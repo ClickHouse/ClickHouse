@@ -41,7 +41,7 @@ bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         const char * next_whitespace = find_first_symbols<' ', '\0'>(current_word, s_end);
         size_t word_length = next_whitespace - current_word;
 
-        if (static_cast<ptrdiff_t>(word_length) != pos->size())
+        if (word_length != pos->size())
             return false;
 
         if (strncasecmp(pos->begin, current_word, word_length))

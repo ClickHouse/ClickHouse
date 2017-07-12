@@ -396,6 +396,14 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    bool negative = false;
+
+    if (pos->type == TokenType::Minus)
+    {
+        ++pos;
+        negative = true;
+    }
+
     Field res;
 
     Pos begin = pos;
@@ -427,23 +435,25 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
+    if (float_value < 0)
+        throw Exception("Logical error: token number cannot begin with minus, but parsed float number is less than zero.", ErrorCodes::LOGICAL_ERROR);
+
+    if (negative)
+        float_value = -float_value;
+
     res = float_value;
 
-    /// try to use more exact type: UInt64 or Int64
+    /// try to use more exact type: UInt64
 
     char * pos_integer = buf;
-    if (float_value < 0)
+
+    errno = 0;
+    UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
+    if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value < static_cast<UInt64>(std::numeric_limits<Int64>::max())))
     {
-        errno = 0;
-        Int64 int_value = std::strtoll(buf, &pos_integer, 0);
-        if (pos_integer == pos_double && errno != ERANGE)
-            res = int_value;
-    }
-    else
-    {
-        errno = 0;
-        UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
-        if (pos_integer == pos_double && errno != ERANGE)
+        if (negative)
+            res = -static_cast<Int64>(uint_value);
+        else
             res = uint_value;
     }
 

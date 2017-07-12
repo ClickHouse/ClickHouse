@@ -147,8 +147,7 @@ public:
         if (params.size() != 1)
             throw Exception{
                 "Aggregate function " + getName() + " requires exactly one parameter.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         pattern = params.front().safeGet<std::string>();
     }

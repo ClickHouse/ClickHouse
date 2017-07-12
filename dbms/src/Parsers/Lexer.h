@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h>
+
 
 namespace DB
 {
@@ -65,7 +67,7 @@ struct Token
     const char * begin;
     const char * end;
 
-    auto size() const { return end - begin; }
+    size_t size() const { return end - begin; }
 
     Token() = default;
     Token(TokenType type, const char * begin, const char * end) : type(type), begin(begin), end(end) {}
@@ -82,8 +84,6 @@ private:
     const char * const begin;
     const char * pos;
     const char * const end;
-
-    void skipWhitespacesAndComments();
 };
 
 }

@@ -16,8 +16,23 @@ struct StringRange
 
     StringRange() {}
     StringRange(const char * begin, const char * end) : first(begin), second(end) {}
-    StringRange(TokenIterator token_begin, TokenIterator token_end) : first(token_begin->begin), second(token_end->begin) {}
     StringRange(TokenIterator token) : first(token->begin), second(token->end) {}
+
+    StringRange(TokenIterator token_begin, TokenIterator token_end)
+    {
+        /// Empty range.
+        if (token_begin == token_end)
+        {
+            first = token_begin->begin;
+            second = token_begin->begin;
+        }
+
+        TokenIterator token_last = token_end;
+        --token_last;
+
+        first = token_begin->begin;
+        second = token_last->end;
+    }
 };
 
 using StringPtr = std::shared_ptr<String>;

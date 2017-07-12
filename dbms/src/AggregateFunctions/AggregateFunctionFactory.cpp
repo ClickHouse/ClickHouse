@@ -156,8 +156,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
         if (argument_types.empty())
             throw Exception{
                 "Incorrect number of arguments for aggregate function " + name,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         /// For aggregate functions of the form `aggIf`, where `agg` is the name of another aggregate function.
         DataTypes nested_dt = argument_types;
