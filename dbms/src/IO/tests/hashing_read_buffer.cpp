@@ -24,10 +24,6 @@ void test(size_t data_size)
         out.write(data, data_size);
         out.next();
 
-        //std::cout.write(data, data_size);
-        //std::cout << std::endl;
-        //std::cout << io.str() << std::endl;
-
         DB::ReadBufferFromIStream source(io, read_buffer_block_size);
         DB::HashingReadBuffer buf(source);
 

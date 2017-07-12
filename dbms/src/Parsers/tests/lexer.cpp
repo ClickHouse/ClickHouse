@@ -7,9 +7,9 @@
 #include <IO/WriteHelpers.h>
 
 
-/** How to test:
-  * for i in ~/work/ClickHouse/dbms/tests/queries/0_stateless/*.sql; do echo $i; grep -q 'FORMAT' $i || ./lexer < $i || break; done
-  */
+/// How to test:
+/// for i in ~/work/ClickHouse/dbms/tests/queries/0_stateless/*.sql; do echo $i; grep -q 'FORMAT' $i || ./lexer < $i || break; done
+///
 
 
 using namespace DB;

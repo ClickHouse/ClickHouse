@@ -730,9 +730,9 @@ private:
     }
 
 
-    ASTPtr parseQuery(IParser::Pos & pos, const char * end, bool allow_multi_statements)
+    ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser;
+        ParserQuery parser(end);
         ASTPtr res;
 
         if (is_interactive)
