@@ -69,6 +69,26 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
     return current_suffix;
 }
 
+
+Names getRequestedColumns(ASTPtr ast)
+{
+    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
+    ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
+    ASTs & asts = node.children;
+
+    Names names;
+    for (size_t i = 0; i < asts.size(); ++i)
+    {
+        if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
+        {
+            if (identifier->kind == ASTIdentifier::Kind::Column)
+                names.push_back(identifier->name);
+        }
+    }
+    return names;
+}
+
+
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
     ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
