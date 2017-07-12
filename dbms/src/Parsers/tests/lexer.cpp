@@ -1,5 +1,6 @@
 #include <map>
 #include <Parsers/Lexer.h>
+#include <Parsers/TokenIterator.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -93,6 +94,24 @@ int main(int argc, char ** argv)
     }
 
     writeChar('\n', out);
+/*
+    Tokens tokens(query.data(), query.data() + query.size());
+    TokenIterator token(tokens);
+
+    while (token->type != TokenType::EndOfStream)
+    {
+        auto it = hilite.find(token->type);
+        if (it != hilite.end())
+            writeCString(it->second, out);
+
+        writeString(token->begin, token->size(), out);
+
+        if (it != hilite.end())
+            writeCString("\033[0m", out);
+
+        writeChar('\n', out);
+        ++token;
+    }*/
 
     return 0;
 }
