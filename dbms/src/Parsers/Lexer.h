@@ -31,8 +31,8 @@ enum class TokenType
 
     Plus,
     Minus,
-    Division,
-    Modulo,
+    Slash,
+    Percent,
     Arrow,                  /// ->. Should be distinguished from minus operator.
     QuestionMark,
     Colon,
