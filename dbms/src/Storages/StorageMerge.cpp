@@ -14,6 +14,8 @@
 #include <DataStreams/CastTypeBlockInputStream.h>
 #include <DataStreams/FilterColumnsBlockInputStream.h>
 #include <DataStreams/RemoveColumnsBlockInputStream.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 
 
 namespace DB
@@ -237,11 +239,13 @@ BlockInputStreams StorageMerge::read(
     }
     else
     {
-        auto requested_columns = VirtualColumnUtils::getRequestedColumns(query);
-        std::set<String> requested_columns_set(requested_columns.begin(), requested_columns.end());
+        /// Blocks from distributed tables may have extra columns.
+        /// We need to remove them to make blocks compatible.
+        auto identifiers = collectIdentifiersInFirstLevelOfSelectQuery(query);
+        std::set<String> identifiers_set(identifiers.begin(), identifiers.end());
         Names columns_to_remove;
         for (const auto & column : column_names)
-            if (!requested_columns_set.count(column))
+            if (!identifiers_set.count(column))
                 columns_to_remove.push_back(column);
 
         if (!columns_to_remove.empty())
@@ -299,6 +303,24 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
     context.getDatabase(database_name)->alterTable(
         context, table_name,
         *columns, materialized_columns, alias_columns, column_defaults, {});
+}
+
+Names StorageMerge::collectIdentifiersInFirstLevelOfSelectQuery(ASTPtr ast) const
+{
+    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
+    ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
+    ASTs & asts = node.children;
+
+    Names names;
+    for (size_t i = 0; i < asts.size(); ++i)
+    {
+        if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
+        {
+            if (identifier->kind == ASTIdentifier::Kind::Column)
+                names.push_back(identifier->name);
+        }
+    }
+    return names;
 }
 
 }

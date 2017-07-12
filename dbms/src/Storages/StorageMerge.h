@@ -76,6 +76,8 @@ private:
     StorageListWithLocks getSelectedTables() const;
 
     Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
+
+    Names collectIdentifiersInFirstLevelOfSelectQuery(ASTPtr ast) const;
 };
 
 }
