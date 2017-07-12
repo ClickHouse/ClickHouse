@@ -88,19 +88,24 @@ Token Lexer::nextToken()
         case '0'...'9':
         {
             /// 0x, 0b
+            bool allow_hex = false;
             if (pos < end - 2 && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b'))
             {
+                if (pos[1] == 'x')
+                    allow_hex = true;
                 pos += 2;
             }
+            else
+                ++pos;
 
-            while (pos < end && isNumericASCII(*pos))
+            while (pos < end && (allow_hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
                 ++pos;
 
             /// decimal point
             if (pos < end && *pos == '.')
             {
                 ++pos;
-                while (pos < end && isNumericASCII(*pos))
+                while (pos < end && (allow_hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
                     ++pos;
             }
 
@@ -113,7 +118,7 @@ Token Lexer::nextToken()
                 if (pos < end - 1 && (*pos == '-' || *pos == '+'))
                     ++pos;
 
-                while (pos < end && isNumericASCII(*pos))
+                while (pos < end && (allow_hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
                     ++pos;
             }
 
