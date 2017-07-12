@@ -13,6 +13,7 @@
 #include <Databases/IDatabase.h>
 #include <DataStreams/CastTypeBlockInputStream.h>
 #include <DataStreams/FilterColumnsBlockInputStream.h>
+#include <DataStreams/RemoveColumnsBlockInputStream.h>
 
 
 namespace DB
@@ -229,10 +230,24 @@ BlockInputStreams StorageMerge::read(
     res = narrowBlockInputStreams(res, num_streams);
 
     /// Added to avoid different block structure from different sources
-    bool throw_if_column_not_found = !processed_stage_in_source_tables
-        || processed_stage_in_source_tables.value() == QueryProcessingStage::FetchColumns;
-    for (auto & stream : res)
-        stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names, throw_if_column_not_found);
+    if (!processed_stage_in_source_tables || processed_stage_in_source_tables.value() == QueryProcessingStage::FetchColumns)
+    {
+        for (auto & stream : res)
+            stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names, true);
+    }
+    else
+    {
+        auto requested_columns = VirtualColumnUtils::getRequestedColumns(query);
+        std::set<String> requested_columns_set(requested_columns.begin(), requested_columns.end());
+        Names columns_to_remove;
+        for (const auto & column : column_names)
+            if (!requested_columns_set.count(column))
+                columns_to_remove.push_back(column);
+
+        if (!columns_to_remove.empty())
+            for (auto & stream : res)
+                stream = std::make_shared<RemoveColumnsBlockInputStream>(stream, columns_to_remove);
+    }
 
     return res;
 }
