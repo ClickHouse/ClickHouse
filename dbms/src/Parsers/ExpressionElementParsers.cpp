@@ -403,6 +403,8 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
         negative = true;
     }
+    else if (pos->type == TokenType::Plus)  /// Leading plus is simply ignored.
+        ++pos;
 
     Field res;
 

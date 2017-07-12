@@ -13,7 +13,7 @@ enum class TokenType
 
     BareWord,               /// Either keyword (SELECT) or identifier (column)
 
-    Number,                 /// Always non-negative. 123 or something like 123.456e12, 0x123p12
+    Number,                 /// Always non-negative. No leading plus. 123 or something like 123.456e12, 0x123p12
     StringLiteral,          /// 'hello word', 'hello''word', 'hello\'word\\'
 
     QuotedIdentifier,       /// "x", `x`
