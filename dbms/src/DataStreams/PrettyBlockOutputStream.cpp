@@ -79,9 +79,13 @@ void PrettyBlockOutputStream::calculateWidths(const Block & block, WidthsPerColu
 
         /// And also calculate widths for names of columns.
         {
-            const String & name = elem.name;
+            /// We need to obtain length in escaped form.
+            {
+                WriteBufferFromString out(serialized_value);
+                writeEscapedString(elem.name, out);
+            }
 
-            name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(name.data()), name.size());
+            name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
             max_widths[i] = std::max(max_widths[i], name_widths[i]);
         }
     }
