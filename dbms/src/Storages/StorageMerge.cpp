@@ -88,6 +88,24 @@ bool StorageMerge::hasColumn(const String & column_name) const
     return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
+static Names collectIdentifiersInFirstLevelOfSelectQuery(ASTPtr ast)
+{
+    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
+    ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
+    ASTs & asts = node.children;
+
+    Names names;
+    for (size_t i = 0; i < asts.size(); ++i)
+    {
+        if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
+        {
+            if (identifier->kind == ASTIdentifier::Kind::Column)
+                names.push_back(identifier->name);
+        }
+    }
+    return names;
+}
+
 BlockInputStreams StorageMerge::read(
     const Names & column_names,
     const ASTPtr & query,
@@ -303,24 +321,6 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
     context.getDatabase(database_name)->alterTable(
         context, table_name,
         *columns, materialized_columns, alias_columns, column_defaults, {});
-}
-
-Names StorageMerge::collectIdentifiersInFirstLevelOfSelectQuery(ASTPtr ast) const
-{
-    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
-    ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
-    ASTs & asts = node.children;
-
-    Names names;
-    for (size_t i = 0; i < asts.size(); ++i)
-    {
-        if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
-        {
-            if (identifier->kind == ASTIdentifier::Kind::Column)
-                names.push_back(identifier->name);
-        }
-    }
-    return names;
 }
 
 }
