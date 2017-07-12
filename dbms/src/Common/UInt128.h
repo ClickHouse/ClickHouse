@@ -1,8 +1,8 @@
 #pragma once
 
+#include <city.h>
+
 #include <Common/HashTable/Hash.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 #if __SSE4_2__
 #include <nmmintrin.h>
@@ -12,37 +12,64 @@
 namespace DB
 {
 
-
-/// For aggregation by SipHash or concatenation of several fields.
+/// For aggregation by SipHash, UUID type or concatenation of several fields.
 struct UInt128
 {
-/// Suppress gcc7 warnings: 'prev_key.DB::UInt128::first' may be used uninitialized in this function
+/// Suppress gcc7 warnings: 'prev_key.DB::UInt128::low' may be used uninitialized in this function
 #if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
-    UInt64 first;
-    UInt64 second;
+    UInt64 low;
+    UInt64 high;
 
-    bool operator== (const UInt128 rhs) const { return first == rhs.first && second == rhs.second; }
-    bool operator!= (const UInt128 rhs) const { return first != rhs.first || second != rhs.second; }
+    UInt128() = default;
+    explicit UInt128(const UInt64 rhs) : low(0), high(rhs) { }
+    explicit UInt128(const UInt64 low, const UInt64 high) : low(low), high(high) { }
 
-    bool operator== (const UInt64 rhs) const { return first == rhs && second == 0; }
-    bool operator!= (const UInt64 rhs) const { return first != rhs || second != 0; }
+    bool inline operator== (const UInt128 rhs) const { return std::tie(low, high) == std::tie(rhs.low, rhs.high); }
+    bool inline operator!= (const UInt128 rhs) const { return !operator==(rhs); }
+
+    bool inline operator<  (const UInt128 rhs) const { return std::tie(low, high) < std::tie(rhs.low, rhs.high); }
+    bool inline operator<= (const UInt128 rhs) const { return !rhs.operator<(*this); }
+    bool inline operator>  (const UInt128 rhs) const { return rhs.operator<(*this); }
+    bool inline operator>= (const UInt128 rhs) const { return !operator<(rhs); }
+
+    /** Types who are stored at the moment in the database have no more than 64bits and can be handle
+     *  inside an unique UInt64.
+     */
+    template<typename T> bool inline operator== (const T rhs) const { return *this == UInt128(0, rhs); }
+    template<typename T> bool inline operator!= (const T rhs) const { return *this != UInt128(0, rhs); }
+    template<typename T> bool inline operator>= (const T rhs) const { return *this >= UInt128(0, rhs); }
+    template<typename T> bool inline operator>  (const T rhs) const { return *this >  UInt128(0, rhs); }
+    template<typename T> bool inline operator<= (const T rhs) const { return *this <= UInt128(0, rhs); }
+    template<typename T> bool inline operator<  (const T rhs) const { return *this <  UInt128(0, rhs); }
+
+    template<typename T> explicit operator T() const { return static_cast<T>(high); }
 
 #if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
-    UInt128 & operator= (const UInt64 rhs) { first = rhs; second = 0; return *this; }
+    UInt128 & operator= (const UInt64 rhs) { low = 0; high = rhs; return *this; }
 };
+
+template<typename T> bool inline operator== (T a, const UInt128 b) { return b == a; }
+template<typename T> bool inline operator!= (T a, const UInt128 b) { return b != a; }
+template<typename T> bool inline operator>= (T a, const UInt128 b) { return b.low == 0 && a >= static_cast<T>(b.high); }
+template<typename T> bool inline operator>  (T a, const UInt128 b) { return b.low == 0 && a >  static_cast<T>(b.high); }
+template<typename T> bool inline operator<= (T a, const UInt128 b) { return b.low != 0 || a <= static_cast<T>(b.high); }
+template<typename T> bool inline operator<  (T a, const UInt128 b) { return b.low != 0 || a <  static_cast<T>(b.high); }
+
+template <> struct IsNumber<UInt128> { static constexpr bool value = true; };
+template <> struct TypeName<UInt128> { static std::string get() { return "UInt128"; } };
 
 struct UInt128Hash
 {
     size_t operator()(UInt128 x) const
     {
-        return CityHash_v1_0_2::Hash128to64({x.first, x.second});
+        return CityHash_v1_0_2::Hash128to64({x.low, x.high});
     }
 };
 
@@ -53,8 +80,8 @@ struct UInt128HashCRC32
     size_t operator()(UInt128 x) const
     {
         UInt64 crc = -1ULL;
-        crc = _mm_crc32_u64(crc, x.first);
-        crc = _mm_crc32_u64(crc, x.second);
+        crc = _mm_crc32_u64(crc, x.low);
+        crc = _mm_crc32_u64(crc, x.high);
         return crc;
     }
 };
@@ -68,11 +95,9 @@ struct UInt128HashCRC32 : public UInt128Hash {};
 
 struct UInt128TrivialHash
 {
-    size_t operator()(UInt128 x) const { return x.first; }
+    size_t operator()(UInt128 x) const { return x.low; }
 };
 
-inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 
 /** Used for aggregation, for putting a large number of constant-length keys in a hash table.
@@ -155,10 +180,37 @@ struct UInt256HashCRC32
 };
 
 #endif
+}
 
+/// Overload hash for type casting
+namespace std
+{
+template <> struct hash<DB::UInt128>
+{
+    size_t operator()(const DB::UInt128 & u) const
+    {
+        return CityHash_v1_0_2::Hash128to64({u.low, u.high});
+    }
+};
 
+template <> struct is_signed<DB::UInt128>
+{
+    static constexpr bool value = false;
+};
 
-inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+template <> struct is_unsigned<DB::UInt128>
+{
+    static constexpr bool value = true;
+};
 
+template <> struct is_integral<DB::UInt128>
+{
+    static constexpr bool value = true;
+};
+
+// Operator +, -, /, *, % aren't implemented so it's not an arithmetic type
+template <> struct is_arithmetic<DB::UInt128>
+{
+    static constexpr bool value = false;
+};
 }

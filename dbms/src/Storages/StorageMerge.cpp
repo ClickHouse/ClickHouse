@@ -229,8 +229,10 @@ BlockInputStreams StorageMerge::read(
     res = narrowBlockInputStreams(res, num_streams);
 
     /// Added to avoid different block structure from different sources
+    bool throw_if_column_not_found = !processed_stage_in_source_tables
+        || processed_stage_in_source_tables.value() == QueryProcessingStage::FetchColumns;
     for (auto & stream : res)
-        stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names);
+        stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names, throw_if_column_not_found);
 
     return res;
 }

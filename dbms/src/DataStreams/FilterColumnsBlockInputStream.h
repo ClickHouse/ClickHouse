@@ -14,9 +14,8 @@ class FilterColumnsBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     FilterColumnsBlockInputStream(
-        BlockInputStreamPtr input_,
-        const Names & columns_to_save_)
-        : columns_to_save(columns_to_save_)
+        BlockInputStreamPtr input_, const Names & columns_to_save_, bool throw_if_column_not_found_)
+        : columns_to_save(columns_to_save_), throw_if_column_not_found(throw_if_column_not_found_)
     {
         children.push_back(input_);
     }
@@ -33,6 +32,7 @@ protected:
 
 private:
     Names columns_to_save;
+    bool throw_if_column_not_found;
 };
 
 }

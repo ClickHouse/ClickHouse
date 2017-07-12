@@ -667,7 +667,7 @@ void ServerApplication::beDaemon()
 		exit(0);
 	
 	setsid();
-	umask(0);
+	umask(027);
 	
 	// attach stdin, stdout, stderr to /dev/null
 	// instead of just closing them. This avoids

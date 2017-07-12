@@ -13,6 +13,7 @@
 #include <IO/HexWriteBuffer.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNested.h>
@@ -240,6 +241,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                     && !typeid_cast<const DataTypeUInt16 *>(column.type.get())
                     && !typeid_cast<const DataTypeUInt32 *>(column.type.get())
                     && !typeid_cast<const DataTypeUInt64 *>(column.type.get())
+                    && !typeid_cast<const DataTypeUUID *>(column.type.get())
                     && !typeid_cast<const DataTypeDate *>(column.type.get())
                     && !typeid_cast<const DataTypeDateTime *>(column.type.get()))
                     throw Exception("Version column (" + version_column + ")"
@@ -622,6 +624,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
             { typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
             { typeid(DataTypeDate),     typeid(DataTypeUInt16)   },
+            { typeid(DataTypeUUID),     typeid(DataTypeUUID)     },
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 
@@ -1703,7 +1706,7 @@ static std::pair<String, DayNum_t> getMonthNameAndDayNum(const Field & partition
         ? toString(partition.get<UInt64>())
         : partition.safeGet<String>();
 
-    if (month_name.size() != 6 || !std::all_of(month_name.begin(), month_name.end(), isdigit))
+    if (month_name.size() != 6 || !std::all_of(month_name.begin(), month_name.end(), isNumericASCII))
         throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
             ErrorCodes::INVALID_PARTITION_NAME);
 

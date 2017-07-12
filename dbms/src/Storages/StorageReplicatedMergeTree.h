@@ -257,7 +257,7 @@ private:
       */
     int columns_version = -1;
 
-    /** Is this replica "master". The master replica selects the parts to merge.
+    /** Is this replica "leading". The leader replica selects the parts to merge.
       */
     bool is_leader_node = false;
     std::mutex leader_node_mutex;

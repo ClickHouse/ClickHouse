@@ -79,6 +79,9 @@ struct Settings
     /** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
     M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
     \
+    /** Should StorageDistributed DirectoryMonitors try to batch individual inserts into bigger ones. */ \
+    M(SettingBool, distributed_directory_monitor_batch_inserts, false) \
+    \
     /** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
     M(SettingBool, optimize_move_to_prewhere, true) \
     \
@@ -233,6 +236,9 @@ struct Settings
     /** Controls quoting of 64-bit integers in JSON output format. */ \
     M(SettingBool, output_format_json_quote_64bit_integers, true) \
     \
+    /** Enables "+nan", "-nan", "+inf", "-inf" outputs in JSON output format. */ \
+    M(SettingBool, output_format_json_quote_denormals, false) \
+    \
     /** Rows limit for Pretty formats. */ \
     M(SettingUInt64, output_format_pretty_max_rows, 10000) \
     \
@@ -301,6 +307,11 @@ struct Settings
 
     /// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
     void set(const String & name, const String & value);
+
+    /// Get setting by name. Converts value to String.
+    String get(const String & name) const;
+
+    bool tryGet(const String & name, String & value) const;
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
       * The profile can also be set using the `set` functions, like the profile setting.

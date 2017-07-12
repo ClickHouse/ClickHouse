@@ -80,6 +80,8 @@ public:
         return scatterImpl<ColumnArray>(num_columns, selector);
     }
 
+    void gather(ColumnGathererStream & gatherer_stream) override;
+
 private:
     ColumnPtr data;
     ColumnPtr offsets;  /// Displacements can be shared across multiple columns - to implement nested data structures.

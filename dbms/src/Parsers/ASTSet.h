@@ -10,6 +10,7 @@ class Set;
 
 /** The set. During the calculation, the expression in the IN section is replaced by the set
   *  - a subquery or an explicit enumeration of values.
+  * TODO: This is bad practice, lead to bugs. Remove it.
   */
 class ASTSet : public IAST
 {

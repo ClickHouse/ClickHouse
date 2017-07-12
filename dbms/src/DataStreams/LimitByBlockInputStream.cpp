@@ -40,7 +40,7 @@ Block LimitByBlockInputStream::readImpl()
             for (auto & column : column_ptrs)
                 column->updateHashWithValue(i, hash);
 
-            hash.get128(key.first, key.second);
+            hash.get128(key.low, key.high);
 
             if (keys_counts[key]++ < group_size)
             {

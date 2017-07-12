@@ -67,6 +67,8 @@ public:
         return scatterImpl<ColumnNullable>(num_columns, selector);
     }
 
+    void gather(ColumnGathererStream & gatherer_stream) override;
+
     /// Return the column that represents values.
     ColumnPtr & getNestedColumn() { return nested_column; }
     const ColumnPtr & getNestedColumn() const { return nested_column; }

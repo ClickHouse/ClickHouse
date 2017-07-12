@@ -1,7 +1,7 @@
 #pragma once
 
 #include <map>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 #include <Poco/RegularExpression.h>
 #include <DataTypes/IDataType.h>
 
@@ -11,7 +11,7 @@ namespace DB
 
 /** Creates data type by its name (possibly name contains parameters in parens).
   */
-class DataTypeFactory : public Singleton<DataTypeFactory>
+class DataTypeFactory : public ext::singleton<DataTypeFactory>
 {
 public:
     DataTypeFactory();

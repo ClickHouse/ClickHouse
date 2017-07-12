@@ -3,7 +3,7 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 #include <Common/Exception.h>
 
 
@@ -24,7 +24,7 @@ namespace ErrorCodes
   * Function could use for initialization (take ownership of shared_ptr, for example)
   *  some dictionaries from Context.
   */
-class FunctionFactory : public Singleton<FunctionFactory>
+class FunctionFactory : public ext::singleton<FunctionFactory>
 {
     friend class StorageSystemFunctions;
 

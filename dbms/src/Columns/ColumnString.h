@@ -238,6 +238,8 @@ public:
         return scatterImpl<ColumnString>(num_columns, selector);
     }
 
+    void gather(ColumnGathererStream & gatherer_stream) override;
+
     void reserve(size_t n) override;
 
     void getExtremes(Field & min, Field & max) const override;

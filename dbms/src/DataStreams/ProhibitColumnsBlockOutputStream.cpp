@@ -5,6 +5,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+
 void ProhibitColumnsBlockOutputStream::write(const Block & block)
 {
     for (const auto & column : columns)
