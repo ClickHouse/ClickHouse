@@ -10,7 +10,6 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 
-#include <iostream>
 
 namespace DB
 {
