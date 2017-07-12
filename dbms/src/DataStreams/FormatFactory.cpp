@@ -148,7 +148,9 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     else if (name == "PrettyCompactMonoBlock")
     {
         BlockOutputStreamPtr dst = std::make_shared<PrettyCompactBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);
-        return std::make_shared<SquashingBlockOutputStream>(dst, settings.output_format_pretty_max_rows, 0);
+        auto res = std::make_shared<SquashingBlockOutputStream>(dst, settings.output_format_pretty_max_rows, 0);
+        res->disableFlush();
+        return res;
     }
     else if (name == "PrettySpace")
         return std::make_shared<PrettySpaceBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);

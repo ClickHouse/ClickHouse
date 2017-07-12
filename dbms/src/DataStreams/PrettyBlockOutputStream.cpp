@@ -60,7 +60,7 @@ void PrettyBlockOutputStream::calculateWidths(const Block & block, WidthsPerColu
             {
                 {
                     WriteBufferFromString out(serialized_value);
-                    elem.type->serializeTextEscaped(*elem.column, i, out);
+                    elem.type->serializeTextEscaped(*elem.column, j, out);
                 }
 
                 widths[i][j] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());

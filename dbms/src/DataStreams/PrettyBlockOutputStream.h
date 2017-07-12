@@ -44,7 +44,7 @@ protected:
     const Context & context;
 
     using Widths = PODArray<size_t>;
-    using WidthsPerColumn = PODArray<Widths>;
+    using WidthsPerColumn = std::vector<Widths>;
 
     static void calculateWidths(const Block & block, WidthsPerColumn & widths, Widths & max_widths, Widths & name_widths);
     void writeValueWithPadding(const ColumnWithTypeAndName & elem, size_t row_num, size_t value_width, size_t pad_to_width);
