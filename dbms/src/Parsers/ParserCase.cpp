@@ -17,7 +17,7 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_then{"THEN"};
     ParserKeyword s_else{"ELSE"};
     ParserKeyword s_end{ "END"};
-    ParserExpressionWithOptionalAlias p_expr{false};
+    ParserExpression p_expr{false};
 
     if (!s_case.parse(pos, node, expected))
     {

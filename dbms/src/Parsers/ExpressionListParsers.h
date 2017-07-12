@@ -305,6 +305,9 @@ protected:
 };
 
 
+using ParserExpression = ParserLambdaExpression;
+
+
 class ParserExpressionWithOptionalAlias : public IParserBase
 {
 public:
