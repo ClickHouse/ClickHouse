@@ -72,7 +72,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     ASTPtr ident;
     if (non_parametric.parse(pos, ident, expected))
     {
-        auto func = std::make_shared<ASTFunction>(StringRange(begin, pos));
+        auto func = std::make_shared<ASTFunction>(StringRange(begin));
         func->name = typeid_cast<ASTIdentifier &>(*ident).name;
         node = func;
         return true;

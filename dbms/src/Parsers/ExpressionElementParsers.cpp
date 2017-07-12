@@ -146,7 +146,7 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         ++pos;
-        node = std::make_shared<ASTIdentifier>(StringRange(begin, pos), s);
+        node = std::make_shared<ASTIdentifier>(StringRange(begin), s);
         return true;
     }
     else if (pos->type == TokenType::BareWord)
