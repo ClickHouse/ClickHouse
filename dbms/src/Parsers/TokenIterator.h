@@ -40,6 +40,13 @@ public:
                 data.emplace_back(token);
         }
     }
+
+    const Token & max()
+    {
+        if (data.empty())
+            return (*this)[0];
+        return data.back();
+    }
 };
 
 
@@ -64,6 +71,8 @@ public:
     bool operator== (const TokenIterator & rhs) const { return index == rhs.index; }
 
     bool isValid() { return get().type < TokenType::EndOfStream; }
+
+    const Token & max() { return tokens->max(); }
 };
 
 }
