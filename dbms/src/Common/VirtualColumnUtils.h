@@ -27,9 +27,6 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 /// For example select _port as 9000.
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value);
 
-/// Returns column names was requested.
-Names getRequestedColumns(ASTPtr ast);
-
 /// Leave in the block only the rows that fit under the WHERE clause and the PREWHERE clause of the query.
 /// Only elements of the outer conjunction are considered, depending only on the columns present in the block.
 /// Returns true if at least one row is discarded.
