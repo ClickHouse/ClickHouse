@@ -1,6 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
-#include <AggregateFunctions/AggregateFunctionsStatistics.h>
+#include <AggregateFunctions/AggregateFunctionStatistics.h>
 
 namespace DB
 {
