@@ -46,7 +46,7 @@ bool ValuesRowInputStream::read(Block & block)
       * But as an exception, it also supports processing arbitrary expressions instead of values.
       * This is very inefficient. But if there are no expressions, then there is no overhead.
       */
-    ParserExpressionWithOptionalAlias parser(false);
+    ParserExpression parser;
 
     assertChar('(', istr);
 
