@@ -134,30 +134,40 @@ ASTPtr tryParseQuery(
 
     ASTPtr res;
     bool parse_res = parser.parse(token_iterator, res, expected);
+    const char * max_parsed_pos = token_iterator.max().begin;
 
     /// Lexical error
     if (!parse_res && token_iterator->type > TokenType::EndOfStream)
     {
         expected = "any valid token";
-        out_error_message = getSyntaxErrorMessage(begin, end, token_iterator->begin, expected, hilite, description);
+        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
         return nullptr;
     }
 
-    /// Excessive input after query. Parsed query must end with end of data or semicolon.
-    if (parse_res && token_iterator->type != TokenType::EndOfStream && token_iterator->type != TokenType::Semicolon)
+    /// Excessive input after query. Parsed query must end with end of data or semicolon or data for INSERT.
+    ASTInsertQuery * insert = nullptr;
+    if (parse_res)
+        insert = typeid_cast<ASTInsertQuery *>(res.get());
+
+    if (parse_res
+        && token_iterator->type != TokenType::EndOfStream
+        && token_iterator->type != TokenType::Semicolon
+        && !(insert && insert->data))
     {
         expected = "end of query";
-        out_error_message = getSyntaxErrorMessage(begin, end, token_iterator->begin, expected, hilite, description);
+        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
         return nullptr;
     }
 
-    /// If multi-statements are not allowed, then after semicolon, there must be no non-space characters.
     while (token_iterator->type == TokenType::Semicolon)
         ++token_iterator;
 
-    if (parse_res && !allow_multi_statements && token_iterator->type != TokenType::EndOfStream)
+    /// If multi-statements are not allowed, then after semicolon, there must be no non-space characters.
+    if (parse_res && !allow_multi_statements
+        && token_iterator->type != TokenType::EndOfStream
+        && !(insert && insert->data))
     {
-        out_error_message = getSyntaxErrorMessage(begin, end, token_iterator->begin, nullptr, hilite,
+        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, nullptr, hilite,
             (description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
         return nullptr;
     }
@@ -165,10 +175,11 @@ ASTPtr tryParseQuery(
     /// Parse error.
     if (!parse_res)
     {
-        out_error_message = getSyntaxErrorMessage(begin, end, token_iterator->begin, expected, hilite, description);
+        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
         return nullptr;
     }
 
+    pos = token_iterator->begin;
     return res;
 }
 
