@@ -50,7 +50,7 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
 Token Lexer::nextToken()
 {
     if (pos >= end)
-        return Token(TokenType::EndOfStream, end, 0);
+        return Token(TokenType::EndOfStream, end, end);
 
     const char * const token_begin = pos;
 
