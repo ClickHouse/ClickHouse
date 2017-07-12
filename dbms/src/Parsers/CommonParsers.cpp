@@ -22,6 +22,9 @@ const char * ParserKeyword::getName() const
 
 bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    if (pos->type != TokenType::BareWord)
+        return false;
+
     const char * current_word = s;
 
     size_t s_length = strlen(s);
@@ -32,6 +35,9 @@ bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     while (true)
     {
+        if (pos->type != TokenType::BareWord)
+            return false;
+
         const char * next_whitespace = find_first_symbols<' ', '\0'>(current_word, s_end);
         size_t word_length = next_whitespace - current_word;
 
