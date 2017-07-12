@@ -19,7 +19,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_detach("DETACH");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_database("DATABASE");
-    ParserKeyword s_dot(".");
+    ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
 

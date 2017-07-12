@@ -26,12 +26,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Pos begin = pos;
 
     ParserKeyword s_insert_into("INSERT INTO");
-    ParserKeyword s_dot(".");
+    ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_values("VALUES");
     ParserKeyword s_format("FORMAT");
     ParserKeyword s_select("SELECT");
-    ParserKeyword s_lparen("(");
-    ParserKeyword s_rparen(")");
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
 
