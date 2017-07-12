@@ -184,16 +184,8 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
     }
     else
     {
-        /** A small heuristic to evaluate that there are a lot of empty strings in the column.
-          * In this case, to save RAM, we will say that the average size of the value is small.
-          */
-        if (istr.position() + sizeof(UInt32) <= istr.buffer().end()
-            && unalignedLoad<UInt32>(istr.position()) == 0)    /// The first 4 strings are in the buffer and are empty.
-        {
-            avg_chars_size = 1;
-        }
-        else
-            avg_chars_size = DBMS_APPROX_STRING_SIZE;
+        /// By default reserve only for empty strings.
+        avg_chars_size = 1;
     }
 
     data.reserve(data.size() + std::ceil(limit * avg_chars_size));

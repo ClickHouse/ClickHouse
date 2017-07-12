@@ -227,7 +227,7 @@ void DataTypeTuple::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, s
 {
     ColumnTuple & real_column = static_cast<ColumnTuple &>(column);
     for (size_t i = 0, size = elems.size(); i < size; ++i)
-        NativeBlockInputStream::readData(*elems[i], *real_column.getData().safeGetByPosition(i).column, istr, limit);
+        NativeBlockInputStream::readData(*elems[i], *real_column.getData().safeGetByPosition(i).column, istr, limit, avg_value_size_hint);
 }
 
 ColumnPtr DataTypeTuple::createColumn() const
