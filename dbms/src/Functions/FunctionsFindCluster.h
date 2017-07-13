@@ -27,8 +27,8 @@ namespace ErrorCodes
 
 enum ClusterOperation
 {
-    FindClusterIndex   = 0,
-    FindCentroidValue  = 1
+    FindClusterIndex = 0,
+    FindCentroidValue = 1
 };
 
 /// The centroid values are converted to Float64 for easier coding of
@@ -48,13 +48,13 @@ size_t find_centroid(Float64 x, std::vector<Float64>& centroids)
 {
     // Centroids array has to have at least one element, and if it has only one element,
     // it is also the result of this Function.
-    Float64 distance = abs(centroids[0]-x);
+    Float64 distance = abs(centroids[0] - x);
     size_t index = 0;
 
     // Check if we have more clusters and if we have, whether some is closer to src[i]
     for (size_t j = 1; j < centroids.size(); ++j)
     {
-        Float64 next_distance = abs(centroids[j]-x);
+        Float64 next_distance = abs(centroids[j] - x);
 
         if (next_distance < distance)
         {
@@ -67,57 +67,59 @@ size_t find_centroid(Float64 x, std::vector<Float64>& centroids)
     return index;
 }
 
-
-
 /** findClusterIndex(x, centroids_array) - find index of element in centroids_array with the value nearest to x
-  * findClusterValue(x, centroids_array) - find value of element in centroids_array with the value nearest to x
-  *
-  * Types:
-  * findClusterIndex(T, Array(T)) -> UInt64
-  * findClusterValue(T, Array(T)) -> T
-  *
-  * T can be any numeric type.
-  */
-class FunctionFindClusterIndex : public IFunction
+ * findClusterValue(x, centroids_array) - find value of element in centroids_array with the value nearest to x
+ *
+ * Types:
+ * findClusterIndex(T, Array(T)) -> UInt64
+ * findClusterValue(T, Array(T)) -> T
+ *
+ * T can be any numeric type.
+ */
+class FunctionFindClusterIndex: public IFunction
 {
 public:
     static constexpr auto name = "findClusterIndex";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFindClusterIndex>(); }
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionFindClusterIndex>();
+    }
 
     String getName() const override
     {
         return FunctionFindClusterIndex::name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    bool isVariadic() const override
+    {
+        return true;
+    }
 
+    size_t getNumberOfArguments() const override
+    {
+        return 0;
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto args_size = arguments.size();
         if (args_size != 2)
-            throw Exception{
-                "Number of arguments for function " + getName() + " doesn't match: passed " +
-                    toString(args_size) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception { "Number of arguments for function " + getName() + " doesn't match: passed " + toString(args_size) + ", should be 2",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH };
 
         const auto type_x = arguments[0];
 
         if (!type_x->isNumeric())
-            throw Exception{"Unsupported type " + type_x->getName()
-                + " of first argument of function " + getName()
-                + " must be a numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception { "Unsupported type " + type_x->getName() + " of first argument of function " + getName() + " must be a numeric type",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT };
 
         const DataTypeArray * type_arr_from = typeid_cast<const DataTypeArray *>(arguments[1].get());
 
         if (!type_arr_from)
-            throw Exception{"Second argument of function " + getName()
-                + " must be literal array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception { "Second argument of function " + getName() + " must be literal array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT };
 
         return std::make_shared<DataTypeUInt64>();
     }
-
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
@@ -127,9 +129,7 @@ public:
         auto out_untyped = column_result.get();
 
         if (!centroids_array_untyped->isConst())
-            throw Exception{"Second argument of function " + getName()
-                + " must be literal array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
+            throw Exception { "Second argument of function " + getName() + " must be literal array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT };
 
         executeImplTyped(in_untyped, out_untyped, centroids_array_untyped);
 
@@ -142,64 +142,54 @@ protected:
         return ClusterOperation::FindClusterIndex;
     }
 
-    virtual void executeImplTyped(
-    		const IColumn* in_untyped,
-			IColumn* out_untyped,
-    		const IColumn* centroids_array_untyped)
+    virtual void executeImplTyped(const IColumn* in_untyped, IColumn* out_untyped, const IColumn* centroids_array_untyped)
     {
-        if (   !executeOperation<UInt8, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<UInt16, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<UInt32, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<UInt64, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Int8, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Int16, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Int32, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Int64, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Float32, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Float64, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            )
+        if (!executeOperation<UInt8, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<UInt16, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<UInt32, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<UInt64, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Int8, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Int16, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Int32, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Int64, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Float32, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Float64, UInt64>(in_untyped, out_untyped, centroids_array_untyped))
         {
-            throw Exception{
-                "Function " + getName() + " expects both x and centroids_array of a numeric type."
-                "Passed arguments are " + in_untyped->getName() + " and " + centroids_array_untyped->getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception { "Function " + getName() + " expects both x and centroids_array of a numeric type."
+                    "Passed arguments are " + in_untyped->getName() + " and " + centroids_array_untyped->getName(), ErrorCodes::ILLEGAL_COLUMN };
 
         }
     }
 
-
     //Match the type of the centrods array and convert them to Float64, because we
     //don't want to have problems calculating negative distances of UInts
-    template <typename CentroidsType>
+    template<typename CentroidsType>
     bool fillCentroids(const IColumn* centroids_array_untyped, std::vector<Float64> & centroids)
     {
-	    const ColumnConst<Array> * const_centroids_array = typeid_cast<const ColumnConst<Array> *>(centroids_array_untyped);
+        const ColumnConst<Array> * const_centroids_array = typeid_cast<const ColumnConst<Array> *>(centroids_array_untyped);
 
-		if (!const_centroids_array)
-			return false;
+        if (!const_centroids_array)
+            return false;
 
-		if (const_centroids_array->getData().empty())
-			throw Exception{"Centroids array must be not empty", ErrorCodes::ILLEGAL_COLUMN};
+        if (const_centroids_array->getData().empty())
+            throw Exception { "Centroids array must be not empty", ErrorCodes::ILLEGAL_COLUMN };
 
-		for (size_t k = 0; k < const_centroids_array->getData().size(); ++k)
-		{
-			const Field& tmp_field = (const_centroids_array->getData())[k];
-			typename NearestFieldType<CentroidsType>::Type value;
-			if (!tmp_field.tryGet(value))
-				return false;
+        for (size_t k = 0; k < const_centroids_array->getData().size(); ++k)
+        {
+            const Field& tmp_field = (const_centroids_array->getData())[k];
+            typename NearestFieldType<CentroidsType>::Type value;
+            if (!tmp_field.tryGet(value))
+                return false;
 
-			centroids.push_back(Float64(value));
-		}
-		return true;
+            centroids.push_back(Float64(value));
+        }
+        return true;
     }
 
-	template <typename CentroidsType, typename OutputType>
-    bool executeOperation(
-    		const IColumn* in_untyped,
-			IColumn* out_untyped,
-    		const IColumn* centroids_array_untyped)
-     {
-		//Match the type of the output
+    template<typename CentroidsType, typename OutputType>
+    bool executeOperation(const IColumn* in_untyped, IColumn* out_untyped, const IColumn* centroids_array_untyped)
+    {
+        //Match the type of the output
         ColumnVector<OutputType> * out = typeid_cast<ColumnVector<OutputType> *>(out_untyped);
 
         if (!out)
@@ -207,36 +197,30 @@ protected:
 
         PaddedPODArray<OutputType> & dst = out->getData();
 
-
-		//try to match the type of the input column
-        if (   !executeOperationTyped<UInt8, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
-            && !executeOperationTyped<UInt16, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
-            && !executeOperationTyped<UInt32, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
-            && !executeOperationTyped<UInt64, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
-            && !executeOperationTyped<Int8, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
-            && !executeOperationTyped<Int16, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
-            && !executeOperationTyped<Int32, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
-            && !executeOperationTyped<Int64, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
-            && !executeOperationTyped<Float32, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
-            && !executeOperationTyped<Float64, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped))
+        //try to match the type of the input column
+        if (!executeOperationTyped<UInt8, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
+                && !executeOperationTyped<UInt16, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
+                && !executeOperationTyped<UInt32, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
+                && !executeOperationTyped<UInt64, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
+                && !executeOperationTyped<Int8, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
+                && !executeOperationTyped<Int16, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
+                && !executeOperationTyped<Int32, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
+                && !executeOperationTyped<Int64, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
+                && !executeOperationTyped<Float32, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped)
+                && !executeOperationTyped<Float64, OutputType, CentroidsType>(in_untyped, dst, centroids_array_untyped))
         {
-        	return false;
+            return false;
         }
-
 
         return true;
     }
 
-    template <typename InputType, typename OutputType, typename CentroidsType>
-    bool executeOperationTyped(
-    		const IColumn* in_untyped,
-			PaddedPODArray<OutputType> & dst,
-			const IColumn* centroids_array_untyped
-			)
+    template<typename InputType, typename OutputType, typename CentroidsType>
+    bool executeOperationTyped(const IColumn* in_untyped, PaddedPODArray<OutputType> & dst, const IColumn* centroids_array_untyped)
     {
-    	const auto maybe_const = in_untyped->convertToFullColumnIfConst();
-    	if (maybe_const != nullptr)
-    		in_untyped = maybe_const.get();
+        const auto maybe_const = in_untyped->convertToFullColumnIfConst();
+        if (maybe_const != nullptr)
+            in_untyped = maybe_const.get();
 
         const auto in_vector = typeid_cast<const ColumnVector<InputType> *>(in_untyped);
         if (in_vector)
@@ -245,34 +229,35 @@ protected:
 
             std::vector<Float64> centroids;
             if (!fillCentroids<CentroidsType>(centroids_array_untyped, centroids))
-            	return false;
+                return false;
 
-			for (size_t i = 0; i < src.size(); ++i)
-			{
-				size_t index = find_centroid(Float64(src[i]), centroids);
-	            if (getOperation() == ClusterOperation::FindClusterIndex)
-					// Note that array indexes start with 1 in Clickhouse
-					dst.push_back(UInt64(index+1));
-	            else if (getOperation() == ClusterOperation::FindCentroidValue)
-	            	dst.push_back(centroids[index]);
-	            else
-	                throw Exception{"Unexpected error in findCluster* function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-			}
+            for (size_t i = 0; i < src.size(); ++i)
+            {
+                size_t index = find_centroid(Float64(src[i]), centroids);
+                if (getOperation() == ClusterOperation::FindClusterIndex)
+                    // Note that array indexes start with 1 in Clickhouse
+                    dst.push_back(UInt64(index + 1));
+                else if (getOperation() == ClusterOperation::FindCentroidValue)
+                    dst.push_back(centroids[index]);
+                else
+                    throw Exception { "Unexpected error in findCluster* function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT };
+            }
 
             return true;
         }
         return false;
     }
 
-
 };
 
-
-class FunctionFindClusterValue : public FunctionFindClusterIndex
+class FunctionFindClusterValue: public FunctionFindClusterIndex
 {
 public:
     static constexpr auto name = "findClusterValue";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFindClusterValue>(); }
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionFindClusterValue>();
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -292,27 +277,21 @@ protected:
         return ClusterOperation::FindCentroidValue;
     }
 
-    virtual void executeImplTyped(
-    		const IColumn* in_untyped,
-			IColumn* out_untyped,
-    		const IColumn* centroids_array_untyped)
+    void executeImplTyped(const IColumn* in_untyped, IColumn* out_untyped, const IColumn* centroids_array_untyped) override
     {
-        if (   !executeOperation<UInt8, UInt8>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<UInt16, UInt16>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<UInt32, UInt32>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<UInt64, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Int8, Int8>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Int16, Int16>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Int32, Int32>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Int64, Int64>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Float32, Float32>(in_untyped, out_untyped, centroids_array_untyped)
-            && !executeOperation<Float64, Float64>(in_untyped, out_untyped, centroids_array_untyped)
-            )
+        if (!executeOperation<UInt8, UInt8>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<UInt16, UInt16>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<UInt32, UInt32>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<UInt64, UInt64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Int8, Int8>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Int16, Int16>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Int32, Int32>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Int64, Int64>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Float32, Float32>(in_untyped, out_untyped, centroids_array_untyped)
+                && !executeOperation<Float64, Float64>(in_untyped, out_untyped, centroids_array_untyped))
         {
-            throw Exception{
-                "Function " + getName() + " expects both x and centroids_array of a numeric type."
-                "Passed arguments are " + in_untyped->getName() + " and " + centroids_array_untyped->getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception { "Function " + getName() + " expects both x and centroids_array of a numeric type."
+                    "Passed arguments are " + in_untyped->getName() + " and " + centroids_array_untyped->getName(), ErrorCodes::ILLEGAL_COLUMN };
         }
     }
 };
