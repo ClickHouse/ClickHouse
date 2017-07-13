@@ -30,13 +30,12 @@ public:
             if (index < data.size())
                 return data[index];
 
-            if (!data.empty() && data.back().type == TokenType::EndOfStream)
+            if (!data.empty() && data.back().isEnd())
                 return data.back();
 
             Token token = lexer.nextToken();
 
-            if (token.type != TokenType::Whitespace
-                && token.type != TokenType::Comment)
+            if (token.isSignificant())
                 data.emplace_back(token);
         }
     }
@@ -72,6 +71,7 @@ public:
 
     bool isValid() { return get().type < TokenType::EndOfStream; }
 
+    /// Rightmost token we had looked.
     const Token & max() { return tokens->max(); }
 };
 

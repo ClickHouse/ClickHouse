@@ -49,6 +49,15 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
 
 Token Lexer::nextToken()
 {
+    Token res = nextTokenImpl();
+    if (res.isSignificant())
+        prev_significant_token_type = res.type;
+    return res;
+}
+
+
+Token Lexer::nextTokenImpl()
+{
     if (pos >= end)
         return Token(TokenType::EndOfStream, end, end);
 
@@ -91,7 +100,7 @@ Token Lexer::nextToken()
 
             /// 0x, 0b
             bool hex = false;
-            if (pos < end - 2 && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b' || pos[1] == 'X' || pos[1] == 'B'))
+            if (pos + 2 < end && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b' || pos[1] == 'X' || pos[1] == 'B'))
             {
                 if (pos[1] == 'x' || pos[1] == 'X')
                     hex = true;
@@ -117,7 +126,7 @@ Token Lexer::nextToken()
                 ++pos;
 
                 /// sign of exponent. It is always decimal.
-                if (pos < end - 1 && (*pos == '-' || *pos == '+'))
+                if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                     ++pos;
 
                 while (pos < end && isNumericASCII(*pos))
@@ -160,7 +169,12 @@ Token Lexer::nextToken()
         case '.':   /// qualifier, tuple access operator or start of floating point number
         {
             /// Just after identifier or complex expression.
-            if (pos > begin && (pos[-1] == ')' || pos[-1] == ']' || isAlphaNumericASCII(pos[-1])))
+            if (pos > begin
+                && (!(pos + 1 < end && isNumericASCII(pos[1]))
+                    || prev_significant_token_type == TokenType::ClosingRoundBracket
+                    || prev_significant_token_type == TokenType::ClosingSquareBracket
+                    || prev_significant_token_type == TokenType::BareWord
+                    || prev_significant_token_type == TokenType::QuotedIdentifier))
                 return Token(TokenType::Dot, token_begin, ++pos);
 
             ++pos;
@@ -168,12 +182,12 @@ Token Lexer::nextToken()
                 ++pos;
 
             /// exponentation
-            if (pos < end - 1 && (*pos == 'e' || *pos == 'E'))
+            if (pos + 1 < end && (*pos == 'e' || *pos == 'E'))
             {
                 ++pos;
 
                 /// sign of exponent
-                if (pos < end - 1 && (*pos == '-' || *pos == '+'))
+                if (pos + 1 < end && (*pos == '-' || *pos == '+'))
                     ++pos;
 
                 while (pos < end && isNumericASCII(*pos))
@@ -215,7 +229,7 @@ Token Lexer::nextToken()
                 else
                 {
                     ++pos;
-                    while (pos <= end - 2)
+                    while (pos + 2 <= end)
                     {
                         /// This means that nested multiline comments are not supported.
                         if (pos[0] == '*' && pos[1] == '/')
