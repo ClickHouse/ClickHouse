@@ -67,7 +67,7 @@ void writeQueryWithHighlightedErrorPositions(
     WriteBuffer & out,
     const char * begin,
     const char * end,
-    const char * const * positions_to_hilite,
+    const char * const * positions_to_hilite,   /// must go in ascending order
     size_t num_positions_to_hilite)
 {
     const char * pos = begin;
@@ -79,7 +79,7 @@ void writeQueryWithHighlightedErrorPositions(
         if (current_position_to_hilite == end)
         {
             out << "\033[41;1m \033[0m";
-            pos = end;
+            return;
         }
         else
         {
@@ -107,7 +107,7 @@ void writeQueryAroundTheError(
     if (hilite)
     {
         out << ":\n\n";
-        writeQueryWithHighlightedErrorPositions(out, begin, end, positions_to_hilite, 1);
+        writeQueryWithHighlightedErrorPositions(out, begin, end, positions_to_hilite, num_positions_to_hilite);
         out << "\n\n";
     }
     else
