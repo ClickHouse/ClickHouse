@@ -187,7 +187,7 @@ void NativeBlockInputStream::updateAvgValueSizeHints(const Block & block)
     for (auto idx : ext::range(0, block.columns()))
     {
         auto & avg_value_size_hint = avg_value_size_hints[idx];
-        IDataType::updateAvgValueSizeHints(*block.getByPosition(idx).column, avg_value_size_hint);
+        IDataType::updateAvgValueSizeHint(*block.getByPosition(idx).column, avg_value_size_hint);
     }
 }
 

@@ -156,7 +156,7 @@ public:
     virtual ~IDataType() {}
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
-    static void updateAvgValueSizeHints(const IColumn & column, double & avg_value_size_hint);
+    static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 };
 
 

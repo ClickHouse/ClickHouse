@@ -513,7 +513,7 @@ void MergeTreeReader::readData(
             stream.seekToMark(from_mark);
         type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
 
-        IDataType::updateAvgValueSizeHints(column, avg_value_size_hint);
+        IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
     }
 }
 
