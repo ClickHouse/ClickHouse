@@ -73,7 +73,7 @@ int main(int argc, char ** argv)
     {
         Token token = lexer.nextToken();
 
-        if (token.type == TokenType::EndOfStream)
+        if (token.isEnd())
             break;
 
         writeChar(' ', out);
@@ -89,7 +89,7 @@ int main(int argc, char ** argv)
 
         writeChar(' ', out);
 
-        if (token.type >= TokenType::Error)
+        if (token.isError())
             return 1;
     }
 
@@ -98,7 +98,7 @@ int main(int argc, char ** argv)
     Tokens tokens(query.data(), query.data() + query.size());
     TokenIterator token(tokens);
 
-    while (token->type != TokenType::EndOfStream)
+    while (token->type.isEnd())
     {
         auto it = hilite.find(token->type);
         if (it != hilite.end())

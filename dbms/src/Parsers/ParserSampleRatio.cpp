@@ -91,6 +91,7 @@ bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!parseDecimal(pos->begin, pos->end, numerator))
         return false;
+    ++pos;
 
     bool has_slash = pos->type == TokenType::Slash;
 
@@ -100,6 +101,7 @@ bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (!parseDecimal(pos->begin, pos->end, denominator))
             return false;
+        ++pos;
 
         res.numerator = numerator.numerator * denominator.denominator;
         res.denominator = numerator.denominator * denominator.numerator;

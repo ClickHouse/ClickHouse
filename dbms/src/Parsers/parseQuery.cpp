@@ -122,7 +122,7 @@ ASTPtr tryParseQuery(
     Tokens tokens(pos, end);
     TokenIterator token_iterator(tokens);
 
-    if (token_iterator->type == TokenType::EndOfStream
+    if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
     {
         out_error_message = "Empty query";
@@ -137,7 +137,7 @@ ASTPtr tryParseQuery(
     const char * max_parsed_pos = token_iterator.max().begin;
 
     /// Lexical error
-    if (!parse_res && token_iterator->type > TokenType::EndOfStream)
+    if (!parse_res && token_iterator->isError())
     {
         expected = "any valid token";
         out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
@@ -150,7 +150,7 @@ ASTPtr tryParseQuery(
         insert = typeid_cast<ASTInsertQuery *>(res.get());
 
     if (parse_res
-        && token_iterator->type != TokenType::EndOfStream
+        && !token_iterator->isEnd()
         && token_iterator->type != TokenType::Semicolon
         && !(insert && insert->data))
     {
@@ -164,7 +164,7 @@ ASTPtr tryParseQuery(
 
     /// If multi-statements are not allowed, then after semicolon, there must be no non-space characters.
     if (parse_res && !allow_multi_statements
-        && token_iterator->type != TokenType::EndOfStream
+        && !token_iterator->isEnd()
         && !(insert && insert->data))
     {
         out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, nullptr, hilite,

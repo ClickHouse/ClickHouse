@@ -44,7 +44,9 @@ enum class TokenType
     Greater,
     LessOrEquals,
     GreaterOrEquals,
-    Concatenation,          /// ||
+    Concatenation,          /// String concatenation operator: ||
+
+    /// Order is important. EndOfStream goes after all usual tokens, and special error tokens goes after EndOfStream.
 
     EndOfStream,
 
@@ -71,6 +73,10 @@ struct Token
 
     Token() = default;
     Token(TokenType type, const char * begin, const char * end) : type(type), begin(begin), end(end) {}
+
+    bool isSignificant() const { return type != TokenType::Whitespace && type != TokenType::Comment; }
+    bool isError() const { return type > TokenType::EndOfStream; }
+    bool isEnd() const { return type == TokenType::EndOfStream; }
 };
 
 
@@ -84,6 +90,11 @@ private:
     const char * const begin;
     const char * pos;
     const char * const end;
+
+    Token nextTokenImpl();
+
+    /// This is needed to disambiguate tuple access operator from floating point number (.1).
+    TokenType prev_significant_token_type = TokenType::Whitespace;   /// No previous token.
 };
 
 }
