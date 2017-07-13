@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/HTMLForm.h>
+#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 

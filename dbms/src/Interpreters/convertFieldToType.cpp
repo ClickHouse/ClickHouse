@@ -15,6 +15,7 @@
 
 #include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeUUID.h>
 
 namespace DB

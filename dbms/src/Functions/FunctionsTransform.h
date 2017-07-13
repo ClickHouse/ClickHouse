@@ -12,6 +12,7 @@
 #include <Common/Arena.h>
 #include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/EnrichedDataTypePtr.h>
 

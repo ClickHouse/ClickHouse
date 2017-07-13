@@ -20,6 +20,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/typeid_cast.h>
 
 #include <AggregateFunctions/IUnaryAggregateFunction.h>
 #include <AggregateFunctions/UniqCombinedBiasData.h>

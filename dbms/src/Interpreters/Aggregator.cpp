@@ -21,6 +21,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/config_compile.h>
 
 

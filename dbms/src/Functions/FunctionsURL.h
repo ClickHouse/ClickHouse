@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/StringUtils.h>
 #include <Common/StringView.h>
+#include <Common/typeid_cast.h>
 #include <Functions/FunctionsString.h>
 #include <Functions/FunctionsStringArray.h>
 

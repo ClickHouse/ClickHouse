@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/typeid_cast.h>
 
 #include <iterator>
 #include <memory>

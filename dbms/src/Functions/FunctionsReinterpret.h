@@ -9,6 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 
 

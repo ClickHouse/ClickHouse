@@ -7,6 +7,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Common/typeid_cast.h>
 
 #include <TableFunctions/TableFunctionRemote.h>
 #include <TableFunctions/TableFunctionFactory.h>

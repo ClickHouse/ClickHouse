@@ -10,6 +10,7 @@
 #include <Parsers/ASTSet.h>
 #include <Parsers/formatAST.h>
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNested.h>
 #include <ext/scope_guard.h>
 #include <ext/map.h>

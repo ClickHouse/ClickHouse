@@ -4,6 +4,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 
+#include <Common/typeid_cast.h>
+
 #include <DataTypes/DataTypeString.h>
 
 #include <IO/ReadHelpers.h>

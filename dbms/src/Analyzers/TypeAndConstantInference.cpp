@@ -23,6 +23,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

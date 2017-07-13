@@ -28,6 +28,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
+#include <Common/typeid_cast.h>
+
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageTinyLog.h>

@@ -10,6 +10,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/PODArray.h>
+#include <Common/typeid_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <bitset>

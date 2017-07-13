@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <Common/PODArray.h>
-#include <Common/typeid_cast.h>
 
 #include <Core/Field.h>
 #include <Common/Exception.h>

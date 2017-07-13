@@ -1,5 +1,6 @@
 #include <Columns/ColumnConstAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

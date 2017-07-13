@@ -1,6 +1,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>

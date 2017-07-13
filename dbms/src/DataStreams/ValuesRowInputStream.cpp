@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Core/FieldVisitors.h>
 #include <Core/Block.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

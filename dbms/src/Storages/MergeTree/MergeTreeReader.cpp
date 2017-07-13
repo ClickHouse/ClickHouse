@@ -10,6 +10,7 @@
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/typeid_cast.h>
 #include <Poco/File.h>
 
 

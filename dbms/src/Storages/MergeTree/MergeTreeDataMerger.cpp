@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
+#include <Common/typeid_cast.h>
 
 #include <Poco/File.h>
 

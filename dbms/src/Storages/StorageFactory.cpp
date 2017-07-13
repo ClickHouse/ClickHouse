@@ -3,6 +3,7 @@
 
 #include <Core/FieldVisitors.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>

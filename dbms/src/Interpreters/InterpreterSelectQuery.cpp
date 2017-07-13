@@ -43,6 +43,7 @@
 
 #include <Core/Field.h>
 #include <Common/Collator.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents

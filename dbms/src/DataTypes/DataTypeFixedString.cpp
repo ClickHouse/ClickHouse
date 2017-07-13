@@ -11,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

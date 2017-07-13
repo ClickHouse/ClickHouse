@@ -3,6 +3,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
 #include <queue>
 
 namespace DB

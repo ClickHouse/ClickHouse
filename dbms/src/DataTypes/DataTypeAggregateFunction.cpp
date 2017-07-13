@@ -6,6 +6,8 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConstAggregateFunction.h>
 
+#include <Common/typeid_cast.h>
+
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-void IDataType::updateAvgValueSizeHints(const IColumn & column, double & avg_value_size_hint)
+void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
     /// Update the average value size hint if amount of read rows isn't too small
     size_t column_size = column.size();

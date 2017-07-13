@@ -13,6 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <Common/VirtualColumnUtils.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

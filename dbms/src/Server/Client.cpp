@@ -45,6 +45,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/NetException.h>
 #include <common/readline_use.h>
+#include <Common/typeid_cast.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code

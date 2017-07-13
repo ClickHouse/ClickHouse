@@ -11,6 +11,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 
+#include <Common/typeid_cast.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <Functions/IFunction.h>

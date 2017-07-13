@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Poco/File.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents

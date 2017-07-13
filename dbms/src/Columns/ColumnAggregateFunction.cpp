@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

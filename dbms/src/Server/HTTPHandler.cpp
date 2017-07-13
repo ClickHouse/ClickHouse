@@ -30,6 +30,7 @@
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
+#include <Common/typeid_cast.h>
 
 #include "HTTPHandler.h"
 

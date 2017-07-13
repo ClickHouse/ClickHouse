@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

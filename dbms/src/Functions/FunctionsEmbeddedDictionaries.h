@@ -18,6 +18,7 @@
 #include <Dictionaries/Embedded/RegionsNames.h>
 
 #include <Common/config.h>
+#include <Common/typeid_cast.h>
 
 #if USE_MYSQL
 #include <Dictionaries/Embedded/TechDataHierarchy.h>

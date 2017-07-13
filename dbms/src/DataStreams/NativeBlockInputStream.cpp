@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/typeid_cast.h>
 #include <ext/range.h>
 
 #include <DataStreams/NativeBlockInputStream.h>

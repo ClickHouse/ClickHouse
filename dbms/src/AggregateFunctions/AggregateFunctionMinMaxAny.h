@@ -5,6 +5,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <AggregateFunctions/IUnaryAggregateFunction.h>

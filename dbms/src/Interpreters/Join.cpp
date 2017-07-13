@@ -11,6 +11,7 @@
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Core/ColumnNumbers.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

@@ -1,5 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
+#include <Common/typeid_cast.h>
 
 #include <IO/ConcatReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>

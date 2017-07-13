@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <Common/typeid_cast.h>
 
 #include <limits>
 
