@@ -78,7 +78,7 @@ public:
 
 
 /// Returns positions of unmatched parentheses.
-using UnmatchedParentheses = std::vector<const char *>;
+using UnmatchedParentheses = std::vector<Token>;
 UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, Token * last);
 
 }
