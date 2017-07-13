@@ -14,6 +14,9 @@
 #include <Databases/IDatabase.h>
 #include <DataStreams/CastTypeBlockInputStream.h>
 #include <DataStreams/FilterColumnsBlockInputStream.h>
+#include <DataStreams/RemoveColumnsBlockInputStream.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 
 
 namespace DB
@@ -84,6 +87,24 @@ NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 bool StorageMerge::hasColumn(const String & column_name) const
 {
     return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
+}
+
+static Names collectIdentifiersInFirstLevelOfSelectQuery(ASTPtr ast)
+{
+    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
+    ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
+    ASTs & asts = node.children;
+
+    Names names;
+    for (size_t i = 0; i < asts.size(); ++i)
+    {
+        if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
+        {
+            if (identifier->kind == ASTIdentifier::Kind::Column)
+                names.push_back(identifier->name);
+        }
+    }
+    return names;
 }
 
 BlockInputStreams StorageMerge::read(
@@ -230,10 +251,26 @@ BlockInputStreams StorageMerge::read(
     res = narrowBlockInputStreams(res, num_streams);
 
     /// Added to avoid different block structure from different sources
-    bool throw_if_column_not_found = !processed_stage_in_source_tables
-        || processed_stage_in_source_tables.value() == QueryProcessingStage::FetchColumns;
-    for (auto & stream : res)
-        stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names, throw_if_column_not_found);
+    if (!processed_stage_in_source_tables || processed_stage_in_source_tables.value() == QueryProcessingStage::FetchColumns)
+    {
+        for (auto & stream : res)
+            stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names, true);
+    }
+    else
+    {
+        /// Blocks from distributed tables may have extra columns.
+        /// We need to remove them to make blocks compatible.
+        auto identifiers = collectIdentifiersInFirstLevelOfSelectQuery(query);
+        std::set<String> identifiers_set(identifiers.begin(), identifiers.end());
+        Names columns_to_remove;
+        for (const auto & column : column_names)
+            if (!identifiers_set.count(column))
+                columns_to_remove.push_back(column);
+
+        if (!columns_to_remove.empty())
+            for (auto & stream : res)
+                stream = std::make_shared<RemoveColumnsBlockInputStream>(stream, columns_to_remove);
+    }
 
     return res;
 }

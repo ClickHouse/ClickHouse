@@ -11,10 +11,10 @@ namespace DB
 class IParserBase : public IParser
 {
 public:
-    bool parse(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parse(Pos & pos, ASTPtr & node, Expected & expected);
 
 protected:
-    virtual bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) = 0;
+    virtual bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) = 0;
 };
 
 }

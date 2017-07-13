@@ -22,8 +22,7 @@ AggregateFunctionPtr createAggregateFunctionQuantileDeterministic(const std::str
         throw Exception{
             "Illegal type " + determinator_type->getName() + " of second argument for aggregate function " + name +
             ", Int32, UInt32, Int64 or UInt64 required",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        };
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
     const IDataType & argument_type = *argument_types[0];
@@ -59,8 +58,7 @@ AggregateFunctionPtr createAggregateFunctionQuantilesDeterministic(const std::st
         throw Exception{
             "Illegal type " + determinator_type->getName() + " of second argument for aggregate function " + name +
             ", Int32, UInt32, Int64 or UInt64 required",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        };
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
     const IDataType & argument_type = *argument_types[0];

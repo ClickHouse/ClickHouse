@@ -121,8 +121,8 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
 
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
-    IParser::Pos begin,
-    IParser::Pos end,
+    const char * begin,
+    const char * end,
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage)
@@ -132,7 +132,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context.getSettingsRef();
 
-    ParserQuery parser;
+    ParserQuery parser(end);
     ASTPtr ast;
     size_t query_size;
     size_t max_query_size = settings.max_query_size;

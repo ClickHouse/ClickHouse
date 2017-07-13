@@ -283,7 +283,10 @@ struct Settings
      */ \
     M(SettingBool, fallback_to_stale_replicas_for_distributed_queries, 1) \
     /** For development and testing purposes only still */ \
-    M(SettingBool, distributed_ddl_allow_replicated_alter, 0)
+    M(SettingBool, distributed_ddl_allow_replicated_alter, 0) \
+    /** Limit on max column size in block while reading. Helps to decrease cache misses count. \
+      * Should be close to L2 cache size. */ \
+    M(SettingUInt64, preferred_max_column_in_block_size_bytes, 250000)
 
 
     /// Possible limits for query execution.

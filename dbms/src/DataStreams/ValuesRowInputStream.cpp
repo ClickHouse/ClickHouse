@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Parsers/TokenIterator.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <DataStreams/ValuesRowInputStream.h>
 #include <DataTypes/DataTypeArray.h>
@@ -46,7 +47,7 @@ bool ValuesRowInputStream::read(Block & block)
       * But as an exception, it also supports processing arbitrary expressions instead of values.
       * This is very inefficient. But if there are no expressions, then there is no overhead.
       */
-    ParserExpressionWithOptionalAlias parser(false);
+    ParserExpression parser;
 
     assertChar('(', istr);
 
@@ -86,7 +87,7 @@ bool ValuesRowInputStream::read(Block & block)
                 || e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
                 || e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT)
             {
-                /// TODO Performance if the expression does not fit entirely to the end of the buffer.
+                /// TODO Case when the expression does not fit entirely in the buffer.
 
                 /// If the beginning of the value is no longer in the buffer.
                 if (istr.count() - istr.offset() != prev_istr_bytes)
@@ -97,18 +98,18 @@ bool ValuesRowInputStream::read(Block & block)
 
                 IDataType & type = *block.safeGetByPosition(i).type;
 
-                IParser::Pos pos = prev_istr_position;
+                Expected expected;
 
-                Expected expected = "";
-                IParser::Pos max_parsed_pos = pos;
+                Tokens tokens(prev_istr_position, istr.buffer().end());
+                TokenIterator token_iterator(tokens);
 
                 ASTPtr ast;
-                if (!parser.parse(pos, istr.buffer().end(), ast, max_parsed_pos, expected))
+                if (!parser.parse(token_iterator, ast, expected))
                     throw Exception("Cannot parse expression of type " + type.getName() + " here: "
                         + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
                         ErrorCodes::SYNTAX_ERROR);
 
-                istr.position() = const_cast<char *>(max_parsed_pos);
+                istr.position() = const_cast<char *>(token_iterator->begin);
 
                 std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
                 Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());

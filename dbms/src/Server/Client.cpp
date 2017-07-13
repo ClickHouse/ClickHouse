@@ -46,6 +46,8 @@
 #include <Common/NetException.h>
 #include <common/readline_use.h>
 #include <Common/typeid_cast.h>
+#include <Functions/registerFunctions.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -261,6 +263,9 @@ private:
 
     int mainImpl(const std::vector<std::string> & args)
     {
+        registerFunctions();
+        registerAggregateFunctions();
+
         /// Batch mode is enabled if one of the following is true:
         /// - -e (--query) command line option is present.
         ///   The value of the option is used as the text of query (or of multiple queries).
@@ -726,9 +731,9 @@ private:
     }
 
 
-    ASTPtr parseQuery(IParser::Pos & pos, const char * end, bool allow_multi_statements)
+    ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser;
+        ParserQuery parser(end);
         ASTPtr res;
 
         if (is_interactive)

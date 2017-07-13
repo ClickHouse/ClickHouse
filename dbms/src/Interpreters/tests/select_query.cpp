@@ -5,8 +5,8 @@
 
 #include <Poco/ConsoleChannel.h>
 
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 
 #include <Storages/StorageLog.h>
 #include <Storages/System/attachSystemTables.h>
@@ -42,8 +42,8 @@ try
     attachSystemTablesLocal(*context.getDatabase("system"));
     context.setCurrentDatabase("default");
 
-    ReadBufferFromIStream in(std::cin);
-    WriteBufferFromOStream out(std::cout);
+    ReadBufferFromFileDescriptor in(STDIN_FILENO);
+    WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
     executeQuery(in, out, /* allow_into_outfile = */ false, context, {});
 

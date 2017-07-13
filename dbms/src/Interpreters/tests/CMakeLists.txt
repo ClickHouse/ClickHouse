@@ -1,9 +1,6 @@
 add_executable (expression expression.cpp)
 target_link_libraries (expression dbms)
 
-add_executable (expression_analyzer expression_analyzer.cpp)
-target_link_libraries (expression_analyzer dbms)
-
 add_executable (create_query create_query.cpp)
 target_link_libraries (create_query dbms)
 
