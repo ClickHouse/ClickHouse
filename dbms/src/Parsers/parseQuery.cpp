@@ -244,19 +244,27 @@ ASTPtr tryParseQuery(
     bool parse_res = parser.parse(token_iterator, res, expected);
     Token last_token = token_iterator.max();
 
-    /// Lexical error
-    if (last_token.isError())
-    {
-        out_error_message = getLexicalErrorMessage(begin, end, last_token, getErrorTokenDescription(last_token.type), hilite, query_description);
-        return nullptr;
-    }
+    /// If parsed query ends at data for insertion. Data for insertion could be in any format and not necessary be lexical correct.
+    ASTInsertQuery * insert = nullptr;
+    if (parse_res)
+        insert = typeid_cast<ASTInsertQuery *>(res.get());
 
-    /// Unmatched parentheses
-    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), &last_token);
-    if (!unmatched_parens.empty())
+    if (!(insert && insert->data))
     {
-        out_error_message = getUnmatchedParenthesesErrorMessage(begin, end, unmatched_parens, hilite, query_description);
-        return nullptr;
+        /// Lexical error
+        if (last_token.isError())
+        {
+            out_error_message = getLexicalErrorMessage(begin, end, last_token, getErrorTokenDescription(last_token.type), hilite, query_description);
+            return nullptr;
+        }
+
+        /// Unmatched parentheses
+        UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), &last_token);
+        if (!unmatched_parens.empty())
+        {
+            out_error_message = getUnmatchedParenthesesErrorMessage(begin, end, unmatched_parens, hilite, query_description);
+            return nullptr;
+        }
     }
 
     if (!parse_res)
@@ -267,8 +275,6 @@ ASTPtr tryParseQuery(
     }
 
     /// Excessive input after query. Parsed query must end with end of data or semicolon or data for INSERT.
-    ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(res.get());
-
     if (!token_iterator->isEnd()
         && token_iterator->type != TokenType::Semicolon
         && !(insert && insert->data))
