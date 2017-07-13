@@ -300,7 +300,7 @@ size_t ColumnArray::byteSize() const
 
 size_t ColumnArray::allocatedBytes() const
 {
-    return getData().allocatedBytes() + getOffsets().allocated_bytes() * sizeof(getOffsets()[0]);
+    return getData().allocatedBytes() + getOffsets().allocated_bytes();
 }
 
 
