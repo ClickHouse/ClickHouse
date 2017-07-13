@@ -309,6 +309,14 @@ size_t Block::bytes() const
     return res;
 }
 
+size_t Block::allocatedSize() const
+{
+    size_t res = 0;
+    for (const auto & elem : data)
+        res += elem.column->allocatedSize();
+
+    return res;
+}
 
 std::string Block::dumpNames() const
 {
