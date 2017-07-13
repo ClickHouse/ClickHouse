@@ -88,7 +88,7 @@ public:
     size_t bytes() const;
 
     /// Approximate number of allocated bytes in memory - for profiling and limits.
-    size_t allocatedSize() const;
+    size_t allocatedBytes() const;
 
     operator bool() const { return !data.empty(); }
     bool operator!() const { return data.empty(); }

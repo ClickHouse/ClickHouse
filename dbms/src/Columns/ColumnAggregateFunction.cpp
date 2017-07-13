@@ -185,9 +185,9 @@ size_t ColumnAggregateFunction::byteSize() const
 
 
 /// Like byteSize(), highly overestimates size
-size_t ColumnAggregateFunction::allocatedSize() const
+size_t ColumnAggregateFunction::allocatedBytes() const
 {
-    size_t res = getData().allocated_size() * sizeof(getData()[0]);
+    size_t res = getData().allocated_bytes();
 
     for (const auto & arena : arenas)
         res += arena.get()->size();

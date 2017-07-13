@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNested.h>

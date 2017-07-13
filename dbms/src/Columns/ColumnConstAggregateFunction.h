@@ -91,7 +91,7 @@ public:
 
     size_t byteSize() const override;
 
-    size_t allocatedSize() const override;
+    size_t allocatedBytes() const override;
 
 private:
     DataTypePtr data_type;

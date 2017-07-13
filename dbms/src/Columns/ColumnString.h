@@ -54,9 +54,9 @@ public:
         return chars.size() + offsets.size() * sizeof(offsets[0]);
     }
 
-    size_t allocatedSize() const override
+    size_t allocatedBytes() const override
     {
-        return chars.allocated_size() + offsets.allocated_size();
+        return chars.allocated_bytes() + offsets.allocated_bytes();
     }
 
     ColumnPtr cloneResized(size_t to_size) const override;

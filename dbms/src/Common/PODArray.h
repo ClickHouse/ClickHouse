@@ -77,7 +77,7 @@ private:
         if (c_start == nullptr)
             return;
 
-        TAllocator::free(c_start, allocated_size());
+        TAllocator::free(c_start, allocated_bytes());
     }
 
     void realloc(size_t bytes)
@@ -90,7 +90,7 @@ private:
 
         ptrdiff_t end_diff = c_end - c_start;
 
-        c_start = reinterpret_cast<char *>(TAllocator::realloc(c_start, allocated_size(), bytes));
+        c_start = reinterpret_cast<char *>(TAllocator::realloc(c_start, allocated_bytes(), bytes));
 
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right;
@@ -104,13 +104,13 @@ private:
     bool isAllocatedFromStack() const
     {
         constexpr size_t stack_threshold = TAllocator::getStackThreshold();
-        return (stack_threshold > 0) && (allocated_size() <= stack_threshold);
+        return (stack_threshold > 0) && (allocated_bytes() <= stack_threshold);
     }
 
 public:
     using value_type = T;
 
-    size_t allocated_size() const { return c_end_of_storage - c_start + pad_right; }
+    size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right; }
 
     /// You can not just use `typedef`, because there is ambiguity for the constructors and `assign` functions.
     struct iterator : public boost::iterator_adaptor<iterator, T*>
@@ -195,7 +195,7 @@ public:
         if (size() == 0)
             realloc(std::max(INITIAL_SIZE, minimum_memory_for_elements(1)));
         else
-            realloc(allocated_size() * 2);
+            realloc(allocated_bytes() * 2);
     }
 
     void resize(size_t n)
@@ -305,10 +305,10 @@ public:
         auto swap_stack_heap = [](PODArray & arr1, PODArray & arr2)
         {
             size_t stack_size = arr1.size();
-            size_t stack_allocated = arr1.allocated_size();
+            size_t stack_allocated = arr1.allocated_bytes();
 
             size_t heap_size = arr2.size();
-            size_t heap_allocated = arr2.allocated_size();
+            size_t heap_allocated = arr2.allocated_bytes();
 
             /// Keep track of the stack content we have to copy.
             char * stack_c_start = arr1.c_start;
@@ -330,7 +330,7 @@ public:
             if (src.isAllocatedFromStack())
             {
                 dest.dealloc();
-                dest.alloc(src.allocated_size());
+                dest.alloc(src.allocated_bytes());
                 memcpy(dest.c_start, src.c_start, byte_size(src.size()));
                 dest.c_end = dest.c_start + (src.c_end - src.c_start);
 
@@ -379,10 +379,10 @@ public:
             }
 
             size_t lhs_size = size();
-            size_t lhs_allocated = allocated_size();
+            size_t lhs_allocated = allocated_bytes();
 
             size_t rhs_size = rhs.size();
-            size_t rhs_allocated = rhs.allocated_size();
+            size_t rhs_allocated = rhs.allocated_bytes();
 
             c_end_of_storage = c_start + rhs_allocated - pad_right;
             rhs.c_end_of_storage = rhs.c_start + lhs_allocated - pad_right;

@@ -317,7 +317,7 @@ template <typename T>
 void FlatDictionary::addAttributeSize(const Attribute & attribute)
 {
     const auto & array_ref = std::get<ContainerPtrType<T>>(attribute.arrays);
-    bytes_allocated += sizeof(PaddedPODArray<T>) + array_ref->allocated_size();
+    bytes_allocated += sizeof(PaddedPODArray<T>) + array_ref->allocated_bytes();
     bucket_count = array_ref->capacity();
 }
 

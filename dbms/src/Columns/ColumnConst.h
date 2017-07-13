@@ -175,7 +175,7 @@ public:
     }
 
     size_t byteSize() const override { return sizeof(data) + sizeof(s); }
-    size_t allocatedSize() const override { return byteSize(); }
+    size_t allocatedBytes() const override { return byteSize(); }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {

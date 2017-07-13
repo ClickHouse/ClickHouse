@@ -249,7 +249,7 @@ public:
     /// Size of memory, allocated for column.
     /// This is greater or equals to byteSize due to memory reservation in containers.
     /// Zero, if could be determined.
-    virtual size_t allocatedSize() const = 0;
+    virtual size_t allocatedBytes() const = 0;
 
     virtual ~IColumn() {}
 

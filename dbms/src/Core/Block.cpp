@@ -309,11 +309,11 @@ size_t Block::bytes() const
     return res;
 }
 
-size_t Block::allocatedSize() const
+size_t Block::allocatedBytes() const
 {
     size_t res = 0;
     for (const auto & elem : data)
-        res += elem.column->allocatedSize();
+        res += elem.column->allocatedBytes();
 
     return res;
 }

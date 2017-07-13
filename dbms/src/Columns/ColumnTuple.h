@@ -57,7 +57,7 @@ public:
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
-    size_t allocatedSize() const override;
+    size_t allocatedBytes() const override;
     ColumnPtr convertToFullColumnIfConst() const override;
 
     const Block & getData() const { return data; }

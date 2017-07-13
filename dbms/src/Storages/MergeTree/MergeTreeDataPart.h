@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Poco/RWLock.h>
+#include <Columns/IColumn.h>
 
 
 class SipHash;

@@ -57,9 +57,9 @@ public:
         return chars.size() + sizeof(n);
     }
 
-    size_t allocatedSize() const override
+    size_t allocatedBytes() const override
     {
-        return chars.allocated_size() + sizeof(n);
+        return chars.allocated_bytes() + sizeof(n);
     }
 
     Field operator[](size_t index) const override

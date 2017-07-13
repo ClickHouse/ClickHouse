@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <Core/Field.h>
-#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -14,6 +13,9 @@ class WriteBuffer;
 
 class IDataType;
 struct FormatSettingsJSON;
+
+class IColumn;
+using ColumnPtr = std::shared_ptr<IColumn>;
 
 using DataTypePtr = std::shared_ptr<IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
@@ -152,6 +154,9 @@ public:
     }
 
     virtual ~IDataType() {}
+
+    /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
+    static void updateAvgValueSizeHints(const IColumn & column, double & avg_value_size_hint);
 };
 
 

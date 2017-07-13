@@ -30,7 +30,7 @@ public:
     void insertDefault() override { ++s; }
     void popBack(size_t n) override { s -= n; }
     size_t byteSize() const override { return 0; }
-    size_t allocatedSize() const override { return 0; }
+    size_t allocatedBytes() const override { return 0; }
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override { return 0; }
 
     Field operator[](size_t n) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }

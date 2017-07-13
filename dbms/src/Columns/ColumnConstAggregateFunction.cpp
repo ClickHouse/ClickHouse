@@ -116,7 +116,7 @@ size_t ColumnConstAggregateFunction::byteSize() const
     return sizeof(value) + sizeof(s);
 }
 
-size_t ColumnConstAggregateFunction::allocatedSize() const
+size_t ColumnConstAggregateFunction::allocatedBytes() const
 {
     return byteSize();
 }

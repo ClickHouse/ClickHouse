@@ -182,23 +182,12 @@ void NativeBlockInputStream::updateAvgValueSizeHints(const Block & block)
     if (rows < 10)
         return;
 
-    bool has_prev_hints = !avg_value_size_hints.empty();
-    avg_value_size_hints.resize(block.columns());
+    avg_value_size_hints.resize_fill(block.columns(), 0);
 
     for (auto idx : ext::range(0, block.columns()))
     {
-        double current_avg_value_size = block.getByPosition(idx).column->byteSize() / (rows + .0);
         auto & avg_value_size_hint = avg_value_size_hints[idx];
-        if (!has_prev_hints)
-            avg_value_size_hint = current_avg_value_size;
-        else
-        {
-            /// Heuristic is chosen so that avg_value_size_hint increases rapidly but decreases slowly.
-            if (current_avg_value_size > avg_value_size_hint)
-                avg_value_size_hint = std::min(1024., current_avg_value_size); /// avoid overestimation
-                else if (current_avg_value_size * 2 < avg_value_size_hint)
-                    avg_value_size_hint = (current_avg_value_size + avg_value_size_hint * 3) / 4;
-        }
+        IDataType::updateAvgValueSizeHints(*block.getByPosition(idx).column, avg_value_size_hint);
     }
 }
 
