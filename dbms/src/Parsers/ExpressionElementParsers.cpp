@@ -451,7 +451,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     errno = 0;
     UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
-    if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value < static_cast<UInt64>(std::numeric_limits<Int64>::max())))
+    if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
     {
         if (negative)
             res = -static_cast<Int64>(uint_value);

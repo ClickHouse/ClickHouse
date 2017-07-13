@@ -87,38 +87,40 @@ Token Lexer::nextToken()
 
         case '0'...'9':
         {
+            /// The task is not to parse a number or check correctness, but only to skip it.
+
             /// 0x, 0b
-            bool allow_hex = false;
-            if (pos < end - 2 && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b'))
+            bool hex = false;
+            if (pos < end - 2 && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b' || pos[1] == 'X' || pos[1] == 'B'))
             {
-                if (pos[1] == 'x')
-                    allow_hex = true;
+                if (pos[1] == 'x' || pos[1] == 'X')
+                    hex = true;
                 pos += 2;
             }
             else
                 ++pos;
 
-            while (pos < end && (allow_hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
+            while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
                 ++pos;
 
             /// decimal point
             if (pos < end && *pos == '.')
             {
                 ++pos;
-                while (pos < end && (allow_hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
+                while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
                     ++pos;
             }
 
-            /// exponentation
-            if (pos + 1 < end && (*pos == 'e' || *pos == 'p'))
+            /// exponentation (base 10 or base 2)
+            if (pos + 1 < end && (hex ? (*pos == 'p' || *pos == 'P') : (*pos == 'e' || *pos == 'E')))
             {
                 ++pos;
 
-                /// sign of exponent
+                /// sign of exponent. It is always decimal.
                 if (pos < end - 1 && (*pos == '-' || *pos == '+'))
                     ++pos;
 
-                while (pos < end && (allow_hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
+                while (pos < end && isNumericASCII(*pos))
                     ++pos;
             }
 
@@ -166,7 +168,7 @@ Token Lexer::nextToken()
                 ++pos;
 
             /// exponentation
-            if (pos < end - 1 && (*pos == 'e' || *pos == 'p'))
+            if (pos < end - 1 && (*pos == 'e' || *pos == 'E'))
             {
                 ++pos;
 
