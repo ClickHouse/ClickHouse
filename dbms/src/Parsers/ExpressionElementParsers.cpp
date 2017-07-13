@@ -431,7 +431,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     char * pos_double = buf;
     errno = 0;    /// Functions strto* don't clear errno.
     Float64 float_value = std::strtod(buf, &pos_double);
-    if (pos_double == buf || errno == ERANGE)
+    if (pos_double != buf + pos->size() || errno == ERANGE)
     {
         expected = "number";
         return false;
@@ -475,7 +475,7 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     UInt64 x = 0;
     ReadBufferFromMemory in(pos->begin, pos->size());
-    if (!tryReadIntText(x, in) || in.count() == 0)
+    if (!tryReadIntText(x, in) || in.count() != pos->size())
     {
         expected = "unsigned integer";
         return false;
@@ -501,6 +501,12 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         readQuotedStringWithSQLStyle(s, in);
     }
     catch (const Exception & e)
+    {
+        expected = "string literal";
+        return false;
+    }
+
+    if (in.count() != pos->size())
     {
         expected = "string literal";
         return false;
