@@ -184,7 +184,7 @@ public:
 
     size_t allocatedSize() const override
     {
-        return data.allocated_size() * sizeof(data[0]);
+        return data.allocated_size();
     }
 
     void insert(const T value)
