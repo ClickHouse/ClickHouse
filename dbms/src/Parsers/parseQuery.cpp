@@ -175,7 +175,6 @@ std::string getLexicalErrorMessage(
     const char * begin,
     const char * end,
     Token last_token,
-    const char * error_token_description,
     bool hilite,
     const std::string & query_description)
 {
@@ -186,7 +185,7 @@ std::string getLexicalErrorMessage(
         writeCommonErrorMessage(out, begin, end, last_token, query_description);
         writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
 
-        out << error_token_description;
+        out << getErrorTokenDescription(last_token.type);
     }
 
     return message;
@@ -238,7 +237,6 @@ ASTPtr tryParseQuery(
     }
 
     Expected expected;
-    const char * begin = pos;
 
     ASTPtr res;
     bool parse_res = parser.parse(token_iterator, res, expected);
@@ -254,7 +252,7 @@ ASTPtr tryParseQuery(
         /// Lexical error
         if (last_token.isError())
         {
-            out_error_message = getLexicalErrorMessage(begin, end, last_token, getErrorTokenDescription(last_token.type), hilite, query_description);
+            out_error_message = getLexicalErrorMessage(pos, end, last_token, hilite, query_description);
             return nullptr;
         }
 
@@ -262,7 +260,7 @@ ASTPtr tryParseQuery(
         UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), &last_token);
         if (!unmatched_parens.empty())
         {
-            out_error_message = getUnmatchedParenthesesErrorMessage(begin, end, unmatched_parens, hilite, query_description);
+            out_error_message = getUnmatchedParenthesesErrorMessage(pos, end, unmatched_parens, hilite, query_description);
             return nullptr;
         }
     }
@@ -270,7 +268,7 @@ ASTPtr tryParseQuery(
     if (!parse_res)
     {
         /// Parse error.
-        out_error_message = getSyntaxErrorMessage(begin, end, last_token, expected, hilite, query_description);
+        out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
         return nullptr;
     }
 
@@ -280,7 +278,7 @@ ASTPtr tryParseQuery(
         && !(insert && insert->data))
     {
         expected.add(pos, "end of query");
-        out_error_message = getSyntaxErrorMessage(begin, end, last_token, expected, hilite, query_description);
+        out_error_message = getSyntaxErrorMessage(pos, end, last_token, expected, hilite, query_description);
         return nullptr;
     }
 
@@ -292,7 +290,7 @@ ASTPtr tryParseQuery(
         && !token_iterator->isEnd()
         && !(insert && insert->data))
     {
-        out_error_message = getSyntaxErrorMessage(begin, end, last_token, {}, hilite,
+        out_error_message = getSyntaxErrorMessage(pos, end, last_token, {}, hilite,
             (query_description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
         return nullptr;
     }
