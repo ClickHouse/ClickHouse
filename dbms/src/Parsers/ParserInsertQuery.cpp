@@ -107,7 +107,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        expected = "VALUES or FORMAT or SELECT";
         return false;
     }
 

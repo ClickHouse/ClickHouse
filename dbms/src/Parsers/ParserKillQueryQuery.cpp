@@ -37,8 +37,6 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         query->sync = false;
     else if (ParserKeyword{"TEST"}.ignore(pos))
         query->test = true;
-    else
-        expected = "[SYNC|ASYNC|TEST]";
 
     query->range = StringRange(begin, pos);
 

@@ -5,6 +5,7 @@
 #include <Parsers/TokenIterator.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
+#include <Common/UTF8Helpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
@@ -17,11 +18,13 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
+namespace
+{
 
 /** From position in (possible multiline) query, get line number and column number in line.
   * Used in syntax error message.
   */
-static std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
+std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
 {
     size_t line = 0;
 
@@ -37,76 +40,173 @@ static std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * 
 }
 
 
-static std::string getSyntaxErrorMessage(
+WriteBuffer & operator<< (WriteBuffer & out, const Expected & expected)
+{
+    if (expected.variants.empty())
+        return out;
+
+    if (expected.variants.size() == 1)
+        return out << *expected.variants.begin();
+
+    out << "one of: ";
+    bool first = true;
+    for (const auto & variant : expected.variants)
+    {
+        if (!first)
+            out << ", ";
+        first = false;
+
+        out << variant;
+    }
+    return out;
+}
+
+
+/// Hilite place of syntax error.
+void writeQueryWithHighlightedErrorPositions(
+    WriteBuffer & out,
+    const char * begin,
+    const char * end,
+    const char ** positions_to_hilite,
+    size_t num_positions_to_hilite)
+{
+    const char * pos = begin;
+    for (size_t position_to_hilite_idx = 0; position_to_hilite_idx < num_positions_to_hilite; ++position_to_hilite_idx)
+    {
+        const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx];
+        out.write(pos, current_position_to_hilite - pos);
+
+        size_t bytes_to_hilite = UTF8::seqLength(current_position_to_hilite);
+
+        /// Bright on red background.
+        out << "\033[41;1m";
+        out.write(current_position_to_hilite, bytes_to_hilite);
+        out << "\033[0m";
+        pos += bytes_to_hilite;
+    }
+    out.write(pos, end - pos);
+}
+
+
+void writeQueryAroundTheError(
+    WriteBuffer & out,
+    const char * begin,
+    const char * end,
+    bool hilite,
+    const char ** positions_to_hilite,
+    size_t num_positions_to_hilite)
+{
+    if (hilite)
+    {
+        out << ":\n\n";
+        writeQueryWithHighlightedErrorPositions(out, begin, end, positions_to_hilite, 1);
+        out << "\n\n";
+    }
+    else
+    {
+        if (num_positions_to_hilite)
+            out << ": " << std::string(positions_to_hilite[0], std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - positions_to_hilite[0]));
+    }
+}
+
+
+void writeCommonErrorMessage(
+    WriteBuffer & out,
     const char * begin,
     const char * end,
     const char * max_parsed_pos,
-    Expected expected,
+    const std::string & query_description)
+{
+    out << "Syntax error";
+
+    if (!query_description.empty())
+        out << " (" << query_description << ")";
+
+    out << ": failed at position " << (max_parsed_pos - begin + 1);
+
+    if (max_parsed_pos == end || *max_parsed_pos == ';')
+        out << " (end of query)";
+
+    /// If query is multiline.
+    const char * nl = reinterpret_cast<const char *>(memchr(begin, '\n', end - begin));
+    if (nullptr != nl && nl + 1 != end)
+    {
+        size_t line = 0;
+        size_t col = 0;
+        std::tie(line, col) = getLineAndCol(begin, max_parsed_pos);
+
+        out << " (line " << line << ", col " << col << ")";
+    }
+}
+
+
+std::string getSyntaxErrorMessage(
+    const char * begin,
+    const char * end,
+    const char * max_parsed_pos,
+    const Expected & expected,
     bool hilite,
-    const std::string & description)
+    const std::string & query_description)
 {
     String message;
 
     {
         WriteBufferFromString out(message);
+        writeCommonErrorMessage(out, begin, end, max_parsed_pos, query_description);
+        writeQueryAroundTheError(out, begin, end, hilite, &max_parsed_pos, 1);
 
-        out << "Syntax error";
-
-        if (!description.empty())
-            out << " (" << description << ")";
-
-        if (max_parsed_pos == end || *max_parsed_pos == ';')
-        {
-            out << ": failed at end of query.\n";
-
-            if (expected && *expected && *expected != '.')
-                out << "Expected " << expected;
-        }
-        else
-        {
-            out << ": failed at position " << (max_parsed_pos - begin + 1);
-
-            /// If query is multiline.
-            const char * nl = reinterpret_cast<const char *>(memchr(begin, '\n', end - begin));
-            if (nullptr != nl && nl + 1 != end)
-            {
-                size_t line = 0;
-                size_t col = 0;
-                std::tie(line, col) = getLineAndCol(begin, max_parsed_pos);
-
-                out << " (line " << line << ", col " << col << ")";
-            }
-
-            /// Hilite place of syntax error.
-            if (hilite)
-            {
-                out << ":\n\n";
-                out.write(begin, max_parsed_pos - begin);
-
-                size_t bytes_to_hilite = 1;
-                while (max_parsed_pos + bytes_to_hilite < end
-                    && static_cast<unsigned char>(max_parsed_pos[bytes_to_hilite]) >= 0x80    /// UTF-8
-                    && static_cast<unsigned char>(max_parsed_pos[bytes_to_hilite]) <= 0xBF)
-                    ++bytes_to_hilite;
-
-                out << "\033[41;1m" << std::string(max_parsed_pos, bytes_to_hilite) << "\033[0m";        /// Bright red background.
-                out.write(max_parsed_pos + bytes_to_hilite, end - max_parsed_pos - bytes_to_hilite);
-                out << "\n\n";
-
-                if (expected && *expected && *expected != '.')
-                    out << "Expected " << expected;
-            }
-            else
-            {
-                out << ": " << std::string(max_parsed_pos, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - max_parsed_pos));
-
-                if (expected && *expected && *expected != '.')
-                    out << ", expected " << expected;
-            }
-        }
+        if (!expected.variants.empty())
+            out << "Expected " << expected;
     }
 
     return message;
+}
+
+
+std::string getLexicalErrorMessage(
+    const char * begin,
+    const char * end,
+    const char * max_parsed_pos,
+    const char * error_token_description,
+    bool hilite,
+    const std::string & query_description)
+{
+    String message;
+
+    {
+        WriteBufferFromString out(message);
+        writeCommonErrorMessage(out, begin, end, max_parsed_pos, query_description);
+        writeQueryAroundTheError(out, begin, end, hilite, &max_parsed_pos, 1);
+
+        out << error_token_description;
+    }
+
+    return message;
+}
+
+
+std::string getUnmatchedParenthesesErrorMessage(
+    const char * begin,
+    const char * end,
+    const UnmatchedParentheses & unmatched_parens,
+    bool hilite,
+    const std::string & query_description)
+{
+    String message;
+
+    {
+        WriteBufferFromString out(message);
+        writeCommonErrorMessage(out, begin, end, unmatched_parens[0], query_description);
+        writeQueryAroundTheError(out, begin, end, hilite, unmatched_parens.data(), unmatched_parens.size());
+
+        out << "Unmatched parentheses: ";
+        for (const char * paren : unmatched_parens)
+            out << *paren;
+    }
+
+    return message;
+}
+
 }
 
 
@@ -116,7 +216,7 @@ ASTPtr tryParseQuery(
     const char * end,
     std::string & out_error_message,
     bool hilite,
-    const std::string & description,
+    const std::string & query_description,
     bool allow_multi_statements)
 {
     Tokens tokens(pos, end);
@@ -129,7 +229,7 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
-    Expected expected = "";
+    Expected expected;
     const char * begin = pos;
 
     ASTPtr res;
@@ -139,9 +239,19 @@ ASTPtr tryParseQuery(
     /// Lexical error
     if (!parse_res && token_iterator->isError())
     {
-        expected = "any valid token";
-        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
+        out_error_message = getLexicalErrorMessage(begin, end, max_parsed_pos, getErrorTokenDescription(token_iterator), hilite, query_description);
         return nullptr;
+    }
+
+    /// Unmatched parentheses
+    if (!parse_res)
+    {
+        UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), token_iterator);
+        if (!unmatched_parens.empty())
+        {
+            out_error_message = getUnmatchedParenthesesErrorMessage(begin, end, unmatched_parens, hilite, query_description);
+            return nullptr;
+        }
     }
 
     /// Excessive input after query. Parsed query must end with end of data or semicolon or data for INSERT.
@@ -154,8 +264,8 @@ ASTPtr tryParseQuery(
         && token_iterator->type != TokenType::Semicolon
         && !(insert && insert->data))
     {
-        expected = "end of query";
-        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
+        expected.add(pos, "end of query");
+        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, query_description);
         return nullptr;
     }
 
@@ -167,15 +277,15 @@ ASTPtr tryParseQuery(
         && !token_iterator->isEnd()
         && !(insert && insert->data))
     {
-        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, nullptr, hilite,
-            (description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
+        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, {}, hilite,
+            (query_description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
         return nullptr;
     }
 
     /// Parse error.
     if (!parse_res)
     {
-        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, description);
+        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, query_description);
         return nullptr;
     }
 
@@ -188,11 +298,11 @@ ASTPtr parseQueryAndMovePosition(
     IParser & parser,
     const char * & pos,
     const char * end,
-    const std::string & description,
+    const std::string & query_description,
     bool allow_multi_statements)
 {
     std::string error_message;
-    ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, description, allow_multi_statements);
+    ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements);
 
     if (res)
         return res;
@@ -205,10 +315,10 @@ ASTPtr parseQuery(
     IParser & parser,
     const char * begin,
     const char * end,
-    const std::string & description)
+    const std::string & query_description)
 {
     auto pos = begin;
-    return parseQueryAndMovePosition(parser, pos, end, description, false);
+    return parseQueryAndMovePosition(parser, pos, end, query_description, false);
 }
 
 

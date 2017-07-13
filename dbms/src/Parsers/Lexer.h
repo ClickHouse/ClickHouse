@@ -6,61 +6,69 @@
 namespace DB
 {
 
+#define APPLY_FOR_TOKENS(M) \
+    M(Whitespace) \
+    M(Comment) \
+    \
+    M(BareWord)               /** Either keyword (SELECT) or identifier (column) */ \
+    \
+    M(Number)                 /** Always non-negative. No leading plus. 123 or something like 123.456e12, 0x123p12 */ \
+    M(StringLiteral)          /** 'hello word', 'hello''word', 'hello\'word\\' */ \
+    \
+    M(QuotedIdentifier)       /** "x", `x` */ \
+    \
+    M(OpeningRoundBracket) \
+    M(ClosingRoundBracket) \
+    \
+    M(OpeningSquareBracket) \
+    M(ClosingSquareBracket) \
+    \
+    M(Comma) \
+    M(Semicolon) \
+    M(Dot)                    /** Compound identifiers, like a.b or tuple access operator a.1, (x, y).2. */ \
+                              /** Need to be distinguished from floating point number with omitted integer part: .1 */ \
+    \
+    M(Asterisk)               /** Could be used as multiplication operator or on it's own: "SELECT *" */ \
+    \
+    M(Plus) \
+    M(Minus) \
+    M(Slash) \
+    M(Percent) \
+    M(Arrow)                  /** ->. Should be distinguished from minus operator. */ \
+    M(QuestionMark) \
+    M(Colon) \
+    M(Equals) \
+    M(NotEquals) \
+    M(Less) \
+    M(Greater) \
+    M(LessOrEquals) \
+    M(GreaterOrEquals) \
+    M(Concatenation)          /** String concatenation operator: || */ \
+    \
+    /** Order is important. EndOfStream goes after all usual tokens, and special error tokens goes after EndOfStream. */ \
+    \
+    M(EndOfStream) \
+    \
+    /** Something unrecognized. */ \
+    M(Error) \
+    /** Something is wrong and we have more information. */ \
+    M(ErrorMultilineCommentIsNotClosed) \
+    M(ErrorSingleQuoteIsNotClosed) \
+    M(ErrorDoubleQuoteIsNotClosed) \
+    M(ErrorBackQuoteIsNotClosed) \
+    M(ErrorSingleExclamationMark) \
+    M(ErrorSinglePipeMark) \
+    M(ErrorWrongNumber) \
+
 enum class TokenType
 {
-    Whitespace,
-    Comment,
-
-    BareWord,               /// Either keyword (SELECT) or identifier (column)
-
-    Number,                 /// Always non-negative. No leading plus. 123 or something like 123.456e12, 0x123p12
-    StringLiteral,          /// 'hello word', 'hello''word', 'hello\'word\\'
-
-    QuotedIdentifier,       /// "x", `x`
-
-    OpeningRoundBracket,
-    ClosingRoundBracket,
-
-    OpeningSquareBracket,
-    ClosingSquareBracket,
-
-    Comma,
-    Semicolon,
-    Dot,                    /// Compound identifiers, like a.b or tuple access operator a.1, (x, y).2.
-                            /// Need to be distinguished from floating point number with omitted integer part: .1
-
-    Asterisk,               /// Could be used as multiplication operator or on it's own: SELECT *
-
-    Plus,
-    Minus,
-    Slash,
-    Percent,
-    Arrow,                  /// ->. Should be distinguished from minus operator.
-    QuestionMark,
-    Colon,
-    Equals,
-    NotEquals,
-    Less,
-    Greater,
-    LessOrEquals,
-    GreaterOrEquals,
-    Concatenation,          /// String concatenation operator: ||
-
-    /// Order is important. EndOfStream goes after all usual tokens, and special error tokens goes after EndOfStream.
-
-    EndOfStream,
-
-    /// Something unrecognized.
-    Error,
-    /// Something is wrong and we have more information.
-    ErrorMultilineCommentIsNotClosed,
-    ErrorSingleQuoteIsNotClosed,
-    ErrorDoubleQuoteIsNotClosed,
-    ErrorBackQuoteIsNotClosed,
-    ErrorSingleExclamationMark,
-    ErrorSinglePipeMark,
-    ErrorWrongNumber,
+#define M(TOKEN) TOKEN,
+APPLY_FOR_TOKENS(M)
+#undef M
 };
+
+const char * getTokenName(TokenType type);
+const char * getErrorTokenDescription(TokenType type);
 
 
 struct Token

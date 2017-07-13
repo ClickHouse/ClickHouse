@@ -83,7 +83,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
     /// empty expression in parentheses is not allowed
     if (expr_list.children.empty())
     {
-        expected = "non-empty parenthesized list of expressions";
+        expected.add(pos, "non-empty parenthesized list of expressions");
         return false;
     }
 
@@ -329,7 +329,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         if (type.empty())
         {
             /// there is only one argument and it has no alias
-            expected = "type identifier";
+            expected.add(pos, "type identifier");
             return false;
         }
 
@@ -355,7 +355,7 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
         if (!p_type.parse(pos, type_as_literal, expected))
         {
-            expected = "string literal depicting type";
+            expected.add(pos, "string literal depicting type");
             return false;
         }
 
@@ -419,7 +419,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (pos->size() > MAX_LENGTH_OF_NUMBER)
     {
-        expected = "number";
+        expected.add(pos, "number");
         return false;
     }
 
@@ -433,7 +433,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Float64 float_value = std::strtod(buf, &pos_double);
     if (pos_double != buf + pos->size() || errno == ERANGE)
     {
-        expected = "number";
+        expected.add(pos, "number");
         return false;
     }
 
@@ -477,7 +477,7 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ReadBufferFromMemory in(pos->begin, pos->size());
     if (!tryReadIntText(x, in) || in.count() != pos->size())
     {
-        expected = "unsigned integer";
+        expected.add(pos, "unsigned integer");
         return false;
     }
 
@@ -502,13 +502,13 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     }
     catch (const Exception & e)
     {
-        expected = "string literal";
+        expected.add(pos, "string literal");
         return false;
     }
 
     if (in.count() != pos->size())
     {
-        expected = "string literal";
+        expected.add(pos, "string literal");
         return false;
     }
 
@@ -546,7 +546,7 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
             else
             {
-                expected = "comma or closing square bracket";
+                expected.add(pos, "comma or closing square bracket");
                 return false;
             }
         }
@@ -558,7 +558,7 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         arr.push_back(typeid_cast<const ASTLiteral &>(*literal_node).value);
     }
 
-    expected = "closing square bracket";
+    expected.add(pos, "closing square bracket");
     return false;
 }
 
@@ -578,7 +578,6 @@ bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (str_p.parse(pos, node, expected))
         return true;
 
-    expected = "literal: one of NULL, number, single quoted string";
     return false;
 }
 
@@ -722,8 +721,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (id_p.parse(pos, node, expected))
         return true;
 
-    if (!expected)
-        expected = "expression element: one of array, literal, function, identifier, asterisk, parenthesised expression, subquery";
     return false;
 }
 
@@ -768,7 +765,7 @@ bool ParserWithOptionalAliasImpl<ParserAlias>::parseImpl(Pos & pos, ASTPtr & nod
             ast_with_alias->alias = alias_name;
         else
         {
-            expected = "alias cannot be here";
+            expected.add(pos, "alias cannot be here");
             return false;
         }
     }

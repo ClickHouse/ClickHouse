@@ -75,4 +75,9 @@ public:
     const Token & max() { return tokens->max(); }
 };
 
+
+/// Returns positions of unmatched parentheses.
+using UnmatchedParentheses = std::vector<char *>;
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, TokenIterator end);
+
 }

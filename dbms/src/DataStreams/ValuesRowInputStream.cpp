@@ -97,7 +97,7 @@ bool ValuesRowInputStream::read(Block & block)
 
                 IDataType & type = *block.safeGetByPosition(i).type;
 
-                Expected expected = "";
+                Expected expected;
 
                 Tokens tokens(prev_istr_position, istr.buffer().end());
                 TokenIterator token_iterator(tokens);
