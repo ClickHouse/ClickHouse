@@ -1,6 +1,6 @@
 #pragma once
 
-#include <list>
+#include <set>
 #include <memory>
 
 #include <Core/Defines.h>
@@ -12,7 +12,31 @@
 namespace DB
 {
 
-using Expected = const char *;
+/** Collects variants, how parser could proceed further at rightmost position.
+  */
+struct Expected
+{
+    const char * max_parsed_pos = nullptr;
+    std::set<const char *> variants;
+
+    /// 'description' should be statically allocated string.
+    void add(const char * current_pos, const char * description)
+    {
+        if (!max_parsed_pos || current_pos > max_parsed_pos)
+        {
+            variants.clear();
+            max_parsed_pos = current_pos;
+        }
+
+        if (!max_parsed_pos || current_pos >= max_parsed_pos)
+            variants.insert(description);
+    }
+
+    void add(TokenIterator it, const char * description)
+    {
+        add(it->begin, description);
+    }
+};
 
 
 /** Interface for parser classes

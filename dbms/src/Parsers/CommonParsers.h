@@ -36,7 +36,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
         if (pos->type != token_type)
+        {
+            expected.add(pos, getTokenName(token_type));
             return false;
+        }
         ++pos;
         return true;
     }

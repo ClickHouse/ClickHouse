@@ -118,11 +118,11 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-static bool parseOperator(IParser::Pos & pos, const char * op)
+static bool parseOperator(IParser::Pos & pos, const char * op, Expected & expected)
 {
     if (isWordCharASCII(*op))
     {
-        return ParserKeyword(op).ignore(pos, op);
+        return ParserKeyword(op).ignore(pos, expected);
     }
     else
     {
@@ -158,7 +158,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 
             const char ** it;
             for (it = operators; *it; it += 2)
-                if (parseOperator(pos, *it))
+                if (parseOperator(pos, *it, expected))
                     break;
 
             if (!*it)
@@ -214,7 +214,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
     while (true)
     {
-        if (!parseOperator(pos, infix))
+        if (!parseOperator(pos, infix, expected))
             break;
 
         if (!arguments)
@@ -432,7 +432,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
     const char ** it;
     for (it = operators; *it; it += 2)
     {
-        if (parseOperator(pos, *it))
+        if (parseOperator(pos, *it, expected))
             break;
     }
 
@@ -449,7 +449,7 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
         while (true)
         {
             for (jt = operators; *jt; jt += 2)
-                if (parseOperator(pos, *jt))
+                if (parseOperator(pos, *jt, expected))
                     break;
 
             if (!*jt)

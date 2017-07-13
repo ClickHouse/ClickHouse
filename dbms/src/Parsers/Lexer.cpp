@@ -306,4 +306,42 @@ Token Lexer::nextTokenImpl()
     }
 }
 
+
+const char * getTokenName(TokenType type)
+{
+    switch (type)
+    {
+#define M(TOKEN) \
+        case TokenType::TOKEN: return #TOKEN;
+APPLY_FOR_TOKENS(M)
+#undef M
+    }
+}
+
+
+const char * getErrorTokenDescription(TokenType type)
+{
+    switch (type)
+    {
+        case TokenType::Error:
+            return "Unrecognized token";
+        case TokenType::ErrorMultilineCommentIsNotClosed:
+            return "Multiline comment is not closed";
+        case TokenType::ErrorSingleQuoteIsNotClosed:
+            return "Single quoted string is not closed";
+        case TokenType::ErrorDoubleQuoteIsNotClosed:
+            return "Double quoted string is not closed";
+        case TokenType::ErrorBackQuoteIsNotClosed:
+            return "Back quoted string is not closed";
+        case TokenType::ErrorSingleExclamationMark:
+            return "Exclamation mark can only occur in != operator";
+        case TokenType::ErrorSinglePipeMark:
+            return "Pipe symbol could only occur in || operator";
+        case TokenType::ErrorWrongNumber:
+            return "Wrong number";
+        default:
+            return "Not an error";
+    }
+}
+
 }

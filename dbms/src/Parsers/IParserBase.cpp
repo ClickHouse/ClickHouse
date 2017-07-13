@@ -13,9 +13,9 @@ namespace ErrorCodes
 bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
-    Expected new_expected = getName();
+    expected.add(pos, getName());
 
-    bool res = parseImpl(pos, node, new_expected);
+    bool res = parseImpl(pos, node, expected);
 
     /// TODO expected
 

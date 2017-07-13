@@ -35,6 +35,7 @@ bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     while (true)
     {
+        expected.add(pos, current_word);
         if (pos->type != TokenType::BareWord)
             return false;
 

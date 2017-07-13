@@ -162,7 +162,6 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             else
             {
                 /// Maybe need use INNER by default as in another DBMS.
-                expected = "INNER|LEFT|RIGHT|FULL|CROSS";
                 return false;
             }
 
@@ -213,7 +212,6 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             }
             else
             {
-                expected = "USING or ON";
                 return false;
             }
         }
