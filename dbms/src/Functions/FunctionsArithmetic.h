@@ -9,6 +9,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

@@ -8,6 +8,8 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/VirtualColumnFactory.h>
 
+#include <Common/typeid_cast.h>
+
 
 namespace DB
 {

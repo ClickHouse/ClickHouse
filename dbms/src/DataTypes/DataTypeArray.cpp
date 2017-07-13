@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

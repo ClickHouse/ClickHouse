@@ -1,5 +1,7 @@
 #include <IO/ConcatReadBuffer.h>
 
+#include <Common/typeid_cast.h>
+
 #include <DataStreams/ProhibitColumnsBlockOutputStream.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/AddingDefaultBlockOutputStream.h>

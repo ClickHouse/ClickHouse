@@ -8,6 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

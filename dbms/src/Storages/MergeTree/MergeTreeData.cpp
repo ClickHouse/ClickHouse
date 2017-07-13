@@ -28,6 +28,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
+#include <Common/typeid_cast.h>
 #include <IO/Operators.h>
 
 #include <algorithm>

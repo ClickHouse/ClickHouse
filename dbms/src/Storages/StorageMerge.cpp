@@ -10,6 +10,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
+#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <DataStreams/CastTypeBlockInputStream.h>
 #include <DataStreams/FilterColumnsBlockInputStream.h>

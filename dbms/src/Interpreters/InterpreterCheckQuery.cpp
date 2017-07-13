@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
 
 #include <openssl/sha.h>
 #include <deque>

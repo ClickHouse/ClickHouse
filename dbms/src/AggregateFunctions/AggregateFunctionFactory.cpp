@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/StringUtils.h>
 #include <Poco/String.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

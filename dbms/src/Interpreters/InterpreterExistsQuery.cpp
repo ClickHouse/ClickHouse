@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterExistsQuery.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

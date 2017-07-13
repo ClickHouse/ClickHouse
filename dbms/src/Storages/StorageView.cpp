@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Common/typeid_cast.h>
 
 #include <Storages/StorageView.h>
 

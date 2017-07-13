@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <ext/range.h>
 
 

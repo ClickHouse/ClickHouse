@@ -1,6 +1,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -315,9 +316,9 @@ size_t ColumnNullable::byteSize() const
     return nested_column->byteSize() + getNullMapConcreteColumn().byteSize();
 }
 
-size_t ColumnNullable::allocatedSize() const
+size_t ColumnNullable::allocatedBytes() const
 {
-    return nested_column->allocatedSize() + getNullMapConcreteColumn().allocatedSize();
+    return nested_column->allocatedBytes() + getNullMapConcreteColumn().allocatedBytes();
 }
 
 

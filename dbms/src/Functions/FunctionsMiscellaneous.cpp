@@ -19,6 +19,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Storages/IStorage.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

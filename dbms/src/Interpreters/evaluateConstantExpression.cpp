@@ -9,6 +9,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

@@ -182,9 +182,9 @@ public:
         return data.size() * sizeof(data[0]);
     }
 
-    size_t allocatedSize() const override
+    size_t allocatedBytes() const override
     {
-        return data.allocated_size() * sizeof(data[0]);
+        return data.allocated_bytes();
     }
 
     void insert(const T value)

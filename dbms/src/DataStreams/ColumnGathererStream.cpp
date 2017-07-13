@@ -1,5 +1,6 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <iomanip>
 
 

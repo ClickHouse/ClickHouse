@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/SetVariants.h>
 
 namespace DB

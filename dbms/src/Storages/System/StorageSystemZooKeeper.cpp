@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

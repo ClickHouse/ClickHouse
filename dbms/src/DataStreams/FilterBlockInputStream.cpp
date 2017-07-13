@@ -2,6 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/typeid_cast.h>
 
 #include <DataStreams/FilterBlockInputStream.h>
 

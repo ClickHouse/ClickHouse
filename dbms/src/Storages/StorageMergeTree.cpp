@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/ASTFunction.h>

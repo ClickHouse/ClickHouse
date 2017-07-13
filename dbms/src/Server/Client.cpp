@@ -45,6 +45,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/NetException.h>
 #include <common/readline_use.h>
+#include <Common/typeid_cast.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 

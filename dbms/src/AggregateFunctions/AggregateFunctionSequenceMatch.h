@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <ext/range.h>
 #include <Common/PODArray.h>
+#include <Common/typeid_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <bitset>

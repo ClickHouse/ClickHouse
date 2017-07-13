@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/ReshardingWorker.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
