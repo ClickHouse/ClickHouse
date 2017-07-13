@@ -67,7 +67,7 @@ void writeQueryWithHighlightedErrorPositions(
     WriteBuffer & out,
     const char * begin,
     const char * end,
-    const char ** positions_to_hilite,
+    const char * const * positions_to_hilite,
     size_t num_positions_to_hilite)
 {
     const char * pos = begin;
@@ -76,7 +76,7 @@ void writeQueryWithHighlightedErrorPositions(
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx];
         out.write(pos, current_position_to_hilite - pos);
 
-        size_t bytes_to_hilite = UTF8::seqLength(current_position_to_hilite);
+        size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
 
         /// Bright on red background.
         out << "\033[41;1m";
@@ -93,7 +93,7 @@ void writeQueryAroundTheError(
     const char * begin,
     const char * end,
     bool hilite,
-    const char ** positions_to_hilite,
+    const char * const * positions_to_hilite,
     size_t num_positions_to_hilite)
 {
     if (hilite)
@@ -239,7 +239,7 @@ ASTPtr tryParseQuery(
     /// Lexical error
     if (!parse_res && token_iterator->isError())
     {
-        out_error_message = getLexicalErrorMessage(begin, end, max_parsed_pos, getErrorTokenDescription(token_iterator), hilite, query_description);
+        out_error_message = getLexicalErrorMessage(begin, end, max_parsed_pos, getErrorTokenDescription(token_iterator->type), hilite, query_description);
         return nullptr;
     }
 
