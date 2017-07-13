@@ -82,7 +82,7 @@ void writeQueryWithHighlightedErrorPositions(
         out << "\033[41;1m";
         out.write(current_position_to_hilite, bytes_to_hilite);
         out << "\033[0m";
-        pos += bytes_to_hilite;
+        pos = current_position_to_hilite + bytes_to_hilite;
     }
     out.write(pos, end - pos);
 }
@@ -234,33 +234,35 @@ ASTPtr tryParseQuery(
 
     ASTPtr res;
     bool parse_res = parser.parse(token_iterator, res, expected);
-    const char * max_parsed_pos = token_iterator.max().begin;
+    Token last_token = token_iterator.max();
+    const char * max_parsed_pos = last_token.begin;
 
-    /// Lexical error
-    if (!parse_res && token_iterator->isError())
-    {
-        out_error_message = getLexicalErrorMessage(begin, end, max_parsed_pos, getErrorTokenDescription(token_iterator->type), hilite, query_description);
-        return nullptr;
-    }
-
-    /// Unmatched parentheses
     if (!parse_res)
     {
-        UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), token_iterator);
+        /// Lexical error
+        if (last_token.isError())
+        {
+            out_error_message = getLexicalErrorMessage(begin, end, max_parsed_pos, getErrorTokenDescription(last_token.type), hilite, query_description);
+            return nullptr;
+        }
+
+        /// Unmatched parentheses
+        UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), &last_token);
         if (!unmatched_parens.empty())
         {
             out_error_message = getUnmatchedParenthesesErrorMessage(begin, end, unmatched_parens, hilite, query_description);
             return nullptr;
         }
+
+        /// Parse error.
+        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, query_description);
+        return nullptr;
     }
 
     /// Excessive input after query. Parsed query must end with end of data or semicolon or data for INSERT.
-    ASTInsertQuery * insert = nullptr;
-    if (parse_res)
-        insert = typeid_cast<ASTInsertQuery *>(res.get());
+    ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(res.get());
 
-    if (parse_res
-        && !token_iterator->isEnd()
+    if (!token_iterator->isEnd()
         && token_iterator->type != TokenType::Semicolon
         && !(insert && insert->data))
     {
@@ -273,19 +275,12 @@ ASTPtr tryParseQuery(
         ++token_iterator;
 
     /// If multi-statements are not allowed, then after semicolon, there must be no non-space characters.
-    if (parse_res && !allow_multi_statements
+    if (!allow_multi_statements
         && !token_iterator->isEnd()
         && !(insert && insert->data))
     {
         out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, {}, hilite,
             (query_description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
-        return nullptr;
-    }
-
-    /// Parse error.
-    if (!parse_res)
-    {
-        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, query_description);
         return nullptr;
     }
 

@@ -67,6 +67,7 @@ public:
     TokenIterator & operator--() { --index; return *this; }
 
     bool operator< (const TokenIterator & rhs) const { return index < rhs.index; }
+    bool operator<= (const TokenIterator & rhs) const { return index <= rhs.index; }
     bool operator== (const TokenIterator & rhs) const { return index == rhs.index; }
 
     bool isValid() { return get().type < TokenType::EndOfStream; }
@@ -78,6 +79,6 @@ public:
 
 /// Returns positions of unmatched parentheses.
 using UnmatchedParentheses = std::vector<const char *>;
-UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, TokenIterator end);
+UnmatchedParentheses checkUnmatchedParentheses(TokenIterator begin, Token * last);
 
 }
