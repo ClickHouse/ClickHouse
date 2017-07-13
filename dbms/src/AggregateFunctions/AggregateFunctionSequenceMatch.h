@@ -277,10 +277,10 @@ private:
                 ErrorCodes::SYNTAX_ERROR};
         };
 
-        auto match = [&](const char * str)
+        auto match = [&pos](const char * str) mutable
         {
             size_t length = strlen(str);
-            if (pos + length < end && 0 == memcmp(pos, str, length))
+            if (pos + length <= end && 0 == memcmp(pos, str, length))
             {
                 pos += length;
                 return true;

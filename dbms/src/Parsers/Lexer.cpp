@@ -98,39 +98,51 @@ Token Lexer::nextTokenImpl()
         {
             /// The task is not to parse a number or check correctness, but only to skip it.
 
-            /// 0x, 0b
-            bool hex = false;
-            if (pos + 2 < end && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b' || pos[1] == 'X' || pos[1] == 'B'))
-            {
-                if (pos[1] == 'x' || pos[1] == 'X')
-                    hex = true;
-                pos += 2;
-            }
-            else
-                ++pos;
-
-            while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
-                ++pos;
-
-            /// decimal point
-            if (pos < end && *pos == '.')
+            /// Disambiguation: if previous token was dot, then we could parse only simple integer,
+            ///  for chained tuple access operators (x.1.1) to work.
+            //  Otherwise it will be tokenized as x . 1.1, not as x . 1 . 1
+            if (prev_significant_token_type == TokenType::Dot)
             {
                 ++pos;
-                while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
-                    ++pos;
-            }
-
-            /// exponentation (base 10 or base 2)
-            if (pos + 1 < end && (hex ? (*pos == 'p' || *pos == 'P') : (*pos == 'e' || *pos == 'E')))
-            {
-                ++pos;
-
-                /// sign of exponent. It is always decimal.
-                if (pos + 1 < end && (*pos == '-' || *pos == '+'))
-                    ++pos;
-
                 while (pos < end && isNumericASCII(*pos))
                     ++pos;
+            }
+            else
+            {
+                /// 0x, 0b
+                bool hex = false;
+                if (pos + 2 < end && *pos == '0' && (pos[1] == 'x' || pos[1] == 'b' || pos[1] == 'X' || pos[1] == 'B'))
+                {
+                    if (pos[1] == 'x' || pos[1] == 'X')
+                        hex = true;
+                    pos += 2;
+                }
+                else
+                    ++pos;
+
+                while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
+                    ++pos;
+
+                /// decimal point
+                if (pos < end && *pos == '.')
+                {
+                    ++pos;
+                    while (pos < end && (hex ? isHexDigit(*pos) : isNumericASCII(*pos)))
+                        ++pos;
+                }
+
+                /// exponentation (base 10 or base 2)
+                if (pos + 1 < end && (hex ? (*pos == 'p' || *pos == 'P') : (*pos == 'e' || *pos == 'E')))
+                {
+                    ++pos;
+
+                    /// sign of exponent. It is always decimal.
+                    if (pos + 1 < end && (*pos == '-' || *pos == '+'))
+                        ++pos;
+
+                    while (pos < end && isNumericASCII(*pos))
+                        ++pos;
+                }
             }
 
             /// word character cannot go just after number (SELECT 123FROM)
@@ -168,13 +180,14 @@ Token Lexer::nextTokenImpl()
 
         case '.':   /// qualifier, tuple access operator or start of floating point number
         {
-            /// Just after identifier or complex expression.
+            /// Just after identifier or complex expression or number (for chained tuple access like x.1.1 to work properly).
             if (pos > begin
                 && (!(pos + 1 < end && isNumericASCII(pos[1]))
                     || prev_significant_token_type == TokenType::ClosingRoundBracket
                     || prev_significant_token_type == TokenType::ClosingSquareBracket
                     || prev_significant_token_type == TokenType::BareWord
-                    || prev_significant_token_type == TokenType::QuotedIdentifier))
+                    || prev_significant_token_type == TokenType::QuotedIdentifier
+                    || prev_significant_token_type == TokenType::Number))
                 return Token(TokenType::Dot, token_begin, ++pos);
 
             ++pos;
