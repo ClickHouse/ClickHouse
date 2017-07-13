@@ -245,23 +245,23 @@ ASTPtr tryParseQuery(
     Token last_token = token_iterator.max();
     const char * max_parsed_pos = last_token.begin;
 
+    /// Lexical error
+    if (last_token.isError())
+    {
+        out_error_message = getLexicalErrorMessage(begin, end, max_parsed_pos, getErrorTokenDescription(last_token.type), hilite, query_description);
+        return nullptr;
+    }
+
+    /// Unmatched parentheses
+    UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), &last_token);
+    if (!unmatched_parens.empty())
+    {
+        out_error_message = getUnmatchedParenthesesErrorMessage(begin, end, unmatched_parens, hilite, query_description);
+        return nullptr;
+    }
+
     if (!parse_res)
     {
-        /// Lexical error
-        if (last_token.isError())
-        {
-            out_error_message = getLexicalErrorMessage(begin, end, max_parsed_pos, getErrorTokenDescription(last_token.type), hilite, query_description);
-            return nullptr;
-        }
-
-        /// Unmatched parentheses
-        UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens), &last_token);
-        if (!unmatched_parens.empty())
-        {
-            out_error_message = getUnmatchedParenthesesErrorMessage(begin, end, unmatched_parens, hilite, query_description);
-            return nullptr;
-        }
-
         /// Parse error.
         out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, query_description);
         return nullptr;
