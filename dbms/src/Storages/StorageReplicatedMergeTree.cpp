@@ -2214,6 +2214,9 @@ void StorageReplicatedMergeTree::startup()
         data.getDataParts(), current_zookeeper);
 
     queue.pullLogsToQueue(current_zookeeper, nullptr);
+    last_queue_update_finish_time.store(time(nullptr));
+    /// NOTE: not updating last_queue_update_start_time because it must contain the time when
+    /// the notification of queue change was received. In the beginning it is effectively infinite.
 
     /// In this thread replica will be activated.
     restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
