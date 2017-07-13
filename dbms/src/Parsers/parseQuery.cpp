@@ -76,13 +76,21 @@ void writeQueryWithHighlightedErrorPositions(
         const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx];
         out.write(pos, current_position_to_hilite - pos);
 
-        size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
+        if (current_position_to_hilite == end)
+        {
+            out << "\033[41;1m \033[0m";
+            pos = end;
+        }
+        else
+        {
+            size_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
 
-        /// Bright on red background.
-        out << "\033[41;1m";
-        out.write(current_position_to_hilite, bytes_to_hilite);
-        out << "\033[0m";
-        pos = current_position_to_hilite + bytes_to_hilite;
+            /// Bright on red background.
+            out << "\033[41;1m";
+            out.write(current_position_to_hilite, bytes_to_hilite);
+            out << "\033[0m";
+            pos = current_position_to_hilite + bytes_to_hilite;
+        }
     }
     out.write(pos, end - pos);
 }
