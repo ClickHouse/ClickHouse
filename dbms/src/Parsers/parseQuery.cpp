@@ -67,13 +67,13 @@ void writeQueryWithHighlightedErrorPositions(
     WriteBuffer & out,
     const char * begin,
     const char * end,
-    const char * const * positions_to_hilite,   /// must go in ascending order
+    const Token * positions_to_hilite,   /// must go in ascending order
     size_t num_positions_to_hilite)
 {
     const char * pos = begin;
     for (size_t position_to_hilite_idx = 0; position_to_hilite_idx < num_positions_to_hilite; ++position_to_hilite_idx)
     {
-        const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx];
+        const char * current_position_to_hilite = positions_to_hilite[position_to_hilite_idx].begin;
         out.write(pos, current_position_to_hilite - pos);
 
         if (current_position_to_hilite == end)
@@ -101,7 +101,7 @@ void writeQueryAroundTheError(
     const char * begin,
     const char * end,
     bool hilite,
-    const char * const * positions_to_hilite,
+    const Token * positions_to_hilite,
     size_t num_positions_to_hilite)
 {
     if (hilite)
@@ -113,7 +113,7 @@ void writeQueryAroundTheError(
     else
     {
         if (num_positions_to_hilite)
-            out << ": " << std::string(positions_to_hilite[0], std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - positions_to_hilite[0]));
+            out << ": " << std::string(positions_to_hilite[0].begin, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - positions_to_hilite[0].begin));
     }
 }
 
@@ -122,7 +122,7 @@ void writeCommonErrorMessage(
     WriteBuffer & out,
     const char * begin,
     const char * end,
-    const char * max_parsed_pos,
+    Token last_token,
     const std::string & query_description)
 {
     out << "Syntax error";
@@ -130,9 +130,9 @@ void writeCommonErrorMessage(
     if (!query_description.empty())
         out << " (" << query_description << ")";
 
-    out << ": failed at position " << (max_parsed_pos - begin + 1);
+    out << ": failed at position " << (last_token.begin - begin + 1);
 
-    if (max_parsed_pos == end || *max_parsed_pos == ';')
+    if (last_token.type == TokenType::EndOfStream || last_token.type == TokenType::Semicolon)
         out << " (end of query)";
 
     /// If query is multiline.
@@ -141,7 +141,7 @@ void writeCommonErrorMessage(
     {
         size_t line = 0;
         size_t col = 0;
-        std::tie(line, col) = getLineAndCol(begin, max_parsed_pos);
+        std::tie(line, col) = getLineAndCol(begin, last_token.begin);
 
         out << " (line " << line << ", col " << col << ")";
     }
@@ -151,7 +151,7 @@ void writeCommonErrorMessage(
 std::string getSyntaxErrorMessage(
     const char * begin,
     const char * end,
-    const char * max_parsed_pos,
+    Token last_token,
     const Expected & expected,
     bool hilite,
     const std::string & query_description)
@@ -160,8 +160,8 @@ std::string getSyntaxErrorMessage(
 
     {
         WriteBufferFromString out(message);
-        writeCommonErrorMessage(out, begin, end, max_parsed_pos, query_description);
-        writeQueryAroundTheError(out, begin, end, hilite, &max_parsed_pos, 1);
+        writeCommonErrorMessage(out, begin, end, last_token, query_description);
+        writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
 
         if (!expected.variants.empty())
             out << "Expected " << expected;
@@ -174,7 +174,7 @@ std::string getSyntaxErrorMessage(
 std::string getLexicalErrorMessage(
     const char * begin,
     const char * end,
-    const char * max_parsed_pos,
+    Token last_token,
     const char * error_token_description,
     bool hilite,
     const std::string & query_description)
@@ -183,8 +183,8 @@ std::string getLexicalErrorMessage(
 
     {
         WriteBufferFromString out(message);
-        writeCommonErrorMessage(out, begin, end, max_parsed_pos, query_description);
-        writeQueryAroundTheError(out, begin, end, hilite, &max_parsed_pos, 1);
+        writeCommonErrorMessage(out, begin, end, last_token, query_description);
+        writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
 
         out << error_token_description;
     }
@@ -208,8 +208,8 @@ std::string getUnmatchedParenthesesErrorMessage(
         writeQueryAroundTheError(out, begin, end, hilite, unmatched_parens.data(), unmatched_parens.size());
 
         out << "Unmatched parentheses: ";
-        for (const char * paren : unmatched_parens)
-            out << *paren;
+        for (const Token & paren : unmatched_parens)
+            out << *paren.begin;
     }
 
     return message;
@@ -243,12 +243,11 @@ ASTPtr tryParseQuery(
     ASTPtr res;
     bool parse_res = parser.parse(token_iterator, res, expected);
     Token last_token = token_iterator.max();
-    const char * max_parsed_pos = last_token.begin;
 
     /// Lexical error
     if (last_token.isError())
     {
-        out_error_message = getLexicalErrorMessage(begin, end, max_parsed_pos, getErrorTokenDescription(last_token.type), hilite, query_description);
+        out_error_message = getLexicalErrorMessage(begin, end, last_token, getErrorTokenDescription(last_token.type), hilite, query_description);
         return nullptr;
     }
 
@@ -263,7 +262,7 @@ ASTPtr tryParseQuery(
     if (!parse_res)
     {
         /// Parse error.
-        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, query_description);
+        out_error_message = getSyntaxErrorMessage(begin, end, last_token, expected, hilite, query_description);
         return nullptr;
     }
 
@@ -275,7 +274,7 @@ ASTPtr tryParseQuery(
         && !(insert && insert->data))
     {
         expected.add(pos, "end of query");
-        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, expected, hilite, query_description);
+        out_error_message = getSyntaxErrorMessage(begin, end, last_token, expected, hilite, query_description);
         return nullptr;
     }
 
@@ -287,7 +286,7 @@ ASTPtr tryParseQuery(
         && !token_iterator->isEnd()
         && !(insert && insert->data))
     {
-        out_error_message = getSyntaxErrorMessage(begin, end, max_parsed_pos, {}, hilite,
+        out_error_message = getSyntaxErrorMessage(begin, end, last_token, {}, hilite,
             (query_description.empty() ? std::string() : std::string(". ")) + "Multi-statements are not allowed");
         return nullptr;
     }
