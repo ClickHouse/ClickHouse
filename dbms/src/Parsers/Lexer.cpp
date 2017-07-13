@@ -315,6 +315,8 @@ const char * getTokenName(TokenType type)
         case TokenType::TOKEN: return #TOKEN;
 APPLY_FOR_TOKENS(M)
 #undef M
+        default:
+            __builtin_unreachable();
     }
 }
 
