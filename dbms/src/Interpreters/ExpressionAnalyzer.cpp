@@ -1409,6 +1409,22 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
 }
 
 
+static std::pair<String, String> getDatabaseAndTableNameFromIdentifier(const ASTIdentifier & identifier)
+{
+    std::pair<String, String> res;
+    res.second = identifier.name;
+    if (!identifier.children.empty())
+    {
+        if (identifier.children.size() != 2)
+            throw Exception("Qualified table name could have only two components", ErrorCodes::LOGICAL_ERROR);
+
+        res.first = typeid_cast<const ASTIdentifier &>(*identifier.children[0]).name;
+        res.second = typeid_cast<const ASTIdentifier &>(*identifier.children[1]).name;
+    }
+    return res;
+}
+
+
 static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
     ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_columns)
 {
@@ -1446,7 +1462,8 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
         select_query->children.emplace_back(select_query->select_expression_list);
 
         /// get columns list for target table
-        const auto & storage = context.getTable("", table->name);
+        auto database_table = getDatabaseAndTableNameFromIdentifier(*table);
+        const auto & storage = context.getTable(database_table.first, database_table.second);
         const auto & columns = storage->getColumnsListNonMaterialized();
         select_expression_list->children.reserve(columns.size());
 
@@ -1455,7 +1472,7 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
             select_expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(
                 StringRange{}, column.name));
 
-        select_query->replaceDatabaseAndTable("", table->name);
+        select_query->replaceDatabaseAndTable(database_table.first, database_table.second);
     }
     else
     {
@@ -1528,11 +1545,12 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
         auto ast_set = std::make_shared<ASTSet>(set_id);
         ASTPtr ast_set_ptr = ast_set;
 
-        /// A special case is if the name of the table is specified on the right side of the IN statement, and the table has the type Set (a previously prepared set).
-        /// TODO This syntax does not support the specification of the database name.
+        /// A special case is if the name of the table is specified on the right side of the IN statement,
+        ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
-            StoragePtr table = context.tryGetTable("", identifier->name);
+            auto database_table = getDatabaseAndTableNameFromIdentifier(*identifier);
+            StoragePtr table = context.tryGetTable(database_table.first, database_table.second);
 
             if (table)
             {
@@ -2382,7 +2400,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        StoragePtr table = context.tryGetTable("", static_cast<const ASTIdentifier &>(*table_to_join.database_and_table_name).name);
+        auto database_table = getDatabaseAndTableNameFromIdentifier(static_cast<const ASTIdentifier &>(*table_to_join.database_and_table_name));
+        StoragePtr table = context.tryGetTable(database_table.first, database_table.second);
 
         if (table)
         {
@@ -2779,7 +2798,8 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
     Block nested_result_sample;
     if (table_expression.database_and_table_name)
     {
-        const auto & table = context.getTable("", static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name).name);
+        auto database_table = getDatabaseAndTableNameFromIdentifier(static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name));
+        const auto & table = context.getTable(database_table.first, database_table.second);
         nested_result_sample = table->getSampleBlockNonMaterialized();
     }
     else if (table_expression.subquery)
