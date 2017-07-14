@@ -85,7 +85,7 @@ Block ColumnGathererStream::readImpl()
     if (sources.empty())
         init();
 
-    if (row_sources_buf.eof())
+    if (!source_to_fully_copy && row_sources_buf.eof())
         return Block();
 
     output_block = Block{column.cloneEmpty()};
