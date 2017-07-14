@@ -34,12 +34,13 @@ Connection::Connection(
     const char* user,
     const char* password,
     unsigned port,
+    const char * socket,
     unsigned timeout,
     unsigned rw_timeout)
     : driver(std::make_unique<MYSQL>())
 {
     is_connected = false;
-    connect(db, server, user, password, port, timeout, rw_timeout);
+    connect(db, server, user, password, port, socket, timeout, rw_timeout);
 }
 
 Connection::Connection(const std::string & config_name)
@@ -60,6 +61,7 @@ void Connection::connect(const char* db,
     const char* user,
     const char* password,
     unsigned port,
+    const char * socket,
     unsigned timeout,
     unsigned rw_timeout)
 {
@@ -88,7 +90,7 @@ void Connection::connect(const char* db,
     if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    if (!mysql_real_connect(driver.get(), server, user, password, db, port, nullptr, driver->client_flag))
+    if (!mysql_real_connect(driver.get(), server, user, password, db, port, *socket ? socket : nullptr, driver->client_flag))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     /// Установим кодировки по умолчанию - UTF-8.

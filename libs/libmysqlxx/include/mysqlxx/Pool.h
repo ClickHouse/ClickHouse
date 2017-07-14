@@ -165,6 +165,7 @@ public:
          const std::string & user_ = "",
          const std::string & password_ = "",
          unsigned port_ = 0,
+         const std::string & socket_ = "",
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
@@ -178,8 +179,8 @@ public:
           max_connections{other.max_connections},
           db{other.db}, server{other.server},
           user{other.user}, password{other.password},
-          port{other.port}, connect_timeout{other.connect_timeout},
-          rw_timeout{other.rw_timeout}
+          port{other.port}, socket{other.socket},
+          connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout}
     {}
 
     Pool & operator=(const Pool &) = delete;
@@ -225,6 +226,7 @@ private:
     std::string user;
     std::string password;
     unsigned port;
+    std::string socket;
     unsigned connect_timeout;
     unsigned rw_timeout;
 
