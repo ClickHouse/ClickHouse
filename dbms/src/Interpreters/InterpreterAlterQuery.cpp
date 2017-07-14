@@ -240,7 +240,7 @@ void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
         {
             String column_name = command.column_name.safeGet<String>();
 
-            if (table->getColumnsList().filter(Names{column_name}).empty())
+            if (!table->hasRealColumn(column_name))
             {
                 throw Exception("Wrong column name. Cannot find column " + column_name + " to clear it from partition",
                     DB::ErrorCodes::ILLEGAL_COLUMN);
