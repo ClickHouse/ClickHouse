@@ -164,4 +164,7 @@ using SetPtr = std::shared_ptr<Set>;
 using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
 
+/// Information about calculated sets in right hand side of IN.
+using PreparedSets = std::unordered_map<IAST*, SetPtr>;
+
 }
