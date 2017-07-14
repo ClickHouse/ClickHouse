@@ -5,7 +5,8 @@
 namespace DB
 {
 
-void formatHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes)
+template <typename IteratorSrc, typename IteratorDst>
+void formatHex(IteratorSrc __restrict src, IteratorDst __restrict dst, const size_t num_bytes)
 {
     /// More optimal than lookup table by nibbles.
     constexpr auto hex =
@@ -48,26 +49,20 @@ void formatUUID(const UInt8 * src16, UInt8 * dst36)
     formatHex(&src16[10], &dst36[24], 6);
 }
 
-void formatUUID(const UInt128 & uuid, UInt8 * dst36)
+/** Function used when byte ordering is important when parsing uuid
+ *  ex: When we create an UUID type
+ */
+void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36)
 {
-    char s[16+1];
-
+    formatHex(src16 + 8, &dst36[0], 4);
     dst36[8] = '-';
+    formatHex(src16 + 12, &dst36[9], 2);
     dst36[13] = '-';
+    formatHex(src16 + 14, &dst36[14], 2);
     dst36[18] = '-';
+    formatHex(src16, &dst36[19], 2);
     dst36[23] = '-';
-
-    snprintf(s, sizeof(s), "%016llx", static_cast<long long>(uuid.low));
-
-    memcpy(&dst36[0], &s, 8);
-    memcpy(&dst36[9], &s[8], 4);
-    memcpy(&dst36[14], &s[12], 4);
-
-    snprintf(s, sizeof(s), "%016llx", static_cast<long long>(uuid.high));
-
-    memcpy(&dst36[19], &s[0], 4);
-    memcpy(&dst36[24], &s[4], 12);
-
+    formatHex(src16 + 2, &dst36[24], 6);
 }
 
 
