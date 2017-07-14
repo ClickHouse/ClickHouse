@@ -7,7 +7,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSet.h>
 #include <Parsers/formatAST.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -35,14 +34,18 @@ static constexpr auto global_not_in_function_name = "globalNotIn";
 
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
-    ASTPtr & query, const Context & context, const MergeTreeData & data, const Names & column_names,
+    ASTPtr & query,
+    const PreparedSets & prepared_sets,
+    const Context & context,
+    const MergeTreeData & data,
+    const Names & column_names,
     Logger * log)
-    : primary_key_columns{ext::map<std::unordered_set>(data.getSortDescription(),
-        [] (const SortColumnDescription & col) { return col.column_name; })
-        },
+        : primary_key_columns{ext::map<std::unordered_set>(data.getSortDescription(),
+            [] (const SortColumnDescription & col) { return col.column_name; })},
         table_columns{ext::map<std::unordered_set>(data.getColumnsList(),
-        [] (const NameAndTypePair & col) { return col.name; })
-        }, block_with_constants{PKCondition::getBlockWithConstants(query, context, data.getColumnsList())},
+            [] (const NameAndTypePair & col) { return col.name; })},
+        block_with_constants{PKCondition::getBlockWithConstants(query, context, data.getColumnsList())},
+        prepared_sets(prepared_sets),
         log{log}
 {
     calculateColumnSizes(data, column_names);
@@ -330,7 +333,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const IAST * const ast) const
         if ((primary_key_columns.count(first_arg_name) && isConstant(args[1])) ||
             (primary_key_columns.count(second_arg_name) && isConstant(args[0])) ||
             (primary_key_columns.count(first_arg_name)
-                && (typeid_cast<const ASTSet *>(args[1].get()) || typeid_cast<const ASTSubquery *>(args[1].get()))))
+                && (prepared_sets.count(args[1].get()) || typeid_cast<const ASTSubquery *>(args[1].get()))))
             return true;
     }
 

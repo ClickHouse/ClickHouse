@@ -11,7 +11,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSet.h>
 #include <Parsers/ASTOrderByElement.h>
 
 #include <DataTypes/DataTypeSet.h>
@@ -1386,13 +1385,14 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(ASTPtr & node, const Block & sampl
     for (auto & child : node->children)
         makeSetsForIndexImpl(child, sample_block);
 
-    ASTFunction * func = typeid_cast<ASTFunction *>(node.get());
+    const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
     if (func && func->kind == ASTFunction::FUNCTION && functionIsInOperator(func->name))
     {
-        IAST & args = *func->arguments;
-        ASTPtr & arg = args.children.at(1);
+        const IAST & args = *func->arguments;
+        const ASTPtr & arg = args.children.at(1);
 
-        if (!typeid_cast<ASTSet *>(arg.get()) && !typeid_cast<ASTSubquery *>(arg.get()) && !typeid_cast<ASTIdentifier *>(arg.get()))
+        if (!prepared_sets.count(arg.get()) /// Not already prepared.
+            && !typeid_cast<ASTSubquery *>(arg.get()) && !typeid_cast<ASTIdentifier *>(arg.get()))
         {
             try
             {
@@ -1523,27 +1523,25 @@ static std::shared_ptr<InterpreterSelectQuery> interpretSubquery(
 }
 
 
-void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
+void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_block)
 {
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
       * The enumeration of values is parsed as a function `tuple`.
       */
-    IAST & args = *node->arguments;
-    ASTPtr & arg = args.children.at(1);
+    const IAST & args = *node->arguments;
+    const ASTPtr & arg = args.children.at(1);
 
     /// Already converted.
-    if (typeid_cast<ASTSet *>(arg.get()))
+    if (prepared_sets.count(arg.get()))
         return;
 
     /// If the subquery or table name for SELECT.
-    ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(arg.get());
-    if (typeid_cast<ASTSubquery *>(arg.get()) || identifier)
+    const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(arg.get());
+    if (typeid_cast<const ASTSubquery *>(arg.get()) || identifier)
     {
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
         String set_id = arg->getColumnName();
-        auto ast_set = std::make_shared<ASTSet>(set_id);
-        ASTPtr ast_set_ptr = ast_set;
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -1558,9 +1556,7 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 
                 if (storage_set)
                 {
-                    SetPtr & set = storage_set->getSet();
-                    ast_set->set = set;
-                    arg = ast_set_ptr;
+                    prepared_sets[arg.get()] = storage_set->getSet();
                     return;
                 }
             }
@@ -1571,12 +1567,11 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
         /// If you already created a Set with the same subquery / table.
         if (subquery_for_set.set)
         {
-            ast_set->set = subquery_for_set.set;
-            arg = ast_set_ptr;
+            prepared_sets[arg.get()] = subquery_for_set.set;
             return;
         }
 
-        ast_set->set = std::make_shared<Set>(settings.limits);
+        SetPtr set = std::make_shared<Set>(settings.limits);
 
         /** The following happens for GLOBAL INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1618,8 +1613,8 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
               */
         }
 
-        subquery_for_set.set = ast_set->set;
-        arg = ast_set_ptr;
+        subquery_for_set.set = set;
+        prepared_sets[arg.get()] = set;
     }
     else
     {
@@ -1629,23 +1624,23 @@ void ExpressionAnalyzer::makeSet(ASTFunction * node, const Block & sample_block)
 }
 
 /// The case of an explicit enumeration of values.
-void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set)
+void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set)
 {
-    IAST & args = *node->arguments;
+    const IAST & args = *node->arguments;
 
     if (args.children.size() != 2)
         throw Exception("Wrong number of arguments passed to function in", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ASTPtr & arg = args.children.at(1);
+    const ASTPtr & arg = args.children.at(1);
 
     DataTypes set_element_types;
-    ASTPtr & left_arg = args.children.at(0);
+    const ASTPtr & left_arg = args.children.at(0);
 
-    ASTFunction * left_arg_tuple = typeid_cast<ASTFunction *>(left_arg.get());
+    const ASTFunction * left_arg_tuple = typeid_cast<const ASTFunction *>(left_arg.get());
 
     /** NOTE If tuple in left hand side specified non-explicitly
       * Example: identity((a, b)) IN ((1, 2), (3, 4))
-      *  instead of        (a, b)) IN ((1, 2), (3, 4))
+      *  instead of       (a, b)) IN ((1, 2), (3, 4))
       * then set creation of set doesn't work correctly.
       */
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
@@ -1654,7 +1649,7 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
         {
             const auto & data_type = sample_block.getByName(arg->getColumnName()).type;
 
-            /// @note prevent crash in query: SELECT (1, [1]) in (1, 1)
+            /// NOTE prevent crash in query: SELECT (1, [1]) in (1, 1)
             if (const auto array = typeid_cast<const DataTypeArray * >(data_type.get()))
                 throw Exception("Incorrect element of tuple: " + array->getName(), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
@@ -1720,11 +1715,9 @@ void ExpressionAnalyzer::makeExplicitSet(ASTFunction * node, const Block & sampl
         elements_ast = exp_list;
     }
 
-    auto ast_set = std::make_shared<ASTSet>(arg->getColumnName());
-    ast_set->set = std::make_shared<Set>(settings.limits);
-    ast_set->is_explicit = true;
-    ast_set->set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
-    arg = ast_set;
+    SetPtr set = std::make_shared<Set>(settings.limits);
+    set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
+    prepared_sets[arg.get()] = std::move(set);
 }
 
 
@@ -2057,7 +2050,6 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
             for (auto & child : node->arguments->children)
             {
                 ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
-                ASTSet * set = typeid_cast<ASTSet *>(child.get());
                 if (lambda && lambda->name == "lambda")
                 {
                     /// If the argument is a lambda expression, just remember its approximate type.
@@ -2074,21 +2066,23 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
                     /// Select the name in the next cycle.
                     argument_names.emplace_back();
                 }
-                else if (set)
+                else if (prepared_sets.count(child.get()))
                 {
                     ColumnWithTypeAndName column;
                     column.type = std::make_shared<DataTypeSet>();
 
-                    /// If the argument is a set given by an enumeration of values, give it a unique name,
+                    const SetPtr & set = prepared_sets[child.get()];
+
+                    /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                     ///  so that sets with the same record do not fuse together (they can have different types).
-                    if (set->is_explicit)
+                    if (!set->empty())
                         column.name = getUniqueName(actions_stack.getSampleBlock(), "__set");
                     else
-                        column.name = set->getColumnName();
+                        column.name = child->getColumnName();
 
                     if (!actions_stack.getSampleBlock().has(column.name))
                     {
-                        column.column = std::make_shared<ColumnSet>(1, set->set);
+                        column.column = std::make_shared<ColumnSet>(1, set);
 
                         actions_stack.addAction(ExpressionAction::addColumn(column));
                     }

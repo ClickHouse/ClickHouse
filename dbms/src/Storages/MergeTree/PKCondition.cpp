@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
-#include <Parsers/ASTSet.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Core/FieldVisitors.h>

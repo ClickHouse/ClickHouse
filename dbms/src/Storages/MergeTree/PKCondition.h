@@ -4,6 +4,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -200,7 +201,12 @@ class PKCondition
 {
 public:
     /// Does not include the SAMPLE section. all_columns - the set of all columns of the table.
-    PKCondition(const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr,
+    PKCondition(
+        const ASTPtr & query,
+        const PreparedSets & prepared_sets,
+        const Context & context,
+        const NamesAndTypesList & all_columns,
+        const SortDescription & sort_descr,
         ExpressionActionsPtr pk_expr);
 
     /// Whether the condition is feasible in the key range.
