@@ -45,16 +45,29 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         password = cfg.has(config_name + ".password")
             ? cfg.getString(config_name + ".password")
             : cfg.getString(parent_config_name + ".password");
+
+        if (!cfg.has(config_name + ".port") && !cfg.has(config_name + ".socket")
+            && !cfg.has(parent_config_name + ".port") && !cfg.has(parent_config_name + ".socket"))
+            throw Poco::Exception("mysqlxx::Pool configuration: expected port or socket");
+
         port = cfg.has(config_name + ".port")
             ? cfg.getInt(config_name + ".port")
-            : cfg.getInt(parent_config_name + ".port");
+            : cfg.getInt(parent_config_name + ".port", 0);
+        socket = cfg.has(config_name + ".socket")
+            ? cfg.getString(config_name + ".socket")
+            : cfg.getString(parent_config_name + ".socket", "");
     }
     else
     {
         db = cfg.getString(config_name + ".db", "");
         user = cfg.getString(config_name + ".user");
         password = cfg.getString(config_name + ".password");
-        port = cfg.getInt(config_name + ".port");
+
+        if (!cfg.has(config_name + ".port") && !cfg.has(config_name + ".socket"))
+            throw Poco::Exception("mysqlxx::Pool configuration: expected port or socket");
+
+        port = cfg.getInt(config_name + ".port", 0);
+        socket = cfg.getString(config_name + ".socket", "");
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -158,6 +171,7 @@ void Pool::Entry::forceConnected() const
                            pool->user.c_str(),
                            pool->password.c_str(),
                            pool->port,
+                           pool->socket.c_str(),
                      pool->connect_timeout,
                      pool->rw_timeout);
     }
@@ -195,6 +209,7 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
                            user.c_str(),
                            password.c_str(),
                            port,
+                           socket.c_str(),
                      connect_timeout,
                      rw_timeout);
     }

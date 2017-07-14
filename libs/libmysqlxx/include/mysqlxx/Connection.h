@@ -52,11 +52,12 @@ public:
 
     /// Создать соединение.
     Connection(
-        const char* db,
-        const char* server,
-        const char* user = 0,
-        const char* password = 0,
+        const char * db,
+        const char * server,
+        const char * user = 0,
+        const char * password = 0,
         unsigned port = 0,
+        const char * socket = "",
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
 
@@ -73,6 +74,7 @@ public:
         const char * user,
         const char * password,
         unsigned port,
+        const char * socket,
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
 
@@ -84,7 +86,8 @@ public:
         std::string server         = cfg.getString(config_name + ".host");
         std::string user         = cfg.getString(config_name + ".user");
         std::string password    = cfg.getString(config_name + ".password");
-        unsigned port            = cfg.getInt(config_name + ".port");
+        unsigned port            = cfg.getInt(config_name + ".port", 0);
+        std::string socket = cfg.getString(config_name + ".socket", "");
 
         unsigned timeout =
             cfg.getInt(config_name + ".connect_timeout",
@@ -96,7 +99,7 @@ public:
                 cfg.getInt("mysql_rw_timeout",
                     MYSQLXX_DEFAULT_RW_TIMEOUT));
 
-        connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port, timeout, rw_timeout);
+        connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port, socket.c_str(), timeout, rw_timeout);
     }
 
     /// Было ли произведено соединение с MySQL.
