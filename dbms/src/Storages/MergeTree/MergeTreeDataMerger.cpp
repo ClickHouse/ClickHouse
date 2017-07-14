@@ -595,7 +595,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
         case MergeTreeData::MergingParams::Replacing:
             merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_desc, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
             break;
 
         case MergeTreeData::MergingParams::Graphite:
@@ -773,7 +773,8 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 
     bool is_supported_storage =
         data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
-        data.merging_params.mode == MergeTreeData::MergingParams::Collapsing;
+        data.merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+        data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 
     bool enough_ordinary_cols = gathering_columns.size() >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_columns_to_activate;
 

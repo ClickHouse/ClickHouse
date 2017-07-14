@@ -8,6 +8,16 @@ namespace DB
 
 void ReplacingSortedBlockInputStream::insertRow(ColumnPlainPtrs & merged_columns, size_t & merged_rows)
 {
+    if (out_row_sources_buf)
+    {
+        /// true flag value means "skip row"
+        current_row_sources[selected_row.row_num].setSkipFlag(false);
+
+        out_row_sources_buf->write(reinterpret_cast<const char *>(current_row_sources.data()),
+                                   current_row_sources.size() * sizeof(RowSourcePart));
+        current_row_sources.resize(0);
+    }
+
     ++merged_rows;
     for (size_t i = 0; i < num_columns; ++i)
         merged_columns[i]->insertFrom(*selected_row.columns[i], selected_row.row_num);
@@ -56,6 +66,10 @@ void ReplacingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, st
     while (!queue.empty())
     {
         TSortCursor current = queue.top();
+
+        /// Initially, skip all rows. Unskip on insert.
+        if (out_row_sources_buf)
+            current_row_sources.emplace_back(current.impl->order, true);
 
         if (current_key.empty())
         {
