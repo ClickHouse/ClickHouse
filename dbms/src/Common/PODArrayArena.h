@@ -6,8 +6,9 @@ namespace DB
 {
 
 /// Fake Allocator which proxies all allocations to Arena. Used in aggregate functions.
-struct ArenaAllocator
+class ArenaAllocator
 {
+public:
     static void * alloc(size_t size, Arena * arena)
     {
         return arena->alloc(size);
