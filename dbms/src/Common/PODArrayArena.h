@@ -1,4 +1,3 @@
-#include <Common/PODArray.h>
 #include <Common/Arena.h>
 #include <Common/Allocator.h>
 
@@ -6,8 +5,7 @@
 namespace DB
 {
 
-/// Fake Allocator which proxies all allocations to Arena
-/// Used in aggregate functions
+/// Fake Allocator which proxies all allocations to Arena. Used in aggregate functions.
 struct ArenaAllocator
 {
     static void * alloc(size_t size, Arena * arena)
@@ -32,10 +30,14 @@ struct ArenaAllocator
         }
     }
 
-    static void free(void * buf, size_t size) {}
+    static void free(void * buf, size_t size)
+    {
+        // Remains trash in arena
+    }
 };
 
 
+/// Switches to ordinary Allocator after REAL_ALLOCATION_TRESHOLD bytes to avoid fragmentation and trash in Arena.
 template <size_t REAL_ALLOCATION_TRESHOLD = 4096, typename TRealAllocator = Allocator<false>, typename TArenaAllocator = ArenaAllocator>
 class MixedArenaAllocator : private TRealAllocator
 {
@@ -102,6 +104,8 @@ public:
 
 
 /// Similar to PODArray, but allocates memory using ArenaAllocator
+/// Uses additional Arena * arena parameter in all modification methods to not store it
+/// TODO: avoid copypaste from PODArray
 template <typename T, size_t INITIAL_SIZE = 32, typename TAllocator = ArenaAllocator>
 class PODArrayArenaAllocator : private TAllocator
 {
