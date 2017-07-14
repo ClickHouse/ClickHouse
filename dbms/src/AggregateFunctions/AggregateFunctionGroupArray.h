@@ -30,106 +30,32 @@ namespace ErrorCodes
 }
 
 
-/// A particular case is an implementation for numeric types.
-template <typename T>
-struct AggregateFunctionGroupArrayDataNumeric
+namespace
 {
-    /// Memory is allocated to several elements immediately so that the state occupies 64 bytes.
-    static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<T>);
-
-    using Array = PODArray<T, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
-    Array value;
-};
-
-
-template <typename T>
-class AggregateFunctionGroupArrayNumeric final
-    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataNumeric<T>, AggregateFunctionGroupArrayNumeric<T>>
-{
-public:
-    String getName() const override { return "groupArray"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
-    }
-
-    void setArgument(const DataTypePtr & argument)
-    {
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        this->data(place).value.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        this->data(place).value.insert(this->data(rhs).value.begin(), this->data(rhs).value.end());
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        const auto & value = this->data(place).value;
-        size_t size = value.size();
-        writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(&value[0]), size * sizeof(value[0]));
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        size_t size = 0;
-        readVarUInt(size, buf);
-
-        if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
-
-        auto & value = this->data(place).value;
-
-        value.resize(size);
-        buf.read(reinterpret_cast<char *>(&value[0]), size * sizeof(value[0]));
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        const auto & value = this->data(place).value;
-        size_t size = value.size();
-
-        ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
-
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
-
-        typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-        data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
-    }
-};
-
 
 /// A particular case is an implementation for numeric types.
 template <typename T>
-struct AggregateFunctionGroupArrayDataNumeric2
+struct GroupArrayNumericData
 {
-    /// Memory is allocated to several elements immediately so that the state occupies 64 bytes.
-    static constexpr size_t bytes_in_arena = 64 - sizeof(PODArrayArenaAllocator<T>);
+    // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
+    using Allocator = MixedArenaAllocator<4096>;
+    using Array = PODArrayArenaAllocator<T, 32, Allocator>;
 
-    //using Array = PODArrayArenaAllocator<T, bytes_in_arena, ArenaAllocatorWithStackMemoty<bytes_in_arena>>;
-    using Array = PODArrayArenaAllocator<T, bytes_in_arena, MixedArenaAllocator<4096>>;
     Array value;
 };
 
 
 template <typename T, typename Tlimit_num_elems>
-class AggregateFunctionGroupArrayNumeric2 final
-    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataNumeric2<T>, AggregateFunctionGroupArrayNumeric2<T, Tlimit_num_elems>>
+class GroupArrayNumericImpl final
+    : public IUnaryAggregateFunction<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>
 {
     static constexpr bool limit_num_elems = Tlimit_num_elems::value;
     UInt64 max_elems;
 
 public:
-    AggregateFunctionGroupArrayNumeric2(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
+    GroupArrayNumericImpl(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
 
-    String getName() const override { return "groupArray2"; }
+    String getName() const override { return "groupArray"; }
 
     DataTypePtr getReturnType() const override
     {
@@ -206,82 +132,18 @@ public:
         typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
     }
-};
 
-
-/// General case (inefficient). NOTE You can also implement a special case for strings.
-struct AggregateFunctionGroupArrayDataGeneric
-{
-    Array value;    /// TODO Add MemoryTracker
-};
-
-
-/// Puts all values to an array, general case. Implemented inefficiently.
-class AggregateFunctionGroupArrayGeneric final
-    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayDataGeneric, AggregateFunctionGroupArrayGeneric>
-{
-private:
-    DataTypePtr type;
-
-public:
-    String getName() const override { return "groupArray"; }
-
-    DataTypePtr getReturnType() const override
+    bool allocatesMemoryInArena() const override
     {
-        return std::make_shared<DataTypeArray>(type);
-    }
-
-    void setArgument(const DataTypePtr & argument)
-    {
-        type = argument;
-    }
-
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        data(place).value.push_back(Array::value_type());
-        column.get(row_num, data(place).value.back());
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        data(place).value.insert(data(place).value.end(), data(rhs).value.begin(), data(rhs).value.end());
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        const Array & value = data(place).value;
-        size_t size = value.size();
-        writeVarUInt(size, buf);
-        for (size_t i = 0; i < size; ++i)
-            type->serializeBinary(value[i], buf);
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        size_t size = 0;
-        readVarUInt(size, buf);
-
-        if (unlikely(size > AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE))
-            throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
-
-        Array & value = data(place).value;
-
-        value.resize(size);
-        for (size_t i = 0; i < size; ++i)
-            type->deserializeBinary(value[i], buf);
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        to.insert(data(place).value);
+        return true;
     }
 };
 
 
-namespace
-{
+/// General case
 
+
+/// Nodes used to implement linked list for stoarge of groupArray states
 struct NodeString;
 struct NodeGeneral;
 
@@ -289,8 +151,9 @@ template <typename Node>
 struct NodeBase
 {
     Node * next;
-    UInt64 size;
+    UInt64 size; // size of payload
 
+    /// Returns pointer to actual payload
     char * data()
     {
         static_assert(sizeof(NodeBase) == sizeof(Node));
@@ -346,7 +209,6 @@ struct NodeString : public NodeBase<NodeString>
     }
 };
 
-
 struct NodeGeneral : public NodeBase<NodeGeneral>
 {
     using Node = NodeGeneral;
@@ -371,7 +233,7 @@ struct NodeGeneral : public NodeBase<NodeGeneral>
 
 
 template <typename Node>
-struct AggregateFunctionGroupArrayListImpl_Data
+struct GroupArrayGeneralListData
 {
     UInt64 elems = 0;
     Node * first = nullptr;
@@ -379,13 +241,13 @@ struct AggregateFunctionGroupArrayListImpl_Data
 };
 
 
-/// Implementation of groupArray(String or ComplexObject) via linked list
+/// Implementation of groupArray for String or any ComplexObject via linked list
 /// It has poor performance in case of many small objects
 template <typename Node, bool limit_num_elems>
-class AggregateFunctionGroupArrayStringListImpl final
-    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayListImpl_Data<Node>, AggregateFunctionGroupArrayStringListImpl<Node, limit_num_elems>>
+class GroupArrayGeneralListImpl final
+    : public IUnaryAggregateFunction<GroupArrayGeneralListData<Node>, GroupArrayGeneralListImpl<Node, limit_num_elems>>
 {
-    using Data = AggregateFunctionGroupArrayListImpl_Data<Node>;
+    using Data = GroupArrayGeneralListData<Node>;
     static Data & data(AggregateDataPtr place)            { return *reinterpret_cast<Data*>(place); }
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
@@ -393,9 +255,9 @@ class AggregateFunctionGroupArrayStringListImpl final
     UInt64 max_elems;
 
 public:
-    AggregateFunctionGroupArrayStringListImpl(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
+    GroupArrayGeneralListImpl(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
 
-    String getName() const override { return "groupArray2"; }
+    String getName() const override { return "groupArray"; }
 
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(data_type); }
 
@@ -551,207 +413,6 @@ public:
 };
 
 }
-
-
-struct AggregateFunctionGroupArrayStringConcatImpl_Data
-{
-    static constexpr size_t target_size = 64;
-    static constexpr size_t free_space = target_size - sizeof(PODArrayArenaAllocator<char>) - sizeof(PODArrayArenaAllocator<UInt64>);
-
-    PODArrayArenaAllocator<char, 64> chars;
-    PODArrayArenaAllocator<UInt64, free_space, ArenaAllocatorWithStackMemoty<free_space>> offsets;
-};
-
-
-class AggregateFunctionGroupArrayStringConcatImpl final
-    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayStringConcatImpl_Data, AggregateFunctionGroupArrayStringConcatImpl>
-{
-public:
-
-    String getName() const override { return "groupArray4"; }
-
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()); }
-
-    void setArgument(const DataTypePtr & argument) {}
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
-    {
-        StringRef string = static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num);
-
-        data(place).chars.insert(string.data, string.data + string.size, arena);
-        data(place).offsets.push_back(string.size, arena);
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
-    {
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        auto & cur_state = data(place);
-        auto & rhs_state = data(rhs);
-
-        cur_state.chars.insert(rhs_state.chars.begin(), rhs_state.chars.end(), arena);
-        cur_state.offsets.insert(rhs_state.offsets.begin(), rhs_state.offsets.end(), arena);
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        auto & column_array = static_cast<ColumnArray &>(to);
-        auto & column_string = static_cast<ColumnString &>(column_array.getData());
-        auto & offsets = column_array.getOffsets();
-        auto & cur_state = data(place);
-
-        offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + cur_state.offsets.size());
-
-        auto pos = column_string.getChars().size();
-        column_string.getChars().insert(cur_state.chars.begin(), cur_state.chars.end());
-
-        column_string.getOffsets().reserve(column_string.getOffsets().size() + cur_state.offsets.size());
-        for (UInt64 i = 0; i < cur_state.offsets.size(); ++i)
-        {
-            pos += cur_state.offsets[i];
-            column_string.getOffsets().push_back(pos);
-        }
-    }
-};
-
-
-struct AggregateFunctionGroupArrayGeneric_SerializedData
-{
-    PODArrayArenaAllocator<StringRef> values;
-};
-
-class AggregateFunctionGroupArrayGeneric_SerializedDataImpl final
-    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayGeneric_SerializedData, AggregateFunctionGroupArrayGeneric_SerializedDataImpl>
-{
-private:
-    DataTypePtr type;
-
-public:
-    String getName() const override { return "groupArray"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(type);
-    }
-
-    void setArgument(const DataTypePtr & argument)
-    {
-        type = argument;
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
-    {
-        const char * begin = nullptr;
-        data(place).values.push_back(column.serializeValueIntoArena(row_num, *arena, begin), arena);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        for (const StringRef & elem : data(rhs).values)
-            data(place).values.push_back(StringRef(arena->insert(elem.data, elem.size), elem.size), arena);
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        ColumnArray & column_array = static_cast<ColumnArray &>(to);
-        auto & column_data = column_array.getData();
-        auto & offsets = column_array.getOffsets();
-        auto & cur_state = data(place);
-
-        offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + cur_state.values.size());
-
-        column_data.reserve(cur_state.values.size());
-
-        for (const StringRef & elem : cur_state.values)
-            column_data.deserializeAndInsertFromArena(elem.data);
-    }
-
-    bool allocatesMemoryInArena() const override
-    {
-        return true;
-    }
-};
-
-
-
-
-struct AggregateFunctionGroupArrayGeneric_ColumnPtrImpl_Data
-{
-    ColumnPtr container;
-};
-
-class AggregateFunctionGroupArrayGeneric_ColumnPtrImpl final
-    : public IUnaryAggregateFunction<AggregateFunctionGroupArrayGeneric_ColumnPtrImpl_Data, AggregateFunctionGroupArrayGeneric_ColumnPtrImpl>
-{
-private:
-    DataTypePtr type;
-
-public:
-    String getName() const override { return "groupArray4"; }
-
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeArray>(type);
-    }
-
-    void setArgument(const DataTypePtr & argument)
-    {
-        type = argument;
-    }
-
-    void create(AggregateDataPtr place) const override
-    {
-        new (place) Data;
-        data(place).container = type->createColumn();
-    }
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
-    {
-        data(place).container->insertFrom(column, row_num);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
-    {
-        data(place).container->insertRangeFrom(*data(rhs).container, 0, data(rhs).container->size());
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
-    {
-        UInt64 s = data(place).container->size();
-        writeVarUInt(s, buf);
-        type->serializeBinaryBulk(*data(place).container, buf, 0, s);
-    }
-
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
-    {
-        UInt64 s;
-        readVarUInt(s, buf);
-        type->deserializeBinaryBulk(*data(place).container, buf, s, 0);
-    }
-
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
-    {
-        ColumnArray & array_column = static_cast<ColumnArray &>(to);
-        auto s = data(place).container->size();
-        array_column.getOffsets().push_back(s);
-        array_column.getData().insertRangeFrom(*data(place).container, 0, s);
-    }
-};
-
 
 
 #undef AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE
