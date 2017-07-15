@@ -10,6 +10,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -202,8 +203,7 @@ class PKCondition
 public:
     /// Does not include the SAMPLE section. all_columns - the set of all columns of the table.
     PKCondition(
-        const ASTPtr & query,
-        const PreparedSets & prepared_sets,
+        const SelectQueryInfo & query_info,
         const Context & context,
         const NamesAndTypesList & all_columns,
         const SortDescription & sort_descr,
@@ -330,6 +330,7 @@ private:
     SortDescription sort_descr;
     ColumnIndices pk_columns;
     ExpressionActionsPtr pk_expr;
+    PreparedSets prepared_sets;
 };
 
 }

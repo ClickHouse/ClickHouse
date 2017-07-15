@@ -34,8 +34,7 @@ static constexpr auto global_not_in_function_name = "globalNotIn";
 
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
-    ASTPtr & query,
-    const PreparedSets & prepared_sets,
+    SelectQueryInfo & query_info,
     const Context & context,
     const MergeTreeData & data,
     const Names & column_names,
@@ -44,12 +43,12 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
             [] (const SortColumnDescription & col) { return col.column_name; })},
         table_columns{ext::map<std::unordered_set>(data.getColumnsList(),
             [] (const NameAndTypePair & col) { return col.name; })},
-        block_with_constants{PKCondition::getBlockWithConstants(query, context, data.getColumnsList())},
-        prepared_sets(prepared_sets),
+        block_with_constants{PKCondition::getBlockWithConstants(query_info.query, context, data.getColumnsList())},
+        prepared_sets(query_info.sets),
         log{log}
 {
     calculateColumnSizes(data, column_names);
-    auto & select = typeid_cast<ASTSelectQuery &>(*query);
+    auto & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
     determineArrayJoinedNames(select);
     optimize(select);
 }

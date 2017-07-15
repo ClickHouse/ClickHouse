@@ -189,7 +189,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 
 BlockInputStreams StorageDistributed::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -206,7 +206,7 @@ BlockInputStreams StorageDistributed::read(
         : QueryProcessingStage::WithMergeableState;
 
     const auto & modified_query_ast = rewriteSelectQuery(
-        query, remote_database, remote_table);
+        query_info.query, remote_database, remote_table);
 
     Tables external_tables;
 
@@ -218,7 +218,6 @@ BlockInputStreams StorageDistributed::read(
 
     /** The functionality of shard_multiplexing is not completed - turn it off.
       * (Because connecting to different shards within a single thread is not done in parallel.)
-      * For more information, see https: //███████████.yandex-team.ru/METR-18300
       */
     //bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
     bool enable_shard_multiplexing = false;
@@ -354,7 +353,6 @@ void StorageDistributed::reshardPartitions(
 
         /** The functionality of shard_multiplexing is not completed - turn it off.
         * (Because connecting to different shards within a single thread is not done in parallel.)
-        * For more information, see https: //███████████.yandex-team.ru/METR-18300
         */
         bool enable_shard_multiplexing = false;
 
@@ -433,7 +431,6 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
     /** The functionality of shard_multiplexing is not completed - turn it off.
       * (Because connecting connections to different shards within a single thread is not done in parallel.)
-      * For more information, see https://███████████.yandex-team.ru/METR-18300
       */
     bool enable_shard_multiplexing = false;
 

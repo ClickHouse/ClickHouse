@@ -101,13 +101,13 @@ StorageMergeTree::~StorageMergeTree()
 
 BlockInputStreams StorageMergeTree::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, query, context, processed_stage, max_block_size, num_streams, nullptr, 0);
+    return reader.read(column_names, query_info, context, processed_stage, max_block_size, num_streams, nullptr, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)

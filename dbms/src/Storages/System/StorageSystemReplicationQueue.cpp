@@ -49,7 +49,7 @@ StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string &
 
 BlockInputStreams StorageSystemReplicationQueue::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -80,7 +80,7 @@ BlockInputStreams StorageSystemReplicationQueue::read(
     {
         Block filtered_block { col_database_to_filter, col_table_to_filter };
 
-        VirtualColumnUtils::filterBlockWithQuery(query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
             return BlockInputStreams();

@@ -13,15 +13,15 @@ class Context;
 class ExpressionActions;
 struct ExpressionActionsChain;
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
-using PreparedSets = std::unordered_map<IAST*, SetPtr>;
-
 class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
+
+class Set;
+using SetPtr = std::shared_ptr<Set>;
+using PreparedSets = std::unordered_map<IAST*, SetPtr>;
 
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -247,7 +247,6 @@ private:
     void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, Aliases & aliases) const;
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
-    /// Transform the value enumeration or subquery into ASTSet. `node` - `in` or `notIn` function.
     void makeSet(const ASTFunction * node, const Block & sample_block);
 
     /// Adds a list of ALIAS columns from the table

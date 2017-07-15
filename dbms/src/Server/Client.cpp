@@ -2,19 +2,28 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
+
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <experimental/optional>
 #include <unordered_set>
 #include <algorithm>
+#include <experimental/optional>
 #include <boost/program_options.hpp>
+
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
+
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
+#include <Common/ExternalTable.h>
+#include <Common/UnicodeBar.h>
+#include <Common/formatReadable.h>
+#include <Common/NetException.h>
+#include <common/readline_use.h>
+#include <Common/typeid_cast.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -25,7 +34,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/TabSeparatedRowInputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -39,13 +47,6 @@
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include "InterruptListener.h"
-#include <Common/ExternalTable.h>
-#include <Common/UnicodeBar.h>
-#include <Common/formatReadable.h>
-#include <Columns/ColumnString.h>
-#include <Common/NetException.h>
-#include <common/readline_use.h>
-#include <Common/typeid_cast.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 

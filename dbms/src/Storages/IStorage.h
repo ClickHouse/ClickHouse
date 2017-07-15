@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Core/QueryProcessingStage.h>
 #include <Storages/ITableDeclaration.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Poco/RWLock.h>
 #include <memory>
 #include <experimental/optional>
@@ -29,10 +30,6 @@ using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 class IStorage;
 
 using StoragePtr = std::shared_ptr<IStorage>;
-
-class IAST;
-
-using ASTPtr = std::shared_ptr<IAST>;
 
 struct Settings;
 
@@ -156,7 +153,7 @@ public:
       *  (indexes, locks, etc.)
       * Returns a stream with which you can read data sequentially
       *  or multiple streams for parallel data reading.
-      * The into `processed_stage` info is also written to what stage the request was processed.
+      * The `processed_stage` info is also written to what stage the request was processed.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server.)
       *
@@ -171,7 +168,7 @@ public:
       */
     virtual BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,

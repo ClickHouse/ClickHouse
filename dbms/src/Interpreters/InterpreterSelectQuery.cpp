@@ -836,13 +836,17 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
+        SelectQueryInfo query_info;
+        query_info.query = query_ptr;
+        query_info.sets = query_analyzer->getPreparedSets();
+
         /// PREWHERE optimization
         {
             auto optimize_prewhere = [&](auto & merge_tree)
             {
                 /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
                 if (settings.optimize_move_to_prewhere && query.where_expression && !query.prewhere_expression && !query.final())
-                    MergeTreeWhereOptimizer{query_ptr, context, merge_tree.getData(), required_columns, log};
+                    MergeTreeWhereOptimizer{query_info, context, merge_tree.getData(), required_columns, log};
             };
 
             if (const StorageMergeTree * merge_tree = typeid_cast<const StorageMergeTree *>(storage.get()))
@@ -851,7 +855,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
                 optimize_prewhere(*merge_tree);
         }
 
-        streams = storage->read(required_columns, query_ptr, context, from_stage, max_block_size, max_streams);
+        streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
         if (alias_actions)
         {
