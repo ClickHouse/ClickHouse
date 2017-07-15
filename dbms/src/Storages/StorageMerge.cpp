@@ -109,7 +109,7 @@ static Names collectIdentifiersInFirstLevelOfSelectQuery(ASTPtr ast)
 
 BlockInputStreams StorageMerge::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -130,6 +130,8 @@ BlockInputStreams StorageMerge::read(
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
     StorageListWithLocks selected_tables = getSelectedTables();
+
+    const ASTPtr & query = query_info.query;
 
     /// If PREWHERE is used in query, you need to make sure that all tables support this.
     if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
@@ -178,7 +180,7 @@ BlockInputStreams StorageMerge::read(
             QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
             source_streams = table->read(
                 real_column_names,
-                modified_query_ast,
+                { modified_query_ast, query_info.sets },
                 modified_context,
                 processed_stage_in_source_table,
                 max_block_size,
@@ -206,7 +208,7 @@ BlockInputStreams StorageMerge::read(
                 QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
                 BlockInputStreams streams = table->read(
                     real_column_names,
-                    modified_query_ast,
+                    { modified_query_ast, query_info.sets },
                     modified_context,
                     processed_stage_in_source_table,
                     max_block_size,

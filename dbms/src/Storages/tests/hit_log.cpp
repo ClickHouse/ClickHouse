@@ -132,7 +132,7 @@ try
 
         QueryProcessingStage::Enum stage;
 
-        BlockInputStreamPtr in = table->read(column_names, 0, Context::createGlobal(), stage, 8192, 1)[0];
+        BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
         RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
         BlockOutputStreamFromRowOutputStream out(out_);
         copyData(*in, out);

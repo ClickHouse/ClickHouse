@@ -5,16 +5,13 @@
 #include <set>
 #include <boost/noncopyable.hpp>
 #include <Core/Block.h>
-#include <Interpreters/Set.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace Poco { class Logger; }
 
 namespace DB
 {
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class ASTSelectQuery;
 class ASTFunction;
@@ -36,8 +33,7 @@ class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
     MergeTreeWhereOptimizer(
-        ASTPtr & query,
-        const PreparedSets & prepared_sets,
+        SelectQueryInfo & query_info,
         const Context & context,
         const MergeTreeData & data,
         const Names & column_names,

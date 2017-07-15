@@ -145,7 +145,7 @@ try
 
     QueryProcessingStage::Enum stage;
 
-    BlockInputStreamPtr in = table->read(column_names, 0, Context::createGlobal(), stage, argc == 2 ? atoi(argv[1]) : 65536, 1)[0];
+    BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, argc == 2 ? atoi(argv[1]) : 65536, 1)[0];
     in = std::make_shared<PartialSortingBlockInputStream>(in, sort_columns);
     in = std::make_shared<MergeSortingBlockInputStream>(in, sort_columns, DEFAULT_BLOCK_SIZE, 0, 0, "");
     //in = std::make_shared<LimitBlockInputStream>(in, 10, 0);

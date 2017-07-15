@@ -129,7 +129,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 
 BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -188,7 +188,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     /// If `_part` virtual column is requested, we try to use it as an index.
     Block virtual_columns_block = getBlockWithPartColumn(parts);
     if (part_column_queried)
-        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context);
 
     std::multiset<String> part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
@@ -199,9 +199,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     SortDescription sort_descr = data.getSortDescription();
     ColumnsWithTypeAndName date_columns = {{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}};
 
-    PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr,
+    PKCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
         data.getPrimaryExpression());
-    PKCondition date_condition(query, context, available_real_and_virtual_columns,
+    PKCondition date_condition(query_info, context, available_real_and_virtual_columns,
         SortDescription(1, SortColumnDescription(data.date_column_name, 1, 1)),
         std::make_shared<ExpressionActions>(date_columns, settings));
 
@@ -254,7 +254,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
+    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
 
     auto select_sample_size = select.sample_size();
     auto select_sample_offset = select.sample_offset();
