@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <Core/Field.h>
-#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -13,6 +12,10 @@ class ReadBuffer;
 class WriteBuffer;
 
 class IDataType;
+struct FormatSettingsJSON;
+
+class IColumn;
+using ColumnPtr = std::shared_ptr<IColumn>;
 
 using DataTypePtr = std::shared_ptr<IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
@@ -115,7 +118,7 @@ public:
     /** Text serialization intended for using in JSON format.
       * force_quoting_64bit_integers parameter forces to brace UInt64 and Int64 types into quotes.
       */
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const = 0;
+    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
 
     /** Text serialization for putting into the XML format.
@@ -151,6 +154,9 @@ public:
     }
 
     virtual ~IDataType() {}
+
+    /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
+    static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 };
 
 

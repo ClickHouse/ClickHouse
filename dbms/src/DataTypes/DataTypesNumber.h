@@ -17,6 +17,7 @@ using DataTypeUInt8 = DataTypeNumber<UInt8>;
 using DataTypeUInt16 = DataTypeNumber<UInt16>;
 using DataTypeUInt32 = DataTypeNumber<UInt32>;
 using DataTypeUInt64 = DataTypeNumber<UInt64>;
+using DataTypeUInt128 = DataTypeNumber<UInt128>;
 using DataTypeInt8 = DataTypeNumber<Int8>;
 using DataTypeInt16 = DataTypeNumber<Int16>;
 using DataTypeInt32 = DataTypeNumber<Int32>;

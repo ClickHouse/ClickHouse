@@ -587,7 +587,7 @@ struct ReplaceRegexpImpl
         {
             if (s[i] == '\\' && i + 1 < s.size())
             {
-                if (isdigit(s[i + 1])) /// Substitution
+                if (isNumericASCII(s[i + 1])) /// Substitution
                 {
                     if (!now.empty())
                     {

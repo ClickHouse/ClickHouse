@@ -3,15 +3,12 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/SmallObjectPool.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
-#include <Core/StringRef.h>
-#include <ext/scope_guard.h>
+#include <common/StringRef.h>
 #include <ext/bit_cast.h>
-#include <ext/map.h>
 #include <Poco/RWLock.h>
 #include <atomic>
 #include <chrono>

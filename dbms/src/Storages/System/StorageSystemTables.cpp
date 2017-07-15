@@ -52,7 +52,7 @@ static ColumnWithTypeAndName getFilteredDatabases(const ASTPtr & query, const Co
 
 BlockInputStreams StorageSystemTables::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -87,7 +87,7 @@ BlockInputStreams StorageSystemTables::read(
     col_meta_mod_time.column = std::make_shared<ColumnUInt32>();
     block.insert(col_meta_mod_time);
 
-    ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query, context);
+    ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query_info.query, context);
 
     for (size_t row_number = 0; row_number < filtered_databases_column.column->size(); ++row_number)
     {

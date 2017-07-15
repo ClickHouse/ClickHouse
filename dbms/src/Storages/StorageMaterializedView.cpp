@@ -8,6 +8,8 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/VirtualColumnFactory.h>
 
+#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -54,7 +56,7 @@ StorageMaterializedView::StorageMaterializedView(
     /// If there is an ATTACH request, then the internal table must already be connected.
     if (!attach_)
     {
-        /// We will create a query to create an internal repository.
+        /// We will create a query to create an internal table.
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = database_name;
         manual_create_query->table = inner_table_name;
@@ -64,7 +66,7 @@ StorageMaterializedView::StorageMaterializedView(
         /// If you do not specify a storage type in the query, try retrieving it from SELECT query.
         if (!create.inner_storage)
         {
-            /// TODO also try to extract `params` to create a repository
+            /// TODO also try to extract `params` to create a table
             auto func = std::make_shared<ASTFunction>();
             func->name = context.getTable(select_database_name, select_table_name)->getName();
             manual_create_query->storage = func;
@@ -110,13 +112,13 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
 
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return getInnerTable()->read(column_names, query, context, processed_stage, max_block_size, num_streams);
+    return getInnerTable()->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
@@ -134,7 +136,7 @@ void StorageMaterializedView::drop()
 
     if (context.tryGetTable(database_name, inner_table_name))
     {
-        /// We create and execute `drop` query for internal repository.
+        /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->database = database_name;
         drop_query->table = inner_table_name;
@@ -144,9 +146,9 @@ void StorageMaterializedView::drop()
     }
 }
 
-bool StorageMaterializedView::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageMaterializedView::optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
-    return getInnerTable()->optimize(partition, final, deduplicate, settings);
+    return getInnerTable()->optimize(query, partition, final, deduplicate, settings);
 }
 
 StoragePtr StorageMaterializedView::getInnerTable() const

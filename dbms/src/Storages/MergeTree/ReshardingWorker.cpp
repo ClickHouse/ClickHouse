@@ -22,9 +22,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/typeid_cast.h>
 
 #include <Poco/Event.h>
 #include <Poco/DirectoryIterator.h>
@@ -1476,7 +1477,7 @@ void ReshardingWorker::electLeader()
     /// sequential znode onto ZooKeeper persistent storage. When all the performers
     /// have entered the game, i.e. the election barrier is released, the winner
     /// is the performer having the znode with the lowest ID.
-    /// Then one of the nodes publishes this piece of information as a new znode.
+    /// Then one of the nodes publishes this part of information as a new znode.
     ///
     /// In case of failure this election scheme is guaranteed to always succeed:
     ///

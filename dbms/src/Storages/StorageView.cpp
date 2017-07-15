@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Common/typeid_cast.h>
 
 #include <Storages/StorageView.h>
 
@@ -76,7 +77,7 @@ void StorageView::extractDependentTable(const ASTSelectQuery & query)
 
 BlockInputStreams StorageView::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,

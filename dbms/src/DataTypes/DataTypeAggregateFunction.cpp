@@ -6,6 +6,8 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConstAggregateFunction.h>
 
+#include <Common/typeid_cast.h>
+
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
@@ -190,12 +192,12 @@ void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size
 void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
     String s;
-    readQuotedString(s, istr);
+    readQuotedStringWithSQLStyle(s, istr);
     deserializeFromString(function, column, s);
 }
 
 
-void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
+void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     writeJSONString(serializeToString(function, column, row_num), ostr);
 }

@@ -15,6 +15,8 @@
 
 #include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeUUID.h>
 
 namespace DB
 {
@@ -88,6 +90,18 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
+UInt128 stringToUUID(const String & s)
+{
+    ReadBufferFromString in(s);
+    UUID uuid;
+
+    readText(uuid, in);
+    if (!in.eof())
+        throw Exception("String is too long for UUID: " + s);
+
+    return UInt128(uuid);
+}
+
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 {
@@ -107,11 +121,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
         const bool is_date = typeid_cast<const DataTypeDate *>(&type);
         bool is_datetime = false;
         bool is_enum = false;
+        bool is_uuid = false;
 
         if (!is_date)
             if (!(is_datetime = typeid_cast<const DataTypeDateTime *>(&type)))
-                if (!(is_enum = dynamic_cast<const IDataTypeEnum *>(&type)))
-                    throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
+                if (!(is_uuid = typeid_cast<const DataTypeUUID *>(&type)))
+                    if (!(is_enum = dynamic_cast<const IDataTypeEnum *>(&type)))
+                        throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
 
         /// Numeric values for Enums should not be used directly in IN section
         if (src.getType() == Field::Types::UInt64 && !is_enum)
@@ -128,6 +144,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
             {
                 /// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
                 return stringToDateTime(src.get<const String &>());
+            }
+            else if (is_uuid)
+            {
+                return stringToUUID(src.get<const String &>());
             }
             else if (is_enum)
             {

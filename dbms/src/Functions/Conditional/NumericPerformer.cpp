@@ -11,6 +11,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

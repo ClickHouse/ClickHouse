@@ -58,7 +58,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
@@ -69,7 +69,7 @@ public:
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
     void shutdown() override;
-    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
 

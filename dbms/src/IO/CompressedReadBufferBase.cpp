@@ -9,7 +9,7 @@
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
-#include <Common/unaligned.h>
+#include <common/unaligned.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressedStream.h>
@@ -42,7 +42,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     if (compressed_in->eof())
         return 0;
 
-    uint128 checksum;
+    CityHash_v1_0_2::uint128 checksum;
     compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
 
     own_compressed_buffer.resize(COMPRESSED_BLOCK_HEADER_SIZE);
@@ -80,7 +80,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         compressed_in->readStrict(&compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
     }
 
-    if (!disable_checksum && checksum != CityHash128(&compressed_buffer[0], size_compressed))
+    if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(&compressed_buffer[0], size_compressed))
         throw Exception("Checksum doesn't match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
     return size_compressed + sizeof(checksum);

@@ -108,8 +108,7 @@ void DataTypeNull::serializeText(const IColumn & column, size_t row_num, WriteBu
     writeCString("NULL", ostr);
 }
 
-void DataTypeNull::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-    bool force_quoting_64bit_integers) const
+void DataTypeNull::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     writeCString("null", ostr);
 }

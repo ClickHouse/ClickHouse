@@ -11,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -155,11 +156,11 @@ void DataTypeFixedString::serializeTextQuoted(const IColumn & column, size_t row
 
 void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readQuotedStringInto(data, istr); });
+    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
 }
 
 
-void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
+void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeJSONString(pos, pos + n, ostr);

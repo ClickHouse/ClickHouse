@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
@@ -59,6 +60,7 @@ DataTypeFactory::DataTypeFactory()
         {"Float64",  std::make_shared<DataTypeFloat64>()},
         {"Date",     std::make_shared<DataTypeDate>()},
         {"DateTime", std::make_shared<DataTypeDateTime>()},
+        {"UUID",     std::make_shared<DataTypeUUID>()},
         {"String",   std::make_shared<DataTypeString>()},
         {"Null",     std::make_shared<DataTypeNull>()}
     }
@@ -69,7 +71,7 @@ DataTypeFactory::DataTypeFactory()
 template <typename DataTypeEnum>
 inline DataTypePtr parseEnum(const String & name, const String & base_name, const String & parameters)
 {
-    ParserList parser{std::make_unique<ParserEnumElement>(), std::make_unique<ParserString>(","), false};
+    ParserList parser{std::make_unique<ParserEnumElement>(), std::make_unique<ParserToken>(TokenType::Comma), false};
 
     ASTPtr elements = parseQuery(parser, parameters.data(), parameters.data() + parameters.size(), "parameters for enum type " + name);
 
@@ -86,8 +88,7 @@ inline DataTypePtr parseEnum(const String & name, const String & base_name, cons
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
             throw Exception{
                 "Value " + applyVisitor(FieldVisitorToString{}, e.value) + " for element '" + e.name + "' exceeds range of " + base_name,
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND
-            };
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         values.emplace_back(e.name, value);
     }

@@ -6,7 +6,7 @@
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
 #include <Core/Defines.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
@@ -186,7 +186,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
         hash.update(keys[j].data, keys[j].size);
     }
 
-    hash.get128(key.first, key.second);
+    hash.get128(key.low, key.high);
 
     return key;
 }
@@ -202,7 +202,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
     for (size_t j = 0; j < keys_size; ++j)
         key_columns[j]->updateHashWithValue(i, hash);
 
-    hash.get128(key.first, key.second);
+    hash.get128(key.low, key.high);
 
     return key;
 }

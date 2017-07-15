@@ -175,7 +175,7 @@ public:
     }
 
     size_t byteSize() const override { return sizeof(data) + sizeof(s); }
-    size_t allocatedSize() const override { return byteSize(); }
+    size_t allocatedBytes() const override { return byteSize(); }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
@@ -205,6 +205,11 @@ public:
         res.resize(s);
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
+    }
+
+    void gather(ColumnGathererStream &) override
+    {
+        throw Exception("Cannot gather into constant column " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     DataTypePtr & getDataType() { return data_type; }

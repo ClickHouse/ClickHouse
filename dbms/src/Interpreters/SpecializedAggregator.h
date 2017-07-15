@@ -3,8 +3,8 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <AggregateFunctions/AggregateFunctionAvg.h>
-#include <AggregateFunctions/AggregateFunctionsMinMaxAny.h>
-#include <AggregateFunctions/AggregateFunctionsArgMinMax.h>
+#include <AggregateFunctions/AggregateFunctionMinMaxAny.h>
+#include <AggregateFunctions/AggregateFunctionArgMinMax.h>
 #include <AggregateFunctions/AggregateFunctionUniq.h>
 #include <AggregateFunctions/AggregateFunctionUniqUpTo.h>
 #include <AggregateFunctions/AggregateFunctionGroupArray.h>

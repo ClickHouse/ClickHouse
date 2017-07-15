@@ -33,11 +33,17 @@ add_subdirectory (libfarmhash)
 add_subdirectory (libmetrohash)
 add_subdirectory (libbtrie)
 
+if (USE_INTERNAL_UNWIND_LIBRARY)
+	add_subdirectory (libunwind)
+endif ()
+
 if (USE_INTERNAL_ZLIB_LIBRARY)
 	add_subdirectory (libzlib-ng)
 endif ()
 
-add_subdirectory (libcctz)
+if (USE_INTERNAL_CCTZ_LIBRARY)
+	add_subdirectory (libcctz)
+endif ()
 
 if (ENABLE_LIBTCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
 	add_subdirectory (libtcmalloc)

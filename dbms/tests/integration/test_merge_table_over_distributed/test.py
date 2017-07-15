@@ -41,6 +41,14 @@ def test_global_in(started_cluster):
         == 'node2'
 
 
+def test_filtering(started_cluster):
+
+    assert node1.query("SELECT id, val FROM merge_table WHERE id = 1").rstrip() == '1\tnode1'
+
+    assert node1.query("SELECT id + 1, val FROM merge_table WHERE id = 1").rstrip() == '2\tnode1'
+
+    assert node1.query("SELECT id + 1 FROM merge_table WHERE val = 'node1'").rstrip() == '2'
+
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
         for name, instance in cluster.instances.items():

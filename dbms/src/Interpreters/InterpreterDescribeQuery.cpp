@@ -10,6 +10,7 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Common/typeid_cast.h>
 
 
 

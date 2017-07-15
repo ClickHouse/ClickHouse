@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <Common/typeid_cast.h>
 
 #include <limits>
 
@@ -51,27 +52,23 @@ std::string DataTypeEnum<Type>::generateName(const Values & values)
 template <typename Type>
 void DataTypeEnum<Type>::fillMaps()
 {
-    for (const auto & name_and_value : values )
+    for (const auto & name_and_value : values)
     {
         const auto name_to_value_pair = name_to_value_map.insert(
             { StringRef{name_and_value.first}, name_and_value.second });
         if (!name_to_value_pair.second)
             throw Exception{
                 "Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + name_to_value_pair.first->first.toString() + "' = " + toString(
-                        name_to_value_pair.first->second),
-                ErrorCodes::SYNTAX_ERROR
-            };
+                    + " and '" + name_to_value_pair.first->first.toString() + "' = " + toString(name_to_value_pair.first->second),
+                ErrorCodes::SYNTAX_ERROR};
 
         const auto value_to_name_pair = value_to_name_map.insert(
             { name_and_value.second, StringRef{name_and_value.first} });
         if (!value_to_name_pair.second)
             throw Exception{
                 "Duplicate values in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + value_to_name_pair.first->second.toString() + "' = " + toString(
-                        value_to_name_pair.first->first),
-                ErrorCodes::SYNTAX_ERROR
-            };
+                    + " and '" + value_to_name_pair.first->second.toString() + "' = " + toString(value_to_name_pair.first->first),
+                ErrorCodes::SYNTAX_ERROR};
     }
 }
 
@@ -166,12 +163,12 @@ template <typename Type>
 void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
     std::string name;
-    readQuotedString(name, istr);
+    readQuotedStringWithSQLStyle(name, istr);
     static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
+void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }

@@ -12,6 +12,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/DataTypeTraits.h>

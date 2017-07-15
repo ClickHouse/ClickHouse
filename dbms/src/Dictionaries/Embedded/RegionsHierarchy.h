@@ -3,7 +3,7 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <common/Types.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 
 #define REGION_TYPE_CITY       6
@@ -144,9 +144,9 @@ public:
 };
 
 
-class RegionsHierarchySingleton : public Singleton<RegionsHierarchySingleton>, public RegionsHierarchy
+class RegionsHierarchySingleton : public ext::singleton<RegionsHierarchySingleton>, public RegionsHierarchy
 {
-friend class Singleton<RegionsHierarchySingleton>;
+friend class ext::singleton<RegionsHierarchySingleton>;
 protected:
     RegionsHierarchySingleton()
     {

@@ -93,7 +93,7 @@ int main(int argc, char ** argv)
             {"WithHash", std::make_shared<DataTypeUInt8>()},
         };
 
-        Context context;
+        Context context = Context::createGlobal();
 
         std::string input = "SELECT UniqID, URL, CounterID, IsLink WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
         ParserSelectQuery parser;
@@ -128,7 +128,7 @@ int main(int argc, char ** argv)
 
         QueryProcessingStage::Enum stage;
 
-        BlockInputStreamPtr in = table->read(column_names, 0, context, stage, 8192, 1)[0];
+        BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
         in = std::make_shared<FilterBlockInputStream>(in, expression, 4);
         //in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 

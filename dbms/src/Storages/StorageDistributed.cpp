@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/ReshardingWorker.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -188,7 +189,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 
 BlockInputStreams StorageDistributed::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -205,7 +206,7 @@ BlockInputStreams StorageDistributed::read(
         : QueryProcessingStage::WithMergeableState;
 
     const auto & modified_query_ast = rewriteSelectQuery(
-        query, remote_database, remote_table);
+        query_info.query, remote_database, remote_table);
 
     Tables external_tables;
 
@@ -217,13 +218,12 @@ BlockInputStreams StorageDistributed::read(
 
     /** The functionality of shard_multiplexing is not completed - turn it off.
       * (Because connecting to different shards within a single thread is not done in parallel.)
-      * For more information, see https: //███████████.yandex-team.ru/METR-18300
       */
     //bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
     bool enable_shard_multiplexing = false;
 
     ClusterProxy::SelectQueryConstructor select_query_constructor(
-            processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
+        processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
 
     return ClusterProxy::Query{select_query_constructor, cluster, modified_query_ast,
         context, settings, enable_shard_multiplexing}.execute();
@@ -279,7 +279,7 @@ void StorageDistributed::shutdown()
 
 void StorageDistributed::reshardPartitions(
     const ASTPtr & query, const String & database_name,
-    const Field & first_partition, const Field & last_partition,
+    const Field & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
     Context & context)
@@ -331,10 +331,8 @@ void StorageDistributed::reshardPartitions(
         ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
 
         parameters.type = ASTAlterQuery::RESHARD_PARTITION;
-        if (!first_partition.isNull())
-            parameters.partition = std::make_shared<ASTLiteral>(StringRange(), first_partition);
-        if (!last_partition.isNull())
-            parameters.last_partition = std::make_shared<ASTLiteral>(StringRange(), last_partition);
+        if (!partition.isNull())
+            parameters.partition = std::make_shared<ASTLiteral>(StringRange(), partition);
 
         ASTPtr expr_list = std::make_shared<ASTExpressionList>();
         for (const auto & entry : weighted_zookeeper_paths)
@@ -355,7 +353,6 @@ void StorageDistributed::reshardPartitions(
 
         /** The functionality of shard_multiplexing is not completed - turn it off.
         * (Because connecting to different shards within a single thread is not done in parallel.)
-        * For more information, see https: //███████████.yandex-team.ru/METR-18300
         */
         bool enable_shard_multiplexing = false;
 
@@ -434,7 +431,6 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
     /** The functionality of shard_multiplexing is not completed - turn it off.
       * (Because connecting connections to different shards within a single thread is not done in parallel.)
-      * For more information, see https://███████████.yandex-team.ru/METR-18300
       */
     bool enable_shard_multiplexing = false;
 

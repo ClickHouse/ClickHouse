@@ -15,7 +15,7 @@ class ParserCase final : public IParserBase
 {
 protected:
     const char * getName() const override { return "case"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 }

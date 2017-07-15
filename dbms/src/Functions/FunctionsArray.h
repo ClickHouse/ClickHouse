@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeTraits.h>
 #include <Functions/ObjectPool.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 
 #include <ext/range.h>
 

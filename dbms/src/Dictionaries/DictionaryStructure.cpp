@@ -1,5 +1,6 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/StringUtils.h>
+#include <Columns/IColumn.h>
 
 #include <unordered_set>
 

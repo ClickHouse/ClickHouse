@@ -197,12 +197,13 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         activateReplica();
         updateQuorumIfWeHavePart();
 
-        storage.leader_election = std::make_shared<zkutil::LeaderElection>(
-            storage.zookeeper_path + "/leader_election",
-            *storage.current_zookeeper,     /// current_zookeeper lives for the lifetime of leader_election,
-                                            ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
-            [this] { storage.becomeLeader(); CurrentMetrics::add(CurrentMetrics::LeaderReplica); },
-            storage.replica_name);
+        if (storage.data.settings.replicated_can_become_leader)
+            storage.leader_election = std::make_shared<zkutil::LeaderElection>(
+                storage.zookeeper_path + "/leader_election",
+                *storage.current_zookeeper,     /// current_zookeeper lives for the lifetime of leader_election,
+                                                ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
+                [this] { storage.becomeLeader(); CurrentMetrics::add(CurrentMetrics::LeaderReplica); },
+                storage.replica_name);
 
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
@@ -211,9 +212,9 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.shutdown_event.reset();
 
         storage.queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, &storage);
+        storage.part_check_thread.start();
         storage.alter_thread = std::make_unique<ReplicatedMergeTreeAlterThread>(storage);
         storage.cleanup_thread = std::make_unique<ReplicatedMergeTreeCleanupThread>(storage);
-        storage.part_check_thread.start();
 
         if (!storage.queue_task_handle)
             storage.queue_task_handle = storage.context.getBackgroundPool().addTask(

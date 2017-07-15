@@ -12,6 +12,7 @@
 #include <IO/WriteIntText.h>
 #include <Common/formatIPv6.h>
 #include <iostream>
+#include <btrie.h>
 
 
 namespace DB
@@ -50,7 +51,6 @@ TrieDictionary::TrieDictionary(
 TrieDictionary::TrieDictionary(const TrieDictionary & other)
     : TrieDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
 {
-    trie = btrie_create();
 }
 
 TrieDictionary::~TrieDictionary()

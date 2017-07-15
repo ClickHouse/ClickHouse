@@ -111,7 +111,7 @@ private:
 
 BlockInputStreams StorageTrivialBuffer::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
@@ -130,8 +130,8 @@ BlockInputStreams StorageTrivialBuffer::read(
             throw Exception("Destination table is myself. Read will cause infinite loop.",
                 ErrorCodes::INFINITE_LOOP);
 
-        streams = destination->read(column_names, query, context,
-                                    processed_stage, max_block_size, num_streams);
+        streams = destination->read(column_names, query_info, context,
+            processed_stage, max_block_size, num_streams);
     }
 
     BlockInputStreams streams_from_buffers;
@@ -156,11 +156,12 @@ BlockInputStreams StorageTrivialBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query, context, processed_stage, 0, stream).execute().in;
+            stream = InterpreterSelectQuery(query_info.query, context, processed_stage, 0, stream).execute().in;
 
     streams.insert(streams.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams;
 }
+
 
 template <typename DeduplicationController>
 void StorageTrivialBuffer::addBlock(const Block & block, DeduplicationController & deduplication_controller)
@@ -185,6 +186,7 @@ void StorageTrivialBuffer::addBlock(const Block & block, DeduplicationController
         deduplication_controller.updateOnDeduplication(block_hash);
     }
 }
+
 
 void StorageTrivialBuffer::flush(bool check_thresholds, bool is_called_from_background)
 {
@@ -273,6 +275,7 @@ void StorageTrivialBuffer::flush(bool check_thresholds, bool is_called_from_back
 
 }
 
+
 class TrivialBufferBlockOutputStream : public IBlockOutputStream
 {
 public:
@@ -334,10 +337,12 @@ private:
     StorageTrivialBuffer & buffer;
 };
 
+
 BlockOutputStreamPtr StorageTrivialBuffer::write(const ASTPtr & query, const Settings & settings)
 {
     return std::make_shared<TrivialBufferBlockOutputStream>(*this);
 }
+
 
 void StorageTrivialBuffer::startup()
 {
@@ -363,6 +368,7 @@ void StorageTrivialBuffer::shutdown()
 
 }
 
+
 /** NOTE If you do OPTIMIZE after insertion,
   * it does not guarantee that all data will be in destination table at the time of
   * next SELECT just after OPTIMIZE.
@@ -374,7 +380,7 @@ void StorageTrivialBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageTrivialBuffer::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageTrivialBuffer::optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
     if (!partition.empty())
         throw Exception("Partition cannot be specified when optimizing table of type TrivialBuffer",
@@ -393,7 +399,6 @@ bool StorageTrivialBuffer::optimize(const String & partition, bool final, bool d
 }
 
 
-
 bool StorageTrivialBuffer::checkThresholds(
     const time_t current_time, const size_t additional_rows, const size_t additional_bytes) const
 {
@@ -407,6 +412,7 @@ bool StorageTrivialBuffer::checkThresholds(
     return checkThresholdsImpl(rows, bytes, time_passed);
 
 }
+
 
 bool StorageTrivialBuffer::checkThresholdsImpl(const size_t rows, const size_t bytes,
     const time_t time_passed) const
@@ -438,6 +444,7 @@ bool StorageTrivialBuffer::checkThresholdsImpl(const size_t rows, const size_t b
     return false;
 }
 
+
 void StorageTrivialBuffer::flushThread()
 {
     setThreadName("BufferFlush");
@@ -455,6 +462,7 @@ void StorageTrivialBuffer::flushThread()
     }
     while (!shutdown_event.tryWait(1000));
 }
+
 
 void StorageTrivialBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
 {
@@ -517,6 +525,7 @@ void StorageTrivialBuffer::writeBlockToDestination(const Block & block, StorageP
     block_io.out->write(block);
     block_io.out->writeSuffix();
 }
+
 
 void StorageTrivialBuffer::alter(
     const AlterCommands & params, const String & database_name,

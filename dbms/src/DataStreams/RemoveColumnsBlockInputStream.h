@@ -9,14 +9,14 @@ namespace DB
 {
 
 /** Removes the specified columns from the block.
-  */
+    */
 class RemoveColumnsBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     RemoveColumnsBlockInputStream(
         BlockInputStreamPtr input_,
         const Names & columns_to_remove_)
-        : columns_to_remove(columns_to_remove_)
+    : columns_to_remove(columns_to_remove_)
     {
         children.push_back(input_);
     }

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <ext/range.h>
 
 #include <unicode/ucnv.h>

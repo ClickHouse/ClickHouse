@@ -11,6 +11,7 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/CacheDictionary.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>

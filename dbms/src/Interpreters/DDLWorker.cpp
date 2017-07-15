@@ -28,8 +28,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 
-#include <zkutil/ZooKeeper.h>
-#include <zkutil/Lock.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/Lock.h>
 #include <Poco/Timestamp.h>
 
 #include <experimental/optional>
@@ -263,9 +263,9 @@ void DDLWorker::processTask(const DDLLogEntry & node, const std::string & node_n
         {
             ASTPtr query_ast;
             {
-                ParserQuery parser_query;
+                const char * begin = &node.query.front();
+                ParserQuery parser_query(begin + node.query.size());
                 String description;
-                IParser::Pos begin = &node.query.front();
                 query_ast = parseQuery(parser_query, begin, begin + node.query.size(), description);
             }
 

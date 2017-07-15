@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

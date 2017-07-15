@@ -5,7 +5,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Common/MemoryTracker.h>
 
 

@@ -1,30 +1,29 @@
 #include <Parsers/ParserEnumElement.h>
-
 #include <Parsers/ASTEnumElement.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 
 namespace DB
 {
-bool ParserEnumElement::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr & node, IParser::Pos & max_parsed_pos, Expected & expected)
+
+bool ParserEnumElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserString equality_sign_parser("=");
-    ParserWhitespace ws;
+    ParserStringLiteral name_parser;
+    ParserNumber value_parser;
+    ParserToken equality_sign_parser(TokenType::Equals);
+
     const auto begin = pos;
 
     ASTPtr name;
-    if (!name_parser.parse(pos, end, name, max_parsed_pos, expected))
+    if (!name_parser.parse(pos, name, expected))
         return false;
 
-    ws.ignore(pos, end, max_parsed_pos, expected);
-
-    if (!equality_sign_parser.ignore(pos, end, max_parsed_pos, expected))
+    if (!equality_sign_parser.ignore(pos, expected))
         return false;
-
-    ws.ignore(pos, end, max_parsed_pos, expected);
 
     ASTPtr value;
-    if (!value_parser.parse(pos, end, value, max_parsed_pos, expected))
+    if (!value_parser.parse(pos, value, expected))
         return false;
 
     node = std::make_shared<ASTEnumElement>(
@@ -32,4 +31,5 @@ bool ParserEnumElement::parseImpl(IParser::Pos & pos, IParser::Pos end, ASTPtr &
 
     return true;
 }
+
 }

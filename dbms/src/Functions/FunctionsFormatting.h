@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

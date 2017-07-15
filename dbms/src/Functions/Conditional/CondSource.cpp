@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 
 
