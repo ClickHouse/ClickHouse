@@ -112,7 +112,11 @@ private:
         }
     };
 
-    using PartitionCommands = std::vector<PartitionCommand>;
+    class PartitionCommands : public std::vector<PartitionCommand>
+    {
+    public:
+        void validate(const IStorage * table);
+    };
 
     ASTPtr query_ptr;
 

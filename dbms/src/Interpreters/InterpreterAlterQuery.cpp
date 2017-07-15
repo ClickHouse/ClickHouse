@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -53,6 +54,7 @@ BlockIO InterpreterAlterQuery::execute()
     PartitionCommands partition_commands;
     parseAlter(alter.parameters, alter_commands, partition_commands);
 
+    partition_commands.validate(table.get());
     for (const PartitionCommand & command : partition_commands)
     {
         switch (command.type)
@@ -89,7 +91,6 @@ BlockIO InterpreterAlterQuery::execute()
         return {};
 
     alter_commands.validate(table.get(), context);
-
     table->alter(alter_commands, database_name, table_name, context);
 
     return {};
@@ -229,5 +230,24 @@ void InterpreterAlterQuery::parseAlter(
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
     }
 }
+
+
+void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
+{
+    for (const PartitionCommand & command : *this)
+    {
+        if (command.type == PartitionCommand::CLEAR_COLUMN)
+        {
+            String column_name = command.column_name.safeGet<String>();
+
+            if (!table->hasRealColumn(column_name))
+            {
+                throw Exception("Wrong column name. Cannot find column " + column_name + " to clear it from partition",
+                    DB::ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+    }
+}
+
 
 }

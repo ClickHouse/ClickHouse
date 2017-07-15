@@ -1,10 +1,10 @@
 #pragma once
 
 #include <memory>
-
-#include <Common/PODArray.h>
+#include <boost/noncopyable.hpp>
 
 #include <Core/Field.h>
+#include <Common/PODArray.h>
 #include <Common/Exception.h>
 #include <common/StringRef.h>
 
