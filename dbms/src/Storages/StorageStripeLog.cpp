@@ -4,9 +4,6 @@
 #include <map>
 #include <experimental/optional>
 
-#include <Poco/Path.h>
-#include <Poco/Util/XMLConfiguration.h>
-
 #include <Common/escapeForFileName.h>
 
 #include <Common/Exception.h>
@@ -17,9 +14,6 @@
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -32,7 +26,6 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageStripeLog.h>
-#include <Poco/DirectoryIterator.h>
 
 
 namespace DB

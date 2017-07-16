@@ -202,12 +202,12 @@ public:
 
         if (arguments[0]->getName() != TypeName<T>::get())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
-                + " (must be " + TypeName<T>::get() + ")",
+                + " (must be " + String(TypeName<T>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
             throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
-                + " (must be " + TypeName<String>::get() + ")",
+                + " (must be " + String(TypeName<T>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return arguments[0];
@@ -295,17 +295,17 @@ public:
 
         if (arguments[0]->getName() != TypeName<T>::get())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + " (must be " + TypeName<T>::get() + ")",
+                + " (must be " + String(TypeName<T>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments[1]->getName() != TypeName<T>::get())
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + " (must be " + TypeName<T>::get() + ")",
+                + " (must be " + String(TypeName<T>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 3 && arguments[2]->getName() != TypeName<String>::get())
             throw Exception("Illegal type " + arguments[2]->getName() + " of the third ('point of view') argument of function " + getName()
-                + " (must be " + TypeName<String>::get() + ")",
+                + " (must be " + String(TypeName<String>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt8>();
@@ -428,12 +428,12 @@ public:
 
         if (arguments[0]->getName() != TypeName<T>::get())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
-            + " (must be " + TypeName<T>::get() + ")",
+            + " (must be " + String(TypeName<T>::get()) + ")",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
             throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
-                + " (must be " + TypeName<String>::get() + ")",
+                + " (must be " + String(TypeName<String>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeArray>(arguments[0]);
@@ -714,12 +714,12 @@ public:
 
         if (arguments[0]->getName() != TypeName<UInt32>::get())
             throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName()
-                + " (must be " + TypeName<UInt32>::get() + ")",
+                + " (must be " + String(TypeName<UInt32>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
             throw Exception("Illegal type " + arguments[0]->getName() + " of the second argument of function " + getName()
-                + " (must be " + TypeName<String>::get() + ")",
+                + " (must be " + String(TypeName<String>::get()) + ")",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();

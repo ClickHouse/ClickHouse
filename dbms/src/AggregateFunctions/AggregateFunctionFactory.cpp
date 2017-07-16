@@ -41,11 +41,6 @@ AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & 
 AggregateFunctionPtr createAggregateFunctionCountNotNull(const DataTypes & argument_types);
 
 
-AggregateFunctionFactory::AggregateFunctionFactory()
-{
-}
-
-
 void AggregateFunctionFactory::registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)

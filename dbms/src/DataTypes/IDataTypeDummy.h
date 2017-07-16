@@ -19,6 +19,11 @@ private:
         return true;
     }
 
+    bool canBeInsideNullable() const override
+    {
+        return false;
+    }
+
     void throwNoSerialization() const
     {
         throw Exception("Serialization is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);

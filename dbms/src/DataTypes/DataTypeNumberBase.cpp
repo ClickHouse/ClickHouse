@@ -259,4 +259,5 @@ template class DataTypeNumberBase<Int32>;
 template class DataTypeNumberBase<Int64>;
 template class DataTypeNumberBase<Float32>;
 template class DataTypeNumberBase<Float64>;
+
 }
