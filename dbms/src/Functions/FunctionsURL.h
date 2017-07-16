@@ -2,7 +2,6 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
 #include <Common/StringUtils.h>
 #include <Common/StringView.h>
 #include <Common/typeid_cast.h>

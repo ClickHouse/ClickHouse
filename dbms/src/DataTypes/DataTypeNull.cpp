@@ -1,5 +1,3 @@
-#include <Columns/ColumnConst.h>
-
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -7,6 +5,9 @@
 
 #include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypeFactory.h>
+
+#include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
 
 
 namespace DB
