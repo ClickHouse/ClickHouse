@@ -109,6 +109,7 @@ void registerDataTypeNullable(DataTypeFactory & factory);
 void registerDataTypeNull(DataTypeFactory & factory);
 void registerDataTypeUUID(DataTypeFactory & factory);
 void registerDataTypeAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeNested(DataTypeFactory & factory);
 
 
 DataTypeFactory::DataTypeFactory()
@@ -125,6 +126,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNull(*this);
     registerDataTypeUUID(*this);
     registerDataTypeAggregateFunction(*this);
+    registerDataTypeNested(*this);
 }
 
 }
