@@ -80,7 +80,7 @@ void DataTypeDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const
 
 void registerDataTypeDate(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("Date", [] { return DataTypePtr(std::make_shared<DataTypeDate>()); });
+    factory.registerSimpleDataType("Date", [] { return DataTypePtr(std::make_shared<DataTypeDate>()); }, DataTypeFactory::CaseInsensitive);
 }
 
 }

@@ -305,7 +305,22 @@ ColumnPtr DataTypeString::createConstColumn(size_t size, const Field & field) co
 
 void registerDataTypeString(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("String", [] { return DataTypePtr(std::make_shared<DataTypeString>()); });
+    auto creator = static_cast<DataTypePtr(*)()>([] { return DataTypePtr(std::make_shared<DataTypeString>()); });
+
+    factory.registerSimpleDataType("String", creator);
+
+    /// These synonims are added for compatibility.
+
+    factory.registerSimpleDataType("CHAR", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("VARCHAR", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("TEXT", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("TINYTEXT", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("MEDIUMTEXT", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("LONGTEXT", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("BLOB", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("TINYBLOB", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("MEDIUMBLOB", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("LONGBLOB", creator, DataTypeFactory::CaseInsensitive);
 }
 
 }
