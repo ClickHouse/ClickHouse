@@ -191,7 +191,7 @@ void ExpressionAnalyzer::init()
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries();
 
-    /// Optimize if with constant condition after constats are substituted instead of sclalar subqueries
+    /// Optimize if with constant condition after constants was substituted instead of sclalar subqueries.
     optimizeIfWithConstantCondition();
 
     /// GROUP BY injective function elimination.
