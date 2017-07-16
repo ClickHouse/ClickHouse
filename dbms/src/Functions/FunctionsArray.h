@@ -1303,7 +1303,7 @@ private:
 };
 
 template <typename DataType>
-const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name + DataTypeToName<DataType>::get();
+const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name + String(DataTypeToName<DataType>::get());
 
 class FunctionRange : public IFunction
 {

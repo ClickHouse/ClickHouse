@@ -3,6 +3,8 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Parsers/IAST.h>
 
 #include <ext/map.h>
 #include <ext/enumerate.h>
@@ -11,6 +13,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int EMPTY_DATA_PASSED;
+}
+
 
 std::string DataTypeTuple::getName() const
 {
@@ -251,6 +259,27 @@ ColumnPtr DataTypeTuple::createConstColumn(size_t size, const Field & field) con
 Field DataTypeTuple::getDefault() const
 {
     return Tuple(ext::map<TupleBackend>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
+}
+
+
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (arguments->children.empty())
+        throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
+
+    DataTypes nested_types;
+    nested_types.reserve(arguments->children.size());
+
+    for (const ASTPtr & child : arguments->children)
+        nested_types.emplace_back(DataTypeFactory::instance().get(child));
+
+    return std::make_shared<DataTypeTuple>(nested_types);
+}
+
+
+void registerDataTypeTuple(DataTypeFactory & factory)
+{
+    factory.registerDataType("Tuple", create);
 }
 
 }

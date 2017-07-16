@@ -36,6 +36,8 @@ public:
 
     std::string getName() const override;
 
+    const char * getFamilyName() const override { return "AggregateFunction"; }
+
     DataTypePtr getReturnType() const { return function->getReturnType(); };
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 

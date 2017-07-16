@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -299,6 +300,12 @@ ColumnPtr DataTypeString::createColumn() const
 ColumnPtr DataTypeString::createConstColumn(size_t size, const Field & field) const
 {
     return std::make_shared<ColumnConstString>(size, get<const String &>(field));
+}
+
+
+void registerDataTypeString(DataTypeFactory & factory)
+{
+    factory.registerSimpleDataType("String", [] { return DataTypePtr(std::make_shared<DataTypeString>()); });
 }
 
 }

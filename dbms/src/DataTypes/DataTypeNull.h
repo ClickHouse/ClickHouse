@@ -21,6 +21,11 @@ public:
         return "Null";
     }
 
+    const char * getFamilyName() const override
+    {
+        return "Null";
+    }
+
     bool isNull() const override
     {
         return true;
@@ -29,6 +34,11 @@ public:
     bool notForTables() const override
     {
         return true;
+    }
+
+    bool canBeInsideNullable() const override
+    {
+        return false;
     }
 
     DataTypePtr clone() const override

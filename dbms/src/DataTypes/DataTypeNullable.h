@@ -13,11 +13,13 @@ class DataTypeNullable final : public IDataType
 public:
     DataTypeNullable(DataTypePtr nested_data_type_);
     std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
+    const char * getFamilyName() const override { return "Nullable"; }
     bool isNullable() const override { return true; }
 
     bool isNumeric() const override { return nested_data_type->isNumeric(); }    /// TODO Absolutely wrong.
     bool isNumericNotNullable() const override { return false; }
     bool behavesAsNumber() const override { return nested_data_type->behavesAsNumber(); }    /// TODO Absolutely wrong.
+    bool canBeInsideNullable() const override { return false; }
 
     DataTypePtr clone() const override { return std::make_shared<DataTypeNullable>(nested_data_type->clone()); }
 

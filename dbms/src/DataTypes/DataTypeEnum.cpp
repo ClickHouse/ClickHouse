@@ -1,8 +1,13 @@
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 
 #include <limits>
+
 
 namespace DB
 {
@@ -11,12 +16,21 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int EMPTY_DATA_PASSED;
+    extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
 template <typename FieldType> struct EnumName;
 template <> struct EnumName<Int8> { static constexpr auto value = "Enum8"; };
 template <> struct EnumName<Int16> { static constexpr auto value = "Enum16"; };
+
+
+template <typename Type>
+const char * DataTypeEnum<Type>::getFamilyName() const
+{
+    return EnumName<FieldType>::value;
+}
 
 
 template <typename Type>
@@ -78,12 +92,12 @@ DataTypeEnum<Type>::DataTypeEnum(const Values & values_) : values{values_}
     if (values.empty())
         throw Exception{
             "DataTypeEnum enumeration cannot be empty",
-            ErrorCodes::EMPTY_DATA_PASSED
-        };
+            ErrorCodes::EMPTY_DATA_PASSED};
 
     fillMaps();
 
-    std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right) {
+    std::sort(std::begin(values), std::end(values), [] (auto & left, auto & right)
+    {
         return left.second < right.second;
     });
 
@@ -285,5 +299,60 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 /// Explicit instantiations.
 template class DataTypeEnum<Int8>;
 template class DataTypeEnum<Int16>;
+
+
+template <typename DataTypeEnum>
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (arguments->children.empty())
+        throw Exception("Enum data type cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
+
+    typename DataTypeEnum::Values values;
+    values.reserve(arguments->children.size());
+
+    using FieldType = typename DataTypeEnum::FieldType;
+
+    /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
+    for (const ASTPtr & child : arguments->children)
+    {
+        const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
+        if (!func
+            || func->name != "equals"
+            || func->parameters
+            || !func->arguments
+            || func->arguments->children.size() != 2)
+            throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
+                ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+        const ASTLiteral * name_literal = typeid_cast<const ASTLiteral *>(func->arguments->children[0].get());
+        const ASTLiteral * value_literal = typeid_cast<const ASTLiteral *>(func->arguments->children[1].get());
+
+        if (!name_literal
+            || !value_literal
+            || name_literal->value.getType() != Field::Types::String
+            || (value_literal->value.getType() != Field::Types::UInt64 && value_literal->value.getType() != Field::Types::Int64))
+            throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
+                ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+        const String & name = name_literal->value.get<String>();
+        const auto value = value_literal->value.get<typename NearestFieldType<FieldType>::Type>();
+
+        if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
+            throw Exception{
+                "Value " + toString(value) + " for element '" + name + "' exceeds range of " + EnumName<FieldType>::value,
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+
+        values.emplace_back(name, value);
+    }
+
+    return std::make_shared<DataTypeEnum>(values);
+}
+
+
+void registerDataTypeEnum(DataTypeFactory & factory)
+{
+    factory.registerDataType("Enum8", create<DataTypeEnum<Int8>>);
+    factory.registerDataType("Enum16", create<DataTypeEnum<Int16>>);
+}
 
 }

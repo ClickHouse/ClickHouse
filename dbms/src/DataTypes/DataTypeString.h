@@ -18,6 +18,11 @@ public:
         return "String";
     }
 
+    const char * getFamilyName() const override
+    {
+        return "String";
+    }
+
     DataTypePtr clone() const override
     {
         return std::make_shared<DataTypeString>();
