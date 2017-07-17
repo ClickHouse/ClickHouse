@@ -976,7 +976,7 @@ private:
                 col_res->getData(), null_map_data);
         else if (item_arg.isConst())
             ArrayIndexGenericImpl<IndexConv, true>::vector(col_nested, col_array->getOffsets(),
-                *static_cast<const ColumnConst &>(item_arg).getDataColumn(), col_res->getData(),    /// TODO This is wrong.
+                static_cast<const ColumnConst &>(item_arg).getDataColumn(), col_res->getData(),    /// TODO This is wrong.
                 null_map_data, nullptr);
         else
         {

@@ -592,14 +592,14 @@ private:
 
             return true;
         }
-        else if (const ColumnConst<T1> * col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
+        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
             block.safeGetByPosition(result).column = col_res;
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
-            vec_res.resize(col_left->getData().size());
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right->getData(), vec_res);
+            vec_res.resize(col_left->template getValue<T>().size());
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
 
             return true;
         }
@@ -621,10 +621,10 @@ private:
 
             return true;
         }
-        else if (const ColumnConst<T1> * col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
+        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             UInt8 res = 0;
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->getData(), col_right->getData(), res);
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->getData(), col_right->template getValue<T1>(), res);
 
             auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), res);
             block.safeGetByPosition(result).column = col_res;
@@ -657,7 +657,7 @@ private:
                     + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (const ColumnConst<T0> * col_left = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
+        else if (auto col_left = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
             if (    executeNumConstRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
                 ||    executeNumConstRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
@@ -877,13 +877,13 @@ private:
 
         if (x_const)
         {
-            x_tuple_of_consts = x_const->convertToTupleOfConstants();
+            x_tuple_of_consts = convertConstTupleToTupleOfConstants(*x_const);
             x = static_cast<const ColumnTuple *>(x_tuple_of_consts.get());
         }
 
         if (y_const)
         {
-            y_tuple_of_consts = y_const->convertToTupleOfConstants();
+            y_tuple_of_consts = convertConstTupleToTupleOfConstants(*y_const);
             y = static_cast<const ColumnTuple *>(y_tuple_of_consts.get());
         }
 

@@ -710,9 +710,10 @@ public:
 
             block.safeGetByPosition(result).column = res_holder;
         }
-        else if (const ColumnConstUInt32 * const_times = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto const_times = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
+            block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(
+                block.rows(), const_times->getValue<UInt32>() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -829,11 +830,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const ColumnUInt32 * starts = typeid_cast<const ColumnUInt32 *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConstUInt32 * const_starts = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get());
+        auto starts = checkAndGetColumn<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get());
+        auto const_starts = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get());
 
-        const ColumnUInt32 * durations = typeid_cast<const ColumnUInt32 *>(block.safeGetByPosition(arguments[1]).column.get());
-        const ColumnConstUInt32 * const_durations = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[1]).column.get());
+        auto durations = checkAndGetColumn<ColumnUInt32>(block.safeGetByPosition(arguments[1]).column.get());
+        auto const_durations = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[1]).column.get());
 
         auto res = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt32>());
         ColumnPtr res_holder = res;
@@ -846,18 +847,18 @@ public:
         }
         else if (starts && const_durations)
         {
-            TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getData(), res_values, res->getOffsets());
+            TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getValue<UInt32>(), res_values, res->getOffsets());
             block.safeGetByPosition(result).column = res_holder;
         }
         else if (const_starts && durations)
         {
-            TimeSlotsImpl<UInt32>::constant_vector(const_starts->getData(), durations->getData(), res_values, res->getOffsets());
+            TimeSlotsImpl<UInt32>::constant_vector(const_starts->getValue<UInt32>(), durations->getData(), res_values, res->getOffsets());
             block.safeGetByPosition(result).column = res_holder;
         }
         else if (const_starts && const_durations)
         {
             Array const_res;
-            TimeSlotsImpl<UInt32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
+            TimeSlotsImpl<UInt32>::constant_constant(const_starts->getValue<UInt32>(), const_durations->getValue<UInt32>(), const_res);
             block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), const_res);
         }
         else

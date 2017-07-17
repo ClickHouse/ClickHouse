@@ -248,10 +248,10 @@ public:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from[i], dict);
         }
-        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeNumber<T>().createConstColumn(
-                col_from->size(), Transform::apply(col_from->getData(), dict));
+                col_from->size(), Transform::apply(col_from->template getValue<T>(), dict));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -486,11 +486,11 @@ public:
                 res_offsets[i] = res_values.size();
             }
         }
-        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             Array res;
 
-            T cur = col_from->getData();
+            T cur = col_from->template getValue<T>();
             while (cur)
             {
                 res.push_back(static_cast<typename NearestFieldType<T>::Type>(cur));
@@ -754,9 +754,9 @@ public:
                 col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
             }
         }
-        else if (const ColumnConst<UInt32> * col_from = checkAndGetColumnConst<ColumnVector<UInt32>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<UInt32>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            UInt32 region_id = col_from->getData();
+            UInt32 region_id = col_from->getValue<UInt32>();
             const StringRef & name_ref = dict.getRegionName(region_id, language);
 
             block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), name_ref.toString());

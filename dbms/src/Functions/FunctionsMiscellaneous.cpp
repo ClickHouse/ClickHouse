@@ -656,7 +656,7 @@ public:
 
         /// First argument may be tuple or single column.
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConstTuple * const_tuple = checkAndGetColumnConst<ColumnTuple>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(block.safeGetByPosition(arguments[0]).column.get());
 
         if (tuple)
             block_of_key_columns = tuple->getData();
@@ -698,9 +698,9 @@ void FunctionTuple::executeImpl(Block & block, const ColumnNumbers & arguments, 
 
     if (num_constants == arguments.size())
     {
-        /** Return ColumnConstTuple rather than ColumnTuple of nested const columns.
-              * (otherwise, ColumnTuple will not be understanded as constant in many places in code).
-              */
+        /** Return ColumnConst rather than ColumnTuple of nested const columns.
+          * (otherwise, ColumnTuple will not be understanded as constant in many places in code).
+          */
 
         TupleBackend tuple(arguments.size());
         for (size_t i = 0, size = arguments.size(); i < size; ++i)
@@ -750,11 +750,11 @@ public:
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites) override
     {
-        const ColumnConstUInt8 * index_col = checkAndGetColumnConst<ColumnUInt8>(&*arguments[1].column);
+        auto index_col = checkAndGetColumnConst<ColumnUInt8>(&*arguments[1].column);
         if (!index_col)
             throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        size_t index = index_col->getData();
+        size_t index = index_col->getValue<UInt8>();
 
         const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(&*arguments[0].type);
         if (!tuple)
@@ -775,9 +775,8 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConstTuple * const_tuple_col
-            = checkAndGetColumnConst<ColumnTuple>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConstUInt8 * index_col = checkAndGetColumnConst<ColumnUInt8>(block.safeGetByPosition(arguments[1]).column.get());
+        auto const_tuple_col = checkAndGetColumnConst<ColumnTuple>(block.safeGetByPosition(arguments[0]).column.get());
+        auto index_col = checkAndGetColumnConst<ColumnUInt8>(block.safeGetByPosition(arguments[1]).column.get());
 
         if (!tuple_col && !const_tuple_col)
             throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
@@ -785,7 +784,7 @@ public:
         if (!index_col)
             throw Exception("Second argument for function " + getName() + " must be UInt8 constant literal.", ErrorCodes::ILLEGAL_COLUMN);
 
-        size_t index = index_col->getData();
+        size_t index = index_col->getValue<UInt8>();
         if (index == 0)
             throw Exception("Indices in tuples is 1-based.", ErrorCodes::ILLEGAL_INDEX);
 
@@ -800,10 +799,9 @@ public:
         }
         else
         {
-            const TupleBackend & data = const_tuple_col->getData();
+            TupleBackend data = const_tuple_col->getValue<TupleBackend>();
             block.safeGetByPosition(result).column = static_cast<const DataTypeTuple &>(*block.safeGetByPosition(arguments[0]).type)
-                                                         .getElements()[index - 1]
-                                                         ->createConstColumn(block.rows(), data[index - 1]);
+                .getElements()[index - 1]->createConstColumn(block.rows(), data[index - 1]);
         }
     }
 };
@@ -1185,9 +1183,9 @@ private:
     template <typename T>
     static bool executeConstNumber(const IColumn & src, ColumnConst & dst, Int64 min, Int64 max, Float64 max_width)
     {
-        if (const ColumnConst<T> * col = checkAndGetColumnConst<ColumnVector<T>>(&src))
+        if (auto col = checkAndGetColumnConst<ColumnVector<T>>(&src))
         {
-            fill(col->getData(), dst.getValue<String>(), min, max, max_width);
+            fill(col->template getValue<T>(), dst.getValue<String>(), min, max, max_width);
             return true;
         }
         else

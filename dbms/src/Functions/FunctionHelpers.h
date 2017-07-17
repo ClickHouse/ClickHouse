@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 
 
 
@@ -69,5 +70,8 @@ const bool checkColumnConst(const IColumn * column)
 {
     return checkAndGetColumnConst<Type>();
 }
+
+
+ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column);
 
 }

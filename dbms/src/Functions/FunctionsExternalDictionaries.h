@@ -924,7 +924,7 @@ private:
 
         const auto key_col_with_type = block.safeGetByPosition(arguments[2]);
         if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
-            || checkColumnConst<ColumnConstTuple>(key_col_with_type.column.get()))
+            || checkColumnConst<ColumnTuple>(key_col_with_type.column.get()))
         {
             const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 

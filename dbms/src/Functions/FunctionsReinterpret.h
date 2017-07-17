@@ -83,9 +83,10 @@ public:
             }
             data_to.resize(pos);
         }
-        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            std::string res(reinterpret_cast<const char *>(&col_from->getData()), sizeof(T));
+            T value = col_from->template getValue<T>();
+            std::string res(reinterpret_cast<const char *>(&value), sizeof(T));
             while (!res.empty() && res[res.length() - 1] == '\0')
                 res.erase(res.end() - 1);
 

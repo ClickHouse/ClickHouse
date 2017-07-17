@@ -404,9 +404,9 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
             }
         }
-        else if (const ColumnConst<FromType> * col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
         {
-            const UInt64 hash = IntHash64Impl::apply(toInteger(col_from->getData()));
+            const UInt64 hash = IntHash64Impl::apply(toInteger(col_from->template getValue<FromType>()));
             size_t size = vec_to.size();
             if (first)
             {
@@ -560,9 +560,9 @@ private:
                 executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
             }
         }
-        else if (const ColumnConstTuple * tuple = checkAndGetColumnConst<ColumnTuple>(column))
+        else if (const ColumnConst * tuple = checkAndGetColumnConst<ColumnTuple>(column))
         {
-            ColumnPtr tuple_of_constants = tuple->convertToTupleOfConstants();
+            ColumnPtr tuple_of_constants = convertConstTupleToTupleOfConstants(*tuple);
             executeForArgument(type, tuple_of_constants.get(), vec_to, is_first);
         }
         else

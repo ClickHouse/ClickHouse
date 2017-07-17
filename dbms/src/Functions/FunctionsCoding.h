@@ -600,11 +600,11 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const ColumnConst<UInt32> * col = checkAndGetColumnConst<ColumnVector<UInt32>>(column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnUInt32>(column.get()))
         {
             char buf[16];
             char * pos = buf;
-            formatIP(col->getData(), pos);
+            formatIP(col->getValue<UInt32>(), pos);
 
             auto col_res = DataTypeString().createConstColumn(col->size(), buf);
             block.safeGetByPosition(result).column = col_res;
@@ -783,11 +783,11 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const ColumnConst<UInt32> * col = checkAndGetColumnConst<ColumnVector<UInt32>>(column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnUInt32>(column.get()))
         {
             char buf[16];
             char * pos = buf;
-            formatIP(col->getData(), pos);
+            formatIP(col->getValue<UInt32>(), pos);
 
             auto col_res = DataTypeString().createConstColumn(col->size(), buf);
             block.safeGetByPosition(result).column = col_res;
@@ -948,11 +948,11 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const ColumnConst<UInt64> * col = checkAndGetColumnConst<ColumnVector<UInt64>>(column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnUInt64>(column.get()))
         {
             char buf[18];
             char * pos = buf;
-            formatMAC(col->getData(), pos);
+            formatMAC(col->getValue<UInt64>(), pos);
 
             auto col_res = DataTypeString().createConstColumn(col->size(), buf);
             block.safeGetByPosition(result).column = col_res;
@@ -1796,11 +1796,11 @@ public:
 
             return true;
         }
-        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(column))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(column))
         {
             Array res;
 
-            T x = col_from->getData();
+            T x = col_from->template getValue<T>();
             for (size_t i = 0; i < sizeof(T) * 8; ++i)
             {
                 T bit = static_cast<T>(1) << i;

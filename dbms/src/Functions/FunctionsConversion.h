@@ -83,11 +83,11 @@ struct ConvertImpl
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
         }
-        else if (const ColumnConst<FromFieldType> * col_from
+        else if (auto col_from
             = checkAndGetColumnConst<ColumnVector<FromFieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(
-                col_from->size(), static_cast<ToFieldType>(col_from->getData()));
+                col_from->size(), static_cast<ToFieldType>(col_from->template getValue<FromFieldType>()));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -943,11 +943,11 @@ public:
 
         if (const auto column_const = checkAndGetColumnConst<ColumnString>(column.get()))
         {
-            if (column_const->getData().size() > n)
+            if (column_const->getValue<String>().size() > n)
                 throw Exception("String too long for type FixedString(" + toString(n) + ")",
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
 
-            auto resized_string = column_const->getData();
+            auto resized_string = column_const->getValue<String>();
             resized_string.resize(n);
 
             block.safeGetByPosition(result).column = DataTypeFixedString(n).createConstColumn(
@@ -1006,10 +1006,10 @@ private:
     {
         if (!checkDataType<DataTypeNumber<T>>(column.type.get()))
             return false;
-        const ColumnConst<T> * column_const = checkAndGetColumnConst<ColumnVector<T>>(column.column.get());
+        auto column_const = checkAndGetColumnConst<ColumnVector<T>>(column.column.get());
         if (!column_const)
             throw Exception("Unexpected type of column for FixedString length: " + column.column->getName(), ErrorCodes::ILLEGAL_COLUMN);
-        T s = column_const->getData();
+        T s = column_const->template getValue<T>();
         if (s <= 0)
             throw Exception("FixedString length must be positive (unlike " + toString(s) + ")", ErrorCodes::ILLEGAL_COLUMN);
         out_size = static_cast<size_t>(s);
@@ -1382,7 +1382,7 @@ private:
             if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
                 element_block = column_tuple->getData();
             else if (const auto column_const_tuple = checkAndGetColumnConst<ColumnTuple>(col))
-                element_block = static_cast<const ColumnTuple &>(*column_const_tuple->convertToTupleOfConstants()).getData();
+                element_block = static_cast<const ColumnTuple &>(*convertConstTupleToTupleOfConstants(*column_const_tuple)).getData();
 
             /// create columns for converted elements
             for (const auto & to_element_type : to_element_types)

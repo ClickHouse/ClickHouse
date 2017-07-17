@@ -73,12 +73,12 @@ struct ArrayFilterImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
                 return array.clone();
             else
                 return std::make_shared<ColumnArray>(
@@ -127,12 +127,12 @@ struct ArrayCountImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
                 auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
@@ -189,12 +189,12 @@ struct ArrayExistsImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
                 auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
@@ -255,12 +255,12 @@ struct ArrayAllImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
                 return DataTypeUInt8().createConstColumn(array.size(), 1);
             else
             {
@@ -416,12 +416,12 @@ struct ArrayFirstImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
             {
                 const auto & offsets = array.getOffsets();
                 const auto & data = array.getData();
@@ -493,12 +493,12 @@ struct ArrayFirstIndexImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
             {
                 const auto & offsets = array.getOffsets();
                 auto out_column = std::make_shared<ColumnUInt32>(offsets.size());

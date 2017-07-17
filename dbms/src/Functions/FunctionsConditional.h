@@ -1269,15 +1269,15 @@ private:
 
         if (typeid_cast<const ColumnTuple *>(arg1.column.get()))
             col1_holder = arg1.column;
-        else if (const ColumnConstTuple * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
-            col1_holder = const_tuple->convertToTupleOfConstants();
+        else if (const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
+            col1_holder = convertConstTupleToTupleOfConstants(*const_tuple);
         else
             return false;
 
         if (typeid_cast<const ColumnTuple *>(arg2.column.get()))
             col2_holder = arg2.column;
-        else if (const ColumnConstTuple * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
-            col2_holder = const_tuple->convertToTupleOfConstants();
+        else if (const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
+            col2_holder = convertConstTupleToTupleOfConstants(*const_tuple);
         else
             return false;
 

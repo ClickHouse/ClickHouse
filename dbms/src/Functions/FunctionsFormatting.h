@@ -117,12 +117,12 @@ private:
             }
             data_to.resize(buf_to.count());
         }
-        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             std::string res;
             {
                 WriteBufferFromString buf(res);
-                writeBitmask<T>(col_from->getData(), buf);
+                writeBitmask<T>(col_from->template getValue<T>(), buf);
             }
 
             block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), res);
@@ -203,10 +203,10 @@ private:
             }
             data_to.resize(buf_to.count());
         }
-        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeString().createConstColumn(
-                col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));
+                col_from->size(), formatReadableSizeWithBinarySuffix(col_from->template getValue<T>()));
         }
         else
         {

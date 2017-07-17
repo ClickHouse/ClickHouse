@@ -1063,7 +1063,7 @@ private:
             data.reserve(result_length);
 
             for (const auto & instr : instrs)
-                data += static_cast<const ColumnConst<String> *>(instr.second.first)->getData();
+                data += static_cast<const ColumnConst *>(instr.second.first)->getValue<String>();
         }
         else
         {
@@ -1109,8 +1109,8 @@ private:
                         }
                         case InstructionType::COPY_CONST_STRING:
                         {
-                            const auto col = static_cast<const ColumnConst<String> *>(instr.second.first);
-                            const auto & data = col->getData();
+                            const auto col = static_cast<const ColumnConst *>(instr.second.first);
+                            const auto & data = col->getValue<String>();
                             const auto length = data.size();
 
                             memcpy(&out_data[out_offset], data.data(), length);
