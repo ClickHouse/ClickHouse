@@ -1,6 +1,7 @@
 <test>
-<name>wip</name>
-<type>once</type>
+    <name>system_numbers</name>
+    <type>once</type>
+
     <stop_conditions>
         <any_of>
             <!-- This is only for infinite running query. -->
@@ -8,6 +9,7 @@
             <total_time_ms>1000</total_time_ms>
         </any_of>
     </stop_conditions>
+
     <metrics>
         <!-- For running one inifinite query -->
         <max_rows_per_second />
@@ -16,16 +18,14 @@
         <avg_bytes_per_second />
     </metrics>
 
-<!-- 
-9. Генератор случайных чисел.
+<!-- 9. Генератор случайных чисел.
 Функция rand представляет собой linear congruential generator (то есть, целочисленное умножение на константу и сложение с константой), возвращающий 32-битные целые случайные числа.
 Она реализована так, чтобы несколько потоков случайных чисел вычислялось независимо, и компилятор мог векторизовать цикл.
 Тест, как и многие другие ниже, представлен в виде запроса из таблицы system.numbers. Чтение из этой таблицы осуществляется в один поток, и эта таблица при чтении выдаёт подряд почти все натуральные числа.
 То есть, этот запрос представляет собой необычным образом написанный бесконечный цикл.
 Мы запускаем этот запрос и наблюдаем, с какой скоростью он выполняется. Через несколько секунд, когда скорость стабилизируется, прерываем выполнение.
 В качестве скорости выполнения запроса указывается количество обработанных исходных (прочитанных из таблицы) данных в единицу времени.
-Например, в таблице system.numbers читаемые нами данные - это числа типа UInt64 (8 байт). Если мы обрабатываем миллиард таких чисел в секунду, то отобразится скорость - 8 GB/sec.
--->
+Например, в таблице system.numbers читаемые нами данные - это числа типа UInt64 (8 байт). Если мы обрабатываем миллиард таких чисел в секунду, то отобразится скорость - 8 GB/sec. -->
 <query>SELECT count() FROM system.numbers WHERE NOT ignore(rand())</query>
 <!--  10. Некриптографическая хэш-функция для целых чисел 64bit -> 64bit. -->
 <query>SELECT count() FROM system.numbers WHERE NOT ignore(intHash64(number))</query>
@@ -35,7 +35,6 @@
 <query>SELECT count() FROM system.numbers WHERE NOT ignore(toString(number))</query>
 <!-- 13. Преобразование целого числа в строку путём копирования куска памяти. -->
 <query>SELECT count() FROM system.numbers WHERE NOT ignore(reinterpretAsString(number))</query>
-
 <!-- 26.  Целочисленное деление на константу. Используется библиотека libdivide. -->
 <query>SELECT count() FROM system.numbers WHERE NOT ignore(number / 7)</query>
 <!-- 27. Целочисленное деление на константу. -->
@@ -52,8 +51,6 @@
 <query>SELECT number % 10000000 AS k, count() FROM system.numbers GROUP BY k</query>
 <!-- 33. Хэш-таблица, требующая кучу оперативки. Возможны интересные эффекты. -->
 <query>SELECT number % 500000000 AS k, count() FROM system.numbers GROUP BY k</query>
-
-
 <!-- 35. Кэш-промахи, осуществляемые из многих процессорных ядер.  -->
 <!-- <query>SELECT number % (intDiv(100000000, {THREADS})) AS k, count() FROM system.numbers_mt GROUP BY k</query> -->
 <!-- 46. Запрос, требующий много бесполезных копирований. -->
