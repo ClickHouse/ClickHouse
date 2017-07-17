@@ -930,8 +930,11 @@ private:
         if (test_config->has("times_to_run"))
         {
             times_to_run = test_config->getUInt("times_to_run");
+        } else {
+            times_to_run = 1;
         }
 
+        stop_conditions_by_run.clear();
         TestStopConditions stop_conditions_template;
         if (test_config->has("stop_conditions"))
         {
@@ -950,6 +953,7 @@ private:
         Keys metrics;
         metrics_view->keys(metrics);
 
+        main_metric.clear();
         if (test_config->has("main_metric"))
         {
             Keys main_metrics;
