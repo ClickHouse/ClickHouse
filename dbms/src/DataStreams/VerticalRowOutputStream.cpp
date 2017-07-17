@@ -1,4 +1,5 @@
-#include <Columns/ColumnConst.h>
+#include <cmath>
+
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>

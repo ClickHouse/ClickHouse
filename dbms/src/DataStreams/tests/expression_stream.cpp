@@ -50,7 +50,7 @@ try
     QueryProcessingStage::Enum stage;
 
     BlockInputStreamPtr in;
-    in = table->read(column_names, 0, context, stage, 8192, 1)[0];
+    in = table->read(column_names, {}, context, stage, 8192, 1)[0];
     in = std::make_shared<ExpressionBlockInputStream>(in, expression);
     in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 

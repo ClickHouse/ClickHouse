@@ -23,12 +23,17 @@ using DataTypes = std::vector<DataTypePtr>;
 
 /** Properties of data type.
   * Contains methods for serialization/deserialization.
+  * Implementations of this interface represent a data type (example: UInt8)
+  *  or parapetric family of data types (example: Array(...)).
   */
 class IDataType
 {
 public:
     /// Name of data type (examples: UInt64, Array(String)).
-    virtual std::string getName() const = 0;
+    virtual String getName() const = 0;
+
+    /// Name of data type family (example: FixedString, Array).
+    virtual const char * getFamilyName() const = 0;
 
     /// Is this type the null type? TODO Move this method to separate "traits" classes.
     virtual bool isNull() const { return false; }
@@ -48,6 +53,9 @@ public:
 
     /// If this data type cannot appear in table declaration - only for intermediate values of calculations.
     virtual bool notForTables() const { return false; }
+
+    /// If this data type cannot be wrapped in Nullable data type.
+    virtual bool canBeInsideNullable() const { return true; }
 
     virtual DataTypePtr clone() const = 0;
 

@@ -1,11 +1,13 @@
-#include <Columns/ColumnConst.h>
-
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeNull.h>
+#include <DataTypes/DataTypeFactory.h>
+
+#include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
 
 
 namespace DB
@@ -116,6 +118,12 @@ void DataTypeNull::serializeTextJSON(const IColumn & column, size_t row_num, Wri
 void DataTypeNull::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
     assertString("null", istr);
+}
+
+
+void registerDataTypeNull(DataTypeFactory & factory)
+{
+    factory.registerSimpleDataType("Null", [] { return DataTypePtr(std::make_shared<DataTypeNull>()); });
 }
 
 }

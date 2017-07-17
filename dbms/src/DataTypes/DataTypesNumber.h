@@ -35,6 +35,7 @@ public:
     using FieldType = void;
 
     std::string getName() const override { return "Void"; }
+    const char * getFamilyName() const override { return "Void"; }
     DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<void>>(); }
 };
 
@@ -47,6 +48,7 @@ public:
     using FieldType = Null;
 
     std::string getName() const override { return "Null"; }
+    const char * getFamilyName() const override { return "Null"; }
     DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<Null>>(); }
 };
 

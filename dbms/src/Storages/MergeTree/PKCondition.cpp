@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
-#include <Parsers/ASTSet.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Core/FieldVisitors.h>
@@ -219,9 +218,13 @@ Block PKCondition::getBlockWithConstants(
 }
 
 
-PKCondition::PKCondition(const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns,
-                         const SortDescription & sort_descr_, ExpressionActionsPtr pk_expr_)
-    : sort_descr(sort_descr_), pk_expr(pk_expr_)
+PKCondition::PKCondition(
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    const NamesAndTypesList & all_columns,
+    const SortDescription & sort_descr_,
+    ExpressionActionsPtr pk_expr_)
+    : sort_descr(sort_descr_), pk_expr(pk_expr_), prepared_sets(query_info.sets)
 {
     for (size_t i = 0; i < sort_descr.size(); ++i)
     {
@@ -233,10 +236,10 @@ PKCondition::PKCondition(const ASTPtr & query, const Context & context, const Na
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
-    Block block_with_constants = getBlockWithConstants(query, context, all_columns);
+    Block block_with_constants = getBlockWithConstants(query_info.query, context, all_columns);
 
     /// Trasform WHERE section to Reverse Polish notation
-    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query);
+    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
     if (select.where_expression)
     {
         traverseAST(select.where_expression, context, block_with_constants);
@@ -545,7 +548,7 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
             key_arg_pos = 1;
             is_constant_transformed = true;
         }
-        else if (typeid_cast<const ASTSet *>(args[1].get())
+        else if (prepared_sets.count(args[1].get())
             && isPrimaryKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
         {
             key_arg_pos = 0;
@@ -899,10 +902,10 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
             {
                 auto in_func = typeid_cast<const ASTFunction *>(element.in_function.get());
                 const ASTs & args = typeid_cast<const ASTExpressionList &>(*in_func->arguments).children;
-                auto ast_set = typeid_cast<const ASTSet *>(args[1].get());
-                if (in_func && ast_set)
+                PreparedSets::const_iterator it = prepared_sets.find(args[1].get());
+                if (in_func && it != prepared_sets.end())
                 {
-                    rpn_stack.push_back(ast_set->set->mayBeTrueInRange(*key_range));
+                    rpn_stack.push_back(it->second->mayBeTrueInRange(*key_range));
                     if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                         rpn_stack.back() = !rpn_stack.back();
                 }
@@ -962,14 +965,6 @@ bool PKCondition::mayBeTrueAfter(
 }
 
 
-static const ASTSet & inFunctionToSet(const ASTPtr & in_function)
-{
-    const auto & in_func = typeid_cast<const ASTFunction &>(*in_function);
-    const auto & args = typeid_cast<const ASTExpressionList &>(*in_func.arguments).children;
-    const auto & ast_set = typeid_cast<const ASTSet &>(*args[1]);
-    return ast_set;
-}
-
 String PKCondition::RPNElement::toString() const
 {
     auto print_wrapped_column = [this](std::ostringstream & ss)
@@ -999,7 +994,7 @@ String PKCondition::RPNElement::toString() const
         {
             ss << "(";
             print_wrapped_column(ss);
-            ss << (function == FUNCTION_IN_SET ? " in " : " notIn ") << inFunctionToSet(in_function).set->describe();
+            ss << (function == FUNCTION_IN_SET ? " in set" : " notIn set");
             ss << ")";
             return ss.str();
         }

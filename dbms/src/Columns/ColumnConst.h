@@ -96,7 +96,7 @@ public:
     using Type = T;
     using FieldType = typename NearestFieldType<T>::Type;
 
-    std::string getName() const override { return "ColumnConst<" + TypeName<T>::get() + ">"; }
+    std::string getName() const override { return "ColumnConst<" + String(TypeName<T>::get()) + ">"; }
     bool isNumeric() const override { return IsNumber<T>::value; }
     bool isFixed() const override { return IsNumber<T>::value; }
     size_t sizeOfField() const override { return sizeof(T); }

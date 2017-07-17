@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataStreams/PrettyBlockOutputStream.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>

@@ -117,25 +117,7 @@ bool ValuesRowInputStream::read(Block & block)
                 if (value.isNull())
                 {
                     /// Check that we are indeed allowed to insert a NULL.
-                    bool is_null_allowed = false;
-
-                    if (type.isNullable())
-                        is_null_allowed = true;
-                    else
-                    {
-                        /// NOTE: For now we support only one level of null values, i.e.
-                        /// there are not yet such things as Array(Nullable(Array(Nullable(T))).
-                        /// Therefore the code below is valid within the current limitations.
-                        const auto array_type = typeid_cast<const DataTypeArray *>(&type);
-                        if (array_type != nullptr)
-                        {
-                            const auto & nested_type = array_type->getMostNestedType();
-                            if (nested_type->isNullable())
-                                is_null_allowed = true;
-                        }
-                    }
-
-                    if (!is_null_allowed)
+                    if (!type.isNullable())
                         throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
                             + ", that is out of range of type " + type.getName()
                             + ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),

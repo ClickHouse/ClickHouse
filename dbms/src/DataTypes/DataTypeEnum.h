@@ -52,6 +52,7 @@ public:
 
     const Values & getValues() const { return values; }
     std::string getName() const override { return name; }
+    const char * getFamilyName() const override;
     bool isNumeric() const override { return true; }
     bool behavesAsNumber() const override { return true; }
 
@@ -61,8 +62,7 @@ public:
         if (it == std::end(value_to_name_map))
             throw Exception{
                 "Unexpected value " + toString(value) + " for type " + getName(),
-                ErrorCodes::LOGICAL_ERROR
-            };
+                ErrorCodes::LOGICAL_ERROR};
 
         return it->second;
     }

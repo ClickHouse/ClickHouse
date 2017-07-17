@@ -1,7 +1,6 @@
 #include <iomanip>
 #include <random>
 
-#include <Columns/ColumnConst.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>

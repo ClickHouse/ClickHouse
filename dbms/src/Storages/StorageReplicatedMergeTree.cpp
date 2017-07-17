@@ -2288,7 +2288,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 
 BlockInputStreams StorageReplicatedMergeTree::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -2340,7 +2340,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     }
 
     return reader.read(
-        column_names, query, context, processed_stage, max_block_size, num_streams, &part_index, max_block_number_to_read);
+        column_names, query_info, context, processed_stage, max_block_size, num_streams, &part_index, max_block_number_to_read);
 }
 
 
