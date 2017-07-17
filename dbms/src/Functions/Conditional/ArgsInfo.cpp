@@ -1,6 +1,7 @@
 #include <Functions/Conditional/ArgsInfo.h>
 #include <Functions/Conditional/CondException.h>
 #include <Functions/Conditional/common.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTraits.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -229,7 +230,7 @@ bool hasArrayBranches(const DataTypes & args)
         else
             observed_type = args[i].get();
 
-        return (typeid_cast<const DataTypeArray *>(observed_type) != nullptr) || args[i]->isNull();
+        return checkDataType<DataTypeArray>(observed_type) || args[i]->isNull();
     };
 
     size_t else_arg = elseArg(args);
@@ -294,7 +295,7 @@ bool hasFixedStrings(const DataTypes & args)
         else
             observed_type = args[i].get();
 
-        return (typeid_cast<const DataTypeFixedString *>(observed_type) != nullptr) || (args[i]->isNull());
+        return checkDataType<DataTypeFixedString>(observed_type) || (args[i]->isNull());
     };
 
     size_t else_arg = elseArg(args);
@@ -324,7 +325,7 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
                 observed_type = args[i].get();
 
             /// Get the length of the fixed string currently being checked.
-            auto fixed_str = typeid_cast<const DataTypeFixedString *>(observed_type);
+            auto fixed_str = checkAndGetDataType<DataTypeFixedString>(observed_type);
             if (fixed_str == nullptr)
                 throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
             size_t length = fixed_str->getN();
@@ -367,8 +368,8 @@ bool hasStrings(const DataTypes & args)
         else
             observed_type = args[i].get();
 
-        return (typeid_cast<const DataTypeFixedString *>(observed_type) != nullptr) ||
-            (typeid_cast<const DataTypeString *>(observed_type) != nullptr) || args[i]->isNull();
+        return checkDataType<DataTypeFixedString>(observed_type) ||
+            checkDataType<DataTypeString>(observed_type) || args[i]->isNull();
     };
 
     size_t else_arg = elseArg(args);

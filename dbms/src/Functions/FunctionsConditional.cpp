@@ -171,7 +171,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
         else
             observed_type = args[i].get();
 
-        if (!typeid_cast<const DataTypeUInt8 *>(observed_type) && !observed_type->isNull())
+        if (!checkDataType<DataTypeUInt8>(observed_type) && !observed_type->isNull())
             throw Exception{"Illegal type of argument " + toString(i) + " (condition) "
                 "of function " + getName() + ". Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -202,7 +202,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
                 else
                     observed_type = args[i].get();
 
-                const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type);
+                const DataTypeArray * type_arr = checkAndGetDataType<DataTypeArray>(observed_type);
                 if (type_arr == nullptr)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 new_args.push_back(type_arr->getNestedType());

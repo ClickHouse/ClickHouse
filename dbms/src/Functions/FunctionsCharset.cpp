@@ -4,6 +4,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/ObjectPool.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
@@ -168,7 +169,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (size_t i : ext::range(0, 3))
-            if (!typeid_cast<const DataTypeString *>(&*arguments[i]))
+            if (!checkDataType<DataTypeString>(&*arguments[i]))
                 throw Exception("Illegal type " + arguments[i]->getName() + " of argument of function " + getName()
                     + ", must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

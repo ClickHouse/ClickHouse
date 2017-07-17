@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace DB
@@ -154,7 +155,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -176,12 +177,11 @@ public:
             block.safeGetByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
         }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(&*column))
         {
             String res;
-            Impl::constant(col->getData(), res);
-            auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
-            block.safeGetByPosition(result).column = col_res;
+            Impl::constant(col->getValue<String>(), res);
+            block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(col->size(), res);
         }
         else
             throw Exception(

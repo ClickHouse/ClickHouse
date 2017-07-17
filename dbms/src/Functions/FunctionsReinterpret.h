@@ -11,6 +11,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace DB
@@ -44,8 +45,8 @@ public:
     {
         const IDataType * type = &*arguments[0];
         if (!type->isNumeric() &&
-            !typeid_cast<const DataTypeDate *>(type) &&
-            !typeid_cast<const DataTypeDateTime *>(type))
+            !checkDataType<DataTypeDate>(type) &&
+            !checkDataType<DataTypeDateTime>(type))
             throw Exception("Cannot reinterpret " + type->getName() + " as String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -135,8 +136,8 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const IDataType * type = &*arguments[0];
-        if (!typeid_cast<const DataTypeString *>(type) &&
-            !typeid_cast<const DataTypeFixedString *>(type))
+        if (!checkDataType<DataTypeString>(type) &&
+            !checkDataType<DataTypeFixedString>(type))
             throw Exception("Cannot reinterpret " + type->getName() + " as " + ToDataType().getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<ToDataType>();

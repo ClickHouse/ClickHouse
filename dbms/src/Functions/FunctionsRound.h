@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Functions/FunctionsArithmetic.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <cmath>

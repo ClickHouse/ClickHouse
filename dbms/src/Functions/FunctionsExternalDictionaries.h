@@ -19,6 +19,8 @@
 #include <Interpreters/ExternalDictionaries.h>
 
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
+
 #include <Dictionaries/FlatDictionary.h>
 #include <Dictionaries/HashedDictionary.h>
 #include <Dictionaries/CacheDictionary.h>
@@ -75,14 +77,14 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+        if (!checkDataType<DataTypeString>(arguments[0].get()))
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                     + ", expected a string.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!typeid_cast<const DataTypeUInt64 *>(arguments[1].get()) &&
-            !typeid_cast<const DataTypeTuple *>(arguments[1].get()))
+        if (!checkDataType<DataTypeUInt64>(arguments[1].get()) &&
+            !checkDataType<DataTypeTuple>(arguments[1].get()))
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
                     + ", must be UInt64 or tuple(...).",
@@ -157,8 +159,8 @@ private:
             return false;
 
         const auto key_col_with_type = block.safeGetByPosition(arguments[1]);
-        if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
-            || typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
+        if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
+            || checkColumnConst<ColumnTuple>(key_col_with_type.column.get()))
         {
             /// Functions in external dictionaries only support full-value (not constant) columns with keys.
             const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
@@ -235,7 +237,7 @@ private:
                     + toString(arguments.size()) + ", should be 3 or 4.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+        if (!checkDataType<DataTypeString>(arguments[0].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -243,7 +245,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeString *>(arguments[1].get()))
+        if (!checkDataType<DataTypeString>(arguments[1].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -251,8 +253,8 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()) &&
-            !typeid_cast<const DataTypeTuple *>(arguments[2].get()))
+        if (!checkDataType<DataTypeUInt64>(arguments[2].get()) &&
+            !checkDataType<DataTypeTuple>(arguments[2].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
@@ -260,7 +262,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (arguments.size() == 4 && !typeid_cast<const DataTypeDate *>(arguments[3].get()))
+        if (arguments.size() == 4 && !checkDataType<DataTypeDate>(arguments[3].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
@@ -365,8 +367,8 @@ private:
         const auto & attr_name = attr_name_col->getData();
 
         const auto key_col_with_type = block.safeGetByPosition(arguments[2]);
-        if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
-            || typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
+        if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
+            || checkColumnConst<ColumnTuple>(key_col_with_type.column.get()))
         {
             const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
@@ -506,20 +508,20 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+        if (!checkDataType<DataTypeString>(arguments[0].get()))
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() +
                     ", expected a string.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!typeid_cast<const DataTypeString *>(arguments[1].get()))
+        if (!checkDataType<DataTypeString>(arguments[1].get()))
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() +
                     ", expected a string.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()) &&
-            !typeid_cast<const DataTypeTuple *>(arguments[2].get()))
+        if (!checkDataType<DataTypeUInt64>(arguments[2].get()) &&
+            !checkDataType<DataTypeTuple>(arguments[2].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
@@ -527,7 +529,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeString *>(arguments[3].get()))
+        if (!checkDataType<DataTypeString>(arguments[3].get()))
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName() +
                     ", must be String.",
@@ -791,7 +793,7 @@ private:
         if (arguments.size() != 3 && arguments.size() != 4)
             throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+        if (!checkDataType<DataTypeString>(arguments[0].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -799,7 +801,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeString *>(arguments[1].get()))
+        if (!checkDataType<DataTypeString>(arguments[1].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -807,8 +809,8 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()) &&
-            !typeid_cast<const DataTypeTuple *>(arguments[2].get()))
+        if (!checkDataType<DataTypeUInt64>(arguments[2].get()) &&
+            !checkDataType<DataTypeTuple>(arguments[2].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
@@ -816,7 +818,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (arguments.size() == 4 && !typeid_cast<const DataTypeDate *>(arguments[3].get()))
+        if (arguments.size() == 4 && !checkDataType<DataTypeDate>(arguments[3].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
@@ -924,8 +926,8 @@ private:
         const auto & attr_name = attr_name_col->getData();
 
         const auto key_col_with_type = block.safeGetByPosition(arguments[2]);
-        if (typeid_cast<const ColumnTuple *>(key_col_with_type.column.get())
-            || typeid_cast<const ColumnConstTuple *>(key_col_with_type.column.get()))
+        if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
+            || checkColumnConst<ColumnConstTuple>(key_col_with_type.column.get()))
         {
             const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
 
@@ -1099,7 +1101,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+        if (!checkDataType<DataTypeString>(arguments[0].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1107,7 +1109,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeString *>(arguments[1].get()))
+        if (!checkDataType<DataTypeString>(arguments[1].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -1115,8 +1117,8 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()) &&
-            !typeid_cast<const DataTypeTuple *>(arguments[2].get()))
+        if (!checkDataType<DataTypeUInt64>(arguments[2].get()) &&
+            !checkDataType<DataTypeTuple>(arguments[2].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
@@ -1124,7 +1126,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataType *>(arguments[3].get()))
+        if (!checkDataType<DataType>(arguments[3].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
@@ -1356,7 +1358,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+        if (!checkDataType<DataTypeString>(arguments[0].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1364,7 +1366,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeUInt64 *>(arguments[1].get()))
+        if (!checkDataType<DataTypeUInt64>(arguments[1].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -1516,7 +1518,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(arguments[0].get()))
+        if (!checkDataType<DataTypeString>(arguments[0].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1524,7 +1526,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeUInt64 *>(arguments[1].get()))
+        if (!checkDataType<DataTypeUInt64>(arguments[1].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -1532,7 +1534,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!typeid_cast<const DataTypeUInt64 *>(arguments[2].get()))
+        if (!checkDataType<DataTypeUInt64>(arguments[2].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()

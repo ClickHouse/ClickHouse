@@ -7,6 +7,7 @@
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsArithmetic.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace DB

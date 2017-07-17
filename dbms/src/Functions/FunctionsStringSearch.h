@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionsArithmetic.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace DB
@@ -60,11 +61,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!typeid_cast<const DataTypeString *>(&*arguments[1]))
+        if (!checkDataType<DataTypeString>(&*arguments[1]))
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -78,13 +79,13 @@ public:
         const ColumnPtr & column_haystack = block.safeGetByPosition(arguments[0]).column;
         const ColumnPtr & column_needle = block.safeGetByPosition(arguments[1]).column;
 
-        const ColumnConstString * col_haystack_const = typeid_cast<const ColumnConstString *>(&*column_haystack);
-        const ColumnConstString * col_needle_const = typeid_cast<const ColumnConstString *>(&*column_needle);
+        const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
+        const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
 
         if (col_haystack_const && col_needle_const)
         {
             ResultType res{};
-            Impl::constant_constant(col_haystack_const->getData(), col_needle_const->getData(), res);
+            Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
             block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ResultType>>(col_haystack_const->size(), res);
             return;
         }
@@ -105,9 +106,9 @@ public:
                 col_needle_vector->getOffsets(),
                 vec_res);
         else if (col_haystack_vector && col_needle_const)
-            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), col_needle_const->getData(), vec_res);
+            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), col_needle_const->getValue<String>(), vec_res);
         else if (col_haystack_const && col_needle_vector)
-            Impl::constant_vector(col_haystack_const->getData(), col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
+            Impl::constant_vector(col_haystack_const->getValue<String>(), col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         else
             throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName() + " and "
                     + block.safeGetByPosition(arguments[1]).column->getName()
@@ -140,11 +141,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!typeid_cast<const DataTypeString *>(&*arguments[1]))
+        if (!checkDataType<DataTypeString>(&*arguments[1]))
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -156,7 +157,7 @@ public:
         const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
         const ColumnPtr column_needle = block.safeGetByPosition(arguments[1]).column;
 
-        const ColumnConstString * col_needle = typeid_cast<const ColumnConstString *>(&*column_needle);
+        const ColumnConst * col_needle = typeid_cast<const ColumnConst *>(&*column_needle);
         if (!col_needle)
             throw Exception("Second argument of function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
 
@@ -167,7 +168,7 @@ public:
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
-            Impl::vector(col->getChars(), col->getOffsets(), col_needle->getData(), vec_res, offsets_res);
+            Impl::vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
         }
         else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
         {
@@ -177,7 +178,7 @@ public:
             ColumnString::Offsets_t offsets(1, vdata.size());
             ColumnString::Chars_t res_vdata;
             ColumnString::Offsets_t res_offsets;
-            Impl::vector(vdata, offsets, col_needle->getData(), res_vdata, res_offsets);
+            Impl::vector(vdata, offsets, col_needle->getValue<String>(), res_vdata, res_offsets);
 
             std::string res;
 

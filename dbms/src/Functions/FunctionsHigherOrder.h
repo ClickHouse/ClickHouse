@@ -11,6 +11,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace DB
@@ -311,20 +312,20 @@ struct ArraySumImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
     {
-        if (typeid_cast<const DataTypeUInt8 *>(&*expression_return) ||
-            typeid_cast<const DataTypeUInt16 *>(&*expression_return) ||
-            typeid_cast<const DataTypeUInt32 *>(&*expression_return) ||
-            typeid_cast<const DataTypeUInt64 *>(&*expression_return))
+        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
+            checkDataType<DataTypeUInt16>(&*expression_return) ||
+            checkDataType<DataTypeUInt32>(&*expression_return) ||
+            checkDataType<DataTypeUInt64>(&*expression_return))
             return std::make_shared<DataTypeUInt64>();
 
-        if (typeid_cast<const DataTypeInt8 *>(&*expression_return) ||
-            typeid_cast<const DataTypeInt16 *>(&*expression_return) ||
-            typeid_cast<const DataTypeInt32 *>(&*expression_return) ||
-            typeid_cast<const DataTypeInt64 *>(&*expression_return))
+        if (checkDataType<DataTypeInt8>(&*expression_return) ||
+            checkDataType<DataTypeInt16>(&*expression_return) ||
+            checkDataType<DataTypeInt32>(&*expression_return) ||
+            checkDataType<DataTypeInt64>(&*expression_return))
             return std::make_shared<DataTypeInt64>();
 
-        if (typeid_cast<const DataTypeFloat32 *>(&*expression_return) ||
-            typeid_cast<const DataTypeFloat64 *>(&*expression_return))
+        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
+            checkDataType<DataTypeFloat64>(&*expression_return))
             return std::make_shared<DataTypeFloat64>();
 
         throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -627,14 +628,14 @@ public:
         DataTypes nested_types(arguments.size() - 1);
         for (size_t i = 0; i < nested_types.size(); ++i)
         {
-            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[i + 1]);
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[i + 1]);
             if (!array_type)
                 throw Exception("Argument " + toString(i + 2) + " of function " + getName() + " must be array. Found "
                                 + arguments[i + 1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             nested_types[i] = array_type->getNestedType();
         }
 
-        const DataTypeExpression * expression_type = typeid_cast<const DataTypeExpression *>(&*arguments[0]);
+        const DataTypeExpression * expression_type = checkAndGetDataType<DataTypeExpression>(&*arguments[0]);
         if (!expression_type || expression_type->getArgumentTypes().size() != nested_types.size())
             throw Exception("First argument for this overload of " + getName() + " must be an expression with "
                             + toString(nested_types.size()) + " arguments. Found "
@@ -654,7 +655,7 @@ public:
 
         if (arguments.size() == 1)
         {
-            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
 
             if (!array_type)
                 throw Exception("The only argument for function " + getName() + " must be array. Found "
@@ -662,7 +663,7 @@ public:
 
             DataTypePtr nested_type = array_type->getNestedType();
 
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*nested_type))
+            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*nested_type))
                 throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
                     + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -674,7 +675,7 @@ public:
                 throw Exception("Function " + getName() + " needs one array argument.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            const DataTypeExpression * expression = typeid_cast<const DataTypeExpression *>(arguments[0].get());
+            const DataTypeExpression * expression = checkAndGetDataType<DataTypeExpression>(arguments[0].get());
 
             if (!expression)
                 throw Exception("Type of first argument for function " + getName() + " must be an expression.",
@@ -683,11 +684,11 @@ public:
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
             DataTypePtr return_type = expression->getReturnType();
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*return_type))
+            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*return_type))
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                     + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const DataTypeArray * first_array_type = typeid_cast<const DataTypeArray *>(arguments[1].get());
+            const DataTypeArray * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
 
             return Impl::getReturnType(return_type, first_array_type->getNestedType());
         }
@@ -706,7 +707,7 @@ public:
 
         if (arguments.size() == 1)
         {
-            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[0].type);
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[0].type);
 
             if (!array_type)
                 throw Exception("The only argument for function " + getName() + " must be array. Found "
@@ -714,7 +715,7 @@ public:
 
             DataTypePtr nested_type = array_type->getNestedType();
 
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*nested_type))
+            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*nested_type))
                 throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
                                 + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -756,11 +757,11 @@ public:
             }
 
             DataTypePtr return_type = column_expression->getReturnType();
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*return_type))
+            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*return_type))
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                                 + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const DataTypeArray * first_array_type = typeid_cast<const DataTypeArray *>(&*arguments[1].type);
+            const DataTypeArray * first_array_type = checkAndGetDataType<DataTypeArray>(&*arguments[1].type);
 
             out_return_type = Impl::getReturnType(return_type, first_array_type->getNestedType());
         }

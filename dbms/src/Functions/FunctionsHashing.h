@@ -25,6 +25,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/Hash.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <ext/range.h>
 
@@ -191,7 +192,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -246,7 +247,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -349,16 +350,16 @@ public:
     {
         IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
 
-        if      (typeid_cast<const DataTypeUInt8 *        >(from_type)) executeType<UInt8    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeUInt16 *    >(from_type)) executeType<UInt16>(block, arguments, result);
-        else if (typeid_cast<const DataTypeUInt32 *    >(from_type)) executeType<UInt32>(block, arguments, result);
-        else if (typeid_cast<const DataTypeUInt64 *    >(from_type)) executeType<UInt64>(block, arguments, result);
-        else if (typeid_cast<const DataTypeInt8 *        >(from_type)) executeType<Int8    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeInt16 *        >(from_type)) executeType<Int16    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeInt32 *        >(from_type)) executeType<Int32    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeInt64 *        >(from_type)) executeType<Int64    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeDate *        >(from_type)) executeType<UInt16>(block, arguments, result);
-        else if (typeid_cast<const DataTypeDateTime *    >(from_type)) executeType<UInt32>(block, arguments, result);
+        if      (checkDataType<DataTypeUInt8>(from_type)) executeType<UInt8>(block, arguments, result);
+        else if (checkDataType<DataTypeUInt16>(from_type)) executeType<UInt16>(block, arguments, result);
+        else if (checkDataType<DataTypeUInt32>(from_type)) executeType<UInt32>(block, arguments, result);
+        else if (checkDataType<DataTypeUInt64>(from_type)) executeType<UInt64>(block, arguments, result);
+        else if (checkDataType<DataTypeInt8>(from_type)) executeType<Int8>(block, arguments, result);
+        else if (checkDataType<DataTypeInt16>(from_type)) executeType<Int16>(block, arguments, result);
+        else if (checkDataType<DataTypeInt32>(from_type)) executeType<Int32>(block, arguments, result);
+        else if (checkDataType<DataTypeInt64>(from_type)) executeType<Int64>(block, arguments, result);
+        else if (checkDataType<DataTypeDate>(from_type)) executeType<UInt16>(block, arguments, result);
+        else if (checkDataType<DataTypeDateTime>(from_type)) executeType<UInt32>(block, arguments, result);
         else
             throw Exception("Illegal type " + block.safeGetByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -485,7 +486,7 @@ private:
     template <bool first>
     void executeArray(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to)
     {
-        const IDataType * nested_type = &*typeid_cast<const DataTypeArray *>(type)->getNestedType();
+        const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
 
         if (const ColumnArray * col_from = typeid_cast<const ColumnArray *>(column))
         {
@@ -528,23 +529,23 @@ private:
     template <bool first>
     void executeAny(const IDataType * from_type, const IColumn * icolumn, ColumnUInt64::Container_t & vec_to)
     {
-        if      (typeid_cast<const DataTypeUInt8 *        >(from_type)) executeIntType<UInt8,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeUInt16 *        >(from_type)) executeIntType<UInt16,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeUInt32 *        >(from_type)) executeIntType<UInt32,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeUInt64 *        >(from_type)) executeIntType<UInt64,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeInt8 *        >(from_type)) executeIntType<Int8,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeInt16 *        >(from_type)) executeIntType<Int16,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeInt32 *        >(from_type)) executeIntType<Int32,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeInt64 *        >(from_type)) executeIntType<Int64,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeEnum8 *        >(from_type)) executeIntType<Int8,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeEnum16 *        >(from_type)) executeIntType<Int16,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeDate *        >(from_type)) executeIntType<UInt16,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeDateTime *    >(from_type)) executeIntType<UInt32,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeFloat32 *    >(from_type)) executeIntType<Float32,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeFloat64 *    >(from_type)) executeIntType<Float64,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeString *        >(from_type)) executeString    <            first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeFixedString *>(from_type)) executeString    <            first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeArray *        >(from_type)) executeArray    <            first>(from_type, icolumn, vec_to);
+        if      (checkDataType<DataTypeUInt8>(from_type)) executeIntType<UInt8, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeUInt16>(from_type)) executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeUInt32>(from_type)) executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeUInt64>(from_type)) executeIntType<UInt64, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt8>(from_type)) executeIntType<Int8, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt16>(from_type)) executeIntType<Int16, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt32>(from_type)) executeIntType<Int32, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt64>(from_type)) executeIntType<Int64, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeEnum8>(from_type)) executeIntType<Int8, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeEnum16>(from_type)) executeIntType<Int16, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeDate>(from_type)) executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeDateTime>(from_type)) executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeFloat32>(from_type)) executeIntType<Float32, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeFloat64>(from_type)) executeIntType<Float64, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeString>(from_type)) executeString<first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeFixedString>(from_type)) executeString<first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeArray>(from_type)) executeArray<first>(from_type, icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -727,7 +728,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto first_arg = arguments.front().get();
-        if (!typeid_cast<const DataTypeString *>(first_arg))
+        if (!checkDataType<DataTypeString>(first_arg))
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -735,14 +736,14 @@ public:
         if (arg_count == 2)
         {
             const auto second_arg = arguments.back().get();
-            if (!typeid_cast<const DataTypeUInt8 *>(second_arg) &&
-                !typeid_cast<const DataTypeUInt16 *>(second_arg) &&
-                !typeid_cast<const DataTypeUInt32 *>(second_arg) &&
-                !typeid_cast<const DataTypeUInt64 *>(second_arg) &&
-                !typeid_cast<const DataTypeInt8 *>(second_arg) &&
-                !typeid_cast<const DataTypeInt16 *>(second_arg) &&
-                !typeid_cast<const DataTypeInt32 *>(second_arg) &&
-                !typeid_cast<const DataTypeInt64 *>(second_arg))
+            if (!checkDataType<DataTypeUInt8>(second_arg) &&
+                !checkDataType<DataTypeUInt16>(second_arg) &&
+                !checkDataType<DataTypeUInt32>(second_arg) &&
+                !checkDataType<DataTypeUInt64>(second_arg) &&
+                !checkDataType<DataTypeInt8>(second_arg) &&
+                !checkDataType<DataTypeInt16>(second_arg) &&
+                !checkDataType<DataTypeInt32>(second_arg) &&
+                !checkDataType<DataTypeInt64>(second_arg))
                 throw Exception{
                     "Illegal type " + second_arg->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

@@ -1,4 +1,5 @@
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
@@ -46,14 +47,14 @@ public:
     {
         const IDataType * type = &*arguments[0];
 
-        if (!typeid_cast<const DataTypeUInt8 *>(type) &&
-            !typeid_cast<const DataTypeUInt16 *>(type) &&
-            !typeid_cast<const DataTypeUInt32 *>(type) &&
-            !typeid_cast<const DataTypeUInt64 *>(type) &&
-            !typeid_cast<const DataTypeInt8 *>(type) &&
-            !typeid_cast<const DataTypeInt16 *>(type) &&
-            !typeid_cast<const DataTypeInt32 *>(type) &&
-            !typeid_cast<const DataTypeInt64 *>(type))
+        if (!checkDataType<DataTypeUInt8>(type) &&
+            !checkDataType<DataTypeUInt16>(type) &&
+            !checkDataType<DataTypeUInt32>(type) &&
+            !checkDataType<DataTypeUInt64>(type) &&
+            !checkDataType<DataTypeInt8>(type) &&
+            !checkDataType<DataTypeInt16>(type) &&
+            !checkDataType<DataTypeInt32>(type) &&
+            !checkDataType<DataTypeInt64>(type))
             throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();

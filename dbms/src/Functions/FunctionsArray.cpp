@@ -1,4 +1,4 @@
-﻿#include <Functions/FunctionsArray.h>
+#include <Functions/FunctionsArray.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -165,7 +165,7 @@ bool FunctionArray::addField(DataTypePtr type_res, const Field & f, Array & arr)
 
 const DataTypePtr & FunctionArray::getScalarType(const DataTypePtr & type)
 {
-    const auto array = typeid_cast<const DataTypeArray *>(type.get());
+    const auto array = checkAndGetDataType<DataTypeArray>(type.get());
 
     if (!array)
         return type;
@@ -1056,7 +1056,7 @@ String FunctionArrayElement::getName() const
 
 DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1216,7 +1216,7 @@ String FunctionArrayEnumerate::getName() const
 
 DataTypePtr FunctionArrayEnumerate::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
             + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1286,7 +1286,7 @@ DataTypePtr FunctionArrayUniq::getReturnTypeImpl(const DataTypes & arguments) co
 
     for (size_t i = 0; i < arguments.size(); ++i)
     {
-        const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
         if (!array_type)
             throw Exception("All arguments for function " + getName() + " must be arrays but argument " +
                 toString(i + 1) + " has type " + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1611,7 +1611,7 @@ DataTypePtr FunctionArrayEnumerateUniq::getReturnTypeImpl(const DataTypes & argu
 
     for (size_t i = 0; i < arguments.size(); ++i)
     {
-        const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
         if (!array_type)
             throw Exception("All arguments for function " + getName() + " must be arrays but argument " +
                 toString(i + 1) + " has type " + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1913,7 +1913,7 @@ String FunctionEmptyArrayToSingle::getName() const
 
 DataTypePtr FunctionEmptyArrayToSingle::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
         throw Exception("Argument for function " + getName() + " must be array.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -2306,15 +2306,14 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 {
     const auto arg = arguments.front().get();
 
-    if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
-        !typeid_cast<const DataTypeUInt16 *>(arg) &&
-        !typeid_cast<const DataTypeUInt32 *>(arg) &
-        !typeid_cast<const DataTypeUInt64 *>(arg))
+    if (!checkDataType<DataTypeUInt8>(arg) &&
+        !checkDataType<DataTypeUInt16>(arg) &&
+        !checkDataType<DataTypeUInt32>(arg) &
+        !checkDataType<DataTypeUInt64>(arg))
     {
         throw Exception{
             "Illegal type " + arg->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        };
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
     return std::make_shared<DataTypeArray>(arg->clone());
@@ -2327,13 +2326,13 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
     {
         const auto & in_data = in->getData();
         const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), std::size_t{},
-            [this] (const std::size_t lhs, const std::size_t rhs) {
+            [this] (const std::size_t lhs, const std::size_t rhs)
+            {
                 const auto sum = lhs + rhs;
                 if (sum < lhs)
                     throw Exception{
                         "A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
-                        ErrorCodes::ARGUMENT_OUT_OF_BOUND
-                    };
+                        ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
                 return sum;
             });
@@ -2342,8 +2341,7 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
             throw Exception{
                 "A call to function " + getName() + " would produce " + std::to_string(total_values) +
                     " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND
-            };
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
         const auto out = std::make_shared<ColumnArray>(
@@ -2436,7 +2434,7 @@ String FunctionArrayReverse::getName() const
 
 DataTypePtr FunctionArrayReverse::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
         throw Exception("Argument for function " + getName() + " must be array.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -2764,7 +2762,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
     DataTypes argument_types(arguments.size() - 1);
     for (size_t i = 1, size = arguments.size(); i < size; ++i)
     {
-        const DataTypeArray * arg = typeid_cast<const DataTypeArray *>(arguments[i].type.get());
+        const DataTypeArray * arg = checkAndGetDataType<DataTypeArray>(arguments[i].type.get());
         if (!arg)
             throw Exception("Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
                 + arguments[i].type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

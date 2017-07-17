@@ -506,11 +506,11 @@ public:
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeFloat64 *>(&*arguments[0]) && !typeid_cast<const DataTypeFloat32 *>(&*arguments[0])
-            && !typeid_cast<const DataTypeUInt64 *>(&*arguments[0])
-            && !typeid_cast<const DataTypeUInt32 *>(&*arguments[0])
-            && !typeid_cast<const DataTypeUInt16 *>(&*arguments[0])
-            && !typeid_cast<const DataTypeUInt8 *>(&*arguments[0]))
+        if (!checkDataType<DataTypeFloat64>(&*arguments[0]) && !checkDataType<DataTypeFloat32>(&*arguments[0])
+            && !checkDataType<DataTypeUInt64>(&*arguments[0])
+            && !checkDataType<DataTypeUInt32>(&*arguments[0])
+            && !checkDataType<DataTypeUInt16>(&*arguments[0])
+            && !checkDataType<DataTypeUInt8>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -755,7 +755,7 @@ public:
 
         size_t index = index_col->getData();
 
-        const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(&*arguments[0].type);
+        const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(&*arguments[0].type);
         if (!tuple)
             throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -964,7 +964,7 @@ public:
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeArray * arr = typeid_cast<const DataTypeArray *>(&*arguments[0]);
+        const DataTypeArray * arr = checkAndGetDataType<DataTypeArray>(&*arguments[0]);
         if (!arr)
             throw Exception("Argument for function " + getName() + " must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -992,7 +992,7 @@ FunctionPtr FunctionReplicate::create(const Context & context)
 
 DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[1]);
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[1]);
     if (!array_type)
         throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1218,15 +1218,15 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto arg = arguments.front().get();
-        if (!typeid_cast<const DataTypeUInt8 *>(arg) && !typeid_cast<const DataTypeUInt16 *>(arg)
-            && !typeid_cast<const DataTypeUInt32 *>(arg)
-            && !typeid_cast<const DataTypeUInt64 *>(arg)
-            && !typeid_cast<const DataTypeInt8 *>(arg)
-            && !typeid_cast<const DataTypeInt16 *>(arg)
-            && !typeid_cast<const DataTypeInt32 *>(arg)
-            && !typeid_cast<const DataTypeInt64 *>(arg)
-            && !typeid_cast<const DataTypeFloat32 *>(arg)
-            && !typeid_cast<const DataTypeFloat64 *>(arg))
+        if (!checkDataType<DataTypeUInt8>(arg) && !checkDataType<DataTypeUInt16>(arg)
+            && !checkDataType<DataTypeUInt32>(arg)
+            && !checkDataType<DataTypeUInt64>(arg)
+            && !checkDataType<DataTypeInt8>(arg)
+            && !checkDataType<DataTypeInt16>(arg)
+            && !checkDataType<DataTypeInt32>(arg)
+            && !checkDataType<DataTypeInt64>(arg)
+            && !checkDataType<DataTypeFloat32>(arg)
+            && !checkDataType<DataTypeFloat64>(arg))
             throw Exception{"Argument for function " + getName() + " must be numeric", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeUInt8>();
@@ -1452,7 +1452,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeAggregateFunction * type = typeid_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
+        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(&*arguments[0]);
         if (!type)
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1536,29 +1536,29 @@ private:
     template <typename F>
     void dispatchForSourceType(const IDataType & src_type, F && f) const
     {
-        if (typeid_cast<const DataTypeUInt8 *>(&src_type))
+        if (checkDataType<DataTypeUInt8>(&src_type))
             f(UInt8());
-        else if (typeid_cast<const DataTypeUInt16 *>(&src_type))
+        else if (checkDataType<DataTypeUInt16>(&src_type))
             f(UInt16());
-        else if (typeid_cast<const DataTypeUInt32 *>(&src_type))
+        else if (checkDataType<DataTypeUInt32>(&src_type))
             f(UInt32());
-        else if (typeid_cast<const DataTypeUInt64 *>(&src_type))
+        else if (checkDataType<DataTypeUInt64>(&src_type))
             f(UInt64());
-        else if (typeid_cast<const DataTypeInt8 *>(&src_type))
+        else if (checkDataType<DataTypeInt8>(&src_type))
             f(Int8());
-        else if (typeid_cast<const DataTypeInt16 *>(&src_type))
+        else if (checkDataType<DataTypeInt16>(&src_type))
             f(Int16());
-        else if (typeid_cast<const DataTypeInt32 *>(&src_type))
+        else if (checkDataType<DataTypeInt32>(&src_type))
             f(Int32());
-        else if (typeid_cast<const DataTypeInt64 *>(&src_type))
+        else if (checkDataType<DataTypeInt64>(&src_type))
             f(Int64());
-        else if (typeid_cast<const DataTypeFloat32 *>(&src_type))
+        else if (checkDataType<DataTypeFloat32>(&src_type))
             f(Float32());
-        else if (typeid_cast<const DataTypeFloat64 *>(&src_type))
+        else if (checkDataType<DataTypeFloat64>(&src_type))
             f(Float64());
-        else if (typeid_cast<const DataTypeDate *>(&src_type))
+        else if (checkDataType<DataTypeDate>(&src_type))
             f(DataTypeDate::FieldType());
-        else if (typeid_cast<const DataTypeDateTime *>(&src_type))
+        else if (checkDataType<DataTypeDateTime>(&src_type))
             f(DataTypeDateTime::FieldType());
         else
             throw Exception("Argument for function " + getName() + " must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1642,7 +1642,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeAggregateFunction * type = typeid_cast<const DataTypeAggregateFunction *>(&*arguments[0]);
+        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(&*arguments[0]);
         if (!type)
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

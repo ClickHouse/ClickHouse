@@ -11,11 +11,13 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeTraits.h>
 #include <Functions/ObjectPool.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 
@@ -975,7 +977,7 @@ private:
                 col_res->getData(), null_map_data);
         else if (item_arg.isConst())
             ArrayIndexGenericImpl<IndexConv, true>::vector(col_nested, col_array->getOffsets(),
-                *item_arg.cut(0, 1)->convertToFullColumnIfConst(), col_res->getData(),
+                *static_cast<const ColumnConst &>(item_arg).getData(), col_res->getData(),
                 null_map_data, nullptr);
         else
         {
@@ -1010,7 +1012,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!array_type)
             throw Exception("First argument for function " + getName() + " must be an array.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

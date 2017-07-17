@@ -14,6 +14,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/DataTypeTraits.h>
 
@@ -941,7 +942,7 @@ private:
         }
         else
         {
-            if (!typeid_cast<const DataTypeNumber<T1> *>(
+            if (!checkDataType<DataTypeNumber<T1>>(
                 typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
                 return false;
 
@@ -988,7 +989,7 @@ private:
         }
         else
         {
-            if (!typeid_cast<const DataTypeNumber<T1> *>(
+            if (!checkDataType<DataTypeNumber<T1>>(
                 typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
                 return false;
 
@@ -1612,15 +1613,15 @@ public:
                 getNestedDataType(arguments[2])}));
         }
 
-        if (!typeid_cast<const DataTypeUInt8 *>(arguments[0].get()))
+        if (!checkDataType<DataTypeUInt8>(arguments[0].get()))
             throw Exception("Illegal type of first argument (condition) of function if. Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        const DataTypeArray * type_arr1 = typeid_cast<const DataTypeArray *>(arguments[1].get());
-        const DataTypeArray * type_arr2 = typeid_cast<const DataTypeArray *>(arguments[2].get());
+        const DataTypeArray * type_arr1 = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+        const DataTypeArray * type_arr2 = checkAndGetDataType<DataTypeArray>(arguments[2].get());
 
-        const DataTypeTuple * type_tuple1 = typeid_cast<const DataTypeTuple *>(arguments[1].get());
-        const DataTypeTuple * type_tuple2 = typeid_cast<const DataTypeTuple *>(arguments[2].get());
+        const DataTypeTuple * type_tuple1 = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
+        const DataTypeTuple * type_tuple2 = checkAndGetDataType<DataTypeTuple>(arguments[2].get());
 
         if (arguments[1]->behavesAsNumber() && arguments[2]->behavesAsNumber())
         {
@@ -1661,10 +1662,10 @@ public:
         }
         else if (!arguments[1]->equals(*arguments[2]))
         {
-            const DataTypeString * type_string1 = typeid_cast<const DataTypeString *>(arguments[1].get());
-            const DataTypeString * type_string2 = typeid_cast<const DataTypeString *>(arguments[2].get());
-            const DataTypeFixedString * type_fixed_string1 = typeid_cast<const DataTypeFixedString *>(arguments[1].get());
-            const DataTypeFixedString * type_fixed_string2 = typeid_cast<const DataTypeFixedString *>(arguments[2].get());
+            const DataTypeString * type_string1 = checkAndGetDataType<DataTypeString>(arguments[1].get());
+            const DataTypeString * type_string2 = checkAndGetDataType<DataTypeString>(arguments[2].get());
+            const DataTypeFixedString * type_fixed_string1 = checkAndGetDataType<DataTypeFixedString>(arguments[1].get());
+            const DataTypeFixedString * type_fixed_string2 = checkAndGetDataType<DataTypeFixedString>(arguments[2].get());
 
             if (type_fixed_string1 && type_fixed_string2)
             {

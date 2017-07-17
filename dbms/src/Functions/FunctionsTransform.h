@@ -14,6 +14,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/EnrichedDataTypePtr.h>
 
 
@@ -78,12 +79,12 @@ public:
 
         const IDataType * type_x = arguments[0].get();
 
-        if (!type_x->isNumeric() && !typeid_cast<const DataTypeString *>(type_x))
+        if (!type_x->isNumeric() && !checkDataType<DataTypeString>(type_x))
             throw Exception{"Unsupported type " + type_x->getName()
                 + " of first argument of function " + getName()
                 + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        const DataTypeArray * type_arr_from = typeid_cast<const DataTypeArray *>(arguments[1].get());
+        const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
 
         if (!type_arr_from)
             throw Exception{"Second argument of function " + getName()
@@ -92,13 +93,13 @@ public:
         const auto type_arr_from_nested = type_arr_from->getNestedType();
 
         if ((type_x->isNumeric() != type_arr_from_nested->isNumeric())
-            || (!!typeid_cast<const DataTypeString *>(type_x) != !!typeid_cast<const DataTypeString *>(type_arr_from_nested.get())))
+            || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_from_nested.get())))
         {
             throw Exception{"First argument and elements of array of second argument of function " + getName()
                 + " must have compatible types: both numeric or both strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        const DataTypeArray * type_arr_to = typeid_cast<const DataTypeArray *>(arguments[2].get());
+        const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
 
         if (!type_arr_to)
             throw Exception{"Third argument of function " + getName()
@@ -110,7 +111,7 @@ public:
         if (args_size == 3)
         {
             if ((type_x->isNumeric() != type_arr_to_nested->isNumeric())
-                || (!!typeid_cast<const DataTypeString *>(type_x) != !!typeid_cast<const DataTypeString *>(type_arr_to_nested.get())))
+                || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -121,13 +122,13 @@ public:
         {
             const IDataType * type_default = arguments[3].get();
 
-            if (!type_default->isNumeric() && !typeid_cast<const DataTypeString *>(type_default))
+            if (!type_default->isNumeric() && !checkDataType<DataTypeString>(type_default))
                 throw Exception{"Unsupported type " + type_default->getName()
                     + " of fourth argument (default value) of function " + getName()
                     + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
             if ((type_default->isNumeric() != type_arr_to_nested->isNumeric())
-                || (!!typeid_cast<const DataTypeString *>(type_default) != !!typeid_cast<const DataTypeString *>(type_arr_to_nested.get())))
+                || (!!checkDataType<DataTypeString>(type_default) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -146,15 +147,15 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const ColumnConstArray * array_from = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[1]).column.get());
-        const ColumnConstArray * array_to = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[2]).column.get());
+        const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
+        const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get());
 
         if (!array_from || !array_to)
             throw Exception{"Second and third arguments of function " + getName() + " must be constant arrays.", ErrorCodes::ILLEGAL_COLUMN};
 
-        prepare(array_from->getData(), array_to->getData(), block, arguments);
+        prepare(array_from->getValue<Array>(), array_to->getValue<Array>(), block, arguments);
 
-        const auto in = block.safeGetByPosition(arguments.front()).column.get();
+        const auto in = block.getByPosition(arguments.front()).column.get();
 
         if (in->isConst())
         {
@@ -164,9 +165,9 @@ public:
 
         const IColumn * default_column = nullptr;
         if (arguments.size() == 4)
-            default_column = block.safeGetByPosition(arguments[3]).column.get();
+            default_column = block.getByPosition(arguments[3]).column.get();
 
-        auto column_result = block.safeGetByPosition(result).type->createColumn();
+        auto column_result = block.getByPosition(result).type->createColumn();
         auto out = column_result.get();
 
         if (!executeNum<UInt8>(in, out, default_column)
@@ -779,10 +780,10 @@ private:
 
             /// Do I need to convert the elements `to` and `default_value` to the smallest common type that is Float64?
             bool default_col_is_float =
-                   typeid_cast<const ColumnFloat32 *>(default_col)
-                || typeid_cast<const ColumnFloat64 *>(default_col)
-                || typeid_cast<const ColumnConstFloat32 *>(default_col)
-                || typeid_cast<const ColumnConstFloat64 *>(default_col);
+                   checkColumn<ColumnFloat32>(default_col)
+                || checkColumnConst<ColumnFloat64>(default_col)
+                || checkColumnConst<ColumnFloat32>(default_col)
+                || checkColumnConst<ColumnFloat64>(default_col);
 
             bool to_is_float = to[0].getType() == Field::Types::Float64;
 

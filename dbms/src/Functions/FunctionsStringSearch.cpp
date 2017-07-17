@@ -962,15 +962,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!typeid_cast<const DataTypeString *>(&*arguments[1]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[1]))
+        if (!checkDataType<DataTypeString>(&*arguments[1]) && !checkDataType<DataTypeFixedString>(&*arguments[1]))
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!typeid_cast<const DataTypeString *>(&*arguments[2]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[2]))
+        if (!checkDataType<DataTypeString>(&*arguments[2]) && !checkDataType<DataTypeFixedString>(&*arguments[2]))
             throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -988,10 +988,10 @@ public:
 
         const IColumn * c1 = block.safeGetByPosition(arguments[1]).column.get();
         const IColumn * c2 = block.safeGetByPosition(arguments[2]).column.get();
-        const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
-        const ColumnConstString * c2_const = typeid_cast<const ColumnConstString *>(c2);
-        String needle = c1_const->getData();
-        String replacement = c2_const->getData();
+        const ColumnConst * c1_const = typeid_cast<const ColumnConst *>(c1);
+        const ColumnConst * c2_const = typeid_cast<const ColumnConst *>(c2);
+        String needle = c1_const->getValue<String>();
+        String replacement = c2_const->getValue<String>();
 
         if (needle.size() == 0)
             throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -1008,11 +1008,11 @@ public:
             block.safeGetByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column_src))
+        else if (const ColumnConst * col = typeid_cast<const ColumnConst *>(&*column_src))
         {
             String res;
-            Impl::constant(col->getData(), needle, replacement, res);
-            auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
+            Impl::constant(col->getValue<String>(), needle, replacement, res);
+            auto col_res = DataTypeString().createConstColumn(col->size(), res);
             block.safeGetByPosition(result).column = col_res;
         }
         else

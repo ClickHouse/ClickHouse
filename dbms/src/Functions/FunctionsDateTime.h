@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <common/DateLUT.h>
 
@@ -509,16 +510,16 @@ public:
     {
         if (arguments.size() == 1)
         {
-            if (!typeid_cast<const DataTypeDate *>(arguments[0].get())
-                && !typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
+            if (!checkDataType<DataTypeDate>(arguments[0].get())
+                && !checkDataType<DataTypeDateTime>(arguments[0].get()))
                 throw Exception{
                     "Illegal type " + arguments[0]->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
         else if (arguments.size() == 2)
         {
-            if (!typeid_cast<const DataTypeDateTime *>(arguments[0].get())
-                || !typeid_cast<const DataTypeString *>(arguments[1].get()))
+            if (!checkDataType<DataTypeDateTime>(arguments[0].get())
+                || !checkDataType<DataTypeString>(arguments[1].get()))
                 throw Exception{
                     "Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument (optional) must be "
@@ -538,9 +539,9 @@ public:
     {
         IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
 
-        if (typeid_cast<const DataTypeDate *>(from_type))
+        if (checkDataType<DataTypeDate>(from_type))
             DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
-        else if (typeid_cast<const DataTypeDateTime * >(from_type))
+        else if (checkDataType<DataTypeDateTime>(from_type))
             DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
         else
             throw Exception("Illegal type " + block.safeGetByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
@@ -572,7 +573,7 @@ public:
 
         /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 
-        if (typeid_cast<const DataTypeDate *>(&type))
+        if (checkAndGetDataType<DataTypeDate>(&type))
         {
             return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), date_lut)
                 == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), date_lut)
@@ -685,7 +686,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
+        if (!checkDataType<DataTypeDateTime>(arguments[0].get()))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -815,11 +816,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
+        if (!checkDataType<DataTypeDateTime>(arguments[0].get()))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!typeid_cast<const DataTypeUInt32 *>(arguments[1].get()))
+        if (!checkDataType<DataTypeUInt32>(arguments[1].get()))
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be UInt32.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

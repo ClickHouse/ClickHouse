@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 
@@ -64,7 +65,7 @@ public:
     /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -122,25 +123,25 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!typeid_cast<const DataTypeString *>(&*arguments[1]))
+        if (!checkDataType<DataTypeString>(&*arguments[1]))
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     void init(Block & block, const ColumnNumbers & arguments)
     {
-        const ColumnConstString * col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
 
         if (!col)
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + getName() + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        const String & sep_str = col->getData();
+        String sep_str = col->getValue<String>();
 
         if (sep_str.size() != 1)
             throw Exception("Illegal separator for function " + getName() + ". Must be exactly one byte.");
@@ -201,14 +202,14 @@ public:
 
     void init(Block & block, const ColumnNumbers & arguments)
     {
-        const ColumnConstString * col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
 
         if (!col)
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + getName() + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        sep = col->getData();
+        sep = col->getValue<String>();
     }
 
     /// Returns the position of the argument that is the column of strings
@@ -268,14 +269,14 @@ public:
     /// Initialize by the function arguments.
     void init(Block & block, const ColumnNumbers & arguments)
     {
-        const ColumnConstString * col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
 
         if (!col)
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
                 + " of first argument of function " + getName() + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        re = Regexps::get<false, false>(col->getData());
+        re = Regexps::get<false, false>(col->getValue<String>());
         capture = re->getNumberOfSubpatterns() > 0 ? 1 : 0;
 
         matches.resize(capture + 1);
@@ -341,8 +342,8 @@ public:
         size_t arrayArgumentPosition = arguments[generator.getStringsArgumentPosition()];
 
         const ColumnString * col_str = typeid_cast<const ColumnString *>(block.safeGetByPosition(arrayArgumentPosition).column.get());
-        const ColumnConstString * col_const_str =
-                typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arrayArgumentPosition).column.get());
+        const ColumnConst * col_const_str =
+                checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arrayArgumentPosition).column.get());
 
         auto col_res = std::make_shared<ColumnArray>(std::make_shared<ColumnString>());
         ColumnPtr col_res_holder = col_res;
@@ -397,7 +398,7 @@ public:
         }
         else if (col_const_str)
         {
-            String src = col_const_str->getData();
+            String src = col_const_str->getValue<String>();
             Array dst;
 
             generator.set(src.data(), src.data() + src.size());
@@ -499,12 +500,12 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-        if (!array_type || !typeid_cast<const DataTypeString *>(array_type->getNestedType().get()))
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+        if (!array_type || !checkDataType<DataTypeString>(array_type->getNestedType().get()))
             throw Exception("First argument for function " + getName() + " must be array of strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2
-            && !typeid_cast<const DataTypeString *>(arguments[1].get()))
+            && !checkDataType<DataTypeString>(arguments[1].get()))
             throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -515,26 +516,25 @@ public:
         String delimiter;
         if (arguments.size() == 2)
         {
-            const ColumnConstString * col_delim = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
+            const ColumnConst * col_delim = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
             if (!col_delim)
                 throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
 
-            delimiter = col_delim->getData();
+            delimiter = col_delim->getValue<String>();
         }
 
-        if (const ColumnConstArray * col_const_arr = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnConstString>(col_const_arr->size(), "");
-            block.safeGetByPosition(result).column = col_res;
-
-            const Array & src_arr = col_const_arr->getData();
-            String & dst_str = col_res->getData();
+            const Array & src_arr = col_const_arr->getValue<Array>();
+            String dst_str;
             for (size_t i = 0, size = src_arr.size(); i < size; ++i)
             {
                 if (i != 0)
                     dst_str += delimiter;
                 dst_str += src_arr[i].get<const String &>();
             }
+
+            block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(col_const_arr->size(), dst_str);
         }
         else
         {

@@ -6,6 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/NumberTraits.h>
 #include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
@@ -577,18 +578,18 @@ private:
     {
         if (typeid_cast<const T0 *>(&*arguments[0]))
         {
-            if (    checkRightType<T0, DataTypeDate>(arguments, type_res)
-                ||  checkRightType<T0, DataTypeDateTime>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt8>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt16>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt32>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt64>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt8>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt16>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt32>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt64>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeFloat32>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeFloat64>(arguments, type_res))
+            if (   checkRightType<T0, DataTypeDate>(arguments, type_res)
+                || checkRightType<T0, DataTypeDateTime>(arguments, type_res)
+                || checkRightType<T0, DataTypeUInt8>(arguments, type_res)
+                || checkRightType<T0, DataTypeUInt16>(arguments, type_res)
+                || checkRightType<T0, DataTypeUInt32>(arguments, type_res)
+                || checkRightType<T0, DataTypeUInt64>(arguments, type_res)
+                || checkRightType<T0, DataTypeInt8>(arguments, type_res)
+                || checkRightType<T0, DataTypeInt16>(arguments, type_res)
+                || checkRightType<T0, DataTypeInt32>(arguments, type_res)
+                || checkRightType<T0, DataTypeInt64>(arguments, type_res)
+                || checkRightType<T0, DataTypeFloat32>(arguments, type_res)
+                || checkRightType<T0, DataTypeFloat64>(arguments, type_res))
                 return true;
             else
                 throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
@@ -666,7 +667,7 @@ private:
 
     /// ColumnConst overload
     template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
-    bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst<T0> * col_left)
+    bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst * col_left)
     {
         if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[1]).column.get()))
         {
@@ -675,7 +676,7 @@ private:
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
-            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->getData(), col_right->getData(), vec_res);
+            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->getValue<T0>(), col_right->getData(), vec_res);
 
             return true;
         }

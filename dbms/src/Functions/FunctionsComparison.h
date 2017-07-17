@@ -18,6 +18,7 @@
 
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <Core/AccurateComparison.h>
 #include <IO/ReadBufferFromString.h>
@@ -771,11 +772,11 @@ private:
         bool is_enum8 = false;
         bool is_enum16 = false;
 
-        const auto legal_types = (is_date = typeid_cast<const DataTypeDate *>(number_type))
-            || (is_date_time = typeid_cast<const DataTypeDateTime *>(number_type))
-            || (is_uuid = typeid_cast<const DataTypeUUID *>(number_type))
-            || (is_enum8 = typeid_cast<const DataTypeEnum8 *>(number_type))
-            || (is_enum16 = typeid_cast<const DataTypeEnum16 *>(number_type));
+        const auto legal_types = (is_date = checkAndGetDataType<DataTypeDate>(number_type))
+            || (is_date_time = checkAndGetDataType<DataTypeDateTime>(number_type))
+            || (is_uuid = checkAndGetDataType<DataTypeUUID>(number_type))
+            || (is_enum8 = checkAndGetDataType<DataTypeEnum8>(number_type))
+            || (is_enum16 = checkAndGetDataType<DataTypeEnum16>(number_type));
 
         const auto column_string = typeid_cast<const ColumnConstString *>(column_string_untyped);
         if (!column_string || !legal_types)
@@ -1017,14 +1018,14 @@ public:
         const DataTypeTuple * left_tuple = nullptr;
 
         false
-            || (left_is_date         = typeid_cast<const DataTypeDate *>(arguments[0].get()))
-            || (left_is_date_time     = typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
-            || (left_is_enum8         = typeid_cast<const DataTypeEnum8 *>(arguments[0].get()))
-            || (left_is_uuid           = typeid_cast<const DataTypeUUID *>(arguments[0].get()))
-            || (left_is_enum16         = typeid_cast<const DataTypeEnum16 *>(arguments[0].get()))
-            || (left_is_string         = typeid_cast<const DataTypeString *>(arguments[0].get()))
-            || (left_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[0].get()))
-            || (left_tuple             = typeid_cast<const DataTypeTuple *>(arguments[0].get()));
+            || (left_is_date         = checkAndGetDataType<DataTypeDate>(arguments[0].get()))
+            || (left_is_date_time     = checkAndGetDataType<DataTypeDateTime>(arguments[0].get()))
+            || (left_is_enum8         = checkAndGetDataType<DataTypeEnum8>(arguments[0].get()))
+            || (left_is_uuid           = checkAndGetDataType<DataTypeUUID>(arguments[0].get()))
+            || (left_is_enum16         = checkAndGetDataType<DataTypeEnum16>(arguments[0].get()))
+            || (left_is_string         = checkAndGetDataType<DataTypeString>(arguments[0].get()))
+            || (left_is_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].get()))
+            || (left_tuple             = checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
 
         const bool left_is_enum = left_is_enum8 || left_is_enum16;
 
@@ -1038,14 +1039,14 @@ public:
         const DataTypeTuple * right_tuple = nullptr;
 
         false
-            || (right_is_date = typeid_cast<const DataTypeDate *>(arguments[1].get()))
-            || (right_is_date_time = typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
-            || (right_is_uuid = typeid_cast<const DataTypeUUID *>(arguments[1].get()))
-            || (right_is_enum8 = typeid_cast<const DataTypeEnum8 *>(arguments[1].get()))
-            || (right_is_enum16 = typeid_cast<const DataTypeEnum16 *>(arguments[1].get()))
-            || (right_is_string = typeid_cast<const DataTypeString *>(arguments[1].get()))
-            || (right_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[1].get()))
-            || (right_tuple = typeid_cast<const DataTypeTuple *>(arguments[1].get()));
+            || (right_is_date = checkAndGetDataType<DataTypeDate>(arguments[1].get()))
+            || (right_is_date_time = checkAndGetDataType<DataTypeDateTime>(arguments[1].get()))
+            || (right_is_uuid = checkAndGetDataType<DataTypeUUID>(arguments[1].get()))
+            || (right_is_enum8 = checkAndGetDataType<DataTypeEnum8>(arguments[1].get()))
+            || (right_is_enum16 = checkAndGetDataType<DataTypeEnum16>(arguments[1].get()))
+            || (right_is_string = checkAndGetDataType<DataTypeString>(arguments[1].get()))
+            || (right_is_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[1].get()))
+            || (right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get()));
 
         const bool right_is_enum = right_is_enum8 || right_is_enum16;
 
@@ -1108,7 +1109,7 @@ public:
                     + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (typeid_cast<const DataTypeTuple *>(col_with_type_and_name_left.type.get()))
+        else if (checkAndGetDataType<DataTypeTuple>(col_with_type_and_name_left.type.get()))
             executeTuple(block, result, col_left_untyped, col_right_untyped);
         else if (!left_is_num && !right_is_num && executeString(block, result, col_left_untyped, col_right_untyped))
             ;

@@ -10,7 +10,10 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
+
 #include <Common/Arena.h>
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
@@ -114,7 +117,7 @@ public:
             throw Exception { "Unsupported type " + type_x->getName() + " of first argument of function " + getName() + " must be a numeric type",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT };
 
-        const DataTypeArray * type_arr_from = typeid_cast<const DataTypeArray *>(arguments[1].get());
+        const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
 
         if (!type_arr_from)
             throw Exception { "Second argument of function " + getName() + " must be literal array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT };
@@ -263,7 +266,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         FunctionFindClusterIndex::getReturnTypeImpl(arguments);
-        const DataTypeArray * type_arr_from = typeid_cast<const DataTypeArray *>(arguments[1].get());
+        const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
         return type_arr_from->getNestedType();
     }
 

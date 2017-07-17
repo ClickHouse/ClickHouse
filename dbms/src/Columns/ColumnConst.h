@@ -48,7 +48,7 @@ public:
 
     std::string getName() const override
     {
-        return "ColumnConst<" + data->getName() + ">";
+        return "ColumnConst(" + data->getName() + ")";
     }
 
     bool isNumeric() const override

@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 
@@ -80,16 +81,16 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto check_argument_type = [this] (const IDataType * const arg) {
-            if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
-                !typeid_cast<const DataTypeUInt16 *>(arg) &&
-                !typeid_cast<const DataTypeUInt32 *>(arg) &&
-                !typeid_cast<const DataTypeUInt64 *>(arg) &&
-                !typeid_cast<const DataTypeInt8 *>(arg) &&
-                !typeid_cast<const DataTypeInt16 *>(arg) &&
-                !typeid_cast<const DataTypeInt32 *>(arg) &&
-                !typeid_cast<const DataTypeInt64 *>(arg) &&
-                !typeid_cast<const DataTypeFloat32 *>(arg) &&
-                !typeid_cast<const DataTypeFloat64 *>(arg))
+            if (!checkDataType<DataTypeUInt8>(arg) &&
+                !checkDataType<DataTypeUInt16>(arg) &&
+                !checkDataType<DataTypeUInt32>(arg) &&
+                !checkDataType<DataTypeUInt64>(arg) &&
+                !checkDataType<DataTypeInt8>(arg) &&
+                !checkDataType<DataTypeInt16>(arg) &&
+                !checkDataType<DataTypeInt32>(arg) &&
+                !checkDataType<DataTypeInt64>(arg) &&
+                !checkDataType<DataTypeFloat32>(arg) &&
+                !checkDataType<DataTypeFloat64>(arg))
             {
                 throw Exception{
                     "Illegal type " + arg->getName() + " of argument of function " + getName(),
@@ -227,16 +228,16 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto check_argument_type = [this] (const IDataType * const arg) {
-            if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
-                !typeid_cast<const DataTypeUInt16 *>(arg) &&
-                !typeid_cast<const DataTypeUInt32 *>(arg) &&
-                !typeid_cast<const DataTypeUInt64 *>(arg) &&
-                !typeid_cast<const DataTypeInt8 *>(arg) &&
-                !typeid_cast<const DataTypeInt16 *>(arg) &&
-                !typeid_cast<const DataTypeInt32 *>(arg) &&
-                !typeid_cast<const DataTypeInt64 *>(arg) &&
-                !typeid_cast<const DataTypeFloat32 *>(arg) &&
-                !typeid_cast<const DataTypeFloat64 *>(arg))
+            if (!checkDataType<DataTypeUInt8>(arg) &&
+                !checkDataType<DataTypeUInt16>(arg) &&
+                !checkDataType<DataTypeUInt32>(arg) &&
+                !checkDataType<DataTypeUInt64>(arg) &&
+                !checkDataType<DataTypeInt8>(arg) &&
+                !checkDataType<DataTypeInt16>(arg) &&
+                !checkDataType<DataTypeInt32>(arg) &&
+                !checkDataType<DataTypeInt64>(arg) &&
+                !checkDataType<DataTypeFloat32>(arg) &&
+                !checkDataType<DataTypeFloat64>(arg))
             {
                 throw Exception{
                     "Illegal type " + arg->getName() + " of argument of function " + getName(),
