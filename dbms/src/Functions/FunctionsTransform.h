@@ -283,7 +283,7 @@ private:
 
     bool executeString(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped)
     {
-        if (const auto in = typeid_cast<const ColumnString *>(in_untyped))
+        if (const auto in = checkAndGetColumn<ColumnString>(in_untyped))
         {
             if (!default_untyped)
             {
@@ -407,7 +407,7 @@ private:
         if (!out)
             return false;
 
-        auto default_col = typeid_cast<const ColumnString *>(default_untyped);
+        auto default_col = checkAndGetColumn<ColumnString>(default_untyped);
         if (!default_col)
         {
             throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
@@ -497,7 +497,7 @@ private:
         if (!out)
             return false;
 
-        auto default_col = typeid_cast<const ColumnString *>(default_untyped);
+        auto default_col = checkAndGetColumn<ColumnString>(default_untyped);
         if (!default_col)
         {
             throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),

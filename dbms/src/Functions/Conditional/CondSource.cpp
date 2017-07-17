@@ -83,7 +83,7 @@ const PaddedPODArray<UInt8> & CondSource::initDataArray(const Block & block, con
     else
         observed_col = source_col;
 
-    const auto * vec_col = typeid_cast<const ColumnUInt8 *>(observed_col);
+    auto vec_col = checkAndGetColumn<ColumnUInt8>(observed_col);
 
     if (vec_col == nullptr)
         throw CondException{CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN,

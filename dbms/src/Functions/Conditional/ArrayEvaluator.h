@@ -4,6 +4,7 @@
 #include <Functions/Conditional/common.h>
 #include <Functions/Conditional/NullMapBuilder.h>
 #include <Functions/Conditional/CondSource.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
@@ -261,20 +262,18 @@ public:
         if (TypeName<TType>::get() == type_name)
         {
             const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
-            const ColumnArray * col_array = typeid_cast<const ColumnArray *>(col);
-            const ColumnConstArray * col_const_array = typeid_cast<const ColumnConstArray *>(col);
 
             IArraySourcePtr<TResult> source;
 
-            if (col_array != nullptr)
+            if (auto col_array = checkAndGetColumn<ColumnArray>(col))
             {
                 const ColumnVector<TType> * content = typeid_cast<const ColumnVector<TType> *>(&col_array->getData());
                 if (content == nullptr)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 source = std::make_unique<ArraySource<TResult, TType> >(content->getData(), col_array->getOffsets());
             }
-            else if (col_const_array != nullptr)
-                source = std::make_unique<ConstArraySource<TResult, TType> >(col_const_array->getData());
+            else if (auto col_const_array = checkAndGetColumnConst<ColumnArray>(col))
+                source = std::make_unique<ConstArraySource<TResult, TType> >(col_const_array->getValue<Array>());
 
             sources.push_back(std::move(source));
 
@@ -299,12 +298,8 @@ public:
         if (TypeName<Null>::get() == type_name)
         {
             const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
-            const ColumnNull * null_col = typeid_cast<const ColumnNull *>(col);
-            if (null_col == nullptr)
-                throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
             IArraySourcePtr<TResult> source;
-            source = std::make_unique<ConstArraySource<TResult, Null> >(null_array);
+            source = std::make_unique<ConstArraySource<TResult, Null>>(null_array);
             sources.push_back(std::move(source));
 
             return true;

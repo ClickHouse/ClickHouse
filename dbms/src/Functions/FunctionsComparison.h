@@ -682,12 +682,12 @@ private:
 
     bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
-        const ColumnString * c0_string = typeid_cast<const ColumnString *>(c0);
-        const ColumnString * c1_string = typeid_cast<const ColumnString *>(c1);
+        const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
+        const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
         const ColumnFixedString * c0_fixed_string = typeid_cast<const ColumnFixedString *>(c0);
         const ColumnFixedString * c1_fixed_string = typeid_cast<const ColumnFixedString *>(c1);
-        const ColumnConstString * c0_const = typeid_cast<const ColumnConstString *>(c0);
-        const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
+        const ColumnConst * c0_const = checkAndGetColumnConst<ColumnString>(c0);
+        const ColumnConst * c1_const = checkAndGetColumnConst<ColumnString>(c1);
 
         if (!((c0_string || c0_fixed_string || c0_const) && (c1_string || c1_fixed_string || c1_const)))
             return false;
@@ -778,7 +778,7 @@ private:
             || (is_enum8 = checkAndGetDataType<DataTypeEnum8>(number_type))
             || (is_enum16 = checkAndGetDataType<DataTypeEnum16>(number_type));
 
-        const auto column_string = typeid_cast<const ColumnConstString *>(column_string_untyped);
+        const auto column_string = checkAndGetColumnConst<ColumnString>(column_string_untyped);
         if (!column_string || !legal_types)
             throw Exception{
                 "Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
@@ -837,7 +837,7 @@ private:
     /// Comparison between DataTypeEnum<T> and string constant containing the name of an enum element
     template <typename EnumType>
     void executeEnumWithConstString(
-        Block & block, const size_t result, const IColumn * column_number, const ColumnConstString * column_string,
+        Block & block, const size_t result, const IColumn * column_number, const ColumnConst * column_string,
         const IDataType * type_untyped, const bool left_is_num)
     {
         const auto type = static_cast<const EnumType *>(type_untyped);
@@ -866,8 +866,8 @@ private:
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
           */
 
-        auto x_const = typeid_cast<const ColumnConstTuple *>(c0);
-        auto y_const = typeid_cast<const ColumnConstTuple *>(c1);
+        auto x_const = checkAndGetColumnConst<ColumnTuple>(c0);
+        auto y_const = checkAndGetColumnConst<ColumnTuple>(c1);
 
         ColumnPtr x_tuple_of_consts;
         ColumnPtr y_tuple_of_consts;

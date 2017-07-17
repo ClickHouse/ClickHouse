@@ -55,7 +55,7 @@ protected:
 
         const ColumnArray * arr_col = nullptr;
         const ColumnVector<TType> * arr_vec_col = nullptr;
-        const ColumnConstArray * arr_const_col = nullptr;
+        const ColumnConst * arr_const_col = nullptr;
 
         Branch branch;
 
@@ -69,37 +69,19 @@ protected:
                 branch.is_const = true;
             else
             {
-                arr_col = typeid_cast<const ColumnArray *>(col);
-                if (arr_col != nullptr)
+                if (auto arr_col = checkAndGetColumn<ColumnArray>(col))
                 {
-                    arr_vec_col = typeid_cast<const ColumnVector<TType> *>(&arr_col->getData());
-                    if (arr_vec_col != nullptr)
+                    if (checkColumn<ColumnVector<TType>>(arr_col))
                         branch.is_const = false;
                     else
                         return false;
                 }
-                else
+                else if (arr_const_col = checkAndGetColumnConst<ColumnArray>(col))
                 {
-                    arr_const_col = typeid_cast<const ColumnConstArray *>(col);
-                    if (arr_const_col != nullptr)
-                    {
-                        const IDataType * data = arr_const_col->getDataType().get();
-                        const DataTypeArray * arr = typeid_cast<const DataTypeArray *>(data);
-                        if (arr == nullptr)
-                            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
-                        const IDataType * nested_type = arr->getNestedType().get();
-
-                        using ElementType = DataTypeNumber<TType>;
-
-                        if (typeid_cast<const ElementType *>(nested_type) == nullptr)
-                            return false;
-
-                        branch.is_const = true;
-                    }
-                    else
-                        return false;
+                    branch.is_const = true;
                 }
+                else
+                    return false;
             }
         }
 
@@ -127,10 +109,6 @@ protected:
         const ColumnNumbers & args, Branches & branches)
     {
         const IColumn * col = block.safeGetByPosition(args[index]).column.get();
-        const ColumnNull * const_col = typeid_cast<const ColumnNull *>(col);
-
-        if (const_col == nullptr)
-            return false;
 
         Branch branch;
         branch.is_const = true;

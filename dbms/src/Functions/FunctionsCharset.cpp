@@ -193,7 +193,7 @@ public:
         String charset_from = col_charset_from->getValue<String>();
         String charset_to = col_charset_to->getValue<String>();
 
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(arg_from.column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arg_from.column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());

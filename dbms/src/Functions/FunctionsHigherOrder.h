@@ -73,7 +73,7 @@ struct ArrayFilterImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
@@ -127,7 +127,7 @@ struct ArrayCountImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
@@ -189,7 +189,7 @@ struct ArrayExistsImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
@@ -255,7 +255,7 @@ struct ArrayAllImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
@@ -416,7 +416,7 @@ struct ArrayFirstImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
@@ -493,7 +493,7 @@ struct ArrayFirstIndexImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            const ColumnConstUInt8 * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
@@ -772,11 +772,11 @@ public:
         if (arguments.size() == 1)
         {
             ColumnPtr column_array_ptr = block.safeGetByPosition(arguments[0]).column;
-            const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*column_array_ptr);
+            const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(&*column_array_ptr);
 
             if (!column_array)
             {
-                const ColumnConstArray * column_const_array = typeid_cast<const ColumnConstArray *>(&*column_array_ptr);
+                const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(&*column_array_ptr);
                 if (!column_const_array)
                     throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                 column_array_ptr = column_const_array->convertToFullColumn();
@@ -813,15 +813,15 @@ public:
                 DataTypePtr argument_type = expression_arguments[i].type;
 
                 ColumnPtr column_array_ptr = block.safeGetByPosition(arguments[i + 1]).column;
-                const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*column_array_ptr);
+                const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(&*column_array_ptr);
 
                 if (!column_array)
                 {
-                    const ColumnConstArray * column_const_array = typeid_cast<const ColumnConstArray *>(&*column_array_ptr);
+                    const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(&*column_array_ptr);
                     if (!column_const_array)
                         throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                     column_array_ptr = column_const_array->convertToFullColumn();
-                    column_array = typeid_cast<const ColumnArray *>(&*column_array_ptr);
+                    column_array = checkAndGetColumn<ColumnArray>(&*column_array_ptr);
                 }
 
                 if (!offsets_column)

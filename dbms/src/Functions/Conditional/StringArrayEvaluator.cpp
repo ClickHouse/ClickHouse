@@ -2,6 +2,7 @@
 #include <Functions/Conditional/CondSource.h>
 #include <Functions/Conditional/common.h>
 #include <Functions/Conditional/NullMapBuilder.h>
+#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -306,9 +307,9 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
     auto append_source = [&](size_t i) -> bool
     {
         const IColumn * col = block.safeGetByPosition(args[i]).column.get();
-        const ColumnArray * col_arr = typeid_cast<const ColumnArray *>(col);
-        const ColumnString * var_col = col_arr ? typeid_cast<const ColumnString *>(&col_arr->getData()) : nullptr;
-        const ColumnConstArray * const_col = typeid_cast<const ColumnConstArray *>(col);
+        const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(col);
+        const ColumnString * var_col = col_arr ? checkAndGetColumn<ColumnString>(&col_arr->getData()) : nullptr;
+        const ColumnConst * const_col = checkAndGetColumnConst<ColumnArray>(col);
 
         if (col->isNull())
         {
@@ -325,7 +326,7 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
                 source = std::make_unique<VarStringArraySource>(var_col->getChars(),
                     var_col->getOffsets(), col_arr->getOffsets(), args[i]);
             else if (const_col)
-                source = std::make_unique<ConstStringArraySource>(const_col->getData(), args[i]);
+                source = std::make_unique<ConstStringArraySource>(const_col->getValue<Array>(), args[i]);
             else
                 throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 

@@ -2,6 +2,7 @@
 #include <Functions/Conditional/common.h>
 #include <Functions/Conditional/NullMapBuilder.h>
 #include <Functions/Conditional/CondSource.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -364,9 +365,12 @@ bool createStringSources(StringSources & sources, const Block & block,
     auto append_source = [&](size_t i)
     {
         const IColumn * col = block.safeGetByPosition(args[i]).column.get();
-        const ColumnString * var_col = typeid_cast<const ColumnString *>(col);
-        const ColumnFixedString * fixed_col = typeid_cast<const ColumnFixedString *>(col);
-        const ColumnConstString * const_col = typeid_cast<const ColumnConstString *>(col);
+        const ColumnString * var_col = checkAndGetColumn<ColumnString>(col);
+        const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(col);
+
+        const ColumnConst * const_col = checkAndGetColumnConst<ColumnString>(col);
+        if (!const_col)
+            const_col = checkAndGetColumnConst<ColumnFixedString>(col);
 
         StringSourcePtr source;
 
@@ -382,15 +386,10 @@ bool createStringSources(StringSources & sources, const Block & block,
         {
             /// If we actually have a fixed string, get its capacity.
             size_t size = 0;
-            const IDataType * data_type = const_col->getDataType().get();
-            if (data_type != nullptr)
-            {
-                const DataTypeFixedString * fixed = typeid_cast<const DataTypeFixedString *>(data_type);
-                if (fixed != nullptr)
-                    size = fixed->getN();
-            }
+            if (auto col_const_fixed = checkAndGetColumn<ColumnFixedString>(const_col->getDataColumn().get()))
+                size = col_const_fixed->getN();
 
-            source = std::make_unique<ConstStringSource>(const_col->getData(), size, args[i]);
+            source = std::make_unique<ConstStringSource>(const_col->getValue<String>(), size, args[i]);
         }
         else
             return false;

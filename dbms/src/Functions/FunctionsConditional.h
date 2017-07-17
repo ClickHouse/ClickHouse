@@ -919,8 +919,8 @@ private:
     {
         const IColumn * col_right_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
-        const ColumnArray * col_right_array = typeid_cast<const ColumnArray *>(col_right_untyped);
-        const ColumnConstArray * col_right_const_array = typeid_cast<const ColumnConstArray *>(col_right_untyped);
+        const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
+        const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
 
         if (!col_right_array && !col_right_const_array)
             return false;
@@ -962,12 +962,12 @@ private:
         Block & block,
         const ColumnNumbers & arguments,
         size_t result,
-        const ColumnConstArray * col_left_const_array)
+        const ColumnConst * col_left_const_array)
     {
         const IColumn * col_right_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
-        const ColumnArray * col_right_array = typeid_cast<const ColumnArray *>(col_right_untyped);
-        const ColumnConstArray * col_right_const_array = typeid_cast<const ColumnConstArray *>(col_right_untyped);
+        const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
+        const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
 
         if (!col_right_array && !col_right_const_array)
             return false;
@@ -1012,7 +1012,7 @@ private:
         const ColumnConst<T0> * col_const_left = nullptr;
         const ColumnArray * col_arr_left = nullptr;
         const ColumnVector<T0> * col_arr_left_elems = nullptr;
-        const ColumnConstArray * col_const_arr_left = nullptr;
+        const ColumnConst * col_const_arr_left = nullptr;
 
         col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped);
         if (!col_left)
@@ -1020,12 +1020,12 @@ private:
             col_const_left = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped);
             if (!col_const_left)
             {
-                col_arr_left = typeid_cast<const ColumnArray *>(col_left_untyped);
+                col_arr_left = checkAndGetColumn<ColumnArray>(col_left_untyped);
 
                 if (col_arr_left)
                     col_arr_left_elems = checkAndGetColumn<ColumnVector<T0>>(&col_arr_left->getData());
                 else
-                    col_const_arr_left = typeid_cast<const ColumnConstArray *>(col_left_untyped);
+                    col_const_arr_left = checkAndGetColumnConst<ColumnArray>(col_left_untyped);
             }
         }
 
@@ -1112,12 +1112,12 @@ private:
         const IColumn * col_then_untyped = block.safeGetByPosition(arguments[1]).column.get();
         const IColumn * col_else_untyped = block.safeGetByPosition(arguments[2]).column.get();
 
-        const ColumnString * col_then = typeid_cast<const ColumnString *>(col_then_untyped);
-        const ColumnString * col_else = typeid_cast<const ColumnString *>(col_else_untyped);
+        const ColumnString * col_then = checkAndGetColumn<ColumnString>(col_then_untyped);
+        const ColumnString * col_else = checkAndGetColumn<ColumnString>(col_else_untyped);
         const ColumnFixedString * col_then_fixed = typeid_cast<const ColumnFixedString *>(col_then_untyped);
         const ColumnFixedString * col_else_fixed = typeid_cast<const ColumnFixedString *>(col_else_untyped);
-        const ColumnConstString * col_then_const = typeid_cast<const ColumnConstString *>(col_then_untyped);
-        const ColumnConstString * col_else_const = typeid_cast<const ColumnConstString *>(col_else_untyped);
+        const ColumnConst * col_then_const = checkAndGetColumnConst<ColumnString>(col_then_untyped);
+        const ColumnConst * col_else_const = checkAndGetColumnConst<ColumnString>(col_else_untyped);
 
         if ((col_then || col_then_const || col_then_fixed) && (col_else || col_else_const || col_else_fixed))
         {
@@ -1206,12 +1206,12 @@ private:
             return true;
         }
 
-        const ColumnArray * col_arr_then = typeid_cast<const ColumnArray *>(col_then_untyped);
-        const ColumnArray * col_arr_else = typeid_cast<const ColumnArray *>(col_else_untyped);
-        const ColumnConstArray * col_arr_then_const = typeid_cast<const ColumnConstArray *>(col_then_untyped);
-        const ColumnConstArray * col_arr_else_const = typeid_cast<const ColumnConstArray *>(col_else_untyped);
-        const ColumnString * col_then_elements = col_arr_then ? typeid_cast<const ColumnString *>(&col_arr_then->getData()) : nullptr;
-        const ColumnString * col_else_elements = col_arr_else ? typeid_cast<const ColumnString *>(&col_arr_else->getData()) : nullptr;
+        const ColumnArray * col_arr_then = checkAndGetColumn<ColumnArray>(col_then_untyped);
+        const ColumnArray * col_arr_else = checkAndGetColumn<ColumnArray>(col_else_untyped);
+        const ColumnConst * col_arr_then_const = checkAndGetColumnConst<ColumnArray>(col_then_untyped);
+        const ColumnConst * col_arr_else_const = checkAndGetColumnConst<ColumnArray>(col_else_untyped);
+        const ColumnString * col_then_elements = col_arr_then ? checkAndGetColumn<ColumnString>(&col_arr_then->getData()) : nullptr;
+        const ColumnString * col_else_elements = col_arr_else ? checkAndGetColumn<ColumnString>(&col_arr_else->getData()) : nullptr;
 
         if (((col_arr_then && col_then_elements) || col_arr_then_const)
             && ((col_arr_else && col_else_elements) || col_arr_else_const))
@@ -1269,14 +1269,14 @@ private:
 
         if (typeid_cast<const ColumnTuple *>(arg1.column.get()))
             col1_holder = arg1.column;
-        else if (const ColumnConstTuple * const_tuple = typeid_cast<const ColumnConstTuple *>(arg1.column.get()))
+        else if (const ColumnConstTuple * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
             col1_holder = const_tuple->convertToTupleOfConstants();
         else
             return false;
 
         if (typeid_cast<const ColumnTuple *>(arg2.column.get()))
             col2_holder = arg2.column;
-        else if (const ColumnConstTuple * const_tuple = typeid_cast<const ColumnConstTuple *>(arg2.column.get()))
+        else if (const ColumnConstTuple * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
             col2_holder = const_tuple->convertToTupleOfConstants();
         else
             return false;

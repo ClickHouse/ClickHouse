@@ -723,7 +723,7 @@ template <typename DataType>
 bool FunctionArrayElement::executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
     ArrayImpl::NullMapBuilder & builder)
 {
-    const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
@@ -752,7 +752,7 @@ template <typename IndexType, typename DataType>
 bool FunctionArrayElement::executeNumber(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
     ArrayImpl::NullMapBuilder & builder)
 {
-    const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
@@ -774,12 +774,12 @@ bool FunctionArrayElement::executeNumber(Block & block, const ColumnNumbers & ar
 bool FunctionArrayElement::executeStringConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
     ArrayImpl::NullMapBuilder & builder)
 {
-    const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
 
-    const ColumnString * col_nested = typeid_cast<const ColumnString *>(&col_array->getData());
+    const ColumnString * col_nested = checkAndGetColumn<ColumnString>(&col_array->getData());
 
     if (!col_nested)
         return false;
@@ -815,12 +815,12 @@ template <typename IndexType>
 bool FunctionArrayElement::executeString(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
     ArrayImpl::NullMapBuilder & builder)
 {
-    const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
 
-    const ColumnString * col_nested = typeid_cast<const ColumnString *>(&col_array->getData());
+    const ColumnString * col_nested = checkAndGetColumn<ColumnString>(&col_array->getData());
 
     if (!col_nested)
         return false;
@@ -843,7 +843,7 @@ bool FunctionArrayElement::executeString(Block & block, const ColumnNumbers & ar
 bool FunctionArrayElement::executeGenericConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
     ArrayImpl::NullMapBuilder & builder)
 {
-    const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
@@ -868,7 +868,7 @@ template <typename IndexType>
 bool FunctionArrayElement::executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
     ArrayImpl::NullMapBuilder & builder)
 {
-    const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
@@ -886,12 +886,12 @@ bool FunctionArrayElement::executeGeneric(Block & block, const ColumnNumbers & a
 bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
     ArrayImpl::NullMapBuilder & builder)
 {
-    const ColumnConstArray * col_array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
 
-    const Array & array = col_array->getData();
+    const Array & array = col_array->getValue<Array>();
     size_t array_size = array.size();
     size_t real_index = 0;
 
@@ -923,7 +923,7 @@ template <typename IndexType>
 bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
     ArrayImpl::NullMapBuilder & builder)
 {
-    const ColumnConstArray * col_array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
@@ -1072,14 +1072,14 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
     bool is_nullable;
 
     const ColumnArray * col_array = nullptr;
-    const ColumnConstArray * col_const_array = nullptr;
+    const ColumnConst * col_const_array = nullptr;
 
-    col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
     if (col_array)
         is_nullable = col_array->getData().isNullable();
     else
     {
-        col_const_array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get());
+        col_const_array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
         if (col_const_array)
         {
             const auto & arr = col_const_array->getData();
@@ -1225,7 +1225,7 @@ DataTypePtr FunctionArrayEnumerate::getReturnTypeImpl(const DataTypes & argument
 
 void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    if (const ColumnArray * array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get()))
+    if (const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get()))
     {
         const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
@@ -1246,7 +1246,7 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
             prev_off = off;
         }
     }
-    else if (const ColumnConstArray * array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get()))
+    else if (const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get()))
     {
         const Array & values = array->getData();
 
@@ -1309,10 +1309,10 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
     for (size_t i = 0; i < arguments.size(); ++i)
     {
         ColumnPtr array_ptr = block.safeGetByPosition(arguments[i]).column;
-        const ColumnArray * array = typeid_cast<const ColumnArray *>(array_ptr.get());
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
-            const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(
+            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
                 block.safeGetByPosition(arguments[i]).column.get());
             if (!const_array)
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[i]).column->getName()
@@ -1438,7 +1438,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
     else
         inner_col = &array_data;
 
-    const ColumnString * nested = typeid_cast<const ColumnString *>(inner_col);
+    const ColumnString * nested = checkAndGetColumn<ColumnString>(inner_col);
     if (!nested)
         return false;
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
@@ -1473,7 +1473,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
 
 bool FunctionArrayUniq::executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    const ColumnConstArray * array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
     if (!array)
         return false;
     const Array & values = array->getData();
@@ -1634,17 +1634,17 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
     for (size_t i = 0; i < arguments.size(); ++i)
     {
         ColumnPtr array_ptr = block.safeGetByPosition(arguments[i]).column;
-        const ColumnArray * array = typeid_cast<const ColumnArray *>(array_ptr.get());
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
-            const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(
+            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
                 block.safeGetByPosition(arguments[i]).column.get());
             if (!const_array)
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[i]).column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
             array_ptr = const_array->convertToFullColumn();
-            array = typeid_cast<const ColumnArray *>(array_ptr.get());
+            array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         }
         array_columns[i] = array_ptr;
         const ColumnArray::Offsets_t & offsets_i = array->getOffsets();
@@ -1668,7 +1668,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
             null_maps[i] = nullptr;
     }
 
-    const ColumnArray * first_array = typeid_cast<const ColumnArray *>(array_columns[0].get());
+    const ColumnArray * first_array = checkAndGetColumn<ColumnArray>(array_columns[0].get());
     const IColumn * first_null_map = null_maps[0];
     auto res_nested = std::make_shared<ColumnUInt32>();
     auto res_array = std::make_shared<ColumnArray>(res_nested, first_array->getOffsetsColumn());
@@ -1762,7 +1762,7 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
     else
         inner_col = &array_data;
 
-    const ColumnString * nested = typeid_cast<const ColumnString *>(inner_col);
+    const ColumnString * nested = checkAndGetColumn<ColumnString>(inner_col);
     if (!nested)
         return false;
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
@@ -1795,7 +1795,7 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
 
 bool FunctionArrayEnumerateUniq::executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    const ColumnConstArray * array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
     if (!array)
         return false;
     const Array & values = array->getData();
@@ -1925,7 +1925,7 @@ namespace
     {
         bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
         {
-            if (const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[0]).column.get()))
+            if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
             {
                 if (const_array->getData().empty())
                 {
@@ -2081,7 +2081,7 @@ namespace
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
-            if (const ColumnString * src_data_concrete = typeid_cast<const ColumnString *>(&src_data))
+            if (const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data))
             {
                 const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
 
@@ -2247,7 +2247,7 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
     if (FunctionEmptyArrayToSingleImpl::executeConst(block, arguments, result))
         return;
 
-    const ColumnArray * array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
     if (!array)
         throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
@@ -2443,7 +2443,7 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
     if (executeConst(block, arguments, result))
         return;
 
-    const ColumnArray * array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+    const ColumnArray * array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
     if (!array)
         throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
@@ -2496,7 +2496,7 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
 
 bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    if (const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get()))
+    if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get()))
     {
         const Array & arr = const_array->getData();
 
@@ -2648,7 +2648,7 @@ bool FunctionArrayReverse::executeString(
     const ColumnNullable * nullable_col,
     ColumnNullable * nullable_res_col)
 {
-    if (const ColumnString * src_data_concrete = typeid_cast<const ColumnString *>(&src_data))
+    if (const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data))
     {
         const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
         ColumnString::Offsets_t & res_string_offsets = typeid_cast<ColumnString &>(res_data_col).getOffsets();
@@ -2747,7 +2747,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
             + toString(arguments.size()) + ", should be at least 2.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ColumnConstString * aggregate_function_name_column = typeid_cast<const ColumnConstString *>(arguments[0].column.get());
+    const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!aggregate_function_name_column)
         throw Exception("First argument for function " + getName() + " must be constant string: name of aggregate function.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -2846,12 +2846,12 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     for (size_t i = 0, size = arguments.size() - 1; i < size; ++i)
     {
         const IColumn * col = block.getByPosition(arguments[i + 1]).column.get();
-        if (const ColumnArray * arr = typeid_cast<const ColumnArray *>(col))
+        if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
         {
             aggregate_arguments_vec[i] = arr->getDataPtr().get();
             is_const = false;
         }
-        else if (const ColumnConstArray * arr = typeid_cast<const ColumnConstArray *>(col))
+        else if (const ColumnConst * arr = checkAndGetColumnConst<ColumnArray>(col))
         {
             materialized_columns.emplace_back(arr->convertToFullColumn());
             aggregate_arguments_vec[i] = typeid_cast<const ColumnArray &>(*materialized_columns.back().get()).getDataPtr().get();

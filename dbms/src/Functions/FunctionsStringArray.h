@@ -341,7 +341,7 @@ public:
         generator.init(block, arguments);
         size_t arrayArgumentPosition = arguments[generator.getStringsArgumentPosition()];
 
-        const ColumnString * col_str = typeid_cast<const ColumnString *>(block.safeGetByPosition(arrayArgumentPosition).column.get());
+        const ColumnString * col_str = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arrayArgumentPosition).column.get());
         const ColumnConst * col_const_str =
                 checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arrayArgumentPosition).column.get());
 

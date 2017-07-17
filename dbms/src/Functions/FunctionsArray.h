@@ -19,7 +19,6 @@
 #include <Functions/ObjectPool.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/StringUtils.h>
-#include <Common/typeid_cast.h>
 
 #include <ext/range.h>
 
@@ -772,7 +771,7 @@ private:
     template <typename T, typename U>
     bool executeNumberNumber(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
         if (!col_array)
             return false;
@@ -820,12 +819,12 @@ private:
 
     bool executeString(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
         if (!col_array)
             return false;
 
-        const ColumnString * col_nested = typeid_cast<const ColumnString *>(&col_array->getData());
+        const ColumnString * col_nested = checkAndGetColumn<ColumnString>(&col_array->getData());
 
         if (!col_nested)
             return false;
@@ -854,11 +853,11 @@ private:
         if (item_arg->isNull())
             ArrayIndexStringNullImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), col_res->getData(), null_map_data);
-        else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<String>>(item_arg))
+        else if (const auto item_arg_const = checkAndGetColumnConst<ColumnString>(item_arg))
             ArrayIndexStringImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
-                col_nested->getOffsets(), item_arg_const->getData(), col_res->getData(),
+                col_nested->getOffsets(), item_arg_const->getValue<String>(), col_res->getData(),
                 null_map_data);
-        else if (const auto item_arg_vector = typeid_cast<const ColumnString *>(item_arg))
+        else if (const auto item_arg_vector = checkAndGetColumn<ColumnString>(item_arg))
             ArrayIndexStringImpl<IndexConv>::vector_vector(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), item_arg_vector->getChars(), item_arg_vector->getOffsets(),
                 col_res->getData(), null_map_data, null_map_item);
@@ -870,12 +869,12 @@ private:
 
     bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnConstArray * col_array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
         if (!col_array)
             return false;
 
-        const Array & arr = col_array->getData();
+        const Array & arr = col_array->getValue<Array>();
 
         const auto item_arg = block.safeGetByPosition(arguments[1]).column.get();
         if (item_arg->isConst())
@@ -945,7 +944,7 @@ private:
 
     bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
 
         if (!col_array)
             return false;
@@ -977,7 +976,7 @@ private:
                 col_res->getData(), null_map_data);
         else if (item_arg.isConst())
             ArrayIndexGenericImpl<IndexConv, true>::vector(col_nested, col_array->getOffsets(),
-                *static_cast<const ColumnConst &>(item_arg).getData(), col_res->getData(),
+                *static_cast<const ColumnConst &>(item_arg).getDataColumn(), col_res->getData(),    /// TODO This is wrong.
                 null_map_data, nullptr);
         else
         {
@@ -1052,7 +1051,7 @@ public:
         bool is_nullable;
 
         const ColumnArray * col_array = nullptr;
-        col_array = typeid_cast<const ColumnArray *>(block.safeGetByPosition(arguments[0]).column.get());
+        col_array = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
         if (col_array)
             is_nullable = col_array->getData().isNullable();
         else

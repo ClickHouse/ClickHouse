@@ -453,11 +453,11 @@ struct DateTimeTransformImpl
         const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get());
         const auto * const_source = checkAndGetColumnConst<ColumnVector<FromType>>(source_col.get());
 
-        const ColumnConstString * time_zone_column = nullptr;
+        const ColumnConst * time_zone_column = nullptr;
 
         if (arguments.size() == 2)
         {
-            time_zone_column = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
+            time_zone_column = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
 
             if (!time_zone_column)
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
@@ -466,7 +466,7 @@ struct DateTimeTransformImpl
         }
 
         const DateLUTImpl & time_zone = time_zone_column
-            ? DateLUT::instance(time_zone_column->getData())
+            ? DateLUT::instance(time_zone_column->getValue<String>())
             : DateLUT::instance();
 
         if (sources)
@@ -710,7 +710,7 @@ public:
 
             block.safeGetByPosition(result).column = res_holder;
         }
-        else if (const ColumnConstUInt32 * const_times = typeid_cast<const ColumnConstUInt32 *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConstUInt32 * const_times = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
         }
@@ -830,10 +830,10 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnUInt32 * starts = typeid_cast<const ColumnUInt32 *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConstUInt32 * const_starts = typeid_cast<const ColumnConstUInt32 *>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConstUInt32 * const_starts = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get());
 
         const ColumnUInt32 * durations = typeid_cast<const ColumnUInt32 *>(block.safeGetByPosition(arguments[1]).column.get());
-        const ColumnConstUInt32 * const_durations = typeid_cast<const ColumnConstUInt32 *>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnConstUInt32 * const_durations = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[1]).column.get());
 
         auto res = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt32>());
         ColumnPtr res_holder = res;

@@ -1,4 +1,4 @@
-﻿#include <Functions/FunctionsString.h>
+#include <Functions/FunctionsString.h>
 
 #include <ext/range.h>
 #include <Columns/ColumnArray.h>
@@ -730,7 +730,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
             block.safeGetByPosition(result).column = col_res;
@@ -759,13 +759,13 @@ public:
                 Impl::vector_fixed_to_vector(col->getChars(), col->getN(), vec_res);
             }
         }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(&*column))
         {
             ResultType res = 0;
-            Impl::constant(col->getData(), res);
+            Impl::constant(col->getValue<String>(), res);
             block.safeGetByPosition(result).column = block.getByPosition(result).createConstColumn(col->size(), res);
         }
-        else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(&*column))
+        else if (const ColumnArray * col = checkAndGetColumn<ColumnArray>(&*column))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
             block.safeGetByPosition(result).column = col_res;
@@ -774,10 +774,10 @@ public:
             vec_res.resize(col->size());
             Impl::array(col->getOffsets(), vec_res);
         }
-        else if (const ColumnConstArray * col = typeid_cast<const ColumnConstArray *>(&*column))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnArray>(&*column))
         {
             ResultType res = 0;
-            Impl::constant_array(col->getData(), res);
+            Impl::constant_array(col->getValue<Array>(), res);
             block.safeGetByPosition(result).column = block.getByPosition(result).createConstColumn(col->size(), res);
         }
         else
@@ -825,7 +825,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_res;
@@ -837,10 +837,10 @@ public:
             block.safeGetByPosition(result).column = col_res;
             ReverseImpl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
         }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             String res;
-            ReverseImpl::constant(col->getData(), res);
+            ReverseImpl::constant(col->getValue<String>(), res);
             auto col_res = DataTypeString().createConstColumn(col->size(), res);
             block.safeGetByPosition(result).column = col_res;
         }
@@ -941,7 +941,7 @@ private:
         {
             const auto column = block.safeGetByPosition(arg_pos).column.get();
 
-            if (const auto col = typeid_cast<const ColumnString *>(column))
+            if (const auto col = checkAndGetColumn<ColumnString>(column))
             {
                 /** ColumnString stores strings with terminating null character
                   *  which should not be copied, therefore the decrease of total size by
@@ -961,7 +961,7 @@ private:
 
                 result.emplace_back(InstructionType::COPY_FIXED_STRING, ColumnAndOffset{col, 0});
             }
-            else if (const auto col = typeid_cast<const ColumnConstString *>(column))
+            else if (const auto col = checkAndGetColumnConst<ColumnString>(column))
             {
                 rows = col->size();
                 out_length += col->getData().size() * col->size();
@@ -985,19 +985,19 @@ private:
         const IColumn * c0 = block.safeGetByPosition(arguments[0]).column.get();
         const IColumn * c1 = block.safeGetByPosition(arguments[1]).column.get();
 
-        const ColumnString * c0_string = typeid_cast<const ColumnString *>(c0);
-        const ColumnString * c1_string = typeid_cast<const ColumnString *>(c1);
+        const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
+        const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
         const ColumnFixedString * c0_fixed_string = typeid_cast<const ColumnFixedString *>(c0);
         const ColumnFixedString * c1_fixed_string = typeid_cast<const ColumnFixedString *>(c1);
-        const ColumnConstString * c0_const = typeid_cast<const ColumnConstString *>(c0);
-        const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
+        const ColumnConst * c0_const = checkAndGetColumnConst<ColumnString>(c0);
+        const ColumnConst * c1_const = checkAndGetColumnConst<ColumnString>(c1);
 
         /// The result is const string
         if (c0_const && c1_const)
         {
             auto c_res = DataTypeString().createConstColumn(c0_const->size(), "");
             block.safeGetByPosition(result).column = c_res;
-            constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
+            constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), c_res->getData());
         }
         else
         {
@@ -1017,7 +1017,7 @@ private:
                     vec_res,
                     offsets_res);
             else if (c0_string && c1_const)
-                vector_constant(c0_string->getChars(), c0_string->getOffsets(), c1_const->getData(), vec_res, offsets_res);
+                vector_constant(c0_string->getChars(), c0_string->getOffsets(), c1_const->getValue<String>(), vec_res, offsets_res);
             else if (c0_fixed_string && c1_string)
                 fixed_vector_vector(c0_fixed_string->getChars(),
                     c0_fixed_string->getN(),
@@ -1026,7 +1026,7 @@ private:
                     vec_res,
                     offsets_res);
             else if (c0_const && c1_string)
-                constant_vector(c0_const->getData(), c1_string->getChars(), c1_string->getOffsets(), vec_res, offsets_res);
+                constant_vector(c0_const->getValue<String>(), c1_string->getChars(), c1_string->getOffsets(), vec_res, offsets_res);
             else if (c0_fixed_string && c1_fixed_string)
                 fixed_vector_fixed_vector(c0_fixed_string->getChars(),
                     c0_fixed_string->getN(),
@@ -1035,9 +1035,9 @@ private:
                     vec_res,
                     offsets_res);
             else if (c0_fixed_string && c1_const)
-                fixed_vector_constant(c0_fixed_string->getChars(), c0_fixed_string->getN(), c1_const->getData(), vec_res, offsets_res);
+                fixed_vector_constant(c0_fixed_string->getChars(), c0_fixed_string->getN(), c1_const->getValue<String>(), vec_res, offsets_res);
             else if (c0_const && c1_fixed_string)
-                constant_fixed_vector(c0_const->getData(), c1_fixed_string->getChars(), c1_fixed_string->getN(), vec_res, offsets_res);
+                constant_fixed_vector(c0_const->getValue<String>(), c1_fixed_string->getChars(), c1_fixed_string->getN(), vec_res, offsets_res);
             else
                 throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName() + " and "
                         + block.safeGetByPosition(arguments[1]).column->getName()
@@ -1408,7 +1408,7 @@ public:
         if (start >= 0x8000000000000000ULL || length >= 0x8000000000000000ULL)
             throw Exception("Too large values of 2nd or 3rd argument provided for function substring.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_string))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column_string))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_res;
@@ -1420,10 +1420,10 @@ public:
             block.safeGetByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), start, length, col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column_string))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(&*column_string))
         {
             String res;
-            Impl::constant(col->getData(), start, length, res);
+            Impl::constant(col->getValue<String>(), start, length, res);
             auto col_res = DataTypeString().createConstColumn(col->size(), res);
             block.safeGetByPosition(result).column = col_res;
         }
@@ -1473,15 +1473,15 @@ private:
         const auto & column = block.safeGetByPosition(arguments[0]).column;
         const auto & column_char = block.safeGetByPosition(arguments[1]).column;
 
-        if (!typeid_cast<const ColumnConstString *>(column_char.get()))
+        if (!checkColumnConst<ColumnString>(column_char.get()))
             throw Exception{"Second argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & trailing_char_str = static_cast<const ColumnConstString &>(*column_char).getData();
+        const auto & trailing_char_str = static_cast<const ColumnConst &>(*column_char).getValue<String>();
 
         if (trailing_char_str.size() != 1)
             throw Exception{"Second argument of function " + getName() + " must be a one-character string", ErrorCodes::BAD_ARGUMENTS};
 
-        if (const auto col = typeid_cast<const ColumnString *>(&*column))
+        if (const auto col = checkAndGetColumn<ColumnString>(&*column))
         {
             auto col_res = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_res;
@@ -1518,7 +1518,7 @@ private:
 
             dst_data.resize_assume_reserved(dst_offset);
         }
-        else if (const auto col = typeid_cast<const ColumnConstString *>(&*column))
+        else if (const auto col = checkAndGetColumnConst<ColumnString>(&*column))
         {
             const auto & in_data = col->getData();
 

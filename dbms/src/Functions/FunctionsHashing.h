@@ -201,7 +201,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnUInt64>();
             block.safeGetByPosition(result).column = col_to;
@@ -217,11 +217,11 @@ public:
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
-                Impl::apply(col_from->getData().data(), col_from->getData().size()));
+                Impl::apply(col_from->getValue<String>().data(), col_from->getData().size()));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -256,7 +256,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnFixedString>(Impl::length);
             block.safeGetByPosition(result).column = col_to;
@@ -273,9 +273,9 @@ public:
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
                     &chars_to[i * Impl::length]);
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            const auto & data = col_from->getData();
+            const auto & data = col_from->getValue<String>();
 
             String hash(Impl::length, 0);
             Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));
@@ -427,7 +427,7 @@ private:
     template <bool first>
     void executeString(const IColumn * column, ColumnUInt64::Container_t & vec_to)
     {
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(column))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
             const typename ColumnString::Chars_t & data = col_from->getChars();
             const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
@@ -458,9 +458,9 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
             }
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(column))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(column))
         {
-            const UInt64 hash = Impl::Hash64(col_from->getData().data(), col_from->getData().size());
+            const UInt64 hash = Impl::Hash64(col_from->getValue<String>().data(), col_from->getData().size());
             const size_t size = vec_to.size();
             if (first)
             {
@@ -485,7 +485,7 @@ private:
     {
         const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
 
-        if (const ColumnArray * col_from = typeid_cast<const ColumnArray *>(column))
+        if (const ColumnArray * col_from = checkAndGetColumn<ColumnArray>(column))
         {
             const IColumn * nested_column = &col_from->getData();
             const ColumnArray::Offsets_t & offsets = col_from->getOffsets();
@@ -511,7 +511,7 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], vec_temp[j]));
             }
         }
-        else if (const ColumnConstArray * col_from = typeid_cast<const ColumnConstArray *>(column))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnArray>(column))
         {
             /// NOTE: here, of course, you can do without the materialization of the column.
             ColumnPtr full_column = col_from->convertToFullColumn();
@@ -560,7 +560,7 @@ private:
                 executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
             }
         }
-        else if (const ColumnConstTuple * tuple = typeid_cast<const ColumnConstTuple *>(column))
+        else if (const ColumnConstTuple * tuple = checkAndGetColumnConst<ColumnTuple>(column))
         {
             ColumnPtr tuple_of_constants = tuple->convertToTupleOfConstants();
             executeForArgument(type, tuple_of_constants.get(), vec_to, is_first);
@@ -766,7 +766,7 @@ private:
     {
         const auto col_untyped = block.safeGetByPosition(arguments.front()).column.get();
 
-        if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
+        if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
             const auto col_to = std::make_shared<ColumnUInt64>(size);
@@ -781,7 +781,7 @@ private:
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
         }
-        else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
+        else if (const auto col_from = checkAndGetColumnConst<ColumnString>(col_untyped))
         {
             block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
@@ -805,7 +805,7 @@ private:
         const auto level = level_col->get64(0);
 
         const auto col_untyped = block.safeGetByPosition(arguments.front()).column.get();
-        if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
+        if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
             const auto col_to = std::make_shared<ColumnUInt64>(size);
@@ -820,7 +820,7 @@ private:
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
         }
-        else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
+        else if (const auto col_from = checkAndGetColumnConst<ColumnString>(col_untyped))
         {
             block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),

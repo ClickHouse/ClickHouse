@@ -115,7 +115,7 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<String>>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             const auto data_type_fixed_string = checkAndGetDataType<DataTypeFixedString>(col_in->getDataType().get());
             if (!data_type_fixed_string || data_type_fixed_string->getN() != ipv6_bytes_length)
@@ -240,7 +240,7 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<String>>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             const auto data_type_fixed_string = checkAndGetDataType<DataTypeFixedString>(col_in->getDataType().get());
             if (!data_type_fixed_string || data_type_fixed_string->getN() != ipv6_bytes_length)
@@ -481,7 +481,7 @@ public:
     {
         const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
 
-        if (const auto col_in = typeid_cast<const ColumnString *>(column.get()))
+        if (const auto col_in = checkAndGetColumn<ColumnString>(column.get()))
         {
             const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
             block.safeGetByPosition(result).column = col_res;
@@ -501,7 +501,7 @@ public:
                 src_offset = offsets_src[i];
             }
         }
-        else if (const auto col_in = typeid_cast<const ColumnConstString *>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             String out(ipv6_bytes_length, 0);
             ipv6_scan(col_in->getData().data(), reinterpret_cast<unsigned char *>(&out[0]));
@@ -666,7 +666,7 @@ public:
     {
         const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
 
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = std::make_shared<ColumnUInt32>();
             block.safeGetByPosition(result).column = col_res;
@@ -684,7 +684,7 @@ public:
                 prev_offset = offsets_src[i];
             }
         }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             auto col_res = DataTypeUInt32().createConstColumn(col->size(), parseIPv4(col->getData().c_str()));
             block.safeGetByPosition(result).column = col_res;
@@ -1031,7 +1031,7 @@ public:
     {
         const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
 
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = std::make_shared<ColumnUInt64>();
             block.safeGetByPosition(result).column = col_res;
@@ -1049,7 +1049,7 @@ public:
                 prev_offset = offsets_src[i];
             }
         }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getData().c_str()));
             block.safeGetByPosition(result).column = col_res;
@@ -1128,7 +1128,7 @@ public:
     {
         const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
 
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = std::make_shared<ColumnUInt64>();
             block.safeGetByPosition(result).column = col_res;
@@ -1146,7 +1146,7 @@ public:
                 prev_offset = offsets_src[i];
             }
         }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getData().c_str()));
             block.safeGetByPosition(result).column = col_res;
@@ -1224,7 +1224,7 @@ public:
                 offsets_res[i] = dst_offset;
             }
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<String>>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             const auto data_type_fixed_string = checkAndGetDataType<DataTypeFixedString>(col_in->getDataType().get());
             if (!data_type_fixed_string || data_type_fixed_string->getN() != uuid_bytes_length)
@@ -1307,7 +1307,7 @@ public:
         const ColumnWithTypeAndName & col_type_name = block.safeGetByPosition(arguments[0]);
         const ColumnPtr & column = col_type_name.column;
 
-        if (const auto col_in = typeid_cast<const ColumnString *>(column.get()))
+        if (const auto col_in = checkAndGetColumn<ColumnString>(column.get()))
         {
             const auto & vec_in = col_in->getChars();
             const auto & offsets_in = col_in->getOffsets();
@@ -1365,7 +1365,7 @@ public:
                 dst_offset += uuid_bytes_length;
             }
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<String>>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             const auto & data_in = col_in->getData();
 
@@ -1509,8 +1509,8 @@ public:
 
     bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
     {
-        const ColumnString * col_str_in = typeid_cast<const ColumnString *>(col);
-        const ColumnConstString * col_const_in = typeid_cast<const ColumnConstString *>(col);
+        const ColumnString * col_str_in = checkAndGetColumn<ColumnString>(col);
+        const ColumnConst * col_const_in = checkAndGetColumnConst<ColumnString>(col);
 
         if (col_str_in)
         {
@@ -1682,7 +1682,7 @@ public:
     {
         const ColumnPtr & column = block.safeGetByPosition(arguments[0]).column;
 
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(column.get()))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_res;
@@ -1714,7 +1714,7 @@ public:
 
             out_vec.resize(pos - begin);
         }
-        else if(const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
+        else if(const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             const std::string & src = col->getData();
             std::string res(src.size(), '\0');
@@ -1866,8 +1866,8 @@ public:
 
     bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
     {
-        const ColumnString * col_str_in = typeid_cast<const ColumnString *>(col);
-        const ColumnConstString * col_const_in = typeid_cast<const ColumnConstString *>(col);
+        const ColumnString * col_str_in = checkAndGetColumn<ColumnString>(col);
+        const ColumnConst * col_const_in = checkAndGetColumnConst<ColumnString>(col);
 
         if (col_str_in)
         {

@@ -222,7 +222,7 @@ public:
 
         if (arguments.size() == 2)
         {
-            const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
+            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
 
             if (!key_col)
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
@@ -230,7 +230,7 @@ public:
                     + ". Must be constant string.",
                     ErrorCodes::ILLEGAL_COLUMN);
 
-            dict_key = key_col->getData();
+            dict_key = key_col->getValue<String>();
         }
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
@@ -320,7 +320,7 @@ public:
 
         if (arguments.size() == 3)
         {
-            const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[2]).column.get());
+            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[2]).column.get());
 
             if (!key_col)
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
@@ -328,15 +328,15 @@ public:
                 + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-            dict_key = key_col->getData();
+            dict_key = key_col->getValue<String>();
         }
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
         const ColumnVector<T> * col_vec1 = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get());
         const ColumnVector<T> * col_vec2 = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[1]).column.get());
-        const ColumnConst<T> * col_const1 = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConst<T> * col_const2 = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnConst * col_const1 = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConst * col_const2 = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[1]).column.get());
 
         if (col_vec1 && col_vec2)
         {
@@ -448,7 +448,7 @@ public:
 
         if (arguments.size() == 2)
         {
-            const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
+            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
 
             if (!key_col)
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
@@ -456,7 +456,7 @@ public:
                 + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-            dict_key = key_col->getData();
+            dict_key = key_col->getValue<String>();
         }
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
@@ -731,8 +731,8 @@ public:
         /// If the result language is specified
         if (arguments.size() == 2)
         {
-            if (const ColumnConstString * col_language = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get()))
-                language = RegionsNames::getLanguageEnum(col_language->getData());
+            if (const ColumnConst * col_language = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get()))
+                language = RegionsNames::getLanguageEnum(col_language->getValue<String>());
             else
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
                         + " of the second argument of function " + getName(),

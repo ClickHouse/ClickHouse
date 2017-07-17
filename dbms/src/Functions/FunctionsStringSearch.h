@@ -86,7 +86,7 @@ public:
         {
             ResultType res{};
             Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
-            block.safeGetByPosition(result).column = block.getByPosition(result).createConstColumn(col_haystack_const->size(), res);
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_haystack_const->size(), toField(res));
             return;
         }
 
@@ -96,8 +96,8 @@ public:
         typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
         vec_res.resize(column_haystack->size());
 
-        const ColumnString * col_haystack_vector = typeid_cast<const ColumnString *>(&*column_haystack);
-        const ColumnString * col_needle_vector = typeid_cast<const ColumnString *>(&*column_needle);
+        const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
+        const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(&*column_needle);
 
         if (col_haystack_vector && col_needle_vector)
             Impl::vector_vector(col_haystack_vector->getChars(),
@@ -161,7 +161,7 @@ public:
         if (!col_needle)
             throw Exception("Second argument of function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
 
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_res;
@@ -170,9 +170,9 @@ public:
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
             Impl::vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
         }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
+        else if (auto col = checkAndGetColumnConst<ColumnString>(&*column))
         {
-            const std::string & data = col->getData();
+            String data = col->getValue<String>();
             ColumnString::Chars_t vdata(reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str()),
                 reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str() + data.size() + 1));
             ColumnString::Offsets_t offsets(1, vdata.size());
@@ -180,7 +180,7 @@ public:
             ColumnString::Offsets_t res_offsets;
             Impl::vector(vdata, offsets, col_needle->getValue<String>(), res_vdata, res_offsets);
 
-            std::string res;
+            String res;
 
             if (!res_offsets.empty())
                 res.assign(&res_vdata[0], &res_vdata[res_vdata.size() - 1]);

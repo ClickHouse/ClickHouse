@@ -165,7 +165,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_res;

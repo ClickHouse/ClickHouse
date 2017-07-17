@@ -138,7 +138,8 @@ public:
       */
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = ColumnConstString(block.rows(), Poco::Net::DNS::hostName()).convertToFullColumn();
+        block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+            block.rows(), Poco::Net::DNS::hostName())->convertToFullColumnIfConst();
     }
 };
 
@@ -655,7 +656,7 @@ public:
 
         /// First argument may be tuple or single column.
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConstTuple * const_tuple = typeid_cast<const ColumnConstTuple *>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConstTuple * const_tuple = checkAndGetColumnConst<ColumnTuple>(block.safeGetByPosition(arguments[0]).column.get());
 
         if (tuple)
             block_of_key_columns = tuple->getData();
@@ -749,7 +750,7 @@ public:
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites) override
     {
-        const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(&*arguments[1].column);
+        const ColumnConstUInt8 * index_col = checkAndGetColumnConst<ColumnUInt8>(&*arguments[1].column);
         if (!index_col)
             throw Exception("Second argument to " + getName() + " must be a constant UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -775,8 +776,8 @@ public:
     {
         const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
         const ColumnConstTuple * const_tuple_col
-            = typeid_cast<const ColumnConstTuple *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConstUInt8 * index_col = typeid_cast<const ColumnConstUInt8 *>(block.safeGetByPosition(arguments[1]).column.get());
+            = checkAndGetColumnConst<ColumnTuple>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConstUInt8 * index_col = checkAndGetColumnConst<ColumnUInt8>(block.safeGetByPosition(arguments[1]).column.get());
 
         if (!tuple_col && !const_tuple_col)
             throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
@@ -1008,7 +1009,7 @@ void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & argumen
 
     if (!array_column)
     {
-        ColumnConstArray * const_array_column = typeid_cast<ColumnConstArray *>(block.safeGetByPosition(arguments[1]).column.get());
+        ColumnConst * const_array_column = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[1]).column.get());
         if (!const_array_column)
             throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
         temp_column = const_array_column->convertToFullColumn();
@@ -1182,11 +1183,11 @@ private:
     }
 
     template <typename T>
-    static bool executeConstNumber(const IColumn & src, ColumnConstString & dst, Int64 min, Int64 max, Float64 max_width)
+    static bool executeConstNumber(const IColumn & src, ColumnConst & dst, Int64 min, Int64 max, Float64 max_width)
     {
         if (const ColumnConst<T> * col = checkAndGetColumnConst<ColumnVector<T>>(&src))
         {
-            fill(col->getData(), dst.getData(), min, max, max_width);
+            fill(col->getData(), dst.getValue<String>(), min, max, max_width);
             return true;
         }
         else
@@ -1748,8 +1749,7 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
     {
         const ColumnWithTypeAndName & argument = arguments[i];
 
-        const ColumnConstString * column = typeid_cast<const ColumnConstString *>(argument.column.get());
-        if (!column)
+        if (!checkColumnConst<ColumnString>(argument.column.get()))
         {
             throw Exception(arg_pos_description[i] + " argument for function " + getName() + " must be const String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1764,8 +1764,8 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
 {
     auto get_string_from_block = [&](size_t column_pos) -> const String & {
         ColumnPtr column = block.safeGetByPosition(column_pos).column;
-        const ColumnConstString * const_column = typeid_cast<const ColumnConstString *>(column.get());
-        return const_column->getData();
+        const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.get());
+        return const_column->getValue<String>();
     };
 
     const String & database_name = get_string_from_block(arguments[0]);

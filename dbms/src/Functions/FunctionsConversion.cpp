@@ -8,14 +8,14 @@ const DateLUTImpl * extractTimeZoneFromFunctionArguments(Block & block, const Co
 {
     if (arguments.size() == 2)
     {
-        const ColumnConstString * time_zone_column = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
 
         if (!time_zone_column)
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
                 + " of second (time zone) argument of function, must be constant string",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        return &DateLUT::instance(time_zone_column->getData());
+        return &DateLUT::instance(time_zone_column->getValue<String>());
     }
     else
         return &DateLUT::instance();

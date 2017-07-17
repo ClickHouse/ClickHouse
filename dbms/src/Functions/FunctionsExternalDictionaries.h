@@ -95,7 +95,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto dict_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[0]).column.get());
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{
                 "First argument of function " + getName() + " must be a constant string",
@@ -190,13 +190,13 @@ static bool isDictGetFunctionInjective(const ExternalDictionaries & dictionaries
     if (sample_block.columns() != 3 && sample_block.columns() != 4)
         throw Exception{"Function dictGet... takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    const auto dict_name_col = checkAndGetColumnConst<ColumnVector<String>>(sample_block.getByPosition(0).column.get());
+    const auto dict_name_col = checkAndGetColumnConst<ColumnString>(sample_block.getByPosition(0).column.get());
     if (!dict_name_col)
         throw Exception{
             "First argument of function dictGet... must be a constant string",
             ErrorCodes::ILLEGAL_COLUMN};
 
-    const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(sample_block.getByPosition(1).column.get());
+    const auto attr_name_col = checkAndGetColumnConst<ColumnString>(sample_block.getByPosition(1).column.get());
     if (!attr_name_col)
         throw Exception{
             "Second argument of function dictGet... must be a constant string",
@@ -275,7 +275,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto dict_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[0]).column.get());
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{
                 "First argument of function " + getName() + " must be a constant string",
@@ -310,7 +310,7 @@ private:
                 " requires exactly 3 arguments",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -357,7 +357,7 @@ private:
                     " requires exactly 3 arguments",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -401,7 +401,7 @@ private:
                 " requires exactly 4 arguments",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -538,7 +538,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto dict_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[0]).column.get());
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{
                 "First argument of function " + getName() + " must be a constant string",
@@ -566,7 +566,7 @@ private:
         if (!dict)
             return false;
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -594,7 +594,7 @@ private:
     {
         const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 
-        if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
+        if (const auto default_col = checkAndGetColumn<ColumnString>(default_col_untyped))
         {
             /// vector ids, vector defaults
             const auto out = std::make_shared<ColumnString>();
@@ -604,7 +604,7 @@ private:
 
             dictionary->getString(attr_name, ids, default_col, out.get());
         }
-        else if (const auto default_col = checkAndGetColumnConst<ColumnVector<String>>(default_col_untyped))
+        else if (const auto default_col = checkAndGetColumnConst<ColumnString>(default_col_untyped))
         {
             /// vector ids, const defaults
             const auto out = std::make_shared<ColumnString>();
@@ -628,7 +628,7 @@ private:
     {
         const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 
-        if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
+        if (const auto default_col = checkAndGetColumn<ColumnString>(default_col_untyped))
         {
             /// const ids, vector defaults
             /// @todo avoid materialization
@@ -638,7 +638,7 @@ private:
 
             dictionary->getString(attr_name, ids, default_col, out.get());
         }
-        else if (const auto default_col = checkAndGetColumnConst<ColumnVector<String>>(default_col_untyped))
+        else if (const auto default_col = checkAndGetColumnConst<ColumnString>(default_col_untyped))
         {
             /// const ids, const defaults
             const PaddedPODArray<UInt64> ids(1, id_col->getData());
@@ -664,7 +664,7 @@ private:
         if (!dict)
             return false;
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -684,11 +684,11 @@ private:
         block.safeGetByPosition(result).column = out;
 
         const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
-        if (const auto default_col = typeid_cast<const ColumnString *>(default_col_untyped))
+        if (const auto default_col = checkAndGetColumn<ColumnString>(default_col_untyped))
         {
             dict->getString(attr_name, key_columns, key_types, default_col, out.get());
         }
-        else if (const auto default_col = checkAndGetColumnConst<ColumnVector<String>>(default_col_untyped))
+        else if (const auto default_col = checkAndGetColumnConst<ColumnString>(default_col_untyped))
         {
             const auto & def = default_col->getData();
             dict->getString(attr_name, key_columns, key_types, def, out.get());
@@ -828,7 +828,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto dict_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[0]).column.get());
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{
                 "First argument of function " + getName() + " must be a constant string",
@@ -863,7 +863,7 @@ private:
                 " requires exactly 3 arguments.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -914,7 +914,7 @@ private:
                     " requires exactly 3 arguments",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -960,7 +960,7 @@ private:
                 " requires exactly 4 arguments",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -1136,7 +1136,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto dict_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[0]).column.get());
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{
                 "First argument of function " + getName() + " must be a constant string",
@@ -1164,7 +1164,7 @@ private:
         if (!dict)
             return false;
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -1268,7 +1268,7 @@ private:
         if (!dict)
             return false;
 
-        const auto attr_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[1]).column.get());
+        const auto attr_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
         if (!attr_name_col)
             throw Exception{
                 "Second argument of function " + getName() + " must be a constant string",
@@ -1376,7 +1376,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto dict_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[0]).column.get());
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{
                 "First argument of function " + getName() + " must be a constant string",
@@ -1541,7 +1541,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto dict_name_col = checkAndGetColumnConst<ColumnVector<String>>(block.safeGetByPosition(arguments[0]).column.get());
+        const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{
                 "First argument of function " + getName() + " must be a constant string",

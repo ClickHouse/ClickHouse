@@ -352,7 +352,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
         if (std::is_same<ToDataType, DataTypeDateTime>::value)
             time_zone = extractTimeZoneFromFunctionArguments(block, arguments);
 
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
             block.safeGetByPosition(result).column = col_to;
@@ -380,9 +380,9 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            const String & s = col_from->getData();
+            const String & s = col_from->getValue<String>();
             ReadBufferFromString read_buffer(s);
             ToFieldType x(0);
             parseImpl<ToDataType>(x, read_buffer, time_zone);
@@ -426,7 +426,7 @@ struct ConvertOrZeroImpl
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
             block.safeGetByPosition(result).column = col_to;
@@ -451,9 +451,9 @@ struct ConvertOrZeroImpl
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            const String & s = col_from->getData();
+            const String & s = col_from->getValue<String>();
             ReadBufferFromString read_buffer(s);
             ToFieldType x = 0;
             if (!tryParseImpl<ToDataType>(x, read_buffer) || !read_buffer.eof())
@@ -479,7 +479,7 @@ struct ConvertImplGenericFromString
         ColumnWithTypeAndName & column_type_name_to = block.safeGetByPosition(result);
         const IDataType & data_type_to = *column_type_name_to.type;
 
-        if (const ColumnString * col_from_string = typeid_cast<const ColumnString *>(&col_from))
+        if (const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(&col_from))
         {
             column_type_name_to.column = data_type_to.createColumn();
 
@@ -506,9 +506,9 @@ struct ConvertImplGenericFromString
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConstString * col_from_const_string = typeid_cast<const ColumnConstString *>(&col_from))
+        else if (const ColumnConst * col_from_const_string = checkAndGetColumnConst<ColumnString>(&col_from))
         {
-            const String & s = col_from_const_string->getData();
+            const String & s = col_from_const_string->getValue<String>();
             ReadBufferFromString read_buffer(s);
 
             auto tmp_col = data_type_to.createColumn();
@@ -590,7 +590,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
                 }
             }
         }
-        else if (typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (checkColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             ConvertImpl<DataTypeString, ToDataType, Name>::execute(block, arguments, result);
         }
@@ -641,9 +641,9 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
             data_to.resize(offset_to);
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            const String & s = col_from->getData();
+            const String & s = col_from->getValue<String>();
 
             size_t bytes_to_copy = s.size();
             while (bytes_to_copy > 0 && s[bytes_to_copy - 1] == 0)
@@ -941,7 +941,7 @@ public:
     {
         const auto & column = block.safeGetByPosition(arguments[0]).column;
 
-        if (const auto column_const = typeid_cast<const ColumnConstString *>(column.get()))
+        if (const auto column_const = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             if (column_const->getData().size() > n)
                 throw Exception("String too long for type FixedString(" + toString(n) + ")",
@@ -953,7 +953,7 @@ public:
             block.safeGetByPosition(result).column = DataTypeFixedString(n).createConstColumn(
                 column_const->size(), std::move(resized_string));
         }
-        else if (const auto column_string = typeid_cast<const ColumnString *>(column.get()))
+        else if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
         {
             const auto column_fixed = std::make_shared<ColumnFixedString>(n);
             ColumnPtr result_ptr = column_fixed;
@@ -1296,16 +1296,16 @@ private:
             auto array_arg = block.safeGetByPosition(arguments.front());
 
             /// @todo add const variant which retains array constness
-            if (const auto col_const_array = typeid_cast<const ColumnConstArray *>(array_arg.column.get()))
+            if (const auto col_const_array = checkAndGetColumnConst<ColumnArray>(array_arg.column.get()))
                 array_arg.column = col_const_array->convertToFullColumn();
 
-            if (auto col_array = typeid_cast<const ColumnArray *>(array_arg.column.get()))
+            if (auto col_array = checkAndGetColumn<ColumnArray>(array_arg.column.get()))
             {
                 auto res = new ColumnArray(nullptr, col_array->getOffsetsColumn());
                 block.safeGetByPosition(result).column.reset(res);
 
                 /// get the most nested column
-                while (const auto nested_col_array = typeid_cast<const ColumnArray *>(col_array->getDataPtr().get()))
+                while (const auto nested_col_array = checkAndGetColumn<ColumnArray>(col_array->getDataPtr().get()))
                 {
                     /// create new level of array, copy offsets
                     res->getDataPtr() = std::make_shared<ColumnArray>(nullptr, nested_col_array->getOffsetsColumn());
@@ -1381,7 +1381,7 @@ private:
             /// @todo retain constness
             if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
                 element_block = column_tuple->getData();
-            else if (const auto column_const_tuple = typeid_cast<const ColumnConstTuple *>(col))
+            else if (const auto column_const_tuple = checkAndGetColumnConst<ColumnTuple>(col))
                 element_block = static_cast<const ColumnTuple &>(*column_const_tuple->convertToTupleOfConstants()).getData();
 
             /// create columns for converted elements
@@ -1497,7 +1497,7 @@ private:
 
                 result_col = res;
             }
-            else if (const auto const_col = typeid_cast<const ColumnConstString *>(first_col))
+            else if (const auto const_col = checkAndGetColumnConst<ColumnString>(first_col))
             {
                 result_col = result_type.createConstColumn(const_col->size(),
                     nearestFieldType(result_type.getValue(const_col->getData())));
@@ -1713,7 +1713,7 @@ public:
         const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
         std::vector<ExpressionAction> & out_prerequisites) override
     {
-        const auto type_col = typeid_cast<const ColumnConstString *>(arguments.back().column.get());
+        const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
         if (!type_col)
             throw Exception("Second argument to " + getName() + " must be a constant string describing type",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

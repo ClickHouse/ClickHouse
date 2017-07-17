@@ -996,7 +996,7 @@ public:
         if (needle.size() == 0)
             throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_src))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column_src))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_res;
