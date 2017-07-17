@@ -250,7 +250,7 @@ public:
         }
         else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<T>>(
+            block.safeGetByPosition(result).column = DataTypeNumber<T>().createConstColumn(
                 col_from->size(), Transform::apply(col_from->getData(), dict));
         }
         else
@@ -382,7 +382,7 @@ public:
         }
         else if (col_const1 && col_const2)
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(col_const1->size(),
+            block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(col_const1->size(),
                 Transform::apply(col_const1->getData(), col_const2->getData(), dict));
         }
         else
@@ -497,10 +497,7 @@ public:
                 cur = Transform::toParent(cur, dict);
             }
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
-                col_from->size(),
-                res,
-                std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>()));
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_from->size(), res);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -762,7 +759,7 @@ public:
             UInt32 region_id = col_from->getData();
             const StringRef & name_ref = dict.getRegionName(region_id, language);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), name_ref.toString());
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), name_ref.toString());
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()

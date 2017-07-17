@@ -999,8 +999,7 @@ struct Cruncher
     static inline void apply(Block & block, ColumnConst<T> * col, const ColumnNumbers & arguments, size_t result, size_t scale)
     {
         T res = Op::apply(col->getData(), scale);
-        auto col_res = std::make_shared<ColumnConst<T>>(col->size(), res);
-        block.safeGetByPosition(result).column = col_res;
+        block.safeGetByPosition(result).column = DataTypeNumber<T>().createConstColumn(col->size(), res);
     }
 };
 

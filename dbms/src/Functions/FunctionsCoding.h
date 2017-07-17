@@ -131,7 +131,7 @@ public:
             char * dst = buf;
             formatIPv6(reinterpret_cast<const unsigned char *>(data_in.data()), dst);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_in->size(), buf);
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_in->size(), buf);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -283,7 +283,7 @@ public:
             UInt8 zeroed_tail_bytes_count = isIPv4Mapped(address) ? ipv4_zeroed_tail_bytes_count : ipv6_zeroed_tail_bytes_count;
             cutAddress(address, dst, zeroed_tail_bytes_count);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_in->size(), buf);
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_in->size(), buf);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -506,10 +506,7 @@ public:
             String out(ipv6_bytes_length, 0);
             ipv6_scan(col_in->getData().data(), reinterpret_cast<unsigned char *>(&out[0]));
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<String>>(
-                col_in->size(),
-                out,
-                std::make_shared<DataTypeFixedString>(ipv6_bytes_length));
+            block.safeGetByPosition(result).column = DataTypeFixedString(ipv6_bytes_length).createConstColumn(col_in->size(), out);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -609,7 +606,7 @@ public:
             char * pos = buf;
             formatIP(col->getData(), pos);
 
-            auto col_res = std::make_shared<ColumnConstString>(col->size(), buf);
+            auto col_res = DataTypeString().createConstColumn(col->size(), buf);
             block.safeGetByPosition(result).column = col_res;
         }
         else
@@ -689,7 +686,7 @@ public:
         }
         else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnConst<UInt32>>(col->size(), parseIPv4(col->getData().c_str()));
+            auto col_res = DataTypeUInt32().createConstColumn(col->size(), parseIPv4(col->getData().c_str()));
             block.safeGetByPosition(result).column = col_res;
         }
         else
@@ -792,7 +789,7 @@ public:
             char * pos = buf;
             formatIP(col->getData(), pos);
 
-            auto col_res = std::make_shared<ColumnConstString>(col->size(), buf);
+            auto col_res = DataTypeString().createConstColumn(col->size(), buf);
             block.safeGetByPosition(result).column = col_res;
         }
         else
@@ -846,11 +843,7 @@ public:
             std::string buf;
             buf.resize(ipv6_bytes_length);
             mapIPv4ToIPv6(col_in->getData(), reinterpret_cast<unsigned char *>(&buf[0]));
-
-            auto col_res = std::make_shared<ColumnConstString>(
-                ipv6_bytes_length, buf,
-                std::make_shared<DataTypeFixedString>(ipv6_bytes_length));
-            block.safeGetByPosition(result).column = col_res;
+            block.safeGetByPosition(result).column = DataTypeFixedString(ipv6_bytes_length).createConstColumn(ipv6_bytes_length, buf);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -961,7 +954,7 @@ public:
             char * pos = buf;
             formatMAC(col->getData(), pos);
 
-            auto col_res = std::make_shared<ColumnConstString>(col->size(), buf);
+            auto col_res = DataTypeString().createConstColumn(col->size(), buf);
             block.safeGetByPosition(result).column = col_res;
         }
         else
@@ -1058,7 +1051,7 @@ public:
         }
         else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnConst<UInt64>>(col->size(), parseMAC(col->getData().c_str()));
+            auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getData().c_str()));
             block.safeGetByPosition(result).column = col_res;
         }
         else
@@ -1155,7 +1148,7 @@ public:
         }
         else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnConst<UInt64>>(col->size(), parseMAC(col->getData().c_str()));
+            auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getData().c_str()));
             block.safeGetByPosition(result).column = col_res;
         }
         else
@@ -1246,7 +1239,7 @@ public:
             char buf[uuid_text_length];
             formatUUID(reinterpret_cast<const UInt8 *>(data_in.data()), reinterpret_cast<UInt8 *>(buf));
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_in->size(), String(buf, uuid_text_length));
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_in->size(), String(buf, uuid_text_length));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -1387,8 +1380,7 @@ public:
             else
                 res.resize(uuid_bytes_length, '\0');
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(
-                col_in->size(), res, std::make_shared<DataTypeFixedString>(uuid_bytes_length));
+            block.safeGetByPosition(result).column = DataTypeFixedString(uuid_bytes_length).createConstColumn(col_in->size(), res);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -1494,7 +1486,7 @@ public:
             char * pos = buf;
             executeOneUInt<T>(col_const->getData(), pos);
 
-            col_res = std::make_shared<ColumnConstString>(col_const->size(), buf);
+            col_res = DataTypeString().createConstColumn(col_const->size(), buf);
 
             return true;
         }
@@ -1563,7 +1555,7 @@ public:
             /// Let's write zero into res[res.size()]. Starting with C++ 11, this is correct.
             executeOneString(src_ptr, src_ptr + src.size(), pos);
 
-            col_res = std::make_shared<ColumnConstString>(col_const_in->size(), res);
+            col_res = DataTypeString().createConstColumn(col_const_in->size(), res);
 
             return true;
         }
@@ -1730,7 +1722,7 @@ public:
             unhexOne(src.c_str(), src.c_str() + src.size(), pos);
             res = res.substr(0, pos - &res[0] - 1);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col->size(), res);
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col->size(), res);
         }
         else
         {
@@ -1818,9 +1810,7 @@ public:
                 }
             }
 
-            out_column = std::make_shared<ColumnConstArray>(
-                col_from->size(), res, std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>()));
-
+            out_column = DataTypeArray(std::make_shared<DataTypeNumber<T>>()).createConstColumn(col_from->size(), res);
             return true;
         }
         else
@@ -1919,7 +1909,7 @@ public:
         else if(col_const_in)
         {
             std::string res(col_const_in->getData().c_str());
-            col_res = std::make_shared<ColumnConstString>(col_const_in->size(), res);
+            col_res = DataTypeString().createConstColumn(col_const_in->size(), res);
 
             return true;
         }
@@ -2154,7 +2144,7 @@ private:
         }
         else if (const auto pos_col = typeid_cast<const ColumnConst<T> *>(pos_col_untyped))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
+            block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(
                 value_col->size(),
                 bitTest(value_col->getData(), pos_col->getData()));
 
@@ -2268,8 +2258,7 @@ private:
 
             if (is_const)
             {
-                block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
-                    size, Impl::combine(val, mask));
+                block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(size, Impl::combine(val, mask));
             }
             else
             {

@@ -747,8 +747,7 @@ public:
                 ResultType res = 0;
                 Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);
 
-                auto col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
-                block.safeGetByPosition(result).column = col_res;
+                block.safeGetByPosition(result).column = block.getByPosition(result).createConstColumn(col->size(), res);
             }
             else
             {
@@ -764,9 +763,7 @@ public:
         {
             ResultType res = 0;
             Impl::constant(col->getData(), res);
-
-            auto col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
-            block.safeGetByPosition(result).column = col_res;
+            block.safeGetByPosition(result).column = block.getByPosition(result).createConstColumn(col->size(), res);
         }
         else if (const ColumnArray * col = typeid_cast<const ColumnArray *>(&*column))
         {
@@ -781,9 +778,7 @@ public:
         {
             ResultType res = 0;
             Impl::constant_array(col->getData(), res);
-
-            auto col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
-            block.safeGetByPosition(result).column = col_res;
+            block.safeGetByPosition(result).column = block.getByPosition(result).createConstColumn(col->size(), res);
         }
         else
             throw Exception(
@@ -846,7 +841,7 @@ public:
         {
             String res;
             ReverseImpl::constant(col->getData(), res);
-            auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
+            auto col_res = DataTypeString().createConstColumn(col->size(), res);
             block.safeGetByPosition(result).column = col_res;
         }
         else if (checkColumn<ColumnArray>(column.get()) || checkColumnConst<ColumnArray>(column.get()))
@@ -1000,7 +995,7 @@ private:
         /// The result is const string
         if (c0_const && c1_const)
         {
-            auto c_res = std::make_shared<ColumnConstString>(c0_const->size(), "");
+            auto c_res = DataTypeString().createConstColumn(c0_const->size(), "");
             block.safeGetByPosition(result).column = c_res;
             constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
         }
@@ -1061,7 +1056,7 @@ private:
 
         if (result_is_const)
         {
-            const auto out = std::make_shared<ColumnConstString>(size, "");
+            const auto out = DataTypeString().createConstColumn(size, "");
             block.safeGetByPosition(result).column = out;
 
             auto & data = out->getData();
@@ -1429,7 +1424,7 @@ public:
         {
             String res;
             Impl::constant(col->getData(), start, length, res);
-            auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
+            auto col_res = DataTypeString().createConstColumn(col->size(), res);
             block.safeGetByPosition(result).column = col_res;
         }
         else
@@ -1527,7 +1522,7 @@ private:
         {
             const auto & in_data = col->getData();
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col->size(),
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col->size(),
                 in_data.size() == 0 ? in_data : in_data.back() == trailing_char_str.front() ? in_data : in_data + trailing_char_str);
         }
         else

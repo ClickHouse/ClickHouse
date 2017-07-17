@@ -89,7 +89,7 @@ public:
             while (!res.empty() && res[res.length() - 1] == '\0')
                 res.erase(res.end() - 1);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), res);
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), res);
         }
         else
         {
@@ -191,7 +191,7 @@ public:
             ToFieldType value = 0;
             const String & str = col->getData();
             memcpy(&value, str.data(), std::min(sizeof(ToFieldType), str.length()));
-            auto col_res = std::make_shared<ColumnConst<ToFieldType>>(col->size(), value);
+            auto col_res = DataTypeNumber<ToFieldType>().createConstColumn(col->size(), value);
             block.safeGetByPosition(result).column = col_res;
         }
         else

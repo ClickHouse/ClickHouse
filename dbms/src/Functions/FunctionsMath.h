@@ -58,9 +58,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
-            block.rows(),
-            Impl::value);
+        block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Impl::value);
     }
 };
 
@@ -144,7 +142,7 @@ private:
 
             Impl::execute(src, dst);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(col->size(), dst[0]);
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), dst[0]);
 
             return true;
         }
@@ -295,7 +293,7 @@ private:
 
             Impl::execute(left_src, right_src, dst);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(left_arg->size(), dst[0]);
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(left_arg->size(), dst[0]);
 
             return true;
         }

@@ -264,8 +264,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         }
 
         const auto first_arg = block.safeGetByPosition(arguments[0]);
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
-            first_arg.column->size(), arr, return_type);
+        block.safeGetByPosition(result).column = return_type->createConstColumn(first_arg.column->size(), arr);
     }
     else
     {
@@ -297,7 +296,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
                         arg.name
                     },
                     {
-                        std::make_shared<ColumnConstString>(block_size, elem_type_name),
+                        DataTypeString().createConstColumn(block_size, elem_type_name),
                         std::make_shared<DataTypeString>(),
                         ""
                     },
@@ -1257,8 +1256,7 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
             res_values[i] = i + 1;
         }
 
-        auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
-        block.safeGetByPosition(result).column = res_array;
+        block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(array->size(), res_values);
     }
     else
     {
@@ -1484,7 +1482,7 @@ bool FunctionArrayUniq::executeConst(Block & block, const ColumnNumbers & argume
     for (size_t i = 0; i < values.size(); ++i)
         set.insert(values[i]);
 
-    block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(array->size(), set.size());
+    block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(array->size(), set.size());
     return true;
 }
 
@@ -1809,8 +1807,7 @@ bool FunctionArrayEnumerateUniq::executeConst(Block & block, const ColumnNumbers
         res_values[i] = static_cast<UInt64>(++indices[values[i]]);
     }
 
-    auto res_array = std::make_shared<ColumnConstArray>(array->size(), res_values, std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
-    block.safeGetByPosition(result).column = res_array;
+    block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(array->size(), res_values);
 
     return true;
 }
@@ -1928,19 +1925,18 @@ namespace
     {
         bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result)
         {
-            if (const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(block.safeGetByPosition(arguments[0]).column.get()))
+            if (const ColumnConstArray * const_array = typeid_cast<const ColumnConstArray *>(block.getByPosition(arguments[0]).column.get()))
             {
                 if (const_array->getData().empty())
                 {
-                    auto nested_type = typeid_cast<const DataTypeArray &>(*block.safeGetByPosition(arguments[0]).type).getNestedType();
+                    auto nested_type = typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
-                    block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
+                    block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
                         block.rows(),
-                        Array{nested_type->getDefault()},
-                        nested_type->clone());
+                        Array{nested_type->getDefault()});
                 }
                 else
-                    block.safeGetByPosition(result).column = block.safeGetByPosition(arguments[0]).column;
+                    block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
 
                 return true;
             }
@@ -2510,10 +2506,7 @@ bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arg
         for (size_t i = 0; i < size; ++i)
             res[i] = arr[size - i - 1];
 
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
-            block.rows(),
-            res,
-            block.safeGetByPosition(arguments[0]).type->clone());
+        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), res);
 
         return true;
     }

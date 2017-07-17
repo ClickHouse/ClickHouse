@@ -408,7 +408,7 @@ public:
             while (generator.get(token_begin, token_end))
                 dst.push_back(String(token_begin, token_end - token_begin));
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(col_const_str->size(), dst, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_const_str->size(), dst);
         }
         else
             throw Exception("Illegal columns " + block.safeGetByPosition(arrayArgumentPosition).column->getName()

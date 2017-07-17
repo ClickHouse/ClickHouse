@@ -46,7 +46,7 @@ const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);
 
-    if (!checkColumn<Type>(res->getDataColumn().get()))
+    if (!checkColumn<Type>(&res->getDataColumn()))
         return {};
 
     return res;
@@ -60,7 +60,7 @@ const Type * checkAndGetColumnConstData(const IColumn * column)
     if (!res)
         return res;
 
-    return res->getDataColumn().get();
+    return &res->getDataColumn();
 }
 
 template <typename Type>

@@ -183,15 +183,15 @@ public:
         const ColumnWithTypeAndName & arg_charset_to = block.getByPosition(arguments[2]);
         ColumnWithTypeAndName & res = block.getByPosition(result);
 
-        const ColumnConstString * col_charset_from = typeid_cast<const ColumnConstString *>(arg_charset_from.column.get());
-        const ColumnConstString * col_charset_to = typeid_cast<const ColumnConstString *>(arg_charset_to.column.get());
+        const ColumnConst * col_charset_from = checkAndGetColumnConst<ColumnString>(arg_charset_from.column.get());
+        const ColumnConst * col_charset_to = checkAndGetColumnConst<ColumnString>(arg_charset_to.column.get());
 
         if (!col_charset_from || !col_charset_to)
             throw Exception("2nd and 3rd arguments of function " + getName() + " (source charset and destination charset) must be constant strings.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        String charset_from = col_charset_from->getData();
-        String charset_to = col_charset_to->getData();
+        String charset_from = col_charset_from->getValue<String>();
+        String charset_to = col_charset_to->getValue<String>();
 
         if (const ColumnString * col_from = typeid_cast<const ColumnString *>(arg_from.column.get()))
         {
@@ -199,7 +199,7 @@ public:
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());
             res.column = col_to;
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(arg_from.column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(arg_from.column.get()))
         {
             auto full_column_holder = col_from->cloneResized(1)->convertToFullColumnIfConst();
             const ColumnString * col_from_full = static_cast<const ColumnString *>(full_column_holder.get());
@@ -207,7 +207,7 @@ public:
             auto col_to_full = std::make_shared<ColumnString>();
             convert(charset_from, charset_to, col_from_full->getChars(), col_from_full->getOffsets(), col_to_full->getChars(), col_to_full->getOffsets());
 
-            res.column = std::make_shared<ColumnConstString>(col_from->size(), (*col_to_full)[0].get<String>(), res.type);
+            res.column = DataTypeString().createConstColumn(col_from->size(), (*col_to_full)[0].get<String>());
         }
         else
             throw Exception("Illegal column passed as first argument of function " + getName() + " (must be ColumnString).",

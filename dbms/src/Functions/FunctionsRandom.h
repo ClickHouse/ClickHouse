@@ -236,7 +236,7 @@ public:
             value = vec_to[0];
         }
 
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(block.rows(), value);
+        block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(block.rows(), value);
     }
 };
 

@@ -131,7 +131,7 @@ private:
             const auto & colLat2 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[3]).column.get())->getData();
 
             Float64 res = greatCircleDistance(colLon1, colLat1, colLon2, colLat2);
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(size, res);
+            block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(size, res);
         }
         else
         {
@@ -290,7 +290,7 @@ private:
                 const auto col_const_y = static_cast<const ColumnConst<Float64> *> (col_y);
                 size_t start_index = 0;
                 UInt8 res = isPointInEllipses(col_const_x->getData(), col_const_y->getData(), ellipses, ellipses_count, start_index);
-                block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(size, res);
+                block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(size, res);
             }
             else
             {

@@ -148,7 +148,7 @@ struct ArrayCountImpl
                 return out_column;
             }
             else
-                return std::make_shared<ColumnConstUInt32>(array.size(), 0);
+                return DataTypeUInt32().createConstColumn(array.size(), 0);
         }
 
         const IColumn::Filter & filter = column_filter->getData();
@@ -210,7 +210,7 @@ struct ArrayExistsImpl
                 return out_column;
             }
             else
-                return std::make_shared<ColumnConstUInt8>(array.size(), 0);
+                return DataTypeUInt8().createConstColumn(array.size(), 0);
         }
 
         const IColumn::Filter & filter = column_filter->getData();
@@ -261,7 +261,7 @@ struct ArrayAllImpl
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_filter_const->getData())
-                return std::make_shared<ColumnConstUInt8>(array.size(), 1);
+                return DataTypeUInt8().createConstColumn(array.size(), 1);
             else
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
@@ -514,7 +514,7 @@ struct ArrayFirstIndexImpl
                 return out_column;
             }
             else
-                return std::make_shared<ColumnConstUInt32>(array.size(), 0);
+                return DataTypeUInt32().createConstColumn(array.size(), 0);
         }
 
         const auto & filter = column_filter->getData();

@@ -479,7 +479,7 @@ struct DateTimeTransformImpl
         {
             ToType res;
             Op::constant(const_source->getData(), res, time_zone);
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(const_source->size(), res);
+            block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(const_source->size(), res);
         }
         else
         {
@@ -610,7 +610,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(
+        block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(
             block.rows(),
             time(0));
     }
@@ -637,7 +637,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt16>(
+        block.safeGetByPosition(result).column = DataTypeUInt16().createConstColumn(
             block.rows(),
             DateLUT::instance().toDayNum(time(0)));
     }
@@ -664,7 +664,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt16>(
+        block.safeGetByPosition(result).column = DataTypeUInt16().createConstColumn(
             block.rows(),
             DateLUT::instance().toDayNum(time(0)) - 1);
     }
@@ -712,7 +712,7 @@ public:
         }
         else if (const ColumnConstUInt32 * const_times = typeid_cast<const ColumnConstUInt32 *>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rows(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
+            block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), const_times->getData() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -858,7 +858,7 @@ public:
         {
             Array const_res;
             TimeSlotsImpl<UInt32>::constant_constant(const_starts->getData(), const_durations->getData(), const_res);
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(block.rows(), const_res, std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()));
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), const_res);
         }
         else
             throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -869,56 +869,56 @@ public:
 };
 
 
-struct NameToYear                 { static constexpr auto name = "toYear"; };
-struct NameToMonth                 { static constexpr auto name = "toMonth"; };
-struct NameToDayOfMonth            { static constexpr auto name = "toDayOfMonth"; };
-struct NameToDayOfWeek            { static constexpr auto name = "toDayOfWeek"; };
-struct NameToHour                 { static constexpr auto name = "toHour"; };
-struct NameToMinute                { static constexpr auto name = "toMinute"; };
-struct NameToSecond                { static constexpr auto name = "toSecond"; };
-struct NameToStartOfDay            { static constexpr auto name = "toStartOfDay"; };
-struct NameToMonday                { static constexpr auto name = "toMonday"; };
-struct NameToStartOfMonth        { static constexpr auto name = "toStartOfMonth"; };
-struct NameToStartOfQuarter        { static constexpr auto name = "toStartOfQuarter"; };
-struct NameToStartOfYear        { static constexpr auto name = "toStartOfYear"; };
-struct NameToStartOfMinute        { static constexpr auto name = "toStartOfMinute"; };
-struct NameToStartOfFiveMinute    { static constexpr auto name = "toStartOfFiveMinute"; };
-struct NameToStartOfHour        { static constexpr auto name = "toStartOfHour"; };
-struct NameToTime                 { static constexpr auto name = "toTime"; };
-struct NameToRelativeYearNum    { static constexpr auto name = "toRelativeYearNum"; };
-struct NameToRelativeMonthNum    { static constexpr auto name = "toRelativeMonthNum"; };
-struct NameToRelativeWeekNum    { static constexpr auto name = "toRelativeWeekNum"; };
-struct NameToRelativeDayNum        { static constexpr auto name = "toRelativeDayNum"; };
-struct NameToRelativeHourNum    { static constexpr auto name = "toRelativeHourNum"; };
-struct NameToRelativeMinuteNum    { static constexpr auto name = "toRelativeMinuteNum"; };
-struct NameToRelativeSecondNum    { static constexpr auto name = "toRelativeSecondNum"; };
+struct NameToYear              { static constexpr auto name = "toYear"; };
+struct NameToMonth             { static constexpr auto name = "toMonth"; };
+struct NameToDayOfMonth        { static constexpr auto name = "toDayOfMonth"; };
+struct NameToDayOfWeek         { static constexpr auto name = "toDayOfWeek"; };
+struct NameToHour              { static constexpr auto name = "toHour"; };
+struct NameToMinute            { static constexpr auto name = "toMinute"; };
+struct NameToSecond            { static constexpr auto name = "toSecond"; };
+struct NameToStartOfDay        { static constexpr auto name = "toStartOfDay"; };
+struct NameToMonday            { static constexpr auto name = "toMonday"; };
+struct NameToStartOfMonth      { static constexpr auto name = "toStartOfMonth"; };
+struct NameToStartOfQuarter    { static constexpr auto name = "toStartOfQuarter"; };
+struct NameToStartOfYear       { static constexpr auto name = "toStartOfYear"; };
+struct NameToStartOfMinute     { static constexpr auto name = "toStartOfMinute"; };
+struct NameToStartOfFiveMinute { static constexpr auto name = "toStartOfFiveMinute"; };
+struct NameToStartOfHour       { static constexpr auto name = "toStartOfHour"; };
+struct NameToTime              { static constexpr auto name = "toTime"; };
+struct NameToRelativeYearNum   { static constexpr auto name = "toRelativeYearNum"; };
+struct NameToRelativeMonthNum  { static constexpr auto name = "toRelativeMonthNum"; };
+struct NameToRelativeWeekNum   { static constexpr auto name = "toRelativeWeekNum"; };
+struct NameToRelativeDayNum    { static constexpr auto name = "toRelativeDayNum"; };
+struct NameToRelativeHourNum   { static constexpr auto name = "toRelativeHourNum"; };
+struct NameToRelativeMinuteNum { static constexpr auto name = "toRelativeMinuteNum"; };
+struct NameToRelativeSecondNum { static constexpr auto name = "toRelativeSecondNum"; };
 
 
-using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16,    ToYearImpl,         NameToYear>     ;
-using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8,    ToMonthImpl,         NameToMonth>     ;
-using FunctionToDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8,    ToDayOfMonthImpl,     NameToDayOfMonth> ;
-using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8,    ToDayOfWeekImpl,     NameToDayOfWeek> ;
-using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8,    ToHourImpl,         NameToHour>     ;
-using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8,    ToMinuteImpl,         NameToMinute>     ;
-using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8,    ToSecondImpl,         NameToSecond>     ;
-using FunctionToStartOfDay = FunctionDateOrDateTimeToSomething<DataTypeDateTime,    ToStartOfDayImpl, NameToStartOfDay>;
-using FunctionToMonday = FunctionDateOrDateTimeToSomething<DataTypeDate,        ToMondayImpl,         NameToMonday>     ;
-using FunctionToStartOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate,        ToStartOfMonthImpl, NameToStartOfMonth>;
-using FunctionToStartOfQuarter = FunctionDateOrDateTimeToSomething<DataTypeDate,    ToStartOfQuarterImpl,     NameToStartOfQuarter> ;
-using FunctionToStartOfYear = FunctionDateOrDateTimeToSomething<DataTypeDate,        ToStartOfYearImpl,     NameToStartOfYear> ;
-using FunctionToStartOfMinute = FunctionDateOrDateTimeToSomething<DataTypeDateTime,    ToStartOfMinuteImpl, NameToStartOfMinute>;
-using FunctionToStartOfFiveMinute = FunctionDateOrDateTimeToSomething<DataTypeDateTime,    ToStartOfFiveMinuteImpl, NameToStartOfFiveMinute>;
-using FunctionToStartOfHour = FunctionDateOrDateTimeToSomething<DataTypeDateTime,    ToStartOfHourImpl,     NameToStartOfHour> ;
-using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeDateTime,    ToTimeImpl,         NameToTime>     ;
+using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToYearImpl, NameToYear>;
+using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonthImpl, NameToMonth>;
+using FunctionToDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfMonthImpl, NameToDayOfMonth>;
+using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfWeekImpl, NameToDayOfWeek>;
+using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToHourImpl, NameToHour>;
+using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMinuteImpl, NameToMinute>;
+using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToSecondImpl, NameToSecond>;
+using FunctionToStartOfDay = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfDayImpl, NameToStartOfDay>;
+using FunctionToMonday = FunctionDateOrDateTimeToSomething<DataTypeDate, ToMondayImpl, NameToMonday>;
+using FunctionToStartOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfMonthImpl, NameToStartOfMonth>;
+using FunctionToStartOfQuarter = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfQuarterImpl, NameToStartOfQuarter>;
+using FunctionToStartOfYear = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfYearImpl, NameToStartOfYear>;
+using FunctionToStartOfMinute = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfMinuteImpl, NameToStartOfMinute>;
+using FunctionToStartOfFiveMinute = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfFiveMinuteImpl, NameToStartOfFiveMinute>;
+using FunctionToStartOfHour = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfHourImpl, NameToStartOfHour>;
+using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTimeImpl, NameToTime>;
 
-using FunctionToRelativeYearNum = FunctionDateOrDateTimeToSomething<DataTypeUInt16,    ToRelativeYearNumImpl,         NameToRelativeYearNum>     ;
-using FunctionToRelativeMonthNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,    ToRelativeMonthNumImpl,     NameToRelativeMonthNum> ;
-using FunctionToRelativeWeekNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,    ToRelativeWeekNumImpl,         NameToRelativeWeekNum>     ;
-using FunctionToRelativeDayNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,    ToRelativeDayNumImpl,         NameToRelativeDayNum>     ;
+using FunctionToRelativeYearNum = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToRelativeYearNumImpl, NameToRelativeYearNum>;
+using FunctionToRelativeMonthNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeMonthNumImpl, NameToRelativeMonthNum>;
+using FunctionToRelativeWeekNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeWeekNumImpl, NameToRelativeWeekNum>;
+using FunctionToRelativeDayNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeDayNumImpl, NameToRelativeDayNum>;
 
-using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,    ToRelativeHourNumImpl,         NameToRelativeHourNum>     ;
-using FunctionToRelativeMinuteNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,    ToRelativeMinuteNumImpl,     NameToRelativeMinuteNum> ;
-using FunctionToRelativeSecondNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32,    ToRelativeSecondNumImpl,     NameToRelativeSecondNum> ;
+using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeHourNumImpl, NameToRelativeHourNum>;
+using FunctionToRelativeMinuteNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeMinuteNumImpl, NameToRelativeMinuteNum>;
+using FunctionToRelativeSecondNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeSecondNumImpl, NameToRelativeSecondNum>;
 
 
 }

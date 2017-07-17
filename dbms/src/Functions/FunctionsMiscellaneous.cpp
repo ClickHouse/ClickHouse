@@ -97,7 +97,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), db_name);
+        block.safeGetByPosition(result).column = DataTypeString().createConstColumn(block.rows(), db_name);
     }
 };
 
@@ -214,7 +214,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         block.safeGetByPosition(result).column
-            = std::make_shared<ColumnConstString>(block.rows(), block.safeGetByPosition(arguments[0]).type->getName());
+            = DataTypeString().createConstColumn(block.rows(), block.safeGetByPosition(arguments[0]).type->getName());
     }
 };
 
@@ -252,7 +252,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         block.safeGetByPosition(result).column
-            = std::make_shared<ColumnConstString>(block.rows(), block.safeGetByPosition(arguments[0]).column->getName());
+            = DataTypeString().createConstColumn(block.rows(), block.safeGetByPosition(arguments[0]).column->getName());
     }
 };
 
@@ -706,7 +706,7 @@ void FunctionTuple::executeImpl(Block & block, const ColumnNumbers & arguments, 
             tuple_block.getByPosition(i).column->get(0, tuple[i]);
 
         block.safeGetByPosition(result).column
-            = std::make_shared<ColumnConstTuple>(block.rows(), Tuple(tuple), block.safeGetByPosition(result).type);
+            = block.getByPosition(result).type->createConstColumn(block.rows(), Tuple(tuple));
     }
     else
     {
@@ -843,7 +843,7 @@ public:
     /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 0);
+        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), 0);
     }
 };
 
@@ -895,7 +895,7 @@ public:
     /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), 1);
+        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), 1);
     }
 };
 
@@ -1080,7 +1080,7 @@ public:
 
         if (src.isConst())
         {
-            auto res_column = std::make_shared<ColumnConstString>(block.rows(), "");
+            auto res_column = DataTypeString().createConstColumn(block.rows(), "");
             block.safeGetByPosition(result).column = res_column;
 
             if (executeConstNumber<UInt8>(src, *res_column, min, max, max_width)
@@ -1267,7 +1267,7 @@ public:
         }
         else if (const auto in = typeid_cast<const ColumnConst<T> *>(in_untyped))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(in->size(), Impl::execute(in->getData()));
+            block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(in->size(), Impl::execute(in->getData()));
 
             return true;
         }
@@ -1340,7 +1340,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         static const std::string version = getVersion();
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), version);
+        block.safeGetByPosition(result).column = DataTypeString().createConstColumn(block.rows(), version);
     }
 
 private:
@@ -1380,7 +1380,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt32>(block.rows(), uptime);
+        block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), uptime);
     }
 
 private:
@@ -1415,7 +1415,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(block.rows(), DateLUT::instance().getTimeZone());
+        block.safeGetByPosition(result).column = DataTypeString().createConstColumn(block.rows(), DateLUT::instance().getTimeZone());
     }
 };
 
@@ -1734,7 +1734,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
             src.type->serializeTextEscaped(*src.column->cut(0, 1)->convertToFullColumnIfConst(), 0, out);
         }
 
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(size,
+        block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(size,
             UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()));
     }
 }
@@ -1775,7 +1775,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     const StoragePtr & table = global_context.getTable(database_name, table_name);
     const bool has_column = table->hasColumn(column_name);
 
-    block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), has_column);
+    block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), has_column);
 }
 
 

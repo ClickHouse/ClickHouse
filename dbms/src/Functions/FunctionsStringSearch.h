@@ -86,7 +86,7 @@ public:
         {
             ResultType res{};
             Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ResultType>>(col_haystack_const->size(), res);
+            block.safeGetByPosition(result).column = block.getByPosition(result).createConstColumn(col_haystack_const->size(), res);
             return;
         }
 
@@ -185,7 +185,7 @@ public:
             if (!res_offsets.empty())
                 res.assign(&res_vdata[0], &res_vdata[res_vdata.size() - 1]);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col->size(), res);
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col->size(), res);
         }
         else
             throw Exception(

@@ -86,7 +86,8 @@ struct ConvertImpl
         else if (const ColumnConst<FromFieldType> * col_from
             = typeid_cast<const ColumnConst<FromFieldType> *>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), static_cast<ToFieldType>(col_from->getData()));
+            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(
+                col_from->size(), static_cast<ToFieldType>(col_from->getData()));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -245,7 +246,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
             std::vector<char> buf;
             WriteBufferFromVector<std::vector<char> > write_buffer(buf);
             FormatImpl<FromDataType>::execute(col_from->getData(), write_buffer, &type, time_zone);
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), std::string(&buf[0], write_buffer.count()));
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), std::string(&buf[0], write_buffer.count()));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -298,7 +299,7 @@ struct ConvertImplGenericToString
                 type.serializeText(*col_from.cut(0, 1)->convertToFullColumnIfConst(), 0, write_buffer);
             }
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(size, res);
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(size, res);
         }
     }
 };
@@ -391,7 +392,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
                     && s.size() == strlen("YYYY-MM-DD hh:mm:ss")))
                 throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), x);
+            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), x);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -457,7 +458,7 @@ struct ConvertOrZeroImpl
             ToFieldType x = 0;
             if (!tryParseImpl<ToDataType>(x, read_buffer) || !read_buffer.eof())
                 x = 0;
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToFieldType>>(col_from->size(), x);
+            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), x);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -648,7 +649,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
             while (bytes_to_copy > 0 && s[bytes_to_copy - 1] == 0)
                 --bytes_to_copy;
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), s.substr(0, bytes_to_copy));
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), s.substr(0, bytes_to_copy));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -949,8 +950,8 @@ public:
             auto resized_string = column_const->getData();
             resized_string.resize(n);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<String>>(
-                column_const->size(), std::move(resized_string), std::make_shared<DataTypeFixedString>(n));
+            block.safeGetByPosition(result).column = DataTypeFixedString(n).createConstColumn(
+                column_const->size(), std::move(resized_string));
         }
         else if (const auto column_string = typeid_cast<const ColumnString *>(column.get()))
         {

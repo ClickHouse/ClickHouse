@@ -125,7 +125,7 @@ private:
                 writeBitmask<T>(col_from->getData(), buf);
             }
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), res);
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), res);
         }
         else
         {
@@ -205,7 +205,8 @@ private:
         }
         else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(
+                col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));
         }
         else
         {

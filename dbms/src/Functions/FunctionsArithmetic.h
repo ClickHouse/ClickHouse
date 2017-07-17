@@ -684,9 +684,7 @@ private:
         {
             ResultType res = 0;
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->getData(), col_right->getData(), res);
-
-            auto col_res = std::make_shared<ColumnConst<ResultType>>(col_left->size(), res);
-            block.safeGetByPosition(result).column = col_res;
+            block.safeGetByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), res);
 
             return true;
         }
@@ -832,9 +830,7 @@ private:
 
             ResultType res = 0;
             UnaryOperationImpl<T0, Op<T0> >::constant(col->getData(), res);
-
-            std::shared_ptr<ColumnConst<ResultType>> col_res = std::make_shared<ColumnConst<ResultType>>(col->size(), res);
-            block.safeGetByPosition(result).column = col_res;
+            block.safeGetByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col->size(), res);
 
             return true;
         }

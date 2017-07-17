@@ -140,7 +140,7 @@ private:
 
             dict->has(ids, out);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(id_col->size(), out.front());
+            block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(id_col->size(), out.front());
         }
         else
             throw Exception{
@@ -331,8 +331,7 @@ private:
             auto out = std::make_unique<ColumnString>();
             dict->getString(attr_name, ids, out.get());
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<String>>(
-                id_col->size(), out->getDataAt(0).toString());
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(id_col->size(), out->getDataAt(0).toString());
         }
         else
         {
@@ -474,8 +473,7 @@ private:
             auto out = std::make_unique<ColumnString>();
             dictionary->getString(attr_name, ids, dates, out.get());
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<String>>(
-                id_col->size(), out->getDataAt(0).toString());
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(id_col->size(), out->getDataAt(0).toString());
         }
         else
         {
@@ -650,8 +648,7 @@ private:
 
             dictionary->getString(attr_name, ids, def, out.get());
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<String>>(
-                id_col->size(), out->getDataAt(0).toString());
+            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(id_col->size(), out->getDataAt(0).toString());
         }
         else
             throw Exception{
@@ -891,7 +888,7 @@ private:
             PaddedPODArray<Type> data(1);
             DictGetTraits<DataType>::get(dict, attr_name, ids, data);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
+            block.safeGetByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), data.front());
         }
         else
         {
@@ -1048,7 +1045,7 @@ private:
             PaddedPODArray<Type> data(1);
             DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
+            block.safeGetByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), data.front());
         }
         else
         {
@@ -1255,7 +1252,7 @@ private:
 
             DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Type>>(id_col->size(), data.front());
+            block.safeGetByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), data.front());
         }
         else
             throw Exception{
@@ -1480,10 +1477,7 @@ private:
 
             get_hierarchies(in, backend->getData(), array->getOffsets());
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
-                id_col->size(),
-                (*array)[0].get<Array>(),
-                std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()));
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(id_col->size(), (*array)[0].get<Array>());
         }
         else
         {
@@ -1659,8 +1653,7 @@ private:
 
             dictionary->isInConstantConstant(child_id, ancestor_id, res);
 
-            block.getByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(
-                child_id_col->size(), res);
+            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(child_id_col->size(), res);
         }
         else
         {

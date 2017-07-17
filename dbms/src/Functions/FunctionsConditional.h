@@ -1518,14 +1518,14 @@ private:
                 {
                     then_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumn()
-                        : std::make_shared<ColumnConstUInt8>(block.rows(), 0),
+                        : DataTypeUInt8().createConstColumn(block.rows(), 0),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
                     else_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumn()
-                        : std::make_shared<ColumnConstUInt8>(block.rows(), 0),
+                        : DataTypeUInt8().createConstColumn(block.rows(), 0),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },

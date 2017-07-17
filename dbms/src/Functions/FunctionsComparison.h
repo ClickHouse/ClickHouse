@@ -626,7 +626,7 @@ private:
             UInt8 res = 0;
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->getData(), col_right->getData(), res);
 
-            auto col_res = std::make_shared<ColumnConstUInt8>(col_left->size(), res);
+            auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), res);
             block.safeGetByPosition(result).column = col_res;
 
             return true;
@@ -696,7 +696,7 @@ private:
 
         if (c0_const && c1_const)
         {
-            auto c_res = std::make_shared<ColumnConstUInt8>(c0_const->size(), 0);
+            auto c_res = DataTypeUInt8().createConstColumn(c0_const->size(), 0);
             block.safeGetByPosition(result).column = c_res;
             StringImpl::constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
         }
@@ -977,7 +977,7 @@ private:
 
         if (c0_const && c1_const)
         {
-            auto c_res = std::make_shared<ColumnConstUInt8>(c0->size(), 0);
+            auto c_res = DataTypeUInt8().createConstColumn(c0->size(), 0);
             block.safeGetByPosition(result).column = c_res;
             GenericComparisonImpl<Op<int, int>>::constant_constant(*c0, *c1, c_res->getData());
         }

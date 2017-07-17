@@ -219,7 +219,7 @@ public:
         }
         else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(
+            block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
                 Impl::apply(col_from->getData().data(), col_from->getData().size()));
         }
@@ -280,10 +280,7 @@ public:
             String hash(Impl::length, 0);
             Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(
-                col_from->size(),
-                hash,
-                std::make_shared<DataTypeFixedString>(Impl::length));
+            block.safeGetByPosition(result).column = DataTypeFixedString(Impl::length).createConstColumn(col_from->size(), hash);
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -321,7 +318,7 @@ private:
         }
         else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(col_from->size(), Impl::apply(col_from->getData()));
+            block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(col_from->size(), Impl::apply(col_from->getData()));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -786,7 +783,7 @@ private:
         }
         else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(
+            block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
                 URLHashImpl::apply(col_from->getData().data(), col_from->getData().size()));
         }
@@ -825,7 +822,7 @@ private:
         }
         else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(
+            block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
                 URLHierarchyHashImpl::apply(level, col_from->getData().data(), col_from->getData().size()));
         }

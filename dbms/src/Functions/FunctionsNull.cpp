@@ -51,7 +51,7 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
     if (elem.column->isNull())
     {
         /// Trivial case.
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column->size(), 1);
+        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(elem.column->size(), 1);
     }
     else if (elem.column->isNullable())
     {
@@ -63,7 +63,7 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
     {
         /// Since no element is nullable, return a zero-constant column representing
         /// a zero-filled null map.
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(elem.column->size(), 0);
+        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(elem.column->size(), 0);
     }
 }
 
@@ -436,7 +436,7 @@ void FunctionToNullable::executeImpl(Block & block, const ColumnNumbers & argume
         block.getByPosition(result).column = col;
     else
         block.getByPosition(result).column = std::make_shared<ColumnNullable>(col,
-            std::make_shared<ColumnConstUInt8>(block.rows(), 0)->convertToFullColumn());
+            DataTypeUInt8().createConstColumn(block.rows(), 0)->convertToFullColumn());
 }
 
 }
