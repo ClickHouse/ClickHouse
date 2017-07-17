@@ -51,7 +51,7 @@ public:
         const AllowedMergingPredicate & can_merge);
 
     /** Select all the parts in the specified partition for merge, if possible.
-      * final - choose to merge even a single part - that is, allow to measure one part "with itself".
+      * final - choose to merge even a single part - that is, allow to merge one part "with itself".
       */
     bool selectAllPartsToMergeWithinPartition(
         MergeTreeData::DataPartsVector & what,
@@ -136,8 +136,9 @@ public:
 
 private:
 
-    MergeAlgorithm chooseMergeAlgorithm(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, MergedRowSources & rows_sources_to_alloc, bool deduplicate) const;
+    MergeAlgorithm chooseMergeAlgorithm(
+            const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
+            size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate) const;
 
 private:
     MergeTreeData & data;

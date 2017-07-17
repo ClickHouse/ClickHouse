@@ -32,8 +32,8 @@ public:
         auto res = std::make_shared<ASTInsertQuery>(*this);
         res->children.clear();
 
-        if (columns)     { res->columns = columns->clone();     res->children.push_back(res->columns); }
-        if (select)     { res->select = select->clone();     res->children.push_back(res->select); }
+        if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
+        if (select)  { res->select = select->clone(); res->children.push_back(res->select); }
 
         return res;
     }

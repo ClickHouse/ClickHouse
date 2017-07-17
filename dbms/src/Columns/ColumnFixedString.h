@@ -57,9 +57,9 @@ public:
         return chars.size() + sizeof(n);
     }
 
-    size_t allocatedSize() const override
+    size_t allocatedBytes() const override
     {
-        return chars.allocated_size() + sizeof(n);
+        return chars.allocated_bytes() + sizeof(n);
     }
 
     Field operator[](size_t index) const override
@@ -119,6 +119,8 @@ public:
     {
         return scatterImpl<ColumnFixedString>(num_columns, selector);
     }
+
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
     void reserve(size_t size) override
     {

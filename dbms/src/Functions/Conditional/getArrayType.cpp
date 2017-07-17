@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeTraits.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

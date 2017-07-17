@@ -1,7 +1,7 @@
 include_directories (include)
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
-	#yes, need linux, bacause bsd check inside linux in time_zone_libc.cc:24
+	# yes, need linux, because bsd check inside linux in time_zone_libc.cc:24
 	add_definitions (-D__USE_BSD -Dlinux -D_XOPEN_SOURCE=600)
 endif ()
 

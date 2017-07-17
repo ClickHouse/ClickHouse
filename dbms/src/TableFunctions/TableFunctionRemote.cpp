@@ -7,6 +7,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Common/typeid_cast.h>
 
 #include <TableFunctions/TableFunctionRemote.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -52,7 +53,7 @@ static bool parseNumber(const String & description, size_t l, size_t r, size_t &
     res = 0;
     for (size_t pos = l; pos < r; pos ++)
     {
-        if (!isdigit(description[pos]))
+        if (!isNumericASCII(description[pos]))
             return false;
         res = res * 10 + description[pos] - '0';
         if (res > 1e15)

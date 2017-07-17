@@ -1,5 +1,6 @@
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
+#include <Common/Arena.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/Stopwatch.h>
@@ -7,6 +8,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <ext/range.h>
+#include <ext/scope_guard.h>
+#include <ext/map.h>
 
 
 namespace ProfileEvents

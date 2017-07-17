@@ -34,7 +34,7 @@ struct Mark
 using Marks = std::vector<Mark>;
 
 
-/** Implements a repository that is suitable for logs.
+/** Implements a table engine that is suitable for logs.
   * Keys are not supported.
   * The data is stored in a compressed form.
   */
@@ -52,7 +52,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,

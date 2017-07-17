@@ -19,11 +19,11 @@ UInt8 getDayOfWeek(const cctz::civil_day & date)
     switch (day_of_week)
     {
         case cctz::weekday::monday:     return 1;
-        case cctz::weekday::tuesday:     return 2;
-        case cctz::weekday::wednesday:     return 3;
-        case cctz::weekday::thursday:     return 4;
+        case cctz::weekday::tuesday:    return 2;
+        case cctz::weekday::wednesday:  return 3;
+        case cctz::weekday::thursday:   return 4;
         case cctz::weekday::friday:     return 5;
-        case cctz::weekday::saturday:     return 6;
+        case cctz::weekday::saturday:   return 6;
         case cctz::weekday::sunday:     return 7;
         default:
             throw Poco::Exception("Logical error: incorrect week day.");

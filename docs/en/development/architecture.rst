@@ -48,7 +48,7 @@ Data types
 Block
 -----
 
-A ``Block`` is a container that represents a subset (chunk) of a table in memory. It is just a set of triples: ``(IColumn, IDataType, column name)``. During query execution, data is processed by ``Block``s. If we have a ``Block``, we have data (in the ``IColumn`` object), we have information about its type (in ``IDataType``) that tells us how to deal with that column, and we have the column name (either the original column name from the table, or some artificial name assigned for getting temporary results of calculations).
+A ``Block`` is a container that represents a subset (chunk) of a table in memory. It is just a set of triples: ``(IColumn, IDataType, column name)``. During query execution, data is processed by ``Block`` s. If we have a ``Block``, we have data (in the ``IColumn`` object), we have information about its type (in ``IDataType``) that tells us how to deal with that column, and we have the column name (either the original column name from the table, or some artificial name assigned for getting temporary results of calculations).
 
 When we calculate some function over columns in a block, we add another column with its result to the block, and we don't touch columns for arguments of the function because operations are immutable. Later, unneeded columns can be removed from the block, but not modified. This is convenient for elimination of common subexpressions.
 

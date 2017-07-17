@@ -1,4 +1,5 @@
 #include <DataStreams/CollapsingFinalBlockInputStream.h>
+#include <Common/typeid_cast.h>
 
 /// Maximum number of messages about incorrect data in the log.
 #define MAX_ERROR_MESSAGES 10

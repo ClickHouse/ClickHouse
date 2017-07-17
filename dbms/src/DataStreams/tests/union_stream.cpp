@@ -35,9 +35,9 @@ void test1()
     QueryProcessingStage::Enum stage3;
 
     BlockInputStreams streams;
-    streams.emplace_back(std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, stage1, 1, 1)[0], 30, 30000));
-    streams.emplace_back(std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, stage2, 1, 1)[0], 30, 2000));
-    streams.emplace_back(std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, stage3, 1, 1)[0], 30, 100));
+    streams.emplace_back(std::make_shared<LimitBlockInputStream>(table->read(column_names, {}, context, stage1, 1, 1)[0], 30, 30000));
+    streams.emplace_back(std::make_shared<LimitBlockInputStream>(table->read(column_names, {}, context, stage2, 1, 1)[0], 30, 2000));
+    streams.emplace_back(std::make_shared<LimitBlockInputStream>(table->read(column_names, {}, context, stage3, 1, 1)[0], 30, 100));
 
     UnionBlockInputStream<> union_stream(streams, nullptr, 2);
 
@@ -84,15 +84,15 @@ void test2()
 
     BlockInputStreams streams;
 
-    BlockInputStreamPtr stream1 = std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, stage1, 1, 1)[0], 30, 30000);
+    BlockInputStreamPtr stream1 = std::make_shared<LimitBlockInputStream>(table->read(column_names, {}, context, stage1, 1, 1)[0], 30, 30000);
     stream1 = std::make_shared<BlockExtraInfoInputStream>(stream1, extra_info1);
     streams.emplace_back(stream1);
 
-    BlockInputStreamPtr stream2 = std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, stage2, 1, 1)[0], 30, 2000);
+    BlockInputStreamPtr stream2 = std::make_shared<LimitBlockInputStream>(table->read(column_names, {}, context, stage2, 1, 1)[0], 30, 2000);
     stream2 = std::make_shared<BlockExtraInfoInputStream>(stream2, extra_info2);
     streams.emplace_back(stream2);
 
-    BlockInputStreamPtr stream3 = std::make_shared<LimitBlockInputStream>(table->read(column_names, 0, context, stage3, 1, 1)[0], 30, 100);
+    BlockInputStreamPtr stream3 = std::make_shared<LimitBlockInputStream>(table->read(column_names, {}, context, stage3, 1, 1)[0], 30, 100);
     stream3 = std::make_shared<BlockExtraInfoInputStream>(stream3, extra_info3);
     streams.emplace_back(stream3);
 

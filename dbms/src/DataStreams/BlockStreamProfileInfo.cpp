@@ -1,10 +1,10 @@
+#include <DataStreams/BlockStreamProfileInfo.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <Core/Block.h>
-
-#include <DataStreams/BlockStreamProfileInfo.h>
-
 
 namespace DB
 {
@@ -71,14 +71,17 @@ void BlockStreamProfileInfo::update(Block & block)
 
 void BlockStreamProfileInfo::collectInfosForStreamsWithName(const char * name, BlockStreamProfileInfos & res) const
 {
-    if (stream_name == name)
+    if (parent->getName() == name)
     {
         res.push_back(this);
         return;
     }
 
-    for (const auto & nested_info : nested_infos)
-        nested_info->collectInfosForStreamsWithName(name, res);
+    for (const auto & child_stream : parent->getChildren())
+    {
+        if (const auto * profiling_child = dynamic_cast<const IProfilingBlockInputStream *>(child_stream.get()))
+            profiling_child->getProfileInfo().collectInfosForStreamsWithName(name, res);
+    }
 }
 
 
@@ -102,9 +105,14 @@ void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 
         BlockStreamProfileInfos & limits_or_sortings = partial_sortings.empty() ? limits : partial_sortings;
 
-        for (const auto & info_limit_or_sort : limits_or_sortings)
-            for (const auto & nested_info : info_limit_or_sort->nested_infos)
-                rows_before_limit += nested_info->rows;
+        for (const BlockStreamProfileInfo * info_limit_or_sort : limits_or_sortings)
+        {
+            for (const auto & child_stream : info_limit_or_sort->parent->getChildren())
+            {
+                if (const auto * profiling_child = dynamic_cast<const IProfilingBlockInputStream *>(child_stream.get()))
+                    rows_before_limit += profiling_child->getProfileInfo().rows;
+            }
+        }
     }
     else
     {

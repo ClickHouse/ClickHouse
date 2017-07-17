@@ -7,9 +7,12 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 
+#include <DataStreams/ColumnGathererStream.h>
+
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 
 
@@ -296,9 +299,9 @@ size_t ColumnArray::byteSize() const
 }
 
 
-size_t ColumnArray::allocatedSize() const
+size_t ColumnArray::allocatedBytes() const
 {
-    return getData().allocatedSize() + getOffsets().allocated_size() * sizeof(getOffsets()[0]);
+    return getData().allocatedBytes() + getOffsets().allocated_bytes();
 }
 
 
@@ -608,7 +611,6 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
     return res;
 }
 
-
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     size_t s = size();
@@ -887,5 +889,10 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets_t & replicate_offsets) const
         static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
 }
 
+
+void ColumnArray::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
 
 }

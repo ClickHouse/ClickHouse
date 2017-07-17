@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Core/QueryProcessingStage.h>
 #include <Storages/ITableDeclaration.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Poco/RWLock.h>
 #include <memory>
 #include <experimental/optional>
@@ -29,10 +30,6 @@ using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 class IStorage;
 
 using StoragePtr = std::shared_ptr<IStorage>;
-
-class IAST;
-
-using ASTPtr = std::shared_ptr<IAST>;
 
 struct Settings;
 
@@ -156,7 +153,7 @@ public:
       *  (indexes, locks, etc.)
       * Returns a stream with which you can read data sequentially
       *  or multiple streams for parallel data reading.
-      * The into `processed_stage` info is also written to what stage the request was processed.
+      * The `processed_stage` info is also written to what stage the request was processed.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server.)
       *
@@ -171,7 +168,7 @@ public:
       */
     virtual BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
@@ -217,8 +214,8 @@ public:
         throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Execute DROP COLUMN ... FROM PARTITION query witch drops column from given partition. */
-    virtual void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
+    /** Execute CLEAR COLUMN ... IN PARTITION query which removes column from given partition. */
+    virtual void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
     {
         throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -255,7 +252,7 @@ public:
       */
     virtual void reshardPartitions(
         const ASTPtr & query, const String & database_name,
-        const Field & first_partition, const Field & last_partition,
+        const Field & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
         Context & context)
@@ -266,7 +263,7 @@ public:
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
-    virtual bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+    virtual bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

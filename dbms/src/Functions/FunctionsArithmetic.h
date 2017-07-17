@@ -9,6 +9,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -615,8 +616,8 @@ private:
     bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
                                   const ColumnType * col_left)
     {
-        throw Exception("Types " + TypeName<typename LeftDataType::FieldType>::get()
-            + " and " + TypeName<typename LeftDataType::FieldType>::get()
+        throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
+            + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
             + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

@@ -6,6 +6,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsArray.h>
 #include <IO/WriteHelpers.h>
+#include <Common/UTF8Helpers.h>
 
 
 #if __SSE2__
@@ -122,10 +123,7 @@ struct LengthUTF8Impl
         ColumnString::Offset_t prev_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            res[i] = 0;
-            for (const UInt8 * c = &data[prev_offset]; c + 1 < &data[offsets[i]]; ++c)
-                if (*c <= 0x7F || *c >= 0xC0)
-                    ++res[i];
+            res[i] = UTF8::countCodePoints(&data[prev_offset], offsets[i] - prev_offset - 1);
             prev_offset = offsets[i];
         }
     }
@@ -140,20 +138,13 @@ struct LengthUTF8Impl
 
         for (size_t i = 0; i < size; ++i)
         {
-            res[i] = 0;
-            for (const UInt8 * c = &data[i * n]; c < &data[(i + 1) * n]; ++c)
-                if (*c <= 0x7F || *c >= 0xC0)
-                    ++res[i];
+            res[i] = UTF8::countCodePoints(&data[i * n], n);
         }
     }
 
     static void constant(const std::string & data, UInt64 & res)
     {
-        res = 0;
-        for (const UInt8 * c = reinterpret_cast<const UInt8 *>(data.data()); c < reinterpret_cast<const UInt8 *>(data.data() + data.size());
-             ++c)
-            if (*c <= 0x7F || *c >= 0xC0)
-                ++res;
+        res = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(data.data()), data.size());
     }
 
     static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)

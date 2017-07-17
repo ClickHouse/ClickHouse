@@ -71,7 +71,7 @@ std::string getOrdinalSuffix(T n)
     }
 }
 
-/// More efficient than libc, because doesn't respect locale.
+/// More efficient than libc, because doesn't respect locale. But for some functions table implementation could be better.
 
 inline bool isASCII(char c)
 {
@@ -87,6 +87,13 @@ inline bool isAlphaASCII(char c)
 inline bool isNumericASCII(char c)
 {
     return (c >= '0' && c <= '9');
+}
+
+inline bool isHexDigit(char c)
+{
+    return isNumericASCII(c)
+        || (c >= 'a' && c <= 'f')
+        || (c >= 'A' && c <= 'F');
 }
 
 inline bool isAlphaNumericASCII(char c)

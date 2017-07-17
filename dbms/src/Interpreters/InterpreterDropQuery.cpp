@@ -1,6 +1,7 @@
 #include <Poco/File.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDropQuery.h>

@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsArithmetic.h>

@@ -329,7 +329,7 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
-        LOCAL_SERVER    /// clickhouse-local
+        LOCAL           /// clickhouse-local
     };
 
     ApplicationType getApplicationType() const;
@@ -396,8 +396,8 @@ private:
 
     std::mutex mutex;
     std::condition_variable cond;
-    std::thread thread{&SessionCleaner::run, this};
     std::atomic<bool> quit{false};
+    std::thread thread{&SessionCleaner::run, this};
 };
 
 }

@@ -9,7 +9,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
 #include <Common/hex.h>
 #include <Common/Volnitsky.h>
 #include <Functions/IFunction.h>

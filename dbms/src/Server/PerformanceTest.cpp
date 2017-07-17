@@ -2,28 +2,29 @@
 #include <iostream>
 #include <limits>
 #include <regex>
-#if __has_include(<sys/sysinfo.h>)
-    #include <sys/sysinfo.h>
-#endif
 #include <unistd.h>
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
 #include <sys/stat.h>
 
+#include <common/DateLUT.h>
+
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <Client/Connection.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Common/getFQDNOrHostName.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/Types.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Settings.h>
-
+#include <common/getMemoryAmount.h>
+#include <Common/getMultipleKeysFromConfig.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Exception.h>
@@ -268,9 +269,13 @@ struct Stats
 
     bool last_query_was_cancelled = false;
 
-    size_t queries;
-    size_t rows_read;
-    size_t bytes_read;
+    size_t queries = 0;
+
+    size_t total_rows_read = 0;
+    size_t total_bytes_read = 0;
+
+    size_t last_query_rows_read = 0;
+    size_t last_query_bytes_read = 0;
 
     using Sampler = ReservoirSampler<double>;
     Sampler sampler{1 << 16};
@@ -328,11 +333,11 @@ struct Stats
         }
         if (statistic_name == "rows_per_second")
         {
-            return std::to_string(rows_read / total_time);
+            return std::to_string(total_rows_read / total_time);
         }
         if (statistic_name == "bytes_per_second")
         {
-            return std::to_string(bytes_read / total_time);
+            return std::to_string(total_bytes_read / total_time);
         }
 
         if (statistic_name == "max_rows_per_second")
@@ -397,11 +402,13 @@ struct Stats
 
     void add(size_t rows_read_inc, size_t bytes_read_inc)
     {
-        rows_read += rows_read_inc;
-        bytes_read += bytes_read_inc;
+        total_rows_read += rows_read_inc;
+        total_bytes_read += bytes_read_inc;
+        last_query_rows_read += rows_read_inc;
+        last_query_bytes_read += bytes_read_inc;
 
-        double new_rows_speed = rows_read_inc / watch_per_query.elapsedSeconds();
-        double new_bytes_speed = bytes_read_inc / watch_per_query.elapsedSeconds();
+        double new_rows_speed = last_query_rows_read / watch_per_query.elapsedSeconds();
+        double new_bytes_speed = last_query_bytes_read / watch_per_query.elapsedSeconds();
 
         /// Update rows speed
         update_max_speed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
@@ -448,8 +455,10 @@ struct Stats
         sampler.clear();
 
         queries = 0;
-        rows_read = 0;
-        bytes_read = 0;
+        total_rows_read = 0;
+        total_bytes_read = 0;
+        last_query_rows_read = 0;
+        last_query_bytes_read = 0;
 
         min_time = std::numeric_limits<UInt64>::max();
         total_time = 0;
@@ -514,7 +523,7 @@ public:
         connection.getServerVersion(name, version_major, version_minor, version_revision);
 
         std::stringstream ss;
-        ss << name << " v" << version_major << "." << version_minor << "." << version_revision;
+        ss << version_major << "." << version_minor << "." << version_revision;
         server_version = ss.str();
 
         processTestsConfigurations(input_files);
@@ -662,34 +671,24 @@ private:
         for (const String & precondition : preconditions)
         {
             if (precondition == "flush_disk_cache")
-                if (system("(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')")) {
+                if (system("(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
+                {
                     std::cerr << "Failed to flush disk cache" << std::endl;
                     return false;
                 }
 
             if (precondition == "ram_size")
             {
-#if __has_include(<sys/sysinfo.h>)
-                struct sysinfo *system_information = new struct sysinfo();
-                if (sysinfo(system_information))
+                size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
+                size_t actual_ram = getMemoryAmount();
+                if (!actual_ram)
+                    throw DB::Exception("ram_size precondition not available on this platform", ErrorCodes::NOT_IMPLEMENTED);
+
+                if (ram_size_needed > actual_ram)
                 {
-                    std::cerr << "Failed to check system RAM size" << std::endl;
-                    delete system_information;
+                    std::cerr << "Not enough RAM: need = " << ram_size_needed << ", present = " << actual_ram << std::endl;
+                    return false;
                 }
-                else
-                {
-                    size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
-                    size_t actual_ram = system_information->totalram / 1024 / 1024;
-                    if (ram_size_needed > actual_ram)
-                    {
-                        std::cerr << "Not enough RAM" << std::endl;
-                        delete system_information;
-                        return false;
-                    }
-                }
-#else
-                throw DB::Exception("ram_size precondition not available on this platform", ErrorCodes::NOT_IMPLEMENTED);
-#endif
             }
 
             if (precondition == "table_exists")
@@ -706,11 +705,15 @@ private:
                 {
                     Connection::Packet packet = connection.receivePacket();
 
-                    if (packet.type == Protocol::Server::Data) {
+                    if (packet.type == Protocol::Server::Data)
+                    {
                         for (const ColumnWithTypeAndName & column : packet.block.getColumns())
                         {
-                            if (column.name == "result" && column.column->getDataAt(0).data != nullptr) {
+                            if (column.name == "result" && column.column->size() > 0)
+                            {
                                 exist = column.column->get64(0);
+                                if (exist)
+                                    break;
                             }
                         }
                     }
@@ -719,8 +722,9 @@ private:
                         break;
                 }
 
-                if (exist == 0) {
-                    std::cerr << "Table " + table_to_check + " doesn't exist" << std::endl;
+                if (!exist)
+                {
+                    std::cerr << "Table " << table_to_check << " doesn't exist" << std::endl;
                     return false;
                 }
             }
@@ -864,15 +868,7 @@ private:
 
         if (test_config->has("query"))
         {
-            queries.push_back(test_config->getString("query"));
-            for (size_t i = 1; ; ++i)
-            {
-                std::string key = "query[" + std::to_string(i) + "]";
-                if (!test_config->has(key))
-                    break;
-
-                queries.push_back(test_config->getString(key));
-            }
+            queries = DB::getMultipleValuesFromConfig(*test_config, "", "query");
         }
 
         if (test_config->has("query_file"))
@@ -1073,15 +1069,14 @@ private:
     {
         statistics.watch_per_query.restart();
         statistics.last_query_was_cancelled = false;
+        statistics.last_query_rows_read = 0;
+        statistics.last_query_bytes_read = 0;
 
         RemoteBlockInputStream stream(connection, query, &settings, global_context, nullptr, Tables() /*, query_processing_stage*/);
 
-        Progress progress;
-        stream.setProgressCallback(
-            [&progress, &stream, &statistics, &stop_conditions, this](const Progress & value)
+        stream.setProgressCallback([&](const Progress & value)
             {
-                progress.incrementPiecewiseAtomically(value);
-                this->checkFulfilledConditionsAndUpdate(progress, stream, statistics, stop_conditions);
+                this->checkFulfilledConditionsAndUpdate(value, stream, statistics, stop_conditions);
             });
 
         stream.readPrefix();
@@ -1103,8 +1098,8 @@ private:
     {
         statistics.add(progress.rows, progress.bytes);
 
-        stop_conditions.reportRowsRead(statistics.rows_read);
-        stop_conditions.reportBytesReadUncompressed(statistics.bytes_read);
+        stop_conditions.reportRowsRead(statistics.total_rows_read);
+        stop_conditions.reportBytesReadUncompressed(statistics.total_bytes_read);
         stop_conditions.reportTotalTime(statistics.watch.elapsed() / (1000 * 1000));
         stop_conditions.reportMinTimeNotChangingFor(statistics.min_time_watch.elapsed() / (1000 * 1000));
         stop_conditions.reportMaxSpeedNotChangingFor(
@@ -1217,8 +1212,9 @@ public:
         JSONString json_output;
 
         json_output.set("hostname", getFQDNOrHostName());
-        json_output.set("cpu_num", sysconf(_SC_NPROCESSORS_ONLN));
+        json_output.set("num_cores", getNumberOfPhysicalCPUCores());
         json_output.set("server_version", server_version);
+        json_output.set("time", DateLUT::instance().timeToString(time(0)));
         json_output.set("test_name", test_name);
         json_output.set("main_metric", main_metric);
 
@@ -1309,11 +1305,11 @@ public:
                                                           statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "rows_per_second") != metrics.end())
-                        runJSON.set("rows_per_second", double(statistics.rows_read) /
+                        runJSON.set("rows_per_second", double(statistics.total_rows_read) /
                                                        statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "bytes_per_second") != metrics.end())
-                        runJSON.set("bytes_per_second", double(statistics.bytes_read) /
+                        runJSON.set("bytes_per_second", double(statistics.total_bytes_read) /
                                                         statistics.total_time);
                 }
                 else

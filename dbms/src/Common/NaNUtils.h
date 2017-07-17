@@ -7,17 +7,28 @@
 
 /// To be sure, that this function is zero-cost for non-floating point types.
 template <typename T>
-inline bool isNaN(T x)
+inline typename std::enable_if<std::is_floating_point<T>::value, bool>::type isNaN(T x)
 {
-    return std::is_floating_point<T>::value ? std::isnan(x) : false;
+    return std::isnan(x);
 }
 
 template <typename T>
-inline bool isFinite(T x)
+inline typename std::enable_if<!std::is_floating_point<T>::value, bool>::type isNaN(T x)
 {
-    return std::is_floating_point<T>::value ? std::isfinite(x) : true;
+    return false;
 }
 
+template <typename T>
+inline typename std::enable_if<std::is_floating_point<T>::value, bool>::type isFinite(T x)
+{
+    return std::isfinite(x);
+}
+
+template <typename T>
+inline typename std::enable_if<!std::is_floating_point<T>::value, bool>::type isFinite(T x)
+{
+    return true;
+}
 
 template <typename T>
 typename std::enable_if<std::is_floating_point<T>::value, T>::type NaNOrZero()
@@ -26,7 +37,13 @@ typename std::enable_if<std::is_floating_point<T>::value, T>::type NaNOrZero()
 }
 
 template <typename T>
-typename std::enable_if<!std::is_floating_point<T>::value, T>::type NaNOrZero()
+typename std::enable_if<std::numeric_limits<T>::is_integer, T>::type NaNOrZero()
 {
     return 0;
+}
+
+template <typename T>
+typename std::enable_if<std::is_class<T>::value, T>::type NaNOrZero()
+{
+    return T{};
 }

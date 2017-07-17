@@ -7,8 +7,8 @@ namespace DB
 {
 
 
-JSONEachRowRowOutputStream::JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, bool force_quoting_64bit_integers_)
-    : ostr(ostr_), force_quoting_64bit_integers(force_quoting_64bit_integers_)
+JSONEachRowRowOutputStream::JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettingsJSON & settings_)
+    : ostr(ostr_), settings(settings_)
 {
     size_t columns = sample.columns();
     fields.resize(columns);
@@ -25,7 +25,7 @@ void JSONEachRowRowOutputStream::writeField(const IColumn & column, const IDataT
 {
     writeString(fields[field_number], ostr);
     writeChar(':', ostr);
-    type.serializeTextJSON(column, row_num, ostr, force_quoting_64bit_integers);
+    type.serializeTextJSON(column, row_num, ostr, settings);
     ++field_number;
 }
 

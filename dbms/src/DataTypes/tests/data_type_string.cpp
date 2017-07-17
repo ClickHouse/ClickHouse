@@ -5,8 +5,8 @@
 
 #include <Common/Stopwatch.h>
 
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -36,7 +36,7 @@ try
         }
 
         std::ofstream ostr("test");
-        WriteBufferFromOStream out_buf(ostr);
+        WriteBufferFromFileDescriptor out_buf(STDOUT_FILENO);
 
         stopwatch.restart();
         data_type.serializeBinaryBulk(*column, out_buf, 0, 0);
@@ -49,7 +49,7 @@ try
         std::shared_ptr<ColumnString> column = std::make_shared<ColumnString>();
 
         std::ifstream istr("test");
-        ReadBufferFromIStream in_buf(istr);
+        ReadBufferFromFileDescriptor in_buf(STDIN_FILENO);
 
         stopwatch.restart();
         data_type.deserializeBinaryBulk(*column, in_buf, n, 0);

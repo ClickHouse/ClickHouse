@@ -21,6 +21,11 @@ public:
         return "Null";
     }
 
+    const char * getFamilyName() const override
+    {
+        return "Null";
+    }
+
     bool isNull() const override
     {
         return true;
@@ -29,6 +34,11 @@ public:
     bool notForTables() const override
     {
         return true;
+    }
+
+    bool canBeInsideNullable() const override
+    {
+        return false;
     }
 
     DataTypePtr clone() const override
@@ -60,7 +70,7 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
 };
 

@@ -12,6 +12,7 @@ add_library(clickhouse-server
     StatusFile.cpp
     ReplicasStatusHandler.cpp)
 target_link_libraries(clickhouse-server daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+target_include_directories (clickhouse-server PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 add_library(clickhouse-local LocalServer.cpp)
 target_link_libraries(clickhouse-local dbms clickhouse-server clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
@@ -31,6 +32,7 @@ target_link_libraries (clickhouse-performance-test dbms ${Boost_PROGRAM_OPTIONS_
 
 
 add_executable(clickhouse main.cpp)
+target_include_directories(clickhouse PRIVATE ${COMMON_INCLUDE_DIR})
 target_link_libraries(clickhouse
     clickhouse-server
     clickhouse-client

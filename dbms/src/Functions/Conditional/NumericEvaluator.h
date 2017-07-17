@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 
 

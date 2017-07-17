@@ -33,7 +33,8 @@ void SquashingBlockOutputStream::finalize()
 
 void SquashingBlockOutputStream::flush()
 {
-    finalize();
+    if (!disable_flush)
+        finalize();
     output->flush();
 }
 

@@ -114,7 +114,7 @@ private:
 
 BlockInputStreams StorageBuffer::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
@@ -131,7 +131,7 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        streams_from_dst = destination->read(column_names, query, context, processed_stage, max_block_size, num_streams);
+        streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     BlockInputStreams streams_from_buffers;
@@ -144,7 +144,7 @@ BlockInputStreams StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query, context, processed_stage, 0, stream).execute().in;
+            stream = InterpreterSelectQuery(query_info.query, context, processed_stage, 0, stream).execute().in;
 
     streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams_from_dst;
@@ -346,7 +346,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize({} /*partition*/, false /*final*/, false /*deduplicate*/, context.getSettings());
+        optimize(nullptr /*query*/, {} /*partition*/, false /*final*/, false /*deduplicate*/, context.getSettings());
     }
     catch (...)
     {
@@ -365,7 +365,7 @@ void StorageBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageBuffer::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageBuffer::optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
     if (!partition.empty())
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
@@ -595,7 +595,7 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     auto lock = lockStructureForAlter();
 
     /// So that no blocks of the old structure remain.
-    optimize({} /*partition*/, false /*final*/, false /*deduplicate*/, context.getSettings());
+    optimize({} /*query*/, {} /*partition*/, false /*final*/, false /*deduplicate*/, context.getSettings());
 
     params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 

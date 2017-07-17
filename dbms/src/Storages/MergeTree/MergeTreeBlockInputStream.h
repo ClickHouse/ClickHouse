@@ -20,6 +20,7 @@ public:
         const MergeTreeData::DataPartPtr & owned_data_part,
         size_t max_block_size_rows,
         size_t preferred_block_size_bytes,
+        size_t preferred_max_column_in_block_size_bytes,
         Names column_names,
         const MarkRanges & mark_ranges,
         bool use_uncompressed_cache,

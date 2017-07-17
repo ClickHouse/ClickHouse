@@ -11,7 +11,6 @@ namespace DB
 namespace UTF8
 {
 
-
 static const UInt8 CONTINUATION_OCTET_MASK = 0b11000000u;
 static const UInt8 CONTINUATION_OCTET = 0b10000000u;
 
@@ -36,17 +35,27 @@ inline void syncForward(const UInt8 * & s, const UInt8 * const end)
 }
 
 /// returns UTF-8 code point sequence length judging by it's first octet
-inline std::size_t seqLength(const UInt8 first_octet)
+inline size_t seqLength(const UInt8 first_octet)
 {
     if (first_octet < 0x80u)
         return 1;
 
-    const std::size_t bits = 8;
+    const size_t bits = 8;
     const auto first_zero = bitScanReverse(static_cast<UInt8>(~first_octet));
 
     return bits - 1 - first_zero;
 }
 
+inline size_t countCodePoints(const UInt8 * data, size_t size)
+{
+    size_t res = 0;
+
+    /// TODO SIMD implementation looks quite simple.
+    for (auto end = data + size; data < end; ++data) /// Skip UTF-8 continuation bytes.
+        res += (*data <= 0x7F || *data >= 0xC0);
+
+    return res;
+}
 
 }
 

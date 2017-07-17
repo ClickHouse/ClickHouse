@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
+#include <Common/typeid_cast.h>
 
 #include <type_traits>
 

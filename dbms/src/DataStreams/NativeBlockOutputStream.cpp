@@ -5,7 +5,6 @@
 #include <IO/VarInt.h>
 #include <IO/CompressedWriteBuffer.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -17,6 +16,7 @@
 #include <DataStreams/MarkInCompressedFile.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

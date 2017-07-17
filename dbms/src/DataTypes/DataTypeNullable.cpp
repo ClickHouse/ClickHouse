@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -6,10 +7,18 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ConcatReadBuffer.h>
+#include <Parsers/IAST.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 
 DataTypeNullable::DataTypeNullable(DataTypePtr nested_data_type_)
@@ -192,16 +201,14 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
         nested_data_type->serializeText(*col.getNestedColumn(), row_num, ostr);
 }
 
-void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-    bool force_quoting_64bit_integers) const
+void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
         writeCString("null", ostr);
     else
-        nested_data_type->serializeTextJSON(*col.getNestedColumn(), row_num, ostr,
-            force_quoting_64bit_integers);
+        nested_data_type->serializeTextJSON(*col.getNestedColumn(), row_num, ostr, settings);
 }
 
 void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
@@ -236,6 +243,26 @@ ColumnPtr DataTypeNullable::createConstColumn(size_t size, const Field & field) 
     return std::make_shared<ColumnNullable>(
         nested_data_type->createConstColumn(size, field)->convertToFullColumnIfConst(),
         std::make_shared<ColumnUInt8>(size, 0));
+}
+
+
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (arguments->children.size() != 1)
+        throw Exception("Nullable data type family must have exactly one argument - nested type", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
+
+    if (!nested_type->canBeInsideNullable())
+        throw Exception("Nested type " + nested_type->getName() + " cannot be inside Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    return std::make_shared<DataTypeNullable>(nested_type);
+}
+
+
+void registerDataTypeNullable(DataTypeFactory & factory)
+{
+    factory.registerDataType("Nullable", create);
 }
 
 }
