@@ -251,11 +251,6 @@ ColumnPtr DataTypeTuple::createColumn() const
     return std::make_shared<ColumnTuple>(tuple_block);
 }
 
-ColumnPtr DataTypeTuple::createConstColumn(size_t size, const Field & field) const
-{
-    return std::make_shared<ColumnConstTuple>(size, get<const Tuple &>(field), std::make_shared<DataTypeTuple>(elems));
-}
-
 Field DataTypeTuple::getDefault() const
 {
     return Tuple(ext::map<TupleBackend>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));

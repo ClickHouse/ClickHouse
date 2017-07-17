@@ -396,13 +396,6 @@ ColumnPtr DataTypeArray::createColumn() const
 }
 
 
-ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) const
-{
-    /// `this` can not be passed as the last argument.
-    return std::make_shared<ColumnConstArray>(size, get<const Array &>(field), std::make_shared<DataTypeArray>(nested));
-}
-
-
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (arguments->children.size() != 1)

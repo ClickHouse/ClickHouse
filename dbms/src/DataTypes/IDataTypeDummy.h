@@ -59,11 +59,6 @@ public:
         throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override
-    {
-        throw Exception("Method createConstColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     Field getDefault() const override
     {
         throw Exception("Method getDefault() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);

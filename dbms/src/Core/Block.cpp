@@ -63,10 +63,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
             size_t nested_rows = offsets_column->empty() ? 0
                 : typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
 
-            ColumnPtr nested_column = dynamic_cast<IColumnConst &>(
-                *nested_type->createConstColumn(
-                    nested_rows, nested_type->getDefault())).convertToFullColumn();
-
+            ColumnPtr nested_column = nested_type->createConstColumn(nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
             column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
         }
         else
@@ -74,9 +71,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
             /** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
               *  it can be full (or the interpreter may decide that it is constant everywhere).
               */
-            column_to_add.column = dynamic_cast<IColumnConst &>(
-                *column_to_add.type->createConstColumn(
-                    rows(), column_to_add.type->getDefault())).convertToFullColumn();
+            column_to_add.column = column_to_add.type->createConstColumn(rows(), column_to_add.type->getDefault())->convertToFullColumnIfConst();
         }
 
         insert(std::move(column_to_add));

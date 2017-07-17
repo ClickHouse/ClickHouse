@@ -53,7 +53,6 @@ public:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
     Field getDefault() const override { return Null(); }
 

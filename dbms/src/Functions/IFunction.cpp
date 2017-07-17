@@ -362,7 +362,7 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
     {
         /// We have found at least one NULL argument. Therefore we return NULL.
         ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
-        dest_col.column =  std::make_shared<ColumnNull>(block.rows(), Null());
+        dest_col.column = DataTypeNull().createConstColumn(block.rows(), Null());
     }
     else if (strategy == PROCESS_NULLABLE_COLUMNS)
     {

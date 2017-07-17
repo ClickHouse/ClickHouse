@@ -234,17 +234,6 @@ ColumnPtr DataTypeNullable::createColumn() const
     return std::make_shared<ColumnNullable>(new_col, std::make_shared<ColumnUInt8>());
 }
 
-ColumnPtr DataTypeNullable::createConstColumn(size_t size, const Field & field) const
-{
-    if (field.isNull())
-        return std::make_shared<ColumnNull>(size, Null(), clone());
-
-    /// Actually we return non-const column, because we cannot create const column, corresponding to Nullable type, but with non-NULL value.
-    return std::make_shared<ColumnNullable>(
-        nested_data_type->createConstColumn(size, field)->convertToFullColumnIfConst(),
-        std::make_shared<ColumnUInt8>(size, 0));
-}
-
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
