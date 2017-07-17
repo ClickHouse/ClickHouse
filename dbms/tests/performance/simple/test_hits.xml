@@ -1,0 +1,80 @@
+<test>
+<name>test.hits misc</name>
+<type>once</type>
+    <stop_conditions>
+        <any_of>
+            <!-- This is only for infinite running query. -->
+            <average_speed_not_changing_for_ms>10000</average_speed_not_changing_for_ms>
+            <total_time_ms>1000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+    <metrics>
+        <!-- For running one inifinite query -->
+        <max_rows_per_second />
+        <max_bytes_per_second />
+        <avg_rows_per_second />
+        <avg_bytes_per_second />
+    </metrics>
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+<!-- 
+14. Некриптографическая хэш-функция для строк небольшой длины.
+В качестве данных в следующих тестах будут использованы поисковые фразы (SearchPhrase), URL и PageCharset.
+Строка SearchPhrase непустая только в 6.8% случаев. Средняя длина непустой строки - 47 байт.
+URL почти всегда непуст и его средняя длина - 77 байт.
+PageCharset тоже почти всегда непуст, но его средняя длина поменьше - 6.2 байта. -->
+
+<query>SELECT count() FROM test.hits WHERE NOT ignore(cityHash64(SearchPhrase)) SETTINGS max_threads = 1</query>
+<!-- 15. Некриптографическая хэш-функция для строк небольшой длины. -->
+
+<query>SELECT count() FROM test.hits WHERE NOT ignore(farmHash64(SearchPhrase)) SETTINGS max_threads = 1</query>
+<!-- 16. Некриптографическая хэш-функция для строк небольшой длины. -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(metroHash64(SearchPhrase)) SETTINGS max_threads = 1</query>
+<!-- 17. Криптографическая хэш-функция для строк. -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(sipHash64(SearchPhrase)) SETTINGS max_threads = 1</query>
+<!-- 18. Криптографическая хэш-функция для строк. -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(MD5(SearchPhrase)) SETTINGS max_threads = 1</query>
+<!-- 19. Криптографическая хэш-функция для строк.  -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(MD5(URL)) SETTINGS max_threads = 1</query>
+<!-- 20. -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(cityHash64(URL)) SETTINGS max_threads = 1</query>
+<!-- 21. -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(sipHash64(URL)) SETTINGS max_threads = 1</query>
+<!-- 22. -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(cityHash64(PageCharset)) SETTINGS max_threads = 1</query>
+<!-- 23. Поиск подстроки в строке. -->
+<query>SELECT count() FROM test.hits WHERE URL LIKE '%metrika%' SETTINGS max_threads = 1</query>
+<!-- 24. Более сложный поиск подстроки в строке. -->
+<query>SELECT count() FROM test.hits WHERE positionCaseInsensitiveUTF8(URL, 'новости') != 0 SETTINGS max_threads = 1</query>
+<!-- 25. Регексп. -->
+<query>SELECT count() FROM test.hits WHERE match(URL, '^https?://(?:www\\.)?metri[kc]a\\.yandex\\.(?:ru|com|com\\.tr|ua|by|kz)/.+?2014') SETTINGS max_threads = 1</query>
+
+
+<!-- 34. Сложная агрегация. -->
+<query>SELECT SearchEngineID, SearchPhrase, RegionID FROM test.hits GROUP BY SearchEngineID, SearchPhrase, RegionID ORDER BY count() DESC LIMIT 10 SETTINGS max_threads = 1</query>
+<!-- 36. Функция для работы с датой и временем. -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(toMonday(EventTime)) SETTINGS max_threads = 1</query>
+<!-- 37. Функция для работы с URL. -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(cutQueryString(URL)) SETTINGS max_threads = 1</query>
+<!-- 38. Разные алгоритмы вычисления квантилей. -->
+<query>SELECT quantilesIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM test.hits SETTINGS max_threads = 1</query>
+<!-- 39. Разные алгоритмы вычисления квантилей. -->
+<query>SELECT quantilesTimingIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM test.hits SETTINGS max_threads = 1</query>
+<!-- 40. Разные алгоритмы вычисления квантилей. -->
+<query>SELECT quantilesExactIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM test.hits SETTINGS max_threads = 1</query>
+<!-- 41. Разные алгоритмы вычисления квантилей. -->
+<query>SELECT quantilesTDigestIf(0.5, 0.9)(SendTiming, SendTiming > 0) FROM test.hits SETTINGS max_threads = 1</query>
+<!-- 42. Разные алгоритмы вычисления кардинальности. -->
+<query>SELECT uniq(UserID) FROM test.hits SETTINGS max_threads = 1</query>
+<!-- 43. Разные алгоритмы вычисления кардинальности. -->
+<query>SELECT uniqCombined(UserID) FROM test.hits SETTINGS max_threads = 1</query>
+<!-- 44. Разные алгоритмы вычисления кардинальности. -->
+<query>SELECT uniqExact(UserID) FROM test.hits SETTINGS max_threads = 1</query>
+<!-- 45. Что-то чуть более похожее на реальный запрос. -->
+<query>SELECT RegionID, uniq(UserID) FROM test.hits GROUP BY RegionID SETTINGS max_threads = 1</query>
+<!-- 47. Читаем и разжимаем все столбцы, и ничего с ними потом не делаем. -->
+<query>SELECT count() FROM test.hits WHERE NOT ignore(*) SETTINGS max_threads = 1</query>
+
+</test>
