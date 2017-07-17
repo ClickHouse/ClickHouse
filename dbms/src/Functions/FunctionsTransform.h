@@ -221,11 +221,11 @@ private:
     template <typename T>
     bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped)
     {
-        if (const auto in = typeid_cast<const ColumnVector<T> *>(in_untyped))
+        if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
             if (!default_untyped)
             {
-                auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
+                auto out = checkAndGetColumn<ColumnVector<T>>(out_untyped);
                 if (!out)
                 {
                     throw Exception{
@@ -342,7 +342,7 @@ private:
     template <typename T, typename U>
     bool executeNumToNumWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped)
     {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
+        auto out = checkAndGetColumn<ColumnVector<U>>(out_untyped);
         if (!out)
             return false;
 
@@ -353,7 +353,7 @@ private:
     template <typename T, typename U>
     bool executeNumToNumWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped)
     {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
+        auto out = checkAndGetColumn<ColumnVector<U>>(out_untyped);
         if (!out)
             return false;
 
@@ -379,7 +379,7 @@ private:
     template <typename T, typename U, typename V>
     bool executeNumToNumWithNonConstDefault2(const ColumnVector<T> * in, ColumnVector<U> * out, const IColumn * default_untyped)
     {
-        auto col_default = typeid_cast<const ColumnVector<V> *>(default_untyped);
+        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
         if (!col_default)
             return false;
 
@@ -425,7 +425,7 @@ private:
     template <typename U>
     bool executeStringToNumWithConstDefault(const ColumnString * in, IColumn * out_untyped)
     {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
+        auto out = checkAndGetColumn<ColumnVector<U>>(out_untyped);
         if (!out)
             return false;
 
@@ -436,7 +436,7 @@ private:
     template <typename U>
     bool executeStringToNumWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped)
     {
-        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
+        auto out = checkAndGetColumn<ColumnVector<U>>(out_untyped);
         if (!out)
             return false;
 
@@ -461,7 +461,7 @@ private:
     template <typename U, typename V>
     bool executeStringToNumWithNonConstDefault2(const ColumnString * in, ColumnVector<U> * out, const IColumn * default_untyped)
     {
-        auto col_default = typeid_cast<const ColumnVector<V> *>(default_untyped);
+        auto col_default = checkAndGetColumn<ColumnVector<V>>(default_untyped);
         if (!col_default)
             return false;
 

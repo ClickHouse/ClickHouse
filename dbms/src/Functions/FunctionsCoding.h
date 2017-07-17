@@ -115,7 +115,7 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const auto col_in = typeid_cast<const ColumnConst<String> *>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<String>>(column.get()))
         {
             const auto data_type_fixed_string = checkAndGetDataType<DataTypeFixedString>(col_in->getDataType().get());
             if (!data_type_fixed_string || data_type_fixed_string->getN() != ipv6_bytes_length)
@@ -192,7 +192,7 @@ public:
                                 ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto ipv6_zeroed_tail_bytes = typeid_cast<const ColumnConst<UInt8> *>(col_ipv6_zeroed_tail_bytes.get());
+            const auto ipv6_zeroed_tail_bytes = checkAndGetColumnConst<ColumnVector<UInt8>>(col_ipv6_zeroed_tail_bytes.get());
             if (!ipv6_zeroed_tail_bytes)
                 throw Exception("Illegal type " + col_ipv6_zeroed_tail_bytes_type.type->getName() +
                                 " of argument 2 of function " + getName(),
@@ -204,7 +204,7 @@ public:
                                 " of function " + getName(),
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto ipv4_zeroed_tail_bytes = typeid_cast<const ColumnConst<UInt8> *>(col_ipv4_zeroed_tail_bytes.get());
+            const auto ipv4_zeroed_tail_bytes = checkAndGetColumnConst<ColumnVector<UInt8>>(col_ipv4_zeroed_tail_bytes.get());
             if (!ipv4_zeroed_tail_bytes)
                 throw Exception("Illegal type " + col_ipv4_zeroed_tail_bytes_type.type->getName() +
                                 " of argument 3 of function " + getName(),
@@ -240,7 +240,7 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const auto col_in = typeid_cast<const ColumnConst<String> *>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<String>>(column.get()))
         {
             const auto data_type_fixed_string = checkAndGetDataType<DataTypeFixedString>(col_in->getDataType().get());
             if (!data_type_fixed_string || data_type_fixed_string->getN() != ipv6_bytes_length)
@@ -250,7 +250,7 @@ public:
                                 ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto ipv6_zeroed_tail_bytes = typeid_cast<const ColumnConst<UInt8> *>(col_ipv6_zeroed_tail_bytes.get());
+            const auto ipv6_zeroed_tail_bytes = checkAndGetColumnConst<ColumnVector<UInt8>>(col_ipv6_zeroed_tail_bytes.get());
             if (!ipv6_zeroed_tail_bytes)
                 throw Exception("Illegal type " + col_ipv6_zeroed_tail_bytes_type.type->getName() +
                                 " of argument 2 of function " + getName(),
@@ -262,7 +262,7 @@ public:
                                 " of function " + getName(),
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto ipv4_zeroed_tail_bytes = typeid_cast<const ColumnConst<UInt8> *>(col_ipv4_zeroed_tail_bytes.get());
+            const auto ipv4_zeroed_tail_bytes = checkAndGetColumnConst<ColumnVector<UInt8>>(col_ipv4_zeroed_tail_bytes.get());
             if (!ipv4_zeroed_tail_bytes)
                 throw Exception("Illegal type " + col_ipv4_zeroed_tail_bytes_type.type->getName() +
                                 " of argument 3 of function " + getName(),
@@ -600,7 +600,7 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const ColumnConst<UInt32> * col = typeid_cast<const ColumnConst<UInt32> *>(column.get()))
+        else if (const ColumnConst<UInt32> * col = checkAndGetColumnConst<ColumnVector<UInt32>>(column.get()))
         {
             char buf[16];
             char * pos = buf;
@@ -783,7 +783,7 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const ColumnConst<UInt32> * col = typeid_cast<const ColumnConst<UInt32> *>(column.get()))
+        else if (const ColumnConst<UInt32> * col = checkAndGetColumnConst<ColumnVector<UInt32>>(column.get()))
         {
             char buf[16];
             char * pos = buf;
@@ -838,7 +838,7 @@ public:
             for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += ipv6_bytes_length, ++i)
                 mapIPv4ToIPv6(vec_in[i], &vec_res[out_offset]);
         }
-        else if (const auto col_in = typeid_cast<const ColumnConst<UInt32> *>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<UInt32>>(column.get()))
         {
             std::string buf;
             buf.resize(ipv6_bytes_length);
@@ -948,7 +948,7 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const ColumnConst<UInt64> * col = typeid_cast<const ColumnConst<UInt64> *>(column.get()))
+        else if (const ColumnConst<UInt64> * col = checkAndGetColumnConst<ColumnVector<UInt64>>(column.get()))
         {
             char buf[18];
             char * pos = buf;
@@ -1224,7 +1224,7 @@ public:
                 offsets_res[i] = dst_offset;
             }
         }
-        else if (const auto col_in = typeid_cast<const ColumnConst<String> *>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<String>>(column.get()))
         {
             const auto data_type_fixed_string = checkAndGetDataType<DataTypeFixedString>(col_in->getDataType().get());
             if (!data_type_fixed_string || data_type_fixed_string->getN() != uuid_bytes_length)
@@ -1365,7 +1365,7 @@ public:
                 dst_offset += uuid_bytes_length;
             }
         }
-        else if (const auto col_in = typeid_cast<const ColumnConst<String> *>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<String>>(column.get()))
         {
             const auto & data_in = col_in->getData();
 
@@ -1443,8 +1443,8 @@ public:
     template <typename T>
     bool tryExecuteUInt(const IColumn * col, ColumnPtr & col_res)
     {
-        const ColumnVector<T> * col_vec = typeid_cast<const ColumnVector<T> *>(col);
-        const ColumnConst<T> * col_const = typeid_cast<const ColumnConst<T> *>(col);
+        const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
+        const ColumnConst<T> * col_const = checkAndGetColumnConst<ColumnVector<T>>(col);
 
         static constexpr size_t MAX_UINT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
 
@@ -1767,7 +1767,7 @@ public:
     template <typename T>
     bool tryExecute(const IColumn * column, ColumnPtr & out_column)
     {
-        if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(column))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column))
         {
             auto col_values = std::make_shared<ColumnVector<T>>();
             auto col_array = std::make_shared<ColumnArray>(col_values);
@@ -1796,7 +1796,7 @@ public:
 
             return true;
         }
-        else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(column))
+        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(column))
         {
             Array res;
 
@@ -2045,7 +2045,7 @@ private:
         Block & block, const ColumnNumbers & arguments, const size_t result,
         const IColumn * const value_col_untyped)
     {
-        if (const auto value_col = typeid_cast<const ColumnVector<T> *>(value_col_untyped))
+        if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
             const auto pos_col = block.safeGetByPosition(arguments.back()).column.get();
 
@@ -2056,7 +2056,7 @@ private:
 
             return true;
         }
-        else if (const auto value_col = typeid_cast<const ColumnConst<T> *>(value_col_untyped))
+        else if (const auto value_col = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
             const auto pos_col = block.safeGetByPosition(arguments.back()).column.get();
 
@@ -2085,7 +2085,7 @@ private:
         Block & block, const ColumnNumbers & arguments, const size_t result,
         const ColumnVector<ValueType> * const value_col, const IColumn * const pos_col_untyped)
     {
-        if (const auto pos_col = typeid_cast<const ColumnVector<T> *>(pos_col_untyped))
+        if (const auto pos_col = checkAndGetColumn<ColumnVector<T>>(pos_col_untyped))
         {
             const auto & values = value_col->getData();
             const auto & positions = pos_col->getData();
@@ -2102,7 +2102,7 @@ private:
 
             return true;
         }
-        else if (const auto pos_col = typeid_cast<const ColumnConst<T> *>(pos_col_untyped))
+        else if (const auto pos_col = checkAndGetColumnConst<ColumnVector<T>>(pos_col_untyped))
         {
             const auto & values = value_col->getData();
 
@@ -2126,7 +2126,7 @@ private:
         Block & block, const ColumnNumbers & arguments, const size_t result,
         const ColumnConst<ValueType> * const value_col, const IColumn * const pos_col_untyped)
     {
-        if (const auto pos_col = typeid_cast<const ColumnVector<T> *>(pos_col_untyped))
+        if (const auto pos_col = checkAndGetColumn<ColumnVector<T>>(pos_col_untyped))
         {
             const auto & positions = pos_col->getData();
 
@@ -2142,7 +2142,7 @@ private:
 
             return true;
         }
-        else if (const auto pos_col = typeid_cast<const ColumnConst<T> *>(pos_col_untyped))
+        else if (const auto pos_col = checkAndGetColumnConst<ColumnVector<T>>(pos_col_untyped))
         {
             block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(
                 value_col->size(),
@@ -2221,7 +2221,7 @@ private:
         Block & block, const ColumnNumbers & arguments, const size_t result,
         const IColumn * const value_col_untyped)
     {
-        if (const auto value_col = typeid_cast<const ColumnVector<T> *>(value_col_untyped))
+        if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
             const auto size = value_col->size();
             bool is_const;
@@ -2249,7 +2249,7 @@ private:
 
             return true;
         }
-        else if (const auto value_col = typeid_cast<const ColumnConst<T> *>(value_col_untyped))
+        else if (const auto value_col = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
             const auto size = value_col->size();
             bool is_const;
@@ -2326,7 +2326,7 @@ private:
     template <typename PosType, typename ValueType>
     bool addToMaskImpl(PaddedPODArray<ValueType> & mask, const IColumn * const pos_col_untyped)
     {
-        if (const auto pos_col = typeid_cast<const ColumnVector<PosType> *>(pos_col_untyped))
+        if (const auto pos_col = checkAndGetColumn<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col->getData();
 
@@ -2335,7 +2335,7 @@ private:
 
             return true;
         }
-        else if (const auto pos_col = typeid_cast<const ColumnConst<PosType> *>(pos_col_untyped))
+        else if (const auto pos_col = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col->getData();
             const auto new_mask = 1 << pos;

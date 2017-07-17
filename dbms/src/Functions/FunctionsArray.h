@@ -777,7 +777,7 @@ private:
         if (!col_array)
             return false;
 
-        const ColumnVector<T> * col_nested = typeid_cast<const ColumnVector<T> *>(&col_array->getData());
+        const ColumnVector<T> * col_nested = checkAndGetColumn<ColumnVector<T>>(&col_array->getData());
 
         if (!col_nested)
             return false;
@@ -806,10 +806,10 @@ private:
         if (item_arg->isNull())
             ArrayIndexNumNullImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
                 col_res->getData(), null_map_data);
-        else if (const auto item_arg_const = typeid_cast<const ColumnConst<U> *>(item_arg))
+        else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<U>>(item_arg))
             ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
                 item_arg_const->getData(), col_res->getData(), null_map_data, nullptr);
-        else if (const auto item_arg_vector = typeid_cast<const ColumnVector<U> *>(item_arg))
+        else if (const auto item_arg_vector = checkAndGetColumn<ColumnVector<U>>(item_arg))
             ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
                 item_arg_vector->getData(), col_res->getData(), null_map_data, null_map_item);
         else
@@ -854,7 +854,7 @@ private:
         if (item_arg->isNull())
             ArrayIndexStringNullImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), col_res->getData(), null_map_data);
-        else if (const auto item_arg_const = typeid_cast<const ColumnConst<String> *>(item_arg))
+        else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<String>>(item_arg))
             ArrayIndexStringImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), item_arg_const->getData(), col_res->getData(),
                 null_map_data);

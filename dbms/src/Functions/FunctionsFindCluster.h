@@ -170,7 +170,7 @@ protected:
     template<typename CentroidsType>
     bool fillCentroids(const IColumn* centroids_array_untyped, std::vector<Float64> & centroids)
     {
-        const ColumnConst<Array> * const_centroids_array = typeid_cast<const ColumnConst<Array> *>(centroids_array_untyped);
+        const ColumnConst<Array> * const_centroids_array = checkAndGetColumnConst<ColumnVector<Array>>(centroids_array_untyped);
 
         if (!const_centroids_array)
             return false;
@@ -194,7 +194,7 @@ protected:
     bool executeOperation(const IColumn* in_untyped, IColumn* out_untyped, const IColumn* centroids_array_untyped)
     {
         //Match the type of the output
-        ColumnVector<OutputType> * out = typeid_cast<ColumnVector<OutputType> *>(out_untyped);
+        ColumnVector<OutputType> * out = checkAndGetColumn<ColumnVector<OutputType>>(out_untyped);
 
         if (!out)
             return false;
@@ -226,7 +226,7 @@ protected:
         if (maybe_const != nullptr)
             in_untyped = maybe_const.get();
 
-        const auto in_vector = typeid_cast<const ColumnVector<InputType> *>(in_untyped);
+        const auto in_vector = checkAndGetColumn<ColumnVector<InputType>>(in_untyped);
         if (in_vector)
         {
             const PaddedPODArray<InputType> & src = in_vector->getData();

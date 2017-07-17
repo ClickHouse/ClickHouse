@@ -868,8 +868,8 @@ private:
         size_t result,
         const ColumnVector<T0> * col_left)
     {
-        const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
-        const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
+        const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(block.safeGetByPosition(arguments[2]).column.get());
+        const ColumnConst<T1> * col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(block.safeGetByPosition(arguments[2]).column.get());
 
         if (!col_right_vec && !col_right_const)
             return false;
@@ -892,8 +892,8 @@ private:
         size_t result,
         const ColumnConst<T0> * col_left)
     {
-        const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
-        const ColumnConst<T1> * col_right_const = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[2]).column.get());
+        const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(block.safeGetByPosition(arguments[2]).column.get());
+        const ColumnConst<T1> * col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(block.safeGetByPosition(arguments[2]).column.get());
 
         if (!col_right_vec && !col_right_const)
             return false;
@@ -929,7 +929,7 @@ private:
 
         if (col_right_array)
         {
-            const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(&col_right_array->getData());
+            const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(&col_right_array->getData());
 
             if (!col_right_vec)
                 return false;
@@ -976,7 +976,7 @@ private:
 
         if (col_right_array)
         {
-            const ColumnVector<T1> * col_right_vec = typeid_cast<const ColumnVector<T1> *>(&col_right_array->getData());
+            const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(&col_right_array->getData());
 
             if (!col_right_vec)
                 return false;
@@ -1014,16 +1014,16 @@ private:
         const ColumnVector<T0> * col_arr_left_elems = nullptr;
         const ColumnConstArray * col_const_arr_left = nullptr;
 
-        col_left = typeid_cast<const ColumnVector<T0> *>(col_left_untyped);
+        col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped);
         if (!col_left)
         {
-            col_const_left = typeid_cast<const ColumnConst<T0> *>(col_left_untyped);
+            col_const_left = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped);
             if (!col_const_left)
             {
                 col_arr_left = typeid_cast<const ColumnArray *>(col_left_untyped);
 
                 if (col_arr_left)
-                    col_arr_left_elems = typeid_cast<const ColumnVector<T0> *>(&col_arr_left->getData());
+                    col_arr_left_elems = checkAndGetColumn<ColumnVector<T0>>(&col_arr_left->getData());
                 else
                     col_const_arr_left = typeid_cast<const ColumnConstArray *>(col_left_untyped);
             }
@@ -1420,7 +1420,7 @@ private:
         }
 
         const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
-        const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(arg_cond.column.get());
+        const ColumnConst<UInt8> * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
 
         /// If then is NULL, we create Nullable column with null mask OR-ed with condition.
         if (then_is_null)
@@ -1702,7 +1702,7 @@ public:
         const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
 
         const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
-        const ColumnConst<UInt8> * cond_const_col = typeid_cast<const ColumnConst<UInt8> *>(arg_cond.column.get());
+        const ColumnConst<UInt8> * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
         ColumnPtr materialized_cond_col;
 
         if (cond_const_col)

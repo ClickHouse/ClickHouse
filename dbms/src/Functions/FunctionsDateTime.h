@@ -450,8 +450,8 @@ struct DateTimeTransformImpl
         using Op = Transformer<FromType, ToType, Transform>;
 
         const ColumnPtr source_col = block.safeGetByPosition(arguments[0]).column;
-        const auto * sources = typeid_cast<const ColumnVector<FromType> *>(source_col.get());
-        const auto * const_source = typeid_cast<const ColumnConst<FromType> *>(source_col.get());
+        const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get());
+        const auto * const_source = checkAndGetColumnConst<ColumnVector<FromType>>(source_col.get());
 
         const ColumnConstString * time_zone_column = nullptr;
 

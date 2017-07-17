@@ -105,7 +105,7 @@ private:
     template <typename FieldType>
     bool execute(Block & block, const IColumn * const arg, const size_t result)
     {
-        if (const auto col = typeid_cast<const ColumnVector<FieldType> *>(arg))
+        if (const auto col = checkAndGetColumn<ColumnVector<FieldType>>(arg))
         {
             const auto dst = std::make_shared<ColumnVector<Float64>>();
             block.safeGetByPosition(result).column = dst;
@@ -135,7 +135,7 @@ private:
 
             return true;
         }
-        else if (const auto col = typeid_cast<const ColumnConst<FieldType> *>(arg))
+        else if (const auto col = checkAndGetColumnConst<ColumnVector<FieldType>>(arg))
         {
             const FieldType src[Impl::rows_per_iteration] { col->getData() };
             Float64 dst[Impl::rows_per_iteration];
@@ -253,7 +253,7 @@ private:
     bool executeRight(Block & block, const size_t result, const ColumnConst<LeftType> * const left_arg,
         const IColumn * const right_arg)
     {
-        if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
             const auto dst = std::make_shared<ColumnVector<Float64>>();
             block.safeGetByPosition(result).column = dst;
@@ -285,7 +285,7 @@ private:
 
             return true;
         }
-        else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
+        else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
             const LeftType left_src[Impl::rows_per_iteration] { left_arg->getData() };
             const RightType right_src[Impl::rows_per_iteration] { right_arg_typed->getData() };
@@ -305,7 +305,7 @@ private:
     bool executeRight(Block & block, const size_t result, const ColumnVector<LeftType> * const left_arg,
         const IColumn * const right_arg)
     {
-        if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
             const auto dst = std::make_shared<ColumnVector<Float64>>();
             block.safeGetByPosition(result).column = dst;
@@ -339,7 +339,7 @@ private:
 
             return true;
         }
-        else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
+        else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
             const auto dst = std::make_shared<ColumnVector<Float64>>();
             block.safeGetByPosition(result).column = dst;

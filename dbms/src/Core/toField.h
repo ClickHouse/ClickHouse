@@ -5,9 +5,6 @@
 #include <Core/Field.h>
 
 
-/// This is for Yandex.Metrica code.
-
-
 namespace DB
 {
 
@@ -26,11 +23,6 @@ inline Field toField(const LocalDate & x)
 inline Field toField(const LocalDateTime & x)
 {
     return toField(static_cast<UInt32>(static_cast<time_t>(x)));
-}
-
-inline Field toField(const VisitID_t & x)
-{
-    return toField(static_cast<UInt64>(x));
 }
 
 }

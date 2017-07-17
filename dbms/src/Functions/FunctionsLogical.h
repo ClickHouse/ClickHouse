@@ -196,7 +196,7 @@ private:
     template <typename T>
     bool convertTypeToUInt8(const IColumn * column, UInt8Container & res)
     {
-        auto col = typeid_cast<const ColumnVector<T> *>(column);
+        auto col = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col)
             return false;
         const typename ColumnVector<T>::Container_t & vec = col->getData();
@@ -225,7 +225,7 @@ private:
     template <typename T>
     bool executeUInt8Type(const UInt8Container & uint8_vec, IColumn * column, UInt8Container & res)
     {
-        auto col = typeid_cast<const ColumnVector<T> *>(column);
+        auto col = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col)
             return false;
         const typename ColumnVector<T>::Container_t & other_vec = col->getData();
@@ -381,7 +381,7 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (ColumnVector<T> * col = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_res = std::make_shared<ColumnUInt8>();
             block.safeGetByPosition(result).column = col_res;
@@ -392,7 +392,7 @@ private:
 
             return true;
         }
-        else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (ColumnConst<T> * col = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             UInt8 res = 0;
             UnaryOperationImpl<T, Impl<T> >::constant(col->getData(), res);

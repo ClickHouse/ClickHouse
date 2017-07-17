@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/toField.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>

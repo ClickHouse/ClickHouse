@@ -728,7 +728,7 @@ bool FunctionArrayElement::executeNumberConst(Block & block, const ColumnNumbers
     if (!col_array)
         return false;
 
-    const ColumnVector<DataType> * col_nested = typeid_cast<const ColumnVector<DataType> *>(&col_array->getData());
+    const ColumnVector<DataType> * col_nested = checkAndGetColumn<ColumnVector<DataType>>(&col_array->getData());
 
     if (!col_nested)
         return false;
@@ -757,7 +757,7 @@ bool FunctionArrayElement::executeNumber(Block & block, const ColumnNumbers & ar
     if (!col_array)
         return false;
 
-    const ColumnVector<DataType> * col_nested = typeid_cast<const ColumnVector<DataType> *>(&col_array->getData());
+    const ColumnVector<DataType> * col_nested = checkAndGetColumn<ColumnVector<DataType>>(&col_array->getData());
 
     if (!col_nested)
         return false;
@@ -965,7 +965,7 @@ template <typename IndexType>
 bool FunctionArrayElement::executeArgument(Block & block, const ColumnNumbers & arguments, size_t result,
     ArrayImpl::NullMapBuilder & builder)
 {
-    auto index = typeid_cast<const ColumnVector<IndexType> *>(block.safeGetByPosition(arguments[1]).column.get());
+    auto index = checkAndGetColumn<ColumnVector<IndexType>>(block.safeGetByPosition(arguments[1]).column.get());
 
     if (!index)
         return false;
@@ -1391,7 +1391,7 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     else
         inner_col = &array_data;
 
-    const ColumnVector<T> * nested = typeid_cast<const ColumnVector<T> *>(inner_col);
+    const ColumnVector<T> * nested = checkAndGetColumn<ColumnVector<T>>(inner_col);
     if (!nested)
         return false;
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
@@ -1717,7 +1717,7 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     else
         inner_col = &array_data;
 
-    const ColumnVector<T> * nested = typeid_cast<const ColumnVector<T> *>(inner_col);
+    const ColumnVector<T> * nested = checkAndGetColumn<ColumnVector<T>>(inner_col);
     if (!nested)
         return false;
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
@@ -1951,11 +1951,11 @@ namespace
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
-            if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
+            if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
             {
                 const PaddedPODArray<T> & src_data = src_data_concrete->getData();
 
-                auto concrete_res_data = typeid_cast<ColumnVector<T> *>(&res_data_col);
+                auto concrete_res_data = checkAndGetColumn<ColumnVector<T>>(&res_data_col);
                 if (concrete_res_data == nullptr)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
@@ -2318,7 +2318,7 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 template <typename T>
 bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, const size_t result)
 {
-    if (const auto in = typeid_cast<const ColumnVector<T> *>(arg))
+    if (const auto in = checkAndGetColumn<ColumnVector<T>>(arg))
     {
         const auto & in_data = in->getData();
         const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), std::size_t{},
@@ -2360,7 +2360,7 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
 
         return true;
     }
-    else if (const auto in = typeid_cast<const ColumnConst<T> *>(arg))
+    else if (const auto in = checkAndGetColumnConst<ColumnVector<T>>(arg))
     {
         const auto & in_data = in->getData();
         if ((in_data != 0) && (in->size() > (std::numeric_limits<std::size_t>::max() / in_data)))
@@ -2547,7 +2547,7 @@ bool FunctionArrayReverse::executeNumber(
         }
     };
 
-    if (const ColumnVector<T> * src_data_concrete = typeid_cast<const ColumnVector<T> *>(&src_data))
+    if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
     {
         const PaddedPODArray<T> & src_data = src_data_concrete->getData();
         PaddedPODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();

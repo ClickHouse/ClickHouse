@@ -581,7 +581,7 @@ private:
     template <typename T0, typename T1>
     bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped)
     {
-        if (const ColumnVector<T1> * col_right = typeid_cast<const ColumnVector<T1> *>(col_right_untyped))
+        if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
             std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
             block.safeGetByPosition(result).column = col_res;
@@ -592,7 +592,7 @@ private:
 
             return true;
         }
-        else if (const ColumnConst<T1> * col_right = typeid_cast<const ColumnConst<T1> *>(col_right_untyped))
+        else if (const ColumnConst<T1> * col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
             block.safeGetByPosition(result).column = col_res;
@@ -610,7 +610,7 @@ private:
     template <typename T0, typename T1>
     bool executeNumConstRightType(Block & block, size_t result, const ColumnConst<T0> * col_left, const IColumn * col_right_untyped)
     {
-        if (const ColumnVector<T1> * col_right = typeid_cast<const ColumnVector<T1> *>(col_right_untyped))
+        if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
             std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
             block.safeGetByPosition(result).column = col_res;
@@ -621,7 +621,7 @@ private:
 
             return true;
         }
-        else if (const ColumnConst<T1> * col_right = typeid_cast<const ColumnConst<T1> *>(col_right_untyped))
+        else if (const ColumnConst<T1> * col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             UInt8 res = 0;
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->getData(), col_right->getData(), res);
@@ -638,7 +638,7 @@ private:
     template <typename T0>
     bool executeNumLeftType(Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped)
     {
-        if (const ColumnVector<T0> * col_left = typeid_cast<const ColumnVector<T0> *>(col_left_untyped))
+        if (const ColumnVector<T0> * col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped))
         {
             if (    executeNumRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
                 ||    executeNumRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
@@ -657,7 +657,7 @@ private:
                     + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (const ColumnConst<T0> * col_left = typeid_cast<const ColumnConst<T0> *>(col_left_untyped))
+        else if (const ColumnConst<T0> * col_left = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
             if (    executeNumConstRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
                 ||    executeNumConstRightType<T0, UInt16>(block, result, col_left, col_right_untyped)

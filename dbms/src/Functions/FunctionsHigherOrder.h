@@ -334,11 +334,11 @@ struct ArraySumImpl
     template <class Element, class Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets_t & offsets, ColumnPtr & res_ptr)
     {
-        const ColumnVector<Element> * column = typeid_cast<const ColumnVector<Element> *>(&*mapped);
+        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
 
         if (!column)
         {
-            const ColumnConst<Element> * column_const = typeid_cast<const ColumnConst<Element> *>(&*mapped);
+            const ColumnConst<Element> * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
 
             if (!column_const)
                 return false;

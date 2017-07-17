@@ -64,7 +64,7 @@ protected:
             branch.is_const = false;
         else
         {
-            const_col = typeid_cast<const ColumnConst<TType> *>(col);
+            const_col = checkAndGetColumnConst<ColumnVector<TType>>(col);
             if (const_col != nullptr)
                 branch.is_const = true;
             else

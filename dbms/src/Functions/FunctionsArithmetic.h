@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_DIVISION;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -639,7 +640,7 @@ private:
     template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
     bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
     {
-        if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[1]).column.get()))
+        if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.safeGetByPosition(arguments[1]).column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
             block.safeGetByPosition(result).column = col_res;
@@ -650,14 +651,14 @@ private:
 
             return true;
         }
-        else if (auto col_right = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[1]).column.get()))
+        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.safeGetByPosition(arguments[1]).column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
             block.safeGetByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
-            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_constant(col_left->getData(), col_right->getData(), vec_res);
+            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
 
             return true;
         }
@@ -669,21 +670,21 @@ private:
     template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
     bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst * col_left)
     {
-        if (auto col_right = typeid_cast<const ColumnVector<T1> *>(block.safeGetByPosition(arguments[1]).column.get()))
+        if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.safeGetByPosition(arguments[1]).column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
             block.safeGetByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
-            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->getValue<T0>(), col_right->getData(), vec_res);
+            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
             return true;
         }
-        else if (auto col_right = typeid_cast<const ColumnConst<T1> *>(block.safeGetByPosition(arguments[1]).column.get()))
+        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.safeGetByPosition(arguments[1]).column.get()))
         {
             ResultType res = 0;
-            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->getData(), col_right->getData(), res);
+            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
             block.safeGetByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), res);
 
             return true;
@@ -698,32 +699,46 @@ private:
         if (!typeid_cast<const LeftDataType *>(block.safeGetByPosition(arguments[0]).type.get()))
             return false;
 
-        using T0 = typename LeftDataType::FieldType;
-
-        if (    executeLeftTypeImpl<LeftDataType, ColumnVector<T0>>(block, arguments, result)
-            ||    executeLeftTypeImpl<LeftDataType, ColumnConst<T0>>(block, arguments, result))
-            return true;
-
-        return false;
+        return executeLeftTypeImpl<LeftDataType>(block, arguments, result);
     }
 
-    template <typename LeftDataType, typename ColumnType>
+    template <typename LeftDataType>
     bool executeLeftTypeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
     {
-        if (auto col_left = typeid_cast<const ColumnType *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col_left = checkAndGetColumn<ColumnVector<typename LeftDataType::FieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            if (    executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
-                ||  executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeUInt8>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeUInt16>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeUInt32>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeUInt64>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeInt8>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeInt16>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeInt32>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeInt64>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeFloat32>(block, arguments, result, col_left)
-                ||    executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
+            if (   executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeUInt8>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeUInt16>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeUInt32>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeUInt64>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeInt8>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeInt16>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeInt32>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeInt64>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeFloat32>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
+                return true;
+            else
+                throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+                    + " of second argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
+        }
+        else if (auto col_left = checkAndGetColumnConst<ColumnVector<typename LeftDataType::FieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
+        {
+            if (   executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeUInt8>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeUInt16>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeUInt32>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeUInt64>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeInt8>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeInt16>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeInt32>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeInt64>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeFloat32>(block, arguments, result, col_left)
+                || executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
                 return true;
             else
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
@@ -811,7 +826,7 @@ private:
     template <typename T0>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnVector<T0> * col = typeid_cast<const ColumnVector<T0> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T0> * col = checkAndGetColumn<ColumnVector<T0>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             using ResultType = typename Op<T0>::ResultType;
 
@@ -824,13 +839,13 @@ private:
 
             return true;
         }
-        else if (const ColumnConst<T0> * col = typeid_cast<const ColumnConst<T0> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnVector<T0>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             using ResultType = typename Op<T0>::ResultType;
 
             ResultType res = 0;
-            UnaryOperationImpl<T0, Op<T0> >::constant(col->getData(), res);
-            block.safeGetByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col->size(), res);
+            UnaryOperationImpl<T0, Op<T0> >::constant(col->template getValue<T0>(), res);
+            block.safeGetByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col->size(), toField(res));
 
             return true;
         }
@@ -851,16 +866,16 @@ public:
     {
         DataTypePtr result;
 
-        if (!(    checkType<DataTypeUInt8>(arguments, result)
-            ||    checkType<DataTypeUInt16>(arguments, result)
-            ||    checkType<DataTypeUInt32>(arguments, result)
-            ||    checkType<DataTypeUInt64>(arguments, result)
-            ||    checkType<DataTypeInt8>(arguments, result)
-            ||    checkType<DataTypeInt16>(arguments, result)
-            ||    checkType<DataTypeInt32>(arguments, result)
-            ||    checkType<DataTypeInt64>(arguments, result)
-            ||    checkType<DataTypeFloat32>(arguments, result)
-            ||    checkType<DataTypeFloat64>(arguments, result)))
+        if (!( checkType<DataTypeUInt8>(arguments, result)
+            || checkType<DataTypeUInt16>(arguments, result)
+            || checkType<DataTypeUInt32>(arguments, result)
+            || checkType<DataTypeUInt64>(arguments, result)
+            || checkType<DataTypeInt8>(arguments, result)
+            || checkType<DataTypeInt16>(arguments, result)
+            || checkType<DataTypeInt32>(arguments, result)
+            || checkType<DataTypeInt64>(arguments, result)
+            || checkType<DataTypeFloat32>(arguments, result)
+            || checkType<DataTypeFloat64>(arguments, result)))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -869,16 +884,16 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!(    executeType<UInt8>(block, arguments, result)
-            ||    executeType<UInt16>(block, arguments, result)
-            ||    executeType<UInt32>(block, arguments, result)
-            ||    executeType<UInt64>(block, arguments, result)
-            ||    executeType<Int8>(block, arguments, result)
-            ||    executeType<Int16>(block, arguments, result)
-            ||    executeType<Int32>(block, arguments, result)
-            ||    executeType<Int64>(block, arguments, result)
-            ||    executeType<Float32>(block, arguments, result)
-            ||    executeType<Float64>(block, arguments, result)))
+        if (!( executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -896,25 +911,25 @@ public:
 };
 
 
-struct NamePlus             { static constexpr auto name = "plus"; };
-struct NameMinus             { static constexpr auto name = "minus"; };
-struct NameMultiply         { static constexpr auto name = "multiply"; };
-struct NameDivideFloating    { static constexpr auto name = "divide"; };
-struct NameDivideIntegral    { static constexpr auto name = "intDiv"; };
-struct NameDivideIntegralOrZero    { static constexpr auto name = "intDivOrZero"; };
-struct NameModulo            { static constexpr auto name = "modulo"; };
-struct NameNegate            { static constexpr auto name = "negate"; };
-struct NameAbs                { static constexpr auto name = "abs"; };
-struct NameBitAnd            { static constexpr auto name = "bitAnd"; };
-struct NameBitOr            { static constexpr auto name = "bitOr"; };
-struct NameBitXor            { static constexpr auto name = "bitXor"; };
-struct NameBitNot            { static constexpr auto name = "bitNot"; };
-struct NameBitShiftLeft        { static constexpr auto name = "bitShiftLeft"; };
-struct NameBitShiftRight    { static constexpr auto name = "bitShiftRight"; };
-struct NameBitRotateLeft    { static constexpr auto name = "bitRotateLeft"; };
-struct NameBitRotateRight    { static constexpr auto name = "bitRotateRight"; };
-struct NameLeast            { static constexpr auto name = "least"; };
-struct NameGreatest            { static constexpr auto name = "greatest"; };
+struct NamePlus                 { static constexpr auto name = "plus"; };
+struct NameMinus                { static constexpr auto name = "minus"; };
+struct NameMultiply             { static constexpr auto name = "multiply"; };
+struct NameDivideFloating       { static constexpr auto name = "divide"; };
+struct NameDivideIntegral       { static constexpr auto name = "intDiv"; };
+struct NameDivideIntegralOrZero { static constexpr auto name = "intDivOrZero"; };
+struct NameModulo               { static constexpr auto name = "modulo"; };
+struct NameNegate               { static constexpr auto name = "negate"; };
+struct NameAbs                  { static constexpr auto name = "abs"; };
+struct NameBitAnd               { static constexpr auto name = "bitAnd"; };
+struct NameBitOr                { static constexpr auto name = "bitOr"; };
+struct NameBitXor               { static constexpr auto name = "bitXor"; };
+struct NameBitNot               { static constexpr auto name = "bitNot"; };
+struct NameBitShiftLeft         { static constexpr auto name = "bitShiftLeft"; };
+struct NameBitShiftRight        { static constexpr auto name = "bitShiftRight"; };
+struct NameBitRotateLeft        { static constexpr auto name = "bitRotateLeft"; };
+struct NameBitRotateRight       { static constexpr auto name = "bitRotateRight"; };
+struct NameLeast                { static constexpr auto name = "least"; };
+struct NameGreatest             { static constexpr auto name = "greatest"; };
 
 using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
 using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
@@ -925,13 +940,13 @@ using FunctionDivideIntegralOrZero = FunctionBinaryArithmetic<DivideIntegralOrZe
 using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo>;
 using FunctionNegate = FunctionUnaryArithmetic<NegateImpl, NameNegate, true>;
 using FunctionAbs = FunctionUnaryArithmetic<AbsImpl, NameAbs, false>;
-using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl,    NameBitAnd>;
+using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl, NameBitAnd>;
 using FunctionBitOr = FunctionBinaryArithmetic<BitOrImpl, NameBitOr>;
 using FunctionBitXor = FunctionBinaryArithmetic<BitXorImpl, NameBitXor>;
 using FunctionBitNot = FunctionUnaryArithmetic<BitNotImpl, NameBitNot, true>;
-using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl,    NameBitShiftLeft>;
+using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl, NameBitShiftLeft>;
 using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl, NameBitShiftRight>;
-using FunctionBitRotateLeft = FunctionBinaryArithmetic<BitRotateLeftImpl,    NameBitRotateLeft>;
+using FunctionBitRotateLeft = FunctionBinaryArithmetic<BitRotateLeftImpl, NameBitRotateLeft>;
 using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, NameBitRotateRight>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;

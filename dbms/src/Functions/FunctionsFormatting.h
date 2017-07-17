@@ -95,7 +95,7 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_to;
@@ -117,7 +117,7 @@ private:
             }
             data_to.resize(buf_to.count());
         }
-        else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             std::string res;
             {
@@ -181,7 +181,7 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_to;
@@ -203,7 +203,7 @@ private:
             }
             data_to.resize(buf_to.count());
         }
-        else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeString().createConstColumn(
                 col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));

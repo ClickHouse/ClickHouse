@@ -1,5 +1,6 @@
 #include <Functions/Conditional/CondSource.h>
 #include <Functions/Conditional/CondException.h>
+#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -51,7 +52,7 @@ const ColumnPtr CondSource::initMaterializedCol(const Block & block, const Colum
     else
         observed_col = col.get();
 
-    const auto * const_col = typeid_cast<const ColumnConst<UInt8> *>(observed_col);
+    const auto * const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(observed_col);
 
     if (const_col != nullptr)
         return const_col->convertToFullColumn();

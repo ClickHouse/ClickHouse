@@ -58,7 +58,7 @@ public:
         size_t index = br.index;
 
         const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
-        const auto * const_col = typeid_cast<const ColumnConst<TType> *>(&*col);
+        const auto * const_col = checkAndGetColumnConst<ColumnVector<TType>>(&*col);
         if (const_col == nullptr)
             throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
         data = const_col->getData();

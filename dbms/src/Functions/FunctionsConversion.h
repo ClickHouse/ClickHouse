@@ -70,7 +70,7 @@ struct ConvertImpl
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         if (const ColumnVector<FromFieldType> * col_from
-            = typeid_cast<const ColumnVector<FromFieldType> *>(block.safeGetByPosition(arguments[0]).column.get()))
+            = checkAndGetColumn<ColumnVector<FromFieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
             block.safeGetByPosition(result).column = col_to;
@@ -84,7 +84,7 @@ struct ConvertImpl
                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
         }
         else if (const ColumnConst<FromFieldType> * col_from
-            = typeid_cast<const ColumnConst<FromFieldType> *>(block.safeGetByPosition(arguments[0]).column.get()))
+            = checkAndGetColumnConst<ColumnVector<FromFieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(
                 col_from->size(), static_cast<ToFieldType>(col_from->getData()));
@@ -218,7 +218,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
         if (std::is_same<FromDataType, DataTypeDateTime>::value)
             time_zone = extractTimeZoneFromFunctionArguments(block, arguments);
 
-        if (const auto col_from = typeid_cast<const ColumnVector<FromFieldType> *>(col_with_type_and_name.column.get()))
+        if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_to;
@@ -241,7 +241,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
             data_to.resize(write_buffer.count());
         }
-        else if (const auto col_from = typeid_cast<const ColumnConst<FromFieldType> *>(col_with_type_and_name.column.get()))
+        else if (const auto col_from = checkAndGetColumnConst<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
         {
             std::vector<char> buf;
             WriteBufferFromVector<std::vector<char> > write_buffer(buf);
@@ -1006,7 +1006,7 @@ private:
     {
         if (!checkDataType<DataTypeNumber<T>>(column.type.get()))
             return false;
-        const ColumnConst<T> * column_const = typeid_cast<const ColumnConst<T> *>(column.column.get());
+        const ColumnConst<T> * column_const = checkAndGetColumnConst<ColumnVector<T>>(column.column.get());
         if (!column_const)
             throw Exception("Unexpected type of column for FixedString length: " + column.column->getName(), ErrorCodes::ILLEGAL_COLUMN);
         T s = column_const->getData();

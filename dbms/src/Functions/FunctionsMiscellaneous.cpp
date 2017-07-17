@@ -524,22 +524,22 @@ public:
         double seconds;
         size_t size = col->size();
 
-        if (ColumnConst<Float64> * column = typeid_cast<ColumnConst<Float64> *>(col))
+        if (ColumnConst<Float64> * column = checkAndGetColumnConst<ColumnVector<Float64>>(col))
             seconds = column->getData();
 
-        else if (ColumnConst<Float32> * column = typeid_cast<ColumnConst<Float32> *>(col))
+        else if (ColumnConst<Float32> * column = checkAndGetColumnConst<ColumnVector<Float32>>(col))
             seconds = static_cast<double>(column->getData());
 
-        else if (ColumnConst<UInt64> * column = typeid_cast<ColumnConst<UInt64> *>(col))
+        else if (ColumnConst<UInt64> * column = checkAndGetColumnConst<ColumnVector<UInt64>>(col))
             seconds = static_cast<double>(column->getData());
 
-        else if (ColumnConst<UInt32> * column = typeid_cast<ColumnConst<UInt32> *>(col))
+        else if (ColumnConst<UInt32> * column = checkAndGetColumnConst<ColumnVector<UInt32>>(col))
             seconds = static_cast<double>(column->getData());
 
-        else if (ColumnConst<UInt16> * column = typeid_cast<ColumnConst<UInt16> *>(col))
+        else if (ColumnConst<UInt16> * column = checkAndGetColumnConst<ColumnVector<UInt16>>(col))
             seconds = static_cast<double>(column->getData());
 
-        else if (ColumnConst<UInt8> * column = typeid_cast<ColumnConst<UInt8> *>(col))
+        else if (ColumnConst<UInt8> * column = checkAndGetColumnConst<ColumnVector<UInt8>>(col))
             seconds = static_cast<double>(column->getData());
 
         else
@@ -1172,7 +1172,7 @@ private:
     template <typename T>
     static bool executeNumber(const IColumn & src, ColumnString & dst, Int64 min, Int64 max, Float64 max_width)
     {
-        if (const ColumnVector<T> * col = typeid_cast<const ColumnVector<T> *>(&src))
+        if (const ColumnVector<T> * col = checkAndGetColumn<ColumnVector<T>>(&src))
         {
             fill(col->getData(), dst.getChars(), dst.getOffsets(), min, max, max_width);
             return true;
@@ -1184,7 +1184,7 @@ private:
     template <typename T>
     static bool executeConstNumber(const IColumn & src, ColumnConstString & dst, Int64 min, Int64 max, Float64 max_width)
     {
-        if (const ColumnConst<T> * col = typeid_cast<const ColumnConst<T> *>(&src))
+        if (const ColumnConst<T> * col = checkAndGetColumnConst<ColumnVector<T>>(&src))
         {
             fill(col->getData(), dst.getData(), min, max, max_width);
             return true;
@@ -1250,7 +1250,7 @@ public:
     template <typename T>
     bool execute(Block & block, const IColumn * in_untyped, const size_t result)
     {
-        if (const auto in = typeid_cast<const ColumnVector<T> *>(in_untyped))
+        if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
         {
             const auto size = in->size();
 
@@ -1265,7 +1265,7 @@ public:
 
             return true;
         }
-        else if (const auto in = typeid_cast<const ColumnConst<T> *>(in_untyped))
+        else if (const auto in = checkAndGetColumnConst<ColumnVector<T>>(in_untyped))
         {
             block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(in->size(), Impl::execute(in->getData()));
 

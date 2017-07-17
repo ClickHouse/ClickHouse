@@ -303,7 +303,7 @@ private:
     template <typename FromType>
     void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (ColumnVector<FromType> * col_from = typeid_cast<ColumnVector<FromType> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToType>>();
             block.safeGetByPosition(result).column = col_to;
@@ -316,7 +316,7 @@ private:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
         }
-        else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (ColumnConst<FromType> * col_from = checkAndGetColumnConst<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(col_from->size(), Impl::apply(col_from->getData()));
         }
@@ -391,7 +391,7 @@ private:
     template <typename FromType, bool first>
     void executeIntType(const IColumn * column, ColumnUInt64::Container_t & vec_to)
     {
-        if (const ColumnVector<FromType> * col_from = typeid_cast<const ColumnVector<FromType> *>(column))
+        if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
         {
             const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
             size_t size = vec_from.size();
@@ -404,7 +404,7 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
             }
         }
-        else if (const ColumnConst<FromType> * col_from = typeid_cast<const ColumnConst<FromType> *>(column))
+        else if (const ColumnConst<FromType> * col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
         {
             const UInt64 hash = IntHash64Impl::apply(toInteger(col_from->getData()));
             size_t size = vec_to.size();

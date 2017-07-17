@@ -78,12 +78,12 @@ private:
         {
             const auto column = block.safeGetByPosition(arguments[arg_idx]).column.get();
 
-            if (const auto col = typeid_cast<const ColumnVector<Float64> *>(column))
+            if (const auto col = checkAndGetColumn<ColumnVector<Float64>>(column))
             {
                 out_const = false;
                 result[arg_idx] = instr_t{instr_type::get_float_64, col};
             }
-            else if (const auto col = typeid_cast<const ColumnConst<Float64> *>(column))
+            else if (const auto col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
             {
                 result[arg_idx] = instr_t{instr_type::get_const_float_64, col};
             }
@@ -237,7 +237,7 @@ private:
             {
                 int arg_idx = 2 + 4 * ellipse_idx + idx;
                 const auto column = block.safeGetByPosition(arguments[arg_idx]).column.get();
-                if (const auto col = typeid_cast<const ColumnConst<Float64> *>(column))
+                if (const auto col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
                 {
                     ellipse_data[idx] = col->getData();
                 }

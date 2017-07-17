@@ -235,7 +235,7 @@ public:
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-        if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<T>>();
             block.safeGetByPosition(result).column = col_to;
@@ -248,7 +248,7 @@ public:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from[i], dict);
         }
-        else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeNumber<T>().createConstColumn(
                 col_from->size(), Transform::apply(col_from->getData(), dict));
@@ -333,10 +333,10 @@ public:
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-        const ColumnVector<T> * col_vec1 = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnVector<T> * col_vec2 = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[1]).column.get());
-        const ColumnConst<T> * col_const1 = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConst<T> * col_const2 = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnVector<T> * col_vec1 = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnVector<T> * col_vec2 = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnConst<T> * col_const1 = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConst<T> * col_const2 = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[1]).column.get());
 
         if (col_vec1 && col_vec2)
         {
@@ -461,7 +461,7 @@ public:
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-        if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_values = std::make_shared<ColumnVector<T>>();
             auto col_array = std::make_shared<ColumnArray>(col_values);
@@ -486,7 +486,7 @@ public:
                 res_offsets[i] = res_values.size();
             }
         }
-        else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst<T> * col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             Array res;
 
@@ -754,7 +754,7 @@ public:
                 col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
             }
         }
-        else if (const ColumnConst<UInt32> * col_from = typeid_cast<const ColumnConst<UInt32> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst<UInt32> * col_from = checkAndGetColumnConst<ColumnVector<UInt32>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             UInt32 region_id = col_from->getData();
             const StringRef & name_ref = dict.getRegionName(region_id, language);
