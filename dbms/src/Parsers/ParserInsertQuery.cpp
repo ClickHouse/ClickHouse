@@ -21,20 +21,19 @@ namespace ErrorCodes
 }
 
 
-bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhitespaceOrComments ws;
     ParserKeyword s_insert_into("INSERT INTO");
-    ParserKeyword s_dot(".");
+    ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_values("VALUES");
     ParserKeyword s_format("FORMAT");
     ParserKeyword s_select("SELECT");
-    ParserKeyword s_lparen("(");
-    ParserKeyword s_rparen(")");
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
-    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserString>(","), false);
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr database;
     ASTPtr table;
@@ -44,66 +43,42 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     /// Insertion data
     const char * data = nullptr;
 
-    ws.ignore(pos, end);
-
-    if (!s_insert_into.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_insert_into.ignore(pos, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+    if (!name_p.parse(pos, table, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+    if (s_dot.ignore(pos, expected))
     {
         database = table;
-        if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
-
-        ws.ignore(pos, end);
     }
-
-    ws.ignore(pos, end);
 
     /// Is there a list of columns
-    if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
+    if (s_lparen.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
+        if (!columns_p.parse(pos, columns, expected))
             return false;
 
-        ws.ignore(pos, end);
-
-        if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_rparen.ignore(pos, expected))
             return false;
     }
-
-    ws.ignore(pos, end);
 
     Pos before_select = pos;
 
     /// VALUES or FORMAT or SELECT
-    if (s_values.ignore(pos, end, max_parsed_pos, expected))
+    if (s_values.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-        data = pos;
-        pos = end;
+        data = pos->begin;
     }
-    else if (s_format.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_format.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (!name_p.parse(pos, end, format, max_parsed_pos, expected))
+        if (!name_p.parse(pos, format, expected))
             return false;
 
-        /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
-        ParserWhitespaceOrComments ws_without_nl(false);
-
-        ws_without_nl.ignore(pos, end);
-        if (pos != end && *pos == ';')
+        if (pos->type == TokenType::Semicolon)
             throw Exception("You have excessive ';' symbol before data for INSERT.\n"
                 "Example:\n\n"
                 "INSERT INTO t (x, y) FORMAT TabSeparated\n"
@@ -112,25 +87,30 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
                 "\n"
                 "Note that there is no ';' in first line.", ErrorCodes::SYNTAX_ERROR);
 
-        if (pos != end && *pos == '\n')
-            ++pos;
+        /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
+        data = pos->begin;
 
-        data = pos;
-        pos = end;
+        while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
+            ++data;
+
+        if (data < end && *data == '\r')
+            ++data;
+
+        if (data < end && *data == '\n')
+            ++data;
     }
-    else if (s_select.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_select.ignore(pos, expected))
     {
         pos = before_select;
         ParserSelectQuery select_p;
-        select_p.parse(pos, end, select, max_parsed_pos, expected);
+        select_p.parse(pos, select, expected);
     }
     else
     {
-        expected = "VALUES or FORMAT or SELECT";
         return false;
     }
 
-    auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, data ? data : pos));
+    auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, pos));
     node = query;
 
     if (database)
@@ -143,7 +123,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
     query->columns = columns;
     query->select = select;
-    query->data = data != end ? data : NULL;
+    query->data = data != end ? data : nullptr;
     query->end = end;
 
     if (columns)

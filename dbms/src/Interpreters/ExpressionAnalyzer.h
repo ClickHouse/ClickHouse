@@ -13,14 +13,15 @@ class Context;
 class ExpressionActions;
 struct ExpressionActionsChain;
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
-
 class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
+
+class Set;
+using SetPtr = std::shared_ptr<Set>;
+using PreparedSets = std::unordered_map<IAST*, SetPtr>;
 
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -42,10 +43,8 @@ struct SubqueryForSet
     BlockInputStreamPtr source;
     Block source_sample;
 
-    /// If set, create from Set result.
+    /// If set, build it from result.
     SetPtr set;
-
-    /// If set, create from Join result.
     JoinPtr join;
 
     /// If set, put the result into the table.
@@ -130,6 +129,8 @@ public:
       */
     SubqueriesForSets getSubqueriesForSets() { return subqueries_for_sets; }
 
+    PreparedSets getPreparedSets() { return prepared_sets; }
+
     /** Tables that will need to be sent to remote servers for distributed query processing.
       */
     const Tables & getExternalTables() const { return external_tables; }
@@ -166,6 +167,8 @@ private:
     AggregateDescriptions aggregate_descriptions;
 
     SubqueriesForSets subqueries_for_sets;
+
+    PreparedSets prepared_sets;
 
     /// NOTE: So far, only one JOIN per query is supported.
 
@@ -244,8 +247,7 @@ private:
     void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, Aliases & aliases) const;
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
-    /// Transform the value enumeration or subquery into ASTSet. `node` - `in` or `notIn` function.
-    void makeSet(ASTFunction * node, const Block & sample_block);
+    void makeSet(const ASTFunction * node, const Block & sample_block);
 
     /// Adds a list of ALIAS columns from the table
     void addAliasColumns();
@@ -309,8 +311,8 @@ private:
     /** Create Set from an explicit enumeration of values in the query.
       * If create_ordered_set = true - create a data structure suitable for using the index.
       */
-    void makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set);
-    void makeSetsForIndexImpl(ASTPtr & node, const Block & sample_block);
+    void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set);
+    void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
 
     /** Translate qualified names such as db.table.column, table.column, table_alias.column
       *  to unqualified names. This is done in a poor transitional way:

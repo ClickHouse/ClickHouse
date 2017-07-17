@@ -12,16 +12,15 @@ namespace DB
 {
 
 
-bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhitespaceOrComments ws;
     ParserKeyword s_optimize_table("OPTIMIZE TABLE");
     ParserKeyword s_partition("PARTITION");
     ParserKeyword s_final("FINAL");
     ParserKeyword s_deduplicate("DEDUPLICATE");
-    ParserString s_dot(".");
+    ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p;
     ParserLiteral partition_p;
 
@@ -31,45 +30,29 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max
     bool final = false;
     bool deduplicate = false;
 
-    ws.ignore(pos, end);
-
-    if (!s_optimize_table.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_optimize_table.ignore(pos, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+    if (!name_p.parse(pos, table, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+    if (s_dot.ignore(pos, expected))
     {
         database = table;
-        if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
-
-        ws.ignore(pos, end);
     }
 
-    ws.ignore(pos, end);
-
-    if (s_partition.ignore(pos, end, max_parsed_pos, expected))
+    if (s_partition.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (!partition_p.parse(pos, end, partition, max_parsed_pos, expected))
+        if (!partition_p.parse(pos, partition, expected))
             return false;
     }
 
-    ws.ignore(pos, end);
-
-    if (s_final.ignore(pos, end, max_parsed_pos, expected))
+    if (s_final.ignore(pos, expected))
         final = true;
 
-    ws.ignore(pos, end);
-
-    if (s_deduplicate.ignore(pos, end, max_parsed_pos, expected))
+    if (s_deduplicate.ignore(pos, expected))
         deduplicate = true;
 
     auto query = std::make_shared<ASTOptimizeQuery>(StringRange(begin, pos));

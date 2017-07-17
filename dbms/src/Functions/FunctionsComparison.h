@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -642,6 +643,7 @@ private:
                 ||    executeNumRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
                 ||    executeNumRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
                 ||    executeNumRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
+                ||    executeNumRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
                 ||    executeNumRightType<T0, Int8>(block, result, col_left, col_right_untyped)
                 ||    executeNumRightType<T0, Int16>(block, result, col_left, col_right_untyped)
                 ||    executeNumRightType<T0, Int32>(block, result, col_left, col_right_untyped)
@@ -660,6 +662,7 @@ private:
                 ||    executeNumConstRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
                 ||    executeNumConstRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
                 ||    executeNumConstRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
+                ||    executeNumConstRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
                 ||    executeNumConstRightType<T0, Int8>(block, result, col_left, col_right_untyped)
                 ||    executeNumConstRightType<T0, Int16>(block, result, col_left, col_right_untyped)
                 ||    executeNumConstRightType<T0, Int32>(block, result, col_left, col_right_untyped)
@@ -764,11 +767,13 @@ private:
 
         bool is_date = false;
         bool is_date_time = false;
+        bool is_uuid = false;
         bool is_enum8 = false;
         bool is_enum16 = false;
 
         const auto legal_types = (is_date = typeid_cast<const DataTypeDate *>(number_type))
             || (is_date_time = typeid_cast<const DataTypeDateTime *>(number_type))
+            || (is_uuid = typeid_cast<const DataTypeUUID *>(number_type))
             || (is_enum8 = typeid_cast<const DataTypeEnum8 *>(number_type))
             || (is_enum16 = typeid_cast<const DataTypeEnum16 *>(number_type));
 
@@ -806,6 +811,20 @@ private:
                 left_is_num ? col_left_untyped : &parsed_const_date_time,
                 left_is_num ? &parsed_const_date_time : col_right_untyped);
         }
+        else if (is_uuid)
+        {
+            UUID uuid;
+            ReadBufferFromString in(column_string->getData());
+            readText(uuid, in);
+            if (!in.eof())
+                throw Exception("String is too long for UUID: " + column_string->getData());
+
+            ColumnConst<DataTypeUUID::FieldType> parsed_const_uuid(block.rows(), uuid);
+            executeNumLeftType<DataTypeUUID::FieldType>(block, result,
+                left_is_num ? col_left_untyped : &parsed_const_uuid,
+                left_is_num ? &parsed_const_uuid : col_right_untyped);
+        }
+
         else if (is_enum8)
             executeEnumWithConstString<DataTypeEnum8>(block, result, column_number, column_string,
                 number_type, left_is_num);
@@ -990,6 +1009,7 @@ public:
     {
         bool left_is_date = false;
         bool left_is_date_time = false;
+        bool left_is_uuid = false;
         bool left_is_enum8 = false;
         bool left_is_enum16 = false;
         bool left_is_string = false;
@@ -1000,6 +1020,7 @@ public:
             || (left_is_date         = typeid_cast<const DataTypeDate *>(arguments[0].get()))
             || (left_is_date_time     = typeid_cast<const DataTypeDateTime *>(arguments[0].get()))
             || (left_is_enum8         = typeid_cast<const DataTypeEnum8 *>(arguments[0].get()))
+            || (left_is_uuid           = typeid_cast<const DataTypeUUID *>(arguments[0].get()))
             || (left_is_enum16         = typeid_cast<const DataTypeEnum16 *>(arguments[0].get()))
             || (left_is_string         = typeid_cast<const DataTypeString *>(arguments[0].get()))
             || (left_is_fixed_string = typeid_cast<const DataTypeFixedString *>(arguments[0].get()))
@@ -1009,6 +1030,7 @@ public:
 
         bool right_is_date = false;
         bool right_is_date_time = false;
+        bool right_is_uuid = false;
         bool right_is_enum8 = false;
         bool right_is_enum16 = false;
         bool right_is_string = false;
@@ -1018,6 +1040,7 @@ public:
         false
             || (right_is_date = typeid_cast<const DataTypeDate *>(arguments[1].get()))
             || (right_is_date_time = typeid_cast<const DataTypeDateTime *>(arguments[1].get()))
+            || (right_is_uuid = typeid_cast<const DataTypeUUID *>(arguments[1].get()))
             || (right_is_enum8 = typeid_cast<const DataTypeEnum8 *>(arguments[1].get()))
             || (right_is_enum16 = typeid_cast<const DataTypeEnum16 *>(arguments[1].get()))
             || (right_is_string = typeid_cast<const DataTypeString *>(arguments[1].get()))
@@ -1037,6 +1060,9 @@ public:
             || (left_is_date_time && right_is_date_time)
             || (left_is_date_time && right_is_string)
             || (left_is_string && right_is_date_time)
+            || (left_is_uuid && right_is_uuid)
+            || (left_is_uuid && right_is_string)
+            || (left_is_string && right_is_uuid)
             || (left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_is_enum && right_is_string)
             || (left_is_string && right_is_enum)
@@ -1071,6 +1097,7 @@ public:
                 || executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<UInt128>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int8>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)

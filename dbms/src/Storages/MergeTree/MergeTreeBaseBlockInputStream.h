@@ -21,6 +21,7 @@ public:
         const String & prewhere_column,
         size_t max_block_size_rows,
         size_t preferred_block_size_bytes,
+        size_t preferred_max_column_in_block_size_bytes,
         size_t min_bytes_to_use_direct_io,
         size_t max_read_buffer_size,
         bool use_uncompressed_cache,
@@ -52,6 +53,7 @@ protected:
 
     size_t max_block_size_rows;
     size_t preferred_block_size_bytes;
+    size_t preferred_max_column_in_block_size_bytes;
 
     size_t min_bytes_to_use_direct_io;
     size_t max_read_buffer_size;

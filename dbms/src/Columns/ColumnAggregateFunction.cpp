@@ -1,6 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -184,9 +186,9 @@ size_t ColumnAggregateFunction::byteSize() const
 
 
 /// Like byteSize(), highly overestimates size
-size_t ColumnAggregateFunction::allocatedSize() const
+size_t ColumnAggregateFunction::allocatedBytes() const
 {
-    size_t res = getData().allocated_size() * sizeof(getData()[0]);
+    size_t res = getData().allocated_bytes();
 
     for (const auto & arena : arenas)
         res += arena.get()->size();
@@ -338,6 +340,11 @@ void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan
     res.resize(s);
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
+}
+
+void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const

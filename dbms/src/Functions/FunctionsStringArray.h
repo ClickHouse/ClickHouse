@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <DataTypes/DataTypeString.h>

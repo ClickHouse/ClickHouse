@@ -93,6 +93,7 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
         if (column_data->isFixed())
         {
             fixed_columns_bytes_per_row += column_data->sizeOfField();
+            max_size_per_row_fixed = std::max<size_t>(max_size_per_row_fixed, column_data->sizeOfField());
         }
         else
         {
@@ -112,6 +113,8 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
         info.bytes_per_row_global /= rows_approx;
         info.bytes_per_row = info.bytes_per_row_global;
         bytes_per_row_global += info.bytes_per_row_global;
+
+        max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
     }
     bytes_per_row_current = bytes_per_row_global;
 }
@@ -145,6 +148,7 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
     /// Use sum of gemetric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
     double alpha = std::pow(1. - decay, diff_rows);
 
+    max_size_per_row_dynamic = 0;
     for (auto & info : dynamic_columns_infos)
     {
         size_t new_size = block.getByName(info.name).column->byteSize();
@@ -156,6 +160,8 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
         info.size_bytes = new_size;
         block_size_bytes += new_size;
         bytes_per_row_current += info.bytes_per_row;
+
+        max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
     }
 }
 

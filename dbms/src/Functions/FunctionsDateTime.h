@@ -11,6 +11,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 
+#include <Common/typeid_cast.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <Functions/IFunction.h>
@@ -557,7 +559,10 @@ public:
         IFunction::Monotonicity is_not_monotonic;
 
         if (std::is_same<typename Transform::FactorTransform, ZeroTransform>::value)
+        {
+            is_monotonic.is_always_monotonic = true;
             return is_monotonic;
+        }
 
         /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
         const DateLUTImpl & date_lut = DateLUT::instance();

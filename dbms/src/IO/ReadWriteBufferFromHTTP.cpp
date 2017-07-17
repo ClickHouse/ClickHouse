@@ -37,13 +37,13 @@ static Poco::Net::IPAddress resolveHost(const String & host)
 
 
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
-    const std::string & method,
+    const std::string & method_,
     OutStreamCallback out_stream_callback,
     size_t buffer_size_,
     const HTTPTimeouts & timeouts)
     : ReadBuffer(nullptr, 0),
       uri{uri},
-      method{!method.empty() ? method : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET},
+      method{!method_.empty() ? method_ : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET},
       timeouts{timeouts},
       is_ssl{uri.getScheme() == "https"},
       session

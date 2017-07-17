@@ -1,5 +1,4 @@
 #include <Functions/IFunction.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypeNullable.h>

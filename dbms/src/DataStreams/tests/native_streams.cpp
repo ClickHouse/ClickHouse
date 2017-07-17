@@ -103,7 +103,7 @@ try
     if (argc == 2 && 0 == strcmp(argv[1], "read"))
     {
         QueryProcessingStage::Enum stage;
-        BlockInputStreamPtr in = table->read(column_names, 0, Context::createGlobal(), stage, 8192, 1)[0];
+        BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
         WriteBufferFromFileDescriptor out1(STDOUT_FILENO);
         CompressedWriteBuffer out2(out1);
         NativeBlockOutputStream out3(out2, ClickHouseRevision::get());

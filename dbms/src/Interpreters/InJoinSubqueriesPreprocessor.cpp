@@ -5,6 +5,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

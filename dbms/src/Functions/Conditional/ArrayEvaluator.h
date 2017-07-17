@@ -9,6 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Common/memcpySmall.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/NumberTraits.h>
 
 

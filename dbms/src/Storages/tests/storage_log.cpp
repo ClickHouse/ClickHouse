@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
+#include <Common/typeid_cast.h>
 
 
 int main(int argc, char ** argv)
@@ -68,7 +69,7 @@ try
 
         QueryProcessingStage::Enum stage;
 
-        BlockInputStreamPtr in = table->read(column_names, 0, Context::createGlobal(), stage, 8192, 1)[0];
+        BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
 
         Block sample;
         {

@@ -24,9 +24,13 @@ namespace DB
   */
 class ParserInsertQuery : public IParserBase
 {
-protected:
-    const char * getName() const { return "INSERT query"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+private:
+    const char * end;
+
+    const char * getName() const override { return "INSERT query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+public:
+    ParserInsertQuery(const char * end) : end(end) {}
 };
 
 }

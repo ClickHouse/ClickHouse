@@ -129,7 +129,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
 
 BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -188,22 +188,22 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     /// If `_part` virtual column is requested, we try to use it as an index.
     Block virtual_columns_block = getBlockWithPartColumn(parts);
     if (part_column_queried)
-        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, context);
 
     std::multiset<String> part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
     data.check(real_column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    SortDescription sort_descr = data.getSortDescription();
-
-    PKCondition key_condition(query, context, available_real_and_virtual_columns, sort_descr,
-        data.getPrimaryExpression()->getSampleBlock());
-    PKCondition date_condition(query, context, available_real_and_virtual_columns,
-        SortDescription(1, SortColumnDescription(data.date_column_name, 1, 1)),
-        Block{{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}});
-
     const Settings & settings = context.getSettingsRef();
+    SortDescription sort_descr = data.getSortDescription();
+    ColumnsWithTypeAndName date_columns = {{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}};
+
+    PKCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
+        data.getPrimaryExpression());
+    PKCondition date_condition(query_info, context, available_real_and_virtual_columns,
+        SortDescription(1, SortColumnDescription(data.date_column_name, 1, 1)),
+        std::make_shared<ExpressionActions>(date_columns, settings));
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
@@ -254,7 +254,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    ASTSelectQuery & select = *typeid_cast<ASTSelectQuery*>(&*query);
+    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
 
     auto select_sample_size = select.sample_size();
     auto select_sample_offset = select.sample_offset();
@@ -636,7 +636,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         for (std::size_t i = 0; i < num_streams; ++i)
         {
             res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
-                i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes, data, use_uncompressed_cache,
+                i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes,
+                settings.preferred_max_column_in_block_size_bytes, data, use_uncompressed_cache,
                 prewhere_actions, prewhere_column, settings, virt_columns));
 
             if (i == 0)
@@ -707,7 +708,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                 }
 
                 BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
-                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes, column_names, ranges_to_get_from_part,
+                    data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+                    settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io,
                     settings.max_read_buffer_size, true, virt_columns, part.part_index_in_query);
 
@@ -753,7 +755,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
         RangesInDataPart & part = parts[part_index];
 
         BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
-            data, part.data_part, max_block_size, settings.preferred_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
+            data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
+            settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
             prewhere_actions, prewhere_column, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
             virt_columns, part.part_index_in_query);
 

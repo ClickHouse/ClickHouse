@@ -17,7 +17,7 @@ public:
 
 protected:
     const char * getName() const { return "SET query"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
     /// Parse the list `name = value` pairs, without SET [GLOBAL].
     bool parse_only_internals;

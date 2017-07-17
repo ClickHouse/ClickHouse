@@ -8,6 +8,13 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNull.h>
+#include <DataTypes/DataTypeNullable.h>
+
+#include <Parsers/IAST.h>
+
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -16,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -304,7 +312,7 @@ void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) c
 }
 
 
-void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
+void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -319,7 +327,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
     {
         if (i != offset)
             writeChar(',', ostr);
-        nested->serializeTextJSON(nested_column, i, ostr, force_quoting_64bit_integers);
+        nested->serializeTextJSON(nested_column, i, ostr, settings);
     }
     writeChar(']', ostr);
 }
@@ -395,24 +403,28 @@ ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) con
 }
 
 
-const DataTypePtr & DataTypeArray::getMostNestedType() const
+static DataTypePtr create(const ASTPtr & arguments)
 {
-    const DataTypeArray * array = this;
-    const IDataType * array_nested_type = array->getNestedType().get();
+    if (arguments->children.size() != 1)
+        throw Exception("Array data type family must have exactly one argument - type of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    while (true)
+    DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
+
+    if (typeid_cast<const DataTypeNull *>(nested_type.get()))
     {
-        const DataTypeArray * type = typeid_cast<const DataTypeArray *>(array_nested_type);
-        if (type == nullptr)
-                break;
-        else
-        {
-            array = type;
-            array_nested_type = array->getNestedType().get();
-        }
+        /// Special case: Array(Null) is actually Array(Nullable(UInt8)).
+        return std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeNullable>(
+                std::make_shared<DataTypeUInt8>()));
     }
 
-    return array->getNestedType();
+    return std::make_shared<DataTypeArray>(nested_type);
+}
+
+
+void registerDataTypeArray(DataTypeFactory & factory)
+{
+    factory.registerDataType("Array", create);
 }
 
 }

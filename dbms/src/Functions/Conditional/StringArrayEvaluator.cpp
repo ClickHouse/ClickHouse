@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
+#include <Common/typeid_cast.h>
 
 /// NOTE: this code is quite complicated and ugly because it handles
 /// the internals of arrays of strings.

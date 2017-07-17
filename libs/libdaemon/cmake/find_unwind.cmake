@@ -13,6 +13,7 @@ if (NOT USE_INTERNAL_UNWIND_LIBRARY)
     set(CMAKE_REQUIRED_LIBRARIES ${UNWIND_LIBRARY})
     check_cxx_source_compiles("
     #include <ucontext.h>
+    #define UNW_LOCAL_ONLY
     #include <libunwind.h>
     int main () {
        ucontext_t context;

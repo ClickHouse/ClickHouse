@@ -5,6 +5,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/typeid_cast.h>
+
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 

@@ -4,9 +4,6 @@
 #include <map>
 #include <experimental/optional>
 
-#include <Poco/Path.h>
-#include <Poco/Util/XMLConfiguration.h>
-
 #include <Common/escapeForFileName.h>
 
 #include <Common/Exception.h>
@@ -17,9 +14,6 @@
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -32,7 +26,6 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageStripeLog.h>
-#include <Poco/DirectoryIterator.h>
 
 
 namespace DB
@@ -222,7 +215,7 @@ void StorageStripeLog::rename(const String & new_path_to_db, const String & new_
 
 BlockInputStreams StorageStripeLog::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,

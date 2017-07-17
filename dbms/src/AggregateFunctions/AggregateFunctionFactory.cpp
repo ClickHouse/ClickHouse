@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/StringUtils.h>
 #include <Poco/String.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -38,11 +39,6 @@ AggregateFunctionPtr createAggregateFunctionMerge(AggregateFunctionPtr & nested)
 AggregateFunctionPtr createAggregateFunctionNullUnary(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionNullVariadic(AggregateFunctionPtr & nested);
 AggregateFunctionPtr createAggregateFunctionCountNotNull(const DataTypes & argument_types);
-
-
-AggregateFunctionFactory::AggregateFunctionFactory()
-{
-}
 
 
 void AggregateFunctionFactory::registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness)
@@ -156,8 +152,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(const String & name, cons
         if (argument_types.empty())
             throw Exception{
                 "Incorrect number of arguments for aggregate function " + name,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         /// For aggregate functions of the form `aggIf`, where `agg` is the name of another aggregate function.
         DataTypes nested_dt = argument_types;

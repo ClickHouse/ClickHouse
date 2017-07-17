@@ -11,16 +11,15 @@ namespace DB
 {
 
 
-bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhitespaceOrComments ws;
     ParserKeyword s_drop("DROP");
     ParserKeyword s_detach("DETACH");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_database("DATABASE");
-    ParserKeyword s_dot(".");
+    ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
 
@@ -30,72 +29,52 @@ bool ParserDropQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
     bool detach = false;
     bool if_exists = false;
 
-    ws.ignore(pos, end);
-
-    if (!s_drop.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_drop.ignore(pos, expected))
     {
-        if (s_detach.ignore(pos, end, max_parsed_pos, expected))
+        if (s_detach.ignore(pos, expected))
             detach = true;
         else
             return false;
     }
 
-    ws.ignore(pos, end);
-
-    if (s_database.ignore(pos, end, max_parsed_pos, expected))
+    if (s_database.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (s_if_exists.ignore(pos, end, max_parsed_pos, expected))
+        if (s_if_exists.ignore(pos, expected))
             if_exists = true;
 
-        ws.ignore(pos, end);
-
-        if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
+        if (!name_p.parse(pos, database, expected))
             return false;
 
-        ws.ignore(pos, end);
-
-        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
         {
-            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
     }
     else
     {
-        if (!s_table.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_table.ignore(pos, expected))
             return false;
 
-        ws.ignore(pos, end);
-
-        if (s_if_exists.ignore(pos, end, max_parsed_pos, expected))
+        if (s_if_exists.ignore(pos, expected))
             if_exists = true;
 
-        ws.ignore(pos, end);
-
-        if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
 
-        ws.ignore(pos, end);
-
-        if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+        if (s_dot.ignore(pos, expected))
         {
             database = table;
-            if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+            if (!name_p.parse(pos, table, expected))
                 return false;
-
-            ws.ignore(pos, end);
         }
 
-        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
         {
-            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
     }
-
-    ws.ignore(pos, end);
 
     auto query = std::make_shared<ASTDropQuery>(StringRange(begin, pos));
     node = query;

@@ -54,9 +54,9 @@ public:
         return chars.size() + offsets.size() * sizeof(offsets[0]);
     }
 
-    size_t allocatedSize() const override
+    size_t allocatedBytes() const override
     {
-        return chars.allocated_size() + offsets.allocated_size() * sizeof(offsets[0]);
+        return chars.allocated_bytes() + offsets.allocated_bytes();
     }
 
     ColumnPtr cloneResized(size_t to_size) const override;
@@ -237,6 +237,8 @@ public:
     {
         return scatterImpl<ColumnString>(num_columns, selector);
     }
+
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
     void reserve(size_t n) override;
 

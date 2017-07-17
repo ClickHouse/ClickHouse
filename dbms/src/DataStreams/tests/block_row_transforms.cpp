@@ -6,8 +6,8 @@
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -38,11 +38,8 @@ try
     col2.column = col2.type->createColumn();
     sample.insert(col2);
 
-    std::ifstream istr("test_in");
-    std::ofstream ostr("test_out");
-
-    ReadBufferFromIStream in_buf(istr);
-    WriteBufferFromOStream out_buf(ostr);
+    ReadBufferFromFile in_buf("test_in");
+    WriteBufferFromFile out_buf("test_out");
 
     RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
     BlockInputStreamFromRowInputStream block_input(row_input, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);

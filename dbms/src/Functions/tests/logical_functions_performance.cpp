@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunction.h>
 #include <Common/Stopwatch.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <iomanip>
 

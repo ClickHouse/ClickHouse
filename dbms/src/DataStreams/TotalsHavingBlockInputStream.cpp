@@ -3,6 +3,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

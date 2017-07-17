@@ -1,5 +1,4 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 

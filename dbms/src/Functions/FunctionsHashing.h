@@ -9,6 +9,7 @@
 #include <Poco/ByteOrder.h>
 
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>

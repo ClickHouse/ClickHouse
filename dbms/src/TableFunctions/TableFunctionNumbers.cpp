@@ -4,6 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 

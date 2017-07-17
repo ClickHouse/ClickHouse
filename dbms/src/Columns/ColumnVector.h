@@ -182,9 +182,9 @@ public:
         return data.size() * sizeof(data[0]);
     }
 
-    size_t allocatedSize() const override
+    size_t allocatedBytes() const override
     {
-        return data.allocated_size() * sizeof(data[0]);
+        return data.allocated_bytes();
     }
 
     void insert(const T value)
@@ -241,6 +241,7 @@ public:
         return this->scatterImpl<Self>(num_columns, selector);
     }
 
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container_t & getData()

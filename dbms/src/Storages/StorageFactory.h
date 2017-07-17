@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 
 namespace DB
@@ -14,7 +14,7 @@ class Context;
   * In 'columns', 'materialized_columns', etc., Nested data structures must be flattened.
   * You should subsequently call IStorage::startup method to work with table.
   */
-class StorageFactory : public Singleton<StorageFactory>
+class StorageFactory : public ext::singleton<StorageFactory>
 {
 public:
     StoragePtr get(

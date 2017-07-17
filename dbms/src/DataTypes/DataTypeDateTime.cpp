@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -46,7 +47,7 @@ void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
-void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
+void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr);
@@ -75,5 +76,11 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     readCSV(value, istr);
     static_cast<ColumnUInt32 &>(column).getData().push_back(static_cast<time_t>(value));
 }
+
+void registerDataTypeDateTime(DataTypeFactory & factory)
+{
+    factory.registerSimpleDataType("DateTime", [] { return DataTypePtr(std::make_shared<DataTypeDateTime>()); }, DataTypeFactory::CaseInsensitive);
+}
+
 
 }

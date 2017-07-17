@@ -76,7 +76,6 @@ public:
 
         /** For RESHARD PARTITION.
           */
-        ASTPtr last_partition;
         ASTPtr weighted_zookeeper_paths;
         ASTPtr sharding_key_expr;
         ASTPtr coordinator;

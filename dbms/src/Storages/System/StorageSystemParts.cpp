@@ -47,7 +47,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 
 BlockInputStreams StorageSystemParts::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -73,7 +73,7 @@ BlockInputStreams StorageSystemParts::read(
         block_to_filter.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block_to_filter with column 'database'.
-        VirtualColumnUtils::filterBlockWithQuery(query, block_to_filter, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
         if (!block_to_filter.rows())
             return BlockInputStreams();
@@ -129,7 +129,7 @@ BlockInputStreams StorageSystemParts::read(
     }
 
     /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-    VirtualColumnUtils::filterBlockWithQuery(query, block_to_filter, context);
+    VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
     /// If all was filtered out.
     if (!block_to_filter.rows())

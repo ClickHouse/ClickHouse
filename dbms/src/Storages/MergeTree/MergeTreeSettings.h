@@ -84,6 +84,9 @@ struct MergeTreeSettings
     size_t replicated_max_parallel_sends = 0;
     size_t replicated_max_parallel_sends_for_table = 0;
 
+    /// If true, Replicated tables replicas on this node will try to acquire leadership.
+    bool replicated_can_become_leader = true;
+
     /// In seconds.
     size_t zookeeper_session_expiration_check_period = 60;
 
@@ -141,11 +144,12 @@ struct MergeTreeSettings
         SET(max_suspicious_broken_parts, getUInt64);
         SET(max_files_to_modify_in_alter_columns, getUInt64);
         SET(max_files_to_remove_in_alter_columns, getUInt64);
+        SET(replicated_max_ratio_of_wrong_parts, getDouble);
         SET(replicated_max_parallel_fetches, getUInt64);
         SET(replicated_max_parallel_fetches_for_table, getUInt64);
         SET(replicated_max_parallel_sends, getUInt64);
         SET(replicated_max_parallel_sends_for_table, getUInt64);
-        SET(replicated_max_ratio_of_wrong_parts, getDouble);
+        SET(replicated_can_become_leader, getBool);
         SET(zookeeper_session_expiration_check_period, getUInt64);
         SET(check_delay_period, getUInt64);
         SET(min_relative_delay_to_yield_leadership, getUInt64);

@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/getClusterName.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 #include <TableFunctions/TableFunctionShardByHash.h>
 #include <TableFunctions/TableFunctionFactory.h>
 

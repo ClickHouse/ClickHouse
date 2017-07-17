@@ -23,6 +23,7 @@ var paths = {
         '!public/**/*.html'],
     reference: ['deprecated/reference_ru.html', 'deprecated/reference_en.html'],
     docs: [docsDir + '/build/docs/**/*'],
+    docstxt: ['docs/**/*.txt'],
     scripts: [
         '**/*.js',
         '!gulpfile.js',
@@ -53,16 +54,15 @@ gulp.task('reference', [], function () {
         .pipe(gulp.dest(outputDir + '/deprecated'))
 });
 
-gulp.task('docstxt', [], function () {
+gulp.task('docs', [], function () {
     run('cd ' + docsDir + '; make');
     return gulp.src(paths.docs)
         .pipe(gulp.dest(outputDir + '/../docs'))
 });
 
-gulp.task('docs', ['docstxt'], function () {
-    run('cd ' + docsDir + '; make');
-    return gulp.src(paths.docs)
-        .pipe(gulp.dest(outputDir + '/../docs'))
+gulp.task('docstxt', ['docs'], function () {
+    return gulp.src(paths.docstxt)
+        .pipe(gulp.dest(outputDir + '/docs'))
 });
 
 gulp.task('presentations', [], function () {
@@ -75,7 +75,7 @@ gulp.task('robotstxt', [], function () {
         .pipe(gulp.dest(outputDir))
 });
 
-gulp.task('htmls', ['docs'], function () {
+gulp.task('htmls', ['docs', 'docstxt'], function () {
     return gulp.src(paths.htmls)
         .pipe(htmlmin({collapseWhitespace: true}))
         .pipe(minifyInline())

@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/ReshardingJob.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/createBlockSelector.h>

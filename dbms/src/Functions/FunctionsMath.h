@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Common/config.h>
+#include <Common/typeid_cast.h>
 
 /** More efficient implementations of mathematical functions are possible when using a separate library.
   * Disabled due to licence compatibility limitations.

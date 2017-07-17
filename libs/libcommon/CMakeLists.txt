@@ -38,7 +38,6 @@ add_library (common
     include/common/likely.h
     include/common/logger_useful.h
     include/common/MultiVersion.h
-    include/common/singleton.h
     include/common/strong_typedef.h
     include/common/JSON.h
     include/common/getMemoryAmount.h
@@ -55,6 +54,7 @@ add_library (common
     include/ext/scope_guard.h
     include/ext/size.h
     include/ext/unlock_guard.h
+    include/ext/singleton.h
 
     ${CONFIG_COMMON}
 )

@@ -1,10 +1,12 @@
+#include <Columns/ColumnFixedString.h>
+
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
 
-#include <IO/WriteHelpers.h>
+#include <DataStreams/ColumnGathererStream.h>
 
-#include <Columns/ColumnFixedString.h>
+#include <IO/WriteHelpers.h>
 
 #if __SSE2__
     #include <emmintrin.h>
@@ -276,6 +278,11 @@ ColumnPtr ColumnFixedString::replicate(const Offsets_t & offsets) const
             memcpySmallAllowReadWriteOverflow15(&res->chars[curr_offset * n], &chars[i * n], n);
 
     return res;
+}
+
+void ColumnFixedString::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
 }
 
 void ColumnFixedString::getExtremes(Field & min, Field & max) const

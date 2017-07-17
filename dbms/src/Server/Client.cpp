@@ -2,19 +2,28 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
+
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <experimental/optional>
 #include <unordered_set>
 #include <algorithm>
+#include <experimental/optional>
 #include <boost/program_options.hpp>
+
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
+
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
+#include <Common/ExternalTable.h>
+#include <Common/UnicodeBar.h>
+#include <Common/formatReadable.h>
+#include <Common/NetException.h>
+#include <common/readline_use.h>
+#include <Common/typeid_cast.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -25,7 +34,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/TabSeparatedRowInputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -39,12 +47,6 @@
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include "InterruptListener.h"
-#include <Common/ExternalTable.h>
-#include <Common/UnicodeBar.h>
-#include <Common/formatReadable.h>
-#include <Columns/ColumnString.h>
-#include <Common/NetException.h>
-#include <common/readline_use.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 
@@ -96,19 +98,19 @@ private:
         "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
     };
 
-    bool is_interactive = true;            /// Use either readline interface or batch mode.
+    bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
-    bool echo_queries = false;            /// Print queries before execution in batch mode.
-    bool print_time_to_stderr = false;    /// Output execution time to stderr in batch mode.
-    bool stdin_is_not_tty = false;        /// stdin is not a terminal.
+    bool echo_queries = false;           /// Print queries before execution in batch mode.
+    bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
+    bool stdin_is_not_tty = false;       /// stdin is not a terminal.
 
     winsize terminal_size {};            /// Terminal size is needed to render progress bar.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String query;                        /// Current query.
 
-    String format;                        /// Query results output format.
-    bool is_default_format = true;        /// false, if format is set in the config or command line.
+    String format;                       /// Query results output format.
+    bool is_default_format = true;       /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0;    /// Max block size for console output.
     String insert_format;                /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
@@ -190,10 +192,6 @@ private:
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_LIMITS(EXTRACT_LIMIT)
 #undef EXTRACT_LIMIT
-
-        /// FIXME Why do we need this?
-        registerFunctions();
-        registerAggregateFunctions();
     }
 
 
@@ -266,6 +264,9 @@ private:
 
     int mainImpl(const std::vector<std::string> & args)
     {
+        registerFunctions();
+        registerAggregateFunctions();
+
         /// Batch mode is enabled if one of the following is true:
         /// - -e (--query) command line option is present.
         ///   The value of the option is used as the text of query (or of multiple queries).
@@ -731,9 +732,9 @@ private:
     }
 
 
-    ASTPtr parseQuery(IParser::Pos & pos, const char * end, bool allow_multi_statements)
+    ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser;
+        ParserQuery parser(end);
         ASTPtr res;
 
         if (is_interactive)
@@ -1203,11 +1204,11 @@ public:
             }
             /// Options with value after equal sign.
             else if (in_external_group
-                && (0 == strncmp(arg, "--file=",         strlen("--file="))
-                 || 0 == strncmp(arg, "--name=",         strlen("--name="))
-                 || 0 == strncmp(arg, "--format=",         strlen("--format="))
-                 || 0 == strncmp(arg, "--structure=",     strlen("--structure="))
-                 || 0 == strncmp(arg, "--types=",         strlen("--types="))))
+                && (0 == strncmp(arg, "--file=", strlen("--file="))
+                 || 0 == strncmp(arg, "--name=", strlen("--name="))
+                 || 0 == strncmp(arg, "--format=", strlen("--format="))
+                 || 0 == strncmp(arg, "--structure=", strlen("--structure="))
+                 || 0 == strncmp(arg, "--types=", strlen("--types="))))
             {
                 external_tables_arguments.back().emplace_back(arg);
             }
@@ -1243,24 +1244,24 @@ public:
         boost::program_options::options_description main_description("Main options");
         main_description.add_options()
             ("help", "produce help message")
-            ("config-file,c",     boost::program_options::value<std::string>(),     "config-file path")
-            ("host,h",             boost::program_options::value<std::string>()->default_value("localhost"), "server host")
-            ("port",             boost::program_options::value<int>()->default_value(9000), "server port")
-            ("user,u",             boost::program_options::value<std::string>(),    "user")
-            ("password",         boost::program_options::value<std::string>(),    "password")
-            ("query,q",         boost::program_options::value<std::string>(),     "query")
-            ("database,d",         boost::program_options::value<std::string>(),     "database")
-            ("pager",        boost::program_options::value<std::string>(),    "pager")
-            ("multiline,m",                                                        "multiline")
-            ("multiquery,n",                                                    "multiquery")
-            ("format,f",        boost::program_options::value<std::string>(),     "default output format")
-            ("vertical,E",      "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
-            ("time,t",            "print query execution time to stderr in non-interactive mode (for benchmarks)")
-            ("stacktrace",        "print stack traces of exceptions")
-            ("progress",        "print progress even in non-interactive mode")
-            ("version,V",        "print version information and exit")
-            ("echo",            "in batch mode, print query before execution")
-            ("compression",        boost::program_options::value<bool>(),            "enable or disable compression")
+            ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
+            ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
+            ("port", boost::program_options::value<int>()->default_value(9000), "server port")
+            ("user,u", boost::program_options::value<std::string>(), "user")
+            ("password", boost::program_options::value<std::string>(), "password")
+            ("query,q", boost::program_options::value<std::string>(), "query")
+            ("database,d", boost::program_options::value<std::string>(), "database")
+            ("pager", boost::program_options::value<std::string>(), "pager")
+            ("multiline,m", "multiline")
+            ("multiquery,n", "multiquery")
+            ("format,f", boost::program_options::value<std::string>(), "default output format")
+            ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
+            ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
+            ("stacktrace", "print stack traces of exceptions")
+            ("progress", "print progress even in non-interactive mode")
+            ("version,V", "print version information and exit")
+            ("echo", "in batch mode, print query before execution")
+            ("compression", boost::program_options::value<bool>(), "enable or disable compression")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
             APPLY_FOR_LIMITS(DECLARE_LIMIT)
         ;
@@ -1270,11 +1271,11 @@ public:
         /// Commandline options related to external tables.
         boost::program_options::options_description external_description("External tables options");
         external_description.add_options()
-            ("file",         boost::program_options::value<std::string>(),     "data file or - for stdin")
-            ("name",         boost::program_options::value<std::string>()->default_value("_data"), "name of the table")
-            ("format",         boost::program_options::value<std::string>()->default_value("TabSeparated"), "data format")
-            ("structure",     boost::program_options::value<std::string>(), "structure")
-            ("types",         boost::program_options::value<std::string>(), "types")
+            ("file", boost::program_options::value<std::string>(), "data file or - for stdin")
+            ("name", boost::program_options::value<std::string>()->default_value("_data"), "name of the table")
+            ("format", boost::program_options::value<std::string>()->default_value("TabSeparated"), "data format")
+            ("structure", boost::program_options::value<std::string>(), "structure")
+            ("types", boost::program_options::value<std::string>(), "types")
         ;
 
         /// Parse main commandline options.

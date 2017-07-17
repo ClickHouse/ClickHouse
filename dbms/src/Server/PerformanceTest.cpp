@@ -269,9 +269,13 @@ struct Stats
 
     bool last_query_was_cancelled = false;
 
-    size_t queries;
-    size_t rows_read;
-    size_t bytes_read;
+    size_t queries = 0;
+
+    size_t total_rows_read = 0;
+    size_t total_bytes_read = 0;
+
+    size_t last_query_rows_read = 0;
+    size_t last_query_bytes_read = 0;
 
     using Sampler = ReservoirSampler<double>;
     Sampler sampler{1 << 16};
@@ -329,11 +333,11 @@ struct Stats
         }
         if (statistic_name == "rows_per_second")
         {
-            return std::to_string(rows_read / total_time);
+            return std::to_string(total_rows_read / total_time);
         }
         if (statistic_name == "bytes_per_second")
         {
-            return std::to_string(bytes_read / total_time);
+            return std::to_string(total_bytes_read / total_time);
         }
 
         if (statistic_name == "max_rows_per_second")
@@ -398,11 +402,13 @@ struct Stats
 
     void add(size_t rows_read_inc, size_t bytes_read_inc)
     {
-        rows_read += rows_read_inc;
-        bytes_read += bytes_read_inc;
+        total_rows_read += rows_read_inc;
+        total_bytes_read += bytes_read_inc;
+        last_query_rows_read += rows_read_inc;
+        last_query_bytes_read += bytes_read_inc;
 
-        double new_rows_speed = rows_read_inc / watch_per_query.elapsedSeconds();
-        double new_bytes_speed = bytes_read_inc / watch_per_query.elapsedSeconds();
+        double new_rows_speed = last_query_rows_read / watch_per_query.elapsedSeconds();
+        double new_bytes_speed = last_query_bytes_read / watch_per_query.elapsedSeconds();
 
         /// Update rows speed
         update_max_speed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
@@ -449,8 +455,10 @@ struct Stats
         sampler.clear();
 
         queries = 0;
-        rows_read = 0;
-        bytes_read = 0;
+        total_rows_read = 0;
+        total_bytes_read = 0;
+        last_query_rows_read = 0;
+        last_query_bytes_read = 0;
 
         min_time = std::numeric_limits<UInt64>::max();
         total_time = 0;
@@ -1061,15 +1069,14 @@ private:
     {
         statistics.watch_per_query.restart();
         statistics.last_query_was_cancelled = false;
+        statistics.last_query_rows_read = 0;
+        statistics.last_query_bytes_read = 0;
 
         RemoteBlockInputStream stream(connection, query, &settings, global_context, nullptr, Tables() /*, query_processing_stage*/);
 
-        Progress progress;
-        stream.setProgressCallback(
-            [&progress, &stream, &statistics, &stop_conditions, this](const Progress & value)
+        stream.setProgressCallback([&](const Progress & value)
             {
-                progress.incrementPiecewiseAtomically(value);
-                this->checkFulfilledConditionsAndUpdate(progress, stream, statistics, stop_conditions);
+                this->checkFulfilledConditionsAndUpdate(value, stream, statistics, stop_conditions);
             });
 
         stream.readPrefix();
@@ -1091,8 +1098,8 @@ private:
     {
         statistics.add(progress.rows, progress.bytes);
 
-        stop_conditions.reportRowsRead(statistics.rows_read);
-        stop_conditions.reportBytesReadUncompressed(statistics.bytes_read);
+        stop_conditions.reportRowsRead(statistics.total_rows_read);
+        stop_conditions.reportBytesReadUncompressed(statistics.total_bytes_read);
         stop_conditions.reportTotalTime(statistics.watch.elapsed() / (1000 * 1000));
         stop_conditions.reportMinTimeNotChangingFor(statistics.min_time_watch.elapsed() / (1000 * 1000));
         stop_conditions.reportMaxSpeedNotChangingFor(
@@ -1298,11 +1305,11 @@ public:
                                                           statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "rows_per_second") != metrics.end())
-                        runJSON.set("rows_per_second", double(statistics.rows_read) /
+                        runJSON.set("rows_per_second", double(statistics.total_rows_read) /
                                                        statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "bytes_per_second") != metrics.end())
-                        runJSON.set("bytes_per_second", double(statistics.bytes_read) /
+                        runJSON.set("bytes_per_second", double(statistics.total_bytes_read) /
                                                         statistics.total_time);
                 }
                 else
