@@ -608,7 +608,7 @@ private:
     }
 
     template <typename T0, typename T1>
-    bool executeNumConstRightType(Block & block, size_t result, const ColumnConst<T0> * col_left, const IColumn * col_right_untyped)
+    bool executeNumConstRightType(Block & block, size_t result, const ColumnConst * col_left, const IColumn * col_right_untyped)
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
@@ -617,14 +617,14 @@ private:
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_vector(col_left->getData(), col_right->getData(), vec_res);
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             UInt8 res = 0;
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->getData(), col_right->template getValue<T1>(), res);
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
 
             auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), res);
             block.safeGetByPosition(result).column = col_res;
@@ -698,7 +698,7 @@ private:
         {
             auto c_res = DataTypeUInt8().createConstColumn(c0_const->size(), 0);
             block.safeGetByPosition(result).column = c_res;
-            StringImpl::constant_constant(c0_const->getData(), c1_const->getData(), c_res->getData());
+            StringImpl::constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), c_res->getData());
         }
         else
         {
@@ -720,7 +720,7 @@ private:
             else if (c0_string && c1_const)
                 StringImpl::string_vector_constant(
                     c0_string->getChars(), c0_string->getOffsets(),
-                    c1_const->getData(),
+                    c1_const->getValue<String>(),
                     c_res->getData());
             else if (c0_fixed_string && c1_string)
                 StringImpl::fixed_string_vector_string_vector(
@@ -735,16 +735,16 @@ private:
             else if (c0_fixed_string && c1_const)
                 StringImpl::fixed_string_vector_constant(
                     c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                    c1_const->getData(),
+                    c1_const->getValue<String>(),
                     c_res->getData());
             else if (c0_const && c1_string)
                 StringImpl::constant_string_vector(
-                    c0_const->getData(),
+                    c0_const->getValue<String>(),
                     c1_string->getChars(), c1_string->getOffsets(),
                     c_res->getData());
             else if (c0_const && c1_fixed_string)
                 StringImpl::constant_fixed_string_vector(
-                    c0_const->getData(),
+                    c0_const->getValue<String>(),
                     c1_fixed_string->getChars(), c1_fixed_string->getN(),
                     c_res->getData());
             else
@@ -789,15 +789,16 @@ private:
         if (is_date)
         {
             DayNum_t date;
-            ReadBufferFromString in(column_string->getData());
+            ReadBufferFromString in(column_string->getValue<String>());
             readDateText(date, in);
             if (!in.eof())
-                throw Exception("String is too long for Date: " + column_string->getData());
+                throw Exception("String is too long for Date: " + column_string->getValue<String>());
 
-            ColumnConst<DataTypeDate::FieldType> parsed_const_date(block.rows(), date);
+            ColumnPtr parsed_const_date_holder = DataTypeDate().createConstColumn(block.rows(), date);
+            const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
-                left_is_num ? col_left_untyped : &parsed_const_date,
-                left_is_num ? &parsed_const_date : col_right_untyped);
+                left_is_num ? col_left_untyped : parsed_const_date,
+                left_is_num ? parsed_const_date : col_right_untyped);
         }
         else if (is_date_time)
         {
@@ -807,10 +808,11 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for DateTime: " + column_string->getData());
 
-            ColumnConst<DataTypeDateTime::FieldType> parsed_const_date_time(block.rows(), date_time);
+            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createConstColumn(block.rows(), date_time);
+            const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
             executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
-                left_is_num ? col_left_untyped : &parsed_const_date_time,
-                left_is_num ? &parsed_const_date_time : col_right_untyped);
+                left_is_num ? col_left_untyped : parsed_const_date_time,
+                left_is_num ? parsed_const_date_time : col_right_untyped);
         }
         else if (is_uuid)
         {
@@ -820,10 +822,11 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for UUID: " + column_string->getData());
 
-            ColumnConst<DataTypeUUID::FieldType> parsed_const_uuid(block.rows(), uuid);
+            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createConstColumn(block.rows(), uuid);
+            const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
-                left_is_num ? col_left_untyped : &parsed_const_uuid,
-                left_is_num ? &parsed_const_uuid : col_right_untyped);
+                left_is_num ? col_left_untyped : parsed_const_uuid,
+                left_is_num ? parsed_const_uuid : col_right_untyped);
         }
 
         else if (is_enum8)

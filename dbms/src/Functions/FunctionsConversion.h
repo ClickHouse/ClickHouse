@@ -1500,7 +1500,7 @@ private:
             else if (const auto const_col = checkAndGetColumnConst<ColumnString>(first_col))
             {
                 result_col = result_type.createConstColumn(const_col->size(),
-                    nearestFieldType(result_type.getValue(const_col->getData())));
+                    nearestFieldType(result_type.getValue(const_col->getValue<String>())));
             }
             else
                 throw Exception{
@@ -1718,7 +1718,7 @@ public:
             throw Exception("Second argument to " + getName() + " must be a constant string describing type",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        out_return_type = DataTypeFactory::instance().get(type_col->getData());
+        out_return_type = DataTypeFactory::instance().get(type_col->getValue<String>());
 
         /// Determine whether pre-processing and/or post-processing must take
         /// place during conversion.

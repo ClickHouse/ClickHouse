@@ -891,7 +891,7 @@ bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers 
     if (!col_array)
         return false;
 
-    const Array & array = col_array->getValue<Array>();
+    Array array = col_array->getValue<Array>();
     size_t array_size = array.size();
     size_t real_index = 0;
 
@@ -928,7 +928,7 @@ bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arg
     if (!col_array)
         return false;
 
-    const Array & array = col_array->getData();
+    Array array = col_array->getValue<Array>();
     size_t array_size = array.size();
 
     block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createColumn();
@@ -1082,7 +1082,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         col_const_array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
         if (col_const_array)
         {
-            const auto & arr = col_const_array->getData();
+            Array arr = col_const_array->getValue<Array>();
             is_nullable = std::any_of(arr.begin(), arr.end(), [](const Field & f){ return f.isNull(); });
         }
         else
@@ -1141,7 +1141,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
                 }
             };
 
-            builder.initSource(col_const_array->getData());
+            builder.initSource(col_const_array->getValue<Array>());
         }
 
         perform(source_block, {0, 1}, 2, builder);
@@ -1248,7 +1248,7 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
     }
     else if (const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get()))
     {
-        const Array & values = array->getData();
+        Array values = array->getValue<Array>();
 
         Array res_values(values.size());
         for (size_t i = 0; i < values.size(); ++i)
@@ -1476,7 +1476,7 @@ bool FunctionArrayUniq::executeConst(Block & block, const ColumnNumbers & argume
     const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
     if (!array)
         return false;
-    const Array & values = array->getData();
+    Array values = array->getValue<Array>();
 
     std::set<Field> set;
     for (size_t i = 0; i < values.size(); ++i)
@@ -1798,7 +1798,7 @@ bool FunctionArrayEnumerateUniq::executeConst(Block & block, const ColumnNumbers
     const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get());
     if (!array)
         return false;
-    const Array & values = array->getData();
+    Array values = array->getValue<Array>();
 
     Array res_values(values.size());
     std::map<Field, UInt32> indices;
@@ -1927,7 +1927,7 @@ namespace
         {
             if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
             {
-                if (const_array->getData().empty())
+                if (const_array->getValue<Array>().empty())
                 {
                     auto nested_type = typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
@@ -2362,7 +2362,7 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
     }
     else if (const auto in = checkAndGetColumnConst<ColumnVector<T>>(arg))
     {
-        const auto & in_data = in->getData();
+        T in_data = in->template getValue<T>();
         if ((in_data != 0) && (in->size() > (std::numeric_limits<std::size_t>::max() / in_data)))
             throw Exception{
                 "A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
@@ -2371,8 +2371,8 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, co
         const std::size_t total_values = in->size() * in_data;
         if (total_values > max_elements)
             throw Exception{
-                "A call to function " + getName() + " would produce " + std::to_string(total_values) +
-                    " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
+                "A call to function " + getName() + " would produce " + toString(total_values) +
+                    " array elements, which is greater than the allowed maximum of " + toString(max_elements),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
         const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
@@ -2498,7 +2498,7 @@ bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arg
 {
     if (const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get()))
     {
-        const Array & arr = const_array->getData();
+        Array arr = const_array->getValue<Array>();
 
         size_t size = arr.size();
         Array res(size);
@@ -2765,7 +2765,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
 
     if (!aggregate_function)
     {
-        const String & aggregate_function_name_with_params = aggregate_function_name_column->getData();
+        const String & aggregate_function_name_with_params = aggregate_function_name_column->getValue<Array>();
 
         if (aggregate_function_name_with_params.empty())
             throw Exception("First argument for function " + getName() + " (name of aggregate function) cannot be empty.",

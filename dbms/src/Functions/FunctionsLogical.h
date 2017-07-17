@@ -392,10 +392,10 @@ private:
 
             return true;
         }
-        else if (ColumnConst<T> * col = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             UInt8 res = 0;
-            UnaryOperationImpl<T, Impl<T> >::constant(col->getData(), res);
+            UnaryOperationImpl<T, Impl<T> >::constant(col->template getValue<T>(), res);
 
             auto col_res = DataTypeUInt8().createConstColumn(col->size(), res);
             block.safeGetByPosition(result).column = col_res;
