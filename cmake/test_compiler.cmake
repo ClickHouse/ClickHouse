@@ -1,4 +1,7 @@
 include (CheckCXXSourceCompiles)
+include (CMakePushCheckState)
+
+cmake_push_check_state ()
 
 set (TEST_FLAG "-no-pie")
 set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
@@ -14,3 +17,5 @@ set (CMAKE_REQUIRED_FLAGS "")
 if (HAVE_NO_PIE)
     set (FLAG_NO_PIE ${TEST_FLAG})
 endif ()
+
+cmake_pop_check_state ()

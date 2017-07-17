@@ -1,3 +1,6 @@
+include (CMakePushCheckState)
+cmake_push_check_state ()
+
 if (CMAKE_SYSTEM MATCHES "Linux")
     option (USE_INTERNAL_UNWIND_LIBRARY "Set to FALSE to use system unwind library instead of bundled" ${NOT_UNBUNDLED})
 else ()
@@ -41,3 +44,5 @@ elseif (CMAKE_SYSTEM MATCHES "Linux")
 endif ()
 
 message (STATUS "Using unwind=${USE_UNWIND}: ${UNWIND_INCLUDE_DIR} : ${UNWIND_LIBRARY}")
+
+cmake_pop_check_state ()
