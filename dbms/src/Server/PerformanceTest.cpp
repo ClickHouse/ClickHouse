@@ -1409,7 +1409,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             ("skip-names",           value<Strings>()->multitoken(),                     "Do not run tests with name")
             ("names-regexp",         value<Strings>()->multitoken(),                     "Run tests with names matching regexp")
             ("skip-names-regexp",    value<Strings>()->multitoken(),                     "Do not run tests with names matching regexp")
-            ("recursive",            value<bool>()->default_value(false),                "Recurse in directories to find all xml's");
+            ("recursive,r",                                                              "Recurse in directories to find all xml's");
 
         /// These options will not be displayed in --help
         boost::program_options::options_description hidden("Hidden options");
@@ -1435,7 +1435,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
         }
 
         Strings input_files;
-        bool recursive = options["recursive"].as<bool>();
+        bool recursive = options.count("recursive");
 
         if (!options.count("input-files"))
         {
