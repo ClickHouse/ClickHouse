@@ -879,7 +879,7 @@ private:
         if (col_right_vec)
             NumIfImpl<T0, T1, ResultType>::vector_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
         else
-            NumIfImpl<T0, T1, ResultType>::vector_constant(cond_col->getData(), col_left->getData(), col_right_const->getData(), block, result);
+            NumIfImpl<T0, T1, ResultType>::vector_constant(cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), block, result);
 
         return true;
     }
@@ -901,9 +901,9 @@ private:
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
         if (col_right_vec)
-            NumIfImpl<T0, T1, ResultType>::constant_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
+            NumIfImpl<T0, T1, ResultType>::constant_vector(cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), block, result);
         else
-            NumIfImpl<T0, T1, ResultType>::constant_constant(cond_col->getData(), col_left->getData(), col_right_const->getData(), block, result);
+            NumIfImpl<T0, T1, ResultType>::constant_constant(cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), block, result);
 
         return true;
     }
@@ -949,7 +949,7 @@ private:
             NumArrayIfImpl<T0, T1, ResultType>::vector_constant(
                 cond_col->getData(),
                 col_left->getData(), col_left_array->getOffsets(),
-                col_right_const_array->getData(),
+                col_right_const_array->getValue<Array>(),
                 block, result);
         }
 
@@ -983,7 +983,7 @@ private:
 
             NumArrayIfImpl<T0, T1, ResultType>::constant_vector(
                 cond_col->getData(),
-                col_left_const_array->getData(),
+                col_left_const_array->getValue<Array>(),
                 col_right_vec->getData(), col_right_array->getOffsets(),
                 block, result);
         }
@@ -995,8 +995,8 @@ private:
 
             NumArrayIfImpl<T0, T1, ResultType>::constant_constant(
                 cond_col->getData(),
-                col_left_const_array->getData(),
-                col_right_const_array->getData(),
+                col_left_const_array->getValue<Array>(),
+                col_right_const_array->getValue<Array>(),
                 block, result);
         }
 
@@ -1031,16 +1031,16 @@ private:
 
         if (col_left)
         {
-            if (    executeRightType<T0, UInt8>(cond_col, block, arguments, result, col_left)
-                ||    executeRightType<T0, UInt16>(cond_col, block, arguments, result, col_left)
-                ||    executeRightType<T0, UInt32>(cond_col, block, arguments, result, col_left)
-                ||    executeRightType<T0, UInt64>(cond_col, block, arguments, result, col_left)
-                ||    executeRightType<T0, Int8>(cond_col, block, arguments, result, col_left)
-                ||    executeRightType<T0, Int16>(cond_col, block, arguments, result, col_left)
-                ||    executeRightType<T0, Int32>(cond_col, block, arguments, result, col_left)
-                ||    executeRightType<T0, Int64>(cond_col, block, arguments, result, col_left)
-                ||    executeRightType<T0, Float32>(cond_col, block, arguments, result, col_left)
-                ||    executeRightType<T0, Float64>(cond_col, block, arguments, result, col_left))
+            if (   executeRightType<T0, UInt8>(cond_col, block, arguments, result, col_left)
+                || executeRightType<T0, UInt16>(cond_col, block, arguments, result, col_left)
+                || executeRightType<T0, UInt32>(cond_col, block, arguments, result, col_left)
+                || executeRightType<T0, UInt64>(cond_col, block, arguments, result, col_left)
+                || executeRightType<T0, Int8>(cond_col, block, arguments, result, col_left)
+                || executeRightType<T0, Int16>(cond_col, block, arguments, result, col_left)
+                || executeRightType<T0, Int32>(cond_col, block, arguments, result, col_left)
+                || executeRightType<T0, Int64>(cond_col, block, arguments, result, col_left)
+                || executeRightType<T0, Float32>(cond_col, block, arguments, result, col_left)
+                || executeRightType<T0, Float64>(cond_col, block, arguments, result, col_left))
                 return true;
             else
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
@@ -1049,16 +1049,16 @@ private:
         }
         else if (col_const_left)
         {
-            if (    executeConstRightType<T0, UInt8>(cond_col, block, arguments, result, col_const_left)
-                ||    executeConstRightType<T0, UInt16>(cond_col, block, arguments, result, col_const_left)
-                ||    executeConstRightType<T0, UInt32>(cond_col, block, arguments, result, col_const_left)
-                ||    executeConstRightType<T0, UInt64>(cond_col, block, arguments, result, col_const_left)
-                ||    executeConstRightType<T0, Int8>(cond_col, block, arguments, result, col_const_left)
-                ||    executeConstRightType<T0, Int16>(cond_col, block, arguments, result, col_const_left)
-                ||    executeConstRightType<T0, Int32>(cond_col, block, arguments, result, col_const_left)
-                ||    executeConstRightType<T0, Int64>(cond_col, block, arguments, result, col_const_left)
-                ||    executeConstRightType<T0, Float32>(cond_col, block, arguments, result, col_const_left)
-                ||    executeConstRightType<T0, Float64>(cond_col, block, arguments, result, col_const_left))
+            if (   executeConstRightType<T0, UInt8>(cond_col, block, arguments, result, col_const_left)
+                || executeConstRightType<T0, UInt16>(cond_col, block, arguments, result, col_const_left)
+                || executeConstRightType<T0, UInt32>(cond_col, block, arguments, result, col_const_left)
+                || executeConstRightType<T0, UInt64>(cond_col, block, arguments, result, col_const_left)
+                || executeConstRightType<T0, Int8>(cond_col, block, arguments, result, col_const_left)
+                || executeConstRightType<T0, Int16>(cond_col, block, arguments, result, col_const_left)
+                || executeConstRightType<T0, Int32>(cond_col, block, arguments, result, col_const_left)
+                || executeConstRightType<T0, Int64>(cond_col, block, arguments, result, col_const_left)
+                || executeConstRightType<T0, Float32>(cond_col, block, arguments, result, col_const_left)
+                || executeConstRightType<T0, Float64>(cond_col, block, arguments, result, col_const_left))
                 return true;
             else
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
@@ -1067,16 +1067,16 @@ private:
         }
         else if (col_arr_left && col_arr_left_elems)
         {
-            if (    executeRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                ||    executeRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                ||    executeRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                ||    executeRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                ||    executeRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                ||    executeRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                ||    executeRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                ||    executeRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                ||    executeRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                ||    executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems))
+            if (   executeRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+                || executeRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+                || executeRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+                || executeRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+                || executeRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+                || executeRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+                || executeRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+                || executeRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+                || executeRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
+                || executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems))
                 return true;
             else
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
@@ -1087,16 +1087,16 @@ private:
             && typeid_cast<const DataTypeNumber<T0> *>(
                 typeid_cast<const DataTypeArray &>(*col_const_arr_left->getDataType()).getNestedType().get()))
         {
-            if (    executeConstRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_const_arr_left)
-                ||    executeConstRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_const_arr_left)
-                ||    executeConstRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_const_arr_left)
-                ||    executeConstRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_const_arr_left)
-                ||    executeConstRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_const_arr_left)
-                ||    executeConstRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_const_arr_left)
-                ||    executeConstRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_const_arr_left)
-                ||    executeConstRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_const_arr_left)
-                ||    executeConstRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_const_arr_left)
-                ||    executeConstRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_const_arr_left))
+            if (   executeConstRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_const_arr_left)
+                || executeConstRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_const_arr_left)
+                || executeConstRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_const_arr_left)
+                || executeConstRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_const_arr_left)
+                || executeConstRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_const_arr_left)
+                || executeConstRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_const_arr_left)
+                || executeConstRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_const_arr_left)
+                || executeConstRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_const_arr_left)
+                || executeConstRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_const_arr_left)
+                || executeConstRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_const_arr_left))
                 return true;
             else
                 throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
