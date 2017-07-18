@@ -137,7 +137,7 @@ private:
         }
         else if (const auto col = checkAndGetColumnConst<ColumnVector<FieldType>>(arg))
         {
-            const FieldType src[Impl::rows_per_iteration] { col->getData() };
+            const FieldType src[Impl::rows_per_iteration] { col->template getValue<FieldType>() };
             Float64 dst[Impl::rows_per_iteration];
 
             Impl::execute(src, dst);
@@ -259,7 +259,7 @@ private:
             block.safeGetByPosition(result).column = dst;
 
             LeftType left_src_data[Impl::rows_per_iteration];
-            std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->getData());
+            std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
             const auto & right_src_data = right_arg_typed->getData();
             const auto src_size = right_src_data.size();
             auto & dst_data = dst->getData();
@@ -287,8 +287,8 @@ private:
         }
         else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
-            const LeftType left_src[Impl::rows_per_iteration] { left_arg->getData() };
-            const RightType right_src[Impl::rows_per_iteration] { right_arg_typed->getData() };
+            const LeftType left_src[Impl::rows_per_iteration] { left_arg->template getValue<LeftType>() };
+            const RightType right_src[Impl::rows_per_iteration] { right_arg_typed->template getValue<RightType>() };
             Float64 dst[Impl::rows_per_iteration];
 
             Impl::execute(left_src, right_src, dst);
@@ -346,7 +346,7 @@ private:
 
             const auto & left_src_data = left_arg->getData();
             RightType right_src_data[Impl::rows_per_iteration];
-            std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->getData());
+            std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->template getValue<RightType>());
             const auto src_size = left_src_data.size();
             auto & dst_data = dst->getData();
             dst_data.resize(src_size);
@@ -375,11 +375,11 @@ private:
         return false;
     }
 
-    template <typename LeftType, template <typename> class LeftColumnType>
+    template <typename LeftType, typename LeftColumnType>
     bool executeLeftImpl(Block & block, const ColumnNumbers & arguments, const size_t result,
         const IColumn * left_arg)
     {
-        if (const auto left_arg_typed = typeid_cast<const LeftColumnType<LeftType> *>(left_arg))
+        if (const auto left_arg_typed = typeid_cast<const LeftColumnType *>(left_arg))
         {
             const auto right_arg = block.safeGetByPosition(arguments[1]).column.get();
 
@@ -401,8 +401,7 @@ private:
                 throw Exception{
                     "Illegal column " + block.safeGetByPosition(arguments[1]).column->getName() +
                     " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN
-                };
+                    ErrorCodes::ILLEGAL_COLUMN};
             }
         }
 
@@ -413,7 +412,7 @@ private:
     bool executeLeft(Block & block, const ColumnNumbers & arguments, const size_t result,
         const IColumn * left_arg)
     {
-        if (executeLeftImpl<LeftType, ColumnVector>(block, arguments, result, left_arg) ||
+        if (executeLeftImpl<LeftType, ColumnVector<LeftType>>(block, arguments, result, left_arg) ||
             executeLeftImpl<LeftType, ColumnConst>(block, arguments, result, left_arg))
             return true;
 

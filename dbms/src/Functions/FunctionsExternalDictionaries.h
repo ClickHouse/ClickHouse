@@ -1045,7 +1045,7 @@ private:
             PaddedPODArray<Type> data(1);
             DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
 
-            block.safeGetByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), data.front());
+            block.safeGetByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), toField(data.front()));
         }
         else
         {

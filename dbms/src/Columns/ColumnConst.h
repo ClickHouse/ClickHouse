@@ -246,6 +246,7 @@ public:
 
     IColumn & getDataColumn() { return *data; }
     const IColumn & getDataColumn() const { return *data; }
+    const ColumnPtr & getDataColumnPtr() const { return data; }
 
     Field getField() const { return getDataColumn()[0]; }
 

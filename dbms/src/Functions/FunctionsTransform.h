@@ -199,7 +199,7 @@ private:
         ColumnNumbers tmp_arguments;
 
         tmp_block.insert(block.safeGetByPosition(arguments[0]));
-        tmp_block.safeGetByPosition(0).column = static_cast<IColumnConst *>(tmp_block.safeGetByPosition(0).column->cloneResized(1).get())->convertToFullColumn();
+        tmp_block.safeGetByPosition(0).column = static_cast<const ColumnConst *>(tmp_block.safeGetByPosition(0).column.get())->getDataColumnPtr();
         tmp_arguments.push_back(0);
 
         for (size_t i = 1; i < arguments.size(); ++i)
@@ -773,7 +773,7 @@ private:
         if (arguments.size() == 4)
         {
             const IColumn * default_col = block.safeGetByPosition(arguments[3]).column.get();
-            const IColumnConst * const_default_col = dynamic_cast<const IColumnConst *>(default_col);
+            const ColumnConst * const_default_col = typeid_cast<const ColumnConst *>(default_col);
 
             if (const_default_col)
                 const_default_value = (*const_default_col)[0];
