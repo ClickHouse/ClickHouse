@@ -1,4 +1,6 @@
 #include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnTuple.h>
+
 
 namespace DB
 {

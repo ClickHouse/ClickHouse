@@ -1954,12 +1954,8 @@ namespace
             if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
             {
                 const PaddedPODArray<T> & src_data = src_data_concrete->getData();
+                PaddedPODArray<T> & res_data = static_cast<ColumnVector<T> &>(res_data_col).getData();
 
-                auto concrete_res_data = checkAndGetColumn<ColumnVector<T>>(&res_data_col);
-                if (concrete_res_data == nullptr)
-                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
-                PaddedPODArray<T> & res_data = concrete_res_data->getData();
                 size_t size = src_offsets.size();
                 res_offsets.resize(size);
                 res_data.reserve(src_data.size());
@@ -2014,7 +2010,7 @@ namespace
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
-            if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
+            if (const ColumnFixedString * src_data_concrete = checkAndGetColumn<ColumnFixedString>(&src_data))
             {
                 const size_t n = src_data_concrete->getN();
                 const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
@@ -2316,7 +2312,7 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 }
 
 template <typename T>
-bool FunctionRange::executeInternal(Block & block, const IColumn * const arg, const size_t result)
+bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const size_t result)
 {
     if (const auto in = checkAndGetColumn<ColumnVector<T>>(arg))
     {
@@ -2575,7 +2571,7 @@ bool FunctionArrayReverse::executeFixedString(
     const ColumnNullable * nullable_col,
     ColumnNullable * nullable_res_col)
 {
-    if (const ColumnFixedString * src_data_concrete = typeid_cast<const ColumnFixedString *>(&src_data))
+    if (const ColumnFixedString * src_data_concrete = checkAndGetColumn<ColumnFixedString>(&src_data))
     {
         const size_t n = src_data_concrete->getN();
         const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
@@ -2765,7 +2761,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
 
     if (!aggregate_function)
     {
-        const String & aggregate_function_name_with_params = aggregate_function_name_column->getValue<Array>();
+        const String & aggregate_function_name_with_params = aggregate_function_name_column->getValue<String>();
 
         if (aggregate_function_name_with_params.empty())
             throw Exception("First argument for function " + getName() + " (name of aggregate function) cannot be empty.",

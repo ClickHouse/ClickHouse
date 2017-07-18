@@ -525,22 +525,22 @@ public:
         double seconds;
         size_t size = col->size();
 
-        if (ColumnConst<Float64> * column = checkAndGetColumnConst<ColumnVector<Float64>>(col))
+        if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<Float64>>(col))
             seconds = column->getData();
 
-        else if (ColumnConst<Float32> * column = checkAndGetColumnConst<ColumnVector<Float32>>(col))
+        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<Float32>>(col))
             seconds = static_cast<double>(column->getData());
 
-        else if (ColumnConst<UInt64> * column = checkAndGetColumnConst<ColumnVector<UInt64>>(col))
+        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<UInt64>>(col))
             seconds = static_cast<double>(column->getData());
 
-        else if (ColumnConst<UInt32> * column = checkAndGetColumnConst<ColumnVector<UInt32>>(col))
+        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<UInt32>>(col))
             seconds = static_cast<double>(column->getData());
 
-        else if (ColumnConst<UInt16> * column = checkAndGetColumnConst<ColumnVector<UInt16>>(col))
+        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<UInt16>>(col))
             seconds = static_cast<double>(column->getData());
 
-        else if (ColumnConst<UInt8> * column = checkAndGetColumnConst<ColumnVector<UInt8>>(col))
+        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<UInt8>>(col))
             seconds = static_cast<double>(column->getData());
 
         else
@@ -551,7 +551,7 @@ public:
             usleep(static_cast<unsigned>(seconds * 1e6));
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
-        block.safeGetByPosition(result).column = ColumnConst<UInt8>(size, 0).convertToFullColumn();
+        block.safeGetByPosition(result).column = ColumnConst(size, 0).convertToFullColumn();
     }
 };
 

@@ -30,7 +30,7 @@ namespace ErrorCodes
   * Etc.
   */
 
-template<typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
+template <typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
 struct BinaryOperationImplBase
 {
     using ResultType = ResultType_;
@@ -62,13 +62,13 @@ struct BinaryOperationImplBase
     }
 };
 
-template<typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
+template <typename A, typename B, typename Op, typename ResultType = typename Op::ResultType>
 struct BinaryOperationImpl : BinaryOperationImplBase<A, B, Op, ResultType>
 {
 };
 
 
-template<typename A, typename Op>
+template <typename A, typename Op>
 struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
@@ -87,7 +87,7 @@ struct UnaryOperationImpl
 };
 
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct PlusImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
@@ -101,7 +101,7 @@ struct PlusImpl
 };
 
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct MultiplyImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
@@ -113,7 +113,7 @@ struct MultiplyImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct MinusImpl
 {
     using ResultType = typename NumberTraits::ResultOfSubtraction<A, B>::Type;
@@ -125,7 +125,7 @@ struct MinusImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct DivideFloatingImpl
 {
     using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
@@ -173,7 +173,7 @@ inline bool divisionLeadsToFPE(A a, B b)
 #pragma GCC diagnostic pop
 
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct DivideIntegralImpl
 {
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
@@ -186,7 +186,7 @@ struct DivideIntegralImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct DivideIntegralOrZeroImpl
 {
     using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
@@ -198,7 +198,7 @@ struct DivideIntegralOrZeroImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct ModuloImpl
 {
     using ResultType = typename NumberTraits::ResultOfModulo<A, B>::Type;
@@ -212,7 +212,7 @@ struct ModuloImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct BitAndImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
@@ -225,7 +225,7 @@ struct BitAndImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct BitOrImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
@@ -238,7 +238,7 @@ struct BitOrImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct BitXorImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
@@ -251,7 +251,7 @@ struct BitXorImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct BitShiftLeftImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
@@ -264,7 +264,7 @@ struct BitShiftLeftImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct BitShiftRightImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
@@ -277,7 +277,7 @@ struct BitShiftRightImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct BitRotateLeftImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
@@ -290,7 +290,7 @@ struct BitRotateLeftImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct BitRotateRightImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
@@ -304,7 +304,41 @@ struct BitRotateRightImpl
 };
 
 
-template<typename A, typename B>
+template <typename T>
+std::enable_if_t<std::is_integral<T>::value, T> toInteger(T x) { return x; }
+
+template <typename T>
+std::enable_if_t<std::is_floating_point<T>::value, Int64> toInteger(T x) { return Int64(x); }
+
+template <typename A, typename B>
+struct BitTestImpl
+{
+    using ResultType = UInt8;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b) { return (toInteger(a) >> toInteger(b)) & 1; };
+};
+
+template <typename A, typename B>
+struct BitTestAnyImpl
+{
+    using ResultType = UInt8;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b) { return (toInteger(a) & toInteger(b)) != 0; };
+};
+
+template <typename A, typename B>
+struct BitTestAllImpl
+{
+    using ResultType = UInt8;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b) { return (toInteger(a) & toInteger(b)) == b; };
+};
+
+
+template <typename A, typename B>
 struct LeastBaseImpl
 {
     using ResultType = NumberTraits::ResultOfLeast<A, B>;
@@ -317,7 +351,7 @@ struct LeastBaseImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct LeastSpecialImpl
 {
     using ResultType = std::make_signed_t<A>;
@@ -330,11 +364,11 @@ struct LeastSpecialImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 using LeastImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, B>::value, LeastBaseImpl<A, B>, LeastSpecialImpl<A, B>>;
 
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct GreatestBaseImpl
 {
     using ResultType = NumberTraits::ResultOfGreatest<A, B>;
@@ -346,7 +380,7 @@ struct GreatestBaseImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 struct GreatestSpecialImpl
 {
     using ResultType = std::make_unsigned_t<A>;
@@ -359,11 +393,11 @@ struct GreatestSpecialImpl
     }
 };
 
-template<typename A, typename B>
+template <typename A, typename B>
 using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<A, B>::value, GreatestBaseImpl<A, B>, GreatestSpecialImpl<A, B>>;
 
 
-template<typename A>
+template <typename A>
 struct NegateImpl
 {
     using ResultType = typename NumberTraits::ResultOfNegate<A>::Type;
@@ -374,7 +408,7 @@ struct NegateImpl
     }
 };
 
-template<typename A>
+template <typename A>
 struct BitNotImpl
 {
     using ResultType = typename NumberTraits::ResultOfBitNot<A>::Type;
@@ -385,26 +419,26 @@ struct BitNotImpl
     }
 };
 
-template<typename A>
+template <typename A>
 struct AbsImpl
 {
     using ResultType = typename NumberTraits::ResultOfAbs<A>::Type;
 
-    template<typename T = A>
+    template <typename T = A>
     static inline ResultType apply(T a,
         typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, void>::type * = nullptr)
     {
         return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
     }
 
-    template<typename T = A>
+    template <typename T = A>
     static inline ResultType apply(T a,
         typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value, void>::type * = nullptr)
     {
         return static_cast<ResultType>(a);
     }
 
-    template<typename T = A>
+    template <typename T = A>
     static inline ResultType apply(T a, typename std::enable_if<std::is_floating_point<T>::value, void>::type * = nullptr)
     {
         return static_cast<ResultType>(std::abs(a));
@@ -685,7 +719,7 @@ private:
         {
             ResultType res = 0;
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-            block.safeGetByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), res);
+            block.safeGetByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), toField(res));
 
             return true;
         }
@@ -761,18 +795,18 @@ public:
     {
         DataTypePtr type_res;
 
-        if (!(    checkLeftType<DataTypeDate>(arguments, type_res)
-            ||    checkLeftType<DataTypeDateTime>(arguments, type_res)
-            ||    checkLeftType<DataTypeUInt8>(arguments, type_res)
-            ||    checkLeftType<DataTypeUInt16>(arguments, type_res)
-            ||    checkLeftType<DataTypeUInt32>(arguments, type_res)
-            ||    checkLeftType<DataTypeUInt64>(arguments, type_res)
-            ||    checkLeftType<DataTypeInt8>(arguments, type_res)
-            ||    checkLeftType<DataTypeInt16>(arguments, type_res)
-            ||    checkLeftType<DataTypeInt32>(arguments, type_res)
-            ||    checkLeftType<DataTypeInt64>(arguments, type_res)
-            ||    checkLeftType<DataTypeFloat32>(arguments, type_res)
-            ||    checkLeftType<DataTypeFloat64>(arguments, type_res)))
+        if (!( checkLeftType<DataTypeDate>(arguments, type_res)
+            || checkLeftType<DataTypeDateTime>(arguments, type_res)
+            || checkLeftType<DataTypeUInt8>(arguments, type_res)
+            || checkLeftType<DataTypeUInt16>(arguments, type_res)
+            || checkLeftType<DataTypeUInt32>(arguments, type_res)
+            || checkLeftType<DataTypeUInt64>(arguments, type_res)
+            || checkLeftType<DataTypeInt8>(arguments, type_res)
+            || checkLeftType<DataTypeInt16>(arguments, type_res)
+            || checkLeftType<DataTypeInt32>(arguments, type_res)
+            || checkLeftType<DataTypeInt64>(arguments, type_res)
+            || checkLeftType<DataTypeFloat32>(arguments, type_res)
+            || checkLeftType<DataTypeFloat64>(arguments, type_res)))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -781,18 +815,18 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!(  executeLeftType<DataTypeDate>(block, arguments, result)
-            ||  executeLeftType<DataTypeDateTime>(block, arguments, result)
-            ||  executeLeftType<DataTypeUInt8>(block, arguments, result)
-            ||    executeLeftType<DataTypeUInt16>(block, arguments, result)
-            ||    executeLeftType<DataTypeUInt32>(block, arguments, result)
-            ||    executeLeftType<DataTypeUInt64>(block, arguments, result)
-            ||    executeLeftType<DataTypeInt8>(block, arguments, result)
-            ||    executeLeftType<DataTypeInt16>(block, arguments, result)
-            ||    executeLeftType<DataTypeInt32>(block, arguments, result)
-            ||    executeLeftType<DataTypeInt64>(block, arguments, result)
-            ||    executeLeftType<DataTypeFloat32>(block, arguments, result)
-            ||    executeLeftType<DataTypeFloat64>(block, arguments, result)))
+        if (!( executeLeftType<DataTypeDate>(block, arguments, result)
+            || executeLeftType<DataTypeDateTime>(block, arguments, result)
+            || executeLeftType<DataTypeUInt8>(block, arguments, result)
+            || executeLeftType<DataTypeUInt16>(block, arguments, result)
+            || executeLeftType<DataTypeUInt32>(block, arguments, result)
+            || executeLeftType<DataTypeUInt64>(block, arguments, result)
+            || executeLeftType<DataTypeInt8>(block, arguments, result)
+            || executeLeftType<DataTypeInt16>(block, arguments, result)
+            || executeLeftType<DataTypeInt32>(block, arguments, result)
+            || executeLeftType<DataTypeInt64>(block, arguments, result)
+            || executeLeftType<DataTypeFloat32>(block, arguments, result)
+            || executeLeftType<DataTypeFloat64>(block, arguments, result)))
            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -928,6 +962,9 @@ struct NameBitShiftLeft         { static constexpr auto name = "bitShiftLeft"; }
 struct NameBitShiftRight        { static constexpr auto name = "bitShiftRight"; };
 struct NameBitRotateLeft        { static constexpr auto name = "bitRotateLeft"; };
 struct NameBitRotateRight       { static constexpr auto name = "bitRotateRight"; };
+struct NameBitTest              { static constexpr auto name = "bitTest"; };
+struct NameBitTestAny           { static constexpr auto name = "bitTestAny"; };
+struct NameBitTestAll           { static constexpr auto name = "bitTestAll"; };
 struct NameLeast                { static constexpr auto name = "least"; };
 struct NameGreatest             { static constexpr auto name = "greatest"; };
 
@@ -948,6 +985,9 @@ using FunctionBitShiftLeft = FunctionBinaryArithmetic<BitShiftLeftImpl, NameBitS
 using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl, NameBitShiftRight>;
 using FunctionBitRotateLeft = FunctionBinaryArithmetic<BitRotateLeftImpl, NameBitRotateLeft>;
 using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, NameBitRotateRight>;
+using FunctionBitTest = FunctionBinaryArithmetic<BitTestImpl, NameBitTest>;
+using FunctionBitTestAny = FunctionBinaryArithmetic<BitTestAnyImpl, NameBitTestAny>;
+using FunctionBitTestAll = FunctionBinaryArithmetic<BitTestAllImpl, NameBitTestAll>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
@@ -1082,7 +1122,7 @@ struct ModuloByConstantImpl
         /// Here we failed to make the SSE variant from libdivide give an advantage.
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
-            c[i] = a[i] - (a[i] / divider) * b;    /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
+            c[i] = a[i] - (a[i] / divider) * b; /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
     }
 };
 
@@ -1091,45 +1131,45 @@ struct ModuloByConstantImpl
   * Can be expanded to all possible combinations, but more code is needed.
   */
 
-template <> struct BinaryOperationImpl<UInt64, UInt8,     DivideIntegralImpl<UInt64, UInt8>>     : DivideIntegralByConstantImpl<UInt64, UInt8> {};
-template <> struct BinaryOperationImpl<UInt64, UInt16,    DivideIntegralImpl<UInt64, UInt16>> : DivideIntegralByConstantImpl<UInt64, UInt16> {};
-template <> struct BinaryOperationImpl<UInt64, UInt32,     DivideIntegralImpl<UInt64, UInt32>> : DivideIntegralByConstantImpl<UInt64, UInt32> {};
-template <> struct BinaryOperationImpl<UInt64, UInt64,     DivideIntegralImpl<UInt64, UInt64>> : DivideIntegralByConstantImpl<UInt64, UInt64> {};
+template <> struct BinaryOperationImpl<UInt64, UInt8, DivideIntegralImpl<UInt64, UInt8>> : DivideIntegralByConstantImpl<UInt64, UInt8> {};
+template <> struct BinaryOperationImpl<UInt64, UInt16, DivideIntegralImpl<UInt64, UInt16>> : DivideIntegralByConstantImpl<UInt64, UInt16> {};
+template <> struct BinaryOperationImpl<UInt64, UInt32, DivideIntegralImpl<UInt64, UInt32>> : DivideIntegralByConstantImpl<UInt64, UInt32> {};
+template <> struct BinaryOperationImpl<UInt64, UInt64, DivideIntegralImpl<UInt64, UInt64>> : DivideIntegralByConstantImpl<UInt64, UInt64> {};
 
-template <> struct BinaryOperationImpl<UInt32, UInt8,     DivideIntegralImpl<UInt32, UInt8>>     : DivideIntegralByConstantImpl<UInt32, UInt8> {};
-template <> struct BinaryOperationImpl<UInt32, UInt16,     DivideIntegralImpl<UInt32, UInt16>> : DivideIntegralByConstantImpl<UInt32, UInt16> {};
-template <> struct BinaryOperationImpl<UInt32, UInt32,     DivideIntegralImpl<UInt32, UInt32>> : DivideIntegralByConstantImpl<UInt32, UInt32> {};
-template <> struct BinaryOperationImpl<UInt32, UInt64,     DivideIntegralImpl<UInt32, UInt64>> : DivideIntegralByConstantImpl<UInt32, UInt64> {};
+template <> struct BinaryOperationImpl<UInt32, UInt8, DivideIntegralImpl<UInt32, UInt8>> : DivideIntegralByConstantImpl<UInt32, UInt8> {};
+template <> struct BinaryOperationImpl<UInt32, UInt16, DivideIntegralImpl<UInt32, UInt16>> : DivideIntegralByConstantImpl<UInt32, UInt16> {};
+template <> struct BinaryOperationImpl<UInt32, UInt32, DivideIntegralImpl<UInt32, UInt32>> : DivideIntegralByConstantImpl<UInt32, UInt32> {};
+template <> struct BinaryOperationImpl<UInt32, UInt64, DivideIntegralImpl<UInt32, UInt64>> : DivideIntegralByConstantImpl<UInt32, UInt64> {};
 
-template <> struct BinaryOperationImpl<Int64, Int8,     DivideIntegralImpl<Int64, Int8>>     : DivideIntegralByConstantImpl<Int64, Int8> {};
-template <> struct BinaryOperationImpl<Int64, Int16,     DivideIntegralImpl<Int64, Int16>>     : DivideIntegralByConstantImpl<Int64, Int16> {};
-template <> struct BinaryOperationImpl<Int64, Int32,     DivideIntegralImpl<Int64, Int32>>     : DivideIntegralByConstantImpl<Int64, Int32> {};
-template <> struct BinaryOperationImpl<Int64, Int64,     DivideIntegralImpl<Int64, Int64>>     : DivideIntegralByConstantImpl<Int64, Int64> {};
+template <> struct BinaryOperationImpl<Int64, Int8, DivideIntegralImpl<Int64, Int8>> : DivideIntegralByConstantImpl<Int64, Int8> {};
+template <> struct BinaryOperationImpl<Int64, Int16, DivideIntegralImpl<Int64, Int16>> : DivideIntegralByConstantImpl<Int64, Int16> {};
+template <> struct BinaryOperationImpl<Int64, Int32, DivideIntegralImpl<Int64, Int32>> : DivideIntegralByConstantImpl<Int64, Int32> {};
+template <> struct BinaryOperationImpl<Int64, Int64, DivideIntegralImpl<Int64, Int64>> : DivideIntegralByConstantImpl<Int64, Int64> {};
 
-template <> struct BinaryOperationImpl<Int32, Int8,     DivideIntegralImpl<Int32, Int8>>     : DivideIntegralByConstantImpl<Int32, Int8> {};
-template <> struct BinaryOperationImpl<Int32, Int16,     DivideIntegralImpl<Int32, Int16>>     : DivideIntegralByConstantImpl<Int32, Int16> {};
-template <> struct BinaryOperationImpl<Int32, Int32,     DivideIntegralImpl<Int32, Int32>>     : DivideIntegralByConstantImpl<Int32, Int32> {};
-template <> struct BinaryOperationImpl<Int32, Int64,     DivideIntegralImpl<Int32, Int64>>     : DivideIntegralByConstantImpl<Int32, Int64> {};
+template <> struct BinaryOperationImpl<Int32, Int8, DivideIntegralImpl<Int32, Int8>> : DivideIntegralByConstantImpl<Int32, Int8> {};
+template <> struct BinaryOperationImpl<Int32, Int16, DivideIntegralImpl<Int32, Int16>> : DivideIntegralByConstantImpl<Int32, Int16> {};
+template <> struct BinaryOperationImpl<Int32, Int32, DivideIntegralImpl<Int32, Int32>> : DivideIntegralByConstantImpl<Int32, Int32> {};
+template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, Int64>> : DivideIntegralByConstantImpl<Int32, Int64> {};
 
 
-template <> struct BinaryOperationImpl<UInt64, UInt8,     ModuloImpl<UInt64, UInt8>>     : ModuloByConstantImpl<UInt64, UInt8> {};
-template <> struct BinaryOperationImpl<UInt64, UInt16,    ModuloImpl<UInt64, UInt16>> : ModuloByConstantImpl<UInt64, UInt16> {};
-template <> struct BinaryOperationImpl<UInt64, UInt32,     ModuloImpl<UInt64, UInt32>> : ModuloByConstantImpl<UInt64, UInt32> {};
-template <> struct BinaryOperationImpl<UInt64, UInt64,     ModuloImpl<UInt64, UInt64>> : ModuloByConstantImpl<UInt64, UInt64> {};
+template <> struct BinaryOperationImpl<UInt64, UInt8, ModuloImpl<UInt64, UInt8>> : ModuloByConstantImpl<UInt64, UInt8> {};
+template <> struct BinaryOperationImpl<UInt64, UInt16, ModuloImpl<UInt64, UInt16>> : ModuloByConstantImpl<UInt64, UInt16> {};
+template <> struct BinaryOperationImpl<UInt64, UInt32, ModuloImpl<UInt64, UInt32>> : ModuloByConstantImpl<UInt64, UInt32> {};
+template <> struct BinaryOperationImpl<UInt64, UInt64, ModuloImpl<UInt64, UInt64>> : ModuloByConstantImpl<UInt64, UInt64> {};
 
-template <> struct BinaryOperationImpl<UInt32, UInt8,     ModuloImpl<UInt32, UInt8>>     : ModuloByConstantImpl<UInt32, UInt8> {};
-template <> struct BinaryOperationImpl<UInt32, UInt16,     ModuloImpl<UInt32, UInt16>> : ModuloByConstantImpl<UInt32, UInt16> {};
-template <> struct BinaryOperationImpl<UInt32, UInt32,     ModuloImpl<UInt32, UInt32>> : ModuloByConstantImpl<UInt32, UInt32> {};
-template <> struct BinaryOperationImpl<UInt32, UInt64,     ModuloImpl<UInt32, UInt64>> : ModuloByConstantImpl<UInt32, UInt64> {};
+template <> struct BinaryOperationImpl<UInt32, UInt8, ModuloImpl<UInt32, UInt8>> : ModuloByConstantImpl<UInt32, UInt8> {};
+template <> struct BinaryOperationImpl<UInt32, UInt16, ModuloImpl<UInt32, UInt16>> : ModuloByConstantImpl<UInt32, UInt16> {};
+template <> struct BinaryOperationImpl<UInt32, UInt32, ModuloImpl<UInt32, UInt32>> : ModuloByConstantImpl<UInt32, UInt32> {};
+template <> struct BinaryOperationImpl<UInt32, UInt64, ModuloImpl<UInt32, UInt64>> : ModuloByConstantImpl<UInt32, UInt64> {};
 
-template <> struct BinaryOperationImpl<Int64, Int8,     ModuloImpl<Int64, Int8>>     : ModuloByConstantImpl<Int64, Int8> {};
-template <> struct BinaryOperationImpl<Int64, Int16,     ModuloImpl<Int64, Int16>>     : ModuloByConstantImpl<Int64, Int16> {};
-template <> struct BinaryOperationImpl<Int64, Int32,     ModuloImpl<Int64, Int32>>     : ModuloByConstantImpl<Int64, Int32> {};
-template <> struct BinaryOperationImpl<Int64, Int64,     ModuloImpl<Int64, Int64>>     : ModuloByConstantImpl<Int64, Int64> {};
+template <> struct BinaryOperationImpl<Int64, Int8, ModuloImpl<Int64, Int8>> : ModuloByConstantImpl<Int64, Int8> {};
+template <> struct BinaryOperationImpl<Int64, Int16, ModuloImpl<Int64, Int16>> : ModuloByConstantImpl<Int64, Int16> {};
+template <> struct BinaryOperationImpl<Int64, Int32, ModuloImpl<Int64, Int32>> : ModuloByConstantImpl<Int64, Int32> {};
+template <> struct BinaryOperationImpl<Int64, Int64, ModuloImpl<Int64, Int64>> : ModuloByConstantImpl<Int64, Int64> {};
 
-template <> struct BinaryOperationImpl<Int32, Int8,     ModuloImpl<Int32, Int8>>     : ModuloByConstantImpl<Int32, Int8> {};
-template <> struct BinaryOperationImpl<Int32, Int16,     ModuloImpl<Int32, Int16>>     : ModuloByConstantImpl<Int32, Int16> {};
-template <> struct BinaryOperationImpl<Int32, Int32,     ModuloImpl<Int32, Int32>>     : ModuloByConstantImpl<Int32, Int32> {};
-template <> struct BinaryOperationImpl<Int32, Int64,     ModuloImpl<Int32, Int64>>     : ModuloByConstantImpl<Int32, Int64> {};
+template <> struct BinaryOperationImpl<Int32, Int8, ModuloImpl<Int32, Int8>> : ModuloByConstantImpl<Int32, Int8> {};
+template <> struct BinaryOperationImpl<Int32, Int16, ModuloImpl<Int32, Int16>> : ModuloByConstantImpl<Int32, Int16> {};
+template <> struct BinaryOperationImpl<Int32, Int32, ModuloImpl<Int32, Int32>> : ModuloByConstantImpl<Int32, Int32> {};
+template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> : ModuloByConstantImpl<Int32, Int64> {};
 
 }

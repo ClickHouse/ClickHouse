@@ -125,10 +125,10 @@ private:
 
         if (result_is_const)
         {
-            const auto & colLon1 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[0]).column.get())->getData();
-            const auto & colLat1 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[1]).column.get())->getData();
-            const auto & colLon2 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[2]).column.get())->getData();
-            const auto & colLat2 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[3]).column.get())->getData();
+            const auto & colLon1 = static_cast<const ColumnConst *>(block.safeGetByPosition(arguments[0]).column.get())->getData();
+            const auto & colLat1 = static_cast<const ColumnConst *>(block.safeGetByPosition(arguments[1]).column.get())->getData();
+            const auto & colLon2 = static_cast<const ColumnConst *>(block.safeGetByPosition(arguments[2]).column.get())->getData();
+            const auto & colLat2 = static_cast<const ColumnConst *>(block.safeGetByPosition(arguments[3]).column.get())->getData();
 
             Float64 res = greatCircleDistance(colLon1, colLat1, colLon2, colLat2);
             block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(size, res);
@@ -147,7 +147,7 @@ private:
                     if (instr_type::get_float_64 == instrs[idx].first)
                         vals[idx] = static_cast<const ColumnVector<Float64> *>(instrs[idx].second)->getData()[row];
                     else if (instr_type::get_const_float_64 == instrs[idx].first)
-                        vals[idx] = static_cast<const ColumnConst<Float64> *>(instrs[idx].second)->getData();
+                        vals[idx] = static_cast<const ColumnConst *>(instrs[idx].second)->getData();
                     else
                         throw std::logic_error{"unknown instr_type"};
                 }
@@ -255,7 +255,7 @@ private:
         for (const auto idx : ext::range(0, 2))
         {
             const auto column = block.safeGetByPosition(arguments[idx]).column.get();
-            if (typeid_cast<const ColumnConst<Float64> *> (column))
+            if (typeid_cast<const ColumnConst *> (column))
             {
                 ++const_cnt;
             }
@@ -286,8 +286,8 @@ private:
             }
             else if (const_cnt == 2)
             {
-                const auto col_const_x = static_cast<const ColumnConst<Float64> *> (col_x);
-                const auto col_const_y = static_cast<const ColumnConst<Float64> *> (col_y);
+                const auto col_const_x = static_cast<const ColumnConst *> (col_x);
+                const auto col_const_y = static_cast<const ColumnConst *> (col_y);
                 size_t start_index = 0;
                 UInt8 res = isPointInEllipses(col_const_x->getData(), col_const_y->getData(), ellipses, ellipses_count, start_index);
                 block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(size, res);

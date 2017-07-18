@@ -187,7 +187,7 @@ public:
                 offset += step;
             }
         }
-        else if (ColumnConst<String> * col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             ToFieldType value = 0;
             const String & str = col->getData();

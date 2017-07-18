@@ -455,7 +455,7 @@ private:
     template <typename DictionaryType>
     void executeRange(
         Block & block, const size_t result, const DictionaryType * dictionary, const std::string & attr_name,
-        const ColumnConst<UInt64> * id_col, const IColumn * date_col_untyped)
+        const ColumnConst * id_col, const IColumn * date_col_untyped)
     {
         if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
         {
@@ -624,7 +624,7 @@ private:
     template <typename DictionaryType>
     void executeDispatch(
         Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
-        const std::string & attr_name, const ColumnConst<UInt64> * id_col)
+        const std::string & attr_name, const ColumnConst * id_col)
     {
         const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 
@@ -1024,7 +1024,7 @@ private:
     template <typename DictionaryType>
     void executeRange(
         Block & block, const size_t result, const DictionaryType * dictionary, const std::string & attr_name,
-        const ColumnConst<UInt64> * id_col, const IColumn * date_col_untyped)
+        const ColumnConst * id_col, const IColumn * date_col_untyped)
     {
         if (const auto date_col = typeid_cast<const ColumnUInt16 *>(date_col_untyped))
         {
@@ -1204,7 +1204,7 @@ private:
 
             DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, defs, data);
         }
-        else if (const auto default_col =  typeid_cast<const ColumnConst<Type> *>(default_col_untyped))
+        else if (const auto default_col =  typeid_cast<const ColumnConst *>(default_col_untyped))
         {
             /// vector ids, const defaults
             const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
@@ -1225,7 +1225,7 @@ private:
     template <typename DictionaryType>
     void executeDispatch(
         Block & block, const ColumnNumbers & arguments, const size_t result, const DictionaryType * dictionary,
-        const std::string & attr_name, const ColumnConst<UInt64> * id_col)
+        const std::string & attr_name, const ColumnConst * id_col)
     {
         const auto default_col_untyped = block.safeGetByPosition(arguments[3]).column.get();
 
@@ -1630,7 +1630,7 @@ private:
 
     template <typename DictionaryType>
     bool execute(Block & block, const size_t result, const DictionaryType * dictionary,
-        const ColumnConst<UInt64> * child_id_col, const IColumn * ancestor_id_col_untyped)
+        const ColumnConst * child_id_col, const IColumn * ancestor_id_col_untyped)
     {
         if (const auto ancestor_id_col = typeid_cast<const ColumnUInt64 *>(ancestor_id_col_untyped))
         {

@@ -56,7 +56,7 @@ inline UInt8 xor_or_identity<false>(const UInt8 c, const int)
 
 /// It is caller's responsibility to ensure the presence of a valid cyrillic sequence in array
 template <bool to_lower>
-inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * const src_end, UInt8 *& dst)
+inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
 {
     if (src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
     {
@@ -119,7 +119,7 @@ struct LowerUpperUTF8Impl
 
     /** Converts a single code point starting at `src` to desired case, storing result starting at `dst`.
      *    `src` and `dst` are incremented by corresponding sequence lengths. */
-    static void toCase(const UInt8 *& src, const UInt8 * const src_end, UInt8 *& dst);
+    static void toCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst);
 
 private:
     static constexpr auto ascii_upper_bound = '\x7f';
@@ -171,7 +171,7 @@ public:
             block.safeGetByPosition(result).column = col_res;
             Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column))
         {
             auto col_res = std::make_shared<ColumnFixedString>(col->getN());
             block.safeGetByPosition(result).column = col_res;

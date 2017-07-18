@@ -170,7 +170,7 @@ protected:
     template<typename CentroidsType>
     bool fillCentroids(const IColumn* centroids_array_untyped, std::vector<Float64> & centroids)
     {
-        const ColumnConst<Array> * const_centroids_array = checkAndGetColumnConst<ColumnVector<Array>>(centroids_array_untyped);
+        const ColumnConst * const_centroids_array = checkAndGetColumnConst<ColumnVector<Array>>(centroids_array_untyped);
 
         if (!const_centroids_array)
             return false;

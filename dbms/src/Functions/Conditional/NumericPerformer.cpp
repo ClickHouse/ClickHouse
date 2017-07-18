@@ -51,7 +51,7 @@ protected:
         const IColumn * col = block.safeGetByPosition(args[index]).column.get();
 
         const ColumnVector<TType> * vec_col = nullptr;
-        const ColumnConst<TType> * const_col = nullptr;
+        const ColumnConst * const_col = nullptr;
 
         const ColumnArray * arr_col = nullptr;
         const ColumnVector<TType> * arr_vec_col = nullptr;

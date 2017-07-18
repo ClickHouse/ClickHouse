@@ -87,7 +87,7 @@ struct ConvertImpl
             = checkAndGetColumnConst<ColumnVector<FromFieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(
-                col_from->size(), static_cast<ToFieldType>(col_from->template getValue<FromFieldType>()));
+                col_from->size(), toField(static_cast<ToFieldType>(col_from->template getValue<FromFieldType>())));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -245,7 +245,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
         {
             std::vector<char> buf;
             WriteBufferFromVector<std::vector<char> > write_buffer(buf);
-            FormatImpl<FromDataType>::execute(col_from->getData(), write_buffer, &type, time_zone);
+            FormatImpl<FromDataType>::execute(col_from->template getValue<FromFieldType>(), write_buffer, &type, time_zone);
             block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), std::string(&buf[0], write_buffer.count()));
         }
         else
@@ -392,7 +392,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
                     && s.size() == strlen("YYYY-MM-DD hh:mm:ss")))
                 throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
-            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), x);
+            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), toField(x));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -557,7 +557,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             const DateLUTImpl * time_zone = nullptr;
 
@@ -610,7 +610,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_to;
@@ -976,7 +976,7 @@ public:
 
             block.safeGetByPosition(result).column = result_ptr;
         }
-        else if (const auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column.get()))
+        else if (const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             const auto src_n = column_fixed_string->getN();
             if (src_n > n)
@@ -1446,7 +1446,7 @@ private:
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
-    void checkEnumToEnumConversion(const EnumTypeFrom * const from_type, const EnumTypeTo * const to_type)
+    void checkEnumToEnumConversion(const EnumTypeFrom * from_type, const EnumTypeTo * to_type)
     {
         const auto & from_values = from_type->getValues();
         const auto & to_values = to_type->getValues();
@@ -1536,7 +1536,7 @@ private:
         static constexpr auto CONVERT_NULL = UInt64(1) << 2;
     };
 
-    WrapperType prepare(const DataTypePtr & from_type, const IDataType * const to_type, const uint64_t action)
+    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type, const uint64_t action)
     {
         auto wrapper = prepareImpl((action & Action::CONVERT_NULL) ?
                                         std::make_shared<DataTypeUInt8>() :
@@ -1605,7 +1605,7 @@ private:
             return wrapper;
     }
 
-    WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * const to_type)
+    WrapperType prepareImpl(const DataTypePtr & from_type, const IDataType * to_type)
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);

@@ -78,7 +78,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto check_argument_type = [this] (const IDataType * const arg) {
+        const auto check_argument_type = [this] (const IDataType * arg) {
             if (!checkDataType<DataTypeUInt8>(arg) &&
                 !checkDataType<DataTypeUInt16>(arg) &&
                 !checkDataType<DataTypeUInt32>(arg) &&
@@ -103,7 +103,7 @@ private:
     }
 
     template <typename FieldType>
-    bool execute(Block & block, const IColumn * const arg, const size_t result)
+    bool execute(Block & block, const IColumn * arg, const size_t result)
     {
         if (const auto col = checkAndGetColumn<ColumnVector<FieldType>>(arg))
         {
@@ -181,7 +181,7 @@ struct UnaryFunctionPlain
     static constexpr auto rows_per_iteration = 1;
 
     template <typename T>
-    static void execute(const T * const src, Float64 * const dst)
+    static void execute(const T * src, Float64 * dst)
     {
         dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src[0])));
     }
@@ -196,7 +196,7 @@ struct UnaryFunctionVectorized
     static constexpr auto rows_per_iteration = 2;
 
     template <typename T>
-    static void execute(const T * const src, Float64 * const dst)
+    static void execute(const T * src, Float64 * dst)
     {
         const auto result = Function(Vec2d(src[0], src[1]));
         result.store(dst);
@@ -225,7 +225,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto check_argument_type = [this] (const IDataType * const arg) {
+        const auto check_argument_type = [this] (const IDataType * arg) {
             if (!checkDataType<DataTypeUInt8>(arg) &&
                 !checkDataType<DataTypeUInt16>(arg) &&
                 !checkDataType<DataTypeUInt32>(arg) &&
@@ -250,8 +250,8 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeRight(Block & block, const size_t result, const ColumnConst<LeftType> * const left_arg,
-        const IColumn * const right_arg)
+    bool executeRight(Block & block, const size_t result, const ColumnConst * left_arg,
+        const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -302,8 +302,8 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeRight(Block & block, const size_t result, const ColumnVector<LeftType> * const left_arg,
-        const IColumn * const right_arg)
+    bool executeRight(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg,
+        const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -377,7 +377,7 @@ private:
 
     template <typename LeftType, template <typename> class LeftColumnType>
     bool executeLeftImpl(Block & block, const ColumnNumbers & arguments, const size_t result,
-        const IColumn * const left_arg)
+        const IColumn * left_arg)
     {
         if (const auto left_arg_typed = typeid_cast<const LeftColumnType<LeftType> *>(left_arg))
         {
@@ -411,7 +411,7 @@ private:
 
     template <typename LeftType>
     bool executeLeft(Block & block, const ColumnNumbers & arguments, const size_t result,
-        const IColumn * const left_arg)
+        const IColumn * left_arg)
     {
         if (executeLeftImpl<LeftType, ColumnVector>(block, arguments, result, left_arg) ||
             executeLeftImpl<LeftType, ColumnConst>(block, arguments, result, left_arg))
@@ -451,7 +451,7 @@ struct BinaryFunctionPlain
     static constexpr auto rows_per_iteration = 1;
 
     template <typename T1, typename T2>
-    static void execute(const T1 * const src_left, const T2 * const src_right, Float64 * const dst)
+    static void execute(const T1 * src_left, const T2 * src_right, Float64 * dst)
     {
         dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src_left[0]), static_cast<Float64>(src_right[0])));
     }
@@ -466,7 +466,7 @@ struct BinaryFunctionVectorized
     static constexpr auto rows_per_iteration = 2;
 
     template <typename T1, typename T2>
-    static void execute(const T1 * const src_left, const T2 * const src_right, Float64 * const dst)
+    static void execute(const T1 * src_left, const T2 * src_right, Float64 * dst)
     {
         const auto result = Function(Vec2d(src_left[0], src_left[1]), Vec2d(src_right[0], src_right[1]));
         result.store(dst);

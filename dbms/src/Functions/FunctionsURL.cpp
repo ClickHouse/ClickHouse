@@ -12,7 +12,7 @@ static size_t decodeURL(const char * src, size_t src_size, char * dst)
 {
     const char * src_prev_pos = src;
     const char * src_curr_pos = src;
-    const char * const src_end = src + src_size;
+    const char * src_end = src + src_size;
     char * dst_pos = dst;
 
     while (true)

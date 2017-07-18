@@ -316,7 +316,7 @@ private:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
         }
-        else if (ColumnConst<FromType> * col_from = checkAndGetColumnConst<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (ColumnConst * col_from = checkAndGetColumnConst<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(col_from->size(), Impl::apply(col_from->getData()));
         }
@@ -444,7 +444,7 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
             }
         }
-        else if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(column))
+        else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
         {
             const typename ColumnString::Chars_t & data = col_from->getChars();
             size_t n = col_from->getN();
@@ -646,7 +646,7 @@ struct URLHashImpl
 
 struct URLHierarchyHashImpl
 {
-    static std::size_t findLevelLength(const UInt64 level, const char * begin, const char * const end)
+    static std::size_t findLevelLength(const UInt64 level, const char * begin, const char * end)
     {
         auto pos = begin;
 
@@ -846,7 +846,7 @@ struct ImplCityHash64
     using uint128_t = CityHash_v1_0_2::uint128;
 
     static auto Hash128to64(const uint128_t & x) { return CityHash_v1_0_2::Hash128to64(x); }
-    static auto Hash64(const char * const s, const std::size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
+    static auto Hash64(const char * s, const std::size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
 };
 
 struct ImplFarmHash64
@@ -855,7 +855,7 @@ struct ImplFarmHash64
     using uint128_t = farmhash::uint128_t;
 
     static auto Hash128to64(const uint128_t & x) { return farmhash::Hash128to64(x); }
-    static auto Hash64(const char * const s, const std::size_t len) { return farmhash::Hash64(s, len); }
+    static auto Hash64(const char * s, const std::size_t len) { return farmhash::Hash64(s, len); }
 };
 
 struct ImplMetroHash64
@@ -864,7 +864,7 @@ struct ImplMetroHash64
     using uint128_t = CityHash_v1_0_2::uint128;
 
     static auto Hash128to64(const uint128_t & x) { return CityHash_v1_0_2::Hash128to64(x); }
-    static auto Hash64(const char * const s, const std::size_t len)
+    static auto Hash64(const char * s, const std::size_t len)
     {
         union {
             UInt64 u64;

@@ -1002,7 +1002,7 @@ public:
             block.safeGetByPosition(result).column = col_res;
             Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_src))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column_src))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_res;

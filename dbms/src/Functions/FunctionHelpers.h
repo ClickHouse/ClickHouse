@@ -5,7 +5,6 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
 
 
 
@@ -68,7 +67,7 @@ const Type * checkAndGetColumnConstData(const IColumn * column)
 template <typename Type>
 const bool checkColumnConst(const IColumn * column)
 {
-    return checkAndGetColumnConst<Type>();
+    return checkAndGetColumnConst<Type>(column);
 }
 
 

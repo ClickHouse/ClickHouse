@@ -397,7 +397,7 @@ template <char not_case_lower_bound,
     int to_case(int),
     void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::toCase(
-    const UInt8 *& src, const UInt8 * const src_end, UInt8 *& dst)
+    const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
 {
     if (src[0] <= ascii_upper_bound)
     {
@@ -739,7 +739,7 @@ public:
             vec_res.resize(col->size());
             Impl::vector(col->getChars(), col->getOffsets(), vec_res);
         }
-        else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column))
         {
             /// For a fixed string only `lengthUTF8` function returns not a constant.
             if ("lengthUTF8" != getName())
@@ -831,7 +831,7 @@ public:
             block.safeGetByPosition(result).column = col_res;
             ReverseImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(column.get()))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = std::make_shared<ColumnFixedString>(col->getN());
             block.safeGetByPosition(result).column = col_res;
@@ -953,7 +953,7 @@ private:
 
                 result.emplace_back(InstructionType::COPY_STRING, ColumnAndOffset{col, 0});
             }
-            else if (const auto col = typeid_cast<const ColumnFixedString *>(column))
+            else if (const auto col = checkAndGetColumn<ColumnFixedString>(column))
             {
                 rows = col->size();
                 out_length += col->getChars().size();
@@ -987,8 +987,8 @@ private:
 
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
-        const ColumnFixedString * c0_fixed_string = typeid_cast<const ColumnFixedString *>(c0);
-        const ColumnFixedString * c1_fixed_string = typeid_cast<const ColumnFixedString *>(c1);
+        const ColumnFixedString * c0_fixed_string = checkAndGetColumn<ColumnFixedString>(c0);
+        const ColumnFixedString * c1_fixed_string = checkAndGetColumn<ColumnFixedString>(c1);
         const ColumnConst * c0_const = checkAndGetColumnConst<ColumnString>(c0);
         const ColumnConst * c1_const = checkAndGetColumnConst<ColumnString>(c1);
 
@@ -1414,7 +1414,7 @@ public:
             block.safeGetByPosition(result).column = col_res;
             Impl::vector(col->getChars(), col->getOffsets(), start, length, col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_string))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column_string))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_res;

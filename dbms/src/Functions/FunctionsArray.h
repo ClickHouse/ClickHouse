@@ -807,7 +807,7 @@ private:
                 col_res->getData(), null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<U>>(item_arg))
             ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
-                item_arg_const->getData(), col_res->getData(), null_map_data, nullptr);
+                item_arg_const->template getValue<U>(), col_res->getData(), null_map_data, nullptr);
         else if (const auto item_arg_vector = checkAndGetColumn<ColumnVector<U>>(item_arg))
             ArrayIndexNumImpl<T, U, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
                 item_arg_vector->getData(), col_res->getData(), null_map_data, null_map_item);
@@ -1321,7 +1321,7 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     template <typename T>
-    bool executeInternal(Block & block, const IColumn * const arg, const size_t result);
+    bool executeInternal(Block & block, const IColumn * arg, const size_t result);
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override;
 };

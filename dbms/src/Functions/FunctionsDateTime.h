@@ -478,8 +478,8 @@ struct DateTimeTransformImpl
         else if (const_source)
         {
             ToType res;
-            Op::constant(const_source->getData(), res, time_zone);
-            block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(const_source->size(), res);
+            Op::constant(const_source->template getValue<FromType>(), res, time_zone);
+            block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(const_source->size(), toField(res));
         }
         else
         {
@@ -639,7 +639,7 @@ public:
     {
         block.safeGetByPosition(result).column = DataTypeUInt16().createConstColumn(
             block.rows(),
-            DateLUT::instance().toDayNum(time(0)));
+            UInt64(DateLUT::instance().toDayNum(time(0))));
     }
 };
 
@@ -666,7 +666,7 @@ public:
     {
         block.safeGetByPosition(result).column = DataTypeUInt16().createConstColumn(
             block.rows(),
-            DateLUT::instance().toDayNum(time(0)) - 1);
+            UInt64(DateLUT::instance().toDayNum(time(0)) - 1));
     }
 };
 
@@ -713,7 +713,7 @@ public:
         else if (auto const_times = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(
-                block.rows(), const_times->getValue<UInt32>() / TIME_SLOT_SIZE * TIME_SLOT_SIZE);
+                block.rows(), toField(const_times->getValue<UInt32>() / TIME_SLOT_SIZE * TIME_SLOT_SIZE));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()

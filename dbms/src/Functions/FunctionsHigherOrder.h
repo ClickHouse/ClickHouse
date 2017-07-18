@@ -338,7 +338,7 @@ struct ArraySumImpl
 
         if (!column)
         {
-            const ColumnConst<Element> * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
+            const ColumnConst * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
 
             if (!column_const)
                 return false;

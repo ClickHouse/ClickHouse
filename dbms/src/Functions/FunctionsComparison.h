@@ -560,12 +560,12 @@ struct GenericComparisonImpl
 };
 
 
-struct NameEquals             { static constexpr auto name = "equals"; };
-struct NameNotEquals         { static constexpr auto name = "notEquals"; };
-struct NameLess             { static constexpr auto name = "less"; };
-struct NameGreater             { static constexpr auto name = "greater"; };
-struct NameLessOrEquals     { static constexpr auto name = "lessOrEquals"; };
-struct NameGreaterOrEquals     { static constexpr auto name = "greaterOrEquals"; };
+struct NameEquals          { static constexpr auto name = "equals"; };
+struct NameNotEquals       { static constexpr auto name = "notEquals"; };
+struct NameLess            { static constexpr auto name = "less"; };
+struct NameGreater         { static constexpr auto name = "greater"; };
+struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
+struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
 
 template <
@@ -598,7 +598,7 @@ private:
             block.safeGetByPosition(result).column = col_res;
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
-            vec_res.resize(col_left->template getValue<T>().size());
+            vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
 
             return true;
@@ -626,7 +626,7 @@ private:
             UInt8 res = 0;
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
 
-            auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), res);
+            auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), toField(res));
             block.safeGetByPosition(result).column = col_res;
 
             return true;
@@ -640,17 +640,17 @@ private:
     {
         if (const ColumnVector<T0> * col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped))
         {
-            if (    executeNumRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, Int8>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, Int16>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, Int32>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, Int64>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, Float32>(block, result, col_left, col_right_untyped)
-                ||    executeNumRightType<T0, Float64>(block, result, col_left, col_right_untyped))
+            if (   executeNumRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, Int8>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, Int16>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, Int32>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, Int64>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, Float32>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, Float64>(block, result, col_left, col_right_untyped))
                 return true;
             else
                 throw Exception("Illegal column " + col_right_untyped->getName()
@@ -659,17 +659,17 @@ private:
         }
         else if (auto col_left = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
-            if (    executeNumConstRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, Int8>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, Int16>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, Int32>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, Int64>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, Float32>(block, result, col_left, col_right_untyped)
-                ||    executeNumConstRightType<T0, Float64>(block, result, col_left, col_right_untyped))
+            if (   executeNumConstRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, Int8>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, Int16>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, Int32>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, Int64>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, Float32>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, Float64>(block, result, col_left, col_right_untyped))
                 return true;
             else
                 throw Exception("Illegal column " + col_right_untyped->getName()
@@ -684,8 +684,8 @@ private:
     {
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
-        const ColumnFixedString * c0_fixed_string = typeid_cast<const ColumnFixedString *>(c0);
-        const ColumnFixedString * c1_fixed_string = typeid_cast<const ColumnFixedString *>(c1);
+        const ColumnFixedString * c0_fixed_string = checkAndGetColumn<ColumnFixedString>(c0);
+        const ColumnFixedString * c1_fixed_string = checkAndGetColumn<ColumnFixedString>(c1);
         const ColumnConst * c0_const = checkAndGetColumnConst<ColumnString>(c0);
         const ColumnConst * c1_const = checkAndGetColumnConst<ColumnString>(c1);
 
@@ -696,9 +696,9 @@ private:
 
         if (c0_const && c1_const)
         {
-            auto c_res = DataTypeUInt8().createConstColumn(c0_const->size(), 0);
-            block.safeGetByPosition(result).column = c_res;
-            StringImpl::constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), c_res->getData());
+            UInt8 res = 0;
+            StringImpl::constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), res);
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(c0_const->size(), toField(res));
         }
         else
         {
@@ -794,7 +794,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for Date: " + column_string->getValue<String>());
 
-            ColumnPtr parsed_const_date_holder = DataTypeDate().createConstColumn(block.rows(), date);
+            ColumnPtr parsed_const_date_holder = DataTypeDate().createConstColumn(block.rows(), UInt64(date));
             const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date,
@@ -803,12 +803,12 @@ private:
         else if (is_date_time)
         {
             time_t date_time;
-            ReadBufferFromString in(column_string->getData());
+            ReadBufferFromString in(column_string->getValue<String>());
             readDateTimeText(date_time, in);
             if (!in.eof())
-                throw Exception("String is too long for DateTime: " + column_string->getData());
+                throw Exception("String is too long for DateTime: " + column_string->getValue<String>());
 
-            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createConstColumn(block.rows(), date_time);
+            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createConstColumn(block.rows(), UInt64(date_time));
             const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
             executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date_time,
@@ -817,12 +817,12 @@ private:
         else if (is_uuid)
         {
             UUID uuid;
-            ReadBufferFromString in(column_string->getData());
+            ReadBufferFromString in(column_string->getValue<String>());
             readText(uuid, in);
             if (!in.eof())
-                throw Exception("String is too long for UUID: " + column_string->getData());
+                throw Exception("String is too long for UUID: " + column_string->getValue<String>());
 
-            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createConstColumn(block.rows(), uuid);
+            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createConstColumn(block.rows(), UInt128(uuid));
             const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_uuid,
@@ -845,7 +845,7 @@ private:
     {
         const auto type = static_cast<const EnumType *>(type_untyped);
 
-        const Field x = nearestFieldType(type->getValue(column_string->getData()));
+        const Field x = nearestFieldType(type->getValue(column_string->getValue<String>()));
         const auto enum_col = type->createConstColumn(block.rows(), x);
 
         executeNumLeftType<typename EnumType::FieldType>(block, result,
@@ -980,9 +980,9 @@ private:
 
         if (c0_const && c1_const)
         {
-            auto c_res = DataTypeUInt8().createConstColumn(c0->size(), 0);
-            block.safeGetByPosition(result).column = c_res;
-            GenericComparisonImpl<Op<int, int>>::constant_constant(*c0, *c1, c_res->getData());
+            UInt8 res = 0;
+            GenericComparisonImpl<Op<int, int>>::constant_constant(*c0, *c1, res);
+            block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(c0->size(), toField(res));
         }
         else
         {
