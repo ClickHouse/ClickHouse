@@ -123,7 +123,7 @@ Pool::Entry Pool::tryGet()
 
     initialize();
 
-    /// Поиск уже установленного, но не использующегося сейчас соединения.
+    /// Searching for connection which was established but wasn't used.
     for (Connections::iterator it = connections.begin(); it != connections.end(); ++it)
     {
         if ((*it)->ref_count == 0)
@@ -133,11 +133,11 @@ Pool::Entry Pool::tryGet()
         }
     }
 
-    /// Если пул переполнен.
+    /// Throws if pool is overflowed.
     if (connections.size() >= max_connections)
         throw Poco::Exception("mysqlxx::Pool is full");
 
-    /// Выделение нового соединения.
+    /// Allocates new connection.
     Connection * conn = allocConnection(true);
     if (conn)
         return Entry(conn, this);

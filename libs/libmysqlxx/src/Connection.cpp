@@ -24,7 +24,7 @@ Connection::Connection()
 {
     is_connected = false;
 
-    /// Инициализация библиотеки.
+    /// MySQL library initialization.
     LibrarySingleton::instance();
 }
 
@@ -68,13 +68,13 @@ void Connection::connect(const char* db,
     if (is_connected)
         disconnect();
 
-    /// Инициализация библиотеки.
+    /// MySQL library initialization.
     LibrarySingleton::instance();
 
     if (!mysql_init(driver.get()))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Установим таймауты
+    /// Set timeouts.
     if (mysql_options(driver.get(), MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<const char *>(&timeout)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
@@ -84,20 +84,18 @@ void Connection::connect(const char* db,
     if (mysql_options(driver.get(), MYSQL_OPT_WRITE_TIMEOUT, reinterpret_cast<const char *>(&rw_timeout)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /** Включаем возможность использовать запрос LOAD DATA LOCAL INFILE с серверами,
-      *  которые были скомпилированы без опции --enable-local-infile.
-      */
+    /// Enables ability to use query LOAD DATA LOCAL INFILE with servers were compiled without --enable-local-infile option.
     if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     if (!mysql_real_connect(driver.get(), server, user, password, db, port, *socket ? socket : nullptr, driver->client_flag))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Установим кодировки по умолчанию - UTF-8.
+    /// Sets UTF-8 as default encoding.
     if (mysql_set_character_set(driver.get(), "UTF8"))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Установим автоматический реконнект
+    /// Enables auto-reconnect.
     my_bool reconnect = true;
     if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&reconnect)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
