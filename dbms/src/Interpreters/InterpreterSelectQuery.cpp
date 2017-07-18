@@ -442,7 +442,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
     if (to_stage > QueryProcessingStage::FetchColumns)
     {
-        bool has_join        = false;
+        bool has_join       = false;
         bool has_where      = false;
         bool need_aggregate = false;
         bool has_having     = false;
@@ -1006,7 +1006,7 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
         executeUnion();
 
         /// Now merge the aggregated blocks
-        streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, max_streams);
+        streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, settings.max_threads);
     }
     else
     {
