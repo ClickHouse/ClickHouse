@@ -11,15 +11,17 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
-
+#include <Functions/FunctionsRandom.h>
 #include <arpa/inet.h>
 
+#include <iostream>
 #include <ext/range.h>
 #include <array>
 
@@ -1393,6 +1395,46 @@ public:
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
             + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+class FunctionGenerateUUIDV4 : public IFunction
+{
+public:
+    static constexpr auto name = "generateUUIDV4";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionGenerateUUIDV4>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isDeterministicInScopeOfQuery() override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return std::make_shared<DataTypeUUID>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        auto col_to = std::make_shared<ColumnVector<UInt128>>();
+        block.safeGetByPosition(result).column = col_to;
+
+        typename ColumnVector<UInt128>::Container_t & vec_to = col_to->getData();
+
+        size_t size = block.rows();
+        vec_to.resize(size);
+        Rand64Impl::execute(vec_to);
+
+        for (UInt128 & uuid: vec_to)
+        {
+            /** https://tools.ietf.org/html/rfc4122#section-4.4
+             */
+            uuid.low = (uuid.low & 0xffffffffffff0ffful) | 0x0000000000004000ul;
+            uuid.high = (uuid.high & 0x3ffffffffffffffful) | 0x8000000000000000ul;
+        }
     }
 };
 

@@ -114,7 +114,8 @@ struct Rand64Impl
 {
     using ReturnType = UInt64;
 
-    static void execute(PaddedPODArray<ReturnType> & res)
+    template <typename T>
+    static void execute(PaddedPODArray<T> & res)
     {
         detail::LinearCongruentialGenerator generator0;
         detail::LinearCongruentialGenerator generator1;
@@ -126,8 +127,8 @@ struct Rand64Impl
         detail::seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(&res[0]));
         detail::seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(&res[0]));
 
-        size_t size = res.size();
-        ReturnType * pos = &res[0];
+        size_t size = res.size() * (sizeof(T) / sizeof(ReturnType));
+        ReturnType * pos = reinterpret_cast<ReturnType *>(&res[0]);
         ReturnType * end = pos + size;
         ReturnType * end2 = pos + size / 2 * 2;
 
