@@ -221,7 +221,7 @@ public:
         {
             block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
-                Impl::apply(col_from->getValue<String>().data(), col_from->getData().size()));
+                Impl::apply(col_from->getValue<String>().data(), col_from->getValue<String>().size()));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -303,7 +303,7 @@ private:
     template <typename FromType>
     void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToType>>();
             block.safeGetByPosition(result).column = col_to;
@@ -316,9 +316,10 @@ private:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
         }
-        else if (ColumnConst * col_from = checkAndGetColumnConst<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(col_from->size(), Impl::apply(col_from->getData()));
+            block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(
+                col_from->size(), toField(Impl::apply(col_from->template getValue<FromType>())));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -460,7 +461,7 @@ private:
         }
         else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(column))
         {
-            const UInt64 hash = Impl::Hash64(col_from->getValue<String>().data(), col_from->getData().size());
+            const UInt64 hash = Impl::Hash64(col_from->getValue<String>().data(), col_from->getValue<String>().size());
             const size_t size = vec_to.size();
             if (first)
             {
@@ -783,9 +784,10 @@ private:
         }
         else if (const auto col_from = checkAndGetColumnConst<ColumnString>(col_untyped))
         {
+            String from = col_from->getValue<String>();
             block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
-                URLHashImpl::apply(col_from->getData().data(), col_from->getData().size()));
+                URLHashImpl::apply(from.data(), from.size()));
         }
         else
             throw Exception{
@@ -822,9 +824,10 @@ private:
         }
         else if (const auto col_from = checkAndGetColumnConst<ColumnString>(col_untyped))
         {
+            String from = col_from->getValue<String>();
             block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
-                URLHierarchyHashImpl::apply(level, col_from->getData().data(), col_from->getData().size()));
+                URLHierarchyHashImpl::apply(level, from.data(), from.size()));
         }
         else
             throw Exception{

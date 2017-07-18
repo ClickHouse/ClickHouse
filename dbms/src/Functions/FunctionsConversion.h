@@ -458,7 +458,7 @@ struct ConvertOrZeroImpl
             ToFieldType x = 0;
             if (!tryParseImpl<ToDataType>(x, read_buffer) || !read_buffer.eof())
                 x = 0;
-            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), x);
+            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), toField(x));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()

@@ -50,7 +50,7 @@ struct ArrayMapImpl
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
         return mapped->isConst()
-            ? std::make_shared<ColumnArray>(dynamic_cast<const IColumnConst &>(*mapped).convertToFullColumn(), array.getOffsetsColumn())
+            ? std::make_shared<ColumnArray>(mapped->convertToFullColumnIfConst(), array.getOffsetsColumn())
             : std::make_shared<ColumnArray>(mapped, array.getOffsetsColumn());
     }
 };
@@ -148,7 +148,7 @@ struct ArrayCountImpl
                 return out_column;
             }
             else
-                return DataTypeUInt32().createConstColumn(array.size(), 0);
+                return DataTypeUInt32().createConstColumn(array.size(), UInt64(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
@@ -210,7 +210,7 @@ struct ArrayExistsImpl
                 return out_column;
             }
             else
-                return DataTypeUInt8().createConstColumn(array.size(), 0);
+                return DataTypeUInt8().createConstColumn(array.size(), UInt64(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
@@ -261,7 +261,7 @@ struct ArrayAllImpl
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_filter_const->getValue<UInt8>())
-                return DataTypeUInt8().createConstColumn(array.size(), 1);
+                return DataTypeUInt8().createConstColumn(array.size(), UInt64(1));
             else
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
@@ -343,7 +343,7 @@ struct ArraySumImpl
             if (!column_const)
                 return false;
 
-            const Element x = column_const->getData();
+            const Element x = column_const->template getValue<Element>();
 
             auto res_column = std::make_shared<ColumnVector<Result>>(offsets.size());
             res_ptr = res_column;
@@ -514,7 +514,7 @@ struct ArrayFirstIndexImpl
                 return out_column;
             }
             else
-                return DataTypeUInt32().createConstColumn(array.size(), 0);
+                return DataTypeUInt32().createConstColumn(array.size(), UInt64(0));
         }
 
         const auto & filter = column_filter->getData();

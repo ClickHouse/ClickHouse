@@ -383,7 +383,7 @@ public:
         else if (col_const1 && col_const2)
         {
             block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(col_const1->size(),
-                Transform::apply(col_const1->template getValue<T>(), col_const2->template getValue<T>(), dict));
+                toField(Transform::apply(col_const1->template getValue<T>(), col_const2->template getValue<T>(), dict)));
         }
         else
             throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName()

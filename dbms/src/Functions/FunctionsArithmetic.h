@@ -319,6 +319,9 @@ struct BitTestImpl
     static inline Result apply(A a, B b) { return (toInteger(a) >> toInteger(b)) & 1; };
 };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 template <typename A, typename B>
 struct BitTestAnyImpl
 {
@@ -336,6 +339,8 @@ struct BitTestAllImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b) { return (toInteger(a) & toInteger(b)) == b; };
 };
+
+#pragma GCC diagnostic pop
 
 
 template <typename A, typename B>
