@@ -753,7 +753,7 @@ private:
             {
                 if (!checkPreconditions(test_config))
                 {
-                    std::cerr << "Preconditions are not fulfilled for test \"" + test_config->getString("name", "") + "\"";
+                    std::cerr << "Preconditions are not fulfilled for test \"" + test_config->getString("name", "") + "\" ";
                     continue;
                 }
 
