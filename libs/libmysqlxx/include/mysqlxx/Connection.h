@@ -18,9 +18,9 @@ namespace mysqlxx
 {
 
 
-/** Для корректной инициализации и деинициализации MySQL библиотеки.
-  * Обеспечивает единственный и thread-safe вызов mysql_library_init().
-  * Использование:
+/** LibrarySingleton is used for appropriate initialisation and deinitialisation of MySQL library.
+  * Makes single thread-safe call of mysql_library_init().
+  * Usage:
   *     LibrarySingleton::instance();
   */
 class LibrarySingleton : public ext::singleton<LibrarySingleton>
@@ -32,25 +32,29 @@ private:
 };
 
 
-/** Соединение с MySQL.
-  * Использование:
-  *     mysqlxx::Connection connection("Test", "127.0.0.1", "root", "qwerty", 3306);
+/** MySQL connection.
+  * Usage:
+  *        mysqlxx::Connection connection("Test", "127.0.0.1", "root", "qwerty", 3306);
   *        std::cout << connection.query("SELECT 'Hello, World!'").store().at(0).at(0).getString() << std::endl;
   *
-  * Или так, если вы используете конфигурацию из библиотеки Poco:
+  * Or with Poco library configuration:
   *        mysqlxx::Connection connection("mysql_params");
   *
-  * Внимание! Рекомендуется использовать соединение в том потоке, в котором оно создано.
-  * Если вы используете соединение, созданное в другом потоке, то вы должны перед использованием
-  *  вызвать функцию MySQL C API mysql_thread_init(), а после использования - mysql_thread_end().
+  * Or using socket:
+  *        mysqlxx::Connection connection("Test", "localhost", "root", "qwerty", 0, "/path/to/socket/file.sock");
+  *
+  * Attention! It's strictly recommended to use connection in thread where it was created.
+  * In order to use connection in other thread, you should call MySQL C API function mysql_thread_init() before and
+  * mysql_thread_end() after working with it.
   */
 class Connection : private boost::noncopyable
 {
 public:
-    /// Для отложенной инициализации.
+    /// For delayed initialisation
     Connection();
 
-    /// Создать соединение.
+    /// Creates connection. Either port either socket should be specified.
+    /// If server is localhost and socket is not empty, than socket is used. Otherwise, server and port is used.
     Connection(
         const char * db,
         const char * server,
@@ -61,14 +65,13 @@ public:
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
 
-    /** Конструктор-помошник. Создать соединение, считав все параметры из секции config_name конфигурации.
-      * Можно использовать, если вы используете Poco::Util::Application из библиотеки Poco.
-      */
+    /// Creates connection. Can be used if Poco::Util::Application is using.
+    /// All settings will be got from config_name section of configuration.
     Connection(const std::string & config_name);
 
     virtual ~Connection();
 
-    /// Для отложенной инициализации или для того, чтобы подключиться с другими параметрами.
+    /// Provides delayed initialization or reconnection with other settings.
     virtual void connect(const char * db,
         const char * server,
         const char * user,
@@ -82,11 +85,11 @@ public:
     {
         Poco::Util::LayeredConfiguration & cfg = Poco::Util::Application::instance().config();
 
-        std::string db             = cfg.getString(config_name + ".db", "");
-        std::string server         = cfg.getString(config_name + ".host");
-        std::string user         = cfg.getString(config_name + ".user");
-        std::string password    = cfg.getString(config_name + ".password");
-        unsigned port            = cfg.getInt(config_name + ".port", 0);
+        std::string db = cfg.getString(config_name + ".db", "");
+        std::string server = cfg.getString(config_name + ".host");
+        std::string user = cfg.getString(config_name + ".user");
+        std::string password = cfg.getString(config_name + ".password");
+        unsigned port = cfg.getInt(config_name + ".port", 0);
         std::string socket = cfg.getString(config_name + ".socket", "");
 
         unsigned timeout =
@@ -102,19 +105,19 @@ public:
         connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port, socket.c_str(), timeout, rw_timeout);
     }
 
-    /// Было ли произведено соединение с MySQL.
+    /// If MySQL connection was established.
     bool connected() const;
 
-    /// Отсоединиться от MySQL.
+    /// Disconnect from MySQL.
     void disconnect();
 
-    /// Если соединение утеряно - попытаться восстановить его. true - если после вызова соединение есть.
+    /// Tries to reconnect if connection was lost. Is true if connection is established after call.
     bool ping();
 
-    /// Создать запрос. Вы можете сразу указать его, передав строку, или заполнить потом.
+    /// Creates query. It can be set with query string or later.
     Query query(const std::string & str = "");
 
-    /// Получить объект MYSQL из C API.
+    /// Get MySQL C API MYSQL object.
     MYSQL * getDriver();
 
 private:
