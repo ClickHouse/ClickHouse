@@ -927,12 +927,7 @@ private:
         else
             throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name, 1);
 
-        if (test_config->has("times_to_run"))
-        {
-            times_to_run = test_config->getUInt("times_to_run");
-        } else {
-            times_to_run = 1;
-        }
+        times_to_run = test_config->getUInt("times_to_run", 1);
 
         stop_conditions_by_run.clear();
         TestStopConditions stop_conditions_template;
