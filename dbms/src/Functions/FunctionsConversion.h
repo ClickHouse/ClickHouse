@@ -912,10 +912,6 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const Block &) override { return true; }
 
-    /** Get the result type by argument types and constant argument values.
-      * If the function does not apply to these arguments, throw an exception.
-      * For non-constant columns arguments[i].column = nullptr.
-      */
     void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
         DataTypePtr & out_return_type,
         std::vector<ExpressionAction> & out_prerequisites) override

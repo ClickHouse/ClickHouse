@@ -942,8 +942,8 @@ private:
         }
         else
         {
-            if (!checkDataType<DataTypeNumber<T1>>(
-                typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
+            const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
+            if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
                 return false;
 
             NumArrayIfImpl<T0, T1, ResultType>::vector_constant(
@@ -989,8 +989,8 @@ private:
         }
         else
         {
-            if (!checkDataType<DataTypeNumber<T1>>(
-                typeid_cast<const DataTypeArray &>(*col_right_const_array->getDataType()).getNestedType().get()))
+            const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
+            if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
                 return false;
 
             NumArrayIfImpl<T0, T1, ResultType>::constant_constant(
@@ -1083,9 +1083,7 @@ private:
                     + " of third argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (col_const_arr_left
-            && typeid_cast<const DataTypeNumber<T0> *>(
-                typeid_cast<const DataTypeArray &>(*col_const_arr_left->getDataType()).getNestedType().get()))
+        else if (col_const_arr_left && checkColumn<ColumnVector<T0>>(&static_cast<const ColumnArray &>(col_const_arr_left->getDataColumn()).getData()))
         {
             if (   executeConstRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_const_arr_left)
                 || executeConstRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_const_arr_left)
@@ -1161,19 +1159,19 @@ private:
                     StringIfImpl::vector_constant(
                         cond_col->getData(),
                         col_then->getChars(), col_then->getOffsets(),
-                        col_else_const->getData(),
+                        col_else_const->getValue<String>(),
                         res_vec, res_offsets);
                 else if (col_then_const && col_else)
                     StringIfImpl::constant_vector(
                         cond_col->getData(),
-                        col_then_const->getData(),
+                        col_then_const->getValue<String>(),
                         col_else->getChars(), col_else->getOffsets(),
                         res_vec, res_offsets);
                 else if (col_then_const && col_else_const)
                     StringIfImpl::constant_constant(
                         cond_col->getData(),
-                        col_then_const->getData(),
-                        col_else_const->getData(),
+                        col_then_const->getValue<String>(),
+                        col_else_const->getValue<String>(),
                         res_vec, res_offsets);
                 else if (col_then && col_else_fixed)
                     StringIfImpl::vector_vector_fixed(
@@ -1190,14 +1188,14 @@ private:
                 else if (col_then_const && col_else_fixed)
                     StringIfImpl::constant_vector_fixed(
                         cond_col->getData(),
-                        col_then_const->getData(),
+                        col_then_const->getValue<String>(),
                         col_else_fixed->getChars(), col_else_fixed->getN(),
                         res_vec, res_offsets);
                 else if (col_then_fixed && col_else_const)
                     StringIfImpl::vector_fixed_constant(
                         cond_col->getData(),
                         col_then_fixed->getChars(), col_then_fixed->getN(),
-                        col_else_const->getData(),
+                        col_else_const->getValue<String>(),
                         res_vec, res_offsets);
                 else
                     return false;
@@ -1234,19 +1232,19 @@ private:
                 StringArrayIfImpl::vector_constant(
                     cond_col->getData(),
                     col_then_elements->getChars(), col_then_elements->getOffsets(), col_arr_then->getOffsets(),
-                    col_arr_else_const->getData(),
+                    col_arr_else_const->getValue<Array>(),
                     res_chars, res_string_offsets, res_array_offsets);
             else if (col_arr_then_const && col_else_elements)
                 StringArrayIfImpl::constant_vector(
                     cond_col->getData(),
-                    col_arr_then_const->getData(),
+                    col_arr_then_const->getValue<Array>(),
                     col_else_elements->getChars(), col_else_elements->getOffsets(), col_arr_else->getOffsets(),
                     res_chars, res_string_offsets, res_array_offsets);
             else if (col_arr_then_const && col_arr_else_const)
                 StringArrayIfImpl::constant_constant(
                     cond_col->getData(),
-                    col_arr_then_const->getData(),
-                    col_arr_else_const->getData(),
+                    col_arr_then_const->getValue<Array>(),
+                    col_arr_else_const->getValue<Array>(),
                     res_chars, res_string_offsets, res_array_offsets);
             else
                 return false;
@@ -1322,7 +1320,7 @@ private:
 
         if (cond_is_null)
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnNull>(block.rows(), Null());
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
             return true;
         }
 
@@ -1347,7 +1345,7 @@ private:
             }
             else if (result_column->isNull())
             {
-                result_column = std::make_shared<ColumnNull>(block.rows(), Null());
+                result_column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
             }
             else
             {
@@ -1374,7 +1372,7 @@ private:
             return column;
 
         return std::make_shared<ColumnNullable>(
-            materializeColumnIfConst(column), ColumnConstUInt8(column->size(), 0).convertToFullColumn());
+            materializeColumnIfConst(column), std::make_shared<ColumnUInt8>(column->size(), 0));
     }
 
     static const DataTypePtr makeNullableDataTypeIfNot(const DataTypePtr & type)
@@ -1415,7 +1413,7 @@ private:
 
         if (then_is_null && else_is_null)
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnNull>(block.rows(), Null());
+            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
             return true;
         }
 
@@ -1441,7 +1439,7 @@ private:
             }
             else if (cond_const_col)
             {
-                block.safeGetByPosition(result).column = cond_const_col->getData()
+                block.safeGetByPosition(result).column = cond_const_col->getValue<UInt8>()
                     ? block.safeGetByPosition(result).type->createColumn()->cloneResized(block.rows())
                     : makeNullableColumnIfNot(arg_else.column);
             }
@@ -1481,7 +1479,7 @@ private:
             }
             else if (cond_const_col)
             {
-                block.safeGetByPosition(result).column = cond_const_col->getData()
+                block.safeGetByPosition(result).column = cond_const_col->getValue<UInt8>()
                     ? makeNullableColumnIfNot(arg_then.column)
                     : block.safeGetByPosition(result).type->createColumn()->cloneResized(block.rows());
             }
@@ -1518,14 +1516,14 @@ private:
                 {
                     then_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumn()
-                        : DataTypeUInt8().createConstColumn(block.rows(), 0),
+                        : DataTypeUInt8().createConstColumn(block.rows(), UInt64(0)),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
                     else_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumn()
-                        : DataTypeUInt8().createConstColumn(block.rows(), 0),
+                        : DataTypeUInt8().createConstColumn(block.rows(), UInt64(0)),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
@@ -1709,7 +1707,7 @@ public:
         {
             if (arg_then.type->equals(*arg_else.type))
             {
-                block.safeGetByPosition(result).column = cond_const_col->getData()
+                block.safeGetByPosition(result).column = cond_const_col->getValue<UInt8>()
                     ? arg_then.column
                     : arg_else.column;
                 return;

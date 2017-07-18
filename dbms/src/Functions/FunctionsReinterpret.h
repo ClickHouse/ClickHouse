@@ -9,6 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -55,7 +56,7 @@ public:
     template<typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col_from = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
             block.safeGetByPosition(result).column = col_to;
@@ -102,16 +103,16 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!(    executeType<UInt8>(block, arguments, result)
-            ||    executeType<UInt16>(block, arguments, result)
-            ||    executeType<UInt32>(block, arguments, result)
-            ||    executeType<UInt64>(block, arguments, result)
-            ||    executeType<Int8>(block, arguments, result)
-            ||    executeType<Int16>(block, arguments, result)
-            ||    executeType<Int32>(block, arguments, result)
-            ||    executeType<Int64>(block, arguments, result)
-            ||    executeType<Float32>(block, arguments, result)
-            ||    executeType<Float64>(block, arguments, result)))
+        if (!( executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -187,12 +188,12 @@ public:
                 offset += step;
             }
         }
-        else if (ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             ToFieldType value = 0;
-            const String & str = col->getData();
+            String str = col->getValue<String>();
             memcpy(&value, str.data(), std::min(sizeof(ToFieldType), str.length()));
-            auto col_res = DataTypeNumber<ToFieldType>().createConstColumn(col->size(), value);
+            auto col_res = DataTypeNumber<ToFieldType>().createConstColumn(col->size(), toField(value));
             block.safeGetByPosition(result).column = col_res;
         }
         else

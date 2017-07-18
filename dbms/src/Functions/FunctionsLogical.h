@@ -381,7 +381,7 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (ColumnVector<T> * col = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             auto col_res = std::make_shared<ColumnUInt8>();
             block.safeGetByPosition(result).column = col_res;
@@ -397,7 +397,7 @@ private:
             UInt8 res = 0;
             UnaryOperationImpl<T, Impl<T> >::constant(col->template getValue<T>(), res);
 
-            auto col_res = DataTypeUInt8().createConstColumn(col->size(), res);
+            auto col_res = DataTypeUInt8().createConstColumn(col->size(), toField(res));
             block.safeGetByPosition(result).column = col_res;
 
             return true;
@@ -427,16 +427,16 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!(    executeType<UInt8>(block, arguments, result)
-            ||    executeType<UInt16>(block, arguments, result)
-            ||    executeType<UInt32>(block, arguments, result)
-            ||    executeType<UInt64>(block, arguments, result)
-            ||    executeType<Int8>(block, arguments, result)
-            ||    executeType<Int16>(block, arguments, result)
-            ||    executeType<Int32>(block, arguments, result)
-            ||    executeType<Int64>(block, arguments, result)
-            ||    executeType<Float32>(block, arguments, result)
-            ||    executeType<Float64>(block, arguments, result)))
+        if (!( executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
                     + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);

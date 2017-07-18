@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/toField.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
@@ -68,6 +67,14 @@ template <typename Type>
 const bool checkColumnConst(const IColumn * column)
 {
     return checkAndGetColumnConst<Type>(column);
+}
+
+
+/// Transform anything to Field.
+template <typename T>
+inline Field toField(const T & x)
+{
+    return Field(typename NearestFieldType<T>::Type(x));
 }
 
 

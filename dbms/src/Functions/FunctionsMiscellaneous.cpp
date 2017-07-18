@@ -127,7 +127,6 @@ public:
         return 0;
     }
 
-    /// Get the result type by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return std::make_shared<DataTypeString>();
@@ -169,7 +168,6 @@ public:
         return 1;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return std::make_shared<DataTypeUInt64>();
@@ -205,7 +203,6 @@ public:
         return 1;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return std::make_shared<DataTypeString>();
@@ -321,17 +318,15 @@ public:
         return 0;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t size = block.rows();
-        block.safeGetByPosition(result).column = ColumnConstUInt64(size, size).convertToFullColumn();
+        block.safeGetByPosition(result).column = std::make_shared<ColumnUInt64>(size, size);
     }
 };
 
@@ -361,13 +356,11 @@ public:
         return false;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t size = block.rows();
@@ -411,17 +404,15 @@ public:
         return false;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t current_block_number = block_number++;
-        block.safeGetByPosition(result).column = ColumnConstUInt64(block.rows(), current_block_number).convertToFullColumn();
+        block.safeGetByPosition(result).column = std::make_shared<ColumnUInt64>(block.rows(), current_block_number);
     }
 };
 
@@ -455,13 +446,11 @@ public:
         return false;
     }
 
-    /// Get the result type by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t rows_in_block = block.rows();
@@ -504,7 +493,6 @@ public:
         return 1;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!checkDataType<DataTypeFloat64>(&*arguments[0]) && !checkDataType<DataTypeFloat32>(&*arguments[0])
@@ -518,30 +506,29 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         IColumn * col = block.safeGetByPosition(arguments[0]).column.get();
         double seconds;
         size_t size = col->size();
 
-        if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<Float64>>(col))
-            seconds = column->getData();
+        if (auto column = checkAndGetColumnConst<ColumnVector<Float64>>(col))
+            seconds = column->getValue<Float64>();
 
-        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<Float32>>(col))
-            seconds = static_cast<double>(column->getData());
+        else if (auto column = checkAndGetColumnConst<ColumnVector<Float32>>(col))
+            seconds = static_cast<double>(column->getValue<Float64>());
 
-        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<UInt64>>(col))
-            seconds = static_cast<double>(column->getData());
+        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt64>>(col))
+            seconds = static_cast<double>(column->getValue<UInt64>());
 
-        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<UInt32>>(col))
-            seconds = static_cast<double>(column->getData());
+        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt32>>(col))
+            seconds = static_cast<double>(column->getValue<UInt32>());
 
-        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<UInt16>>(col))
-            seconds = static_cast<double>(column->getData());
+        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt16>>(col))
+            seconds = static_cast<double>(column->getValue<UInt16>());
 
-        else if (ColumnConst * column = checkAndGetColumnConst<ColumnVector<UInt8>>(col))
-            seconds = static_cast<double>(column->getData());
+        else if (auto column = checkAndGetColumnConst<ColumnVector<UInt8>>(col))
+            seconds = static_cast<double>(column->getValue<UInt8>());
 
         else
             throw Exception("The argument of function " + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
@@ -551,7 +538,7 @@ public:
             usleep(static_cast<unsigned>(seconds * 1e6));
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
-        block.safeGetByPosition(result).column = ColumnConst(size, 0).convertToFullColumn();
+        block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, UInt64(0))->convertToFullColumnIfConst();
     }
 };
 
@@ -576,13 +563,11 @@ public:
         return 1;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return arguments[0];
     }
 
-    /// Apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const auto & src = block.safeGetByPosition(arguments[0]).column;
@@ -636,13 +621,11 @@ public:
         return 2;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    /// Apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         /// Second argument must be ColumnSet.
@@ -771,7 +754,6 @@ public:
         out_return_type = elems[index - 1]->clone();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
@@ -834,15 +816,15 @@ public:
     {
         return name;
     }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), 0);
+        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(0));
     }
 };
 
@@ -891,10 +873,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), 1);
+        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(1));
     }
 };
 
@@ -908,7 +889,6 @@ public:
         return std::make_shared<FunctionIdentity>();
     }
 
-    /// Get the function name.
     String getName() const override
     {
         return name;
@@ -919,13 +899,11 @@ public:
         return 1;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         return arguments.front()->clone();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         block.safeGetByPosition(result).column = block.safeGetByPosition(arguments.front()).column;
@@ -960,7 +938,6 @@ public:
         return false;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeArray * arr = checkAndGetDataType<DataTypeArray>(&*arguments[0]);
@@ -970,7 +947,6 @@ public:
         return arr->getNestedType()->clone();
     }
 
-    /// Apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         throw Exception("Function " + getName() + " must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
@@ -1002,16 +978,16 @@ void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & argumen
 {
     ColumnPtr first_column = block.safeGetByPosition(arguments[0]).column;
 
-    ColumnArray * array_column = typeid_cast<ColumnArray *>(block.safeGetByPosition(arguments[1]).column.get());
+    const ColumnArray * array_column = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[1]).column.get());
     ColumnPtr temp_column;
 
     if (!array_column)
     {
-        ColumnConst * const_array_column = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[1]).column.get());
+        auto const_array_column = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[1]).column.get());
         if (!const_array_column)
             throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
         temp_column = const_array_column->convertToFullColumn();
-        array_column = typeid_cast<ColumnArray *>(&*temp_column);
+        array_column = checkAndGetColumn<ColumnArray>(temp_column.get());
     }
 
     block.safeGetByPosition(result).column
@@ -1043,7 +1019,6 @@ public:
         return 0;
     }
 
-    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 3 && arguments.size() != 4)
@@ -1060,7 +1035,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    /// apply function to the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// The level at which the line has zero length.
@@ -1079,19 +1053,20 @@ public:
 
         if (src.isConst())
         {
-            auto res_column = DataTypeString().createConstColumn(block.rows(), "");
-            block.safeGetByPosition(result).column = res_column;
+            auto res_column_holder = DataTypeString().createConstColumn(block.rows(), String());
+            ColumnConst & res_column = static_cast<ColumnConst &>(*res_column_holder);
+            block.safeGetByPosition(result).column = res_column_holder;
 
-            if (executeConstNumber<UInt8>(src, *res_column, min, max, max_width)
-                || executeConstNumber<UInt16>(src, *res_column, min, max, max_width)
-                || executeConstNumber<UInt32>(src, *res_column, min, max, max_width)
-                || executeConstNumber<UInt64>(src, *res_column, min, max, max_width)
-                || executeConstNumber<Int8>(src, *res_column, min, max, max_width)
-                || executeConstNumber<Int16>(src, *res_column, min, max, max_width)
-                || executeConstNumber<Int32>(src, *res_column, min, max, max_width)
-                || executeConstNumber<Int64>(src, *res_column, min, max, max_width)
-                || executeConstNumber<Float32>(src, *res_column, min, max, max_width)
-                || executeConstNumber<Float64>(src, *res_column, min, max, max_width))
+            if (executeConstNumber<UInt8>(src, res_column, min, max, max_width)
+                || executeConstNumber<UInt16>(src, res_column, min, max, max_width)
+                || executeConstNumber<UInt32>(src, res_column, min, max, max_width)
+                || executeConstNumber<UInt64>(src, res_column, min, max, max_width)
+                || executeConstNumber<Int8>(src, res_column, min, max, max_width)
+                || executeConstNumber<Int16>(src, res_column, min, max, max_width)
+                || executeConstNumber<Int32>(src, res_column, min, max, max_width)
+                || executeConstNumber<Int64>(src, res_column, min, max, max_width)
+                || executeConstNumber<Float32>(src, res_column, min, max, max_width)
+                || executeConstNumber<Float64>(src, res_column, min, max, max_width))
             {
             }
             else
@@ -1185,7 +1160,10 @@ private:
     {
         if (auto col = checkAndGetColumnConst<ColumnVector<T>>(&src))
         {
-            fill(col->template getValue<T>(), dst.getValue<String>(), min, max, max_width);
+            String res;
+            fill(col->template getValue<T>(), res, min, max, max_width);
+            dst.getDataColumn().cut(0, 0);
+            dst.getDataColumn().insert(res);
             return true;
         }
         else
@@ -1266,7 +1244,7 @@ public:
         }
         else if (const auto in = checkAndGetColumnConst<ColumnVector<T>>(in_untyped))
         {
-            block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(in->size(), Impl::execute(in->getData()));
+            block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(in->size(), toField(Impl::execute(in->template getValue<T>())));
 
             return true;
         }
@@ -1760,7 +1738,8 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
 
 void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto get_string_from_block = [&](size_t column_pos) -> const String & {
+    auto get_string_from_block = [&](size_t column_pos) -> String
+    {
         ColumnPtr column = block.safeGetByPosition(column_pos).column;
         const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.get());
         return const_column->getValue<String>();
@@ -1773,7 +1752,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     const StoragePtr & table = global_context.getTable(database_name, table_name);
     const bool has_column = table->hasColumn(column_name);
 
-    block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), has_column);
+    block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(has_column));
 }
 
 

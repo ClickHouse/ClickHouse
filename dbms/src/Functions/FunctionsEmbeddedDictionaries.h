@@ -251,7 +251,7 @@ public:
         else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
         {
             block.safeGetByPosition(result).column = DataTypeNumber<T>().createConstColumn(
-                col_from->size(), Transform::apply(col_from->template getValue<T>(), dict));
+                col_from->size(), toField(Transform::apply(col_from->template getValue<T>(), dict)));
         }
         else
             throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
@@ -358,7 +358,7 @@ public:
             block.safeGetByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
-            const T const_from2 = col_const2->getData();
+            const T const_from2 = col_const2->template getValue<T>();
             typename ColumnUInt8::Container_t & vec_to = col_to->getData();
             size_t size = vec_from1.size();
             vec_to.resize(size);
@@ -371,7 +371,7 @@ public:
             auto col_to = std::make_shared<ColumnUInt8>();
             block.safeGetByPosition(result).column = col_to;
 
-            const T const_from1 = col_const1->getData();
+            const T const_from1 = col_const1->template getValue<T>();
             const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
             typename ColumnUInt8::Container_t & vec_to = col_to->getData();
             size_t size = vec_from2.size();
@@ -383,7 +383,7 @@ public:
         else if (col_const1 && col_const2)
         {
             block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(col_const1->size(),
-                Transform::apply(col_const1->getData(), col_const2->getData(), dict));
+                Transform::apply(col_const1->template getValue<T>(), col_const2->template getValue<T>(), dict));
         }
         else
             throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName()

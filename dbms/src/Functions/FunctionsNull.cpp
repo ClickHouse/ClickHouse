@@ -51,7 +51,7 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
     if (elem.column->isNull())
     {
         /// Trivial case.
-        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(elem.column->size(), 1);
+        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(elem.column->size(), UInt64(1));
     }
     else if (elem.column->isNullable())
     {
@@ -63,7 +63,7 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
     {
         /// Since no element is nullable, return a zero-constant column representing
         /// a zero-filled null map.
-        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(elem.column->size(), 0);
+        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(elem.column->size(), UInt64(0));
     }
 }
 
@@ -234,7 +234,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
     /// If all arguments appeared to be NULL.
     if (multi_if_args.empty())
     {
-        block.getByPosition(result).column = std::make_shared<ColumnNull>(block.rows(), Null());
+        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
         return;
     }
 
@@ -353,7 +353,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 
     /// Append a NULL column.
     ColumnWithTypeAndName null_elem;
-    null_elem.column = std::make_shared<ColumnNull>(temp_block.rows(), Null());
+    null_elem.column = DataTypeNull().createConstColumn(temp_block.rows(), Null());
     null_elem.type = std::make_shared<DataTypeNull>();
     null_elem.name = "NULL";
 
@@ -436,7 +436,7 @@ void FunctionToNullable::executeImpl(Block & block, const ColumnNumbers & argume
         block.getByPosition(result).column = col;
     else
         block.getByPosition(result).column = std::make_shared<ColumnNullable>(col,
-            DataTypeUInt8().createConstColumn(block.rows(), 0)->convertToFullColumn());
+            std::make_shared<ColumnUInt8>(block.rows(), 0));
 }
 
 }
