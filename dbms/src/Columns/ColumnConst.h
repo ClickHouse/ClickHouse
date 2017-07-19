@@ -38,7 +38,7 @@ public:
 
     ColumnPtr convertToFullColumn() const
     {
-        return data->replicate({s});
+        return data->replicate(Offsets_t(1, s));
     }
 
     ColumnPtr convertToFullColumnIfConst() const override
@@ -155,6 +155,7 @@ public:
     {
         auto res = data->deserializeAndInsertFromArena(pos);
         data->popBack(1);
+        ++s;
         return res;
     }
 

@@ -249,7 +249,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         {
             const auto & elem = block.getByPosition(arg_num);
 
-            if (DataTypeTraits::removeNullable(elem.type)->getName() == observed_type->getName())
+            if (DataTypeTraits::removeNullable(elem.type)->equals(*observed_type))
             {
                 /// If an element of the same type as the result, just add it in response
                 arr.push_back((*elem.column)[0]);
