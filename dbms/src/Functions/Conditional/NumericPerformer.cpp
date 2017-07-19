@@ -94,7 +94,7 @@ protected:
         else if ((arr_vec_col != nullptr) || (arr_const_col != nullptr))
             branch.category = Category::NUMERIC_ARRAY;
         else
-            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Unexpected type in multiIf function", ErrorCodes::LOGICAL_ERROR};
 
         branches.push_back(branch);
 
@@ -176,7 +176,7 @@ struct ElsePredicate<NumberTraits::Enriched::Void<Nullity>, Null> final : public
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
@@ -187,7 +187,7 @@ struct ElsePredicate<TResult, NumberTraits::Error> : public PredicateBase<Number
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
@@ -198,7 +198,7 @@ struct ElsePredicate<NumberTraits::Error, TType>
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
@@ -267,7 +267,7 @@ struct ThenPredicate<TResult, NumberTraits::Error>
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
@@ -278,7 +278,7 @@ struct ThenPredicate<NumberTraits::Error, TType>
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 

@@ -246,7 +246,7 @@ public:
     /// For the meaning of the builder parameter, see the FunctionMultiIf::perform() declaration.
     static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
