@@ -834,11 +834,10 @@ ColumnPtr ColumnArray::replicateGeneric(const Offsets_t & replicate_offsets) con
         return res;
 
     IColumn::Offset_t prev_offset = 0;
-    const auto & offsets_data = getOffsets();
     for (size_t i = 0; i < col_size; ++i)
     {
-        size_t size_to_replicate = offsets_data[i] - prev_offset;
-        prev_offset = offsets_data[i];
+        size_t size_to_replicate = replicate_offsets[i] - prev_offset;
+        prev_offset = replicate_offsets[i];
 
         for (size_t j = 0; j < size_to_replicate; ++j)
             res_concrete.insertFrom(*this, i);
