@@ -1,6 +1,16 @@
 #include <Common/Collator.h>
 
 #include <Common/config.h>
+
+#if USE_ICU
+    #pragma GCC diagnostic push
+    #ifdef __APPLE__
+    #pragma GCC diagnostic ignored "-Wold-style-cast"
+    #endif
+    #include <unicode/ucol.h>
+    #pragma GCC diagnostic pop
+#endif
+
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/String.h>
