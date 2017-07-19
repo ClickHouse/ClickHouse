@@ -2,6 +2,7 @@
 #include <iostream>
 #include <limits>
 #include <regex>
+#include <thread>
 #include <unistd.h>
 
 #include <boost/program_options.hpp>
@@ -1212,6 +1213,8 @@ public:
 
         json_output.set("hostname", getFQDNOrHostName());
         json_output.set("num_cores", getNumberOfPhysicalCPUCores());
+        json_output.set("num_threads", std::thread::hardware_concurrency());
+        json_output.set("ram", getMemoryAmount());
         json_output.set("server_version", server_version);
         json_output.set("time", DateLUT::instance().timeToString(time(0)));
         json_output.set("test_name", test_name);
