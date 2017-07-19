@@ -2314,6 +2314,8 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 template <typename T>
 bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const size_t result)
 {
+    static constexpr size_t max_elements = 100'000'000;
+
     if (const auto in = checkAndGetColumn<ColumnVector<T>>(arg))
     {
         const auto & in_data = in->getData();

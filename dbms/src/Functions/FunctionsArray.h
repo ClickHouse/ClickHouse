@@ -1309,7 +1309,6 @@ const String FunctionEmptyArray<DataType>::name = FunctionEmptyArray::base_name 
 class FunctionRange : public IFunction
 {
 public:
-    static constexpr auto max_elements = 100'000'000;
     static constexpr auto name = "range";
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionRange>(); }
 
