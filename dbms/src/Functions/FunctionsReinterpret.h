@@ -1,6 +1,5 @@
 #pragma once
 
-#include <IO/ReadBufferFromString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>

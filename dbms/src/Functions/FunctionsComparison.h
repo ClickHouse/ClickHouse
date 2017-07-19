@@ -21,7 +21,7 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <Core/AccurateComparison.h>
-#include <IO/ReadBufferFromString.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
 #include <limits>
@@ -778,20 +778,22 @@ private:
             || (is_enum8 = checkAndGetDataType<DataTypeEnum8>(number_type))
             || (is_enum16 = checkAndGetDataType<DataTypeEnum16>(number_type));
 
-        const auto column_string = checkAndGetColumnConstStringOrFixedString(column_string_untyped);
+        const auto column_string = checkAndGetColumnConst<ColumnString>(column_string_untyped);
         if (!column_string || !legal_types)
             throw Exception{
                 "Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
                     + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
 
+        StringRef string_value = column_string->getDataAt(0);
+
         if (is_date)
         {
             DayNum_t date;
-            ReadBufferFromString in(column_string->getValue<String>());
+            ReadBufferFromMemory in(string_value.data, string_value.size);
             readDateText(date, in);
             if (!in.eof())
-                throw Exception("String is too long for Date: " + column_string->getValue<String>());
+                throw Exception("String is too long for Date: " + string_value.toString());
 
             ColumnPtr parsed_const_date_holder = DataTypeDate().createConstColumn(block.rows(), UInt64(date));
             const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
@@ -802,10 +804,10 @@ private:
         else if (is_date_time)
         {
             time_t date_time;
-            ReadBufferFromString in(column_string->getValue<String>());
+            ReadBufferFromMemory in(string_value.data, string_value.size);
             readDateTimeText(date_time, in);
             if (!in.eof())
-                throw Exception("String is too long for DateTime: " + column_string->getValue<String>());
+                throw Exception("String is too long for DateTime: " + string_value.toString());
 
             ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createConstColumn(block.rows(), UInt64(date_time));
             const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
@@ -816,10 +818,10 @@ private:
         else if (is_uuid)
         {
             UUID uuid;
-            ReadBufferFromString in(column_string->getValue<String>());
+            ReadBufferFromMemory in(string_value.data, string_value.size);
             readText(uuid, in);
             if (!in.eof())
-                throw Exception("String is too long for UUID: " + column_string->getValue<String>());
+                throw Exception("String is too long for UUID: " + string_value.toString());
 
             ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createConstColumn(block.rows(), UInt128(uuid));
             const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());

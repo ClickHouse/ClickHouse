@@ -6,9 +6,8 @@
 #include <type_traits>
 
 #include <IO/WriteBufferFromVector.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/Operators.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -382,14 +381,14 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
         }
         else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
-            const String & s = col_from->getValue<String>();
-            ReadBufferFromString read_buffer(s);
+            StringRef s = col_from->getDataAt(0);
+            ReadBufferFromMemory read_buffer(s.data, s.size);
             ToFieldType x(0);
             parseImpl<ToDataType>(x, read_buffer, time_zone);
 
             if (!read_buffer.eof()
                 && !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
-                    && s.size() == strlen("YYYY-MM-DD hh:mm:ss")))
+                    && s.size == strlen("YYYY-MM-DD hh:mm:ss")))
                 throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
             block.getByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), toField(x));
@@ -453,8 +452,8 @@ struct ConvertOrZeroImpl
         }
         else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
-            const String & s = col_from->getValue<String>();
-            ReadBufferFromString read_buffer(s);
+            StringRef s = col_from->getDataAt(0);
+            ReadBufferFromMemory read_buffer(s.data, s.size);
             ToFieldType x = 0;
             if (!tryParseImpl<ToDataType>(x, read_buffer) || !read_buffer.eof())
                 x = 0;
@@ -506,10 +505,10 @@ struct ConvertImplGenericFromString
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from_const_string = checkAndGetColumnConstStringOrFixedString(&col_from))
+        else if (checkAndGetColumnConstStringOrFixedString(&col_from))
         {
-            const String & s = col_from_const_string->getValue<String>();
-            ReadBufferFromString read_buffer(s);
+            StringRef s = col_from.getDataAt(0);
+            ReadBufferFromMemory read_buffer(s.data, s.size);
 
             auto tmp_col = data_type_to.createColumn();
             data_type_to.deserializeTextEscaped(*tmp_col, read_buffer);

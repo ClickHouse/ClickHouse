@@ -3,7 +3,6 @@
 #include <Common/hex.h>
 #include <Common/formatIPv6.h>
 #include <Common/typeid_cast.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
