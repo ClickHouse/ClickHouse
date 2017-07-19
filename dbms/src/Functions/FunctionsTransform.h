@@ -779,10 +779,10 @@ private:
             if (const_default_col)
                 const_default_value = (*const_default_col)[0];
 
-            /// Do I need to convert the elements `to` and `default_value` to the smallest common type that is Float64?
+            /// Do we need to convert the elements `to` and `default_value` to the smallest common type that is Float64?
             bool default_col_is_float =
                    checkColumn<ColumnFloat32>(default_col)
-                || checkColumnConst<ColumnFloat64>(default_col)
+                || checkColumn<ColumnFloat64>(default_col)
                 || checkColumnConst<ColumnFloat32>(default_col)
                 || checkColumnConst<ColumnFloat64>(default_col);
 
@@ -802,7 +802,7 @@ private:
             }
         }
 
-        /// Note: Do not check the duplicates in the `from` array.
+        /// Note: Doesn't check the duplicates in the `from` array.
 
         if (from[0].getType() != Field::Types::String && to[0].getType() != Field::Types::String)
         {
