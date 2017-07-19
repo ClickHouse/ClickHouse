@@ -1674,10 +1674,6 @@ class FunctionHasColumnInTable : public IFunction
 {
 public:
     static constexpr auto name = "hasColumnInTable";
-
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
     static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext());
@@ -1686,6 +1682,15 @@ public:
     FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
     {
     }
+
+    bool isVariadic() const override
+	{
+		return true;
+	}
+    size_t getNumberOfArguments() const override
+	{
+		return 0;
+	}
 
     String getName() const override
     {
@@ -1744,7 +1749,7 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
     const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites)
 {
     if (getNumberOfArguments() < 3 || getNumberOfArguments() > 6)
-        throw Exception{"Invalid number of arguments for function " + getName(),
+        throw Exception{"Invalid number of arguments for function " + getName() + ": " + std::to_string(getNumberOfArguments()),
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
     static const std::string arg_pos_description[] = {"First", "Second", "Third", "Fourth", "Fifth", "Sixth"};
