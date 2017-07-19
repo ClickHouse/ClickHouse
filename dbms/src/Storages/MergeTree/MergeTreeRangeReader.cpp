@@ -5,8 +5,7 @@ namespace DB
 
 MergeTreeRangeReader::MergeTreeRangeReader(
     MergeTreeReader & merge_tree_reader, size_t from_mark, size_t to_mark, size_t index_granularity)
-    : logger(&Poco::Logger::get("MergeTreeRangeReader"))
-    , merge_tree_reader(merge_tree_reader), current_mark(from_mark), last_mark(to_mark)
+    : merge_tree_reader(merge_tree_reader), current_mark(from_mark), last_mark(to_mark)
     , read_rows_after_current_mark(0), index_granularity(index_granularity), continue_reading(false), is_reading_finished(false)
 {
 }
