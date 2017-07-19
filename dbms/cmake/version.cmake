@@ -1,6 +1,6 @@
 #This strings autochanged from release_lib.sh :
-set(VERSION_DESCRIBE v1.1.54245-testing)
-set(VERSION_REVISION 54245)
+set(VERSION_DESCRIBE v1.1.54254-testing)
+set(VERSION_REVISION 54254)
 #===end of autochange
 
 set (VERSION_MAJOR 1)
