@@ -74,4 +74,15 @@ template <> struct TypeName<Float32> { static const char * get() { return "Float
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
 
+#define APPLY_FOR_NUMBERS(M, N) \
+    M(UInt8, N) \
+    M(UInt16, N) \
+    M(UInt32, N) \
+    M(UInt64, N) \
+    M(Int8, N) \
+    M(Int16, N) \
+    M(Int32, N) \
+    M(Int64, N) \
+    M(Float32, N) \
+    M(Float64, N)
 }

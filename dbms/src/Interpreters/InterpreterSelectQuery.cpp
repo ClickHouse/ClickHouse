@@ -353,7 +353,7 @@ Block InterpreterSelectQuery::getSampleBlock(const ASTPtr & query_ptr_, const Co
     return InterpreterSelectQuery(OnlyAnalyzeTag(), query_ptr_, context_).getSampleBlock();
 }
 
-
+#incldue <DataStreams/LogColumnTypesBlockInputStream.h>
 BlockIO InterpreterSelectQuery::execute()
 {
     (void) executeWithoutUnion();
@@ -388,7 +388,7 @@ BlockIO InterpreterSelectQuery::execute()
     }
 
     BlockIO res;
-    res.in = streams[0];
+    res.in = std::make_shared<LogColumnTypesBlockInputStream>(streams[0]);
     res.in_sample = getSampleBlock();
 
     return res;

@@ -7,6 +7,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
+#include <Columns/ColumnImpl.h>
 
 
 class Collator;
@@ -17,7 +18,7 @@ namespace DB
 
 /** Column for String values.
   */
-class ColumnString final : public IColumn
+class ColumnString final : public ColumnImpl<ColumnString>
 {
 public:
     using Chars_t = PaddedPODArray<UInt8>;

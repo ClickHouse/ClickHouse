@@ -31,6 +31,7 @@ using ConstColumnPlainPtrs = std::vector<const IColumn *>;
 
 class Arena;
 class ColumnGathererStream;
+class ColumnVisitor;
 
 /// Declares interface to store columns in memory.
 class IColumn : private boost::noncopyable
@@ -249,6 +250,10 @@ public:
     /// This is greater or equals to byteSize due to memory reservation in containers.
     /// Zero, if could be determined.
     virtual size_t allocatedBytes() const = 0;
+
+    /// For visitors
+    void accept(ColumnVisitor &) { throw Exception("Accept not implemented"); }
+    void accept(ColumnVisitor &) const { throw Exception("Accept not implemented"); }
 
     virtual ~IColumn() {}
 
