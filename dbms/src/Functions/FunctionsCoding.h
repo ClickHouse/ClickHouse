@@ -118,7 +118,7 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnFixedString>(column.get()))
         {
             const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(&col_in->getDataColumn());
             if (!column_fixed_string || column_fixed_string->getN() != ipv6_bytes_length)
@@ -243,7 +243,7 @@ public:
 
             vec_res.resize(pos - begin);
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnFixedString>(column.get()))
         {
             const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(&col_in->getDataColumn());
             if (!column_fixed_string || column_fixed_string->getN() != ipv6_bytes_length)
@@ -504,7 +504,7 @@ public:
                 src_offset = offsets_src[i];
             }
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             String out(ipv6_bytes_length, 0);
             ipv6_scan(col_in->getValue<String>().data(), reinterpret_cast<unsigned char *>(&out[0]));
@@ -687,7 +687,7 @@ public:
                 prev_offset = offsets_src[i];
             }
         }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             auto col_res = DataTypeUInt32().createConstColumn(col->size(), toField(parseIPv4(col->getValue<String>().c_str())));
             block.getByPosition(result).column = col_res;
@@ -1052,7 +1052,7 @@ public:
                 prev_offset = offsets_src[i];
             }
         }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getValue<String>().c_str()));
             block.getByPosition(result).column = col_res;
@@ -1149,7 +1149,7 @@ public:
                 prev_offset = offsets_src[i];
             }
         }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getValue<String>().c_str()));
             block.getByPosition(result).column = col_res;
@@ -1227,7 +1227,7 @@ public:
                 offsets_res[i] = dst_offset;
             }
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConst<ColumnFixedString>(column.get()))
         {
             const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(&col_in->getDataColumn());
             if (!column_fixed_string || column_fixed_string->getN() != ipv6_bytes_length)
@@ -1368,7 +1368,7 @@ public:
                 dst_offset += uuid_bytes_length;
             }
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if (const auto col_in = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             const auto & data_in = col_in->getValue<String>();
 
@@ -1513,7 +1513,7 @@ public:
     bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
     {
         const ColumnString * col_str_in = checkAndGetColumn<ColumnString>(col);
-        const ColumnConst * col_const_in = checkAndGetColumnConst<ColumnString>(col);
+        const ColumnConst * col_const_in = checkAndGetColumnConstStringOrFixedString(col);
 
         if (col_str_in)
         {
@@ -1717,7 +1717,7 @@ public:
 
             out_vec.resize(pos - begin);
         }
-        else if(const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if(const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             String src = col->getValue<String>();
             String res(src.size(), '\0');
@@ -1870,7 +1870,7 @@ public:
     bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
     {
         const ColumnString * col_str_in = checkAndGetColumn<ColumnString>(col);
-        const ColumnConst * col_const_in = checkAndGetColumnConst<ColumnString>(col);
+        const ColumnConst * col_const_in = checkAndGetColumnConstStringOrFixedString(col);
 
         if (col_str_in)
         {

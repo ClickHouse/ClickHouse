@@ -1114,8 +1114,8 @@ private:
         const ColumnString * col_else = checkAndGetColumn<ColumnString>(col_else_untyped);
         const ColumnFixedString * col_then_fixed = checkAndGetColumn<ColumnFixedString>(col_then_untyped);
         const ColumnFixedString * col_else_fixed = checkAndGetColumn<ColumnFixedString>(col_else_untyped);
-        const ColumnConst * col_then_const = checkAndGetColumnConst<ColumnString>(col_then_untyped);
-        const ColumnConst * col_else_const = checkAndGetColumnConst<ColumnString>(col_else_untyped);
+        const ColumnConst * col_then_const = checkAndGetColumnConstStringOrFixedString(col_then_untyped);
+        const ColumnConst * col_else_const = checkAndGetColumnConstStringOrFixedString(col_else_untyped);
 
         if ((col_then || col_then_const || col_then_fixed) && (col_else || col_else_const || col_else_fixed))
         {

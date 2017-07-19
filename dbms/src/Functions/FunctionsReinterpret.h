@@ -188,7 +188,7 @@ public:
                 offset += step;
             }
         }
-        else if (auto col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        else if (auto col = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
             ToFieldType value = 0;
             String str = col->getValue<String>();

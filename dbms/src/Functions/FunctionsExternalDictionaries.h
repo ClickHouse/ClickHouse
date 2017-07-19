@@ -604,7 +604,7 @@ private:
 
             dictionary->getString(attr_name, ids, default_col, out.get());
         }
-        else if (const auto default_col = checkAndGetColumnConst<ColumnString>(default_col_untyped))
+        else if (const auto default_col = checkAndGetColumnConstStringOrFixedString(default_col_untyped))
         {
             /// vector ids, const defaults
             const auto out = std::make_shared<ColumnString>();
@@ -638,7 +638,7 @@ private:
 
             dictionary->getString(attr_name, ids, default_col, out.get());
         }
-        else if (const auto default_col = checkAndGetColumnConst<ColumnString>(default_col_untyped))
+        else if (const auto default_col = checkAndGetColumnConstStringOrFixedString(default_col_untyped))
         {
             /// const ids, const defaults
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
@@ -688,7 +688,7 @@ private:
         {
             dict->getString(attr_name, key_columns, key_types, default_col, out.get());
         }
-        else if (const auto default_col = checkAndGetColumnConst<ColumnString>(default_col_untyped))
+        else if (const auto default_col = checkAndGetColumnConstStringOrFixedString(default_col_untyped))
         {
             const auto & def = default_col->getValue<String>();
             dict->getString(attr_name, key_columns, key_types, def, out.get());

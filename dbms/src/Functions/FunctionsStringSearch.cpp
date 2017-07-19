@@ -996,19 +996,19 @@ public:
         if (needle.size() == 0)
             throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column_src))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.getByPosition(result).column = col_res;
             Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column_src))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.getByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnConst * col = typeid_cast<const ColumnConst *>(&*column_src))
+        else if (const ColumnConst * col = typeid_cast<const ColumnConst *>(column_src.get()))
         {
             String res;
             Impl::constant(col->getValue<String>(), needle, replacement, res);

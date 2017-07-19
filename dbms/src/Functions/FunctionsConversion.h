@@ -380,7 +380,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
             const String & s = col_from->getValue<String>();
             ReadBufferFromString read_buffer(s);
@@ -451,7 +451,7 @@ struct ConvertOrZeroImpl
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
             const String & s = col_from->getValue<String>();
             ReadBufferFromString read_buffer(s);
@@ -506,7 +506,7 @@ struct ConvertImplGenericFromString
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from_const_string = checkAndGetColumnConst<ColumnString>(&col_from))
+        else if (const ColumnConst * col_from_const_string = checkAndGetColumnConstStringOrFixedString(&col_from))
         {
             const String & s = col_from_const_string->getValue<String>();
             ReadBufferFromString read_buffer(s);
@@ -641,7 +641,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
             data_to.resize(offset_to);
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
             const String & s = col_from->getValue<String>();
 
@@ -937,7 +937,7 @@ public:
     {
         const auto & column = block.getByPosition(arguments[0]).column;
 
-        if (const auto column_const = checkAndGetColumnConst<ColumnString>(column.get()))
+        if (const auto column_const = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             if (column_const->getValue<String>().size() > n)
                 throw Exception("String too long for type FixedString(" + toString(n) + ")",
@@ -1493,7 +1493,7 @@ private:
 
                 result_col = res;
             }
-            else if (const auto const_col = checkAndGetColumnConst<ColumnString>(first_col))
+            else if (const auto const_col = checkAndGetColumnConstStringOrFixedString(first_col))
             {
                 result_col = result_type.createConstColumn(const_col->size(),
                     nearestFieldType(result_type.getValue(const_col->getValue<String>())));

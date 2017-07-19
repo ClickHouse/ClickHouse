@@ -730,7 +730,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
             block.getByPosition(result).column = col_res;
@@ -739,7 +739,7 @@ public:
             vec_res.resize(col->size());
             Impl::vector(col->getChars(), col->getOffsets(), vec_res);
         }
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             /// For a fixed string only `lengthUTF8` function returns not a constant.
             if ("lengthUTF8" != getName())
@@ -759,13 +759,13 @@ public:
                 Impl::vector_fixed_to_vector(col->getChars(), col->getN(), vec_res);
             }
         }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(&*column))
+        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             ResultType res = 0;
             Impl::constant(col->getValue<String>(), res);
             block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), toField(res));
         }
-        else if (const ColumnArray * col = checkAndGetColumn<ColumnArray>(&*column))
+        else if (const ColumnArray * col = checkAndGetColumn<ColumnArray>(column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
             block.getByPosition(result).column = col_res;
@@ -774,7 +774,7 @@ public:
             vec_res.resize(col->size());
             Impl::array(col->getOffsets(), vec_res);
         }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnArray>(&*column))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnArray>(column.get()))
         {
             ResultType res = 0;
             Impl::constant_array(col->getValue<Array>(), res);
@@ -837,7 +837,7 @@ public:
             block.getByPosition(result).column = col_res;
             ReverseImpl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
         }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
+        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             String res;
             ReverseImpl::constant(col->getValue<String>(), res);
@@ -916,7 +916,8 @@ private:
     {
         COPY_STRING,
         COPY_FIXED_STRING,
-        COPY_CONST_STRING
+        COPY_CONST_STRING,
+        COPY_CONST_FIXED_STRING,
     };
 
     /// column pointer augmented with offset (current offset String/FixedString, unused for Const<String>)
@@ -961,7 +962,7 @@ private:
 
                 result.emplace_back(InstructionType::COPY_FIXED_STRING, ColumnAndOffset{col, 0});
             }
-            else if (const auto col = checkAndGetColumnConst<ColumnString>(column))
+            else if (const auto col = checkAndGetColumnConstStringOrFixedString(column))
             {
                 rows = col->size();
                 out_length += col->getValue<String>().size() * col->size();
@@ -989,8 +990,8 @@ private:
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
         const ColumnFixedString * c0_fixed_string = checkAndGetColumn<ColumnFixedString>(c0);
         const ColumnFixedString * c1_fixed_string = checkAndGetColumn<ColumnFixedString>(c1);
-        const ColumnConst * c0_const = checkAndGetColumnConst<ColumnString>(c0);
-        const ColumnConst * c1_const = checkAndGetColumnConst<ColumnString>(c1);
+        const ColumnConst * c0_const = checkAndGetColumnConstStringOrFixedString(c0);
+        const ColumnConst * c1_const = checkAndGetColumnConstStringOrFixedString(c1);
 
         /// The result is const string
         if (c0_const && c1_const)
@@ -1419,7 +1420,7 @@ public:
             block.getByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), start, length, col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(&*column_string))
+        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(&*column_string))
         {
             String res;
             Impl::constant(col->getValue<String>(), start, length, res);
@@ -1480,7 +1481,7 @@ private:
         if (trailing_char_str.size() != 1)
             throw Exception{"Second argument of function " + getName() + " must be a one-character string", ErrorCodes::BAD_ARGUMENTS};
 
-        if (const auto col = checkAndGetColumn<ColumnString>(&*column))
+        if (const auto col = checkAndGetColumn<ColumnString>(column.get()))
         {
             auto col_res = std::make_shared<ColumnString>();
             block.getByPosition(result).column = col_res;
@@ -1517,7 +1518,7 @@ private:
 
             dst_data.resize_assume_reserved(dst_offset);
         }
-        else if (const auto col = checkAndGetColumnConst<ColumnString>(&*column))
+        else if (const auto col = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             String in_data = col->getValue<String>();
 

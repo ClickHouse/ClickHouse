@@ -853,7 +853,7 @@ private:
         if (item_arg->isNull())
             ArrayIndexStringNullImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), col_res->getData(), null_map_data);
-        else if (const auto item_arg_const = checkAndGetColumnConst<ColumnString>(item_arg))
+        else if (const auto item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
             ArrayIndexStringImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), item_arg_const->getValue<String>(), col_res->getData(),
                 null_map_data);

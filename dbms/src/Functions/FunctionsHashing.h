@@ -217,7 +217,7 @@ public:
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
             block.getByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
@@ -273,7 +273,7 @@ public:
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
                     &chars_to[i * Impl::length]);
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
             const auto & data = col_from->getValue<String>();
 
@@ -459,9 +459,10 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(column))
+        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(column))
         {
-            const UInt64 hash = Impl::Hash64(col_from->getValue<String>().data(), col_from->getValue<String>().size());
+            String value = col_from->getValue<String>().data();
+            const UInt64 hash = Impl::Hash64(value.data(), value.size());
             const size_t size = vec_to.size();
             if (first)
             {

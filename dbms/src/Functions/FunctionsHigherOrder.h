@@ -772,15 +772,15 @@ public:
         if (arguments.size() == 1)
         {
             ColumnPtr column_array_ptr = block.getByPosition(arguments[0]).column;
-            const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(&*column_array_ptr);
+            const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
             if (!column_array)
             {
-                const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(&*column_array_ptr);
+                const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
                 if (!column_const_array)
                     throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                 column_array_ptr = column_const_array->convertToFullColumn();
-                column_array = static_cast<const ColumnArray *>(&*column_array_ptr);
+                column_array = static_cast<const ColumnArray *>(column_array_ptr.get());
             }
 
             block.getByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());
@@ -813,15 +813,15 @@ public:
                 DataTypePtr argument_type = expression_arguments[i].type;
 
                 ColumnPtr column_array_ptr = block.getByPosition(arguments[i + 1]).column;
-                const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(&*column_array_ptr);
+                const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
                 if (!column_array)
                 {
-                    const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(&*column_array_ptr);
+                    const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
                     if (!column_const_array)
                         throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                     column_array_ptr = column_const_array->convertToFullColumn();
-                    column_array = checkAndGetColumn<ColumnArray>(&*column_array_ptr);
+                    column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
 
                 if (!offsets_column)

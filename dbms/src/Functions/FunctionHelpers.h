@@ -70,6 +70,10 @@ const bool checkColumnConst(const IColumn * column)
 }
 
 
+/// Returns non-nullptr if column is ColumnConst with ColumnString or ColumnFixedString inside.
+const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column);
+
+
 /// Transform anything to Field.
 template <typename T>
 inline Field toField(const T & x)

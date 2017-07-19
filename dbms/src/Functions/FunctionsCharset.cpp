@@ -183,8 +183,8 @@ public:
         const ColumnWithTypeAndName & arg_charset_to = block.getByPosition(arguments[2]);
         ColumnWithTypeAndName & res = block.getByPosition(result);
 
-        const ColumnConst * col_charset_from = checkAndGetColumnConst<ColumnString>(arg_charset_from.column.get());
-        const ColumnConst * col_charset_to = checkAndGetColumnConst<ColumnString>(arg_charset_to.column.get());
+        const ColumnConst * col_charset_from = checkAndGetColumnConstStringOrFixedString(arg_charset_from.column.get());
+        const ColumnConst * col_charset_to = checkAndGetColumnConstStringOrFixedString(arg_charset_to.column.get());
 
         if (!col_charset_from || !col_charset_to)
             throw Exception("2nd and 3rd arguments of function " + getName() + " (source charset and destination charset) must be constant strings.",

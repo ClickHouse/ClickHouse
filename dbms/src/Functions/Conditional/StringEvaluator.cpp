@@ -368,9 +368,7 @@ bool createStringSources(StringSources & sources, const Block & block,
         const ColumnString * var_col = checkAndGetColumn<ColumnString>(col);
         const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(col);
 
-        const ColumnConst * const_col = checkAndGetColumnConst<ColumnString>(col);
-        if (!const_col)
-            const_col = checkAndGetColumnConst<ColumnFixedString>(col);
+        const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(col);
 
         StringSourcePtr source;
 

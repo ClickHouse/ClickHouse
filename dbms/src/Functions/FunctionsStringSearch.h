@@ -161,7 +161,7 @@ public:
         if (!col_needle)
             throw Exception("Second argument of function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.getByPosition(result).column = col_res;
@@ -170,7 +170,7 @@ public:
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
             Impl::vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
         }
-        else if (auto col = checkAndGetColumnConst<ColumnString>(&*column))
+        else if (auto col = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
             String data = col->getValue<String>();
             ColumnString::Chars_t vdata(reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str()),

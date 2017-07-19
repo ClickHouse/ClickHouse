@@ -165,19 +165,19 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.getByPosition(result).column = col_res;
             Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = std::make_shared<ColumnFixedString>(col->getN());
             block.getByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
         }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(&*column))
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
         {
             String res;
             Impl::constant(col->getValue<String>(), res);

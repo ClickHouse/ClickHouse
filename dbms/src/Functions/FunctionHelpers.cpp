@@ -1,9 +1,25 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 
 
 namespace DB
 {
+
+const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
+{
+    if (!column->isConst())
+        return {};
+
+    const ColumnConst * res = static_cast<const ColumnConst *>(column);
+
+    if (checkColumn<ColumnString>(&res->getDataColumn())
+        || checkColumn<ColumnFixedString>(&res->getDataColumn()))
+        return res;
+
+    return {};
+}
 
 ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column)
 {

@@ -134,7 +134,7 @@ public:
 
     void init(Block & block, const ColumnNumbers & arguments)
     {
-        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get());
 
         if (!col)
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -202,7 +202,7 @@ public:
 
     void init(Block & block, const ColumnNumbers & arguments)
     {
-        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
+        const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get());
 
         if (!col)
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -269,7 +269,7 @@ public:
     /// Initialize by the function arguments.
     void init(Block & block, const ColumnNumbers & arguments)
     {
-        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+        const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[1]).column.get());
 
         if (!col)
             throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
@@ -343,7 +343,7 @@ public:
 
         const ColumnString * col_str = checkAndGetColumn<ColumnString>(block.getByPosition(arrayArgumentPosition).column.get());
         const ColumnConst * col_const_str =
-                checkAndGetColumnConst<ColumnString>(block.getByPosition(arrayArgumentPosition).column.get());
+                checkAndGetColumnConstStringOrFixedString(block.getByPosition(arrayArgumentPosition).column.get());
 
         auto col_res = std::make_shared<ColumnArray>(std::make_shared<ColumnString>());
         ColumnPtr col_res_holder = col_res;
@@ -516,7 +516,7 @@ public:
         String delimiter;
         if (arguments.size() == 2)
         {
-            const ColumnConst * col_delim = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+            const ColumnConst * col_delim = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[1]).column.get());
             if (!col_delim)
                 throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
 

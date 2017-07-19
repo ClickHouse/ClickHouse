@@ -2738,7 +2738,8 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
     DataTypePtr & out_return_type,
     std::vector<ExpressionAction> & out_prerequisites)
 {
-    /// The first argument is a constant string with the name of the aggregate function (possibly with parameters in parentheses, for example: "quantile(0.99)").
+    /// The first argument is a constant string with the name of the aggregate function
+    ///  (possibly with parameters in parentheses, for example: "quantile(0.99)").
 
     if (arguments.size() < 2)
         throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "

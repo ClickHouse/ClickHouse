@@ -686,8 +686,8 @@ private:
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
         const ColumnFixedString * c0_fixed_string = checkAndGetColumn<ColumnFixedString>(c0);
         const ColumnFixedString * c1_fixed_string = checkAndGetColumn<ColumnFixedString>(c1);
-        const ColumnConst * c0_const = checkAndGetColumnConst<ColumnString>(c0);
-        const ColumnConst * c1_const = checkAndGetColumnConst<ColumnString>(c1);
+        const ColumnConst * c0_const = checkAndGetColumnConstStringOrFixedString(c0);
+        const ColumnConst * c1_const = checkAndGetColumnConstStringOrFixedString(c1);
 
         if (!((c0_string || c0_fixed_string || c0_const) && (c1_string || c1_fixed_string || c1_const)))
             return false;
@@ -778,13 +778,12 @@ private:
             || (is_enum8 = checkAndGetDataType<DataTypeEnum8>(number_type))
             || (is_enum16 = checkAndGetDataType<DataTypeEnum16>(number_type));
 
-        const auto column_string = checkAndGetColumnConst<ColumnString>(column_string_untyped);
+        const auto column_string = checkAndGetColumnConstStringOrFixedString(column_string_untyped);
         if (!column_string || !legal_types)
             throw Exception{
                 "Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
                     + " of arguments of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
 
         if (is_date)
         {
