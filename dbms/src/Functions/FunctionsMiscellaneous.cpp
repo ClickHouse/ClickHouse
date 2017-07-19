@@ -781,7 +781,7 @@ public:
         }
         else
         {
-            TupleBackend data = const_tuple_col->getValue<TupleBackend>();
+            TupleBackend data = const_tuple_col->getValue<Tuple>();
             block.getByPosition(result).column = static_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type)
                 .getElements()[index - 1]->createConstColumn(block.rows(), data[index - 1]);
         }
