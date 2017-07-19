@@ -8,10 +8,10 @@ const DateLUTImpl * extractTimeZoneFromFunctionArguments(Block & block, const Co
 {
     if (arguments.size() == 2)
     {
-        const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
 
         if (!time_zone_column)
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                 + " of second (time zone) argument of function, must be constant string",
                 ErrorCodes::ILLEGAL_COLUMN);
 
@@ -27,7 +27,7 @@ void throwExceptionForIncompletelyParsedValue(
 {
     std::string message;
     {
-        const IDataType & to_type = *block.safeGetByPosition(result).type;
+        const IDataType & to_type = *block.getByPosition(result).type;
 
         WriteBufferFromString message_buf(message);
         message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())

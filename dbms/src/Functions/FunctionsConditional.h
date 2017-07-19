@@ -34,7 +34,7 @@ private:
     static PaddedPODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
     {
         auto col_res = std::make_shared<ColumnVector<ResultType>>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
 
         typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
         vec_res.resize(size);
@@ -432,7 +432,7 @@ struct NumArrayIfImpl
     {
         auto col_res_vec = std::make_shared<ColumnVector<ResultType>>();
         auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
-        block.safeGetByPosition(result).column = col_res_array;
+        block.getByPosition(result).column = col_res_array;
 
         *c_data = &col_res_vec->getData();
         *c_offsets = &col_res_array->getOffsets();
@@ -868,8 +868,8 @@ private:
         size_t result,
         const ColumnVector<T0> * col_left)
     {
-        const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(block.safeGetByPosition(arguments[2]).column.get());
-        const ColumnConst * col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(block.safeGetByPosition(arguments[2]).column.get());
+        const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[2]).column.get());
+        const ColumnConst * col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[2]).column.get());
 
         if (!col_right_vec && !col_right_const)
             return false;
@@ -892,8 +892,8 @@ private:
         size_t result,
         const ColumnConst * col_left)
     {
-        const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(block.safeGetByPosition(arguments[2]).column.get());
-        const ColumnConst * col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(block.safeGetByPosition(arguments[2]).column.get());
+        const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[2]).column.get());
+        const ColumnConst * col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[2]).column.get());
 
         if (!col_right_vec && !col_right_const)
             return false;
@@ -917,7 +917,7 @@ private:
         const ColumnArray * col_left_array,
         const ColumnVector<T0> * col_left)
     {
-        const IColumn * col_right_untyped = block.safeGetByPosition(arguments[2]).column.get();
+        const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
 
         const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
         const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
@@ -964,7 +964,7 @@ private:
         size_t result,
         const ColumnConst * col_left_const_array)
     {
-        const IColumn * col_right_untyped = block.safeGetByPosition(arguments[2]).column.get();
+        const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
 
         const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
         const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
@@ -1006,7 +1006,7 @@ private:
     template <typename T0>
     bool executeLeftType(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const IColumn * col_left_untyped = block.safeGetByPosition(arguments[1]).column.get();
+        const IColumn * col_left_untyped = block.getByPosition(arguments[1]).column.get();
 
         const ColumnVector<T0> * col_left = nullptr;
         const ColumnConst * col_const_left = nullptr;
@@ -1043,7 +1043,7 @@ private:
                 || executeRightType<T0, Float64>(cond_col, block, arguments, result, col_left))
                 return true;
             else
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
                     + " of third argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -1061,7 +1061,7 @@ private:
                 || executeConstRightType<T0, Float64>(cond_col, block, arguments, result, col_const_left))
                 return true;
             else
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
                     + " of third argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -1079,7 +1079,7 @@ private:
                 || executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems))
                 return true;
             else
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
                     + " of third argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -1097,7 +1097,7 @@ private:
                 || executeConstRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_const_arr_left))
                 return true;
             else
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
                     + " of third argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -1107,8 +1107,8 @@ private:
 
     bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const IColumn * col_then_untyped = block.safeGetByPosition(arguments[1]).column.get();
-        const IColumn * col_else_untyped = block.safeGetByPosition(arguments[2]).column.get();
+        const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
+        const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
 
         const ColumnString * col_then = checkAndGetColumn<ColumnString>(col_then_untyped);
         const ColumnString * col_else = checkAndGetColumn<ColumnString>(col_else_untyped);
@@ -1129,7 +1129,7 @@ private:
                 size_t N = col_then_fixed->getN();
 
                 auto col_res = std::make_shared<ColumnFixedString>(N);
-                block.safeGetByPosition(result).column = col_res;
+                block.getByPosition(result).column = col_res;
 
                 ColumnFixedString::Chars_t & res_vec = col_res->getChars();
 
@@ -1144,7 +1144,7 @@ private:
             {
                 /// The result is String.
                 std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-                block.safeGetByPosition(result).column = col_res;
+                block.getByPosition(result).column = col_res;
 
                 ColumnString::Chars_t & res_vec = col_res->getChars();
                 ColumnString::Offsets_t & res_offsets = col_res->getOffsets();
@@ -1216,7 +1216,7 @@ private:
         {
             auto col_res_elements = std::make_shared<ColumnString>();
             auto col_res = std::make_shared<ColumnArray>(col_res_elements);
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & res_chars = col_res_elements->getChars();
             ColumnString::Offsets_t & res_string_offsets = col_res_elements->getOffsets();
@@ -1259,8 +1259,8 @@ private:
     {
         /// Calculate function for each corresponding elements of tuples.
 
-        const ColumnWithTypeAndName & arg1 = block.safeGetByPosition(arguments[1]);
-        const ColumnWithTypeAndName & arg2 = block.safeGetByPosition(arguments[2]);
+        const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[2]);
 
         ColumnPtr col1_holder;
         ColumnPtr col2_holder;
@@ -1286,7 +1286,7 @@ private:
         const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
 
         Block temporary_block;
-        temporary_block.insert(block.safeGetByPosition(arguments[0]));
+        temporary_block.insert(block.getByPosition(arguments[0]));
 
         size_t tuple_size = type1.getElements().size();
 
@@ -1296,8 +1296,8 @@ private:
                 getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
                 {}});
 
-            temporary_block.insert({col1->getData().safeGetByPosition(i).column, type1.getElements()[i], {}});
-            temporary_block.insert({col2->getData().safeGetByPosition(i).column, type2.getElements()[i], {}});
+            temporary_block.insert({col1->getData().getByPosition(i).column, type1.getElements()[i], {}});
+            temporary_block.insert({col2->getData().getByPosition(i).column, type2.getElements()[i], {}});
 
             /// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
             executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1);
@@ -1308,19 +1308,19 @@ private:
         /// temporary_block is: cond, res_0, res_1, res_2...
 
         temporary_block.erase(0);
-        block.safeGetByPosition(result).column = std::make_shared<ColumnTuple>(temporary_block);
+        block.getByPosition(result).column = std::make_shared<ColumnTuple>(temporary_block);
         return true;
     }
 
     bool executeForNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnWithTypeAndName & arg_cond = block.safeGetByPosition(arguments[0]);
+        const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         bool cond_is_null = arg_cond.column->isNull();
         bool cond_is_nullable = arg_cond.column->isNullable();
 
         if (cond_is_null)
         {
-            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
             return true;
         }
 
@@ -1401,9 +1401,9 @@ private:
 
     bool executeForNullThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnWithTypeAndName & arg_cond = block.safeGetByPosition(arguments[0]);
-        const ColumnWithTypeAndName & arg_then = block.safeGetByPosition(arguments[1]);
-        const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
+        const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
 
         bool then_is_null = arg_then.column->isNull();
         bool else_is_null = arg_else.column->isNull();
@@ -1413,7 +1413,7 @@ private:
 
         if (then_is_null && else_is_null)
         {
-            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
             return true;
         }
 
@@ -1429,18 +1429,18 @@ private:
                 {
                     auto result_column = arg_else.column->clone();
                     static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
-                    block.safeGetByPosition(result).column = result_column;
+                    block.getByPosition(result).column = result_column;
                 }
                 else
                 {
-                    block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
+                    block.getByPosition(result).column = std::make_shared<ColumnNullable>(
                         materializeColumnIfConst(arg_else.column), arg_cond.column->clone());
                 }
             }
             else if (cond_const_col)
             {
-                block.safeGetByPosition(result).column = cond_const_col->getValue<UInt8>()
-                    ? block.safeGetByPosition(result).type->createColumn()->cloneResized(block.rows())
+                block.getByPosition(result).column = cond_const_col->getValue<UInt8>()
+                    ? block.getByPosition(result).type->createColumn()->cloneResized(block.rows())
                     : makeNullableColumnIfNot(arg_else.column);
             }
             else
@@ -1469,19 +1469,19 @@ private:
                 {
                     auto result_column = arg_then.column->clone();
                     static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
-                    block.safeGetByPosition(result).column = result_column;
+                    block.getByPosition(result).column = result_column;
                 }
                 else
                 {
-                    block.safeGetByPosition(result).column = std::make_shared<ColumnNullable>(
+                    block.getByPosition(result).column = std::make_shared<ColumnNullable>(
                         materializeColumnIfConst(arg_then.column), negated_null_map);
                 }
             }
             else if (cond_const_col)
             {
-                block.safeGetByPosition(result).column = cond_const_col->getValue<UInt8>()
+                block.getByPosition(result).column = cond_const_col->getValue<UInt8>()
                     ? makeNullableColumnIfNot(arg_then.column)
-                    : block.safeGetByPosition(result).type->createColumn()->cloneResized(block.rows());
+                    : block.getByPosition(result).type->createColumn()->cloneResized(block.rows());
             }
             else
                 throw Exception("Illegal column " + cond_col->getName() + " of first argument of function " + getName()
@@ -1495,9 +1495,9 @@ private:
 
     bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const ColumnWithTypeAndName & arg_cond = block.safeGetByPosition(arguments[0]);
-        const ColumnWithTypeAndName & arg_then = block.safeGetByPosition(arguments[1]);
-        const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
+        const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
 
         bool then_is_nullable = typeid_cast<const ColumnNullable *>(arg_then.column.get());
         bool else_is_nullable = typeid_cast<const ColumnNullable *>(arg_else.column.get());
@@ -1695,9 +1695,9 @@ public:
             || executeForNullableThenElse(block, arguments, result))
             return;
 
-        const ColumnWithTypeAndName & arg_cond = block.safeGetByPosition(arguments[0]);
-        const ColumnWithTypeAndName & arg_then = block.safeGetByPosition(arguments[1]);
-        const ColumnWithTypeAndName & arg_else = block.safeGetByPosition(arguments[2]);
+        const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
 
         const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
         const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
@@ -1707,7 +1707,7 @@ public:
         {
             if (arg_then.type->equals(*arg_else.type))
             {
-                block.safeGetByPosition(result).column = cond_const_col->getValue<UInt8>()
+                block.getByPosition(result).column = cond_const_col->getValue<UInt8>()
                     ? arg_then.column
                     : arg_else.column;
                 return;

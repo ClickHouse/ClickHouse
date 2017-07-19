@@ -94,10 +94,10 @@ public:
 };
 
 template <typename TResult>
-using IArraySourcePtr = std::unique_ptr<IArraySource<TResult> >;
+using IArraySourcePtr = std::unique_ptr<IArraySource<TResult>>;
 
 template <typename TResult>
-using IArraySources = std::vector<IArraySourcePtr<TResult> >;
+using IArraySources = std::vector<IArraySourcePtr<TResult>>;
 
 /// Column type-specific implementation of IArraySource for arrays.
 template <typename TResult, typename TType>
@@ -176,7 +176,7 @@ public:
     {
         if (!converted)
         {
-            converted = std::make_unique<PaddedPODArray<TResult> >(array.size());
+            converted = std::make_unique<PaddedPODArray<TResult>>(array.size());
             size_t size = array.size();
             for (size_t i = 0; i < size; ++i)
                 (*converted)[i] = array[i].template get<typename NearestFieldType<TType>::Type>();
@@ -197,7 +197,7 @@ public:
 
 private:
     const Array & array;
-    mutable std::unique_ptr<PaddedPODArray<TResult> > converted;
+    mutable std::unique_ptr<PaddedPODArray<TResult>> converted;
 };
 
 /// Access provider to the target array that receives the results of the
@@ -261,7 +261,7 @@ public:
         auto type_name = br.type->getName();
         if (TypeName<TType>::get() == type_name)
         {
-            const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
+            const IColumn * col = block.getByPosition(args[br.index]).column.get();
 
             IArraySourcePtr<TResult> source;
 
@@ -270,10 +270,10 @@ public:
                 const ColumnVector<TType> * content = typeid_cast<const ColumnVector<TType> *>(&col_array->getData());
                 if (content == nullptr)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-                source = std::make_unique<ArraySource<TResult, TType> >(content->getData(), col_array->getOffsets());
+                source = std::make_unique<ArraySource<TResult, TType>>(content->getData(), col_array->getOffsets());
             }
             else if (auto col_const_array = checkAndGetColumnConst<ColumnArray>(col))
-                source = std::make_unique<ConstArraySource<TResult, TType> >(col_const_array->getValue<Array>());
+                source = std::make_unique<ConstArraySource<TResult, TType>>(col_const_array->getValue<Array>());
 
             sources.push_back(std::move(source));
 
@@ -297,7 +297,6 @@ public:
         auto type_name = br.type->getName();
         if (TypeName<Null>::get() == type_name)
         {
-            const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
             IArraySourcePtr<TResult> source;
             source = std::make_unique<ConstArraySource<TResult, Null>>(null_array);
             sources.push_back(std::move(source));
@@ -413,7 +412,7 @@ private:
 
         auto col_res_vec = std::make_shared<ColumnVector<TResult>>();
         auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
-        block.safeGetByPosition(result).column = col_res_array;
+        block.getByPosition(result).column = col_res_array;
 
         return ArraySink<TResult>{col_res_vec->getData(), col_res_array->getOffsets(),
             data_size, offsets_size};

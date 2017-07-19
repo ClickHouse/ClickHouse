@@ -56,10 +56,10 @@ public:
     template<typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (auto col_from = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -84,14 +84,14 @@ public:
             }
             data_to.resize(pos);
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             T value = col_from->template getValue<T>();
             std::string res(reinterpret_cast<const char *>(&value), sizeof(T));
             while (!res.empty() && res[res.length() - 1] == '\0')
                 res.erase(res.end() - 1);
 
-            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), res);
+            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), res);
         }
         else
         {
@@ -113,7 +113,7 @@ public:
             || executeType<Int64>(block, arguments, result)
             || executeType<Float32>(block, arguments, result)
             || executeType<Float64>(block, arguments, result)))
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -147,10 +147,10 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (ColumnString * col_from = typeid_cast<ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (ColumnString * col_from = typeid_cast<ColumnString *>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & data_from = col_from->getChars();
             ColumnString::Offsets_t & offsets_from = col_from->getOffsets();
@@ -167,10 +167,10 @@ public:
                 offset = offsets_from[i];
             }
         }
-        else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & data_from = col_from->getChars();
             size_t step = col_from->getN();
@@ -188,17 +188,17 @@ public:
                 offset += step;
             }
         }
-        else if (auto col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             ToFieldType value = 0;
             String str = col->getValue<String>();
             memcpy(&value, str.data(), std::min(sizeof(ToFieldType), str.length()));
             auto col_res = DataTypeNumber<ToFieldType>().createConstColumn(col->size(), toField(value));
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
         }
         else
         {
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of argument of function " + getName(),
                             ErrorCodes::ILLEGAL_COLUMN);
         }

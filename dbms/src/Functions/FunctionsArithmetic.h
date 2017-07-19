@@ -642,7 +642,7 @@ private:
     template <typename LeftDataType, typename RightDataType, typename ColumnType>
     bool executeRightType(Block & block, const ColumnNumbers & arguments, const size_t result, const ColumnType * col_left)
     {
-        if (!typeid_cast<const RightDataType *>(block.safeGetByPosition(arguments[1]).type.get()))
+        if (!typeid_cast<const RightDataType *>(block.getByPosition(arguments[1]).type.get()))
             return false;
 
         using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
@@ -679,10 +679,10 @@ private:
     template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
     bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
     {
-        if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.safeGetByPosition(arguments[1]).column.get()))
+        if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
@@ -690,10 +690,10 @@ private:
 
             return true;
         }
-        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.safeGetByPosition(arguments[1]).column.get()))
+        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
@@ -709,10 +709,10 @@ private:
     template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
     bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst * col_left)
     {
-        if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.safeGetByPosition(arguments[1]).column.get()))
+        if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
@@ -720,11 +720,11 @@ private:
 
             return true;
         }
-        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.safeGetByPosition(arguments[1]).column.get()))
+        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
             ResultType res = 0;
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-            block.safeGetByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), toField(res));
+            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), toField(res));
 
             return true;
         }
@@ -735,7 +735,7 @@ private:
     template <typename LeftDataType>
     bool executeLeftType(Block & block, const ColumnNumbers & arguments, const size_t result)
     {
-        if (!typeid_cast<const LeftDataType *>(block.safeGetByPosition(arguments[0]).type.get()))
+        if (!typeid_cast<const LeftDataType *>(block.getByPosition(arguments[0]).type.get()))
             return false;
 
         return executeLeftTypeImpl<LeftDataType>(block, arguments, result);
@@ -744,7 +744,7 @@ private:
     template <typename LeftDataType>
     bool executeLeftTypeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
     {
-        if (auto col_left = checkAndGetColumn<ColumnVector<typename LeftDataType::FieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col_left = checkAndGetColumn<ColumnVector<typename LeftDataType::FieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
             if (   executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
                 || executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
@@ -760,11 +760,11 @@ private:
                 || executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
                 return true;
             else
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                     + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (auto col_left = checkAndGetColumnConst<ColumnVector<typename LeftDataType::FieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_left = checkAndGetColumnConst<ColumnVector<typename LeftDataType::FieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
             if (   executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
                 || executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
@@ -780,7 +780,7 @@ private:
                 || executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
                 return true;
             else
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                     + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -832,7 +832,7 @@ public:
             || executeLeftType<DataTypeInt64>(block, arguments, result)
             || executeLeftType<DataTypeFloat32>(block, arguments, result)
             || executeLeftType<DataTypeFloat64>(block, arguments, result)))
-           throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+           throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -865,26 +865,26 @@ private:
     template <typename T0>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnVector<T0> * col = checkAndGetColumn<ColumnVector<T0>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T0> * col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
         {
             using ResultType = typename Op<T0>::ResultType;
 
             std::shared_ptr<ColumnVector<ResultType>> col_res = std::make_shared<ColumnVector<ResultType>>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
             vec_res.resize(col->getData().size());
-            UnaryOperationImpl<T0, Op<T0> >::vector(col->getData(), vec_res);
+            UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
 
             return true;
         }
-        else if (auto col = checkAndGetColumnConst<ColumnVector<T0>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
         {
             using ResultType = typename Op<T0>::ResultType;
 
             ResultType res = 0;
-            UnaryOperationImpl<T0, Op<T0> >::constant(col->template getValue<T0>(), res);
-            block.safeGetByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col->size(), toField(res));
+            UnaryOperationImpl<T0, Op<T0>>::constant(col->template getValue<T0>(), res);
+            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col->size(), toField(res));
 
             return true;
         }
@@ -933,7 +933,7 @@ public:
             || executeType<Int64>(block, arguments, result)
             || executeType<Float32>(block, arguments, result)
             || executeType<Float64>(block, arguments, result)))
-           throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+           throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }

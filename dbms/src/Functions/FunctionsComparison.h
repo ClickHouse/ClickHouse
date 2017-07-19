@@ -584,7 +584,7 @@ private:
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
             std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
@@ -595,7 +595,7 @@ private:
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
@@ -613,7 +613,7 @@ private:
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
             std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
@@ -627,7 +627,7 @@ private:
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
 
             auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), toField(res));
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             return true;
         }
@@ -698,12 +698,12 @@ private:
         {
             UInt8 res = 0;
             StringImpl::constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), res);
-            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(c0_const->size(), toField(res));
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(c0_const->size(), toField(res));
         }
         else
         {
             auto c_res = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = c_res;
+            block.getByPosition(result).column = c_res;
             ColumnUInt8::Container_t & vec_res = c_res->getData();
             vec_res.resize(c0->size());
 
@@ -909,8 +909,8 @@ private:
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert(x->getData().safeGetByPosition(i));
-            tmp_block.insert(y->getData().safeGetByPosition(i));
+            tmp_block.insert(x->getData().getByPosition(i));
+            tmp_block.insert(y->getData().getByPosition(i));
 
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
@@ -925,7 +925,7 @@ private:
             convolution_args[i] = i * 3 + 2;
 
         func_convolution.execute(tmp_block, convolution_args, tuple_size * 3);
-        block.safeGetByPosition(result).column = tmp_block.safeGetByPosition(tuple_size * 3).column;
+        block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
     }
 
     template <typename HeadComparisonFunction, typename TailComparisonFunction>
@@ -942,8 +942,8 @@ private:
         /// Pairwise comparison of the inequality of all elements; on the equality of all elements except the last.
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert(x->getData().safeGetByPosition(i));
-            tmp_block.insert(y->getData().safeGetByPosition(i));
+            tmp_block.insert(x->getData().getByPosition(i));
+            tmp_block.insert(y->getData().getByPosition(i));
 
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
@@ -970,7 +970,7 @@ private:
             --i;
         }
 
-        block.safeGetByPosition(result).column = tmp_block.safeGetByPosition(tmp_block.columns() - 1).column;
+        block.getByPosition(result).column = tmp_block.getByPosition(tmp_block.columns() - 1).column;
     }
 
     void executeGeneric(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
@@ -982,12 +982,12 @@ private:
         {
             UInt8 res = 0;
             GenericComparisonImpl<Op<int, int>>::constant_constant(*c0, *c1, res);
-            block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(c0->size(), toField(res));
+            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(c0->size(), toField(res));
         }
         else
         {
             auto c_res = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = c_res;
+            block.getByPosition(result).column = c_res;
             ColumnUInt8::Container_t & vec_res = c_res->getData();
             vec_res.resize(c0->size());
 
@@ -1087,8 +1087,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const auto & col_with_type_and_name_left = block.safeGetByPosition(arguments[0]);
-        const auto & col_with_type_and_name_right = block.safeGetByPosition(arguments[1]);
+        const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
+        const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
         const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
 

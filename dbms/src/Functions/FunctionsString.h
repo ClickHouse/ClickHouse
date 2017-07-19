@@ -164,28 +164,28 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
+        const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
             Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column))
         {
             auto col_res = std::make_shared<ColumnFixedString>(col->getN());
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
         }
         else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(&*column))
         {
             String res;
             Impl::constant(col->getValue<String>(), res);
-            block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(col->size(), res);
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), res);
         }
         else
             throw Exception(
-                "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };

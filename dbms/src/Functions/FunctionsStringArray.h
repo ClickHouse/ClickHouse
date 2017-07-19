@@ -134,10 +134,10 @@ public:
 
     void init(Block & block, const ColumnNumbers & arguments)
     {
-        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
 
         if (!col)
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + getName() + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
@@ -202,10 +202,10 @@ public:
 
     void init(Block & block, const ColumnNumbers & arguments)
     {
-        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
 
         if (!col)
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + getName() + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
@@ -269,10 +269,10 @@ public:
     /// Initialize by the function arguments.
     void init(Block & block, const ColumnNumbers & arguments)
     {
-        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnConst * col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
 
         if (!col)
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                 + " of first argument of function " + getName() + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
@@ -341,9 +341,9 @@ public:
         generator.init(block, arguments);
         size_t arrayArgumentPosition = arguments[generator.getStringsArgumentPosition()];
 
-        const ColumnString * col_str = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arrayArgumentPosition).column.get());
+        const ColumnString * col_str = checkAndGetColumn<ColumnString>(block.getByPosition(arrayArgumentPosition).column.get());
         const ColumnConst * col_const_str =
-                checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arrayArgumentPosition).column.get());
+                checkAndGetColumnConst<ColumnString>(block.getByPosition(arrayArgumentPosition).column.get());
 
         auto col_res = std::make_shared<ColumnArray>(std::make_shared<ColumnString>());
         ColumnPtr col_res_holder = col_res;
@@ -394,7 +394,7 @@ public:
                 res_offsets.push_back(current_dst_offset);
             }
 
-            block.safeGetByPosition(result).column = col_res_holder;
+            block.getByPosition(result).column = col_res_holder;
         }
         else if (col_const_str)
         {
@@ -408,11 +408,11 @@ public:
             while (generator.get(token_begin, token_end))
                 dst.push_back(String(token_begin, token_end - token_begin));
 
-            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_const_str->size(), dst);
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_const_str->size(), dst);
         }
         else
-            throw Exception("Illegal columns " + block.safeGetByPosition(arrayArgumentPosition).column->getName()
-                    + ", " + block.safeGetByPosition(arrayArgumentPosition).column->getName()
+            throw Exception("Illegal columns " + block.getByPosition(arrayArgumentPosition).column->getName()
+                    + ", " + block.getByPosition(arrayArgumentPosition).column->getName()
                     + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -516,14 +516,14 @@ public:
         String delimiter;
         if (arguments.size() == 2)
         {
-            const ColumnConst * col_delim = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
+            const ColumnConst * col_delim = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
             if (!col_delim)
                 throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_COLUMN);
 
             delimiter = col_delim->getValue<String>();
         }
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
         {
             const Array & src_arr = col_const_arr->getValue<Array>();
             String dst_str;
@@ -534,15 +534,15 @@ public:
                 dst_str += src_arr[i].get<const String &>();
             }
 
-            block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(col_const_arr->size(), dst_str);
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_const_arr->size(), dst_str);
         }
         else
         {
-            const ColumnArray & col_arr = static_cast<const ColumnArray &>(*block.safeGetByPosition(arguments[0]).column);
+            const ColumnArray & col_arr = static_cast<const ColumnArray &>(*block.getByPosition(arguments[0]).column);
             const ColumnString & col_string = static_cast<const ColumnString &>(col_arr.getData());
 
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             executeInternal(
                 col_string.getChars(), col_string.getOffsets(), col_arr.getOffsets(),

@@ -70,10 +70,10 @@ struct ConvertImpl
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         if (const ColumnVector<FromFieldType> * col_from
-            = checkAndGetColumn<ColumnVector<FromFieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
+            = checkAndGetColumn<ColumnVector<FromFieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
             typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
@@ -84,13 +84,13 @@ struct ConvertImpl
                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
         }
         else if (auto col_from
-            = checkAndGetColumnConst<ColumnVector<FromFieldType>>(block.safeGetByPosition(arguments[0]).column.get()))
+            = checkAndGetColumnConst<ColumnVector<FromFieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(
+            block.getByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(
                 col_from->size(), toField(static_cast<ToFieldType>(col_from->template getValue<FromFieldType>())));
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -193,7 +193,7 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        block.safeGetByPosition(result).column = block.safeGetByPosition(arguments[0]).column;
+        block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
     }
 };
 
@@ -209,7 +209,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const auto & col_with_type_and_name = block.safeGetByPosition(arguments[0]);
+        const auto & col_with_type_and_name = block.getByPosition(arguments[0]);
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
         const DateLUTImpl * time_zone = nullptr;
@@ -221,7 +221,7 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
         if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -244,12 +244,12 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
         else if (const auto col_from = checkAndGetColumnConst<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
         {
             std::vector<char> buf;
-            WriteBufferFromVector<std::vector<char> > write_buffer(buf);
+            WriteBufferFromVector<std::vector<char>> write_buffer(buf);
             FormatImpl<FromDataType>::execute(col_from->template getValue<FromFieldType>(), write_buffer, &type, time_zone);
-            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), std::string(&buf[0], write_buffer.count()));
+            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), std::string(&buf[0], write_buffer.count()));
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -261,7 +261,7 @@ struct ConvertImplGenericToString
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const auto & col_with_type_and_name = block.safeGetByPosition(arguments[0]);
+        const auto & col_with_type_and_name = block.getByPosition(arguments[0]);
         const IDataType & type = *col_with_type_and_name.type;
         const IColumn & col_from = *col_with_type_and_name.column;
 
@@ -270,7 +270,7 @@ struct ConvertImplGenericToString
         if (!col_from.isConst())
         {
             auto col_to = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             ColumnString::Chars_t & data_to = col_to->getChars();
             ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
@@ -299,7 +299,7 @@ struct ConvertImplGenericToString
                 type.serializeText(*col_from.cut(0, 1)->convertToFullColumnIfConst(), 0, write_buffer);
             }
 
-            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(size, res);
+            block.getByPosition(result).column = DataTypeString().createConstColumn(size, res);
         }
     }
 };
@@ -352,10 +352,10 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
         if (std::is_same<ToDataType, DataTypeDateTime>::value)
             time_zone = extractTimeZoneFromFunctionArguments(block, arguments);
 
-        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
             size_t size = col_from->size();
@@ -380,7 +380,7 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             const String & s = col_from->getValue<String>();
             ReadBufferFromString read_buffer(s);
@@ -392,10 +392,10 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
                     && s.size() == strlen("YYYY-MM-DD hh:mm:ss")))
                 throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
-            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), toField(x));
+            block.getByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), toField(x));
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -426,10 +426,10 @@ struct ConvertOrZeroImpl
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
             size_t size = col_from->size();
@@ -451,17 +451,17 @@ struct ConvertOrZeroImpl
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             const String & s = col_from->getValue<String>();
             ReadBufferFromString read_buffer(s);
             ToFieldType x = 0;
             if (!tryParseImpl<ToDataType>(x, read_buffer) || !read_buffer.eof())
                 x = 0;
-            block.safeGetByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), toField(x));
+            block.getByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), toField(x));
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -473,10 +473,10 @@ struct ConvertImplGenericFromString
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        const IColumn & col_from = *block.safeGetByPosition(arguments[0]).column;
+        const IColumn & col_from = *block.getByPosition(arguments[0]).column;
         size_t size = col_from.size();
 
-        ColumnWithTypeAndName & column_type_name_to = block.safeGetByPosition(result);
+        ColumnWithTypeAndName & column_type_name_to = block.getByPosition(result);
         const IDataType & data_type_to = *column_type_name_to.type;
 
         if (const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(&col_from))
@@ -517,10 +517,10 @@ struct ConvertImplGenericFromString
             if (!read_buffer.eof())
                 throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
 
-            block.safeGetByPosition(result).column = data_type_to.createConstColumn(size, (*tmp_col)[0]);
+            block.getByPosition(result).column = data_type_to.createConstColumn(size, (*tmp_col)[0]);
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of conversion function from string",
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -543,7 +543,7 @@ struct ConvertImpl<DataTypeString, DataTypeString, Name>
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        block.safeGetByPosition(result).column = block.safeGetByPosition(arguments[0]).column;
+        block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
     }
 };
 
@@ -557,7 +557,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
         {
             const DateLUTImpl * time_zone = nullptr;
 
@@ -566,7 +566,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
                 time_zone = extractTimeZoneFromFunctionArguments(block, arguments);
 
             auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const ColumnFixedString::Chars_t & data_from = col_from->getChars();
             size_t n = col_from->getN();
@@ -590,12 +590,12 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
                 }
             }
         }
-        else if (checkColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (checkColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             ConvertImpl<DataTypeString, ToDataType, Name>::execute(block, arguments, result);
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -610,10 +610,10 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const ColumnFixedString::Chars_t & data_from = col_from->getChars();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -641,7 +641,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
             data_to.resize(offset_to);
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             const String & s = col_from->getValue<String>();
 
@@ -649,10 +649,10 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
             while (bytes_to_copy > 0 && s[bytes_to_copy - 1] == 0)
                 --bytes_to_copy;
 
-            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), s.substr(0, bytes_to_copy));
+            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), s.substr(0, bytes_to_copy));
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -734,7 +734,7 @@ public:
 private:
     void executeInternal(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
+        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if      (checkDataType<DataTypeUInt8>(from_type)) ConvertImpl<DataTypeUInt8, ToDataType, Name>::execute(block, arguments, result);
         else if (checkDataType<DataTypeUInt16>(from_type)) ConvertImpl<DataTypeUInt16, ToDataType, Name>::execute(block, arguments, result);
@@ -761,7 +761,7 @@ private:
                 ConvertImplGenericToString::execute(block, arguments, result);
             }
             else
-                throw Exception("Illegal type " + block.safeGetByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+                throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
@@ -884,12 +884,12 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
+        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if (checkAndGetDataType<DataTypeString>(from_type))
             ConvertOrZeroImpl<ToDataType, Name>::execute(block, arguments, result);
         else
-            throw Exception("Illegal type " + block.safeGetByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
+            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
                 + ". Only String argument is accepted for try-conversion function. For other arguments, use function without 'try'.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -929,13 +929,13 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto n = getSize(block.safeGetByPosition(arguments[1]));
+        const auto n = getSize(block.getByPosition(arguments[1]));
         return execute(block, arguments, result, n);
     }
 
     static void execute(Block & block, const ColumnNumbers & arguments, const size_t result, const size_t n)
     {
-        const auto & column = block.safeGetByPosition(arguments[0]).column;
+        const auto & column = block.getByPosition(arguments[0]).column;
 
         if (const auto column_const = checkAndGetColumnConst<ColumnString>(column.get()))
         {
@@ -946,7 +946,7 @@ public:
             auto resized_string = column_const->getValue<String>();
             resized_string.resize(n);
 
-            block.safeGetByPosition(result).column = DataTypeFixedString(n).createConstColumn(
+            block.getByPosition(result).column = DataTypeFixedString(n).createConstColumn(
                 column_const->size(), std::move(resized_string));
         }
         else if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
@@ -970,7 +970,7 @@ public:
                 memcpy(&out_chars[i * n], &in_chars[off], len);
             }
 
-            block.safeGetByPosition(result).column = result_ptr;
+            block.getByPosition(result).column = result_ptr;
         }
         else if (const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
@@ -982,7 +982,7 @@ public:
                 };
 
             const auto column_fixed = std::make_shared<ColumnFixedString>(n);
-            block.safeGetByPosition(result).column = column_fixed;
+            block.getByPosition(result).column = column_fixed;
 
             auto & out_chars = column_fixed->getChars();
             const auto & in_chars = column_fixed_string->getChars();
@@ -1289,7 +1289,7 @@ private:
         return [nested_function, from_nested_type, to_nested_type] (
             Block & block, const ColumnNumbers & arguments, const size_t result)
         {
-            auto array_arg = block.safeGetByPosition(arguments.front());
+            auto array_arg = block.getByPosition(arguments.front());
 
             /// @todo add const variant which retains array constness
             if (const auto col_const_array = checkAndGetColumnConst<ColumnArray>(array_arg.column.get()))
@@ -1298,7 +1298,7 @@ private:
             if (auto col_array = checkAndGetColumn<ColumnArray>(array_arg.column.get()))
             {
                 auto res = new ColumnArray(nullptr, col_array->getOffsetsColumn());
-                block.safeGetByPosition(result).column.reset(res);
+                block.getByPosition(result).column.reset(res);
 
                 /// get the most nested column
                 while (const auto nested_col_array = checkAndGetColumn<ColumnArray>(col_array->getDataPtr().get()))
@@ -1321,7 +1321,7 @@ private:
                 nested_function(nested_block, {0 }, nested_result);
 
                 /// set converted nested column to result
-                res->getDataPtr() = nested_block.safeGetByPosition(nested_result).column;
+                res->getDataPtr() = nested_block.getByPosition(nested_result).column;
             }
             else
                 throw Exception{
@@ -1369,7 +1369,7 @@ private:
         return [element_wrappers, function_tuple, from_element_types, to_element_types]
             (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
-            const auto col = block.safeGetByPosition(arguments.front()).column.get();
+            const auto col = block.getByPosition(arguments.front()).column.get();
 
             /// copy tuple elements to a separate block
             Block element_block;
@@ -1403,7 +1403,7 @@ private:
                 converted_tuple_pos);
 
             /// copy FunctionTuple's result from element_block to resulting block
-            block.safeGetByPosition(result).column = element_block.safeGetByPosition(converted_tuple_pos).column;
+            block.getByPosition(result).column = element_block.getByPosition(converted_tuple_pos).column;
         };
     }
 
@@ -1474,9 +1474,9 @@ private:
     {
         return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
-            const auto first_col = block.safeGetByPosition(arguments.front()).column.get();
+            const auto first_col = block.getByPosition(arguments.front()).column.get();
 
-            auto & col_with_type_and_name = block.safeGetByPosition(result);
+            auto & col_with_type_and_name = block.getByPosition(result);
             auto & result_col = col_with_type_and_name.column;
             const auto & result_type = typeid_cast<EnumType &>(*col_with_type_and_name.type);
 
@@ -1511,7 +1511,7 @@ private:
     {
         return [] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
-            block.safeGetByPosition(result).column = block.safeGetByPosition(arguments.front()).column;
+            block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
         };
     }
 
@@ -1544,7 +1544,7 @@ private:
             return [wrapper, action] (Block & block, const ColumnNumbers & arguments, const size_t result)
             {
                 /// Create a temporary block on which to perform the operation.
-                auto & res = block.safeGetByPosition(result);
+                auto & res = block.getByPosition(result);
                 const auto & ret_type = res.type;
                 const auto & nullable_type = static_cast<const DataTypeNullable &>(*ret_type);
                 const auto & nested_type = nullable_type.getNestedType();
@@ -1577,7 +1577,7 @@ private:
                 {
                     /// This is a conversion from a nullable to a nullable type.
                     /// So we just keep the null map of the input argument.
-                    const auto & col = block.safeGetByPosition(arguments[0]).column;
+                    const auto & col = block.getByPosition(arguments[0]).column;
                     const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
                     null_map = nullable_col.getNullMapColumn();
                 }
@@ -1593,7 +1593,7 @@ private:
                     null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);
                 }
 
-                const auto & tmp_res = tmp_block.safeGetByPosition(tmp_res_index);
+                const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
                 res.column = std::make_shared<ColumnNullable>(tmp_res.column, null_map);
             };
         }

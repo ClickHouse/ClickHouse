@@ -201,10 +201,10 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnUInt64>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
             const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
@@ -217,14 +217,14 @@ public:
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
+            block.getByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
                 Impl::apply(col_from->getValue<String>().data(), col_from->getValue<String>().size()));
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -256,10 +256,10 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnFixedString>(Impl::length);
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
             const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
@@ -273,17 +273,17 @@ public:
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
                     &chars_to[i * Impl::length]);
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             const auto & data = col_from->getValue<String>();
 
             String hash(Impl::length, 0);
             Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));
 
-            block.safeGetByPosition(result).column = DataTypeFixedString(Impl::length).createConstColumn(col_from->size(), hash);
+            block.getByPosition(result).column = DataTypeFixedString(Impl::length).createConstColumn(col_from->size(), hash);
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -303,10 +303,10 @@ private:
     template <typename FromType>
     void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
             typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
@@ -316,13 +316,13 @@ private:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(
+            block.getByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(
                 col_from->size(), toField(Impl::apply(col_from->template getValue<FromType>())));
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -346,7 +346,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
+        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if      (checkDataType<DataTypeUInt8>(from_type)) executeType<UInt8>(block, arguments, result);
         else if (checkDataType<DataTypeUInt16>(from_type)) executeType<UInt16>(block, arguments, result);
@@ -359,7 +359,7 @@ public:
         else if (checkDataType<DataTypeDate>(from_type)) executeType<UInt16>(block, arguments, result);
         else if (checkDataType<DataTypeDateTime>(from_type)) executeType<UInt32>(block, arguments, result);
         else
-            throw Exception("Illegal type " + block.safeGetByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
@@ -595,7 +595,7 @@ public:
     {
         size_t rows = block.rows();
         auto col_to = std::make_shared<ColumnUInt64>(rows);
-        block.safeGetByPosition(result).column = col_to;
+        block.getByPosition(result).column = col_to;
 
         ColumnUInt64::Container_t & vec_to = col_to->getData();
 
@@ -610,7 +610,7 @@ public:
         bool is_first_argument = true;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const ColumnWithTypeAndName & col = block.safeGetByPosition(arguments[i]);
+            const ColumnWithTypeAndName & col = block.getByPosition(arguments[i]);
             executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
         }
 
@@ -765,13 +765,13 @@ public:
 private:
     void executeSingleArg(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
     {
-        const auto col_untyped = block.safeGetByPosition(arguments.front()).column.get();
+        const auto col_untyped = block.getByPosition(arguments.front()).column.get();
 
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
             const auto col_to = std::make_shared<ColumnUInt64>(size);
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
@@ -785,20 +785,20 @@ private:
         else if (const auto col_from = checkAndGetColumnConst<ColumnString>(col_untyped))
         {
             String from = col_from->getValue<String>();
-            block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
+            block.getByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
                 URLHashImpl::apply(from.data(), from.size()));
         }
         else
             throw Exception{
-                "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() +
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() +
                 " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 
     void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
     {
-        const auto level_col = block.safeGetByPosition(arguments.back()).column.get();
+        const auto level_col = block.getByPosition(arguments.back()).column.get();
         if (!level_col->isConst())
             throw Exception{
                 "Second argument of function " + getName() + " must be an integral constant",
@@ -806,12 +806,12 @@ private:
 
         const auto level = level_col->get64(0);
 
-        const auto col_untyped = block.safeGetByPosition(arguments.front()).column.get();
+        const auto col_untyped = block.getByPosition(arguments.front()).column.get();
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
             const auto col_to = std::make_shared<ColumnUInt64>(size);
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
@@ -825,13 +825,13 @@ private:
         else if (const auto col_from = checkAndGetColumnConst<ColumnString>(col_untyped))
         {
             String from = col_from->getValue<String>();
-            block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(
+            block.getByPosition(result).column = DataTypeUInt64().createConstColumn(
                 col_from->size(),
                 URLHierarchyHashImpl::apply(level, from.data(), from.size()));
         }
         else
             throw Exception{
-                "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() +
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() +
                 " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
     }

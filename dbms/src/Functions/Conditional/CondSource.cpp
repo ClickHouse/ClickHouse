@@ -34,13 +34,7 @@ CondSource::CondSource(const Block & block, const ColumnNumbers & args, size_t i
 
 const ColumnPtr CondSource::initMaterializedCol(const Block & block, const ColumnNumbers & args, size_t i)
 {
-    const ColumnPtr & col = block.safeGetByPosition(args[i]).column;
-
-    if (col->isNull())
-    {
-        const ColumnNull & null_col = static_cast<const ColumnNull &>(*col);
-        return null_col.convertToFullColumn();
-    }
+    const ColumnPtr & col = block.getByPosition(args[i]).column;
 
     const IColumn * observed_col;
 
@@ -69,7 +63,7 @@ const PaddedPODArray<UInt8> & CondSource::initDataArray(const Block & block, con
         source_col = materialized_col_.get();
     else
     {
-        const ColumnPtr & col = block.safeGetByPosition(args[i]).column;
+        const ColumnPtr & col = block.getByPosition(args[i]).column;
         source_col = col.get();
     }
 
@@ -94,7 +88,7 @@ const PaddedPODArray<UInt8> & CondSource::initDataArray(const Block & block, con
 
 const PaddedPODArray<UInt8> & CondSource::initNullMap(const Block & block, const ColumnNumbers & args, size_t i)
 {
-    const ColumnPtr & col = block.safeGetByPosition(args[i]).column;
+    const ColumnPtr & col = block.getByPosition(args[i]).column;
     if (col->isNullable())
     {
         const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);

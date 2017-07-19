@@ -771,7 +771,7 @@ public:
     {
         if (arguments.size() == 1)
         {
-            ColumnPtr column_array_ptr = block.safeGetByPosition(arguments[0]).column;
+            ColumnPtr column_array_ptr = block.getByPosition(arguments[0]).column;
             const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(&*column_array_ptr);
 
             if (!column_array)
@@ -783,11 +783,11 @@ public:
                 column_array = static_cast<const ColumnArray *>(&*column_array_ptr);
             }
 
-            block.safeGetByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());
+            block.getByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());
         }
         else
         {
-            const auto & column_with_type_and_name = block.safeGetByPosition(arguments[0]);
+            const auto & column_with_type_and_name = block.getByPosition(arguments[0]);
 
             if (!column_with_type_and_name.column)
                 throw Exception("First argument for function " + getName() + " must be an expression.",
@@ -812,7 +812,7 @@ public:
                 const std::string & argument_name = expression_arguments[i].name;
                 DataTypePtr argument_type = expression_arguments[i].type;
 
-                ColumnPtr column_array_ptr = block.safeGetByPosition(arguments[i + 1]).column;
+                ColumnPtr column_array_ptr = block.getByPosition(arguments[i + 1]).column;
                 const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(&*column_array_ptr);
 
                 if (!column_array)
@@ -862,7 +862,7 @@ public:
                 if (argument_names.count(name))
                     continue;
 
-                ColumnWithTypeAndName replicated_column = block.safeGetByPosition(prerequisites[prerequisite_index]);
+                ColumnWithTypeAndName replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
 
                 replicated_column.name = name;
                 replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();
@@ -874,7 +874,7 @@ public:
 
             expression.execute(temp_block);
 
-            block.safeGetByPosition(result).column = Impl::execute(*column_first_array, temp_block.getByName(column_expression->getReturnName()).column);
+            block.getByPosition(result).column = Impl::execute(*column_first_array, temp_block.getByName(column_expression->getReturnName()).column);
         }
     }
 };

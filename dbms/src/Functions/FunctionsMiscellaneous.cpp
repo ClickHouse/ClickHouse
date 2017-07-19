@@ -97,7 +97,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeString().createConstColumn(block.rows(), db_name);
+        block.getByPosition(result).column = DataTypeString().createConstColumn(block.rows(), db_name);
     }
 };
 
@@ -137,7 +137,7 @@ public:
       */
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
             block.rows(), Poco::Net::DNS::hostName())->convertToFullColumnIfConst();
     }
 };
@@ -211,8 +211,8 @@ public:
     /// Execute the function on the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column
-            = DataTypeString().createConstColumn(block.rows(), block.safeGetByPosition(arguments[0]).type->getName());
+        block.getByPosition(result).column
+            = DataTypeString().createConstColumn(block.rows(), block.getByPosition(arguments[0]).type->getName());
     }
 };
 
@@ -249,8 +249,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column
-            = DataTypeString().createConstColumn(block.rows(), block.safeGetByPosition(arguments[0]).column->getName());
+        block.getByPosition(result).column
+            = DataTypeString().createConstColumn(block.rows(), block.getByPosition(arguments[0]).column->getName());
     }
 };
 
@@ -326,7 +326,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t size = block.rows();
-        block.safeGetByPosition(result).column = std::make_shared<ColumnUInt64>(size, size);
+        block.getByPosition(result).column = std::make_shared<ColumnUInt64>(size, size);
     }
 };
 
@@ -370,7 +370,7 @@ public:
         for (size_t i = 0; i < size; ++i)
             data[i] = i;
 
-        block.safeGetByPosition(result).column = column;
+        block.getByPosition(result).column = column;
     }
 };
 
@@ -412,7 +412,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t current_block_number = block_number++;
-        block.safeGetByPosition(result).column = std::make_shared<ColumnUInt64>(block.rows(), current_block_number);
+        block.getByPosition(result).column = std::make_shared<ColumnUInt64>(block.rows(), current_block_number);
     }
 };
 
@@ -462,7 +462,7 @@ public:
         for (size_t i = 0; i < rows_in_block; ++i)
             data[i] = current_row_number + i;
 
-        block.safeGetByPosition(result).column = column;
+        block.getByPosition(result).column = column;
     }
 };
 
@@ -508,7 +508,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IColumn * col = block.safeGetByPosition(arguments[0]).column.get();
+        IColumn * col = block.getByPosition(arguments[0]).column.get();
         double seconds;
         size_t size = col->size();
 
@@ -538,7 +538,7 @@ public:
             usleep(static_cast<unsigned>(seconds * 1e6));
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
-        block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, UInt64(0))->convertToFullColumnIfConst();
+        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, UInt64(0))->convertToFullColumnIfConst();
     }
 };
 
@@ -570,11 +570,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const auto & src = block.safeGetByPosition(arguments[0]).column;
+        const auto & src = block.getByPosition(arguments[0]).column;
         if (auto converted = src->convertToFullColumnIfConst())
-            block.safeGetByPosition(result).column = converted;
+            block.getByPosition(result).column = converted;
         else
-            block.safeGetByPosition(result).column = src;
+            block.getByPosition(result).column = src;
     }
 };
 
@@ -629,7 +629,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         /// Second argument must be ColumnSet.
-        ColumnPtr column_set_ptr = block.safeGetByPosition(arguments[1]).column;
+        ColumnPtr column_set_ptr = block.getByPosition(arguments[1]).column;
         const ColumnSet * column_set = typeid_cast<const ColumnSet *>(&*column_set_ptr);
         if (!column_set)
             throw Exception("Second argument for function '" + getName() + "' must be Set; found " + column_set_ptr->getName(),
@@ -638,17 +638,17 @@ public:
         Block block_of_key_columns;
 
         /// First argument may be tuple or single column.
-        const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(block.safeGetByPosition(arguments[0]).column.get());
+        const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
+        const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(block.getByPosition(arguments[0]).column.get());
 
         if (tuple)
             block_of_key_columns = tuple->getData();
         else if (const_tuple)
             block_of_key_columns = static_cast<const ColumnTuple &>(*const_tuple->convertToFullColumn()).getData();
         else
-            block_of_key_columns.insert(block.safeGetByPosition(arguments[0]));
+            block_of_key_columns.insert(block.getByPosition(arguments[0]));
 
-        block.safeGetByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
+        block.getByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
     }
 };
 
@@ -672,7 +672,7 @@ void FunctionTuple::executeImpl(Block & block, const ColumnNumbers & arguments, 
     size_t num_constants = 0;
     for (auto column_number : arguments)
     {
-        const auto & elem = block.safeGetByPosition(column_number);
+        const auto & elem = block.getByPosition(column_number);
         if (elem.column->isConst())
             ++num_constants;
 
@@ -689,7 +689,7 @@ void FunctionTuple::executeImpl(Block & block, const ColumnNumbers & arguments, 
         for (size_t i = 0, size = arguments.size(); i < size; ++i)
             tuple_block.getByPosition(i).column->get(0, tuple[i]);
 
-        block.safeGetByPosition(result).column
+        block.getByPosition(result).column
             = block.getByPosition(result).type->createConstColumn(block.rows(), Tuple(tuple));
     }
     else
@@ -704,7 +704,7 @@ void FunctionTuple::executeImpl(Block & block, const ColumnNumbers & arguments, 
             if (auto converted = res->convertToFullColumnIfConst())
                 res = converted;
 
-        block.safeGetByPosition(result).column = res;
+        block.getByPosition(result).column = res;
     }
 }
 
@@ -756,9 +756,9 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.safeGetByPosition(arguments[0]).column.get());
-        auto const_tuple_col = checkAndGetColumnConst<ColumnTuple>(block.safeGetByPosition(arguments[0]).column.get());
-        auto index_col = checkAndGetColumnConst<ColumnUInt8>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnTuple * tuple_col = typeid_cast<const ColumnTuple *>(block.getByPosition(arguments[0]).column.get());
+        auto const_tuple_col = checkAndGetColumnConst<ColumnTuple>(block.getByPosition(arguments[0]).column.get());
+        auto index_col = checkAndGetColumnConst<ColumnUInt8>(block.getByPosition(arguments[1]).column.get());
 
         if (!tuple_col && !const_tuple_col)
             throw Exception("First argument for function " + getName() + " must be tuple.", ErrorCodes::ILLEGAL_COLUMN);
@@ -777,12 +777,12 @@ public:
             if (index > tuple_block.columns())
                 throw Exception("Index for tuple element is out of range.", ErrorCodes::ILLEGAL_INDEX);
 
-            block.safeGetByPosition(result).column = tuple_block.safeGetByPosition(index - 1).column;
+            block.getByPosition(result).column = tuple_block.getByPosition(index - 1).column;
         }
         else
         {
             TupleBackend data = const_tuple_col->getValue<TupleBackend>();
-            block.safeGetByPosition(result).column = static_cast<const DataTypeTuple &>(*block.safeGetByPosition(arguments[0]).type)
+            block.getByPosition(result).column = static_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type)
                 .getElements()[index - 1]->createConstColumn(block.rows(), data[index - 1]);
         }
     }
@@ -824,7 +824,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(0));
+        block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(0));
     }
 };
 
@@ -875,7 +875,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(1));
+        block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(1));
     }
 };
 
@@ -906,7 +906,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = block.safeGetByPosition(arguments.front()).column;
+        block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
     }
 };
 
@@ -976,21 +976,21 @@ DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) co
 
 void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    ColumnPtr first_column = block.safeGetByPosition(arguments[0]).column;
+    ColumnPtr first_column = block.getByPosition(arguments[0]).column;
 
-    const ColumnArray * array_column = checkAndGetColumn<ColumnArray>(block.safeGetByPosition(arguments[1]).column.get());
+    const ColumnArray * array_column = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[1]).column.get());
     ColumnPtr temp_column;
 
     if (!array_column)
     {
-        auto const_array_column = checkAndGetColumnConst<ColumnArray>(block.safeGetByPosition(arguments[1]).column.get());
+        auto const_array_column = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
         if (!const_array_column)
             throw Exception("Unexpected column for replicate", ErrorCodes::ILLEGAL_COLUMN);
         temp_column = const_array_column->convertToFullColumn();
         array_column = checkAndGetColumn<ColumnArray>(temp_column.get());
     }
 
-    block.safeGetByPosition(result).column
+    block.getByPosition(result).column
         = std::make_shared<ColumnArray>(first_column->replicate(array_column->getOffsets()), array_column->getOffsetsColumn());
 }
 
@@ -1049,13 +1049,13 @@ public:
         if (max_width > 1000)
             throw Exception("Too large max_width.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        const auto & src = *block.safeGetByPosition(arguments[0]).column;
+        const auto & src = *block.getByPosition(arguments[0]).column;
 
         if (src.isConst())
         {
             auto res_column_holder = DataTypeString().createConstColumn(block.rows(), String());
             ColumnConst & res_column = static_cast<ColumnConst &>(*res_column_holder);
-            block.safeGetByPosition(result).column = res_column_holder;
+            block.getByPosition(result).column = res_column_holder;
 
             if (executeConstNumber<UInt8>(src, res_column, min, max, max_width)
                 || executeConstNumber<UInt16>(src, res_column, min, max, max_width)
@@ -1071,13 +1071,13 @@ public:
             }
             else
                 throw Exception(
-                    "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else
         {
             auto res_column = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = res_column;
+            block.getByPosition(result).column = res_column;
 
             if (executeNumber<UInt8>(src, *res_column, min, max, max_width) || executeNumber<UInt16>(src, *res_column, min, max, max_width)
                 || executeNumber<UInt32>(src, *res_column, min, max, max_width)
@@ -1092,7 +1092,7 @@ public:
             }
             else
                 throw Exception(
-                    "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
     }
@@ -1101,7 +1101,7 @@ private:
     template <typename T>
     T extractConstant(Block & block, const ColumnNumbers & arguments, size_t argument_pos, const char * which_argument) const
     {
-        const auto & column = *block.safeGetByPosition(arguments[argument_pos]).column;
+        const auto & column = *block.getByPosition(arguments[argument_pos]).column;
 
         if (!column.isConst())
             throw Exception(
@@ -1211,7 +1211,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto in = block.safeGetByPosition(arguments.front()).column.get();
+        const auto in = block.getByPosition(arguments.front()).column.get();
 
         if (!execute<UInt8>(block, in, result) && !execute<UInt16>(block, in, result) && !execute<UInt32>(block, in, result)
             && !execute<UInt64>(block, in, result)
@@ -1232,7 +1232,7 @@ public:
             const auto size = in->size();
 
             const auto out = std::make_shared<ColumnUInt8>(size);
-            block.safeGetByPosition(result).column = out;
+            block.getByPosition(result).column = out;
 
             const auto & in_data = in->getData();
             auto & out_data = out->getData();
@@ -1244,7 +1244,7 @@ public:
         }
         else if (const auto in = checkAndGetColumnConst<ColumnVector<T>>(in_untyped))
         {
-            block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(in->size(), toField(Impl::execute(in->template getValue<T>())));
+            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(in->size(), toField(Impl::execute(in->template getValue<T>())));
 
             return true;
         }
@@ -1317,7 +1317,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         static const std::string version = getVersion();
-        block.safeGetByPosition(result).column = DataTypeString().createConstColumn(block.rows(), version);
+        block.getByPosition(result).column = DataTypeString().createConstColumn(block.rows(), version);
     }
 
 private:
@@ -1357,7 +1357,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), uptime);
+        block.getByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), uptime);
     }
 
 private:
@@ -1392,7 +1392,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeString().createConstColumn(block.rows(), DateLUT::instance().getTimeZone());
+        block.getByPosition(result).column = DataTypeString().createConstColumn(block.rows(), DateLUT::instance().getTimeZone());
     }
 };
 
@@ -1440,9 +1440,9 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnAggregateFunction * column_with_states
-            = typeid_cast<const ColumnAggregateFunction *>(&*block.safeGetByPosition(arguments.at(0)).column);
+            = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
         if (!column_with_states)
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments.at(0)).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -1461,7 +1461,7 @@ public:
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
         ColumnPtr result_column_ptr = agg_func.getReturnType()->createColumn();
-        block.safeGetByPosition(result).column = result_column_ptr;
+        block.getByPosition(result).column = result_column_ptr;
         IColumn & result_column = *result_column_ptr;
         result_column.reserve(column_with_states->size());
 
@@ -1575,8 +1575,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        auto & src = block.safeGetByPosition(arguments.at(0));
-        auto & res = block.safeGetByPosition(result);
+        auto & src = block.getByPosition(arguments.at(0));
+        auto & res = block.getByPosition(result);
 
         /// When column is constant, its difference is zero.
         if (src.column->isConst())
@@ -1630,14 +1630,14 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         ColumnAggregateFunction * column_with_states
-            = typeid_cast<ColumnAggregateFunction *>(&*block.safeGetByPosition(arguments.at(0)).column);
+            = typeid_cast<ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
         if (!column_with_states)
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments.at(0)).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                     + " of first argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        block.safeGetByPosition(result).column = column_with_states->convertToValues();
+        block.getByPosition(result).column = column_with_states->convertToValues();
     }
 };
 
@@ -1681,14 +1681,14 @@ private:
 
 void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    auto & src = block.safeGetByPosition(arguments[0]);
+    auto & src = block.getByPosition(arguments[0]);
     size_t size = block.rows();
 
     if (!src.column->isConst())
     {
         auto res_col = std::make_shared<ColumnUInt64>(size);
         auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
-        block.safeGetByPosition(result).column = res_col;
+        block.getByPosition(result).column = res_col;
 
         /// For simplicity reasons, function is implemented by serializing into temporary buffer.
 
@@ -1711,7 +1711,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
             src.type->serializeTextEscaped(*src.column->cut(0, 1)->convertToFullColumnIfConst(), 0, out);
         }
 
-        block.safeGetByPosition(result).column = DataTypeUInt64().createConstColumn(size,
+        block.getByPosition(result).column = DataTypeUInt64().createConstColumn(size,
             UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()));
     }
 }
@@ -1740,7 +1740,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
 {
     auto get_string_from_block = [&](size_t column_pos) -> String
     {
-        ColumnPtr column = block.safeGetByPosition(column_pos).column;
+        ColumnPtr column = block.getByPosition(column_pos).column;
         const ColumnConst * const_column = checkAndGetColumnConst<ColumnString>(column.get());
         return const_column->getValue<String>();
     };
@@ -1752,7 +1752,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     const StoragePtr & table = global_context.getTable(database_name, table_name);
     const bool has_column = table->hasColumn(column_name);
 
-    block.safeGetByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(has_column));
+    block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(has_column));
 }
 
 

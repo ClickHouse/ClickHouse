@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
@@ -187,7 +188,7 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        block.safeGetByPosition(result).column = column_result;
+        block.getByPosition(result).column = column_result;
     }
 
 private:
@@ -198,24 +199,24 @@ private:
         Block tmp_block;
         ColumnNumbers tmp_arguments;
 
-        tmp_block.insert(block.safeGetByPosition(arguments[0]));
-        tmp_block.safeGetByPosition(0).column = static_cast<const ColumnConst *>(tmp_block.safeGetByPosition(0).column.get())->getDataColumnPtr();
+        tmp_block.insert(block.getByPosition(arguments[0]));
+        tmp_block.getByPosition(0).column = static_cast<const ColumnConst *>(tmp_block.getByPosition(0).column.get())->getDataColumnPtr();
         tmp_arguments.push_back(0);
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            tmp_block.insert(block.safeGetByPosition(arguments[i]));
+            tmp_block.insert(block.getByPosition(arguments[i]));
             tmp_arguments.push_back(i);
         }
 
-        tmp_block.insert(block.safeGetByPosition(result));
+        tmp_block.insert(block.getByPosition(result));
         size_t tmp_result = arguments.size();
 
         execute(tmp_block, tmp_arguments, tmp_result);
 
-        block.safeGetByPosition(result).column = block.safeGetByPosition(result).type->createConstColumn(
+        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
             block.rows(),
-            (*tmp_block.safeGetByPosition(tmp_result).column)[0]);
+            (*tmp_block.getByPosition(tmp_result).column)[0]);
     }
 
     template <typename T>
@@ -225,7 +226,7 @@ private:
         {
             if (!default_untyped)
             {
-                auto out = checkAndGetColumn<ColumnVector<T>>(out_untyped);
+                auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
                 if (!out)
                 {
                     throw Exception{
@@ -342,7 +343,7 @@ private:
     template <typename T, typename U>
     bool executeNumToNumWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped)
     {
-        auto out = checkAndGetColumn<ColumnVector<U>>(out_untyped);
+        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
         if (!out)
             return false;
 
@@ -353,7 +354,7 @@ private:
     template <typename T, typename U>
     bool executeNumToNumWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped)
     {
-        auto out = checkAndGetColumn<ColumnVector<U>>(out_untyped);
+        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
         if (!out)
             return false;
 
@@ -425,7 +426,7 @@ private:
     template <typename U>
     bool executeStringToNumWithConstDefault(const ColumnString * in, IColumn * out_untyped)
     {
-        auto out = checkAndGetColumn<ColumnVector<U>>(out_untyped);
+        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
         if (!out)
             return false;
 
@@ -436,7 +437,7 @@ private:
     template <typename U>
     bool executeStringToNumWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped)
     {
-        auto out = checkAndGetColumn<ColumnVector<U>>(out_untyped);
+        auto out = typeid_cast<ColumnVector<U> *>(out_untyped);
         if (!out)
             return false;
 
@@ -772,7 +773,7 @@ private:
 
         if (arguments.size() == 4)
         {
-            const IColumn * default_col = block.safeGetByPosition(arguments[3]).column.get();
+            const IColumn * default_col = block.getByPosition(arguments[3]).column.get();
             const ColumnConst * const_default_col = typeid_cast<const ColumnConst *>(default_col);
 
             if (const_default_col)

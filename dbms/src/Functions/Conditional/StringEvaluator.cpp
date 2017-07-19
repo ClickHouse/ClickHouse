@@ -364,7 +364,7 @@ bool createStringSources(StringSources & sources, const Block & block,
 {
     auto append_source = [&](size_t i)
     {
-        const IColumn * col = block.safeGetByPosition(args[i]).column.get();
+        const IColumn * col = block.getByPosition(args[i]).column.get();
         const ColumnString * var_col = checkAndGetColumn<ColumnString>(col);
         const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(col);
 
@@ -386,7 +386,7 @@ bool createStringSources(StringSources & sources, const Block & block,
         {
             /// If we actually have a fixed string, get its capacity.
             size_t size = 0;
-            if (auto col_const_fixed = checkAndGetColumn<ColumnFixedString>(const_col->getDataColumn().get()))
+            if (auto col_const_fixed = checkAndGetColumn<ColumnFixedString>(&const_col->getDataColumn()))
                 size = col_const_fixed->getN();
 
             source = std::make_unique<ConstStringSource>(const_col->getValue<String>(), size, args[i]);
@@ -506,7 +506,7 @@ private:
         size_t first_data_size = sources[0]->getDataSize();
 
         auto col_res = std::make_shared<ColumnFixedString>(first_size);
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
         return FixedStringSink{col_res->getChars(), first_size, first_data_size};
     }
 };
@@ -533,7 +533,7 @@ private:
         size_t data_size = computeResultSize(sources, row_count);
 
         std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
         return VarStringSink{col_res->getChars(), col_res->getOffsets(),
             data_size, offsets_size};
     }

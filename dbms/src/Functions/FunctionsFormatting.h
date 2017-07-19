@@ -70,7 +70,7 @@ public:
             ||    executeType<Int16>(block, arguments, result)
             ||    executeType<Int32>(block, arguments, result)
             ||    executeType<Int64>(block, arguments, result)))
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -95,10 +95,10 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -117,7 +117,7 @@ private:
             }
             data_to.resize(buf_to.count());
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             std::string res;
             {
@@ -125,7 +125,7 @@ private:
                 writeBitmask<T>(col_from->template getValue<T>(), buf);
             }
 
-            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), res);
+            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), res);
         }
         else
         {
@@ -172,7 +172,7 @@ public:
             ||    executeType<Int64>(block, arguments, result)
             ||    executeType<Float32>(block, arguments, result)
             ||    executeType<Float64>(block, arguments, result)))
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -181,10 +181,10 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -203,9 +203,9 @@ private:
             }
             data_to.resize(buf_to.count());
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(
+            block.getByPosition(result).column = DataTypeString().createConstColumn(
                 col_from->size(), formatReadableSizeWithBinarySuffix(col_from->template getValue<T>()));
         }
         else

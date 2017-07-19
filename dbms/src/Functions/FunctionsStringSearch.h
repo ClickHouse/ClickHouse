@@ -76,8 +76,8 @@ public:
     {
         using ResultType = typename Impl::ResultType;
 
-        const ColumnPtr & column_haystack = block.safeGetByPosition(arguments[0]).column;
-        const ColumnPtr & column_needle = block.safeGetByPosition(arguments[1]).column;
+        const ColumnPtr & column_haystack = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & column_needle = block.getByPosition(arguments[1]).column;
 
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
@@ -86,12 +86,12 @@ public:
         {
             ResultType res{};
             Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
-            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_haystack_const->size(), toField(res));
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_haystack_const->size(), toField(res));
             return;
         }
 
         auto col_res = std::make_shared<ColumnVector<ResultType>>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
 
         typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
         vec_res.resize(column_haystack->size());
@@ -110,8 +110,8 @@ public:
         else if (col_haystack_const && col_needle_vector)
             Impl::constant_vector(col_haystack_const->getValue<String>(), col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         else
-            throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName() + " and "
-                    + block.safeGetByPosition(arguments[1]).column->getName()
+            throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName() + " and "
+                    + block.getByPosition(arguments[1]).column->getName()
                     + " of arguments of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -154,8 +154,8 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
-        const ColumnPtr column_needle = block.safeGetByPosition(arguments[1]).column;
+        const ColumnPtr column = block.getByPosition(arguments[0]).column;
+        const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
 
         const ColumnConst * col_needle = typeid_cast<const ColumnConst *>(&*column_needle);
         if (!col_needle)
@@ -164,7 +164,7 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
@@ -185,11 +185,11 @@ public:
             if (!res_offsets.empty())
                 res.assign(&res_vdata[0], &res_vdata[res_vdata.size() - 1]);
 
-            block.safeGetByPosition(result).column = DataTypeString().createConstColumn(col->size(), res);
+            block.getByPosition(result).column = DataTypeString().createConstColumn(col->size(), res);
         }
         else
             throw Exception(
-                "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };

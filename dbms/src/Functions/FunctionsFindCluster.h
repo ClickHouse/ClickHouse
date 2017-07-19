@@ -127,9 +127,9 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto in_untyped = block.safeGetByPosition(arguments[0]).column.get();
-        const auto centroids_array_untyped = block.safeGetByPosition(arguments[1]).column.get();
-        auto column_result = block.safeGetByPosition(result).type->createColumn();
+        const auto in_untyped = block.getByPosition(arguments[0]).column.get();
+        const auto centroids_array_untyped = block.getByPosition(arguments[1]).column.get();
+        auto column_result = block.getByPosition(result).type->createColumn();
         auto out_untyped = column_result.get();
 
         if (!centroids_array_untyped->isConst())
@@ -137,7 +137,7 @@ public:
 
         executeImplTyped(in_untyped, out_untyped, centroids_array_untyped);
 
-        block.safeGetByPosition(result).column = column_result;
+        block.getByPosition(result).column = column_result;
     }
 
 protected:

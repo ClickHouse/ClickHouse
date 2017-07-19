@@ -361,13 +361,13 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
     else if (strategy == RETURN_NULL)
     {
         /// We have found at least one NULL argument. Therefore we return NULL.
-        ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
+        ColumnWithTypeAndName & dest_col = block.getByPosition(result);
         dest_col.column = DataTypeNull().createConstColumn(block.rows(), Null());
     }
     else if (strategy == PROCESS_NULLABLE_COLUMNS)
     {
-        const ColumnWithTypeAndName & source_col = processed_block.safeGetByPosition(result);
-        ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
+        const ColumnWithTypeAndName & source_col = processed_block.getByPosition(result);
+        ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 
         /// Initialize the result column.
         ColumnPtr null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);

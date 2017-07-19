@@ -153,7 +153,7 @@ private:
     using U = typename Extend<T>::Type;
 
 public:
-    using Divisor = std::pair<size_t, typename libdivide::divider<U> >;
+    using Divisor = std::pair<size_t, typename libdivide::divider<U>>;
 
     static inline Divisor prepare(size_t b)
     {
@@ -978,7 +978,7 @@ struct Cruncher
     static inline void apply(Block & block, const ColumnVector<T> * col, const ColumnNumbers & arguments, size_t result, size_t scale)
     {
         auto col_res = std::make_shared<ColumnVector<T>>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
 
         typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
         vec_res.resize(col->getData().size());
@@ -992,7 +992,7 @@ struct Cruncher
     static inline void apply(Block & block, const ColumnConst * col, const ColumnNumbers & arguments, size_t result, size_t scale)
     {
         T res = Op::apply(col->getValue<T>(), scale);
-        block.safeGetByPosition(result).column = DataTypeNumber<T>().createConstColumn(col->size(), toField(res));
+        block.getByPosition(result).column = DataTypeNumber<T>().createConstColumn(col->size(), toField(res));
     }
 };
 
@@ -1007,7 +1007,7 @@ struct Dispatcher
         size_t scale;
 
         if (arguments.size() == 2)
-            ScaleForLeftType<T>::apply(block.safeGetByPosition(arguments[1]).column, scale_mode, scale);
+            ScaleForLeftType<T>::apply(block.getByPosition(arguments[1]).column, scale_mode, scale);
         else
         {
             scale_mode = ZeroScale;
@@ -1048,12 +1048,12 @@ private:
     template<typename T>
     bool executeForType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (auto col = checkAndGetColumn<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             Dispatcher<T, ColumnVector<T>, rounding_mode>::apply(block, col, arguments, result);
             return true;
         }
-        else if (auto col = checkAndGetColumnConst<ColumnVector<T>>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             Dispatcher<T, ColumnConst, rounding_mode>::apply(block, col, arguments, result);
             return true;
@@ -1119,7 +1119,7 @@ public:
             ||    executeForType<Float32>(block, arguments, result)
             ||    executeForType<Float64>(block, arguments, result)))
         {
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }

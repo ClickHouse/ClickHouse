@@ -48,14 +48,14 @@ protected:
     static bool appendBranchInfo(size_t index, const Block & block,
         const ColumnNumbers & args, Branches & branches)
     {
-        const IColumn * col = block.safeGetByPosition(args[index]).column.get();
+        const IColumn * col = block.getByPosition(args[index]).column.get();
 
         const ColumnVector<TType> * vec_col = nullptr;
         const ColumnConst * const_col = nullptr;
 
-        const ColumnArray * arr_col = nullptr;
+        const ColumnArray * arr_col = checkAndGetColumn<ColumnArray>(col);
         const ColumnVector<TType> * arr_vec_col = nullptr;
-        const ColumnConst * arr_const_col = nullptr;
+        const ColumnConst * arr_const_col = checkAndGetColumnConst<ColumnArray>(col);
 
         Branch branch;
 
@@ -69,14 +69,15 @@ protected:
                 branch.is_const = true;
             else
             {
-                if (auto arr_col = checkAndGetColumn<ColumnArray>(col))
+                if (arr_col)
                 {
-                    if (checkColumn<ColumnVector<TType>>(arr_col))
+                    arr_vec_col = checkAndGetColumn<ColumnVector<TType>>(arr_col);
+                    if (arr_vec_col)
                         branch.is_const = false;
                     else
                         return false;
                 }
-                else if (arr_const_col = checkAndGetColumnConst<ColumnArray>(col))
+                else if (arr_const_col)
                 {
                     branch.is_const = true;
                 }
@@ -108,8 +109,6 @@ protected:
     static bool appendBranchInfo(size_t index, const Block & block,
         const ColumnNumbers & args, Branches & branches)
     {
-        const IColumn * col = block.safeGetByPosition(args[index]).column.get();
-
         Branch branch;
         branch.is_const = true;
         branch.index = index;

@@ -9,6 +9,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 
 #include <Common/typeid_cast.h>
@@ -449,7 +450,7 @@ struct DateTimeTransformImpl
     {
         using Op = Transformer<FromType, ToType, Transform>;
 
-        const ColumnPtr source_col = block.safeGetByPosition(arguments[0]).column;
+        const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
         const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get());
         const auto * const_source = checkAndGetColumnConst<ColumnVector<FromType>>(source_col.get());
 
@@ -457,10 +458,10 @@ struct DateTimeTransformImpl
 
         if (arguments.size() == 2)
         {
-            time_zone_column = checkAndGetColumnConst<ColumnString>(block.safeGetByPosition(arguments[1]).column.get());
+            time_zone_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
 
             if (!time_zone_column)
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                     + " of second (time zone) argument of function " + Name::name + ", must be constant string",
                     ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -472,18 +473,18 @@ struct DateTimeTransformImpl
         if (sources)
         {
             auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
             Op::vector(sources->getData(), col_to->getData(), time_zone);
         }
         else if (const_source)
         {
             ToType res;
             Op::constant(const_source->template getValue<FromType>(), res, time_zone);
-            block.safeGetByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(const_source->size(), toField(res));
+            block.getByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(const_source->size(), toField(res));
         }
         else
         {
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -537,14 +538,14 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
+        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if (checkDataType<DataTypeDate>(from_type))
             DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
         else if (checkDataType<DataTypeDateTime>(from_type))
             DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform, Name>::execute(block, arguments, result);
         else
-            throw Exception("Illegal type " + block.safeGetByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
@@ -610,7 +611,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(
+        block.getByPosition(result).column = DataTypeUInt32().createConstColumn(
             block.rows(),
             time(0));
     }
@@ -637,7 +638,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeUInt16().createConstColumn(
+        block.getByPosition(result).column = DataTypeUInt16().createConstColumn(
             block.rows(),
             UInt64(DateLUT::instance().toDayNum(time(0))));
     }
@@ -664,7 +665,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.safeGetByPosition(result).column = DataTypeUInt16().createConstColumn(
+        block.getByPosition(result).column = DataTypeUInt16().createConstColumn(
             block.rows(),
             UInt64(DateLUT::instance().toDayNum(time(0)) - 1));
     }
@@ -695,7 +696,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
             auto res = std::make_shared<ColumnUInt32>();
             ColumnPtr res_holder = res;
@@ -708,15 +709,15 @@ public:
             for (size_t i = 0; i < size; ++i)
                 res_vec[i] = vec[i] / TIME_SLOT_SIZE * TIME_SLOT_SIZE;
 
-            block.safeGetByPosition(result).column = res_holder;
+            block.getByPosition(result).column = res_holder;
         }
-        else if (auto const_times = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto const_times = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = DataTypeUInt32().createConstColumn(
+            block.getByPosition(result).column = DataTypeUInt32().createConstColumn(
                 block.rows(), toField(const_times->getValue<UInt32>() / TIME_SLOT_SIZE * TIME_SLOT_SIZE));
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -830,11 +831,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        auto starts = checkAndGetColumn<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get());
-        auto const_starts = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[0]).column.get());
+        auto starts = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
+        auto const_starts = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
 
-        auto durations = checkAndGetColumn<ColumnUInt32>(block.safeGetByPosition(arguments[1]).column.get());
-        auto const_durations = checkAndGetColumnConst<ColumnUInt32>(block.safeGetByPosition(arguments[1]).column.get());
+        auto durations = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
+        auto const_durations = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
 
         auto res = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt32>());
         ColumnPtr res_holder = res;
@@ -843,27 +844,27 @@ public:
         if (starts && durations)
         {
             TimeSlotsImpl<UInt32>::vector_vector(starts->getData(), durations->getData(), res_values, res->getOffsets());
-            block.safeGetByPosition(result).column = res_holder;
+            block.getByPosition(result).column = res_holder;
         }
         else if (starts && const_durations)
         {
             TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getValue<UInt32>(), res_values, res->getOffsets());
-            block.safeGetByPosition(result).column = res_holder;
+            block.getByPosition(result).column = res_holder;
         }
         else if (const_starts && durations)
         {
             TimeSlotsImpl<UInt32>::constant_vector(const_starts->getValue<UInt32>(), durations->getData(), res_values, res->getOffsets());
-            block.safeGetByPosition(result).column = res_holder;
+            block.getByPosition(result).column = res_holder;
         }
         else if (const_starts && const_durations)
         {
             Array const_res;
             TimeSlotsImpl<UInt32>::constant_constant(const_starts->getValue<UInt32>(), const_durations->getValue<UInt32>(), const_res);
-            block.safeGetByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), const_res);
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), const_res);
         }
         else
-            throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName()
-                    + ", " + block.safeGetByPosition(arguments[1]).column->getName()
+            throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
+                    + ", " + block.getByPosition(arguments[1]).column->getName()
                     + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
