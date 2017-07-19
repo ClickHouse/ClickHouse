@@ -1749,7 +1749,7 @@ void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
     const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites)
 {
     if (getNumberOfArguments() < 3 || getNumberOfArguments() > 6)
-        throw Exception{"Invalid number of arguments for function " + getName(),
+        throw Exception{"Invalid number of arguments for function " + getName() + ": " + std::to_string(getNumberOfArguments()),
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
     static const std::string arg_pos_description[] = {"First", "Second", "Third", "Fourth", "Fifth", "Sixth"};
