@@ -36,20 +36,18 @@
 	</data>
 	<extremes>
 		<min>
-			<s>Hello &amp; world</s>
-			<field>Hello
-&lt;World></field>
+			<s></s>
+			<field></field>
 			<time>2001-02-03 04:05:06</time>
 			<arr><array></array></arr>
-			<tpl><tuple><elem>Hello &amp; world</elem><elem>2001-02-03 04:05:06</elem></tuple></tpl>
+			<tpl><tuple><elem></elem><elem>2001-02-03 04:05:06</elem></tuple></tpl>
 		</min>
 		<max>
-			<s>Hello &amp; world</s>
-			<field>Hello
-&lt;World></field>
+			<s></s>
+			<field></field>
 			<time>2001-02-03 04:05:06</time>
 			<arr><array></array></arr>
-			<tpl><tuple><elem>Hello &amp; world</elem><elem>2001-02-03 04:05:06</elem></tuple></tpl>
+			<tpl><tuple><elem></elem><elem>2001-02-03 04:05:06</elem></tuple></tpl>
 		</max>
 	</extremes>
 	<rows>1</rows>

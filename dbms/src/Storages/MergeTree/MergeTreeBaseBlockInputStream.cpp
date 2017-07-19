@@ -456,7 +456,7 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
             else if (virt_column_name == "_part_index")
             {
                 block.insert(ColumnWithTypeAndName{
-                    DataTypeString().createConstColumn(rows, task->part_index_in_query)->convertToFullColumnIfConst(),
+                    DataTypeUInt64().createConstColumn(rows, task->part_index_in_query)->convertToFullColumnIfConst(),
                     std::make_shared<DataTypeUInt64>(),
                     virt_column_name});
             }
