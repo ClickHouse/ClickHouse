@@ -10,17 +10,17 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-/// Allows loading dictionaries from http[s] source
-class HTTPDictionarySource final : public IDictionarySource
+/// Allows loading dictionaries from .so
+class LibDictionarySource final : public IDictionarySource
 {
 public:
-    HTTPDictionarySource(const DictionaryStructure & dict_struct_,
+    LibDictionarySource(const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block,
         const Context & context);
 
-    HTTPDictionarySource(const HTTPDictionarySource & other);
+    LibDictionarySource(const LibDictionarySource & other);
 
     BlockInputStreamPtr loadAll() override;
 
@@ -43,7 +43,8 @@ private:
     LocalDateTime getLastModification() const;
 
     const DictionaryStructure dict_struct;
-    const std::string url;
+    const std::string filename;
+    const std::string url; //del
     const std::string format;
     Block sample_block;
     const Context & context;

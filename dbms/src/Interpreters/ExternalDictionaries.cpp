@@ -71,6 +71,7 @@ namespace
     std::set<std::string> getDictionariesConfigPaths(const Poco::Util::AbstractConfiguration & config)
     {
         auto pattern = config.getString("dictionaries_config", "");
+std::cerr << "pattern=" << pattern << "\n";
         if (pattern.empty())
             return {};
 
