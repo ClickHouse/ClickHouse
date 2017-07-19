@@ -37,8 +37,7 @@ size_t MergeTreeRangeReader::read(Block & res, size_t max_rows_to_read)
         return false;
 
     auto read_rows = merge_tree_reader.get().readRows(current_mark, continue_reading, rows_to_read, res);
-    if (!read_rows)
-        read_rows = rows_to_read;
+
     continue_reading = true;
 
     read_rows_after_current_mark += read_rows;
@@ -48,6 +47,9 @@ size_t MergeTreeRangeReader::read(Block & res, size_t max_rows_to_read)
 
     if (read_rows < rows_to_read || current_mark == last_mark)
         is_reading_finished = true;
+
+    if (!read_rows)
+        read_rows = rows_to_read;
 
     return read_rows;
 }
