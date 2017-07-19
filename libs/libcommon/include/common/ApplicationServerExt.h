@@ -43,9 +43,9 @@ public:
     static int main(int _argc, char * _argv[])
     {
         App app;
-        AppHandler::init(app, _argc, _argv);
         try
         {
+            AppHandler::init(app, _argc, _argv);
             return AppHandler::run(app, _argc, _argv);
         }
         catch (const Poco::Exception & _ex)
