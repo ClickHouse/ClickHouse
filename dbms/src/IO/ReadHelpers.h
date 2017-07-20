@@ -4,6 +4,7 @@
 #include <cstring>
 #include <limits>
 #include <algorithm>
+#include <iterator>
 
 #include <type_traits>
 
@@ -559,8 +560,10 @@ struct NullSink
 };
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
-void parseUUID(const UInt8 * src36, UInt128 & uuid);
-void formatHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes);
+void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
+
+template<class IteratorSrc, class IteratorDst>
+void formatHex(IteratorSrc __restrict src, IteratorDst __restrict dst, const size_t num_bytes);
 
 /// In YYYY-MM-DD format
 inline void readDateText(DayNum_t & date, ReadBuffer & buf)
@@ -606,7 +609,7 @@ inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
         throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
     }
 
-    parseUUID(reinterpret_cast<const UInt8 *>(s), uuid);
+    parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
 }
 
 
