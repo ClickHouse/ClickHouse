@@ -2,6 +2,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -141,7 +142,7 @@ protected:
 
     bool is_initialized_in_update = false;
 
-    void initialize(const Block & sample_block);
+    void initialize(const Block & sample_block, const Names & columns, bool from_update = false);
 
 public:
 
