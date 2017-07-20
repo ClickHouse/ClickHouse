@@ -4,7 +4,9 @@
 #include <Dictionaries/DictionaryStructure.h>
 
 
-namespace Poco { class Logger; }
+namespace Poco {
+class Logger;
+}
 
 
 namespace DB
@@ -15,10 +17,10 @@ class LibDictionarySource final : public IDictionarySource
 {
 public:
     LibDictionarySource(const DictionaryStructure & dict_struct_,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        Block & sample_block,
-        const Context & context);
+                        const Poco::Util::AbstractConfiguration & config,
+                        const std::string & config_prefix,
+                        Block & sample_block,
+                        const Context & context);
 
     LibDictionarySource(const LibDictionarySource & other);
 
@@ -44,7 +46,6 @@ private:
 
     const DictionaryStructure dict_struct;
     const std::string filename;
-    //const std::string url; //del
     const std::string format;
     Block sample_block;
     const Context & context;

@@ -1,46 +1,39 @@
 #include <Dictionaries/LibDictionarySource.h>
 
-//#include <Poco/Net/HTTPRequest.h>
 #include <Interpreters/Context.h>
-//#include <DataStreams/OwningBlockInputStream.h>
-//#include <IO/ReadWriteBufferFromHTTP.h>
-//#include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>
-//#include <IO/WriteBufferFromOStream.h>
-//#include <Dictionaries/DictionarySourceHelpers.h>
 #include <common/logger_useful.h>
 
 #include <Interpreters/Compiler.h>
 
+//dev:
 #include <DataStreams/NullBlockInputStream.h>
 
 namespace DB
 {
 
-static const size_t max_block_size = 8192;
+//static const size_t max_block_size = 8192;
 
 
 LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-    Block & sample_block, const Context & context)
+        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+        Block & sample_block, const Context & context)
     : log(&Logger::get("LibDictionarySource")),
-    dict_struct{dict_struct_},
-    filename{config.getString(config_prefix + ".filename", "")},
-    //url{config.getString(config_prefix + ".url", "")}, //del
-    format{config.getString(config_prefix + ".format")},
-    sample_block{sample_block},
-    context(context)
+      dict_struct {dict_struct_},
+              filename {config.getString(config_prefix + ".filename", "")},
+              format {config.getString(config_prefix + ".format")},
+              sample_block {sample_block},
+              context(context)
 {
     std::cerr << "LibDictionarySource::LibDictionarySource()\n";
 }
 
 LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
     : log(&Logger::get("LibDictionarySource")),
-    dict_struct{other.dict_struct},
-    //url{other.url},
-    format{other.format},
-    sample_block{other.sample_block},
-    context(other.context)
+      dict_struct {other.dict_struct},
+              format {other.format},
+              sample_block {other.sample_block},
+              context(other.context)
 {
 }
 
@@ -79,7 +72,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(
     std::cerr << "LibDictionarySource::loadKeys filename=" << filename << " size=" << requested_rows.size() << " fptr=" << fptr << "\n";
     if (fptr)
         fptr(requested_rows);
-                 
+
     return std::make_shared<NullBlockInputStream>();
 }
 
