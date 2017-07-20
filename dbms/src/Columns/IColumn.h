@@ -252,8 +252,8 @@ public:
     virtual size_t allocatedBytes() const = 0;
 
     /// For visitors
-    void accept(ColumnVisitor &) { throw Exception("Accept not implemented"); }
-    void accept(ColumnVisitor &) const { throw Exception("Accept not implemented"); }
+    virtual void accept(ColumnVisitor &) { throw Exception("Accept not implemented"); }
+    virtual void accept(ColumnVisitor &) const { throw Exception("Accept not implemented"); }
 
     virtual ~IColumn() {}
 

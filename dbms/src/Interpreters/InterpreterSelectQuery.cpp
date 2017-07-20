@@ -45,6 +45,7 @@
 #include <Common/Collator.h>
 #include <Common/typeid_cast.h>
 
+#include <DataStreams/LogColumnTypesBlockInputStream.h>
 
 namespace ProfileEvents
 {
@@ -353,7 +354,6 @@ Block InterpreterSelectQuery::getSampleBlock(const ASTPtr & query_ptr_, const Co
     return InterpreterSelectQuery(OnlyAnalyzeTag(), query_ptr_, context_).getSampleBlock();
 }
 
-#incldue <DataStreams/LogColumnTypesBlockInputStream.h>
 BlockIO InterpreterSelectQuery::execute()
 {
     (void) executeWithoutUnion();
