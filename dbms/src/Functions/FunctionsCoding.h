@@ -21,7 +21,6 @@
 #include <Functions/FunctionsRandom.h>
 #include <arpa/inet.h>
 
-#include <iostream>
 #include <ext/range.h>
 #include <array>
 
@@ -1410,7 +1409,6 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 0; }
-    //bool isDeterministicInScopeOfQuery() override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1432,8 +1430,8 @@ public:
         {
             /** https://tools.ietf.org/html/rfc4122#section-4.4
              */
-            uuid.low = (uuid.low & 0xffffffffffff0ffful) | 0x0000000000004000ul;
-            uuid.high = (uuid.high & 0x3ffffffffffffffful) | 0x8000000000000000ul;
+            uuid.low = (uuid.low & 0xffffffffffff0fffull) | 0x0000000000004000ull;
+            uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
         }
     }
 };
