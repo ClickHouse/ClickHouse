@@ -1,17 +1,18 @@
 #include <Dictionaries/LibDictionarySource.h>
 
-#include <Poco/Net/HTTPRequest.h>
+//#include <Poco/Net/HTTPRequest.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/OwningBlockInputStream.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
-#include <DataStreams/IBlockOutputStream.h>
+//#include <DataStreams/OwningBlockInputStream.h>
+//#include <IO/ReadWriteBufferFromHTTP.h>
+//#include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/WriteBufferFromOStream.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+//#include <IO/WriteBufferFromOStream.h>
+//#include <Dictionaries/DictionarySourceHelpers.h>
 #include <common/logger_useful.h>
 
 #include <Interpreters/Compiler.h>
 
+#include <DataStreams/NullBlockInputStream.h>
 
 namespace DB
 {
@@ -31,13 +32,12 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
     context(context)
 {
     std::cerr << "LibDictionarySource::LibDictionarySource()\n";
-    
 }
 
 LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
     : log(&Logger::get("LibDictionarySource")),
     dict_struct{other.dict_struct},
-    url{other.url},
+    //url{other.url},
     format{other.format},
     sample_block{other.sample_block},
     context(other.context)
@@ -47,59 +47,26 @@ LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
 BlockInputStreamPtr LibDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
-    Poco::URI uri(url);
-    std::cerr << "1dl filename=" << filename << "\n";
-    SharedLibraryPtr lib = std::make_shared<SharedLibrary>(filename);
+    auto lib = std::make_shared<SharedLibrary>(filename);
+    auto fptr = lib->get<void * (*) ()>("loadAll");
+    std::cerr << "LibDictionarySource::loadAll filename=" << filename << " fptr=" << fptr << "\n";
+    if (fptr)
+        fptr();
 
-    auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_GET);
-    auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
+    return std::make_shared<NullBlockInputStream>();
 }
 
 BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
-    std::cerr << "2dl filename=" << filename << "\n";
-    SharedLibraryPtr lib = std::make_shared<SharedLibrary>(filename);
-    //auto fptr = lib->get<void * (*) ()>("_ZN2DB6getPtrEv")();
+    auto lib = std::make_shared<SharedLibrary>(filename);
     auto fptr = lib->get<void * (*) (const std::vector<UInt64> &)>("loadIds");
-    //(10);
-    // libfunc
-    //auto f = std::function(fptr);
-    //auto f = std::mem_fn(&fptr);
-    //f();
-std::cerr << " fptr=" << fptr << "\n";
+    std::cerr << "LibDictionarySource::loadIds filename=" << filename << " size=" << ids.size()<< " fptr=" << fptr<< "\n";
+    if (fptr)
+        fptr(ids);
 
-        if (fptr)
-        {
-            //reinterpret_cast<void (*)(const Aggregator &, AggregatedDataWithoutKey &, size_t, AggregateColumns &, Arena *)>
-            //        (f)(*this, result.without_key, rows, aggregate_columns, result.aggregates_pool);
-            //reinterpret_cast<void (*)(int)> (fptr)(11);
-fptr(ids);
-std::cerr << " fptr destroy.."  << "\n";
-        }
-
-
-    //fptr();
-
-std::cerr << " fptr done." << "\n";
-
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
-    {
-        WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context.getOutputFormat(format, out_buffer, sample_block);
-        formatIDs(output_stream, ids);
-    };
-
-    Poco::URI uri(url);
-    auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
-    auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
-
-
-std::cerr << "fptr destroy2:" << "\n";
-
-    return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
+    return std::make_shared<NullBlockInputStream>();
 }
 
 BlockInputStreamPtr LibDictionarySource::loadKeys(
@@ -107,17 +74,13 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(
 {
     LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
 
-    ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
-    {
-        WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context.getOutputFormat(format, out_buffer, sample_block);
-        formatKeys(dict_struct, output_stream, key_columns, requested_rows);
-    };
-
-    Poco::URI uri(url);
-    auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
-    auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
+    auto lib = std::make_shared<SharedLibrary>(filename);
+    auto fptr = lib->get<void * (*) (const std::vector<std::size_t> &)>("loadKeys");
+    std::cerr << "LibDictionarySource::loadKeys filename=" << filename << " size=" << requested_rows.size() << " fptr=" << fptr << "\n";
+    if (fptr)
+        fptr(requested_rows);
+                 
+    return std::make_shared<NullBlockInputStream>();
 }
 
 bool LibDictionarySource::isModified() const
@@ -137,8 +100,7 @@ DictionarySourcePtr LibDictionarySource::clone() const
 
 std::string LibDictionarySource::toString() const
 {
-    Poco::URI uri(url);
-    return uri.toString();
+    return filename;
 }
 
 }
