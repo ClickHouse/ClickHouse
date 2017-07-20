@@ -224,7 +224,7 @@ protected:
     bool executeOperationTyped(const IColumn * in_untyped, PaddedPODArray<OutputType> & dst, const IColumn * centroids_array_untyped)
     {
         const auto maybe_const = in_untyped->convertToFullColumnIfConst();
-        if (maybe_const != nullptr)
+        if (maybe_const)
             in_untyped = maybe_const.get();
 
         const auto in_vector = checkAndGetColumn<ColumnVector<InputType>>(in_untyped);

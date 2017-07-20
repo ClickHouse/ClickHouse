@@ -59,19 +59,19 @@ protected:
 
         Branch branch;
 
-        vec_col = typeid_cast<const ColumnVector<TType> *>(col);
-        if (vec_col != nullptr)
+        vec_col = checkAndGetColumn<ColumnVector<TType>>(col);
+        if (vec_col)
             branch.is_const = false;
         else
         {
             const_col = checkAndGetColumnConst<ColumnVector<TType>>(col);
-            if (const_col != nullptr)
+            if (const_col)
                 branch.is_const = true;
             else
             {
                 if (arr_col)
                 {
-                    arr_vec_col = checkAndGetColumn<ColumnVector<TType>>(arr_col);
+                    arr_vec_col = checkAndGetColumn<ColumnVector<TType>>(&arr_col->getData());
                     if (arr_vec_col)
                         branch.is_const = false;
                     else
@@ -79,6 +79,9 @@ protected:
                 }
                 else if (arr_const_col)
                 {
+                    if (!checkColumn<ColumnVector<TType>>(&static_cast<const ColumnArray &>(arr_const_col->getDataColumn()).getData()))
+                        return false;
+
                     branch.is_const = true;
                 }
                 else
@@ -89,9 +92,11 @@ protected:
         branch.index = index;
         branch.type = DataTypeTraits::DataTypeFromFieldTypeOrError<TType>::getDataType();
 
-        if ((vec_col != nullptr) || (const_col != nullptr))
+        std::cerr << __PRETTY_FUNCTION__ << "\n";
+
+        if (vec_col || const_col)
             branch.category = Category::NUMERIC;
-        else if ((arr_vec_col != nullptr) || (arr_const_col != nullptr))
+        else if (arr_vec_col || arr_const_col)
             branch.category = Category::NUMERIC_ARRAY;
         else
             throw Exception{"Unexpected type in multiIf function", ErrorCodes::LOGICAL_ERROR};
@@ -235,8 +240,7 @@ struct ThenPredicate final : public PredicateBase<TType>
                 || ThenPredicate<TCombined, Int32>::execute(index2 + 1, block, args, result, builder, branches)
                 || ThenPredicate<TCombined, Int64>::execute(index2 + 1, block, args, result, builder, branches)
                 || ThenPredicate<TCombined, Float32>::execute(index2 + 1, block, args, result, builder, branches)
-                || ThenPredicate<TCombined, Float64>::execute(index2 + 1, block, args, result, builder, branches)
-                || ThenPredicate<TCombined, Null>::execute(index2 + 1, block, args, result, builder, branches)))
+                || ThenPredicate<TCombined, Float64>::execute(index2 + 1, block, args, result, builder, branches)))
                 return false;
         }
         else
@@ -251,8 +255,7 @@ struct ThenPredicate final : public PredicateBase<TType>
                 || ElsePredicate<TCombined, Int32>::execute(index2, block, args, result, builder, branches)
                 || ElsePredicate<TCombined, Int64>::execute(index2, block, args, result, builder, branches)
                 || ElsePredicate<TCombined, Float32>::execute(index2, block, args, result, builder, branches)
-                || ElsePredicate<TCombined, Float64>::execute(index2, block, args, result, builder, branches)
-                || ElsePredicate<TCombined, Null>::execute(index2, block, args, result, builder, branches)))
+                || ElsePredicate<TCombined, Float64>::execute(index2, block, args, result, builder, branches)))
                 return false;
         }
 

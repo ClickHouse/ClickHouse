@@ -136,7 +136,7 @@ ColumnsWithTypeAndName toNestedColumns(const ColumnsWithTypeAndName & args)
         if (arg.type->isNullable())
         {
             auto nullable_col = static_cast<const ColumnNullable *>(arg.column.get());
-            ColumnPtr nested_col = (nullable_col != nullptr) ? nullable_col->getNestedColumn() : nullptr;
+            ColumnPtr nested_col = (nullable_col) ? nullable_col->getNestedColumn() : nullptr;
             auto nullable_type = static_cast<const DataTypeNullable *>(arg.type.get());
             DataTypePtr nested_type = nullable_type->getNestedType();
 

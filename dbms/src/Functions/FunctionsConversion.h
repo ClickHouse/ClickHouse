@@ -790,14 +790,14 @@ private:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (checkAndGetDataType<DataTypeDateTime>(arguments[0].get()) == nullptr)
+        if (!checkAndGetDataType<DataTypeDateTime>(arguments[0].get()))
         {
             if (arguments.size() != 1)
                 throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                     + toString(arguments.size()) + ", should be 1.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
-        else if ((arguments.size() == 2) && (checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr))
+        else if ((arguments.size() == 2) && !checkAndGetDataType<DataTypeString>(arguments[1].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
@@ -817,14 +817,14 @@ private:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (checkAndGetDataType<DataTypeString>(arguments[0].get()) == nullptr)
+        if (!checkAndGetDataType<DataTypeString>(arguments[0].get()))
         {
             if (arguments.size() != 1)
                 throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                     + toString(arguments.size()) + ", should be 1.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
-        else if ((arguments.size() == 2) && (checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr))
+        else if ((arguments.size() == 2) && !checkAndGetDataType<DataTypeString>(arguments[1].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
@@ -844,7 +844,7 @@ private:
                 + toString(arguments.size()) + ", should be 1 or 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if ((arguments.size() == 2) && (checkAndGetDataType<DataTypeString>(arguments[1].get()) == nullptr))
+        if ((arguments.size() == 2) && !checkAndGetDataType<DataTypeString>(arguments[1].get()))
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of 2nd argument of function " + getName(),

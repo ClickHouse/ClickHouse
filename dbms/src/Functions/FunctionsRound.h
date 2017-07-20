@@ -1042,7 +1042,7 @@ private:
     template<typename T>
     bool checkType(const IDataType * type) const
     {
-        return typeid_cast<const T *>(type) != nullptr;
+        return typeid_cast<const T *>(type);
     }
 
     template<typename T>

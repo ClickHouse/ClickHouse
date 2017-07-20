@@ -374,13 +374,13 @@ bool createStringSources(StringSources & sources, const Block & block,
 
         if (col->isNull())
             source = std::make_unique<ConstStringSource>(null_string, 1, args[i]);
-        else if (var_col != nullptr)
+        else if (var_col)
             source = std::make_unique<VarStringSource>(var_col->getChars(),
                 var_col->getOffsets(), args[i]);
-        else if (fixed_col != nullptr)
+        else if (fixed_col)
             source = std::make_unique<FixedStringSource>(fixed_col->getChars(),
                 fixed_col->getN(), args[i]);
-        else if (const_col != nullptr)
+        else if (const_col)
         {
             /// If we actually have a fixed string, get its capacity.
             size_t size = 0;
@@ -472,11 +472,8 @@ public:
 };
 
 /// Sink type-specific handler of multiIf.
-template <bool hasFixedSources>
-class Performer;
 
-template <>
-class Performer<true>
+class PerformerForFixedStrings
 {
 public:
     static void execute(const StringSources & sources, const CondSources & conds,
@@ -509,8 +506,7 @@ private:
     }
 };
 
-template <>
-class Performer<false>
+class PerformerForAnyStrings
 {
 public:
     static void execute(const StringSources & sources, const CondSources & conds,
@@ -560,9 +556,9 @@ bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t 
     }
 
     if (has_only_fixed_sources)
-        Performer<true>::execute(sources, conds, row_count, block, args, result, builder);
+        PerformerForFixedStrings::execute(sources, conds, row_count, block, args, result, builder);
     else
-        Performer<false>::execute(sources, conds, row_count, block, args, result, builder);
+        PerformerForAnyStrings::execute(sources, conds, row_count, block, args, result, builder);
 
     return true;
 }

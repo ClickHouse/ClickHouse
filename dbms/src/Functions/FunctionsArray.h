@@ -346,11 +346,11 @@ public:
         const PaddedPODArray<UInt8> * null_map_item)
     {
         /// Processing is split into 4 cases.
-        if ((null_map_data == nullptr) && (null_map_item == nullptr))
+        if (!null_map_data && null_map_item)
             vectorCase1(data, offsets, value, result);
-        else if ((null_map_data == nullptr) && (null_map_item != nullptr))
+        else if (!null_map_data && null_map_item)
             vectorCase2(data, offsets, value, result, *null_map_item);
-        else if ((null_map_data != nullptr) && (null_map_item == nullptr))
+        else if (null_map_data && !null_map_item)
             vectorCase3(data, offsets, value, result, *null_map_data);
         else
             vectorCase4(data, offsets, value, result, *null_map_data, *null_map_item);
@@ -386,7 +386,7 @@ struct ArrayIndexNumNullImpl
         size_t size = offsets.size();
         result.resize(size);
 
-        if (null_map_data == nullptr)
+        if (!null_map_data)
             return;
 
         const auto & null_map_ref = *null_map_data;
@@ -425,7 +425,7 @@ struct ArrayIndexStringNullImpl
         const auto size = offsets.size();
         result.resize(size);
 
-        if (null_map_data == nullptr)
+        if (!null_map_data)
             return;
 
         const auto & null_map_ref = *null_map_data;
@@ -692,11 +692,11 @@ public:
         const PaddedPODArray<UInt8> * null_map_item)
     {
         /// Processing is split into 4 cases.
-        if ((null_map_data == nullptr) && (null_map_item == nullptr))
+        if (!null_map_data && !null_map_item)
             vectorCase1(data, offsets, value, result);
-        else if ((null_map_data == nullptr) && (null_map_item != nullptr))
+        else if (!null_map_data && null_map_item)
             vectorCase2(data, offsets, value, result, *null_map_item);
-        else if ((null_map_data != nullptr) && (null_map_item == nullptr))
+        else if (null_map_data && !null_map_item)
             vectorCase3(data, offsets, value, result, *null_map_data);
         else
             vectorCase4(data, offsets, value, result, *null_map_data, *null_map_item);
@@ -716,7 +716,7 @@ struct ArrayIndexGenericNullImpl
         size_t size = offsets.size();
         result.resize(size);
 
-        if (null_map_data == nullptr)
+        if (!null_map_data)
             return;
 
         const auto & null_map_ref = *null_map_data;

@@ -434,7 +434,7 @@ struct ExtractURLParameterImpl
 
             const char * pos = nullptr;
             const char * begin = strpbrk(str, "?#");
-            if (begin != nullptr)
+            if (begin)
             {
                 pos = begin + 1;
                 while (true)
@@ -457,7 +457,7 @@ struct ExtractURLParameterImpl
                 }
             }
 
-            if (pos != nullptr)
+            if (pos)
             {
                 const char * end = strpbrk(pos, "&#");
                 if (end == nullptr)

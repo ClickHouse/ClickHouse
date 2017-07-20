@@ -322,7 +322,7 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
         {
             StringArraySourcePtr source;
 
-            if (var_col != nullptr)
+            if (var_col)
                 source = std::make_unique<VarStringArraySource>(var_col->getChars(),
                     var_col->getOffsets(), col_arr->getOffsets(), args[i]);
             else if (const_col)

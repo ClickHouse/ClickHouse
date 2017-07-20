@@ -815,7 +815,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (checkAndGetDataType<DataTypeUInt32>(arguments[0].get()) == nullptr)
+        if (!checkAndGetDataType<DataTypeUInt32>(arguments[0].get()))
             throw Exception("Illegal type " + arguments[0]->getName() +
                             " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

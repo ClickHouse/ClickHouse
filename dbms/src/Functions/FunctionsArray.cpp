@@ -112,14 +112,14 @@ DataTypePtr getArrayElementType(const DataTypes & args)
         return *ret;
     else if (found_null)
     {
-        if (ret != nullptr)
+        if (ret)
             return std::make_shared<DataTypeNullable>(*ret);
         else
             return std::make_shared<DataTypeNull>();
     }
     else
     {
-        if (ret == nullptr)
+        if (!ret)
             throw Exception{"getArrayElementType: internal error", ErrorCodes::LOGICAL_ERROR};
         else
             return *ret;
@@ -361,8 +361,8 @@ namespace ArrayImpl
 class NullMapBuilder
 {
 public:
-    operator bool() const { return (src_nullable_col != nullptr) || (src_array != nullptr); }
-    bool operator!() const { return (src_nullable_col == nullptr) && (src_array == nullptr); }
+    operator bool() const { return src_nullable_col || src_array; }
+    bool operator!() const { return !src_nullable_col && !src_array; }
 
     void initSource(const ColumnNullable & src_nullable_col_)
     {
@@ -386,7 +386,7 @@ public:
             throw Exception{"Logical error: index passed to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
 
         bool is_null;
-        if (src_nullable_col != nullptr)
+        if (src_nullable_col)
             is_null = src_nullable_col->isNullAt(from);
         else
             is_null = from < src_array->size() ? (*src_array)[from].isNull() : true;
@@ -1540,7 +1540,7 @@ bool FunctionArrayUniq::execute128bit(
 
                 for (size_t i = 0; i < columns.size(); ++i)
                 {
-                    if (null_maps[i] != nullptr)
+                    if (null_maps[i])
                     {
                         const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
                         if (null_map[j] == 1)
@@ -1853,7 +1853,7 @@ bool FunctionArrayEnumerateUniq::execute128bit(
 
                 for (size_t i = 0; i < columns.size(); ++i)
                 {
-                    if (null_maps[i] != nullptr)
+                    if (null_maps[i])
                     {
                         const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
                         if (null_map[j] == 1)
@@ -2016,7 +2016,7 @@ namespace
                 const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
 
                 auto concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
-                if (concrete_res_data == nullptr)
+                if (!concrete_res_data)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
                 ColumnFixedString::Chars_t & res_data = concrete_res_data->getChars();
@@ -2082,14 +2082,14 @@ namespace
                 const ColumnString::Offsets_t & src_string_offsets = src_data_concrete->getOffsets();
 
                 auto concrete_res_string_offsets = typeid_cast<ColumnString *>(&res_data_col);
-                if (concrete_res_string_offsets == nullptr)
+                if (!concrete_res_string_offsets)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 ColumnString::Offsets_t & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
                 const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
 
                 auto concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
-                if (concrete_res_data == nullptr)
+                if (!concrete_res_data)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 ColumnString::Chars_t & res_data = concrete_res_data->getChars();
 
@@ -2552,7 +2552,7 @@ bool FunctionArrayReverse::executeNumber(
         res_data.resize(src_data.size());
         do_reverse(src_data, src_offsets, res_data);
 
-        if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
+        if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
             const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
@@ -2604,7 +2604,7 @@ bool FunctionArrayReverse::executeFixedString(
             src_prev_offset = src_offsets[i];
         }
 
-        if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
+        if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
             const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
@@ -2684,7 +2684,7 @@ bool FunctionArrayReverse::executeString(
             src_array_prev_offset = src_array_offsets[i];
         }
 
-        if ((nullable_col != nullptr) && (nullable_res_col != nullptr))
+        if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
             const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();

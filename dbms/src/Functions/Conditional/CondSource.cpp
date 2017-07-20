@@ -48,7 +48,7 @@ const ColumnPtr CondSource::initMaterializedCol(const Block & block, const Colum
 
     const auto * const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(observed_col);
 
-    if (const_col != nullptr)
+    if (const_col)
         return const_col->convertToFullColumn();
     else
         return null_materialized_col;
@@ -79,7 +79,7 @@ const PaddedPODArray<UInt8> & CondSource::initDataArray(const Block & block, con
 
     auto vec_col = checkAndGetColumn<ColumnUInt8>(observed_col);
 
-    if (vec_col == nullptr)
+    if (!vec_col)
         throw CondException{CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN,
             source_col->getName(), toString(i)};
 

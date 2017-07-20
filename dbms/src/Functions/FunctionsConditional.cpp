@@ -203,7 +203,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
                     observed_type = args[i].get();
 
                 const DataTypeArray * type_arr = checkAndGetDataType<DataTypeArray>(observed_type);
-                if (type_arr == nullptr)
+                if (!type_arr)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 new_args.push_back(type_arr->getNestedType());
             }

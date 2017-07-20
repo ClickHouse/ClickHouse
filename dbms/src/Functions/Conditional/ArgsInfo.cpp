@@ -102,7 +102,7 @@ struct TypeChecker
     {
         if (arg->isNullable())
             return false;
-        return typeid_cast<const TType *>(arg.get()) != nullptr;
+        return typeid_cast<const TType *>(arg.get());
     }
 };
 
@@ -116,7 +116,7 @@ struct TypeChecker<Nullable<TType>>
 
         const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*arg);
         const IDataType * nested_type = nullable_type.getNestedType().get();
-        return typeid_cast<const TType *>(nested_type) != nullptr;
+        return typeid_cast<const TType *>(nested_type);
     }
 };
 
@@ -326,7 +326,7 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
 
             /// Get the length of the fixed string currently being checked.
             auto fixed_str = checkAndGetDataType<DataTypeFixedString>(observed_type);
-            if (fixed_str == nullptr)
+            if (!fixed_str)
                 throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
             size_t length = fixed_str->getN();
 

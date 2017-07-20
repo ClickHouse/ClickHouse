@@ -268,7 +268,7 @@ public:
             if (auto col_array = checkAndGetColumn<ColumnArray>(col))
             {
                 const ColumnVector<TType> * content = typeid_cast<const ColumnVector<TType> *>(&col_array->getData());
-                if (content == nullptr)
+                if (!content)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 source = std::make_unique<ArraySource<TResult, TType>>(content->getData(), col_array->getOffsets());
             }

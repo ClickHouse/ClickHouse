@@ -107,7 +107,7 @@ private:
         size_t index = br.index;
         const ColumnPtr & col = block.getByPosition(args[index]).column;
         const auto * vec_col = typeid_cast<const ColumnVector<TType> *>(&*col);
-        if (vec_col == nullptr)
+        if (!vec_col)
             throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
         return vec_col->getData();
     }
