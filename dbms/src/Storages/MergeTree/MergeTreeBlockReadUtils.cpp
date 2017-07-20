@@ -82,7 +82,7 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
     : data_part(data_part_)
 {
-    approximate_number_of_rows_in_part = data_part->getExactSizeRows();
+    number_of_rows_in_part = data_part->getExactSizeRows();
     /// Initialize with sample block untill update won't called.
     initialize(sample_block);
 }
@@ -124,7 +124,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block)
     bytes_per_row_global = fixed_columns_bytes_per_row;
     for (auto & info : dynamic_columns_infos)
     {
-        info.bytes_per_row_global /= approximate_number_of_rows_in_part;
+        info.bytes_per_row_global /= number_of_rows_in_part;
         info.bytes_per_row = info.bytes_per_row_global;
         bytes_per_row_global += info.bytes_per_row_global;
 
