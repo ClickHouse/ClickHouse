@@ -16,10 +16,12 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
+#include <TableFunctions/getStructureOfRemoteTable.h>
 
 
 namespace DB
@@ -1666,18 +1668,12 @@ public:
 
 
 /** Usage:
- *  hasColumnInTable('database', 'table', 'column')
+ *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
 class FunctionHasColumnInTable : public IFunction
 {
 public:
     static constexpr auto name = "hasColumnInTable";
-
-    size_t getNumberOfArguments() const override
-    {
-        return 3;
-    }
-
     static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext());
@@ -1685,6 +1681,15 @@ public:
 
     FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
     {
+    }
+
+    bool isVariadic() const override
+    {
+        return true;
+    }
+    size_t getNumberOfArguments() const override
+    {
+        return 0;
     }
 
     String getName() const override
@@ -1743,8 +1748,12 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
     const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites)
 {
-    static const std::string arg_pos_description[] = {"First", "Second", "Third"};
-    for (size_t i = 0; i < getNumberOfArguments(); ++i)
+    if (arguments.size() < 3 || arguments.size() > 6)
+        throw Exception{"Invalid number of arguments for function " + getName(),
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+    static const std::string arg_pos_description[] = {"First", "Second", "Third", "Fourth", "Fifth", "Sixth"};
+    for (size_t i = 0; i < arguments.size(); ++i)
     {
         const ColumnWithTypeAndName & argument = arguments[i];
 
@@ -1768,12 +1777,40 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
         return const_column->getData();
     };
 
-    const String & database_name = get_string_from_block(arguments[0]);
-    const String & table_name = get_string_from_block(arguments[1]);
-    const String & column_name = get_string_from_block(arguments[2]);
+    size_t arg = 0;
+    const String * host_name = nullptr;
+    const String * user_name = nullptr;
+    const String * password = nullptr;
+    if (arguments.size() > 3)
+    {
+        host_name = &get_string_from_block(arguments[arg++]);
+    }
+    if (arguments.size() > 4)
+    {
+        user_name = &get_string_from_block(arguments[arg++]);
+    }
+    if (arguments.size() > 5)
+    {
+        password = &get_string_from_block(arguments[arg++]);
+    }
+    const String & database_name = get_string_from_block(arguments[arg++]);
+    const String & table_name = get_string_from_block(arguments[arg++]);
+    const String & column_name = get_string_from_block(arguments[arg++]);
 
-    const StoragePtr & table = global_context.getTable(database_name, table_name);
-    const bool has_column = table->hasColumn(column_name);
+    bool has_column;
+    if (host_name == nullptr)
+    {
+        const StoragePtr & table = global_context.getTable(database_name, table_name);
+        has_column = table->hasColumn(column_name);
+    }
+    else
+    {
+        std::vector<std::vector<String>> host_names = {{ *host_name }};
+        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, user_name != nullptr ? *user_name : "default", password != nullptr ? *password : "");
+        auto names_and_types_list = std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, database_name, table_name, global_context));
+        const auto & names = names_and_types_list->getNames();
+        has_column = std::find(names.begin(), names.end(), column_name) != names.end();
+    }
 
     block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt8>(block.rows(), has_column);
 }
