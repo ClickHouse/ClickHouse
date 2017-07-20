@@ -137,7 +137,7 @@ protected:
     size_t max_size_per_row_fixed = 0;
     double max_size_per_row_dynamic = 0;
 
-    size_t approximate_number_of_rows_in_part;
+    size_t number_of_rows_in_part;
 
     bool is_initialized_in_update = false;
 
