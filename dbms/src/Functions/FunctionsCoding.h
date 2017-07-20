@@ -1410,7 +1410,7 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 0; }
-    bool isDeterministicInScopeOfQuery() override { return false; }
+    //bool isDeterministicInScopeOfQuery() override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
