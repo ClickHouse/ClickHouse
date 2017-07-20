@@ -48,7 +48,7 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
     Poco::URI uri(url);
-    std::cerr << "dl filename=" << filename << "\n";
+    std::cerr << "1dl filename=" << filename << "\n";
     SharedLibraryPtr lib = std::make_shared<SharedLibrary>(filename);
 
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_GET);
@@ -59,6 +59,9 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
 BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
+
+    std::cerr << "2dl filename=" << filename << "\n";
+    SharedLibraryPtr lib = std::make_shared<SharedLibrary>(filename);
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {

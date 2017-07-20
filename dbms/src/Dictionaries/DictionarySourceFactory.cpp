@@ -106,8 +106,6 @@ DictionarySourcePtr DictionarySourceFactory::create(
 
     const auto & source_type = keys.front();
 
-    std::cerr << "source_type="<<source_type<<"\n";
-    
     if ("file" == source_type)
     {
         if (dict_struct.has_expressions)
