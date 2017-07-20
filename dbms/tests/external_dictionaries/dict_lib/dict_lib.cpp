@@ -1,7 +1,7 @@
-//#include <iostream>
+#include <iostream>
 
-extern "C" void libfunc(/*int fd*/)
+extern "C" void loadIds(int fd)
 {
-  //std::cerr << "Runned!!!\n";
+  std::cerr << "loadIds Runned!!!="<<fd<<"\n";
   return;
 }
