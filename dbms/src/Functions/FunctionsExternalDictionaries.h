@@ -1418,7 +1418,7 @@ private:
             std::vector<std::vector<IDictionary::Key>> hierarchies(size);    /// TODO Bad code, poor performance.
 
             /// total number of non-zero elements, used for allocating all the required memory upfront
-            std::size_t total_count = 0;
+            size_t total_count = 0;
 
             while (true)
             {

@@ -2319,8 +2319,8 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
     if (const auto in = checkAndGetColumn<ColumnVector<T>>(arg))
     {
         const auto & in_data = in->getData();
-        const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), std::size_t{},
-            [this] (const std::size_t lhs, const std::size_t rhs)
+        const auto total_values = std::accumulate(std::begin(in_data), std::end(in_data), size_t{},
+            [this] (const size_t lhs, const size_t rhs)
             {
                 const auto sum = lhs + rhs;
                 if (sum < lhs)
@@ -2361,12 +2361,12 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
     else if (const auto in = checkAndGetColumnConst<ColumnVector<T>>(arg))
     {
         T in_data = in->template getValue<T>();
-        if ((in_data != 0) && (in->size() > (std::numeric_limits<std::size_t>::max() / in_data)))
+        if ((in_data != 0) && (in->size() > (std::numeric_limits<size_t>::max() / in_data)))
             throw Exception{
                 "A call to function " + getName() + " overflows, investigate the values of arguments you are passing",
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
-        const std::size_t total_values = in->size() * in_data;
+        const size_t total_values = in->size() * in_data;
         if (total_values > max_elements)
             throw Exception{
                 "A call to function " + getName() + " would produce " + toString(total_values) +

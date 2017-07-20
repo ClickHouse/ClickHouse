@@ -111,13 +111,13 @@ struct AggregateFunctionSequenceMatchData final
     {
         readBinary(sorted, buf);
 
-        std::size_t size;
+        size_t size;
         readBinary(size, buf);
 
         events_list.clear();
         events_list.reserve(size);
 
-        for (std::size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             std::uint32_t timestamp;
             readBinary(timestamp, buf);
@@ -137,7 +137,7 @@ constexpr auto sequence_match_max_iterations = 1000000;
 class AggregateFunctionSequenceMatch : public IAggregateFunctionHelper<AggregateFunctionSequenceMatchData>
 {
 public:
-    static bool sufficientArgs(const std::size_t arg_count) { return arg_count >= 3; }
+    static bool sufficientArgs(const size_t arg_count) { return arg_count >= 3; }
 
     String getName() const override { return "sequenceMatch"; }
 
@@ -386,7 +386,7 @@ protected:
             return false;
         };
 
-        std::size_t i = 0;
+        size_t i = 0;
         while (action_it != action_end && events_it != events_end)
         {
             if (action_it->type == PatternActionType::SpecificEvent)
@@ -489,7 +489,7 @@ protected:
 
 private:
     std::string pattern;
-    std::size_t arg_count;
+    size_t arg_count;
     PatternActions actions;
 };
 
@@ -515,7 +515,7 @@ private:
         const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
-        std::size_t count = 0;
+        size_t count = 0;
         while (events_it != events_end && match(events_it, events_end))
             ++count;
 

@@ -1051,7 +1051,7 @@ private:
     void executeNAry(Block & block, const ColumnNumbers & arguments, const size_t result)
     {
         const auto size = block.rows();
-        std::size_t result_length{};
+        size_t result_length{};
         bool result_is_const{};
         auto instrs = getInstructions(block, arguments, result_length, result_is_const);
 
@@ -1076,7 +1076,7 @@ private:
             auto & out_offsets = out->getOffsets();
             out_offsets.resize(size);
 
-            std::size_t out_offset{};
+            size_t out_offset{};
 
             for (const auto row : ext::range(0, size))
             {

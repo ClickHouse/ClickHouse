@@ -1286,17 +1286,17 @@ private:
     }
 
     template <typename ValueType>
-    ValueType createConstMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments, bool & is_const)
+    ValueType createConstMask(const size_t size, const Block & block, const ColumnNumbers & arguments, bool & is_const)
     {
         is_const = true;
         ValueType mask = 0;
 
-        for (auto arg_pos : arguments)
+        for (const auto i : ext::range(1, arguments.size()))
         {
-            if (auto pos_col_const = checkAndGetColumnConst<ColumnVector<ValueType>>(block.getByPosition(arg_pos).column.get()))
+            if (auto pos_col_const = checkAndGetColumnConst<ColumnVector<ValueType>>(block.getByPosition(arguments[i]).column.get()))
             {
                 const auto pos = pos_col_const->template getValue<ValueType>();
-                mask = mask | 1 << pos;
+                mask = mask | (1 << pos);
             }
             else
             {
@@ -1309,13 +1309,13 @@ private:
     }
 
     template <typename ValueType>
-    PaddedPODArray<ValueType> createMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments)
+    PaddedPODArray<ValueType> createMask(const size_t size, const Block & block, const ColumnNumbers & arguments)
     {
         PaddedPODArray<ValueType> mask(size, ValueType{});
 
-        for (auto arg_pos : arguments)
+        for (const auto i : ext::range(1, arguments.size()))
         {
-            const auto pos_col = block.getByPosition(arg_pos).column.get();
+            const auto pos_col = block.getByPosition(arguments[i]).column.get();
 
             if (!addToMaskImpl<UInt8>(mask, pos_col)
                 && !addToMaskImpl<UInt16>(mask, pos_col)

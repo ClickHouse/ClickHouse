@@ -183,9 +183,9 @@ private:
 #pragma GCC diagnostic ignored "-Wsign-compare"
 
     /// compares `lhs` against `i`-th element of `rhs`
-    static bool compare(const T & lhs, const PaddedPODArray<U> & rhs, const std::size_t i ) { return lhs == rhs[i]; }
+    static bool compare(const T & lhs, const PaddedPODArray<U> & rhs, const size_t i ) { return lhs == rhs[i]; }
     /// compares `lhs against `rhs`, third argument unused
-    static bool compare(const T & lhs, const U & rhs, std::size_t) { return lhs == rhs; }
+    static bool compare(const T & lhs, const U & rhs, size_t) { return lhs == rhs; }
 
 #pragma GCC diagnostic pop
 

@@ -635,7 +635,7 @@ public:
 
 struct URLHashImpl
 {
-    static UInt64 apply(const char * data, const std::size_t size)
+    static UInt64 apply(const char * data, const size_t size)
     {
         /// do not take last slash, '?' or '#' character into account
         if (size > 0 && (data[size - 1] == '/' || data[size - 1] == '?' || data[size - 1] == '#'))
@@ -648,7 +648,7 @@ struct URLHashImpl
 
 struct URLHierarchyHashImpl
 {
-    static std::size_t findLevelLength(const UInt64 level, const char * begin, const char * end)
+    static size_t findLevelLength(const UInt64 level, const char * begin, const char * end)
     {
         auto pos = begin;
 
@@ -699,7 +699,7 @@ struct URLHierarchyHashImpl
         return current_level == level ? pos - begin : 0;
     }
 
-    static UInt64 apply(const UInt64 level, const char * data, const std::size_t size)
+    static UInt64 apply(const UInt64 level, const char * data, const size_t size)
     {
         return URLHashImpl::apply(data, findLevelLength(level, data, data + size));
     }
@@ -764,7 +764,7 @@ public:
     }
 
 private:
-    void executeSingleArg(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
+    void executeSingleArg(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto col_untyped = block.getByPosition(arguments.front()).column.get();
 
@@ -797,7 +797,7 @@ private:
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 
-    void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
+    void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto level_col = block.getByPosition(arguments.back()).column.get();
         if (!level_col->isConst())
@@ -850,7 +850,7 @@ struct ImplCityHash64
     using uint128_t = CityHash_v1_0_2::uint128;
 
     static auto Hash128to64(const uint128_t & x) { return CityHash_v1_0_2::Hash128to64(x); }
-    static auto Hash64(const char * s, const std::size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
+    static auto Hash64(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
 };
 
 struct ImplFarmHash64
@@ -859,7 +859,7 @@ struct ImplFarmHash64
     using uint128_t = farmhash::uint128_t;
 
     static auto Hash128to64(const uint128_t & x) { return farmhash::Hash128to64(x); }
-    static auto Hash64(const char * s, const std::size_t len) { return farmhash::Hash64(s, len); }
+    static auto Hash64(const char * s, const size_t len) { return farmhash::Hash64(s, len); }
 };
 
 struct ImplMetroHash64
@@ -868,7 +868,7 @@ struct ImplMetroHash64
     using uint128_t = CityHash_v1_0_2::uint128;
 
     static auto Hash128to64(const uint128_t & x) { return CityHash_v1_0_2::Hash128to64(x); }
-    static auto Hash64(const char * s, const std::size_t len)
+    static auto Hash64(const char * s, const size_t len)
     {
         union {
             UInt64 u64;
