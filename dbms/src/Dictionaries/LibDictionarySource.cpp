@@ -63,7 +63,7 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     std::cerr << "2dl filename=" << filename << "\n";
     SharedLibraryPtr lib = std::make_shared<SharedLibrary>(filename);
     //auto fptr = lib->get<void * (*) ()>("_ZN2DB6getPtrEv")();
-    auto fptr = lib->get<void * (*) (int)>("loadIds");
+    auto fptr = lib->get<void * (*) (const std::vector<UInt64> &)>("loadIds");
     //(10);
     // libfunc
     //auto f = std::function(fptr);
@@ -76,7 +76,7 @@ std::cerr << " fptr=" << fptr << "\n";
             //reinterpret_cast<void (*)(const Aggregator &, AggregatedDataWithoutKey &, size_t, AggregateColumns &, Arena *)>
             //        (f)(*this, result.without_key, rows, aggregate_columns, result.aggregates_pool);
             //reinterpret_cast<void (*)(int)> (fptr)(11);
-fptr(11);
+fptr(ids);
 std::cerr << " fptr destroy.."  << "\n";
         }
 

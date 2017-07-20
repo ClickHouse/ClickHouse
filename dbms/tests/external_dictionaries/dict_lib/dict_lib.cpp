@@ -1,7 +1,10 @@
 #include <iostream>
+#include <vector>
 
-extern "C" void loadIds(int fd)
+typedef unsigned long      UInt64; // TEST ONLY
+
+extern "C" void loadIds(const std::vector<UInt64> & ids)
 {
-  std::cerr << "loadIds Runned!!!="<<fd<<"\n";
+  std::cerr << "loadIds Runned!!!="<<ids.size()<<"\n";
   return;
 }
