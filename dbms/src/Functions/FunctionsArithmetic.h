@@ -11,6 +11,8 @@
 #include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
 #include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
+#include <ext/range.h>
 
 
 namespace DB
@@ -21,6 +23,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_DIVISION;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
 }
 
 
@@ -318,29 +321,6 @@ struct BitTestImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b) { return (toInteger(a) >> toInteger(b)) & 1; };
 };
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
-template <typename A, typename B>
-struct BitTestAnyImpl
-{
-    using ResultType = UInt8;
-
-    template <typename Result = ResultType>
-    static inline Result apply(A a, B b) { return (toInteger(a) & toInteger(b)) != 0; };
-};
-
-template <typename A, typename B>
-struct BitTestAllImpl
-{
-    using ResultType = UInt8;
-
-    template <typename Result = ResultType>
-    static inline Result apply(A a, B b) { return (toInteger(a) & toInteger(b)) == b; };
-};
-
-#pragma GCC diagnostic pop
 
 
 template <typename A, typename B>
@@ -991,8 +971,6 @@ using FunctionBitShiftRight = FunctionBinaryArithmetic<BitShiftRightImpl, NameBi
 using FunctionBitRotateLeft = FunctionBinaryArithmetic<BitRotateLeftImpl, NameBitRotateLeft>;
 using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, NameBitRotateRight>;
 using FunctionBitTest = FunctionBinaryArithmetic<BitTestImpl, NameBitTest>;
-using FunctionBitTestAny = FunctionBinaryArithmetic<BitTestAnyImpl, NameBitTestAny>;
-using FunctionBitTestAll = FunctionBinaryArithmetic<BitTestAllImpl, NameBitTestAll>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
@@ -1176,5 +1154,223 @@ template <> struct BinaryOperationImpl<Int32, Int8, ModuloImpl<Int32, Int8>> : M
 template <> struct BinaryOperationImpl<Int32, Int16, ModuloImpl<Int32, Int16>> : ModuloByConstantImpl<Int32, Int16> {};
 template <> struct BinaryOperationImpl<Int32, Int32, ModuloImpl<Int32, Int32>> : ModuloByConstantImpl<Int32, Int32> {};
 template <> struct BinaryOperationImpl<Int32, Int64, ModuloImpl<Int32, Int64>> : ModuloByConstantImpl<Int32, Int64> {};
+
+
+template <typename Impl, typename Name>
+struct FunctionBitTestMany : public IFunction
+{
+public:
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitTestMany>(); }
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() < 2)
+            throw Exception{
+                "Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be at least 2.",
+                ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+
+        const auto first_arg = arguments.front().get();
+        if (!checkDataType<DataTypeUInt8>(first_arg)
+            && !checkDataType<DataTypeUInt16>(first_arg)
+            && !checkDataType<DataTypeUInt32>(first_arg)
+            && !checkDataType<DataTypeUInt64>(first_arg)
+            && !checkDataType<DataTypeInt8>(first_arg)
+            && !checkDataType<DataTypeInt16>(first_arg)
+            && !checkDataType<DataTypeInt32>(first_arg)
+            && !checkDataType<DataTypeInt64>(first_arg))
+            throw Exception{
+                "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+
+        for (const auto i : ext::range(1, arguments.size()))
+        {
+            const auto pos_arg = arguments[i].get();
+
+            if (!checkDataType<DataTypeUInt8>(pos_arg)
+                && !checkDataType<DataTypeUInt16>(pos_arg)
+                && !checkDataType<DataTypeUInt32>(pos_arg)
+                && !checkDataType<DataTypeUInt64>(pos_arg))
+                throw Exception{
+                    "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        }
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    {
+        const auto value_col = block.getByPosition(arguments.front()).column.get();
+
+        if (!execute<UInt8>(block, arguments, result, value_col)
+            && !execute<UInt16>(block, arguments, result, value_col)
+            && !execute<UInt32>(block, arguments, result, value_col)
+            && !execute<UInt64>(block, arguments, result, value_col)
+            && !execute<Int8>(block, arguments, result, value_col)
+            && !execute<Int16>(block, arguments, result, value_col)
+            && !execute<Int32>(block, arguments, result, value_col)
+            && !execute<Int64>(block, arguments, result, value_col))
+            throw Exception{
+                "Illegal column " + value_col->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN};
+    }
+
+private:
+    template <typename T>
+    bool execute(
+        Block & block, const ColumnNumbers & arguments, const size_t result,
+        const IColumn * const value_col_untyped)
+    {
+        if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
+        {
+            const auto size = value_col->size();
+            bool is_const;
+            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto & val = value_col->getData();
+
+            const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+            auto & out = out_col->getData();
+
+            if (is_const)
+            {
+                for (const auto i : ext::range(0, size))
+                    out[i] = Impl::apply(val[i], mask);
+            }
+            else
+            {
+                const auto mask = createMask<T>(size, block, arguments);
+
+                for (const auto i : ext::range(0, size))
+                    out[i] = Impl::apply(val[i], mask[i]);
+            }
+
+            block.getByPosition(result).column = out_col;
+            return true;
+        }
+        else if (const auto value_col = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
+        {
+            const auto size = value_col->size();
+            bool is_const;
+            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto val = value_col->template getValue<T>();
+
+            if (is_const)
+            {
+                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, toField(Impl::apply(val, mask)));
+            }
+            else
+            {
+                const auto mask = createMask<T>(size, block, arguments);
+                const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+
+                auto & out = out_col->getData();
+
+                for (const auto i : ext::range(0, size))
+                    out[i] = Impl::apply(val, mask[i]);
+
+                block.getByPosition(result).column = out_col;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    template <typename ValueType>
+    ValueType createConstMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments, bool & is_const)
+    {
+        is_const = true;
+        ValueType mask = 0;
+
+        for (auto arg_pos : arguments)
+        {
+            if (auto pos_col_const = checkAndGetColumnConst<ColumnVector<ValueType>>(block.getByPosition(arg_pos).column.get()))
+            {
+                const auto pos = pos_col_const->template getValue<ValueType>();
+                mask = mask | 1 << pos;
+            }
+            else
+            {
+                is_const = false;
+                return {};
+            }
+        }
+
+        return mask;
+    }
+
+    template <typename ValueType>
+    PaddedPODArray<ValueType> createMask(const std::size_t size, const Block & block, const ColumnNumbers & arguments)
+    {
+        PaddedPODArray<ValueType> mask(size, ValueType{});
+
+        for (auto arg_pos : arguments)
+        {
+            const auto pos_col = block.getByPosition(arg_pos).column.get();
+
+            if (!addToMaskImpl<UInt8>(mask, pos_col)
+                && !addToMaskImpl<UInt16>(mask, pos_col)
+                && !addToMaskImpl<UInt32>(mask, pos_col)
+                && !addToMaskImpl<UInt64>(mask, pos_col))
+                throw Exception{
+                    "Illegal column " + pos_col->getName() + " of argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN};
+        }
+
+        return mask;
+    }
+
+    template <typename PosType, typename ValueType>
+    bool addToMaskImpl(PaddedPODArray<ValueType> & mask, const IColumn * const pos_col_untyped)
+    {
+        if (const auto pos_col = checkAndGetColumn<ColumnVector<PosType>>(pos_col_untyped))
+        {
+            const auto & pos = pos_col->getData();
+
+            for (const auto i : ext::range(0, mask.size()))
+                mask[i] = mask[i] | (1 << pos[i]);
+
+            return true;
+        }
+        else if (const auto pos_col = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
+        {
+            const auto & pos = pos_col->template getValue<PosType>();
+            const auto new_mask = 1 << pos;
+
+            for (const auto i : ext::range(0, mask.size()))
+                mask[i] = mask[i] | new_mask;
+
+            return true;
+        }
+
+        return false;
+    }
+};
+
+
+struct BitTestAnyImpl
+{
+    template <typename A, typename B>
+    static inline UInt8 apply(A a, B b) { return (a & b) != 0; };
+};
+
+struct BitTestAllImpl
+{
+    template <typename A, typename B>
+    static inline UInt8 apply(A a, B b) { return (a & b) == b; };
+};
+
+
+using FunctionBitTestAny = FunctionBitTestMany<BitTestAnyImpl, NameBitTestAny>;
+using FunctionBitTestAll = FunctionBitTestMany<BitTestAllImpl, NameBitTestAll>;
 
 }
