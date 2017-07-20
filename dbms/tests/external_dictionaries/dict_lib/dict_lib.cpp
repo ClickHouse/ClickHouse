@@ -1,7 +1,7 @@
-#include <iostream>
+//#include <iostream>
 
-void libfunc(int fd)
+extern "C" void libfunc(/*int fd*/)
 {
-std::cerr << "Runned!!!\n";
+  //std::cerr << "Runned!!!\n";
   return;
 }

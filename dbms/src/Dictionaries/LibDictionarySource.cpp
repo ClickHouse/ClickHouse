@@ -62,6 +62,24 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
 
     std::cerr << "2dl filename=" << filename << "\n";
     SharedLibraryPtr lib = std::make_shared<SharedLibrary>(filename);
+    //auto fptr = lib->get<void * (*) ()>("_ZN2DB6getPtrEv")();
+    auto fptr = lib->get<void * (*) ()>("libfunc")();
+    // libfunc
+    //auto f = std::function(fptr);
+    //auto f = std::mem_fn(&fptr);
+    //f();
+std::cerr << " fptr=" << fptr << "\n";
+        if (fptr)
+        {
+            //reinterpret_cast<void (*)(const Aggregator &, AggregatedDataWithoutKey &, size_t, AggregateColumns &, Arena *)>
+            //        (f)(*this, result.without_key, rows, aggregate_columns, result.aggregates_pool);
+            reinterpret_cast<void (*)()> (fptr)();
+std::cerr << " fptr destroy.."  << "\n";
+        }
+
+    //fptr();
+
+std::cerr << " fptr done." << "\n";
 
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
     {
@@ -73,6 +91,10 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     Poco::URI uri(url);
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback);
     auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
+
+
+std::cerr << "fptr destroy2:" << "\n";
+
     return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
 }
 
