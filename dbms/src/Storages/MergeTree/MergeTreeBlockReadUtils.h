@@ -2,7 +2,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <common/logger_useful.h>
 
 namespace DB
 {
