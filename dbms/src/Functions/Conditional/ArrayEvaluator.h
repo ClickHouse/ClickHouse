@@ -99,7 +99,7 @@ class ArraySource final : public IArraySource<TResult>
 {
 public:
     ArraySource(const PaddedPODArray<TType> & data_, const ColumnArray::Offsets_t & offsets_)
-        : data{data_}, offsets{offsets_}
+        : data(data_), offsets(offsets_)
     {
     }
 
@@ -146,7 +146,7 @@ class ConstArraySource final : public IArraySource<TResult>
 {
 public:
     ConstArraySource(const Array & array_)
-        : array{array_}
+        : array(array_)
     {
     }
 
@@ -190,7 +190,7 @@ class ArraySink
 public:
     ArraySink(PaddedPODArray<TResult> & data_, ColumnArray::Offsets_t & offsets_,
         size_t data_size_, size_t offsets_size_)
-        : data{data_}, offsets{offsets_}
+        : data(data_), offsets(offsets_)
     {
         offsets.resize(offsets_size_);
         data.reserve(data_size_);
@@ -245,7 +245,7 @@ public:
             {
                 const ColumnVector<TType> * content = typeid_cast<const ColumnVector<TType> *>(&col_array->getData());
                 if (!content)
-                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+                    throw Exception{"Unexpected type of Array column in function multiIf with numeric Array arguments", ErrorCodes::LOGICAL_ERROR};
                 source = std::make_unique<ArraySource<TResult, TType>>(content->getData(), col_array->getOffsets());
             }
             else if (auto col_const_array = checkAndGetColumnConst<ColumnArray>(col))
@@ -260,8 +260,6 @@ public:
     }
 };
 
-const Array null_array{Null()};
-
 /// Case for null sources.
 template <typename TResult>
 class ArraySourceCreator<TResult, Null> final
@@ -274,7 +272,7 @@ public:
         if (TypeName<Null>::get() == type_name)
         {
             IArraySourcePtr<TResult> source;
-            source = std::make_unique<ConstArraySource<TResult, Null>>(null_array);
+            source = std::make_unique<ConstArraySource<TResult, Null>>(Array());
             sources.push_back(std::move(source));
 
             return true;
@@ -363,7 +361,7 @@ private:
                 || ArraySourceCreator<TResult, Float32>::execute(sources, block, args, br)
                 || ArraySourceCreator<TResult, Float64>::execute(sources, block, args, br)
                 || ArraySourceCreator<TResult, Null>::execute(sources, block, args, br)))
-                throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+                throw Exception{"Unexpected type of Array column in function multiIf with numeric Array arguments", ErrorCodes::LOGICAL_ERROR};
         }
 
         return sources;
