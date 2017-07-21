@@ -423,6 +423,48 @@ struct ToRelativeSecondNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToYYYYMMImpl
+{
+    static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMM(t);
+    }
+    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMM(static_cast<DayNum_t>(d));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToYYYYMMDDImpl
+{
+    static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDD(t);
+    }
+    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDD(static_cast<DayNum_t>(d));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToYYYYMMDDhhmmssImpl
+{
+    static inline UInt64 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDDhhmmss(t);
+    }
+    static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(static_cast<DayNum_t>(d)));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 
 template<typename FromType, typename ToType, typename Transform>
 struct Transformer
@@ -894,6 +936,9 @@ struct NameToRelativeDayNum    { static constexpr auto name = "toRelativeDayNum"
 struct NameToRelativeHourNum   { static constexpr auto name = "toRelativeHourNum"; };
 struct NameToRelativeMinuteNum { static constexpr auto name = "toRelativeMinuteNum"; };
 struct NameToRelativeSecondNum { static constexpr auto name = "toRelativeSecondNum"; };
+struct NameToYYYYMM            { static constexpr auto name = "toYYYYMM"; };
+struct NameToYYYYMMDD          { static constexpr auto name = "toYYYYMMDD"; };
+struct NameToYYYYMMDDhhmmss    { static constexpr auto name = "toYYYYMMDDhhmmss"; };
 
 
 using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToYearImpl, NameToYear>;
@@ -922,5 +967,8 @@ using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt
 using FunctionToRelativeMinuteNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeMinuteNumImpl, NameToRelativeMinuteNum>;
 using FunctionToRelativeSecondNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeSecondNumImpl, NameToRelativeSecondNum>;
 
+using FunctionToYYYYMM = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToYYYYMMImpl, NameToYYYYMM>;
+using FunctionToYYYYMMDD = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToYYYYMMDDImpl, NameToYYYYMMDD>;
+using FunctionToYYYYMMDDhhmmss = FunctionDateOrDateTimeToSomething<DataTypeUInt64, ToYYYYMMDDhhmmssImpl, NameToYYYYMMDDhhmmss>;
 
 }
