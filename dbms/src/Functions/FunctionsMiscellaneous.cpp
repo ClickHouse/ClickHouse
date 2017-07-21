@@ -1755,35 +1755,33 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     };
 
     size_t arg = 0;
-    const String * host_name = nullptr;
-    const String * user_name = nullptr;
-    const String * password = nullptr;
+    String host_name;
+    String user_name;
+    String password;
+
     if (arguments.size() > 3)
-    {
-        host_name = &get_string_from_block(arguments[arg++]);
-    }
+        host_name = get_string_from_block(arguments[arg++]);
+
     if (arguments.size() > 4)
-    {
-        user_name = &get_string_from_block(arguments[arg++]);
-    }
+        user_name = get_string_from_block(arguments[arg++]);
+
     if (arguments.size() > 5)
-    {
-        password = &get_string_from_block(arguments[arg++]);
-    }
-    const String & database_name = get_string_from_block(arguments[arg++]);
-    const String & table_name = get_string_from_block(arguments[arg++]);
-    const String & column_name = get_string_from_block(arguments[arg++]);
+        password = get_string_from_block(arguments[arg++]);
+
+    String database_name = get_string_from_block(arguments[arg++]);
+    String table_name = get_string_from_block(arguments[arg++]);
+    String column_name = get_string_from_block(arguments[arg++]);
 
     bool has_column;
-    if (host_name == nullptr)
+    if (host_name.empty())
     {
         const StoragePtr & table = global_context.getTable(database_name, table_name);
         has_column = table->hasColumn(column_name);
     }
     else
     {
-        std::vector<std::vector<String>> host_names = {{ *host_name }};
-        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, user_name != nullptr ? *user_name : "default", password != nullptr ? *password : "");
+        std::vector<std::vector<String>> host_names = {{ host_name }};
+        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? *user_name : "default", password);
         auto names_and_types_list = std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, database_name, table_name, global_context));
         const auto & names = names_and_types_list->getNames();
         has_column = std::find(names.begin(), names.end(), column_name) != names.end();
