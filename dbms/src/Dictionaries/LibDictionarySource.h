@@ -46,7 +46,7 @@ private:
 
     const DictionaryStructure dict_struct;
     const std::string filename;
-    const std::string format;
+    //const std::string format;
     Block sample_block;
     const Context & context;
 };

@@ -6,6 +6,7 @@
 #include <common/logger_useful.h>
 
 #include <Interpreters/Compiler.h>
+#include <Poco/File.h>
 
 //dev:
 #include <DataStreams/NullBlockInputStream.h>
@@ -24,17 +25,21 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
     : log(&Logger::get("LibDictionarySource")),
       dict_struct {dict_struct_},
               filename {config.getString(config_prefix + ".filename", "")},
-              format {config.getString(config_prefix + ".format")},
+              //format {config.getString(config_prefix + ".format")},
               sample_block {sample_block},
               context(context)
 {
     std::cerr << "LibDictionarySource::LibDictionarySource()\n";
+    if (!Poco::File(filename).exists()) {
+        LOG_ERROR(log, "LibDictionarySource: Cant load lib " << toString() << " : " << Poco::File(filename).path());
+    }
 }
 
 LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
     : log(&Logger::get("LibDictionarySource")),
       dict_struct {other.dict_struct},
-              format {other.format},
+              filename {other.filename},
+              //format {other.format},
               sample_block {other.sample_block},
               context(other.context)
 {
