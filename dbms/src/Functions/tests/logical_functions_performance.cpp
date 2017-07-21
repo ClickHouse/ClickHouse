@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunction.h>
 #include <Common/Stopwatch.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <iomanip>
 
@@ -227,7 +228,7 @@ public:
         ColumnPlainPtrs in(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            in[i] = block.safeGetByPosition(arguments[i]).column.get();
+            in[i] = block.getByPosition(arguments[i]).column.get();
         }
         size_t n = in[0]->size();
 
@@ -240,8 +241,8 @@ public:
         {
             if (!in.empty())
                 const_val = Impl<UInt8>::apply(const_val, 0);
-            auto col_res = std::make_shared<ColumnConst<UInt8>>(n, const_val);
-            block.safeGetByPosition(result).column = col_res;
+            auto col_res = DataTypeUInt8().createConstColumn(n, const_val);
+            block.getByPosition(result).column = col_res;
             return;
         }
 
@@ -250,7 +251,7 @@ public:
             has_consts = false;
 
         auto col_res = std::make_shared<ColumnUInt8>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
         UInt8Container & vec_res = col_res->getData();
 
         if (has_consts)

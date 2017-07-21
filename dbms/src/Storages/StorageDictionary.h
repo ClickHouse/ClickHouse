@@ -4,6 +4,7 @@
 #include <common/MultiVersion.h>
 #include <ext/shared_ptr_helper.h>
 
+
 namespace Poco
 {
 class Logger;
@@ -11,8 +12,8 @@ class Logger;
 
 namespace DB
 {
-class DictionaryStructure;
-class IDictionaryBase;
+struct DictionaryStructure;
+struct IDictionaryBase;
 class ExternalDictionaries;
 
 class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, public IStorage
@@ -40,7 +41,7 @@ public:
     std::string getTableName() const override { return table_name; }
     const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     BlockInputStreams read(const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,

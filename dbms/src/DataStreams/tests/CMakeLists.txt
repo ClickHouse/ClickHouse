@@ -43,6 +43,3 @@ target_link_libraries (fork_streams dbms clickhouse_storages_system)
 
 add_executable (glue_streams glue_streams.cpp ${SRCS})
 target_link_libraries (glue_streams dbms)
-
-add_executable (json_streams json_streams.cpp ${SRCS})
-target_link_libraries (json_streams dbms)

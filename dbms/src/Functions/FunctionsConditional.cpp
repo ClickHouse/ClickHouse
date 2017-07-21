@@ -9,7 +9,6 @@
 #include <Functions/Conditional/NumericPerformer.h>
 #include <Functions/Conditional/StringEvaluator.h>
 #include <Functions/Conditional/StringArrayEvaluator.h>
-#include <Functions/Conditional/CondException.h>
 #include <Columns/ColumnNullable.h>
 
 namespace DB
@@ -171,7 +170,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
         else
             observed_type = args[i].get();
 
-        if (!typeid_cast<const DataTypeUInt8 *>(observed_type) && !observed_type->isNull())
+        if (!checkDataType<DataTypeUInt8>(observed_type) && !observed_type->isNull())
             throw Exception{"Illegal type of argument " + toString(i) + " (condition) "
                 "of function " + getName() + ". Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -202,8 +201,8 @@ DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
                 else
                     observed_type = args[i].get();
 
-                const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type);
-                if (type_arr == nullptr)
+                const DataTypeArray * type_arr = checkAndGetDataType<DataTypeArray>(observed_type);
+                if (!type_arr)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 new_args.push_back(type_arr->getNestedType());
             }
@@ -297,54 +296,42 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 {
     /// Check that all the branches have the same type. Moreover
     /// some or all these branches may be null.
-    std::string first_type_name;
     DataTypePtr type;
 
     size_t else_arg = Conditional::elseArg(args);
     for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
     {
-        if (!block.safeGetByPosition(args[i]).type->isNull())
+        if (!block.getByPosition(args[i]).type->isNull())
         {
-            const auto & name = block.safeGetByPosition(args[i]).type->getName();
-            if (first_type_name.empty())
-            {
-                first_type_name = name;
-                type = block.safeGetByPosition(args[i]).type;
-            }
-            else
-            {
-                if (name != first_type_name)
-                    return false;
-            }
-        }
-    }
-
-    if (!block.safeGetByPosition(args[else_arg]).type->isNull())
-    {
-        if (first_type_name.empty())
-            type = block.safeGetByPosition(args[else_arg]).type;
-        else
-        {
-            const auto & name = block.safeGetByPosition(args[else_arg]).type->getName();
-            if (name != first_type_name)
+            if (!type)
+                type = block.getByPosition(args[i]).type;
+            else if (!type->equals(*block.getByPosition(args[i]).type))
                 return false;
         }
     }
 
+    if (!block.getByPosition(args[else_arg]).type->isNull())
+    {
+        if (!type)
+            type = block.getByPosition(args[else_arg]).type;
+        else if (!type->equals(*block.getByPosition(args[else_arg]).type))
+            return false;
+    }
+
     size_t row_count = block.rows();
-    auto & res_col = block.safeGetByPosition(result).column;
+    auto & res_col = block.getByPosition(result).column;
 
     if (!type)
     {
         /// Degenerate case: all the branches are null.
-        res_col = std::make_shared<ColumnNull>(row_count, Null());
+        res_col = block.getByPosition(result).type->createConstColumn(row_count, Null());
         return true;
     }
 
     /// Check that all the conditions are constants.
     for (size_t i = Conditional::firstCond(); i < else_arg; i = Conditional::nextCond(i))
     {
-        const IColumn * col = block.safeGetByPosition(args[i]).column.get();
+        const IColumn * col = block.getByPosition(args[i]).column.get();
         if (!col->isConst())
             return false;
     }
@@ -360,7 +347,7 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 
     auto make_result = [&](size_t index)
     {
-        res_col = block.safeGetByPosition(index).column;
+        res_col = block.getByPosition(index).column;
         if (res_col->isNull())
         {
             /// The return type of multiIf is Nullable(T). Therefore we create
@@ -453,12 +440,12 @@ void FunctionCaseWithExpr::executeImpl(Block & block, const ColumnNumbers & args
         if ((i % 2) != 0)
         {
             src_array_args.push_back(args[i]);
-            src_array_types.push_back(block.safeGetByPosition(args[i]).type);
+            src_array_types.push_back(block.getByPosition(args[i]).type);
         }
         else
         {
             dst_array_args.push_back(args[i]);
-            dst_array_types.push_back(block.safeGetByPosition(args[i]).type);
+            dst_array_types.push_back(block.getByPosition(args[i]).type);
         }
     }
 
@@ -485,7 +472,7 @@ void FunctionCaseWithExpr::executeImpl(Block & block, const ColumnNumbers & args
     fun_transform.executeImpl(temp_block, transform_args, result);
 
     /// Put the result into the original block.
-    block.safeGetByPosition(result).column = std::move(temp_block.safeGetByPosition(result).column);
+    block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
 }
 
 /// Implementation of FunctionCaseWithoutExpr.

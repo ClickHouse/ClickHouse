@@ -10,6 +10,7 @@
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Common/typeid_cast.h>
 
 #include <iostream>
 #include <vector>

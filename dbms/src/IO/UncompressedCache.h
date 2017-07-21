@@ -52,7 +52,7 @@ public:
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
         hash.update(reinterpret_cast<const char *>(&offset), sizeof(offset));
-        hash.get128(key.first, key.second);
+        hash.get128(key.low, key.high);
 
         return key;
     }

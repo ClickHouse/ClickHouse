@@ -9,10 +9,10 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
 #include <Common/hex.h>
 #include <Common/Volnitsky.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 

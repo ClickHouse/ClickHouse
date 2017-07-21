@@ -8,6 +8,8 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/VirtualColumnFactory.h>
 
+#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -110,13 +112,13 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
 
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return getInnerTable()->read(column_names, query, context, processed_stage, max_block_size, num_streams);
+    return getInnerTable()->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
@@ -144,9 +146,9 @@ void StorageMaterializedView::drop()
     }
 }
 
-bool StorageMaterializedView::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageMaterializedView::optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
 {
-    return getInnerTable()->optimize(partition, final, deduplicate, settings);
+    return getInnerTable()->optimize(query, partition, final, deduplicate, settings);
 }
 
 StoragePtr StorageMaterializedView::getInnerTable() const

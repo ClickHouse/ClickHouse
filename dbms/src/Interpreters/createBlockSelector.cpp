@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
+#include <Common/typeid_cast.h>
 
 #include <type_traits>
 
@@ -32,7 +33,7 @@ IColumn::Selector createBlockSelector(
     /// const columns contain only one value, therefore we do not need to read it at every iteration
     if (column.isConst())
     {
-        const auto data = typeid_cast<const ColumnConst<T> &>(column).getData();
+        const auto data = typeid_cast<const ColumnConst &>(column).getValue<T>();
         const auto shard_num = slots[static_cast<UnsignedT>(data) % total_weight];
         selector.assign(num_rows, shard_num);
     }

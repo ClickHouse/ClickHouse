@@ -1,6 +1,7 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Columns/ColumnString.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

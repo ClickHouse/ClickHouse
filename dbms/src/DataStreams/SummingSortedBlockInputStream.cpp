@@ -4,6 +4,7 @@
 #include <Common/StringUtils.h>
 #include <Core/FieldVisitors.h>
 #include <common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

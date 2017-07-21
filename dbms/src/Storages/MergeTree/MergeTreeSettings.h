@@ -22,7 +22,7 @@ struct MergeTreeSettings
     /** Merge settings. */
 
     /// Maximum in total size of parts to merge, when there are maximum (minimum) free threads in background pool (or entries in replication queue).
-    size_t max_bytes_to_merge_at_max_space_in_pool = 500ULL * 1024 * 1024 * 1024;
+    size_t max_bytes_to_merge_at_max_space_in_pool = 100ULL * 1024 * 1024 * 1024;
     size_t max_bytes_to_merge_at_min_space_in_pool = 1024 * 1024;
 
     /// How many tasks of merging parts are allowed simultaneously in ReplicatedMergeTree queue.
@@ -84,6 +84,9 @@ struct MergeTreeSettings
     size_t replicated_max_parallel_sends = 0;
     size_t replicated_max_parallel_sends_for_table = 0;
 
+    /// If true, Replicated tables replicas on this node will try to acquire leadership.
+    bool replicated_can_become_leader = true;
+
     /// In seconds.
     size_t zookeeper_session_expiration_check_period = 60;
 
@@ -128,6 +131,7 @@ struct MergeTreeSettings
         SET(max_bytes_to_merge_at_max_space_in_pool, getUInt64);
         SET(max_bytes_to_merge_at_min_space_in_pool, getUInt64);
         SET(max_replicated_merges_in_queue, getUInt64);
+        SET(number_of_free_entries_in_pool_to_lower_max_size_of_merge, getUInt64);
         SET(old_parts_lifetime, getUInt64);
         SET(temporary_directories_lifetime, getUInt64);
         SET(parts_to_delay_insert, getUInt64);
@@ -140,11 +144,12 @@ struct MergeTreeSettings
         SET(max_suspicious_broken_parts, getUInt64);
         SET(max_files_to_modify_in_alter_columns, getUInt64);
         SET(max_files_to_remove_in_alter_columns, getUInt64);
+        SET(replicated_max_ratio_of_wrong_parts, getDouble);
         SET(replicated_max_parallel_fetches, getUInt64);
         SET(replicated_max_parallel_fetches_for_table, getUInt64);
         SET(replicated_max_parallel_sends, getUInt64);
         SET(replicated_max_parallel_sends_for_table, getUInt64);
-        SET(replicated_max_ratio_of_wrong_parts, getDouble);
+        SET(replicated_can_become_leader, getBool);
         SET(zookeeper_session_expiration_check_period, getUInt64);
         SET(check_delay_period, getUInt64);
         SET(min_relative_delay_to_yield_leadership, getUInt64);

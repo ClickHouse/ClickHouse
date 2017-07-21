@@ -1,5 +1,6 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/StringUtils.h>
+#include <Columns/IColumn.h>
 
 #include <unordered_set>
 
@@ -226,9 +227,9 @@ bool DictionaryStructure::isKeySizeFixed() const
     return true;
 }
 
-std::size_t DictionaryStructure::getKeySize() const
+size_t DictionaryStructure::getKeySize() const
 {
-    return std::accumulate(std::begin(*key), std::end(*key), std::size_t{},
+    return std::accumulate(std::begin(*key), std::end(*key), size_t{},
         [] (const auto running_size, const auto & key_i) {return running_size + key_i.type->getSizeOfField(); });
 }
 

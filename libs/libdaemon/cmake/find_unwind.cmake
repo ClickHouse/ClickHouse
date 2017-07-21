@@ -1,3 +1,6 @@
+include (CMakePushCheckState)
+cmake_push_check_state ()
+
 if (CMAKE_SYSTEM MATCHES "Linux")
     option (USE_INTERNAL_UNWIND_LIBRARY "Set to FALSE to use system unwind library instead of bundled" ${NOT_UNBUNDLED})
 else ()
@@ -13,6 +16,7 @@ if (NOT USE_INTERNAL_UNWIND_LIBRARY)
     set(CMAKE_REQUIRED_LIBRARIES ${UNWIND_LIBRARY})
     check_cxx_source_compiles("
     #include <ucontext.h>
+    #define UNW_LOCAL_ONLY
     #include <libunwind.h>
     int main () {
        ucontext_t context;
@@ -40,3 +44,5 @@ elseif (CMAKE_SYSTEM MATCHES "Linux")
 endif ()
 
 message (STATUS "Using unwind=${USE_UNWIND}: ${UNWIND_INCLUDE_DIR} : ${UNWIND_LIBRARY}")
+
+cmake_pop_check_state ()

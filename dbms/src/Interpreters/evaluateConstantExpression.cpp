@@ -9,6 +9,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -27,12 +28,12 @@ std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(std::sha
         node, context, nullptr, NamesAndTypesList{{ "_dummy", std::make_shared<DataTypeUInt8>() }}).getConstActions();
 
     /// There must be at least one column in the block so that it knows the number of rows.
-    Block block_with_constants{{ std::make_shared<ColumnConstUInt8>(1, 0), std::make_shared<DataTypeUInt8>(), "_dummy" }};
+    Block block_with_constants{{ std::make_shared<ColumnConst>(std::make_shared<ColumnUInt8>(1, 0), 1), std::make_shared<DataTypeUInt8>(), "_dummy" }};
 
     expr_for_constant_folding->execute(block_with_constants);
 
     if (!block_with_constants || block_with_constants.rows() == 0)
-        throw Exception("Logical error: empty block after evaluation constant expression for IN or VALUES", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error: empty block after evaluation of constant expression for IN or VALUES", ErrorCodes::LOGICAL_ERROR);
 
     String name = node->getColumnName();
 

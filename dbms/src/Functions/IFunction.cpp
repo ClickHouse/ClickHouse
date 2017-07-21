@@ -1,5 +1,4 @@
 #include <Functions/IFunction.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -137,7 +136,7 @@ ColumnsWithTypeAndName toNestedColumns(const ColumnsWithTypeAndName & args)
         if (arg.type->isNullable())
         {
             auto nullable_col = static_cast<const ColumnNullable *>(arg.column.get());
-            ColumnPtr nested_col = (nullable_col != nullptr) ? nullable_col->getNestedColumn() : nullptr;
+            ColumnPtr nested_col = (nullable_col) ? nullable_col->getNestedColumn() : nullptr;
             auto nullable_type = static_cast<const DataTypeNullable *>(arg.type.get());
             DataTypePtr nested_type = nullable_type->getNestedType();
 
@@ -362,13 +361,13 @@ void IFunction::postProcessResult(Strategy strategy, Block & block, const Block 
     else if (strategy == RETURN_NULL)
     {
         /// We have found at least one NULL argument. Therefore we return NULL.
-        ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
-        dest_col.column =  std::make_shared<ColumnNull>(block.rows(), Null());
+        ColumnWithTypeAndName & dest_col = block.getByPosition(result);
+        dest_col.column = DataTypeNull().createConstColumn(block.rows(), Null());
     }
     else if (strategy == PROCESS_NULLABLE_COLUMNS)
     {
-        const ColumnWithTypeAndName & source_col = processed_block.safeGetByPosition(result);
-        ColumnWithTypeAndName & dest_col = block.safeGetByPosition(result);
+        const ColumnWithTypeAndName & source_col = processed_block.getByPosition(result);
+        ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 
         /// Initialize the result column.
         ColumnPtr null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);

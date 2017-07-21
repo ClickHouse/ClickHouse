@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
 #include <Parsers/ASTFunction.h>
@@ -88,7 +89,8 @@ void StorageMergeTree::shutdown()
         return;
     shutdown_called = true;
     merger.cancelForever();
-    background_pool.removeTask(merge_task_handle);
+    if (merge_task_handle)
+        background_pool.removeTask(merge_task_handle);
 }
 
 
@@ -99,13 +101,13 @@ StorageMergeTree::~StorageMergeTree()
 
 BlockInputStreams StorageMergeTree::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, query, context, processed_stage, max_block_size, num_streams, nullptr, 0);
+    return reader.read(column_names, query_info, context, processed_stage, max_block_size, num_streams, nullptr, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)
@@ -166,6 +168,7 @@ void StorageMergeTree::alter(
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 
     bool primary_key_is_modified = false;
+
     ASTPtr new_primary_key_ast = data.primary_expr_ast;
 
     for (const AlterCommand & param : params)
@@ -185,8 +188,10 @@ void StorageMergeTree::alter(
 
     MergeTreeData::DataParts parts = data.getAllDataParts();
     for (const MergeTreeData::DataPartPtr & part : parts)
+    {
         if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
             transactions.push_back(std::move(transaction));
+    }
 
     auto table_hard_lock = lockStructureForAlter();
 
@@ -391,13 +396,15 @@ bool StorageMergeTree::mergeTask()
     }
 }
 
-void StorageMergeTree::dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings &)
+
+void StorageMergeTree::clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings &)
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger.cancel();
-    /// Waits for completion of merge and does not start new ones.
-    auto lock = lockForAlter();
+
+    auto lock_read_structure = lockStructure(false);
+    auto lock_write_data = lockDataForAlter();
 
     DayNum_t month = MergeTreeData::getMonthDayNum(partition);
     MergeTreeData::DataParts parts = data.getDataParts();
@@ -435,7 +442,10 @@ void StorageMergeTree::dropColumnFromPartition(const ASTPtr & query, const Field
 
     for (auto & transaction : transactions)
         transaction->commit();
+
+    data.recalculateColumnSizes();
 }
+
 
 void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings)
 {

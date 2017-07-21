@@ -22,6 +22,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
+#include <Common/typeid_cast.h>
+
 #include <Interpreters/Context.h>
 
 #include <Poco/Path.h>
@@ -773,7 +775,7 @@ const Marks & StorageLog::getMarksWithRealRowCount() const
 
 BlockInputStreams StorageLog::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,

@@ -52,8 +52,8 @@ void FlatDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Ke
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
     getItemsNumber<UInt64>(*hierarchical_attribute, ids,
-        [&] (const std::size_t row, const UInt64 value) { out[row] = value; },
-        [&] (const std::size_t) { return null_value; });
+        [&] (const size_t row, const UInt64 value) { out[row] = value; },
+        [&] (const size_t) { return null_value; });
 }
 
 
@@ -124,8 +124,8 @@ void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedP
     const auto null_value = std::get<TYPE>(attribute.null_values);\
     \
     getItemsNumber<TYPE>(attribute, ids,\
-        [&] (const std::size_t row, const auto value) { out[row] = value; },\
-        [&] (const std::size_t) { return null_value; });\
+        [&] (const size_t row, const auto value) { out[row] = value; },\
+        [&] (const size_t) { return null_value; });\
 }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -150,8 +150,8 @@ void FlatDictionary::getString(const std::string & attribute_name, const PaddedP
     const auto & null_value = std::get<StringRef>(attribute.null_values);
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
-        [&] (const std::size_t) { return null_value; });
+        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t) { return null_value; });
 }
 
 #define DECLARE(TYPE)\
@@ -166,8 +166,8 @@ void FlatDictionary::get##TYPE(\
             ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, ids,\
-        [&] (const std::size_t row, const auto value) { out[row] = value; },\
-        [&] (const std::size_t row) { return def[row]; });\
+        [&] (const size_t row, const auto value) { out[row] = value; },\
+        [&] (const size_t row) { return def[row]; });\
 }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -192,8 +192,8 @@ void FlatDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
-        [&] (const std::size_t row) { return def->getDataAt(row); });
+        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t row) { return def->getDataAt(row); });
 }
 
 #define DECLARE(TYPE)\
@@ -208,8 +208,8 @@ void FlatDictionary::get##TYPE(\
             ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, ids,\
-        [&] (const std::size_t row, const auto value) { out[row] = value; },\
-        [&] (const std::size_t) { return def; });\
+        [&] (const size_t row, const auto value) { out[row] = value; },\
+        [&] (const size_t) { return def; });\
 }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -234,8 +234,8 @@ void FlatDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     FlatDictionary::getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const std::size_t row, const StringRef value) { out->insertData(value.data, value.size); },
-        [&] (const std::size_t) { return StringRef{def}; });
+        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t) { return StringRef{def}; });
 }
 
 
@@ -317,7 +317,7 @@ template <typename T>
 void FlatDictionary::addAttributeSize(const Attribute & attribute)
 {
     const auto & array_ref = std::get<ContainerPtrType<T>>(attribute.arrays);
-    bytes_allocated += sizeof(PaddedPODArray<T>) + array_ref->allocated_size();
+    bytes_allocated += sizeof(PaddedPODArray<T>) + array_ref->allocated_bytes();
     bucket_count = array_ref->capacity();
 }
 

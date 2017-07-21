@@ -13,6 +13,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/typeid_cast.h>
 
 #include <Poco/DirectoryIterator.h>
 

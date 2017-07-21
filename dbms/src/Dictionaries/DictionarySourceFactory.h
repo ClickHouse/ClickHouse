@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Dictionaries/IDictionarySource.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 
 namespace Poco
@@ -19,7 +19,7 @@ class Context;
 struct DictionaryStructure;
 
 /// creates IDictionarySource instance from config and DictionaryStructure
-class DictionarySourceFactory : public Singleton<DictionarySourceFactory>
+class DictionarySourceFactory : public ext::singleton<DictionarySourceFactory>
 {
 public:
     DictionarySourceFactory();

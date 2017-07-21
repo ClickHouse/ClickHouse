@@ -2,11 +2,13 @@
 #include <Functions/Conditional/CondSource.h>
 #include <Functions/Conditional/common.h>
 #include <Functions/Conditional/NullMapBuilder.h>
+#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
+#include <Common/typeid_cast.h>
 
 /// NOTE: this code is quite complicated and ugly because it handles
 /// the internals of arrays of strings.
@@ -46,12 +48,6 @@ struct Chunk
     {
     }
 
-    Chunk(const Chunk &) = delete;
-    Chunk & operator=(const Chunk &) = delete;
-
-    Chunk(Chunk &&) = default;
-    Chunk & operator=(Chunk &&) = default;
-
     VarCallback var_callback;
 };
 
@@ -85,12 +81,6 @@ public:
         index{index_}
     {
     }
-
-    VarStringArraySource(const VarStringArraySource &) = delete;
-    VarStringArraySource & operator=(const VarStringArraySource &) = delete;
-
-    VarStringArraySource(VarStringArraySource &&) = default;
-    VarStringArraySource & operator=(VarStringArraySource &&) = default;
 
     ChunkType getType() const override
     {
@@ -176,12 +166,6 @@ public:
             data_size += s.get<const String &>().size() + 1;
     }
 
-    ConstStringArraySource(const ConstStringArraySource &) = delete;
-    ConstStringArraySource & operator=(const ConstStringArraySource &) = delete;
-
-    ConstStringArraySource(ConstStringArraySource &&) = default;
-    ConstStringArraySource & operator=(ConstStringArraySource &&) = default;
-
     ChunkType getType() const override
     {
         return ChunkType::CONSTANT;
@@ -212,7 +196,7 @@ public:
     }
 
 private:
-    const Array & data;
+    Array data;
     size_t data_size;
     size_t index;
 
@@ -259,12 +243,6 @@ public:
         data.reserve(data_size_);
     }
 
-    VarStringArraySink(const VarStringArraySink &) = delete;
-    VarStringArraySink & operator=(const VarStringArraySink &) = delete;
-
-    VarStringArraySink(VarStringArraySink &&) = default;
-    VarStringArraySink & operator=(VarStringArraySink &&) = default;
-
     void store(const Chunk & chunk)
     {
         size_t array_size = chunk.var_callback(data, string_prev_offset, string_offsets);
@@ -304,10 +282,10 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
 {
     auto append_source = [&](size_t i) -> bool
     {
-        const IColumn * col = block.safeGetByPosition(args[i]).column.get();
-        const ColumnArray * col_arr = typeid_cast<const ColumnArray *>(col);
-        const ColumnString * var_col = col_arr ? typeid_cast<const ColumnString *>(&col_arr->getData()) : nullptr;
-        const ColumnConstArray * const_col = typeid_cast<const ColumnConstArray *>(col);
+        const IColumn * col = block.getByPosition(args[i]).column.get();
+        const ColumnArray * col_arr = checkAndGetColumn<ColumnArray>(col);
+        const ColumnString * var_col = col_arr ? checkAndGetColumn<ColumnString>(&col_arr->getData()) : nullptr;
+        const ColumnConst * const_col = checkAndGetColumnConst<ColumnArray>(col);
 
         if (col->isNull())
         {
@@ -320,11 +298,11 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
         {
             StringArraySourcePtr source;
 
-            if (var_col != nullptr)
+            if (var_col)
                 source = std::make_unique<VarStringArraySource>(var_col->getChars(),
                     var_col->getOffsets(), col_arr->getOffsets(), args[i]);
             else if (const_col)
-                source = std::make_unique<ConstStringArraySource>(const_col->getData(), args[i]);
+                source = std::make_unique<ConstStringArraySource>(const_col->getValue<Array>(), args[i]);
             else
                 throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
@@ -372,12 +350,7 @@ auto computeResultSize(const StringArraySources & sources, size_t row_count)
             throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
     }
 
-    if (max_var > 0)
-        return std::make_tuple(max_var, max_var_string_offsets);
-    else if (max_const > 0)
-        return std::make_tuple(max_const * row_count, max_const_string_offsets * row_count);
-    else
-        throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+    return std::make_tuple(std::max(max_var, max_const * row_count), std::max(max_var_string_offsets, max_const_string_offsets * row_count));
 }
 
 /// Create the result column.
@@ -391,7 +364,7 @@ VarStringArraySink createSink(Block & block, const StringArraySources & sources,
 
     std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
     auto var_col_res = std::make_shared<ColumnArray>(col_res);
-    block.safeGetByPosition(result).column = var_col_res;
+    block.getByPosition(result).column = var_col_res;
 
     return VarStringArraySink{col_res->getChars(), col_res->getOffsets(),
         var_col_res->getOffsets(), data_size, offsets_size, row_count};

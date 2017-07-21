@@ -4,7 +4,10 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 
+#include <Common/typeid_cast.h>
+
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -127,7 +130,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
         {
 #if __SSE2__
             /// An optimistic branch in which more efficient copying is possible.
-            if (offset + 16 * UNROLL_TIMES <= data.allocated_size() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
+            if (offset + 16 * UNROLL_TIMES <= data.allocated_bytes() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
             {
                 const __m128i * sse_src_pos = reinterpret_cast<const __m128i *>(istr.position());
                 const __m128i * sse_src_end = sse_src_pos + (size + (16 * UNROLL_TIMES - 1)) / 16 / UNROLL_TIMES * UNROLL_TIMES;
@@ -184,16 +187,8 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
     }
     else
     {
-        /** A small heuristic to evaluate that there are a lot of empty strings in the column.
-          * In this case, to save RAM, we will say that the average size of the value is small.
-          */
-        if (istr.position() + sizeof(UInt32) <= istr.buffer().end()
-            && unalignedLoad<UInt32>(istr.position()) == 0)    /// The first 4 strings are in the buffer and are empty.
-        {
-            avg_chars_size = 1;
-        }
-        else
-            avg_chars_size = DBMS_APPROX_STRING_SIZE;
+        /// By default reserve only for empty strings.
+        avg_chars_size = 1;
     }
 
     data.reserve(data.size() + std::ceil(limit * avg_chars_size));
@@ -266,7 +261,7 @@ void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) 
 }
 
 
-void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
+void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
@@ -302,9 +297,24 @@ ColumnPtr DataTypeString::createColumn() const
 }
 
 
-ColumnPtr DataTypeString::createConstColumn(size_t size, const Field & field) const
+void registerDataTypeString(DataTypeFactory & factory)
 {
-    return std::make_shared<ColumnConstString>(size, get<const String &>(field));
+    auto creator = static_cast<DataTypePtr(*)()>([] { return DataTypePtr(std::make_shared<DataTypeString>()); });
+
+    factory.registerSimpleDataType("String", creator);
+
+    /// These synonims are added for compatibility.
+
+    factory.registerSimpleDataType("CHAR", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("VARCHAR", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("TEXT", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("TINYTEXT", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("MEDIUMTEXT", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("LONGTEXT", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("BLOB", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("TINYBLOB", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("MEDIUMBLOB", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerSimpleDataType("LONGBLOB", creator, DataTypeFactory::CaseInsensitive);
 }
 
 }

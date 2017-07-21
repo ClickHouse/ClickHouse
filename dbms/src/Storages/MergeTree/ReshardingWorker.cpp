@@ -25,6 +25,7 @@
 #include <common/ThreadPool.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/typeid_cast.h>
 
 #include <Poco/Event.h>
 #include <Poco/DirectoryIterator.h>

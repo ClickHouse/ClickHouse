@@ -95,7 +95,7 @@ struct DictionaryStructure final
     void validateKeyTypes(const DataTypes & key_types) const;
     std::string getKeyDescription() const;
     bool isKeySizeFixed() const;
-    std::size_t getKeySize() const;
+    size_t getKeySize() const;
 
 private:
     std::vector<DictionaryAttribute> getAttributes(

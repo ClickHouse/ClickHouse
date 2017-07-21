@@ -21,6 +21,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/config_compile.h>
 
 
@@ -444,10 +445,10 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
             /// We have exactly one key and it is nullable. We shall add it a tag
             /// which specifies whether its value is null or not.
             size_t size_of_field = nested_key_columns[0]->sizeOfField();
-            if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8))
+            if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8) || (size_of_field == 16))
                 return AggregatedDataVariants::Type::nullable_keys128;
             else
-                throw Exception{"Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.",
+                throw Exception{"Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.",
                     ErrorCodes::LOGICAL_ERROR};
         }
 
@@ -481,7 +482,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
             return AggregatedDataVariants::Type::key32;
         if (size_of_field == 8)
             return AggregatedDataVariants::Type::key64;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
+        if (size_of_field == 16)
+            return AggregatedDataVariants::Type::keys128;
+        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.", ErrorCodes::LOGICAL_ERROR);
     }
 
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.

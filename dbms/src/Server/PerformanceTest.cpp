@@ -2,6 +2,7 @@
 #include <iostream>
 #include <limits>
 #include <regex>
+#include <thread>
 #include <unistd.h>
 
 #include <boost/program_options.hpp>
@@ -269,9 +270,13 @@ struct Stats
 
     bool last_query_was_cancelled = false;
 
-    size_t queries;
-    size_t rows_read;
-    size_t bytes_read;
+    size_t queries = 0;
+
+    size_t total_rows_read = 0;
+    size_t total_bytes_read = 0;
+
+    size_t last_query_rows_read = 0;
+    size_t last_query_bytes_read = 0;
 
     using Sampler = ReservoirSampler<double>;
     Sampler sampler{1 << 16};
@@ -329,11 +334,11 @@ struct Stats
         }
         if (statistic_name == "rows_per_second")
         {
-            return std::to_string(rows_read / total_time);
+            return std::to_string(total_rows_read / total_time);
         }
         if (statistic_name == "bytes_per_second")
         {
-            return std::to_string(bytes_read / total_time);
+            return std::to_string(total_bytes_read / total_time);
         }
 
         if (statistic_name == "max_rows_per_second")
@@ -398,11 +403,13 @@ struct Stats
 
     void add(size_t rows_read_inc, size_t bytes_read_inc)
     {
-        rows_read += rows_read_inc;
-        bytes_read += bytes_read_inc;
+        total_rows_read += rows_read_inc;
+        total_bytes_read += bytes_read_inc;
+        last_query_rows_read += rows_read_inc;
+        last_query_bytes_read += bytes_read_inc;
 
-        double new_rows_speed = rows_read_inc / watch_per_query.elapsedSeconds();
-        double new_bytes_speed = bytes_read_inc / watch_per_query.elapsedSeconds();
+        double new_rows_speed = last_query_rows_read / watch_per_query.elapsedSeconds();
+        double new_bytes_speed = last_query_bytes_read / watch_per_query.elapsedSeconds();
 
         /// Update rows speed
         update_max_speed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
@@ -449,8 +456,10 @@ struct Stats
         sampler.clear();
 
         queries = 0;
-        rows_read = 0;
-        bytes_read = 0;
+        total_rows_read = 0;
+        total_bytes_read = 0;
+        last_query_rows_read = 0;
+        last_query_bytes_read = 0;
 
         min_time = std::numeric_limits<UInt64>::max();
         total_time = 0;
@@ -745,7 +754,7 @@ private:
             {
                 if (!checkPreconditions(test_config))
                 {
-                    std::cerr << "Preconditions are not fulfilled for test \"" + test_config->getString("name", "") + "\"";
+                    std::cerr << "Preconditions are not fulfilled for test \"" + test_config->getString("name", "") + "\" ";
                     continue;
                 }
 
@@ -919,11 +928,9 @@ private:
         else
             throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name, 1);
 
-        if (test_config->has("times_to_run"))
-        {
-            times_to_run = test_config->getUInt("times_to_run");
-        }
+        times_to_run = test_config->getUInt("times_to_run", 1);
 
+        stop_conditions_by_run.clear();
         TestStopConditions stop_conditions_template;
         if (test_config->has("stop_conditions"))
         {
@@ -942,6 +949,7 @@ private:
         Keys metrics;
         metrics_view->keys(metrics);
 
+        main_metric.clear();
         if (test_config->has("main_metric"))
         {
             Keys main_metrics;
@@ -1061,15 +1069,14 @@ private:
     {
         statistics.watch_per_query.restart();
         statistics.last_query_was_cancelled = false;
+        statistics.last_query_rows_read = 0;
+        statistics.last_query_bytes_read = 0;
 
         RemoteBlockInputStream stream(connection, query, &settings, global_context, nullptr, Tables() /*, query_processing_stage*/);
 
-        Progress progress;
-        stream.setProgressCallback(
-            [&progress, &stream, &statistics, &stop_conditions, this](const Progress & value)
+        stream.setProgressCallback([&](const Progress & value)
             {
-                progress.incrementPiecewiseAtomically(value);
-                this->checkFulfilledConditionsAndUpdate(progress, stream, statistics, stop_conditions);
+                this->checkFulfilledConditionsAndUpdate(value, stream, statistics, stop_conditions);
             });
 
         stream.readPrefix();
@@ -1091,8 +1098,8 @@ private:
     {
         statistics.add(progress.rows, progress.bytes);
 
-        stop_conditions.reportRowsRead(statistics.rows_read);
-        stop_conditions.reportBytesReadUncompressed(statistics.bytes_read);
+        stop_conditions.reportRowsRead(statistics.total_rows_read);
+        stop_conditions.reportBytesReadUncompressed(statistics.total_bytes_read);
         stop_conditions.reportTotalTime(statistics.watch.elapsed() / (1000 * 1000));
         stop_conditions.reportMinTimeNotChangingFor(statistics.min_time_watch.elapsed() / (1000 * 1000));
         stop_conditions.reportMaxSpeedNotChangingFor(
@@ -1206,6 +1213,8 @@ public:
 
         json_output.set("hostname", getFQDNOrHostName());
         json_output.set("num_cores", getNumberOfPhysicalCPUCores());
+        json_output.set("num_threads", std::thread::hardware_concurrency());
+        json_output.set("ram", getMemoryAmount());
         json_output.set("server_version", server_version);
         json_output.set("time", DateLUT::instance().timeToString(time(0)));
         json_output.set("test_name", test_name);
@@ -1298,11 +1307,11 @@ public:
                                                           statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "rows_per_second") != metrics.end())
-                        runJSON.set("rows_per_second", double(statistics.rows_read) /
+                        runJSON.set("rows_per_second", double(statistics.total_rows_read) /
                                                        statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "bytes_per_second") != metrics.end())
-                        runJSON.set("bytes_per_second", double(statistics.bytes_read) /
+                        runJSON.set("bytes_per_second", double(statistics.total_bytes_read) /
                                                         statistics.total_time);
                 }
                 else
@@ -1362,7 +1371,7 @@ public:
 };
 }
 
-static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_files)
+static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_files, const bool recursive = false)
 {
     if (dir.extension().string() == ".xml")
         std::cerr << "Warning: \"" + dir.string() + "\" is a directory, but has .xml extension" << std::endl;
@@ -1371,7 +1380,9 @@ static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_fi
     for (FS::directory_iterator it(dir); it != end; ++it)
     {
         const FS::path file = (*it);
-        if (!FS::is_directory(file) && file.extension().string() == ".xml")
+        if (recursive && FS::is_directory(file))
+            getFilesFromDir(file, input_files, recursive);
+        else if (!FS::is_directory(file) && file.extension().string() == ".xml")
             input_files.push_back(file.string());
     }
 }
@@ -1400,7 +1411,8 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             ("names",                value<Strings>()->multitoken(),                     "Run tests with specific name")
             ("skip-names",           value<Strings>()->multitoken(),                     "Do not run tests with name")
             ("names-regexp",         value<Strings>()->multitoken(),                     "Run tests with names matching regexp")
-            ("skip-names-regexp",    value<Strings>()->multitoken(),                     "Do not run tests with names matching regexp");
+            ("skip-names-regexp",    value<Strings>()->multitoken(),                     "Do not run tests with names matching regexp")
+            ("recursive,r",                                                              "Recurse in directories to find all xml's");
 
         /// These options will not be displayed in --help
         boost::program_options::options_description hidden("Hidden options");
@@ -1426,13 +1438,14 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
         }
 
         Strings input_files;
+        bool recursive = options.count("recursive");
 
         if (!options.count("input-files"))
         {
             std::cerr << "Trying to find test scenario files in the current folder...";
             FS::path curr_dir(".");
 
-            getFilesFromDir(curr_dir, input_files);
+            getFilesFromDir(curr_dir, input_files, recursive);
 
             if (input_files.empty())
             {
@@ -1456,7 +1469,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
                 if (FS::is_directory(file))
                 {
                     input_files.erase( std::remove(input_files.begin(), input_files.end(), filename) , input_files.end() );
-                    getFilesFromDir(file, input_files);
+                    getFilesFromDir(file, input_files, recursive);
                 }
                 else
                 {

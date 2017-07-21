@@ -3,9 +3,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsArithmetic.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace DB
@@ -194,7 +196,7 @@ private:
     template <typename T>
     bool convertTypeToUInt8(const IColumn * column, UInt8Container & res)
     {
-        auto col = typeid_cast<const ColumnVector<T> *>(column);
+        auto col = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col)
             return false;
         const typename ColumnVector<T>::Container_t & vec = col->getData();
@@ -223,7 +225,7 @@ private:
     template <typename T>
     bool executeUInt8Type(const UInt8Container & uint8_vec, IColumn * column, UInt8Container & res)
     {
-        auto col = typeid_cast<const ColumnVector<T> *>(column);
+        auto col = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col)
             return false;
         const typename ColumnVector<T>::Container_t & other_vec = col->getData();
@@ -283,7 +285,7 @@ public:
         ColumnPlainPtrs in(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            in[i] = block.safeGetByPosition(arguments[i]).column.get();
+            in[i] = block.getByPosition(arguments[i]).column.get();
         }
         size_t n = in[0]->size();
 
@@ -296,8 +298,8 @@ public:
         {
             if (!in.empty())
                 const_val = Impl<UInt8>::apply(const_val, 0);
-            auto col_res = std::make_shared<ColumnConst<UInt8>>(n, const_val);
-            block.safeGetByPosition(result).column = col_res;
+            auto col_res = DataTypeUInt8().createConstColumn(n, toField(const_val));
+            block.getByPosition(result).column = col_res;
             return;
         }
 
@@ -306,7 +308,7 @@ public:
             has_consts = false;
 
         auto col_res = std::make_shared<ColumnUInt8>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
         UInt8Container & vec_res = col_res->getData();
 
         if (has_consts)
@@ -379,24 +381,24 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_res = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             typename ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col->getData().size());
-            UnaryOperationImpl<T, Impl<T> >::vector(col->getData(), vec_res);
+            UnaryOperationImpl<T, Impl<T>>::vector(col->getData(), vec_res);
 
             return true;
         }
-        else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             UInt8 res = 0;
-            UnaryOperationImpl<T, Impl<T> >::constant(col->getData(), res);
+            UnaryOperationImpl<T, Impl<T>>::constant(col->template getValue<T>(), res);
 
-            auto col_res = std::make_shared<ColumnConst<UInt8>>(col->size(), res);
-            block.safeGetByPosition(result).column = col_res;
+            auto col_res = DataTypeUInt8().createConstColumn(col->size(), toField(res));
+            block.getByPosition(result).column = col_res;
 
             return true;
         }
@@ -425,17 +427,17 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!(    executeType<UInt8>(block, arguments, result)
-            ||    executeType<UInt16>(block, arguments, result)
-            ||    executeType<UInt32>(block, arguments, result)
-            ||    executeType<UInt64>(block, arguments, result)
-            ||    executeType<Int8>(block, arguments, result)
-            ||    executeType<Int16>(block, arguments, result)
-            ||    executeType<Int32>(block, arguments, result)
-            ||    executeType<Int64>(block, arguments, result)
-            ||    executeType<Float32>(block, arguments, result)
-            ||    executeType<Float64>(block, arguments, result)))
-           throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+        if (!( executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
+           throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }

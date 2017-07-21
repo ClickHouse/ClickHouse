@@ -1,6 +1,6 @@
 #pragma once
 
-#include <AggregateFunctions/AggregateFunctionsMinMaxAny.h>
+#include <AggregateFunctions/AggregateFunctionMinMaxAny.h>
 #include <AggregateFunctions/IBinaryAggregateFunction.h>
 
 
@@ -8,9 +8,9 @@ namespace DB
 {
 
 
-/// For possible values for template parameters, see AggregateFunctionsMinMaxAny.h
+/// For possible values for template parameters, see AggregateFunctionMinMaxAny.h
 template <typename ResultData, typename ValueData>
-struct AggregateFunctionsArgMinMaxData
+struct AggregateFunctionArgMinMaxData
 {
     using ResultData_t = ResultData;
     using ValueData_t = ValueData;
@@ -21,7 +21,7 @@ struct AggregateFunctionsArgMinMaxData
 
 /// Returns the first arg value found for the minimum/maximum value. Example: argMax(arg, value).
 template <typename Data>
-class AggregateFunctionsArgMinMax final : public IBinaryAggregateFunction<Data, AggregateFunctionsArgMinMax<Data>>
+class AggregateFunctionArgMinMax final : public IBinaryAggregateFunction<Data, AggregateFunctionArgMinMax<Data>>
 {
 private:
     DataTypePtr type_res;

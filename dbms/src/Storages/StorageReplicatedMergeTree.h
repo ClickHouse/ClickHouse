@@ -123,7 +123,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
@@ -131,10 +131,11 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override;
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
+    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
     void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
     void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
@@ -142,7 +143,7 @@ public:
 
     void reshardPartitions(
         const ASTPtr & query, const String & database_name,
-        const Field & first_partition, const Field & last_partition,
+        const Field & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
         Context & context) override;
@@ -256,7 +257,7 @@ private:
       */
     int columns_version = -1;
 
-    /** Is this replica "master". The master replica selects the parts to merge.
+    /** Is this replica "leading". The leader replica selects the parts to merge.
       */
     bool is_leader_node = false;
     std::mutex leader_node_mutex;
@@ -394,6 +395,8 @@ private:
 
     void executeDropRange(const LogEntry & entry);
 
+    void executeClearColumnInPartition(const LogEntry & entry);
+
     /** Updates the queue.
       */
     void queueUpdatingThread();
@@ -458,19 +461,14 @@ private:
       */
     void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
+    /// Choose leader replica, send requst to it and wait.
+    void sendRequestToLeaderReplica(const ASTPtr & query, const Settings & settings);
+
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
 
-    /** Get a lock that protects the specified partition from the merge task.
-      * The lock is recursive.
-      */
-    std::string acquirePartitionMergeLock(const std::string & partition_name);
-
-    /** Declare that we no longer refer to the lock corresponding to the specified
-      * partition. If there are no more links, the lock is destroyed.
-      */
-    void releasePartitionMergeLock(const std::string & partition_name);
-
+    /// The name of an imaginary part covering all parts in the specified partition (at the call moment).
+    String getFakePartNameCoveringAllPartsInPartition(const String & month_name);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     std::unordered_set<std::string> existing_nodes_cache;
