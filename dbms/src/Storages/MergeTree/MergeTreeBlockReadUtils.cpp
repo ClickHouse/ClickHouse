@@ -108,7 +108,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const N
             continue;
 
         /// At least PREWHERE filter column might be const.
-        if (typeid_cast<IColumnConst *> (column_data.get()))
+        if (typeid_cast<const ColumnConst *>(column_data.get()))
             continue;
 
         if (column_data->isFixed())
