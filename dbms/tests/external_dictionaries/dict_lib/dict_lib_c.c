@@ -1,6 +1,5 @@
 #include <stdint.h>
 #include <stdio.h>
-//typedef uint64_t UInt64;
 
 struct VectorUint64 {const uint64_t size; const uint64_t * data;};
 

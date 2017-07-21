@@ -2,11 +2,11 @@
 #include <vector>
 #include <cstdint>
 
-typedef uint64_t UInt64;
+struct VectorUint64 {const uint64_t size; const uint64_t * data;};
 
-extern "C" void loadIds(const std::vector<UInt64> & ids)
+extern "C" void loadIds(const struct VectorUint64 ids)
 {
-  std::cerr << "loadIds Runned!!!="<<ids.size()<<"\n";
+  std::cerr << "loadIds Runned!!!="<<ids.size<<"\n";
   return;
 }
 
@@ -16,8 +16,8 @@ extern "C" void loadAll()
   return;
 }
 
-extern "C" void loadKeys(const std::vector<std::size_t> & requested_rows)
+extern "C" void loadKeys(const struct VectorUint64 requested_rows)
 {
-  std::cerr << "loadKeys Runned!!!="<<requested_rows.size()<<"\n";
+  std::cerr << "loadKeys Runned!!!="<<requested_rows.size<<"\n";
   return;
 }

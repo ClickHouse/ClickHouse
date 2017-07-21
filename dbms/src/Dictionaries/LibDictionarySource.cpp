@@ -10,6 +10,8 @@
 
 //dev:
 #include <DataStreams/NullBlockInputStream.h>
+#include <Common/iostream_debug_helpers.h>
+
 
 namespace DB
 {
