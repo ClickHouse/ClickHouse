@@ -22,6 +22,7 @@
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnExpression.h>
+#include <Columns/ColumnConst.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -2030,7 +2031,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
             if (node->name == "indexHint")
             {
                 actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
-                    std::make_shared<ColumnConstUInt8>(1, 1), std::make_shared<DataTypeUInt8>(), node->getColumnName())));
+                    std::make_shared<ColumnConst>(std::make_shared<ColumnUInt8>(1, 1), 1), std::make_shared<DataTypeUInt8>(), node->getColumnName())));
                 return;
             }
 

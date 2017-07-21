@@ -27,7 +27,7 @@ class ComplexKeyCacheDictionary final : public IDictionaryBase
 public:
     ComplexKeyCacheDictionary(const std::string & name, const DictionaryStructure & dict_struct,
         DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime,
-        const std::size_t size);
+        const size_t size);
 
     ComplexKeyCacheDictionary(const ComplexKeyCacheDictionary & other);
 
@@ -39,13 +39,13 @@ public:
 
     std::string getTypeName() const override { return "ComplexKeyCache"; }
 
-    std::size_t getBytesAllocated() const override
+    size_t getBytesAllocated() const override
     {
         return bytes_allocated + (key_size_is_fixed ? fixed_size_keys_pool->size() : keys_pool->size()) +
             (string_arena ? string_arena->size() : 0);
     }
 
-    std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override
     {
@@ -53,7 +53,7 @@ public:
             query_count.load(std::memory_order_relaxed);
     }
 
-    std::size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
+    size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
 
     double getLoadFactor() const override
     {
@@ -214,29 +214,29 @@ private:
     template <typename PresentKeyHandler, typename AbsentKeyHandler>
     void update(
         const Columns & in_key_columns, const PODArray<StringRef> & in_keys,
-        const std::vector<std::size_t> & in_requested_rows,
+        const std::vector<size_t> & in_requested_rows,
         PresentKeyHandler && on_cell_updated,
         AbsentKeyHandler && on_key_not_found) const;
 
     UInt64 getCellIdx(const StringRef key) const;
 
-    void setDefaultAttributeValue(Attribute & attribute, const std::size_t idx) const;
+    void setDefaultAttributeValue(Attribute & attribute, const size_t idx) const;
 
-    void setAttributeValue(Attribute & attribute, const std::size_t idx, const Field & value) const;
+    void setAttributeValue(Attribute & attribute, const size_t idx, const Field & value) const;
 
     Attribute & getAttribute(const std::string & attribute_name) const;
 
-    StringRef allocKey(const std::size_t row, const Columns & key_columns, StringRefs & keys) const;
+    StringRef allocKey(const size_t row, const Columns & key_columns, StringRefs & keys) const;
 
     void freeKey(const StringRef key) const;
 
     template <typename Arena>
     static StringRef placeKeysInPool(
-        const std::size_t row, const Columns & key_columns, StringRefs & keys,
+        const size_t row, const Columns & key_columns, StringRefs & keys,
         const std::vector<DictionaryAttribute> & key_attributes, Arena & pool);
 
     StringRef placeKeysInFixedSizePool(
-        const std::size_t row, const Columns & key_columns) const;
+        const size_t row, const Columns & key_columns) const;
 
     static StringRef copyIntoArena(StringRef src, Arena & arena);
     StringRef copyKey(const StringRef key) const;
@@ -266,20 +266,20 @@ private:
     mutable Poco::RWLock rw_lock;
 
     /// Actual size will be increased to match power of 2
-    const std::size_t size;
+    const size_t size;
 
     /// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
-    const std::size_t size_overlap_mask;
+    const size_t size_overlap_mask;
 
     /// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
-    static constexpr std::size_t max_collision_length = 10;
+    static constexpr size_t max_collision_length = 10;
 
     const UInt64 zero_cell_idx{getCellIdx(StringRef{})};
-    std::map<std::string, std::size_t> attribute_index_by_name;
+    std::map<std::string, size_t> attribute_index_by_name;
     mutable std::vector<Attribute> attributes;
     mutable std::vector<CellMetadata> cells{size};
     const bool key_size_is_fixed{dict_struct.isKeySizeFixed()};
-    std::size_t key_size{key_size_is_fixed ? dict_struct.getKeySize() : 0};
+    size_t key_size{key_size_is_fixed ? dict_struct.getKeySize() : 0};
     std::unique_ptr<ArenaWithFreeLists> keys_pool = key_size_is_fixed ? nullptr :
         std::make_unique<ArenaWithFreeLists>();
     std::unique_ptr<SmallObjectPool> fixed_size_keys_pool = key_size_is_fixed ?
@@ -288,10 +288,10 @@ private:
 
     mutable std::mt19937_64 rnd_engine;
 
-    mutable std::size_t bytes_allocated = 0;
-    mutable std::atomic<std::size_t> element_count{0};
-    mutable std::atomic<std::size_t> hit_count{0};
-    mutable std::atomic<std::size_t> query_count{0};
+    mutable size_t bytes_allocated = 0;
+    mutable std::atomic<size_t> element_count{0};
+    mutable std::atomic<size_t> hit_count{0};
+    mutable std::atomic<size_t> query_count{0};
 
     const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };

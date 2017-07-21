@@ -31,7 +31,7 @@ struct MergeTreeReadTask
      *    Specified in reverse order for MergeTreeThreadBlockInputStream's convenience of calling .pop_back(). */
     MarkRanges mark_ranges;
     /// for virtual `part_index` virtual column
-    std::size_t part_index_in_query;
+    size_t part_index_in_query;
     /// ordered list of column names used in this query, allows returning blocks with consistent ordering
     const Names & ordered_names;
     /// used to determine whether column should be filtered during PREWHERE or WHERE
@@ -50,12 +50,12 @@ struct MergeTreeReadTask
     std::experimental::optional<MergeTreeRangeReader> current_range_reader;
     /// the number of rows wasn't read by range_reader if condition in prewhere was false
     /// helps to skip graunule if all conditions will be aslo false
-    std::size_t number_of_rows_to_skip;
+    size_t number_of_rows_to_skip;
 
     bool isFinished() const { return mark_ranges.empty() && !current_range_reader; }
 
     MergeTreeReadTask(
-        const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const std::size_t part_index_in_query,
+        const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
         const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
         const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
         MergeTreeBlockSizePredictorPtr && size_predictor);

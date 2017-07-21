@@ -67,7 +67,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
 
 
 MergeTreeReadTask::MergeTreeReadTask(
-    const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const std::size_t part_index_in_query,
+    const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
     const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
     const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
     MergeTreeBlockSizePredictorPtr && size_predictor)

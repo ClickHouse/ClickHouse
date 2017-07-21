@@ -3,6 +3,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 
@@ -39,6 +40,12 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
     if (const ASTIdentifier * ident = typeid_cast<const ASTIdentifier *>(ast.get()))
     {
         return get(ident->name, {});
+    }
+
+    if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(ast.get()))
+    {
+        if (lit->value.isNull())
+            return get("Null", {});
     }
 
     throw Exception("Unexpected AST element for data type.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

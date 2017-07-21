@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/randomSeed.h>
@@ -182,7 +183,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         auto col_to = std::make_shared<ColumnVector<ToType>>();
-        block.safeGetByPosition(result).column = col_to;
+        block.getByPosition(result).column = col_to;
 
         typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
 
@@ -235,7 +236,7 @@ public:
             value = vec_to[0];
         }
 
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(block.rows(), value);
+        block.getByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(block.rows(), toField(value));
     }
 };
 

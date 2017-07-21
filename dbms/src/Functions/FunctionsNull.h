@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/IDataType.h>
 #include <Core/ColumnNumbers.h>
 

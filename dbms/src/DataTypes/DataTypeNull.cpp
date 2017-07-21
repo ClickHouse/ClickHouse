@@ -7,7 +7,8 @@
 #include <DataTypes/DataTypeFactory.h>
 
 #include <Columns/IColumn.h>
-#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -27,23 +28,18 @@ void DataTypeNull::serializeBinaryBulk(const IColumn & column, WriteBuffer & ost
 
 void DataTypeNull::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
-    ColumnNull & null_col = static_cast<ColumnNull &>(column);
-
     istr.ignore(sizeof(UInt8) * limit);
-    null_col.insertRangeFrom(ColumnNull{0, Null()}, 0, limit);
+
+    for (size_t i = 0; i < limit; ++i)
+        column.insertDefault();
 }
 
 ColumnPtr DataTypeNull::createColumn() const
 {
-    return std::make_shared<ColumnNull>(0, Null());
+    return std::make_shared<ColumnNullable>(std::make_shared<ColumnUInt8>(), std::make_shared<ColumnUInt8>());
 }
 
-ColumnPtr DataTypeNull::createConstColumn(size_t size, const Field & field) const
-{
-    return std::make_shared<ColumnNull>(size, Null());
-}
-
-size_t DataTypeNull::getSizeOfField() const        /// TODO Check where it is needed.
+size_t DataTypeNull::getSizeOfField() const
 {
     /// NULL has the size of the smallest non-null type.
     return sizeof(UInt8);

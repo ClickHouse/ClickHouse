@@ -11,6 +11,7 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <Common/VirtualColumnUtils.h>
 #include <Common/typeid_cast.h>
@@ -168,7 +169,7 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
     ColumnPtr filter_column = block.getByName(filter_column_name).column;
     if (auto converted = filter_column->convertToFullColumnIfConst())
         filter_column = converted;
-    const IColumn::Filter & filter = dynamic_cast<ColumnUInt8 &>(*filter_column).getData();
+    const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
 
     if (countBytesInFilter(filter) == 0)
         return false;
