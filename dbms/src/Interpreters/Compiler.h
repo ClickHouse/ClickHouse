@@ -48,14 +48,17 @@ public:
     }
 
     template <typename Func>
-    Func get(const std::string & name)
+    Func get(const std::string & name, bool no_throw = false)
     {
         dlerror();
 
         Func res = reinterpret_cast<Func>(dlsym(handle, name.c_str()));
 
-        if (char * error = dlerror())
+        if (char * error = dlerror()) {
+            if (no_throw)
+                return nullptr;
             throw Exception(std::string("Cannot dlsym: ") + error, ErrorCodes::CANNOT_DLSYM);
+        }
 
         return res;
     }
