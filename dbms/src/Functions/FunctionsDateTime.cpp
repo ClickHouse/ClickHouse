@@ -34,6 +34,9 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionYesterday>();
     factory.registerFunction<FunctionTimeSlot>();
     factory.registerFunction<FunctionTimeSlots>();
+    factory.registerFunction<FunctionToYYYYMM>();
+    factory.registerFunction<FunctionToYYYYMMDD>();
+    factory.registerFunction<FunctionToYYYYMMDDhhmmss>();
 }
 
 }

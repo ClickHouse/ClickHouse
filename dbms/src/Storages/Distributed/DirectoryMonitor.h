@@ -37,6 +37,7 @@ private:
     size_t min_batched_block_size_bytes = 0;
     String current_batch_file_path;
 
+    struct BatchHeader;
     struct Batch;
 
     size_t error_count{};

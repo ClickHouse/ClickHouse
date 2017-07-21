@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 template <class IteratorSrc, class IteratorDst>
-void parseHex(IteratorSrc __restrict src, IteratorDst __restrict dst, const size_t num_bytes)
+void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
 {
     size_t src_pos = 0;
     size_t dst_pos = 0;

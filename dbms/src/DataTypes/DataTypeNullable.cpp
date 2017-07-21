@@ -24,6 +24,8 @@ namespace ErrorCodes
 DataTypeNullable::DataTypeNullable(DataTypePtr nested_data_type_)
     : nested_data_type{nested_data_type_}
 {
+    if (!nested_data_type->canBeInsideNullable())
+        throw Exception("Nested type " + nested_data_type->getName() + " cannot be inside Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 void DataTypeNullable::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -234,17 +236,6 @@ ColumnPtr DataTypeNullable::createColumn() const
     return std::make_shared<ColumnNullable>(new_col, std::make_shared<ColumnUInt8>());
 }
 
-ColumnPtr DataTypeNullable::createConstColumn(size_t size, const Field & field) const
-{
-    if (field.isNull())
-        return std::make_shared<ColumnNull>(size, Null(), clone());
-
-    /// Actually we return non-const column, because we cannot create const column, corresponding to Nullable type, but with non-NULL value.
-    return std::make_shared<ColumnNullable>(
-        nested_data_type->createConstColumn(size, field)->convertToFullColumnIfConst(),
-        std::make_shared<ColumnUInt8>(size, 0));
-}
-
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -252,9 +243,6 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Nullable data type family must have exactly one argument - nested type", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
-
-    if (!nested_type->canBeInsideNullable())
-        throw Exception("Nested type " + nested_type->getName() + " cannot be inside Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return std::make_shared<DataTypeNullable>(nested_type);
 }

@@ -87,13 +87,17 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         if (!task.size_predictor)
             return max_block_size_rows;
 
-        size_t rows_to_read_for_block = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
-        size_t rows_to_read_for_max_size_column
-            = task.size_predictor->estimateNumRowsForMaxSizeColumn(preferred_max_column_in_block_size_bytes);
-        double filtration_ratio = std::max(min_filtration_ratio, 1.0 - task.size_predictor->filtered_rows_ratio);
-        size_t rows_to_read_for_max_size_column_with_filtration
-            = static_cast<size_t>(rows_to_read_for_max_size_column / filtration_ratio);
-        size_t rows_to_read = std::min(rows_to_read_for_block, rows_to_read_for_max_size_column_with_filtration);
+        size_t rows_to_read = std::max(index_granularity, task.size_predictor->estimateNumRows(preferred_block_size_bytes));
+
+        if (preferred_max_column_in_block_size_bytes)
+        {
+            size_t rows_to_read_for_max_size_column
+                = task.size_predictor->estimateNumRowsForMaxSizeColumn(preferred_max_column_in_block_size_bytes);
+            double filtration_ratio = std::max(min_filtration_ratio, 1.0 - task.size_predictor->filtered_rows_ratio);
+            size_t rows_to_read_for_max_size_column_with_filtration
+                = static_cast<size_t>(rows_to_read_for_max_size_column / filtration_ratio);
+            rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
+        }
 
         size_t unread_rows_in_current_granule = reader.unreadRowsInCurrentGranule();
         if (unread_rows_in_current_granule >= rows_to_read)
@@ -210,9 +214,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             /** If the filter is a constant (for example, it says PREWHERE 1),
               * then either return an empty block, or return the block unchanged.
               */
-            if (const auto column_const = typeid_cast<const ColumnConstUInt8 *>(observed_column.get()))
+            if (observed_column->isConst())
             {
-                if (!column_const->getData())
+                if (!static_cast<const ColumnConst &>(*observed_column).getValue<UInt8>())
                 {
                     if (pre_range_reader)
                     {
@@ -378,7 +382,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 /// Replace column with condition value from PREWHERE to a constant.
                 if (!task->remove_prewhere_column)
-                    res.getByName(prewhere_column).column = std::make_shared<ColumnConstUInt8>(rows, 1);
+                    res.getByName(prewhere_column).column = DataTypeUInt8().createConstColumn(rows, UInt64(1));
             }
             else
                 throw Exception{
@@ -449,18 +453,16 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
             if (virt_column_name == "_part")
             {
                 block.insert(ColumnWithTypeAndName{
-                    ColumnConst<String>{rows, task->data_part->name}.convertToFullColumn(),
+                    DataTypeString().createConstColumn(rows, task->data_part->name)->convertToFullColumnIfConst(),
                     std::make_shared<DataTypeString>(),
-                    virt_column_name
-                });
+                    virt_column_name});
             }
             else if (virt_column_name == "_part_index")
             {
                 block.insert(ColumnWithTypeAndName{
-                    ColumnConst<UInt64>{rows, task->part_index_in_query}.convertToFullColumn(),
+                    DataTypeUInt64().createConstColumn(rows, task->part_index_in_query)->convertToFullColumnIfConst(),
                     std::make_shared<DataTypeUInt64>(),
-                    virt_column_name
-                });
+                    virt_column_name});
             }
         }
     }

@@ -563,7 +563,7 @@ void parseUUID(const UInt8 * src36, UInt8 * dst16);
 void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 
 template<class IteratorSrc, class IteratorDst>
-void formatHex(IteratorSrc __restrict src, IteratorDst __restrict dst, const size_t num_bytes);
+void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 
 /// In YYYY-MM-DD format
 inline void readDateText(DayNum_t & date, ReadBuffer & buf)

@@ -4,7 +4,6 @@
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnConstAggregateFunction.h>
 
 #include <Common/typeid_cast.h>
 
@@ -249,10 +248,6 @@ ColumnPtr DataTypeAggregateFunction::createColumn() const
     return std::make_shared<ColumnAggregateFunction>(function);
 }
 
-ColumnPtr DataTypeAggregateFunction::createConstColumn(size_t size, const Field & field) const
-{
-    return std::make_shared<ColumnConstAggregateFunction>(size, field, clone());
-}
 
 /// Create empty state
 Field DataTypeAggregateFunction::getDefault() const

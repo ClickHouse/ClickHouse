@@ -221,7 +221,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
 
 
 BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
-    const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+    const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!dict_struct.key)
         throw Exception{"'key' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};

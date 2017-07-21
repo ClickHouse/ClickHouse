@@ -595,9 +595,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const Names & virt_columns,
     const Settings & settings) const
 {
-    const std::size_t min_marks_for_concurrent_read =
+    const size_t min_marks_for_concurrent_read =
         (settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
-    const std::size_t max_marks_to_use_cache =
+    const size_t max_marks_to_use_cache =
         (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
 
     /// Count marks for each part.
@@ -630,10 +630,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
-        const std::size_t total_rows = data.index_granularity * sum_marks;
+        const size_t total_rows = data.index_granularity * sum_marks;
         LOG_TRACE(log, "Reading approx. " << total_rows << " rows");
 
-        for (std::size_t i = 0; i < num_streams; ++i)
+        for (size_t i = 0; i < num_streams; ++i)
         {
             res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
                 i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes,

@@ -245,8 +245,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 
     if (has_null)
     {
-        /// Special case: an array of NULLs is represented as an array
-        /// of Nullable(UInt8) because ColumnNull is actually ColumnConst<Null>.
+        /// Special case: an array of NULLs is represented as an array of Nullable(UInt8).
         return wrap_into_array(std::make_shared<DataTypeUInt8>());
     }
 
