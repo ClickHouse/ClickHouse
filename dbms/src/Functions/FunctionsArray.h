@@ -346,7 +346,7 @@ public:
         const PaddedPODArray<UInt8> * null_map_item)
     {
         /// Processing is split into 4 cases.
-        if (!null_map_data && null_map_item)
+        if (!null_map_data && !null_map_item)
             vectorCase1(data, offsets, value, result);
         else if (!null_map_data && null_map_item)
             vectorCase2(data, offsets, value, result, *null_map_item);
