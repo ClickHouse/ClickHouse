@@ -4,17 +4,17 @@ cmake_minimum_required (VERSION 2.8)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # Require at least gcc 5
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
-        message (FATAL_ERROR "GCC version must be at least 5! For example, if GCC 5 is available under gcc-5, g++-5 names, do the following: export CC=gcc-5 CXX=g++-5; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
+    # Require at least gcc 6
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
+        message (FATAL_ERROR "GCC version must be at least 6! For example, if GCC 6 is available under gcc-6, g++-6 names, do the following: export CC=gcc-6 CXX=g++-6; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Require at least clang 3.8
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
-        message (FATAL_ERROR "Clang version must be at least 3.8!")
+    # Require at least clang 4
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4)
+        message (FATAL_ERROR "Clang version must be at least 4!")
     endif ()
 else ()
-    message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 3.8+ and GCC 5+.")
+    message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 4+ and GCC 6+.")
 endif ()
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
