@@ -47,12 +47,6 @@ public:
     {
     }
 
-    Chunk(const Chunk &) = delete;
-    Chunk & operator=(const Chunk &) = delete;
-
-    Chunk(Chunk &&) = default;
-    Chunk & operator=(Chunk &&) = default;
-
     inline TType * data() const
     {
         return pos_begin;
@@ -109,12 +103,6 @@ public:
     {
     }
 
-    ArraySource(const ArraySource &) = delete;
-    ArraySource & operator=(const ArraySource &) = delete;
-
-    ArraySource(ArraySource &&) = default;
-    ArraySource & operator=(ArraySource &&) = default;
-
     void next() override
     {
         prev_offset = offsets[i];
@@ -162,12 +150,6 @@ public:
     {
     }
 
-    ConstArraySource(const ConstArraySource &) = delete;
-    ConstArraySource & operator=(const ConstArraySource &) = delete;
-
-    ConstArraySource(ConstArraySource &&) = default;
-    ConstArraySource & operator=(ConstArraySource &&) = default;
-
     void next() override
     {
     }
@@ -196,7 +178,7 @@ public:
     }
 
 private:
-    const Array & array;
+    Array array;
     mutable std::unique_ptr<PaddedPODArray<TResult>> converted;
 };
 
@@ -213,12 +195,6 @@ public:
         offsets.resize(offsets_size_);
         data.reserve(data_size_);
     }
-
-    ArraySink(const ArraySink &) = delete;
-    ArraySink & operator=(const ArraySink &) = delete;
-
-    ArraySink(ArraySink &&) = default;
-    ArraySink & operator=(ArraySink &&) = default;
 
     void store(const Chunk<TResult> & chunk)
     {

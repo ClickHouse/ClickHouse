@@ -525,7 +525,7 @@ public:
 
         if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get()))
         {
-            const Array & src_arr = col_const_arr->getValue<Array>();
+            Array src_arr = col_const_arr->getValue<Array>();
             String dst_str;
             for (size_t i = 0, size = src_arr.size(); i < size; ++i)
             {

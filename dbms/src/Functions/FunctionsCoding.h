@@ -127,7 +127,7 @@ public:
                                 ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto & data_in = col_in->getValue<String>();
+            String data_in = col_in->getValue<String>();
 
             char buf[IPV6_MAX_TEXT_LENGTH + 1];
             char * dst = buf;
@@ -276,7 +276,7 @@ public:
                                 " of function " + getName(),
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto & data_in = col_in->getValue<String>();
+            String data_in = col_in->getValue<String>();
 
             char buf[IPV6_MAX_TEXT_LENGTH + 1];
             char * dst = buf;
@@ -1236,7 +1236,7 @@ public:
                                 ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto & data_in = col_in->getValue<String>();
+            String data_in = col_in->getValue<String>();
 
             char buf[uuid_text_length];
             formatUUID(reinterpret_cast<const UInt8 *>(data_in.data()), reinterpret_cast<UInt8 *>(buf));
@@ -1369,7 +1369,7 @@ public:
         }
         else if (const auto col_in = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
-            const auto & data_in = col_in->getValue<String>();
+            String data_in = col_in->getValue<String>();
 
             String res;
 

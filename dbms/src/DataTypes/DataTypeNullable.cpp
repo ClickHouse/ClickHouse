@@ -24,6 +24,8 @@ namespace ErrorCodes
 DataTypeNullable::DataTypeNullable(DataTypePtr nested_data_type_)
     : nested_data_type{nested_data_type_}
 {
+    if (!nested_data_type->canBeInsideNullable())
+        throw Exception("Nested type " + nested_data_type->getName() + " cannot be inside Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 void DataTypeNullable::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -241,9 +243,6 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Nullable data type family must have exactly one argument - nested type", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
-
-    if (!nested_type->canBeInsideNullable())
-        throw Exception("Nested type " + nested_type->getName() + " cannot be inside Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return std::make_shared<DataTypeNullable>(nested_type);
 }

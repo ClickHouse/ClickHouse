@@ -874,7 +874,7 @@ private:
         if (!col_array)
             return false;
 
-        const Array & arr = col_array->getValue<Array>();
+        Array arr = col_array->getValue<Array>();
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
         if (item_arg->isConst())

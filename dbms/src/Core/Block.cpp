@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeArray.h>
@@ -399,16 +400,7 @@ void Block::checkNestedArraysOffsets() const
 
     for (const auto & elem : data)
     {
-        const IColumn * observed_col;
-        if (elem.column->isNullable())
-        {
-            const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
-            observed_col = nullable_col.getNestedColumn().get();
-        }
-        else
-            observed_col = elem.column.get();
-
-        if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(observed_col))
+        if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(elem.column.get()))
         {
             String name = DataTypeNested::extractNestedTableName(elem.name);
 
@@ -433,16 +425,7 @@ void Block::optimizeNestedArraysOffsets()
 
     for (auto & elem : data)
     {
-        IColumn * observed_col;
-        if (elem.column->isNullable())
-        {
-            auto & nullable_col = static_cast<ColumnNullable &>(*elem.column);
-            observed_col = nullable_col.getNestedColumn().get();
-        }
-        else
-            observed_col = elem.column.get();
-
-        if (ColumnArray * column_array = typeid_cast<ColumnArray *>(observed_col))
+        if (ColumnArray * column_array = typeid_cast<ColumnArray *>(elem.column.get()))
         {
             String name = DataTypeNested::extractNestedTableName(elem.name);
 
@@ -473,7 +456,7 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
         const IDataType & lhs_type = *lhs.safeGetByPosition(i).type;
         const IDataType & rhs_type = *rhs.safeGetByPosition(i).type;
 
-        if (lhs_type.equals(rhs_type))
+        if (!lhs_type.equals(rhs_type))
             return false;
     }
 
@@ -604,6 +587,12 @@ void Block::unshareColumns()
                 null_map = null_map->clone();
 
             ColumnPtr & nested = nullable->getNestedColumn();
+            if (!pointers.insert(nested.get()).second)
+                nested = nested->clone();
+        }
+        else if (ColumnConst * col_const = typeid_cast<ColumnConst *>(elem.column.get()))
+        {
+            ColumnPtr & nested = col_const->getDataColumnPtr();
             if (!pointers.insert(nested.get()).second)
                 nested = nested->clone();
         }

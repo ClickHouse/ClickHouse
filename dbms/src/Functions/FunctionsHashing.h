@@ -275,7 +275,7 @@ public:
         }
         else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
-            const auto & data = col_from->getValue<String>();
+            String data = col_from->getValue<String>();
 
             String hash(Impl::length, 0);
             Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));

@@ -22,71 +22,35 @@ extern const int ILLEGAL_COLUMN;
 namespace Conditional
 {
 
-const ColumnPtr CondSource::null_materialized_col;
-const PaddedPODArray<UInt8> CondSource::empty_null_map;
-
-CondSource::CondSource(const Block & block, const ColumnNumbers & args, size_t i)
-    : materialized_col{initMaterializedCol(block, args, i)},
-    data_array{initDataArray(block, args, i, materialized_col)},
-    null_map{initNullMap(block, args, i)}
+static const ColumnPtr initMaterializedCol(const Block & block, const ColumnNumbers & args, size_t i)
 {
-}
+    ColumnPtr col = block.getByPosition(args[i]).column;
 
-const ColumnPtr CondSource::initMaterializedCol(const Block & block, const ColumnNumbers & args, size_t i)
-{
-    const ColumnPtr & col = block.getByPosition(args[i]).column;
-
-    const IColumn * observed_col;
+    if (col->isConst())
+        col = col->convertToFullColumnIfConst();
 
     if (col->isNullable())
     {
         const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-        observed_col = nullable_col.getNestedColumn().get();
+        return nullable_col.getNestedColumn();
     }
     else
-        observed_col = col.get();
-
-    const auto * const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(observed_col);
-
-    if (const_col)
-        return const_col->convertToFullColumn();
-    else
-        return null_materialized_col;
+        return col;
 }
 
-const PaddedPODArray<UInt8> & CondSource::initDataArray(const Block & block, const ColumnNumbers & args,
-    size_t i, const ColumnPtr & materialized_col_)
+static const PaddedPODArray<UInt8> & initDataArray(const Block & block, const ColumnNumbers & args,
+    size_t i, const ColumnPtr & materialized_col)
 {
-    const IColumn * source_col;
-
-    if (materialized_col_)
-        source_col = materialized_col_.get();
-    else
-    {
-        const ColumnPtr & col = block.getByPosition(args[i]).column;
-        source_col = col.get();
-    }
-
-    const IColumn * observed_col;
-
-    if (source_col->isNullable())
-    {
-        const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*source_col);
-        observed_col = nullable_col.getNestedColumn().get();
-    }
-    else
-        observed_col = source_col;
-
-    auto vec_col = checkAndGetColumn<ColumnUInt8>(observed_col);
+    auto vec_col = checkAndGetColumn<ColumnUInt8>(materialized_col.get());
 
     if (!vec_col)
         throw CondException{CondErrorCodes::COND_SOURCE_ILLEGAL_COLUMN,
-            source_col->getName(), toString(i)};
+            materialized_col->getName(), toString(i)};
 
     return vec_col->getData();
 }
 
-const PaddedPODArray<UInt8> & CondSource::initNullMap(const Block & block, const ColumnNumbers & args, size_t i)
+static const PaddedPODArray<UInt8> & initNullMap(const Block & block, const ColumnNumbers & args, size_t i)
 {
     const ColumnPtr & col = block.getByPosition(args[i]).column;
     if (col->isNullable())
@@ -98,7 +62,18 @@ const PaddedPODArray<UInt8> & CondSource::initNullMap(const Block & block, const
         return content.getData();
     }
     else
+    {
+        static const PaddedPODArray<UInt8> empty_null_map;
         return empty_null_map;
+    }
+}
+
+
+CondSource::CondSource(const Block & block, const ColumnNumbers & args, size_t i)
+    : materialized_col{initMaterializedCol(block, args, i)},
+    data_array{initDataArray(block, args, i, materialized_col)},
+    null_map{initNullMap(block, args, i)}
+{
 }
 
 }

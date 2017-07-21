@@ -48,12 +48,6 @@ struct Chunk
     {
     }
 
-    Chunk(const Chunk &) = delete;
-    Chunk & operator=(const Chunk &) = delete;
-
-    Chunk(Chunk &&) = default;
-    Chunk & operator=(Chunk &&) = default;
-
     VarCallback var_callback;
 };
 
@@ -87,12 +81,6 @@ public:
         index{index_}
     {
     }
-
-    VarStringArraySource(const VarStringArraySource &) = delete;
-    VarStringArraySource & operator=(const VarStringArraySource &) = delete;
-
-    VarStringArraySource(VarStringArraySource &&) = default;
-    VarStringArraySource & operator=(VarStringArraySource &&) = default;
 
     ChunkType getType() const override
     {
@@ -178,12 +166,6 @@ public:
             data_size += s.get<const String &>().size() + 1;
     }
 
-    ConstStringArraySource(const ConstStringArraySource &) = delete;
-    ConstStringArraySource & operator=(const ConstStringArraySource &) = delete;
-
-    ConstStringArraySource(ConstStringArraySource &&) = default;
-    ConstStringArraySource & operator=(ConstStringArraySource &&) = default;
-
     ChunkType getType() const override
     {
         return ChunkType::CONSTANT;
@@ -214,7 +196,7 @@ public:
     }
 
 private:
-    const Array & data;
+    Array data;
     size_t data_size;
     size_t index;
 
@@ -260,12 +242,6 @@ public:
         string_offsets.reserve(offsets_size_);
         data.reserve(data_size_);
     }
-
-    VarStringArraySink(const VarStringArraySink &) = delete;
-    VarStringArraySink & operator=(const VarStringArraySink &) = delete;
-
-    VarStringArraySink(VarStringArraySink &&) = default;
-    VarStringArraySink & operator=(VarStringArraySink &&) = default;
 
     void store(const Chunk & chunk)
     {

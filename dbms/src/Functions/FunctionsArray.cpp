@@ -1104,6 +1104,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         const auto & input_type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
         const auto & tmp_ret_type = static_cast<const DataTypeNullable &>(*block.getByPosition(result).type).getNestedType();
 
+        Array const_array;
         if (col_array)
         {
             const auto & nullable_col = static_cast<const ColumnNullable &>(col_array->getData());
@@ -1141,7 +1142,8 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
                 }
             };
 
-            builder.initSource(col_const_array->getValue<Array>());
+            const_array = col_const_array->getValue<Array>();
+            builder.initSource(const_array);
         }
 
         perform(source_block, {0, 1}, 2, builder);
@@ -2764,7 +2766,7 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
 
     if (!aggregate_function)
     {
-        const String & aggregate_function_name_with_params = aggregate_function_name_column->getValue<String>();
+        String aggregate_function_name_with_params = aggregate_function_name_column->getValue<String>();
 
         if (aggregate_function_name_with_params.empty())
             throw Exception("First argument for function " + getName() + " (name of aggregate function) cannot be empty.",

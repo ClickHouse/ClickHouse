@@ -316,7 +316,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                 ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
         if (const auto id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
@@ -363,7 +363,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                 ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto key_col_with_type = block.getByPosition(arguments[2]);
         if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
@@ -407,7 +407,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                 ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
         const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
@@ -572,7 +572,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                     ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
         if (const auto id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
@@ -611,7 +611,7 @@ private:
             block.getByPosition(result).column = out;
 
             const auto & ids = id_col->getData();
-            const auto & def = default_col->getValue<String>();
+            String def = default_col->getValue<String>();
 
             dictionary->getString(attr_name, ids, def, out.get());
         }
@@ -644,7 +644,7 @@ private:
             const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
             auto out = std::make_unique<ColumnString>();
 
-            const auto & def = default_col->getValue<String>();
+            String def = default_col->getValue<String>();
 
             dictionary->getString(attr_name, ids, def, out.get());
 
@@ -670,7 +670,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                     ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto key_col_with_type = block.getByPosition(arguments[2]);
         const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);
@@ -690,7 +690,7 @@ private:
         }
         else if (const auto default_col = checkAndGetColumnConstStringOrFixedString(default_col_untyped))
         {
-            const auto & def = default_col->getValue<String>();
+            String def = default_col->getValue<String>();
             dict->getString(attr_name, key_columns, key_types, def, out.get());
         }
         else
@@ -869,7 +869,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                 ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
         if (const auto id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
@@ -920,7 +920,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                 ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto key_col_with_type = block.getByPosition(arguments[2]);
         if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
@@ -966,7 +966,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                 ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
         const auto date_col_untyped = block.getByPosition(arguments[3]).column.get();
@@ -1170,7 +1170,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                 ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
         if (const auto id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
@@ -1274,7 +1274,7 @@ private:
                 "Second argument of function " + getName() + " must be a constant string",
                 ErrorCodes::ILLEGAL_COLUMN};
 
-        const auto & attr_name = attr_name_col->getValue<String>();
+        String attr_name = attr_name_col->getValue<String>();
 
         const auto key_col_with_type = block.getByPosition(arguments[2]);
         const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);

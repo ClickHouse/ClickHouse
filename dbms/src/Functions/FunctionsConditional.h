@@ -1749,7 +1749,6 @@ namespace Conditional
 {
 
 class NullMapBuilder;
-class CondException;
 
 }
 

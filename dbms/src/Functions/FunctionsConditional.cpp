@@ -9,7 +9,6 @@
 #include <Functions/Conditional/NumericPerformer.h>
 #include <Functions/Conditional/StringEvaluator.h>
 #include <Functions/Conditional/StringArrayEvaluator.h>
-#include <Functions/Conditional/CondException.h>
 #include <Columns/ColumnNullable.h>
 
 namespace DB
@@ -297,7 +296,6 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
 {
     /// Check that all the branches have the same type. Moreover
     /// some or all these branches may be null.
-    std::string first_type_name;
     DataTypePtr type;
 
     size_t else_arg = Conditional::elseArg(args);
@@ -305,30 +303,19 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
     {
         if (!block.getByPosition(args[i]).type->isNull())
         {
-            const auto & name = block.getByPosition(args[i]).type->getName();
-            if (first_type_name.empty())
-            {
-                first_type_name = name;
+            if (!type)
                 type = block.getByPosition(args[i]).type;
-            }
-            else
-            {
-                if (name != first_type_name)
-                    return false;
-            }
+            else if (!type->equals(*block.getByPosition(args[i]).type))
+                return false;
         }
     }
 
     if (!block.getByPosition(args[else_arg]).type->isNull())
     {
-        if (first_type_name.empty())
+        if (!type)
             type = block.getByPosition(args[else_arg]).type;
-        else
-        {
-            const auto & name = block.getByPosition(args[else_arg]).type->getName();
-            if (name != first_type_name)
-                return false;
-        }
+        else if (!type->equals(*block.getByPosition(args[else_arg]).type))
+            return false;
     }
 
     size_t row_count = block.rows();

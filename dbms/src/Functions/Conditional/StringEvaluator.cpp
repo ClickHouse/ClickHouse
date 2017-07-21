@@ -68,17 +68,13 @@ using StringSources = std::vector<StringSourcePtr>;
 class ConstStringSource final : public StringSource
 {
 public:
-    ConstStringSource(const std::string & str_, size_t size_, size_t index_)
-        : str{str_}, size{size_}, index{index_},
-        type{static_cast<UInt64>(StringType::CONSTANT | ((size > 0) ? StringType::FIXED : 0))}
+    ConstStringSource(StringRef str_, size_t index_, bool is_fixed)
+        : str{str_}, index{index_},
+        type{StringType::CONSTANT}
     {
+        if (is_fixed)
+            type |= StringType::FIXED;
     }
-
-    ConstStringSource(const ConstStringSource &) = delete;
-    ConstStringSource & operator=(const ConstStringSource &) = delete;
-
-    ConstStringSource(ConstStringSource &&) = default;
-    ConstStringSource & operator=(ConstStringSource &&) = default;
 
     UInt64 getType() const override
     {
@@ -92,20 +88,20 @@ public:
     StringChunk get() const override
     {
         StringChunk chunk;
-        chunk.pos_begin = reinterpret_cast<const unsigned char *>(str.data());
-        chunk.pos_end = chunk.pos_begin + str.size();
+        chunk.pos_begin = reinterpret_cast<const StringChunk::value_type *>(str.data);
+        chunk.pos_end = chunk.pos_begin + str.size;
         chunk.type = type;
         return chunk;
     }
 
     inline size_t getSize() const override
     {
-        return size;
+        return str.size;
     }
 
     inline size_t getDataSize() const override
     {
-        return str.length();
+        return str.size;
     }
 
     inline size_t getIndex() const override
@@ -114,8 +110,7 @@ public:
     }
 
 private:
-    const std::string & str;
-    size_t size;
+    StringRef str;
     size_t index;
     UInt64 type;
 };
@@ -129,12 +124,6 @@ public:
         : data{data_}, size{size_}, index{index_}
     {
     }
-
-    FixedStringSource(const FixedStringSource &) = delete;
-    FixedStringSource & operator=(const FixedStringSource &) = delete;
-
-    FixedStringSource(FixedStringSource &&) = default;
-    FixedStringSource & operator=(FixedStringSource &&) = default;
 
     UInt64 getType() const override
     {
@@ -188,12 +177,6 @@ public:
         : data{data_}, offsets{offsets_}, index{index_}
     {
     }
-
-    VarStringSource(const VarStringSource &) = delete;
-    VarStringSource & operator=(const VarStringSource &) = delete;
-
-    VarStringSource(VarStringSource &&) = default;
-    VarStringSource & operator=(VarStringSource &&) = default;
 
     UInt64 getType() const override
     {
@@ -257,12 +240,6 @@ public:
         data.reserve(data_size_);
     }
 
-    FixedStringSink(const FixedStringSink &) = delete;
-    FixedStringSink & operator=(const FixedStringSink &) = delete;
-
-    FixedStringSink(FixedStringSink &&) = default;
-    FixedStringSink & operator=(FixedStringSink &&) = default;
-
     void store(const StringChunk & chunk) override
     {
         if (!(chunk.type & StringType::FIXED))
@@ -295,12 +272,6 @@ public:
         offsets.resize(offsets_size_);
         data.reserve(data_size_);
     }
-
-    VarStringSink(const VarStringSink &) = delete;
-    VarStringSink & operator=(const VarStringSink &) = delete;
-
-    VarStringSink(VarStringSink &&) = default;
-    VarStringSink & operator=(VarStringSink &&) = delete;
 
     void store(const StringChunk & chunk) override
     {
@@ -355,8 +326,6 @@ CondSources createConds(const Block & block, const ColumnNumbers & args)
     return conds;
 }
 
-const std::string null_string;
-
 
 /// Create accessors for branch values.
 bool createStringSources(StringSources & sources, const Block & block,
@@ -372,23 +341,14 @@ bool createStringSources(StringSources & sources, const Block & block,
 
         StringSourcePtr source;
 
-        if (col->isNull())
-            source = std::make_unique<ConstStringSource>(null_string, 1, args[i]);
-        else if (var_col)
+        if (var_col)
             source = std::make_unique<VarStringSource>(var_col->getChars(),
                 var_col->getOffsets(), args[i]);
         else if (fixed_col)
             source = std::make_unique<FixedStringSource>(fixed_col->getChars(),
                 fixed_col->getN(), args[i]);
         else if (const_col)
-        {
-            /// If we actually have a fixed string, get its capacity.
-            size_t size = 0;
-            if (auto col_const_fixed = checkAndGetColumn<ColumnFixedString>(&const_col->getDataColumn()))
-                size = col_const_fixed->getN();
-
-            source = std::make_unique<ConstStringSource>(const_col->getValue<String>(), size, args[i]);
-        }
+            source = std::make_unique<ConstStringSource>(const_col->getDataAt(0), args[i], checkColumnConst<ColumnFixedString>(col));
         else
             return false;
 

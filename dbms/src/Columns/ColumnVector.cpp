@@ -233,8 +233,6 @@ ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t lim
 template <typename T>
 ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets_t & offsets) const
 {
-    std::cerr << "size: " << data.size() << ", offsets size: " << offsets.size() << "\n";
-
     size_t size = data.size();
     if (size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);

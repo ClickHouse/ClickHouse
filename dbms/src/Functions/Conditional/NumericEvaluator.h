@@ -65,12 +65,6 @@ public:
         data = const_col->template getValue<TType>();
     }
 
-    NumericSourceImpl(const NumericSourceImpl &) = delete;
-    NumericSourceImpl & operator=(const NumericSourceImpl &) = delete;
-
-    NumericSourceImpl(NumericSourceImpl &&) = default;
-    NumericSourceImpl & operator=(NumericSourceImpl &&) = default;
-
     TResult get(size_t i) const override
     {
         return static_cast<TResult>(data);
@@ -88,12 +82,6 @@ public:
         : data_array{initDataArray(block, args, br)}
     {
     }
-
-    NumericSourceImpl(const NumericSourceImpl &) = delete;
-    NumericSourceImpl & operator=(const NumericSourceImpl &) = delete;
-
-    NumericSourceImpl(NumericSourceImpl &&) = default;
-    NumericSourceImpl & operator=(NumericSourceImpl &&) = default;
 
     TResult get(size_t i) const override
     {

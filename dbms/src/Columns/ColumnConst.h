@@ -63,7 +63,7 @@ public:
 
     bool isNullable() const override
     {
-        return data->isNullable();
+        return false;
     }
 
     bool isNull() const override
@@ -247,6 +247,7 @@ public:
 
     IColumn & getDataColumn() { return *data; }
     const IColumn & getDataColumn() const { return *data; }
+    ColumnPtr & getDataColumnPtr() { return data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
 
     Field getField() const { return getDataColumn()[0]; }

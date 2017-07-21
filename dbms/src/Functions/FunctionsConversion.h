@@ -642,7 +642,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
         }
         else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
         {
-            const String & s = col_from->getValue<String>();
+            String s = col_from->getValue<String>();
 
             size_t bytes_to_copy = s.size();
             while (bytes_to_copy > 0 && s[bytes_to_copy - 1] == 0)
@@ -942,7 +942,7 @@ public:
                 throw Exception("String too long for type FixedString(" + toString(n) + ")",
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
 
-            auto resized_string = column_const->getValue<String>();
+            String resized_string = column_const->getValue<String>();
             resized_string.resize(n);
 
             block.getByPosition(result).column = DataTypeFixedString(n).createConstColumn(

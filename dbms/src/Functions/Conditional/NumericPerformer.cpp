@@ -1,6 +1,5 @@
 #include <Functions/Conditional/NumericPerformer.h>
 #include <Functions/Conditional/NullMapBuilder.h>
-#include <Functions/Conditional/CondException.h>
 #include <Functions/Conditional/ArgsInfo.h>
 #include <Functions/Conditional/NumericEvaluator.h>
 #include <Functions/Conditional/ArrayEvaluator.h>
@@ -50,57 +49,24 @@ protected:
     {
         const IColumn * col = block.getByPosition(args[index]).column.get();
 
-        const ColumnVector<TType> * vec_col = nullptr;
-        const ColumnConst * const_col = nullptr;
-
-        const ColumnArray * arr_col = checkAndGetColumn<ColumnArray>(col);
-        const ColumnVector<TType> * arr_vec_col = nullptr;
-        const ColumnConst * arr_const_col = checkAndGetColumnConst<ColumnArray>(col);
-
         Branch branch;
+        branch.is_const = col->isConst();
 
-        vec_col = checkAndGetColumn<ColumnVector<TType>>(col);
-        if (vec_col)
-            branch.is_const = false;
-        else
+        if (checkColumn<ColumnVector<TType>>(col) || checkColumnConst<ColumnVector<TType>>(col))
         {
-            const_col = checkAndGetColumnConst<ColumnVector<TType>>(col);
-            if (const_col)
-                branch.is_const = true;
-            else
-            {
-                if (arr_col)
-                {
-                    arr_vec_col = checkAndGetColumn<ColumnVector<TType>>(&arr_col->getData());
-                    if (arr_vec_col)
-                        branch.is_const = false;
-                    else
-                        return false;
-                }
-                else if (arr_const_col)
-                {
-                    if (!checkColumn<ColumnVector<TType>>(&static_cast<const ColumnArray &>(arr_const_col->getDataColumn()).getData()))
-                        return false;
-
-                    branch.is_const = true;
-                }
-                else
-                    return false;
-            }
+            branch.category = Category::NUMERIC;
         }
+        else if ((branch.is_const && checkColumnConst<ColumnArray>(col)
+                && checkColumn<ColumnVector<TType>>(&static_cast<const ColumnArray &>(static_cast<const ColumnConst *>(col)->getDataColumn()).getData()))
+            || (!branch.is_const && checkColumn<ColumnArray>(col) && checkColumn<ColumnVector<TType>>(&static_cast<const ColumnArray &>(*col).getData())))
+        {
+            branch.category = Category::NUMERIC_ARRAY;
+        }
+        else
+            return false;
 
         branch.index = index;
         branch.type = DataTypeTraits::DataTypeFromFieldTypeOrError<TType>::getDataType();
-
-        std::cerr << __PRETTY_FUNCTION__ << "\n";
-
-        if (vec_col || const_col)
-            branch.category = Category::NUMERIC;
-        else if (arr_vec_col || arr_const_col)
-            branch.category = Category::NUMERIC_ARRAY;
-        else
-            throw Exception{"Unexpected type in multiIf function", ErrorCodes::LOGICAL_ERROR};
-
         branches.push_back(branch);
 
         return true;
