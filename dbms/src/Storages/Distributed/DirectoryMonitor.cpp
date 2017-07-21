@@ -5,6 +5,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/SipHash.h>
 #include <Interpreters/Context.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -234,6 +235,41 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
     LOG_TRACE(log, "Finished processing `" << file_path << '`');
 }
 
+struct StorageDistributedDirectoryMonitor::BatchHeader
+{
+    String query;
+    Block sample_block;
+
+    BatchHeader(String query_, Block sample_block_)
+        : query(std::move(query_))
+        , sample_block(std::move(sample_block_))
+    {
+    }
+
+    bool operator==(const BatchHeader & other) const
+    {
+        return query == other.query && blocksHaveEqualStructure(sample_block, other.sample_block);
+    }
+
+    struct Hash
+    {
+        size_t operator()(const BatchHeader & batch_header) const
+        {
+            SipHash hash_state;
+            hash_state.update(batch_header.query.data(), batch_header.query.size());
+
+            size_t num_columns = batch_header.sample_block.columns();
+            for (size_t i = 0; i < num_columns; ++i)
+            {
+                const String & type_name = batch_header.sample_block.getByPosition(i).type->getName();
+                hash_state.update(type_name.data(), type_name.size());
+            }
+
+            return hash_state.get64();
+        }
+    };
+};
+
 struct StorageDistributedDirectoryMonitor::Batch
 {
     std::vector<UInt64> file_indices;
@@ -333,7 +369,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         batch.send(/* save = */ false, files);
     }
 
-    std::unordered_map<String, Batch> query_to_batch;
+    std::unordered_map<BatchHeader, Batch, BatchHeader::Hash> header_to_batch;
 
     for (const auto & file : files)
     {
@@ -350,13 +386,12 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         String insert_query;
         readStringBinary(insert_query, in);
 
-        Batch & batch = query_to_batch.try_emplace(insert_query, *this).first->second;
-
         CompressedReadBuffer decompressing_in(in);
         NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
 
         size_t total_rows = 0;
         size_t total_bytes = 0;
+        Block sample_block;
 
         block_in.readPrefix();
         try
@@ -366,6 +401,9 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
             {
                 total_rows += block.rows();
                 total_bytes += block.bytes();
+
+                if (!sample_block)
+                    sample_block = block.cloneEmpty();
             }
         }
         catch (const Exception & e)
@@ -380,6 +418,9 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         }
         block_in.readSuffix();
 
+        BatchHeader batch_header(std::move(insert_query), std::move(sample_block));
+        Batch & batch = header_to_batch.try_emplace(batch_header, *this).first->second;
+
         batch.file_indices.push_back(file_idx);
         batch.total_rows += total_rows;
         batch.total_bytes += total_bytes;
@@ -388,7 +429,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
             batch.send(/* save = */ true, files);
     }
 
-    for (auto & kv : query_to_batch)
+    for (auto & kv : header_to_batch)
     {
         Batch & batch = kv.second;
         batch.send(/* save = */ true, files);

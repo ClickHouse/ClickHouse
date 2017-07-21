@@ -66,10 +66,7 @@ public:
         return false;
     }
 
-    bool isNull() const override
-    {
-        return data->isNullable() && (*data)[0].isNull();
-    }
+    bool isNull() const override;
 
     bool isFixed() const override
     {

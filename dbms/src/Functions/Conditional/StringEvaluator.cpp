@@ -121,7 +121,7 @@ class FixedStringSource final : public StringSource
 {
 public:
     FixedStringSource(const ColumnFixedString::Chars_t & data_, size_t size_, size_t index_)
-        : data{data_}, size{size_}, index{index_}
+        : data(data_), size(size_), index(index_)
     {
     }
 
@@ -174,7 +174,7 @@ class VarStringSource final : public StringSource
 public:
     VarStringSource(const ColumnString::Chars_t & data_,
         const ColumnString::Offsets_t & offsets_, size_t index_)
-        : data{data_}, offsets{offsets_}, index{index_}
+        : data(data_), offsets(offsets_), index(index_)
     {
     }
 
@@ -235,7 +235,7 @@ class FixedStringSink : public StringSink
 {
 public:
     FixedStringSink(ColumnFixedString::Chars_t & data_, size_t size_, size_t data_size_)
-        : data{data_}, size{size_}
+        : data(data_), size(size_)
     {
         data.reserve(data_size_);
     }
@@ -267,7 +267,7 @@ class VarStringSink : public StringSink
 public:
     VarStringSink(ColumnString::Chars_t & data_, ColumnString::Offsets_t & offsets_,
         size_t data_size_, size_t offsets_size_)
-        : data{data_}, offsets{offsets_}
+        : data(data_), offsets(offsets_)
     {
         offsets.resize(offsets_size_);
         data.reserve(data_size_);

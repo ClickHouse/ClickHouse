@@ -10,6 +10,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Common/typeid_cast.h>
 
+
 /// NOTE: this code is quite complicated and ugly because it handles
 /// the internals of arrays of strings.
 /// Arrays of fixed strings are currently unsupported.
@@ -77,8 +78,8 @@ public:
         const ColumnString::Offsets_t & string_offsets_,
         const ColumnArray::Offsets_t & array_offsets_,
         size_t index_)
-        : data{data_}, string_offsets{string_offsets_}, array_offsets{array_offsets_},
-        index{index_}
+        : data(data_), string_offsets(string_offsets_), array_offsets(array_offsets_),
+        index(index_)
     {
     }
 
@@ -159,7 +160,7 @@ class ConstStringArraySource : public StringArraySource
 {
 public:
     ConstStringArraySource(const Array & data_, size_t index_)
-        : data{data_}, index{index_}
+        : data(data_), index(index_)
     {
         data_size = 0;
         for (const auto & s : data)
@@ -221,7 +222,6 @@ private:
 
         return array_size;
     };
-
 };
 
 
@@ -236,7 +236,7 @@ public:
         size_t data_size_,
         size_t offsets_size_,
         size_t row_count)
-        : data{data_}, string_offsets{string_offsets_}, array_offsets{array_offsets_}
+        : data(data_), string_offsets(string_offsets_), array_offsets(array_offsets_)
     {
         array_offsets.resize(row_count);
         string_offsets.reserve(offsets_size_);
@@ -274,8 +274,6 @@ CondSources createConds(const Block & block, const ColumnNumbers & args)
 }
 
 
-const Array null_array{String()};
-
 /// Create accessors for branch values.
 bool createStringArraySources(StringArraySources & sources, const Block & block,
     const ColumnNumbers & args)
@@ -287,14 +285,7 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
         const ColumnString * var_col = col_arr ? checkAndGetColumn<ColumnString>(&col_arr->getData()) : nullptr;
         const ColumnConst * const_col = checkAndGetColumnConst<ColumnArray>(col);
 
-        if (col->isNull())
-        {
-            StringArraySourcePtr source;
-            source = std::make_unique<ConstStringArraySource>(null_array, args[i]);
-            sources.push_back(std::move(source));
-            return true;
-        }
-        else if ((col_arr && var_col) || const_col)
+        if ((col_arr && var_col) || const_col)
         {
             StringArraySourcePtr source;
 
@@ -304,7 +295,8 @@ bool createStringArraySources(StringArraySources & sources, const Block & block,
             else if (const_col)
                 source = std::make_unique<ConstStringArraySource>(const_col->getValue<Array>(), args[i]);
             else
-                throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+                throw Exception{"Unexpected type of column in then or else condition of multiIf function with Array(String) arguments",
+                    ErrorCodes::LOGICAL_ERROR};
 
             sources.push_back(std::move(source));
 
