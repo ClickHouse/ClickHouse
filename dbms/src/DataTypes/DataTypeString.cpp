@@ -297,12 +297,6 @@ ColumnPtr DataTypeString::createColumn() const
 }
 
 
-ColumnPtr DataTypeString::createConstColumn(size_t size, const Field & field) const
-{
-    return std::make_shared<ColumnConstString>(size, get<const String &>(field));
-}
-
-
 void registerDataTypeString(DataTypeFactory & factory)
 {
     auto creator = static_cast<DataTypePtr(*)()>([] { return DataTypePtr(std::make_shared<DataTypeString>()); });

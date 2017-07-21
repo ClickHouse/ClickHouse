@@ -6,7 +6,7 @@ namespace DB
 {
 
 template <typename IteratorSrc, typename IteratorDst>
-void formatHex(IteratorSrc __restrict src, IteratorDst __restrict dst, const size_t num_bytes)
+void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
 {
     /// More optimal than lookup table by nibbles.
     constexpr auto hex =

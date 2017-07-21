@@ -25,6 +25,9 @@ void registerFunctionsArithmetic(FunctionFactory & factory)
     factory.registerFunction<FunctionBitRotateRight>();
     factory.registerFunction<FunctionLeast>();
     factory.registerFunction<FunctionGreatest>();
+    factory.registerFunction<FunctionBitTest>();
+    factory.registerFunction<FunctionBitTestAny>();
+    factory.registerFunction<FunctionBitTestAll>();
 }
 
 }

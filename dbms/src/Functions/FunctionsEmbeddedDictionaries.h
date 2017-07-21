@@ -13,6 +13,8 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
+
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
@@ -220,23 +222,23 @@ public:
 
         if (arguments.size() == 2)
         {
-            const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
+            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
 
             if (!key_col)
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                     + " of second ('point of view') argument of function " + name
                     + ". Must be constant string.",
                     ErrorCodes::ILLEGAL_COLUMN);
 
-            dict_key = key_col->getData();
+            dict_key = key_col->getValue<String>();
         }
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-        if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<T>>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
             typename ColumnVector<T>::Container_t & vec_to = col_to->getData();
@@ -246,13 +248,13 @@ public:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from[i], dict);
         }
-        else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<T>>(
-                col_from->size(), Transform::apply(col_from->getData(), dict));
+            block.getByPosition(result).column = DataTypeNumber<T>().createConstColumn(
+                col_from->size(), toField(Transform::apply(col_from->template getValue<T>(), dict)));
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -318,28 +320,28 @@ public:
 
         if (arguments.size() == 3)
         {
-            const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[2]).column.get());
+            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[2]).column.get());
 
             if (!key_col)
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[2]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
                 + " of third ('point of view') argument of function " + name
                 + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-            dict_key = key_col->getData();
+            dict_key = key_col->getValue<String>();
         }
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-        const ColumnVector<T> * col_vec1 = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnVector<T> * col_vec2 = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[1]).column.get());
-        const ColumnConst<T> * col_const1 = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get());
-        const ColumnConst<T> * col_const2 = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[1]).column.get());
+        const ColumnVector<T> * col_vec1 = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
+        const ColumnVector<T> * col_vec2 = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[1]).column.get());
+        const ColumnConst * col_const1 = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get());
+        const ColumnConst * col_const2 = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[1]).column.get());
 
         if (col_vec1 && col_vec2)
         {
             auto col_to = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
             const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
@@ -353,10 +355,10 @@ public:
         else if (col_vec1 && col_const2)
         {
             auto col_to = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
-            const T const_from2 = col_const2->getData();
+            const T const_from2 = col_const2->template getValue<T>();
             typename ColumnUInt8::Container_t & vec_to = col_to->getData();
             size_t size = vec_from1.size();
             vec_to.resize(size);
@@ -367,9 +369,9 @@ public:
         else if (col_const1 && col_vec2)
         {
             auto col_to = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
-            const T const_from1 = col_const1->getData();
+            const T const_from1 = col_const1->template getValue<T>();
             const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
             typename ColumnUInt8::Container_t & vec_to = col_to->getData();
             size_t size = vec_from2.size();
@@ -380,12 +382,12 @@ public:
         }
         else if (col_const1 && col_const2)
         {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(col_const1->size(),
-                Transform::apply(col_const1->getData(), col_const2->getData(), dict));
+            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(col_const1->size(),
+                toField(Transform::apply(col_const1->template getValue<T>(), col_const2->template getValue<T>(), dict)));
         }
         else
-            throw Exception("Illegal columns " + block.safeGetByPosition(arguments[0]).column->getName()
-                    + " and " + block.safeGetByPosition(arguments[1]).column->getName()
+            throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
+                    + " and " + block.getByPosition(arguments[1]).column->getName()
                     + " of arguments of function " + name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -446,24 +448,24 @@ public:
 
         if (arguments.size() == 2)
         {
-            const ColumnConstString * key_col = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get());
+            const ColumnConst * key_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
 
             if (!key_col)
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                 + " of second ('point of view') argument of function " + name
                 + ". Must be constant string.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-            dict_key = key_col->getData();
+            dict_key = key_col->getValue<String>();
         }
 
         const typename DictGetter::Dst & dict = DictGetter::get(*owned_dict, dict_key);
 
-        if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_values = std::make_shared<ColumnVector<T>>();
             auto col_array = std::make_shared<ColumnArray>(col_values);
-            block.safeGetByPosition(result).column = col_array;
+            block.getByPosition(result).column = col_array;
 
             ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
             typename ColumnVector<T>::Container_t & res_values = col_values->getData();
@@ -484,24 +486,21 @@ public:
                 res_offsets[i] = res_values.size();
             }
         }
-        else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             Array res;
 
-            T cur = col_from->getData();
+            T cur = col_from->template getValue<T>();
             while (cur)
             {
                 res.push_back(static_cast<typename NearestFieldType<T>::Type>(cur));
                 cur = Transform::toParent(cur, dict);
             }
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstArray>(
-                col_from->size(),
-                res,
-                std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>()));
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_from->size(), res);
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of first argument of function " + name,
                             ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -732,20 +731,20 @@ public:
         /// If the result language is specified
         if (arguments.size() == 2)
         {
-            if (const ColumnConstString * col_language = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[1]).column.get()))
-                language = RegionsNames::getLanguageEnum(col_language->getData());
+            if (const ColumnConst * col_language = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get()))
+                language = RegionsNames::getLanguageEnum(col_language->getValue<String>());
             else
-                throw Exception("Illegal column " + block.safeGetByPosition(arguments[1]).column->getName()
+                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                         + " of the second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
 
         const RegionsNames & dict = *owned_dict;
 
-        if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const ColumnUInt32::Container_t & region_ids = col_from->getData();
 
@@ -755,15 +754,15 @@ public:
                 col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
             }
         }
-        else if (const ColumnConst<UInt32> * col_from = typeid_cast<const ColumnConst<UInt32> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<UInt32>>(block.getByPosition(arguments[0]).column.get()))
         {
-            UInt32 region_id = col_from->getData();
+            UInt32 region_id = col_from->getValue<UInt32>();
             const StringRef & name_ref = dict.getRegionName(region_id, language);
 
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), name_ref.toString());
+            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), name_ref.toString());
         }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of the first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }

@@ -1,6 +1,8 @@
 #include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
 
 #include <DataTypes/IDataType.h>
+
 
 namespace DB
 {
@@ -19,6 +21,13 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
         else if (current_avg_value_size * 2 < avg_value_size_hint)
             avg_value_size_hint = (current_avg_value_size + avg_value_size_hint * 3) / 4;
     }
+}
+
+ColumnPtr IDataType::createConstColumn(size_t size, const Field & field) const
+{
+    ColumnPtr column = createColumn();
+    column->insert(field);
+    return std::make_shared<ColumnConst>(column, size);
 }
 
 }

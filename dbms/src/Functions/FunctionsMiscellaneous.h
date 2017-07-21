@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/ExpressionActions.h>
 

@@ -1,5 +1,6 @@
 #include <common/logger_useful.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -84,7 +85,9 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
-    if (keys_size == 1 && (typeid_cast<const ColumnString *>(key_columns[0]) || typeid_cast<const ColumnConstString *>(key_columns[0])))
+    if (keys_size == 1
+        && (typeid_cast<const ColumnString *>(key_columns[0])
+            || (key_columns[0]->isConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
@@ -255,7 +258,7 @@ static void convertColumnToNullable(ColumnWithTypeAndName & column)
 
     if (column.column)
         column.column = std::make_shared<ColumnNullable>(column.column,
-            std::make_shared<ColumnConstUInt8>(column.column->size(), 0)->convertToFullColumn());
+            std::make_shared<ColumnUInt8>(column.column->size(), 0));
 }
 
 

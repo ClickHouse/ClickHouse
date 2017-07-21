@@ -14,7 +14,7 @@
 namespace DB
 {
 
-/** Aggregate functions that store one of any passed values.
+/** Aggregate functions that store one of passed values.
   * For example: min, max, any, anyLast.
   */
 
@@ -25,7 +25,7 @@ struct SingleValueDataFixed
 {
     using Self = SingleValueDataFixed<T>;
 
-    bool has_value = false; /// You need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
+    bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
     T value;
 
 
@@ -165,7 +165,7 @@ struct SingleValueDataFixed
 };
 
 
-/** For strings. Short lines are stored in the structure itself, and long lines are allocated separately.
+/** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
 struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
@@ -573,7 +573,7 @@ struct AggregateFunctionMinData : Data
     using Self = AggregateFunctionMinData<Data>;
 
     bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeIfLess(column, row_num); }
-    bool changeIfBetter(const Self & to)                         { return this->changeIfLess(to); }
+    bool changeIfBetter(const Self & to)                        { return this->changeIfLess(to); }
 
     static const char * name() { return "min"; }
 };
@@ -584,7 +584,7 @@ struct AggregateFunctionMaxData : Data
     using Self = AggregateFunctionMaxData<Data>;
 
     bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeIfGreater(column, row_num); }
-    bool changeIfBetter(const Self & to)                         { return this->changeIfGreater(to); }
+    bool changeIfBetter(const Self & to)                        { return this->changeIfGreater(to); }
 
     static const char * name() { return "max"; }
 };
@@ -595,7 +595,7 @@ struct AggregateFunctionAnyData : Data
     using Self = AggregateFunctionAnyData<Data>;
 
     bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeFirstTime(column, row_num); }
-    bool changeIfBetter(const Self & to)                         { return this->changeFirstTime(to); }
+    bool changeIfBetter(const Self & to)                        { return this->changeFirstTime(to); }
 
     static const char * name() { return "any"; }
 };
@@ -606,7 +606,7 @@ struct AggregateFunctionAnyLastData : Data
     using Self = AggregateFunctionAnyLastData<Data>;
 
     bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeEveryTime(column, row_num); }
-    bool changeIfBetter(const Self & to)                         { return this->changeEveryTime(to); }
+    bool changeIfBetter(const Self & to)                        { return this->changeEveryTime(to); }
 
     static const char * name() { return "anyLast"; }
 };

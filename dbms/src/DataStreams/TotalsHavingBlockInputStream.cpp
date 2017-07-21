@@ -114,9 +114,8 @@ Block TotalsHavingBlockInputStream::readImpl()
             size_t filter_column_pos = finalized.getPositionByName(filter_column_name);
             ColumnPtr filter_column_ptr = finalized.safeGetByPosition(filter_column_pos).column;
 
-            ColumnConstUInt8 * column_const = typeid_cast<ColumnConstUInt8 *>(&*filter_column_ptr);
-            if (column_const)
-                filter_column_ptr = column_const->convertToFullColumn();
+            if (auto converted = filter_column_ptr->convertToFullColumnIfConst())
+                filter_column_ptr = converted;
 
             ColumnUInt8 * filter_column = typeid_cast<ColumnUInt8 *>(&*filter_column_ptr);
             if (!filter_column)

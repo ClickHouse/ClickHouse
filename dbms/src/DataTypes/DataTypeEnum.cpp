@@ -240,12 +240,6 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
 }
 
 template <typename Type>
-ColumnPtr DataTypeEnum<Type>::createConstColumn(const size_t size, const Field & field) const
-{
-    return std::make_shared<ConstColumnType>(size, get<typename NearestFieldType<FieldType>::Type>(field));
-}
-
-template <typename Type>
 Field DataTypeEnum<Type>::getDefault() const
 {
     return typename NearestFieldType<FieldType>::Type(values.front().second);

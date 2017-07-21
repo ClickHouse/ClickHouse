@@ -48,7 +48,7 @@ private:
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
-    std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const;
+    size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const;
 
     bool isConditionGood(const IAST * condition) const;
 
@@ -79,8 +79,8 @@ private:
     const Block block_with_constants;
     const PreparedSets & prepared_sets;
     Poco::Logger * log;
-    std::unordered_map<std::string, std::size_t> column_sizes{};
-    std::size_t total_column_size{};
+    std::unordered_map<std::string, size_t> column_sizes{};
+    size_t total_column_size{};
     NameSet array_joined_names;
 };
 

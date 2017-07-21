@@ -4,6 +4,7 @@
 #include <Functions/Conditional/common.h>
 #include <Functions/Conditional/NullMapBuilder.h>
 #include <Functions/Conditional/CondSource.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
@@ -46,12 +47,6 @@ public:
     {
     }
 
-    Chunk(const Chunk &) = delete;
-    Chunk & operator=(const Chunk &) = delete;
-
-    Chunk(Chunk &&) = default;
-    Chunk & operator=(Chunk &&) = default;
-
     inline TType * data() const
     {
         return pos_begin;
@@ -93,10 +88,10 @@ public:
 };
 
 template <typename TResult>
-using IArraySourcePtr = std::unique_ptr<IArraySource<TResult> >;
+using IArraySourcePtr = std::unique_ptr<IArraySource<TResult>>;
 
 template <typename TResult>
-using IArraySources = std::vector<IArraySourcePtr<TResult> >;
+using IArraySources = std::vector<IArraySourcePtr<TResult>>;
 
 /// Column type-specific implementation of IArraySource for arrays.
 template <typename TResult, typename TType>
@@ -107,12 +102,6 @@ public:
         : data{data_}, offsets{offsets_}
     {
     }
-
-    ArraySource(const ArraySource &) = delete;
-    ArraySource & operator=(const ArraySource &) = delete;
-
-    ArraySource(ArraySource &&) = default;
-    ArraySource & operator=(ArraySource &&) = default;
 
     void next() override
     {
@@ -161,12 +150,6 @@ public:
     {
     }
 
-    ConstArraySource(const ConstArraySource &) = delete;
-    ConstArraySource & operator=(const ConstArraySource &) = delete;
-
-    ConstArraySource(ConstArraySource &&) = default;
-    ConstArraySource & operator=(ConstArraySource &&) = default;
-
     void next() override
     {
     }
@@ -175,7 +158,7 @@ public:
     {
         if (!converted)
         {
-            converted = std::make_unique<PaddedPODArray<TResult> >(array.size());
+            converted = std::make_unique<PaddedPODArray<TResult>>(array.size());
             size_t size = array.size();
             for (size_t i = 0; i < size; ++i)
                 (*converted)[i] = array[i].template get<typename NearestFieldType<TType>::Type>();
@@ -195,8 +178,8 @@ public:
     }
 
 private:
-    const Array & array;
-    mutable std::unique_ptr<PaddedPODArray<TResult> > converted;
+    Array array;
+    mutable std::unique_ptr<PaddedPODArray<TResult>> converted;
 };
 
 /// Access provider to the target array that receives the results of the
@@ -212,12 +195,6 @@ public:
         offsets.resize(offsets_size_);
         data.reserve(data_size_);
     }
-
-    ArraySink(const ArraySink &) = delete;
-    ArraySink & operator=(const ArraySink &) = delete;
-
-    ArraySink(ArraySink &&) = default;
-    ArraySink & operator=(ArraySink &&) = default;
 
     void store(const Chunk<TResult> & chunk)
     {
@@ -260,21 +237,19 @@ public:
         auto type_name = br.type->getName();
         if (TypeName<TType>::get() == type_name)
         {
-            const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
-            const ColumnArray * col_array = typeid_cast<const ColumnArray *>(col);
-            const ColumnConstArray * col_const_array = typeid_cast<const ColumnConstArray *>(col);
+            const IColumn * col = block.getByPosition(args[br.index]).column.get();
 
             IArraySourcePtr<TResult> source;
 
-            if (col_array != nullptr)
+            if (auto col_array = checkAndGetColumn<ColumnArray>(col))
             {
                 const ColumnVector<TType> * content = typeid_cast<const ColumnVector<TType> *>(&col_array->getData());
-                if (content == nullptr)
+                if (!content)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-                source = std::make_unique<ArraySource<TResult, TType> >(content->getData(), col_array->getOffsets());
+                source = std::make_unique<ArraySource<TResult, TType>>(content->getData(), col_array->getOffsets());
             }
-            else if (col_const_array != nullptr)
-                source = std::make_unique<ConstArraySource<TResult, TType> >(col_const_array->getData());
+            else if (auto col_const_array = checkAndGetColumnConst<ColumnArray>(col))
+                source = std::make_unique<ConstArraySource<TResult, TType>>(col_const_array->getValue<Array>());
 
             sources.push_back(std::move(source));
 
@@ -298,13 +273,8 @@ public:
         auto type_name = br.type->getName();
         if (TypeName<Null>::get() == type_name)
         {
-            const IColumn * col = block.safeGetByPosition(args[br.index]).column.get();
-            const ColumnNull * null_col = typeid_cast<const ColumnNull *>(col);
-            if (null_col == nullptr)
-                throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
             IArraySourcePtr<TResult> source;
-            source = std::make_unique<ConstArraySource<TResult, Null> >(null_array);
+            source = std::make_unique<ConstArraySource<TResult, Null>>(null_array);
             sources.push_back(std::move(source));
 
             return true;
@@ -418,7 +388,7 @@ private:
 
         auto col_res_vec = std::make_shared<ColumnVector<TResult>>();
         auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
-        block.safeGetByPosition(result).column = col_res_array;
+        block.getByPosition(result).column = col_res_array;
 
         return ArraySink<TResult>{col_res_vec->getData(), col_res_array->getOffsets(),
             data_size, offsets_size};
