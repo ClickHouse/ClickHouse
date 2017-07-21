@@ -87,7 +87,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         if (!task.size_predictor)
             return max_block_size_rows;
 
-        size_t rows_to_read_for_block = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
+        size_t rows_to_read_for_block = std::max(index_granularity, task.size_predictor->estimateNumRows(preferred_block_size_bytes));
         size_t rows_to_read_for_max_size_column
             = task.size_predictor->estimateNumRowsForMaxSizeColumn(preferred_max_column_in_block_size_bytes);
         double filtration_ratio = std::max(min_filtration_ratio, 1.0 - task.size_predictor->filtered_rows_ratio);
