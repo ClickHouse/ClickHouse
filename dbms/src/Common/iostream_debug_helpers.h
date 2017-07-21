@@ -1,7 +1,8 @@
 #pragma once
 #include <iostream>
 
-#define nv(VAR) "##VAR=" << VAR
+// Rename!
+#define nv(VAR) #VAR "=" << VAR
 #define snv(VAR) std::cerr << nv(VAR) << "\n";
 
 namespace DB { class IBlockInputStream; }

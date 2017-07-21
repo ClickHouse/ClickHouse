@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <common/logger_useful.h>
 
-#include <Interpreters/Compiler.h>
 #include <Poco/File.h>
 
 //dev:
@@ -31,10 +30,12 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
               sample_block {sample_block},
               context(context)
 {
-    std::cerr << "LibDictionarySource::LibDictionarySource()\n";
+    //std::cerr << "LibDictionarySource::LibDictionarySource()\n";
     if (!Poco::File(filename).exists()) {
         LOG_ERROR(log, "LibDictionarySource: Cant load lib " << toString() << " : " << Poco::File(filename).path());
+        //throw;
     }
+    library = std::make_shared<SharedLibrary>(filename);
 }
 
 LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
@@ -71,8 +72,9 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     //  data[i] = ids[i];
     //}
 
-    auto lib = std::make_shared<SharedLibrary>(filename);
-    lib->get<void * (*) (decltype(params))>("loadIds")(params);
+    //auto lib = std::make_shared<SharedLibrary>(filename);
+    library->get<void * (*) (decltype(params))>("loadIds")(params);
+
     /*auto fptr = lib->get<void * (*) (const std::vector<UInt64> &)>("loadIds");
     std::cerr << "LibDictionarySource::loadIds filename=" << filename << " size=" << ids.size()<< " fptr=" << fptr<< "\n";
     if (fptr)
@@ -87,10 +89,10 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(
 {
     LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
 
-    auto lib = std::make_shared<SharedLibrary>(filename);
+    //auto lib = std::make_shared<SharedLibrary>(filename);
 
     const VectorUint64 params {requested_rows.size(), requested_rows.data()};
-    lib->get<void * (*) (decltype(params))>("loadKeys")(params);
+    library->get<void * (*) (decltype(params))>("loadKeys")(params);
 
     //lib->get<void * (*) (const std::vector<std::size_t> &)>("loadKeys")(requested_rows);
     /*auto fptr = lib->get<void * (*) (const std::vector<std::size_t> &)>("loadKeys");
@@ -104,8 +106,8 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(
 
 bool LibDictionarySource::isModified() const
 {
-    auto lib = std::make_shared<SharedLibrary>(filename);
-    auto fptr = lib->get<void * (*) ()>("isModified", true);
+    //auto lib = std::make_shared<SharedLibrary>(filename);
+    auto fptr = library->get<void * (*) ()>("isModified", true);
     if (fptr)
         return fptr();
 std::cerr << "no lib's isModified\n";
@@ -114,8 +116,8 @@ std::cerr << "no lib's isModified\n";
 
 bool LibDictionarySource::supportsSelectiveLoad() const
 {
-    auto lib = std::make_shared<SharedLibrary>(filename);
-    auto fptr = lib->get<void * (*) ()>("supportsSelectiveLoad", true);
+    //auto lib = std::make_shared<SharedLibrary>(filename);
+    auto fptr = library->get<void * (*) ()>("supportsSelectiveLoad", true);
     if (fptr)
         return fptr();
 std::cerr << "no lib's supportsSelectiveLoad\n";

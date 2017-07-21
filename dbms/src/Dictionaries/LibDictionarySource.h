@@ -2,7 +2,7 @@
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-
+#include <Common/SharedLibrary.h>
 
 namespace Poco {
 class Logger;
@@ -49,6 +49,7 @@ private:
     //const std::string format;
     Block sample_block;
     const Context & context;
+    SharedLibraryPtr library;
 };
 
 }
