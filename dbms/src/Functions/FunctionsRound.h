@@ -988,12 +988,6 @@ struct Cruncher
 
         Op::apply(col->getData(), scale, vec_res);
     }
-
-    static inline void apply(Block & block, const ColumnConst * col, const ColumnNumbers & arguments, size_t result, size_t scale)
-    {
-        T res = Op::apply(col->getValue<T>(), scale);
-        block.getByPosition(result).column = DataTypeNumber<T>().createConstColumn(col->size(), toField(res));
-    }
 };
 
 /** Select the appropriate processing algorithm depending on the scale.
@@ -1053,13 +1047,7 @@ private:
             Dispatcher<T, ColumnVector<T>, rounding_mode>::apply(block, col, arguments, result);
             return true;
         }
-        else if (auto col = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            Dispatcher<T, ColumnConst, rounding_mode>::apply(block, col, arguments, result);
-            return true;
-        }
-        else
-            return false;
+        return false;
     }
 
 public:
@@ -1105,6 +1093,9 @@ public:
 
         return arguments[0];
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {

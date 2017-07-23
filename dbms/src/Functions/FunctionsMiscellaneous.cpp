@@ -175,6 +175,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     /// Execute the function on the block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -1037,6 +1039,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// The level at which the line has zero length.
@@ -1053,50 +1058,24 @@ public:
 
         const auto & src = *block.getByPosition(arguments[0]).column;
 
-        if (src.isConst())
-        {
-            auto res_column_holder = DataTypeString().createConstColumn(block.rows(), String());
-            ColumnConst & res_column = static_cast<ColumnConst &>(*res_column_holder);
-            block.getByPosition(result).column = res_column_holder;
+        auto res_column = std::make_shared<ColumnString>();
+        block.getByPosition(result).column = res_column;
 
-            if (executeConstNumber<UInt8>(src, res_column, min, max, max_width)
-                || executeConstNumber<UInt16>(src, res_column, min, max, max_width)
-                || executeConstNumber<UInt32>(src, res_column, min, max, max_width)
-                || executeConstNumber<UInt64>(src, res_column, min, max, max_width)
-                || executeConstNumber<Int8>(src, res_column, min, max, max_width)
-                || executeConstNumber<Int16>(src, res_column, min, max, max_width)
-                || executeConstNumber<Int32>(src, res_column, min, max, max_width)
-                || executeConstNumber<Int64>(src, res_column, min, max, max_width)
-                || executeConstNumber<Float32>(src, res_column, min, max, max_width)
-                || executeConstNumber<Float64>(src, res_column, min, max, max_width))
-            {
-            }
-            else
-                throw Exception(
-                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
+        if (executeNumber<UInt8>(src, *res_column, min, max, max_width) || executeNumber<UInt16>(src, *res_column, min, max, max_width)
+            || executeNumber<UInt32>(src, *res_column, min, max, max_width)
+            || executeNumber<UInt64>(src, *res_column, min, max, max_width)
+            || executeNumber<Int8>(src, *res_column, min, max, max_width)
+            || executeNumber<Int16>(src, *res_column, min, max, max_width)
+            || executeNumber<Int32>(src, *res_column, min, max, max_width)
+            || executeNumber<Int64>(src, *res_column, min, max, max_width)
+            || executeNumber<Float32>(src, *res_column, min, max, max_width)
+            || executeNumber<Float64>(src, *res_column, min, max, max_width))
+        {
         }
         else
-        {
-            auto res_column = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = res_column;
-
-            if (executeNumber<UInt8>(src, *res_column, min, max, max_width) || executeNumber<UInt16>(src, *res_column, min, max, max_width)
-                || executeNumber<UInt32>(src, *res_column, min, max, max_width)
-                || executeNumber<UInt64>(src, *res_column, min, max, max_width)
-                || executeNumber<Int8>(src, *res_column, min, max, max_width)
-                || executeNumber<Int16>(src, *res_column, min, max, max_width)
-                || executeNumber<Int32>(src, *res_column, min, max, max_width)
-                || executeNumber<Int64>(src, *res_column, min, max, max_width)
-                || executeNumber<Float32>(src, *res_column, min, max, max_width)
-                || executeNumber<Float64>(src, *res_column, min, max, max_width))
-            {
-            }
-            else
-                throw Exception(
-                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
+            throw Exception(
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:
@@ -1156,21 +1135,6 @@ private:
         else
             return false;
     }
-
-    template <typename T>
-    static bool executeConstNumber(const IColumn & src, ColumnConst & dst, Int64 min, Int64 max, Float64 max_width)
-    {
-        if (auto col = checkAndGetColumnConst<ColumnVector<T>>(&src))
-        {
-            String res;
-            fill(col->template getValue<T>(), res, min, max, max_width);
-            dst.getDataColumn().cut(0, 0);
-            dst.getDataColumn().insert(res);
-            return true;
-        }
-        else
-            return false;
-    }
 };
 
 
@@ -1211,6 +1175,8 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         const auto in = block.getByPosition(arguments.front()).column.get();
@@ -1241,12 +1207,6 @@ public:
 
             for (const auto i : ext::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
-
-            return true;
-        }
-        else if (const auto in = checkAndGetColumnConst<ColumnVector<T>>(in_untyped))
-        {
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(in->size(), toField(Impl::execute(in->template getValue<T>())));
 
             return true;
         }
@@ -1689,35 +1649,21 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
     auto & src = block.getByPosition(arguments[0]);
     size_t size = block.rows();
 
-    if (!src.column->isConst())
+    auto res_col = std::make_shared<ColumnUInt64>(size);
+    auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
+    block.getByPosition(result).column = res_col;
+
+    /// For simplicity reasons, function is implemented by serializing into temporary buffer.
+
+    String tmp;
+    for (size_t i = 0; i < size; ++i)
     {
-        auto res_col = std::make_shared<ColumnUInt64>(size);
-        auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
-        block.getByPosition(result).column = res_col;
-
-        /// For simplicity reasons, function is implemented by serializing into temporary buffer.
-
-        String tmp;
-        for (size_t i = 0; i < size; ++i)
-        {
-            {
-                WriteBufferFromString out(tmp);
-                src.type->serializeTextEscaped(*src.column, i, out);
-            }
-
-            res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());
-        }
-    }
-    else
-    {
-        String tmp;
         {
             WriteBufferFromString out(tmp);
-            src.type->serializeTextEscaped(*src.column->cut(0, 1)->convertToFullColumnIfConst(), 0, out);
+            src.type->serializeTextEscaped(*src.column, i, out);
         }
 
-        block.getByPosition(result).column = DataTypeUInt64().createConstColumn(size,
-            UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size()));
+        res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());
     }
 }
 

@@ -8,6 +8,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsArithmetic.h>
 #include <Functions/FunctionHelpers.h>
+#include <type_traits>
 
 
 namespace DB
@@ -210,15 +211,8 @@ private:
 
     void convertToUInt8(const IColumn * column, UInt8Container & res)
     {
-        if (!convertTypeToUInt8<  Int8 >(column, res) &&
-            !convertTypeToUInt8<  Int16>(column, res) &&
-            !convertTypeToUInt8<  Int32>(column, res) &&
-            !convertTypeToUInt8<  Int64>(column, res) &&
-            !convertTypeToUInt8< UInt16>(column, res) &&
-            !convertTypeToUInt8< UInt32>(column, res) &&
-            !convertTypeToUInt8< UInt64>(column, res) &&
-            !convertTypeToUInt8<Float32>(column, res) &&
-            !convertTypeToUInt8<Float64>(column, res))
+        if (!dispatchForFirstType<UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>(
+           [&] (auto arg) { return convertTypeToUInt8<typename std::decay<decltype(*arg)>::type>(column, res); }))
             throw Exception("Unexpected type of column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
@@ -239,15 +233,8 @@ private:
 
     void executeUInt8Other(const UInt8Container & uint8_vec, IColumn * column, UInt8Container & res)
     {
-        if (!executeUInt8Type<  Int8 >(uint8_vec, column, res) &&
-            !executeUInt8Type<  Int16>(uint8_vec, column, res) &&
-            !executeUInt8Type<  Int32>(uint8_vec, column, res) &&
-            !executeUInt8Type<  Int64>(uint8_vec, column, res) &&
-            !executeUInt8Type< UInt16>(uint8_vec, column, res) &&
-            !executeUInt8Type< UInt32>(uint8_vec, column, res) &&
-            !executeUInt8Type< UInt64>(uint8_vec, column, res) &&
-            !executeUInt8Type<Float32>(uint8_vec, column, res) &&
-            !executeUInt8Type<Float64>(uint8_vec, column, res))
+        if (!dispatchForFirstType<UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>(
+           [&] (auto arg) { return executeUInt8Type<typename std::decay<decltype(*arg)>::type>(uint8_vec, column, res); }))
             throw Exception("Unexpected type of column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
@@ -392,16 +379,6 @@ private:
 
             return true;
         }
-        else if (auto col = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            UInt8 res = 0;
-            UnaryOperationImpl<T, Impl<T>>::constant(col->template getValue<T>(), res);
-
-            auto col_res = DataTypeUInt8().createConstColumn(col->size(), toField(res));
-            block.getByPosition(result).column = col_res;
-
-            return true;
-        }
 
         return false;
     }
@@ -425,18 +402,11 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!( executeType<UInt8>(block, arguments, result)
-            || executeType<UInt16>(block, arguments, result)
-            || executeType<UInt32>(block, arguments, result)
-            || executeType<UInt64>(block, arguments, result)
-            || executeType<Int8>(block, arguments, result)
-            || executeType<Int16>(block, arguments, result)
-            || executeType<Int32>(block, arguments, result)
-            || executeType<Int64>(block, arguments, result)
-            || executeType<Float32>(block, arguments, result)
-            || executeType<Float64>(block, arguments, result)))
+        if (!dispatchForFirstNumericType([&] (auto arg) { return executeType<typename std::decay<decltype(*arg)>::type>(block, arguments, result); }))
            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -444,14 +414,14 @@ public:
 };
 
 
-struct NameAnd    { static constexpr auto name = "and"; };
-struct NameOr    { static constexpr auto name = "or"; };
-struct NameXor    { static constexpr auto name = "xor"; };
-struct NameNot    { static constexpr auto name = "not"; };
+struct NameAnd { static constexpr auto name = "and"; };
+struct NameOr { static constexpr auto name = "or"; };
+struct NameXor { static constexpr auto name = "xor"; };
+struct NameNot { static constexpr auto name = "not"; };
 
-using FunctionAnd = FunctionAnyArityLogical    <AndImpl,    NameAnd>;
-using FunctionOr = FunctionAnyArityLogical    <OrImpl,    NameOr>    ;
-using FunctionXor = FunctionAnyArityLogical    <XorImpl,    NameXor>;
-using FunctionNot = FunctionUnaryLogical    <NotImpl,    NameNot>;
+using FunctionAnd = FunctionAnyArityLogical<AndImpl, NameAnd>;
+using FunctionOr = FunctionAnyArityLogical<OrImpl, NameOr>;
+using FunctionXor = FunctionAnyArityLogical<XorImpl, NameXor>;
+using FunctionNot = FunctionUnaryLogical<NotImpl, NameNot>;
 
 }

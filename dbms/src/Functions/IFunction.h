@@ -157,6 +157,18 @@ public:
     /// that correspond to nullable columns and null columns.
     virtual bool hasSpecialSupportForNulls() const { return false; }
 
+    /** If the function have non-zero number of arguments,
+      *  and if all arguments are constant, that we could automatically provide default implementation:
+      *  arguments are converted to ordinary columns with single value, then function is executed as usual,
+      *  and then the result is converted to constant column.
+      */
+    virtual bool useDefaultImplementationForConstants() const { return false; }
+
+    /** Some arguments could remain constant during this implementation.
+      */
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
+
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
       * And allows to use the index not only when it is written, for example `date >= const`, but also, for example, `toMonth(date) >= 11`.

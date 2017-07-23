@@ -2,7 +2,11 @@
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/typeid_cast.h>
+#include <ext/range.h>
+
 
 namespace DB
 {
@@ -281,8 +285,47 @@ void IFunction::getLambdaArgumentTypes(DataTypes & arguments) const
 }
 
 
+static bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
+{
+    for (auto arg : args)
+        if (!typeid_cast<const ColumnConst *>(block.getByPosition(arg).column.get()))
+            return false;
+    return true;
+}
+
+
 void IFunction::execute(Block & block, const ColumnNumbers & args, size_t result)
 {
+    /// Default implementation if all arguments are constants.
+    if (!args.empty() && allArgumentsAreConstants(block, args) && useDefaultImplementationForConstants())
+    {
+        ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
+
+        Block temporary_block;
+
+        for (auto arg : args)
+        {
+            const ColumnWithTypeAndName & column = block.getByPosition(arg);
+
+            if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg))
+                temporary_block.insert(column);
+            else
+                temporary_block.insert({ static_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });
+        }
+
+        temporary_block.insert(block.getByPosition(result));
+
+        size_t arguments_size = args.size();
+        ColumnNumbers temporary_argument_numbers(arguments_size);
+        for (size_t i = 0; i < arguments_size; ++i)
+            temporary_argument_numbers[i] = i;
+
+        execute(temporary_block, temporary_argument_numbers, arguments_size);
+
+        block.getByPosition(result).column = std::make_shared<ColumnConst>(temporary_block.getByPosition(arguments_size).column, block.rows());
+        return;
+    }
+
     auto strategy = chooseStrategy(block, args);
     Block processed_block = preProcessBlock(strategy, block, args, result);
 
