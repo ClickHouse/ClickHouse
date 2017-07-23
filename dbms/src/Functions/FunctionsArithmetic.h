@@ -482,7 +482,8 @@ template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto va
  *  least(Date, Date) -> Date
  *  greatest(Date, Date) -> Date
  *  All other operations are not defined and return InvalidType, operations on
- *  distinct date types are also undefined (e.g. DataTypeDate - DataTypeDateTime) */
+ *  distinct date types are also undefined (e.g. DataTypeDate - DataTypeDateTime)
+ */
 template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
 struct DateBinaryOperationTraits
 {
@@ -498,11 +499,7 @@ struct DateBinaryOperationTraits
                     Else<
                         If<IsIntegral<LeftDataType>::value && IsDateOrDateTime<RightDataType>::value,
                             Then<RightDataType>,
-                            Else<InvalidType>
-                        >
-                    >
-                >
-            >,
+                            Else<InvalidType>>>>>,
             Else<
                 If<std::is_same<Op, MinusImpl<T0, T1>>::value,
                     Then<
@@ -513,24 +510,13 @@ struct DateBinaryOperationTraits
                                     Else<
                                         If<IsIntegral<RightDataType>::value,
                                             Then<LeftDataType>,
-                                            Else<InvalidType>
-                                        >
-                                    >
-                                >
-                            >,
-                            Else<InvalidType>
-                        >
-                    >,
+                                            Else<InvalidType>>>>>,
+                            Else<InvalidType>>>,
                     Else<
                         If<std::is_same<T0, T1>::value
                             && (std::is_same<Op, LeastImpl<T0, T1>>::value || std::is_same<Op, GreatestImpl<T0, T1>>::value),
                             Then<LeftDataType>,
-                            Else<InvalidType>
-                        >
-                    >
-                >
-            >
-        >;
+                            Else<InvalidType>>>>>>;
 };
 
 
@@ -542,19 +528,41 @@ struct BinaryOperationTraits
         If<IsDateOrDateTime<LeftDataType>::value || IsDateOrDateTime<RightDataType>::value,
             Then<
                 typename DateBinaryOperationTraits<
-                    Operation, LeftDataType, RightDataType
-                >::ResultDataType
-            >,
+                    Operation, LeftDataType, RightDataType>::ResultDataType>,
             Else<
                 typename DataTypeFromFieldType<
                     typename Operation<
                         typename LeftDataType::FieldType,
-                        typename RightDataType::FieldType
-                    >::ResultType
-                >::Type
-            >
-        >;
+                        typename RightDataType::FieldType>::ResultType>::Type>>;
 };
+
+
+template <typename F>
+bool dispatchForFirstNumericOrTimeDataType(F && f)
+{
+    return dispatchForFirstType<
+        DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64,
+        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
+        DataTypeFloat32, DataTypeFloat64,
+        DataTypeDate, DataTypeDateTime>(std::forward<F>(f));
+}
+
+template <typename F>
+bool dispatchForFirstNumericDataType(F && f)
+{
+    return dispatchForFirstType<
+        DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64,
+        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
+        DataTypeFloat32, DataTypeFloat64>(std::forward<F>(f));
+}
+
+template <typename F>
+bool dispatchForFirstIntegerDataType(F && f)
+{
+    return dispatchForFirstType<
+        DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64,
+        DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64>(std::forward<F>(f));
+}
 
 
 template <template <typename, typename> class Op, typename Name>
@@ -587,7 +595,7 @@ private:
     {
         using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
 
-        if (typeid_cast<const RightDataType *>(&*arguments[1]))
+        if (typeid_cast<const RightDataType *>(arguments[1].get()))
             return checkRightTypeImpl<ResultDataType>(type_res);
 
         return false;
@@ -596,24 +604,15 @@ private:
     template <typename T0>
     bool checkLeftType(const DataTypes & arguments, DataTypePtr & type_res) const
     {
-        if (typeid_cast<const T0 *>(&*arguments[0]))
+        if (typeid_cast<const T0 *>(arguments[0].get()))
         {
-            if (   checkRightType<T0, DataTypeDate>(arguments, type_res)
-                || checkRightType<T0, DataTypeDateTime>(arguments, type_res)
-                || checkRightType<T0, DataTypeUInt8>(arguments, type_res)
-                || checkRightType<T0, DataTypeUInt16>(arguments, type_res)
-                || checkRightType<T0, DataTypeUInt32>(arguments, type_res)
-                || checkRightType<T0, DataTypeUInt64>(arguments, type_res)
-                || checkRightType<T0, DataTypeInt8>(arguments, type_res)
-                || checkRightType<T0, DataTypeInt16>(arguments, type_res)
-                || checkRightType<T0, DataTypeInt32>(arguments, type_res)
-                || checkRightType<T0, DataTypeInt64>(arguments, type_res)
-                || checkRightType<T0, DataTypeFloat32>(arguments, type_res)
-                || checkRightType<T0, DataTypeFloat64>(arguments, type_res))
-                return true;
-            else
+            if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+                {
+                    return checkRightType<T0, typename std::decay<decltype(*arg)>::type>(arguments, type_res);
+                }))
                 throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            return true;
         }
         return false;
     }
@@ -726,43 +725,25 @@ private:
     {
         if (auto col_left = checkAndGetColumn<ColumnVector<typename LeftDataType::FieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
-            if (   executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt8>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt16>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt64>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt8>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt16>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt64>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeFloat32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
-                return true;
-            else
+            if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+                {
+                    return executeRightType<LeftDataType, typename std::decay<decltype(*arg)>::type>(block, arguments, result, col_left);
+                }))
                 throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                     + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
+            return true;
         }
         else if (auto col_left = checkAndGetColumnConst<ColumnVector<typename LeftDataType::FieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
-            if (   executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt8>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt16>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt64>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt8>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt16>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt64>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeFloat32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
-                return true;
-            else
+             if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+                {
+                    return executeRightType<LeftDataType, typename std::decay<decltype(*arg)>::type>(block, arguments, result, col_left);
+                }))
                 throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
                     + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
+            return true;
         }
 
         return false;
@@ -780,18 +761,10 @@ public:
     {
         DataTypePtr type_res;
 
-        if (!( checkLeftType<DataTypeDate>(arguments, type_res)
-            || checkLeftType<DataTypeDateTime>(arguments, type_res)
-            || checkLeftType<DataTypeUInt8>(arguments, type_res)
-            || checkLeftType<DataTypeUInt16>(arguments, type_res)
-            || checkLeftType<DataTypeUInt32>(arguments, type_res)
-            || checkLeftType<DataTypeUInt64>(arguments, type_res)
-            || checkLeftType<DataTypeInt8>(arguments, type_res)
-            || checkLeftType<DataTypeInt16>(arguments, type_res)
-            || checkLeftType<DataTypeInt32>(arguments, type_res)
-            || checkLeftType<DataTypeInt64>(arguments, type_res)
-            || checkLeftType<DataTypeFloat32>(arguments, type_res)
-            || checkLeftType<DataTypeFloat64>(arguments, type_res)))
+        if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+            {
+                return checkLeftType<typename std::decay<decltype(*arg)>::type>(arguments, type_res);
+            }))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -800,18 +773,10 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!( executeLeftType<DataTypeDate>(block, arguments, result)
-            || executeLeftType<DataTypeDateTime>(block, arguments, result)
-            || executeLeftType<DataTypeUInt8>(block, arguments, result)
-            || executeLeftType<DataTypeUInt16>(block, arguments, result)
-            || executeLeftType<DataTypeUInt32>(block, arguments, result)
-            || executeLeftType<DataTypeUInt64>(block, arguments, result)
-            || executeLeftType<DataTypeInt8>(block, arguments, result)
-            || executeLeftType<DataTypeInt16>(block, arguments, result)
-            || executeLeftType<DataTypeInt32>(block, arguments, result)
-            || executeLeftType<DataTypeInt64>(block, arguments, result)
-            || executeLeftType<DataTypeFloat32>(block, arguments, result)
-            || executeLeftType<DataTypeFloat64>(block, arguments, result)))
+        if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+            {
+                return executeLeftType<typename std::decay<decltype(*arg)>::type>(block, arguments, result);
+            }))
            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -834,7 +799,7 @@ private:
     template <typename T0>
     bool checkType(const DataTypes & arguments, DataTypePtr & result) const
     {
-        if (typeid_cast<const T0 *>(&*arguments[0]))
+        if (typeid_cast<const T0 *>(arguments[0].get()))
         {
             result = std::make_shared<DataTypeNumber<typename Op<typename T0::FieldType>::ResultType>>();
             return true;
@@ -858,16 +823,6 @@ private:
 
             return true;
         }
-        else if (auto col = checkAndGetColumnConst<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            using ResultType = typename Op<T0>::ResultType;
-
-            ResultType res = 0;
-            UnaryOperationImpl<T0, Op<T0>>::constant(col->template getValue<T0>(), res);
-            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col->size(), toField(res));
-
-            return true;
-        }
 
         return false;
     }
@@ -885,34 +840,24 @@ public:
     {
         DataTypePtr result;
 
-        if (!( checkType<DataTypeUInt8>(arguments, result)
-            || checkType<DataTypeUInt16>(arguments, result)
-            || checkType<DataTypeUInt32>(arguments, result)
-            || checkType<DataTypeUInt64>(arguments, result)
-            || checkType<DataTypeInt8>(arguments, result)
-            || checkType<DataTypeInt16>(arguments, result)
-            || checkType<DataTypeInt32>(arguments, result)
-            || checkType<DataTypeInt64>(arguments, result)
-            || checkType<DataTypeFloat32>(arguments, result)
-            || checkType<DataTypeFloat64>(arguments, result)))
+        if (!dispatchForFirstNumericDataType([&] (auto arg)
+            {
+                return checkType<typename std::decay<decltype(*arg)>::type>(arguments, result);
+            }))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return result;
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!( executeType<UInt8>(block, arguments, result)
-            || executeType<UInt16>(block, arguments, result)
-            || executeType<UInt32>(block, arguments, result)
-            || executeType<UInt64>(block, arguments, result)
-            || executeType<Int8>(block, arguments, result)
-            || executeType<Int16>(block, arguments, result)
-            || executeType<Int32>(block, arguments, result)
-            || executeType<Int64>(block, arguments, result)
-            || executeType<Float32>(block, arguments, result)
-            || executeType<Float64>(block, arguments, result)))
+        if (!dispatchForFirstNumericType([&] (auto arg)
+            {
+                return executeType<typename std::decay<decltype(*arg)>::type>(block, arguments, result);
+            }))
            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -1177,14 +1122,11 @@ public:
                 ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
 
         const auto first_arg = arguments.front().get();
-        if (!checkDataType<DataTypeUInt8>(first_arg)
-            && !checkDataType<DataTypeUInt16>(first_arg)
-            && !checkDataType<DataTypeUInt32>(first_arg)
-            && !checkDataType<DataTypeUInt64>(first_arg)
-            && !checkDataType<DataTypeInt8>(first_arg)
-            && !checkDataType<DataTypeInt16>(first_arg)
-            && !checkDataType<DataTypeInt32>(first_arg)
-            && !checkDataType<DataTypeInt64>(first_arg))
+
+        if (!dispatchForFirstIntegerDataType([&] (auto arg)
+            {
+                return checkDataType<typename std::decay<decltype(*arg)>::type>(first_arg);
+            }))
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1210,14 +1152,10 @@ public:
     {
         const auto value_col = block.getByPosition(arguments.front()).column.get();
 
-        if (!execute<UInt8>(block, arguments, result, value_col)
-            && !execute<UInt16>(block, arguments, result, value_col)
-            && !execute<UInt32>(block, arguments, result, value_col)
-            && !execute<UInt64>(block, arguments, result, value_col)
-            && !execute<Int8>(block, arguments, result, value_col)
-            && !execute<Int16>(block, arguments, result, value_col)
-            && !execute<Int32>(block, arguments, result, value_col)
-            && !execute<Int64>(block, arguments, result, value_col))
+        if (!dispatchForFirstIntegerType([&] (auto arg)
+            {
+                return execute<typename std::decay<decltype(*arg)>::type>(block, arguments, result, value_col);
+            }))
             throw Exception{
                 "Illegal column " + value_col->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};

@@ -339,11 +339,11 @@ public:
     {
         Generator generator;
         generator.init(block, arguments);
-        size_t arrayArgumentPosition = arguments[generator.getStringsArgumentPosition()];
+        size_t array_argument_position = arguments[generator.getStringsArgumentPosition()];
 
-        const ColumnString * col_str = checkAndGetColumn<ColumnString>(block.getByPosition(arrayArgumentPosition).column.get());
+        const ColumnString * col_str = checkAndGetColumn<ColumnString>(block.getByPosition(array_argument_position).column.get());
         const ColumnConst * col_const_str =
-                checkAndGetColumnConstStringOrFixedString(block.getByPosition(arrayArgumentPosition).column.get());
+                checkAndGetColumnConstStringOrFixedString(block.getByPosition(array_argument_position).column.get());
 
         auto col_res = std::make_shared<ColumnArray>(std::make_shared<ColumnString>());
         ColumnPtr col_res_holder = col_res;
@@ -411,8 +411,8 @@ public:
             block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_const_str->size(), dst);
         }
         else
-            throw Exception("Illegal columns " + block.getByPosition(arrayArgumentPosition).column->getName()
-                    + ", " + block.getByPosition(arrayArgumentPosition).column->getName()
+            throw Exception("Illegal columns " + block.getByPosition(array_argument_position).column->getName()
+                    + ", " + block.getByPosition(array_argument_position).column->getName()
                     + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }

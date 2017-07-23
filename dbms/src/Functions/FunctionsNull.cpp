@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 namespace DB

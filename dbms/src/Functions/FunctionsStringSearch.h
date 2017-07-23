@@ -139,6 +139,9 @@ public:
         return 2;
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!checkDataType<DataTypeString>(&*arguments[0]))
@@ -169,23 +172,6 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
             Impl::vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
-        }
-        else if (auto col = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            String data = col->getValue<String>();
-            ColumnString::Chars_t vdata(reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str()),
-                reinterpret_cast<const ColumnString::Chars_t::value_type *>(data.c_str() + data.size() + 1));
-            ColumnString::Offsets_t offsets(1, vdata.size());
-            ColumnString::Chars_t res_vdata;
-            ColumnString::Offsets_t res_offsets;
-            Impl::vector(vdata, offsets, col_needle->getValue<String>(), res_vdata, res_offsets);
-
-            String res;
-
-            if (!res_offsets.empty())
-                res.assign(&res_vdata[0], &res_vdata[res_vdata.size() - 1]);
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col->size(), res);
         }
         else
             throw Exception(

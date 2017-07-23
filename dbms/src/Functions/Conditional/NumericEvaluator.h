@@ -206,16 +206,10 @@ private:
         {
             NumericSourcePtr<TResult> source;
 
-            if (! (NumericSourceCreator<TResult, UInt8>::execute(source, block, args, br)
-                || NumericSourceCreator<TResult, UInt16>::execute(source, block, args, br)
-                || NumericSourceCreator<TResult, UInt32>::execute(source, block, args, br)
-                || NumericSourceCreator<TResult, UInt64>::execute(source, block, args, br)
-                || NumericSourceCreator<TResult, Int8>::execute(source, block, args, br)
-                || NumericSourceCreator<TResult, Int16>::execute(source, block, args, br)
-                || NumericSourceCreator<TResult, Int32>::execute(source, block, args, br)
-                || NumericSourceCreator<TResult, Int64>::execute(source, block, args, br)
-                || NumericSourceCreator<TResult, Float32>::execute(source, block, args, br)
-                || NumericSourceCreator<TResult, Float64>::execute(source, block, args, br)
+            if (!(dispatchForFirstNumericType([&] (auto arg)
+                {
+                    return NumericSourceCreator<TResult, typename std::decay<decltype(*arg)>::type>::execute(sources, block, args, br);
+                })
                 || NumericSourceCreator<TResult, Null>::execute(source, block, args, br)))
                 throw CondException{CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT, toString(br.index)};
 

@@ -82,12 +82,6 @@ struct ConvertImpl
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
         }
-        else if (auto col_from
-            = checkAndGetColumnConst<ColumnVector<FromFieldType>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            block.getByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(
-                col_from->size(), toField(static_cast<ToFieldType>(col_from->template getValue<FromFieldType>())));
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
@@ -240,13 +234,6 @@ struct ConvertImpl<FromDataType, DataTypeString, Name>
 
             data_to.resize(write_buffer.count());
         }
-        else if (const auto col_from = checkAndGetColumnConst<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
-        {
-            std::vector<char> buf;
-            WriteBufferFromVector<std::vector<char>> write_buffer(buf);
-            FormatImpl<FromDataType>::execute(col_from->template getValue<FromFieldType>(), write_buffer, &type, time_zone);
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), std::string(&buf[0], write_buffer.count()));
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
@@ -379,20 +366,6 @@ struct ConvertImpl<DataTypeString, ToDataType, Name>
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
-        {
-            StringRef s = col_from->getDataAt(0);
-            ReadBufferFromMemory read_buffer(s.data, s.size);
-            ToFieldType x(0);
-            parseImpl<ToDataType>(x, read_buffer, time_zone);
-
-            if (!read_buffer.eof()
-                && !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
-                    && s.size == strlen("YYYY-MM-DD hh:mm:ss")))
-                throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
-
-            block.getByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), toField(x));
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + Name::name,
@@ -450,15 +423,6 @@ struct ConvertOrZeroImpl
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
-        {
-            StringRef s = col_from->getDataAt(0);
-            ReadBufferFromMemory read_buffer(s.data, s.size);
-            ToFieldType x = 0;
-            if (!tryParseImpl<ToDataType>(x, read_buffer) || !read_buffer.eof())
-                x = 0;
-            block.getByPosition(result).column = DataTypeNumber<ToFieldType>().createConstColumn(col_from->size(), toField(x));
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
@@ -504,19 +468,6 @@ struct ConvertImplGenericFromString
 
                 current_offset = offsets[i];
             }
-        }
-        else if (checkAndGetColumnConstStringOrFixedString(&col_from))
-        {
-            StringRef s = col_from.getDataAt(0);
-            ReadBufferFromMemory read_buffer(s.data, s.size);
-
-            auto tmp_col = data_type_to.createColumn();
-            data_type_to.deserializeTextEscaped(*tmp_col, read_buffer);
-
-            if (!read_buffer.eof())
-                throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
-
-            block.getByPosition(result).column = data_type_to.createConstColumn(size, (*tmp_col)[0]);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -589,10 +540,6 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
                 }
             }
         }
-        else if (checkColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get()))
-        {
-            ConvertImpl<DataTypeString, ToDataType, Name>::execute(block, arguments, result);
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
@@ -640,16 +587,6 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
             data_to.resize(offset_to);
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
-        {
-            String s = col_from->getValue<String>();
-
-            size_t bytes_to_copy = s.size();
-            while (bytes_to_copy > 0 && s[bytes_to_copy - 1] == 0)
-                --bytes_to_copy;
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), s.substr(0, bytes_to_copy));
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
@@ -685,6 +622,9 @@ public:
     {
         return getReturnTypeInternal(arguments);
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -801,8 +741,7 @@ private:
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<ToDataType2>();
@@ -828,8 +767,7 @@ private:
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<ToDataType2>();
@@ -848,8 +786,7 @@ private:
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of 2nd argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<ToDataType2>();
@@ -880,6 +817,8 @@ public:
     {
         return std::make_shared<ToDataType>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -926,6 +865,9 @@ public:
         out_return_type = std::make_shared<DataTypeFixedString>(n);
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         const auto n = getSize(block.getByPosition(arguments[1]));
@@ -936,19 +878,7 @@ public:
     {
         const auto & column = block.getByPosition(arguments[0]).column;
 
-        if (const auto column_const = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            if (column_const->getValue<String>().size() > n)
-                throw Exception("String too long for type FixedString(" + toString(n) + ")",
-                    ErrorCodes::TOO_LARGE_STRING_SIZE);
-
-            String resized_string = column_const->getValue<String>();
-            resized_string.resize(n);
-
-            block.getByPosition(result).column = DataTypeFixedString(n).createConstColumn(
-                column_const->size(), std::move(resized_string));
-        }
-        else if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
+        if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
         {
             const auto column_fixed = std::make_shared<ColumnFixedString>(n);
             ColumnPtr result_ptr = column_fixed;
@@ -977,8 +907,7 @@ public:
             if (src_n > n)
                 throw Exception{
                     "String too long for type FixedString(" + toString(n) + ")",
-                    ErrorCodes::TOO_LARGE_STRING_SIZE
-                };
+                    ErrorCodes::TOO_LARGE_STRING_SIZE};
 
             const auto column_fixed = std::make_shared<ColumnFixedString>(n);
             block.getByPosition(result).column = column_fixed;
@@ -1242,8 +1171,7 @@ private:
             !checkDataType<DataTypeFixedString>(from_type.get()))
             throw Exception{
                 "CAST AS FixedString is only implemented for types String and FixedString",
-                ErrorCodes::NOT_IMPLEMENTED
-            };
+                ErrorCodes::NOT_IMPLEMENTED};
 
         return [N] (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
@@ -1279,8 +1207,7 @@ private:
         if (from_type || to_type)
             throw Exception{
                 "CAST AS Array can only be performed between same-dimensional array types or from String",
-                ErrorCodes::TYPE_MISMATCH
-            };
+                ErrorCodes::TYPE_MISMATCH};
 
         /// Prepare nested type conversion
         const auto nested_function = prepareImpl(from_nested_type, to_nested_type.get());
@@ -1289,10 +1216,6 @@ private:
             Block & block, const ColumnNumbers & arguments, const size_t result)
         {
             auto array_arg = block.getByPosition(arguments.front());
-
-            /// @todo add const variant which retains array constness
-            if (const auto col_const_array = checkAndGetColumnConst<ColumnArray>(array_arg.column.get()))
-                array_arg.column = col_const_array->convertToFullColumn();
 
             if (auto col_array = checkAndGetColumn<ColumnArray>(array_arg.column.get()))
             {
@@ -1345,15 +1268,13 @@ private:
             throw Exception{
                 "CAST AS Tuple can only be performed between tuple types or from String.\nLeft type: " + from_type_untyped->getName() +
                     ", right type: " + to_type->getName(),
-                ErrorCodes::TYPE_MISMATCH
-            };
+                ErrorCodes::TYPE_MISMATCH};
 
         if (from_type->getElements().size() != to_type->getElements().size())
             throw Exception{
                 "CAST AS Tuple can only be performed between tuple types with the same number of elements or from String.\n"
                     "Left type: " + from_type->getName() + ", right type: " + to_type->getName(),
-                 ErrorCodes::TYPE_MISMATCH
-            };
+                 ErrorCodes::TYPE_MISMATCH};
 
         const auto & from_element_types = from_type->getElements();
         const auto & to_element_types = to_type->getElements();
@@ -1376,8 +1297,6 @@ private:
             /// @todo retain constness
             if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
                 element_block = column_tuple->getData();
-            else if (const auto column_const_tuple = checkAndGetColumnConst<ColumnTuple>(col))
-                element_block = static_cast<const ColumnTuple &>(*convertConstTupleToTupleOfConstants(*column_const_tuple)).getData();
 
             /// create columns for converted elements
             for (const auto & to_element_type : to_element_types)
@@ -1436,8 +1355,7 @@ private:
             throw Exception{
                 "Conversion from " + from_type->getName() + " to " + to_type->getName() +
                     " is not supported",
-                ErrorCodes::CANNOT_CONVERT_TYPE
-            };
+                ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
@@ -1463,8 +1381,7 @@ private:
                 throw Exception{
                     "Enum conversion changes value for element '" + name_value.first +
                         "' from " + toString(old_value) + " to " + toString(new_value),
-                    ErrorCodes::CANNOT_CONVERT_TYPE
-                };
+                    ErrorCodes::CANNOT_CONVERT_TYPE};
         }
     };
 
@@ -1492,17 +1409,11 @@ private:
 
                 result_col = res;
             }
-            else if (const auto const_col = checkAndGetColumnConstStringOrFixedString(first_col))
-            {
-                result_col = result_type.createConstColumn(const_col->size(),
-                    nearestFieldType(result_type.getValue(const_col->getValue<String>())));
-            }
             else
                 throw Exception{
                     "Unexpected column " + first_col->getName() + " as first argument of function " +
                         name,
-                    ErrorCodes::LOGICAL_ERROR
-                };
+                    ErrorCodes::LOGICAL_ERROR};
         };
     }
 
@@ -1647,8 +1558,7 @@ private:
         throw Exception{
             "Conversion from " + from_type->getName() + " to " + to_type->getName() +
                 " is not supported",
-            ErrorCodes::CANNOT_CONVERT_TYPE
-        };
+            ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
     template <typename DataType> static auto monotonicityForType(const DataType * const)
@@ -1765,6 +1675,9 @@ public:
         wrapper_function = prepare(from_inner_type, to_inner_type, action);
         prepareMonotonicityInformation(from_inner_type, to_inner_type);
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {

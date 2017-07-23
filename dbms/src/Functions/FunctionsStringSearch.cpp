@@ -960,6 +960,9 @@ public:
         return 3;
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
@@ -1007,13 +1010,6 @@ public:
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.getByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
-        }
-        else if (const ColumnConst * col = typeid_cast<const ColumnConst *>(column_src.get()))
-        {
-            String res;
-            Impl::constant(col->getValue<String>(), needle, replacement, res);
-            auto col_res = DataTypeString().createConstColumn(col->size(), res);
-            block.getByPosition(result).column = col_res;
         }
         else
             throw Exception(

@@ -83,15 +83,6 @@ public:
             }
             data_to.resize(pos);
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            T value = col_from->template getValue<T>();
-            std::string res(reinterpret_cast<const char *>(&value), sizeof(T));
-            while (!res.empty() && res[res.length() - 1] == '\0')
-                res.erase(res.end() - 1);
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), res);
-        }
         else
         {
             return false;
@@ -99,6 +90,8 @@ public:
 
         return true;
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -117,6 +110,7 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
+
 
 template<typename ToDataType, typename Name>
 class FunctionReinterpretStringAs : public IFunction
@@ -143,6 +137,8 @@ public:
 
         return std::make_shared<ToDataType>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -186,14 +182,6 @@ public:
                 vec_res[i] = value;
                 offset += step;
             }
-        }
-        else if (auto col = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
-        {
-            ToFieldType value = 0;
-            String str = col->getValue<String>();
-            memcpy(&value, str.data(), std::min(sizeof(ToFieldType), str.length()));
-            auto col_res = DataTypeNumber<ToFieldType>().createConstColumn(col->size(), toField(value));
-            block.getByPosition(result).column = col_res;
         }
         else
         {

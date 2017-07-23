@@ -135,20 +135,11 @@ private:
 
             return true;
         }
-        else if (const auto col = checkAndGetColumnConst<ColumnVector<FieldType>>(arg))
-        {
-            const FieldType src[Impl::rows_per_iteration] { col->template getValue<FieldType>() };
-            Float64 dst[Impl::rows_per_iteration];
-
-            Impl::execute(src, dst);
-
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), dst[0]);
-
-            return true;
-        }
 
         return false;
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {

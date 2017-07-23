@@ -148,6 +148,7 @@ public:
     {
         return 1;
     }
+
     bool isInjective(const Block &) override
     {
         return is_injective;
@@ -161,6 +162,8 @@ public:
 
         return arguments[0]->clone();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -176,12 +179,6 @@ public:
             auto col_res = std::make_shared<ColumnFixedString>(col->getN());
             block.getByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
-        }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column.get()))
-        {
-            String res;
-            Impl::constant(col->getValue<String>(), res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), res);
         }
         else
             throw Exception(

@@ -727,6 +727,8 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
@@ -759,12 +761,6 @@ public:
                 Impl::vector_fixed_to_vector(col->getChars(), col->getN(), vec_res);
             }
         }
-        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            ResultType res = 0;
-            Impl::constant(col->getValue<String>(), res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), toField(res));
-        }
         else if (const ColumnArray * col = checkAndGetColumn<ColumnArray>(column.get()))
         {
             auto col_res = std::make_shared<ColumnVector<ResultType>>();
@@ -773,12 +769,6 @@ public:
             typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
             vec_res.resize(col->size());
             Impl::array(col->getOffsets(), vec_res);
-        }
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnArray>(column.get()))
-        {
-            ResultType res = 0;
-            Impl::constant_array(col->getValue<Array>(), res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), toField(res));
         }
         else
             throw Exception(
@@ -807,10 +797,12 @@ public:
     {
         return 1;
     }
+
     bool isInjective(const Block &) override
     {
         return true;
     }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0])
@@ -821,6 +813,7 @@ public:
         return arguments[0]->clone();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -837,14 +830,7 @@ public:
             block.getByPosition(result).column = col_res;
             ReverseImpl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
         }
-        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            String res;
-            ReverseImpl::constant(col->getValue<String>(), res);
-            auto col_res = DataTypeString().createConstColumn(col->size(), res);
-            block.getByPosition(result).column = col_res;
-        }
-        else if (checkColumn<ColumnArray>(column.get()) || checkColumnConst<ColumnArray>(column.get()))
+        else if (checkColumn<ColumnArray>(column.get()))
         {
             FunctionArrayReverse().execute(block, arguments, result);
         }
@@ -1455,6 +1441,7 @@ private:
     {
         return 2;
     }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!checkDataType<DataTypeString>(arguments[0].get()))
@@ -1467,6 +1454,9 @@ private:
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
@@ -1517,13 +1507,6 @@ private:
             }
 
             dst_data.resize_assume_reserved(dst_offset);
-        }
-        else if (const auto col = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            String in_data = col->getValue<String>();
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col->size(),
-                in_data.size() == 0 ? in_data : in_data.back() == trailing_char_str.front() ? in_data : in_data + trailing_char_str);
         }
         else
             throw Exception{
