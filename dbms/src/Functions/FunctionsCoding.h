@@ -875,23 +875,17 @@ public:
         /// MAC address is represented in UInt64 in natural order (so, MAC addresses are compared in same order as UInt64).
         /// Higher two bytes in UInt64 are just ignored.
 
-        out[0] = hexUppercase((mac >> 44) % 16);
-        out[1] = hexUppercase((mac >> 40) % 16);
+        writeHexByteUppercase(mac >> 40, &out[0]);
         out[2] = ':';
-        out[3] = hexUppercase((mac >> 36) % 16);
-        out[4] = hexUppercase((mac >> 32) % 16);
+        writeHexByteUppercase(mac >> 32, &out[3]);
         out[5] = ':';
-        out[6] = hexUppercase((mac >> 28) % 16);
-        out[7] = hexUppercase((mac >> 24) % 16);
+        writeHexByteUppercase(mac >> 24, &out[6]);
         out[8] = ':';
-        out[9] = hexUppercase((mac >> 20) % 16);
-        out[10] = hexUppercase((mac >> 16) % 16);
+        writeHexByteUppercase(mac >> 16, &out[9]);
         out[11] = ':';
-        out[12] = hexUppercase((mac >> 12) % 16);
-        out[13] = hexUppercase((mac >> 8) % 16);
+        writeHexByteUppercase(mac >> 8, &out[12]);
         out[14] = ':';
-        out[15] = hexUppercase((mac >> 4) % 16);
-        out[16] = hexUppercase((mac) % 16);
+        writeHexByteUppercase(mac, &out[15]);
         out[17] = '\0';
     }
 
@@ -1324,7 +1318,7 @@ public:
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
-            UInt8 byte = static_cast<UInt8>((x >> offset) & 255);
+            UInt8 byte = x >> offset;
 
             /// Leading zeros.
             if (byte == 0 && !was_nonzero && offset)
@@ -1332,10 +1326,11 @@ public:
 
             was_nonzero = true;
 
-            *(out++) = hexUppercase(byte / 16);
-            *(out++) = hexUppercase(byte % 16);
+            writeHexByteUppercase(byte, out);
+            out += 2;
         }
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
     }
 
     template <typename T>
@@ -1398,11 +1393,12 @@ public:
     {
         while (pos < end)
         {
-            UInt8 byte = *(pos++);
-            *(out++) = hexUppercase(byte / 16);
-            *(out++) = hexUppercase(byte % 16);
+            writeHexByteUppercase(*pos, out);
+            ++pos;
+            out += 2;
         }
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
     }
 
     bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
