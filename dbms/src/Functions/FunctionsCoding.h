@@ -52,10 +52,10 @@ namespace ErrorCodes
   */
 
 
-constexpr auto ipv4_bytes_length = 4;
-constexpr auto ipv6_bytes_length = 16;
-constexpr auto uuid_bytes_length = 16;
-constexpr auto uuid_text_length = 36;
+constexpr size_t ipv4_bytes_length = 4;
+constexpr size_t ipv6_bytes_length = 16;
+constexpr size_t uuid_bytes_length = 16;
+constexpr size_t uuid_text_length = 36;
 
 
 class FunctionIPv6NumToString : public IFunction
@@ -375,21 +375,6 @@ public:
             if (*++src != ':')
                 return clear_dst();
 
-        /// get integer value for a hexademical char digit, or -1
-        const auto number_by_char = [] (const char ch)
-        {
-            if ('A' <= ch && ch <= 'F')
-                return 10 + ch - 'A';
-
-            if ('a' <= ch && ch <= 'f')
-                return 10 + ch - 'a';
-
-            if ('0' <= ch && ch <= '9')
-                return ch - '0';
-
-            return -1;
-        };
-
         unsigned char tmp[ipv6_bytes_length]{};
         auto tp = tmp;
         auto endp = tp + ipv6_bytes_length;
@@ -400,7 +385,7 @@ public:
 
         while (const auto ch = *src++)
         {
-            const auto num = number_by_char(ch);
+            const auto num = unhex(ch);
 
             if (num != -1)
             {
@@ -885,42 +870,29 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    static void formatMAC(UInt64 mac, char *& out)
+    static void formatMAC(UInt64 mac, unsigned char * out)
     {
-        char * begin = out;
+        /// MAC address is represented in UInt64 in natural order (so, MAC addresses are compared in same order as UInt64).
+        /// Higher two bytes in UInt64 are just ignored.
 
-        /// Write everything backwards.
-        for (size_t offset = 0; offset <= 40; offset += 8)
-        {
-            if (offset > 0)
-                *(out++) = ':';
-
-            /// Get the next byte.
-            UInt64 value = (mac >> offset) & static_cast<UInt64>(255);
-
-            /// Faster than sprintf.
-            if (value < 16)
-            {
-                *(out++) = '0';
-            }
-            if (value == 0)
-            {
-                *(out++) = '0';
-            }
-            else
-            {
-                while (value > 0)
-                {
-                    *(out++) = hexUppercase(value % 16);
-                    value /= 16;
-                }
-            }
-        }
-
-        /// And reverse.
-        std::reverse(begin, out);
-
-        *(out++) = '\0';
+        out[0] = hexUppercase((mac >> 44) % 16);
+        out[1] = hexUppercase((mac >> 40) % 16);
+        out[2] = ':';
+        out[3] = hexUppercase((mac >> 36) % 16);
+        out[4] = hexUppercase((mac >> 32) % 16);
+        out[5] = ':';
+        out[6] = hexUppercase((mac >> 28) % 16);
+        out[7] = hexUppercase((mac >> 24) % 16);
+        out[8] = ':';
+        out[9] = hexUppercase((mac >> 20) % 16);
+        out[10] = hexUppercase((mac >> 16) % 16);
+        out[11] = ':';
+        out[12] = hexUppercase((mac >> 12) % 16);
+        out[13] = hexUppercase((mac >> 8) % 16);
+        out[14] = ':';
+        out[15] = hexUppercase((mac >> 4) % 16);
+        out[16] = hexUppercase((mac) % 16);
+        out[17] = '\0';
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -937,26 +909,24 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * 18); /// the longest value is: xx:xx:xx:xx:xx:xx\0
+            vec_res.resize(vec_in.size() * 18); /// the value is: xx:xx:xx:xx:xx:xx\0
             offsets_res.resize(vec_in.size());
-            char * begin = reinterpret_cast<char *>(&vec_res[0]);
-            char * pos = begin;
 
+            size_t current_offset = 0;
             for (size_t i = 0; i < vec_in.size(); ++i)
             {
-                formatMAC(vec_in[i], pos);
-                offsets_res[i] = pos - begin;
+                formatMAC(vec_in[i], &vec_res[current_offset]);
+                current_offset += 18;
+                offsets_res[i] = current_offset;
             }
-
-            vec_res.resize(pos - begin);
         }
         else if (auto col = checkAndGetColumnConst<ColumnUInt64>(column.get()))
         {
-            char buf[18];
-            char * pos = buf;
+            unsigned char buf[18];
+            unsigned char * pos = buf;
             formatMAC(col->getValue<UInt64>(), pos);
 
-            auto col_res = DataTypeString().createConstColumn(col->size(), String(buf));
+            auto col_res = DataTypeString().createConstColumn(col->size(), String(reinterpret_cast<const char *>(buf)));
             block.getByPosition(result).column = col_res;
         }
         else
@@ -967,107 +937,63 @@ public:
 };
 
 
-class FunctionMACStringToNum : public IFunction
+struct ParseMACImpl
 {
-public:
+    static constexpr size_t min_string_size = 17;
+    static constexpr size_t max_string_size = 17;
+
+    /** Example: 01:02:03:04:05:06.
+      * There could be any separators instead of : and them are just ignored.
+      * The order of resulting integers are correspond to the order of MAC address.
+      * If there are any chars other than valid hex digits for bytes, the behaviour is implementation specific.
+      */
+    static UInt64 parse(const char * pos)
+    {
+        return (UInt64(unhex(pos[0])) << 44)
+             | (UInt64(unhex(pos[1])) << 40)
+             | (UInt64(unhex(pos[3])) << 36)
+             | (UInt64(unhex(pos[4])) << 32)
+             | (UInt64(unhex(pos[6])) << 28)
+             | (UInt64(unhex(pos[7])) << 24)
+             | (UInt64(unhex(pos[9])) << 20)
+             | (UInt64(unhex(pos[10])) << 16)
+             | (UInt64(unhex(pos[12])) << 12)
+             | (UInt64(unhex(pos[13])) << 8)
+             | (UInt64(unhex(pos[15])) << 4)
+             | (UInt64(unhex(pos[16])));
+    }
+
     static constexpr auto name = "MACStringToNum";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringToNum>(); }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt64>();
-    }
-
-    static UInt64 parseMAC(const char * pos)
-    {
-
-        /// get integer value for a hexademical char digit, or -1
-        const auto number_by_char = [] (const char ch)
-        {
-            if ('A' <= ch && ch <= 'F')
-                return 10 + ch - 'A';
-
-            if ('a' <= ch && ch <= 'f')
-                return 10 + ch - 'a';
-
-            if ('0' <= ch && ch <= '9')
-                return ch - '0';
-
-            return -1;
-        };
-
-        UInt64 res = 0;
-        for (int offset = 40; offset >= 0; offset -= 8)
-        {
-            UInt64 value = 0;
-            size_t len = 0;
-            int val = 0;
-            while ((val = number_by_char(*pos)) >= 0 && len <= 2)
-            {
-                value = value * 16 + val;
-                ++len;
-                ++pos;
-            }
-            if (len == 0 || value > 255 || (offset > 0 && *pos != ':'))
-                return 0;
-            res |= value << offset;
-            ++pos;
-        }
-        if (*(pos - 1) != '\0')
-            return 0;
-        return res;
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
-    {
-        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
-
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
-        {
-            auto col_res = std::make_shared<ColumnUInt64>();
-            block.getByPosition(result).column = col_res;
-
-            ColumnUInt64::Container_t & vec_res = col_res->getData();
-            vec_res.resize(col->size());
-
-            const ColumnString::Chars_t & vec_src = col->getChars();
-            const ColumnString::Offsets_t & offsets_src = col->getOffsets();
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < vec_res.size(); ++i)
-            {
-                vec_res[i] = parseMAC(reinterpret_cast<const char *>(&vec_src[prev_offset]));
-                prev_offset = offsets_src[i];
-            }
-        }
-        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getValue<String>().c_str()));
-            block.getByPosition(result).column = col_res;
-        }
-        else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
-    }
 };
 
-class FunctionMACStringToOUI : public IFunction
+struct ParseOUIImpl
+{
+    static constexpr size_t min_string_size = 8;
+    static constexpr size_t max_string_size = 17;
+
+    /** OUI is the first three bytes of MAC address.
+      * Example: 01:02:03.
+      */
+    static UInt64 parse(const char * pos)
+    {
+        return (UInt64(unhex(pos[0])) << 20)
+             | (UInt64(unhex(pos[1])) << 16)
+             | (UInt64(unhex(pos[3])) << 12)
+             | (UInt64(unhex(pos[4])) << 8)
+             | (UInt64(unhex(pos[6])) << 4)
+             | (UInt64(unhex(pos[7])));
+    }
+
+    static constexpr auto name = "MACStringToOUI";
+};
+
+
+template <typename Impl>
+class FunctionMACStringTo : public IFunction
 {
 public:
-    static constexpr auto name = "MACStringToOUI";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringToOUI>(); }
+    static constexpr auto name = Impl::name;
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringTo<Impl>>(); }
 
     String getName() const override
     {
@@ -1083,47 +1009,6 @@ public:
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt64>();
-    }
-
-    static UInt64 parseMAC(const char * pos)
-    {
-
-        /// get integer value for a hexademical char digit, or -1
-        const auto number_by_char = [] (const char ch)
-        {
-            if ('A' <= ch && ch <= 'F')
-                return 10 + ch - 'A';
-
-            if ('a' <= ch && ch <= 'f')
-                return 10 + ch - 'a';
-
-            if ('0' <= ch && ch <= '9')
-                return ch - '0';
-
-            return -1;
-        };
-
-        UInt64 res = 0;
-        for (int offset = 40; offset >= 0; offset -= 8)
-        {
-            UInt64 value = 0;
-            size_t len = 0;
-            int val = 0;
-            while ((val = number_by_char(*pos)) >= 0 && len <= 2)
-            {
-                value = value * 16 + val;
-                ++len;
-                ++pos;
-            }
-            if (len == 0 || value > 255 || (offset > 0 && *pos != ':'))
-                return 0;
-            res |= value << offset;
-            ++pos;
-        }
-        if (*(pos - 1) != '\0')
-            return 0;
-        res = res >> 24;
-        return res;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -1144,19 +1029,30 @@ public:
 
             for (size_t i = 0; i < vec_res.size(); ++i)
             {
-                vec_res[i] = parseMAC(reinterpret_cast<const char *>(&vec_src[prev_offset]));
-                prev_offset = offsets_src[i];
+                size_t current_offset = offsets_src[i];
+                size_t string_size = current_offset - prev_offset - 1; /// mind the terminating zero byte
+
+                if (string_size >= Impl::min_string_size && string_size <= Impl::max_string_size)
+                    vec_res[i] = Impl::parse(reinterpret_cast<const char *>(&vec_src[prev_offset]));
+                else
+                    vec_res[i] = 0;
+
+                prev_offset = current_offset;
             }
         }
         else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
         {
-            auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getValue<String>().c_str()));
-            block.getByPosition(result).column = col_res;
+            UInt64 res = 0;
+            StringRef src = col->getDataAt(0);
+            if (src.size >= Impl::min_string_size && src.size <= Impl::max_string_size)
+                res = Impl::parse(src.data);
+
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
