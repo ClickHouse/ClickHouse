@@ -18,4 +18,6 @@
 
     <query>SELECT count() FROM system.numbers WHERE NOT ignore(MACNumToString(number))</query>
     <query>SELECT count() FROM system.numbers WHERE NOT ignore(MACStringToNum(MACNumToString(number)))</query>
+    <query>SELECT count() FROM system.numbers_mt WHERE NOT ignore(MACNumToString(rand64()))</query>
+    <query>SELECT count() FROM system.numbers_mt WHERE NOT ignore(MACStringToNum(MACNumToString(rand64())))</query>
 </test>
