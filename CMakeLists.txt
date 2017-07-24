@@ -11,7 +11,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # Require at least clang 3.8
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
-        message (FATAL_ERROR "Clang version must be at least 3.8!")
+        message (FATAL_ERROR "Clang version must be at least 3.8! Recommended 4+")
     endif ()
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4)
         message (WARNING "Compilation has only been tested with Clang 4+")
