@@ -1561,7 +1561,8 @@ private:
             ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
-    template <typename DataType> static auto monotonicityForType(const DataType * const)
+    template <typename DataType>
+    static auto monotonicityForType(const DataType * const)
     {
         return FunctionTo<DataType>::Type::Monotonic::get;
     }
@@ -1610,7 +1611,7 @@ public:
 
     String getName() const override { return name; }
 
-    bool hasSpecialSupportForNulls() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

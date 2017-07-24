@@ -26,20 +26,14 @@ private:
     size_t s;
 
 public:
-    ColumnConst(ColumnPtr data, size_t s)
-        : data(data), s(s)
-    {
-    }
+    ColumnConst(ColumnPtr data, size_t s);
 
     bool isConst() const override
     {
         return true;
     }
 
-    ColumnPtr convertToFullColumn() const
-    {
-        return data->replicate(Offsets_t(1, s));
-    }
+    ColumnPtr convertToFullColumn() const;
 
     ColumnPtr convertToFullColumnIfConst() const override
     {
