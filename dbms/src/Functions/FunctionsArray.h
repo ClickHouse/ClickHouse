@@ -755,10 +755,16 @@ private:
     template <typename T>
     bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        return dispatchForFirstNumericType([&, this] (auto arg)
-            {
-                return executeNumberNumber<T, typename std::decay<decltype(*arg)>::type>(block, arguments, result);
-            })
+        return executeNumberNumber<T, UInt8>(block, arguments, result)
+            || executeNumberNumber<T, UInt16>(block, arguments, result)
+            || executeNumberNumber<T, UInt32>(block, arguments, result)
+            || executeNumberNumber<T, UInt64>(block, arguments, result)
+            || executeNumberNumber<T, Int8>(block, arguments, result)
+            || executeNumberNumber<T, Int16>(block, arguments, result)
+            || executeNumberNumber<T, Int32>(block, arguments, result)
+            || executeNumberNumber<T, Int64>(block, arguments, result)
+            || executeNumberNumber<T, Float32>(block, arguments, result)
+            || executeNumberNumber<T, Float64>(block, arguments, result)
             || executeNumberNumber<T, Null>(block, arguments, result);
     }
 
@@ -1138,10 +1144,16 @@ private:
     /// Perform function on the given block. Internal version.
     void perform(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (!(dispatchForFirstNumericType([&, this] (auto arg)
-            {
-                return executeNumber<typename std::decay<decltype(*arg)>::type>(block, arguments, result);
-            })
+        if (!(executeNumber<UInt8>(block, arguments, result)
+            || executeNumber<UInt16>(block, arguments, result)
+            || executeNumber<UInt32>(block, arguments, result)
+            || executeNumber<UInt64>(block, arguments, result)
+            || executeNumber<Int8>(block, arguments, result)
+            || executeNumber<Int16>(block, arguments, result)
+            || executeNumber<Int32>(block, arguments, result)
+            || executeNumber<Int64>(block, arguments, result)
+            || executeNumber<Float32>(block, arguments, result)
+            || executeNumber<Float64>(block, arguments, result)
             || executeConst(block, arguments, result)
             || executeString(block, arguments, result)
             || executeGeneric(block, arguments, result)))

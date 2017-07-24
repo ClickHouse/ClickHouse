@@ -350,10 +350,16 @@ private:
 
         for (const auto & br : branches)
         {
-            if (!(dispatchForFirstNumericType([&, this] (auto arg)
-                {
-                    return ArraySourceCreator<TResult, typename std::decay<decltype(*arg)>::type>::execute(sources, block, args, br);
-                })
+            if (! (ArraySourceCreator<TResult, UInt8>::execute(sources, block, args, br)
+                || ArraySourceCreator<TResult, UInt16>::execute(sources, block, args, br)
+                || ArraySourceCreator<TResult, UInt32>::execute(sources, block, args, br)
+                || ArraySourceCreator<TResult, UInt64>::execute(sources, block, args, br)
+                || ArraySourceCreator<TResult, Int8>::execute(sources, block, args, br)
+                || ArraySourceCreator<TResult, Int16>::execute(sources, block, args, br)
+                || ArraySourceCreator<TResult, Int32>::execute(sources, block, args, br)
+                || ArraySourceCreator<TResult, Int64>::execute(sources, block, args, br)
+                || ArraySourceCreator<TResult, Float32>::execute(sources, block, args, br)
+                || ArraySourceCreator<TResult, Float64>::execute(sources, block, args, br)
                 || ArraySourceCreator<TResult, Null>::execute(sources, block, args, br)))
                 throw Exception{"Unexpected type of Array column in function multiIf with numeric Array arguments", ErrorCodes::LOGICAL_ERROR};
         }
