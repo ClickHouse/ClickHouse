@@ -70,6 +70,11 @@ struct NumericArraySource
         return row_num == offsets.size();
     }
 
+    size_t rowNum() const
+    {
+        return row_num;
+    }
+
     Slice getWhole() const
     {
         return {&elements[prev_offset], offsets[row_num] - prev_offset};
@@ -135,6 +140,11 @@ struct ConstSource
         return row_num == total_rows;
     }
 
+    size_t rowNum() const
+    {
+        return row_num;
+    }
+
     Slice getWhole() const
     {
         return base.getWhole();
@@ -187,6 +197,11 @@ struct NumericArraySink
     {
         return row_num == offsets.size();
     }
+
+    size_t rowNum() const
+    {
+        return row_num;
+    }
 };
 
 
@@ -215,6 +230,11 @@ struct StringSource
     bool isEnd() const
     {
         return row_num == offsets.size();
+    }
+
+    size_t rowNum() const
+    {
+        return row_num;
     }
 
     Slice getWhole() const
@@ -282,6 +302,11 @@ struct StringSink
     {
         return row_num == offsets.size();
     }
+
+    size_t rowNum() const
+    {
+        return row_num;
+    }
 };
 
 
@@ -312,6 +337,11 @@ struct FixedStringSource
     bool isEnd() const
     {
         return row_num == total_rows;
+    }
+
+    size_t rowNum() const
+    {
+        return row_num;
     }
 
     Slice getWhole() const
@@ -373,6 +403,11 @@ struct FixedStringSink
     bool isEnd() const
     {
         return row_num == total_rows;
+    }
+
+    size_t rowNum() const
+    {
+        return row_num;
     }
 };
 
@@ -450,6 +485,11 @@ struct GenericArraySource
         return row_num == offsets.size();
     }
 
+    size_t rowNum() const
+    {
+        return row_num;
+    }
+
     Slice getWhole() const
     {
         return {&elements, prev_offset, offsets[row_num] - prev_offset};
@@ -511,6 +551,11 @@ struct GenericArraySink
     bool isEnd() const
     {
         return row_num == offsets.size();
+    }
+
+    size_t rowNum() const
+    {
+        return row_num;
     }
 };
 
@@ -578,6 +623,102 @@ void concat(StringSources & sources, Sink && sink)
             source->next();
         }
         sink.next();
+    }
+}
+
+
+template <typename Source, typename Sink>
+void sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
+{
+    while (!src.isEnd())
+    {
+        writeSlice(src.getSliceFromLeft(offset), sink);
+        sink.next();
+        src.next();
+    }
+}
+
+template <typename Source, typename Sink>
+void sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, size_t length)
+{
+    while (!src.isEnd())
+    {
+        writeSlice(src.getSliceFromLeft(offset, length), sink);
+        sink.next();
+        src.next();
+    }
+}
+
+template <typename Source, typename Sink>
+void sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
+{
+    while (!src.isEnd())
+    {
+        writeSlice(src.getSliceFromRight(offset), sink);
+        sink.next();
+        src.next();
+    }
+}
+
+template <typename Source, typename Sink>
+void sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, size_t length)
+{
+    while (!src.isEnd())
+    {
+        writeSlice(src.getSliceFromRight(offset, length), sink);
+        sink.next();
+        src.next();
+    }
+}
+
+
+template <typename Source, typename Sink>
+void sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_column)
+{
+    while (!src.isEnd())
+    {
+        Int64 offset = offset_column.get64(src.rowNum());
+
+        if (offset != 0)
+        {
+            typename Source::Slice slice;
+
+            if (offset > 0)
+                slice = src.getSliceFromLeft(offset - 1);
+            else
+                slice = src.getSliceFromRight(-offset);
+
+            writeSlice(slice, sink);
+        }
+
+        sink.next();
+        src.next();
+    }
+}
+
+template <typename Source, typename Sink>
+void sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_column, IColumn & length_column)
+{
+    while (!src.isEnd())
+    {
+        size_t row_num = src.rowNum();
+        Int64 offset = offset_column.get64(row_num);
+        UInt64 size = length_column.get64(row_num);
+
+        if (offset != 0 && size < 0x8000000000000000ULL)
+        {
+            typename Source::Slice slice;
+
+            if (offset > 0)
+                slice = src.getSliceFromLeft(offset - 1, size);
+            else
+                slice = src.getSliceFromRight(-offset, size);
+
+            writeSlice(slice, sink);
+        }
+
+        sink.next();
+        src.next();
     }
 }
 
