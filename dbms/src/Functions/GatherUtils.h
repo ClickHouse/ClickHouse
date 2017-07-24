@@ -24,7 +24,6 @@
   * - conditional selecting from several string or array columns (if, multiIf);
   * - push and pop elements from array front or back (arrayPushBack, etc);
   * - splitting strings into arrays and joining arrays back;
-  * - conversion of numeric arrays between different types (CAST);
   * - formatting strings (format).
   *
   * There are various Sources, Sinks and Slices.
