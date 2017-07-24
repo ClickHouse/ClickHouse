@@ -877,16 +877,12 @@ public:
         if (column_start_const)
         {
             start_value = column_start_const->getInt(0);
-            if (start_value > 0x8000000000000000ULL)    /// Larger value could lead to overflow, then bypass bounds checking and read wrong data.
-                throw Exception("Too large value of second argument provided for function substring.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
         if (column_length_const)
         {
             length_value = column_length_const->getInt(0);
             if (length_value < 0)
                 throw Exception("Third argument provided for function substring could not be negative.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-            if (length_value > 0x8000000000000000ULL)
-                throw Exception("Too large value of third argument provided for function substring.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column_string))
