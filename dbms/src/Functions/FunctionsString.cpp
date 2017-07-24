@@ -780,10 +780,8 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
+    bool isVariadic() const { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
