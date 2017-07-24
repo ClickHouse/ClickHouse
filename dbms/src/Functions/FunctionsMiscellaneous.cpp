@@ -154,10 +154,7 @@ public:
         return std::make_shared<FunctionVisibleWidth>();
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     /// Get the name of the function.
     String getName() const override
@@ -197,10 +194,7 @@ public:
         return name;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -236,10 +230,7 @@ public:
         return name;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -274,10 +265,7 @@ public:
         return name;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -811,10 +799,7 @@ public:
         return 0;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     String getName() const override
     {
@@ -863,10 +848,7 @@ public:
         return 0;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     String getName() const override
     {

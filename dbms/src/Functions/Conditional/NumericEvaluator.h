@@ -208,7 +208,7 @@ private:
 
             if (!(dispatchForFirstNumericType([&] (auto arg)
                 {
-                    return NumericSourceCreator<TResult, typename std::decay<decltype(*arg)>::type>::execute(sources, block, args, br);
+                    return NumericSourceCreator<TResult, typename std::decay<decltype(*arg)>::type>::execute(source, block, args, br);
                 })
                 || NumericSourceCreator<TResult, Null>::execute(source, block, args, br)))
                 throw CondException{CondErrorCodes::NUMERIC_EVALUATOR_ILLEGAL_ARGUMENT, toString(br.index)};

@@ -71,7 +71,7 @@ public:
 
     FunctionArray(const Context & context);
 
-    bool hasSpecialSupportForNulls() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -996,10 +996,7 @@ public:
         return name;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

@@ -21,7 +21,7 @@ public:
 
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 1; }
-    bool hasSpecialSupportForNulls() const override;
+    bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -36,7 +36,7 @@ public:
 
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 1; }
-    bool hasSpecialSupportForNulls() const override;
+    bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -51,7 +51,7 @@ public:
     static FunctionPtr create(const Context & context);
 
     std::string getName() const override;
-    bool hasSpecialSupportForNulls() const override;
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -69,7 +69,7 @@ public:
 
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 2; }
-    bool hasSpecialSupportForNulls() const override;
+    bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -85,7 +85,7 @@ public:
 
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 2; }
-    bool hasSpecialSupportForNulls() const override;
+    bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -102,7 +102,7 @@ public:
 
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 1; }
-    bool hasSpecialSupportForNulls() const override;
+    bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
@@ -116,7 +116,7 @@ public:
 
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 1; }
-    bool hasSpecialSupportForNulls() const override;
+    bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 };
