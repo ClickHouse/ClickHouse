@@ -57,10 +57,8 @@ NullPresense getNullPresense(const Block & block, const ColumnNumbers & args)
 
         if (!res.has_nullable)
             res.has_nullable = elem.type->isNullable();
-        else if (!res.has_null_constant)
+        if (!res.has_null_constant)
             res.has_null_constant = elem.type->isNull();
-        else
-            break;
     }
 
     return res;
@@ -74,10 +72,8 @@ NullPresense getNullPresense(const ColumnsWithTypeAndName & args)
     {
         if (!res.has_nullable)
             res.has_nullable = elem.type->isNullable();
-        else if (!res.has_null_constant)
+        if (!res.has_null_constant)
             res.has_null_constant = elem.type->isNull();
-        else
-            break;
     }
 
     return res;
@@ -91,10 +87,8 @@ NullPresense getNullPresense(const DataTypes & types)
     {
         if (!res.has_nullable)
             res.has_nullable = type->isNullable();
-        else if (!res.has_null_constant)
+        if (!res.has_null_constant)
             res.has_null_constant = type->isNull();
-        else
-            break;
     }
 
     return res;
@@ -169,7 +163,10 @@ bool defaultImplementationForConstantArguments(
     {
         const ColumnWithTypeAndName & column = block.getByPosition(args[arg_num]);
 
-        if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
+        /// Don't materialize NULL constant column, because it is needed for subsequent defaultImplementationForNulls.
+
+        if (column.column->isNull()
+            || arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
             temporary_block.insert(column);
         else
             temporary_block.insert({ static_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });
@@ -267,6 +264,7 @@ void IFunction::getReturnTypeAndPrerequisites(
     if (!arguments.empty() && useDefaultImplementationForNulls())
     {
         NullPresense null_presense = getNullPresense(arguments);
+
         if (null_presense.has_null_constant)
         {
             out_return_type = std::make_shared<DataTypeNull>();
