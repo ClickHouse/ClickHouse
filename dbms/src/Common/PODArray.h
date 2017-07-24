@@ -35,6 +35,9 @@ namespace DB
   *
   * The template parameter `pad_right` - always allocate at the end of the array as many unused bytes.
   * Can be used to make optimistic reading, writing, copying with unaligned SIMD instructions.
+  *
+  * Some methods using allocator have TAllocatorParams variadic arguments.
+  * These arguments will be passed to corresponding methods of TAllocator.
   */
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0>
 class PODArray : private boost::noncopyable, private TAllocator    /// empty base optimization
@@ -66,9 +69,10 @@ protected:
         alloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(num_elements)));
     }
 
-    void alloc(size_t bytes)
+    template <typename ... TAllocatorParams>
+    void alloc(size_t bytes, TAllocatorParams ... allocator_params)
     {
-        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes));
+        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
         c_end_of_storage = c_start + bytes - pad_right;
     }
 
@@ -80,17 +84,18 @@ protected:
         TAllocator::free(c_start, allocated_bytes());
     }
 
-    void realloc(size_t bytes)
+    template <typename ... TAllocatorParams>
+    void realloc(size_t bytes, TAllocatorParams ... allocator_params)
     {
         if (c_start == nullptr)
         {
-            alloc(bytes);
+            alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...);
             return;
         }
 
         ptrdiff_t end_diff = c_end - c_start;
 
-        c_start = reinterpret_cast<char *>(TAllocator::realloc(c_start, allocated_bytes(), bytes));
+        c_start = reinterpret_cast<char *>(TAllocator::realloc(c_start, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...));
 
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right;
@@ -184,23 +189,26 @@ public:
     const_iterator cbegin() const { return t_start(); }
     const_iterator cend() const   { return t_end(); }
 
-    void reserve(size_t n)
+    template <typename ... TAllocatorParams>
+    void reserve(size_t n, TAllocatorParams ... allocator_params)
     {
         if (n > capacity())
-            realloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(n)));
+            realloc(roundUpToPowerOfTwoOrZero(minimum_memory_for_elements(n)), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
-    void reserve()
+    template <typename ... TAllocatorParams>
+    void reserve(TAllocatorParams ... allocator_params)
     {
         if (size() == 0)
-            realloc(std::max(INITIAL_SIZE, minimum_memory_for_elements(1)));
+            realloc(std::max(INITIAL_SIZE, minimum_memory_for_elements(1)), std::forward<TAllocatorParams>(allocator_params)...);
         else
-            realloc(allocated_bytes() * 2);
+            realloc(allocated_bytes() * 2, std::forward<TAllocatorParams>(allocator_params)...);
     }
 
-    void resize(size_t n)
+    template <typename ... TAllocatorParams>
+    void resize(size_t n, TAllocatorParams ... allocator_params)
     {
-        reserve(n);
+        reserve(n, std::forward<TAllocatorParams>(allocator_params)...);
         resize_assume_reserved(n);
     }
 
@@ -237,10 +245,11 @@ public:
         c_end = c_start;
     }
 
-    void push_back(const T & x)
+    template <typename ... TAllocatorParams>
+    void push_back(const T & x, TAllocatorParams ... allocator_params)
     {
         if (unlikely(c_end == c_end_of_storage))
-            reserve();
+            reserve(std::forward<TAllocatorParams>(allocator_params)...);
 
         *t_end() = x;
         c_end += byte_size(1);
@@ -262,12 +271,12 @@ public:
     }
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
-    template <typename It1, typename It2>
-    void insert(It1 from_begin, It2 from_end)
+    template <typename It1, typename It2, typename ... TAllocatorParams>
+    void insert(It1 from_begin, It2 from_end, TAllocatorParams ... allocator_params)
     {
         size_t required_capacity = size() + (from_end - from_begin);
         if (required_capacity > capacity())
-            reserve(roundUpToPowerOfTwoOrZero(required_capacity));
+            reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
 
         insert_assume_reserved(from_begin, from_end);
     }

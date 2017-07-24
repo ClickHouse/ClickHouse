@@ -25,7 +25,6 @@ private:
     using AggregateFunctions = std::unordered_map<String, Creator>;
 
 public:
-    AggregateFunctionFactory();
 
     AggregateFunctionPtr get(
         const String & name,
