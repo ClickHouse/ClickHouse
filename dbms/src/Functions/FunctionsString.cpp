@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsArray.h>
+#include <Functions/GatherUtils.h>
 #include <IO/WriteHelpers.h>
 #include <Common/UTF8Helpers.h>
 
@@ -861,14 +862,18 @@ public:
     {
         return true;
     }
+
     size_t getNumberOfArguments() const override
     {
         return 0;
     }
+
     bool isInjective(const Block &) override
     {
         return is_injective;
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -979,52 +984,26 @@ private:
         const ColumnConst * c0_const = checkAndGetColumnConstStringOrFixedString(c0);
         const ColumnConst * c1_const = checkAndGetColumnConstStringOrFixedString(c1);
 
-        /// The result is const string
-        if (c0_const && c1_const)
-        {
-            String res;
-            constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(c0_const->size(), res);
-        }
-        else
         {
             auto c_res = std::make_shared<ColumnString>();
             block.getByPosition(result).column = c_res;
-            ColumnString::Chars_t & vec_res = c_res->getChars();
-            ColumnString::Offsets_t & offsets_res = c_res->getOffsets();
 
             if (c0_string && c1_string)
-                vector_vector(
-                    c0_string->getChars(), c0_string->getOffsets(), c1_string->getChars(), c1_string->getOffsets(), vec_res, offsets_res);
+                concat(StringSource(*c0_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
             else if (c0_string && c1_fixed_string)
-                vector_fixed_vector(c0_string->getChars(),
-                    c0_string->getOffsets(),
-                    c1_fixed_string->getChars(),
-                    c1_fixed_string->getN(),
-                    vec_res,
-                    offsets_res);
+                concat(StringSource(*c0_string), FixedStringSource(*c1_fixed_string), StringSink(*c_res, c0->size()));
             else if (c0_string && c1_const)
-                vector_constant(c0_string->getChars(), c0_string->getOffsets(), c1_const->getValue<String>(), vec_res, offsets_res);
+                concat(StringSource(*c0_string), ConstSource<StringSource>(*c1_const), StringSink(*c_res, c0->size()));
             else if (c0_fixed_string && c1_string)
-                fixed_vector_vector(c0_fixed_string->getChars(),
-                    c0_fixed_string->getN(),
-                    c1_string->getChars(),
-                    c1_string->getOffsets(),
-                    vec_res,
-                    offsets_res);
+                concat(FixedStringSource(*c0_fixed_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
             else if (c0_const && c1_string)
-                constant_vector(c0_const->getValue<String>(), c1_string->getChars(), c1_string->getOffsets(), vec_res, offsets_res);
+                concat(ConstSource<StringSource>(*c0_const), StringSource(*c1_string), StringSink(*c_res, c0->size()));
             else if (c0_fixed_string && c1_fixed_string)
-                fixed_vector_fixed_vector(c0_fixed_string->getChars(),
-                    c0_fixed_string->getN(),
-                    c1_fixed_string->getChars(),
-                    c1_fixed_string->getN(),
-                    vec_res,
-                    offsets_res);
+                concat(FixedStringSource(*c0_fixed_string), FixedStringSource(*c1_fixed_string), StringSink(*c_res, c0->size()));
             else if (c0_fixed_string && c1_const)
-                fixed_vector_constant(c0_fixed_string->getChars(), c0_fixed_string->getN(), c1_const->getValue<String>(), vec_res, offsets_res);
+                concat(FixedStringSource(*c0_fixed_string), ConstSource<StringSource>(*c1_const), StringSink(*c_res, c0->size()));
             else if (c0_const && c1_fixed_string)
-                constant_fixed_vector(c0_const->getValue<String>(), c1_fixed_string->getChars(), c1_fixed_string->getN(), vec_res, offsets_res);
+                concat(ConstSource<StringSource>(*c0_const), FixedStringSource(*c1_fixed_string), StringSink(*c_res, c0->size()));
             else
                 throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName() + " and "
                         + block.getByPosition(arguments[1]).column->getName()
@@ -1112,224 +1091,6 @@ private:
                 out_offsets[row] = ++out_offset;
             }
         }
-    }
-
-    static void vector_vector(const ColumnString::Chars_t & a_data,
-        const ColumnString::Offsets_t & a_offsets,
-        const ColumnString::Chars_t & b_data,
-        const ColumnString::Offsets_t & b_offsets,
-        ColumnString::Chars_t & c_data,
-        ColumnString::Offsets_t & c_offsets)
-    {
-        size_t size = a_offsets.size();
-        c_data.resize(a_data.size() + b_data.size() - size);
-        c_offsets.resize(size);
-
-        ColumnString::Offset_t offset = 0;
-        ColumnString::Offset_t a_offset = 0;
-        ColumnString::Offset_t b_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
-            offset += a_offsets[i] - a_offset - 1;
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
-            offset += b_offsets[i] - b_offset;
-
-            a_offset = a_offsets[i];
-            b_offset = b_offsets[i];
-
-            c_offsets[i] = offset;
-        }
-    }
-
-    static void vector_fixed_vector(const ColumnString::Chars_t & a_data,
-        const ColumnString::Offsets_t & a_offsets,
-        const ColumnString::Chars_t & b_data,
-        ColumnString::Offset_t b_n,
-        ColumnString::Chars_t & c_data,
-        ColumnString::Offsets_t & c_offsets)
-    {
-        size_t size = a_offsets.size();
-        c_data.resize(a_data.size() + b_data.size());
-        c_offsets.resize(size);
-
-        ColumnString::Offset_t offset = 0;
-        ColumnString::Offset_t a_offset = 0;
-        ColumnString::Offset_t b_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
-            offset += a_offsets[i] - a_offset - 1;
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_n);
-            offset += b_n;
-            c_data[offset] = 0;
-            offset += 1;
-
-            a_offset = a_offsets[i];
-            b_offset += b_n;
-
-            c_offsets[i] = offset;
-        }
-    }
-
-    static void vector_constant(const ColumnString::Chars_t & a_data,
-        const ColumnString::Offsets_t & a_offsets,
-        const std::string & b,
-        ColumnString::Chars_t & c_data,
-        ColumnString::Offsets_t & c_offsets)
-    {
-        size_t size = a_offsets.size();
-        c_data.resize(a_data.size() + b.size() * size);
-        c_offsets.assign(a_offsets);
-
-        for (size_t i = 0; i < size; ++i)
-            c_offsets[i] += b.size() * (i + 1);
-
-        ColumnString::Offset_t offset = 0;
-        ColumnString::Offset_t a_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_offsets[i] - a_offset - 1);
-            offset += a_offsets[i] - a_offset - 1;
-            memcpy(&c_data[offset], b.data(), b.size() + 1);
-            offset += b.size() + 1;
-
-            a_offset = a_offsets[i];
-        }
-    }
-
-    static void fixed_vector_vector(const ColumnString::Chars_t & a_data,
-        ColumnString::Offset_t a_n,
-        const ColumnString::Chars_t & b_data,
-        const ColumnString::Offsets_t & b_offsets,
-        ColumnString::Chars_t & c_data,
-        ColumnString::Offsets_t & c_offsets)
-    {
-        size_t size = b_offsets.size();
-        c_data.resize(a_data.size() + b_data.size());
-        c_offsets.resize(size);
-
-        ColumnString::Offset_t offset = 0;
-        ColumnString::Offset_t a_offset = 0;
-        ColumnString::Offset_t b_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[a_offset], a_n);
-            offset += a_n;
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
-            offset += b_offsets[i] - b_offset;
-
-            a_offset = a_n;
-            b_offset = b_offsets[i];
-
-            c_offsets[i] = offset;
-        }
-    }
-
-    static void fixed_vector_fixed_vector(const ColumnString::Chars_t & a_data,
-        ColumnString::Offset_t a_n,
-        const ColumnString::Chars_t & b_data,
-        ColumnString::Offset_t b_n,
-        ColumnString::Chars_t & c_data,
-        ColumnString::Offsets_t & c_offsets)
-    {
-        size_t size = a_data.size() / a_n;
-        c_data.resize(a_data.size() + b_data.size() + size);
-        c_offsets.resize(size);
-
-        ColumnString::Offset_t offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[i * a_n], a_n);
-            offset += a_n;
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[i * b_n], b_n);
-            offset += b_n;
-            c_data[offset] = 0;
-            ++offset;
-
-            c_offsets[i] = offset;
-        }
-    }
-
-    static void fixed_vector_constant(const ColumnString::Chars_t & a_data,
-        ColumnString::Offset_t a_n,
-        const std::string & b,
-        ColumnString::Chars_t & c_data,
-        ColumnString::Offsets_t & c_offsets)
-    {
-        size_t size = a_data.size() / a_n;
-        ColumnString::Offset_t b_n = b.size();
-        c_data.resize(a_data.size() + size * b_n + size);
-        c_offsets.resize(size);
-
-        ColumnString::Offset_t offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &a_data[i * a_n], a_n);
-            offset += a_n;
-            memcpy(&c_data[offset], b.data(), b_n);
-            offset += b_n;
-            c_data[offset] = 0;
-            ++offset;
-
-            c_offsets[i] = offset;
-        }
-    }
-
-    static void constant_vector(const std::string & a,
-        const ColumnString::Chars_t & b_data,
-        const ColumnString::Offsets_t & b_offsets,
-        ColumnString::Chars_t & c_data,
-        ColumnString::Offsets_t & c_offsets)
-    {
-        size_t size = b_offsets.size();
-        c_data.resize(b_data.size() + a.size() * size);
-        c_offsets.assign(b_offsets);
-
-        for (size_t i = 0; i < size; ++i)
-            c_offsets[i] += a.size() * (i + 1);
-
-        ColumnString::Offset_t offset = 0;
-        ColumnString::Offset_t b_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            memcpy(&c_data[offset], a.data(), a.size());
-            offset += a.size();
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[b_offset], b_offsets[i] - b_offset);
-            offset += b_offsets[i] - b_offset;
-
-            b_offset = b_offsets[i];
-        }
-    }
-
-    static void constant_fixed_vector(const std::string & a,
-        const ColumnString::Chars_t & b_data,
-        ColumnString::Offset_t b_n,
-        ColumnString::Chars_t & c_data,
-        ColumnString::Offsets_t & c_offsets)
-    {
-        size_t size = b_data.size() / b_n;
-        ColumnString::Offset_t a_n = a.size();
-        c_data.resize(size * a_n + b_data.size() + size);
-        c_offsets.resize(size);
-
-        ColumnString::Offset_t offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            memcpy(&c_data[offset], a.data(), a_n);
-            offset += a_n;
-            memcpySmallAllowReadWriteOverflow15(&c_data[offset], &b_data[i * b_n], b_n);
-            offset += b_n;
-            c_data[offset] = 0;
-            ++offset;
-
-            c_offsets[i] = offset;
-        }
-    }
-
-    static void constant_constant(const std::string & a, const std::string & b, std::string & c)
-    {
-        c = a + b;
     }
 };
 
