@@ -13,7 +13,7 @@ import xml.dom.minidom
 
 import docker
 
-from .client import Client
+from .client import Client, CommandRequest
 
 
 HELPERS_DIR = p.dirname(__file__)
