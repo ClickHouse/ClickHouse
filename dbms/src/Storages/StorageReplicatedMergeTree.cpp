@@ -2617,11 +2617,11 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(co
         block_number_lock.unlock();
     }
 
-    /// This should never happen.
+    /// Empty partition.
     if (right == 0)
-        throw Exception("Logical error: newly allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
-    --right;
+        return {};
 
+    --right;
     return getFakePartNameCoveringPartRange(month_name, left, right);
 }
 
@@ -2635,6 +2635,12 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
 
     String month_name = MergeTreeData::getMonthName(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
+
+    if (fake_part_name.empty())
+    {
+        LOG_INFO(log, "Will not clear partition " << month_name << ", it is empty.");
+        return;
+    }
 
     /// We allocated new block number for this part, so new merges can't merge clearing parts with new ones
 
@@ -2669,6 +2675,12 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field
 
     String month_name = MergeTreeData::getMonthName(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
+
+    if (fake_part_name.empty())
+    {
+        LOG_INFO(log, "Will not drop partition " << month_name << ", it is empty.");
+        return;
+    }
 
     /** Forbid to choose the parts to be deleted for merging.
       * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
