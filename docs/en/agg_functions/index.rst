@@ -87,10 +87,13 @@ You should use the ``uniqExact`` function if you definitely need an exact result
 
 The ``uniqExact`` function uses more memory than the ``uniq`` function, because the size of the state has unbounded growth as the number of different values increases.
 
-groupArray(x)
--------------
+groupArray(x), groupArray(max_size)(x)
+--------------------------------------
 Creates an array of argument values.
 Values can be added to the array in any (indeterminate) order.
+
+The second version (with ``max_size`` parameter) limits the size of resulting array to ``max_size`` elements.
+For example, ``groupArray(1)(x)`` is equivalent to ``[any(x)]``.
 
 In some cases, you can rely on the order of execution. This applies to cases when ``SELECT`` comes from a subquery that uses ``ORDER BY``.
 
