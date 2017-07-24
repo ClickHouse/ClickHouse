@@ -6,6 +6,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 
+#include <Functions/FunctionHelpers.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
 
@@ -14,11 +16,12 @@
   *  copy ranges from one or more columns to another column.
   *
   * Example:
-  * - concatenation of strings and arrays (concat, arrayStringConcat);
+  * - concatenation of strings and arrays (concat);
   * - extracting slices and elements of strings and arrays (substring, arraySlice, arrayElement);
   * - creating arrays from several columns ([x, y]);
   * - conditional selecting from several string or array columns (if, multiIf);
   * - push and pop elements from array front or back (arrayPushBack, etc);
+  * - splitting strings into arrays and joining arrays back;
   * - conversion of numeric arrays between different types (CAST);
   * - formatting strings (format).
   *
@@ -374,6 +377,45 @@ struct FixedStringSink
 };
 
 
+struct IStringSource
+{
+    using Slice = NumericArraySlice<UInt8>;
+
+    virtual void next() = 0;
+    virtual bool isEnd() const = 0;
+    virtual Slice getWhole() const = 0;
+    virtual ~IStringSource() {}
+};
+
+template <typename Impl>
+struct DynamicStringSource : IStringSource
+{
+    Impl impl;
+
+    DynamicStringSource(const IColumn & col) : impl(static_cast<const typename Impl::Column &>(col)) {}
+
+    void next() override { impl.next(); };
+    bool isEnd() const override { return impl.isEnd(); };
+    Slice getWhole() const override { return impl.getWhole(); };
+};
+
+inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & col)
+{
+    if (checkColumn<ColumnString>(&col))
+        return std::make_unique<DynamicStringSource<StringSource>>(col);
+    if (checkColumn<ColumnFixedString>(&col))
+        return std::make_unique<DynamicStringSource<FixedStringSource>>(col);
+    if (checkColumnConst<ColumnString>(&col))
+        return std::make_unique<DynamicStringSource<ConstSource<StringSource>>>(col);
+    if (checkColumnConst<ColumnFixedString>(&col))
+        return std::make_unique<DynamicStringSource<ConstSource<FixedStringSource>>>(col);
+    throw Exception("Unexpected type of string column: " + col.getName(), ErrorCodes::ILLEGAL_COLUMN);
+}
+
+using StringSources = std::vector<std::unique_ptr<IStringSource>>;
+
+
+
 struct GenericArraySlice
 {
     const IColumn * elements;
@@ -522,6 +564,20 @@ void concat(SourceA && src_a, SourceB && src_b, Sink && sink)
         sink.next();
         src_a.next();
         src_b.next();
+    }
+}
+
+template <typename Sink>
+void concat(StringSources & sources, Sink && sink)
+{
+    while (!sink.isEnd())
+    {
+        for (auto & source : sources)
+        {
+            writeSlice(source->getWhole(), sink);
+            source->next();
+        }
+        sink.next();
     }
 }
 
