@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include <city.h>
 
 #include <Common/HashTable/Hash.h>
