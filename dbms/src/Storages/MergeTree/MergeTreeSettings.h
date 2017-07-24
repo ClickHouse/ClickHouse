@@ -54,6 +54,7 @@ struct MergeTreeSettings
 
     /// How many last blocks of hashes should be kept in ZooKeeper.
     size_t replicated_deduplication_window = 100;
+    size_t replicated_deduplication_window_seconds = 7 * 24 * 60 * 60; /// one week
 
     /// Keep about this number of last records in ZooKeeper log, even if they are obsolete.
     /// It doesn't affect work of tables: used only to diagnose ZooKeeper log before cleaning.
