@@ -716,45 +716,23 @@ private:
 
         const ColumnString * c0_string = checkAndGetColumn<ColumnString>(c0);
         const ColumnString * c1_string = checkAndGetColumn<ColumnString>(c1);
-        const ColumnFixedString * c0_fixed_string = checkAndGetColumn<ColumnFixedString>(c0);
-        const ColumnFixedString * c1_fixed_string = checkAndGetColumn<ColumnFixedString>(c1);
         const ColumnConst * c0_const_string = checkAndGetColumnConst<ColumnString>(c0);
         const ColumnConst * c1_const_string = checkAndGetColumnConst<ColumnString>(c1);
-        const ColumnConst * c0_const_fixed_string = checkAndGetColumnConst<ColumnFixedString>(c0);
-        const ColumnConst * c1_const_fixed_string = checkAndGetColumnConst<ColumnFixedString>(c1);
 
         auto c_res = std::make_shared<ColumnString>();
 
         if (c0_string && c1_string)
             concat(StringSource(*c0_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
-        else if (c0_string && c1_fixed_string)
-            concat(StringSource(*c0_string), FixedStringSource(*c1_fixed_string), StringSink(*c_res, c0->size()));
         else if (c0_string && c1_const_string)
             concat(StringSource(*c0_string), ConstSource<StringSource>(*c1_const_string), StringSink(*c_res, c0->size()));
-        else if (c0_string && c1_const_fixed_string)
-            concat(StringSource(*c0_string), ConstSource<FixedStringSource>(*c1_const_fixed_string), StringSink(*c_res, c0->size()));
-        else if (c0_fixed_string && c1_string)
-            concat(FixedStringSource(*c0_fixed_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
         else if (c0_const_string && c1_string)
             concat(ConstSource<StringSource>(*c0_const_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
-        else if (c0_const_fixed_string && c1_string)
-            concat(ConstSource<FixedStringSource>(*c0_const_fixed_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
-        else if (c0_fixed_string && c1_fixed_string)
-            concat(FixedStringSource(*c0_fixed_string), FixedStringSource(*c1_fixed_string), StringSink(*c_res, c0->size()));
-        else if (c0_fixed_string && c1_const_string)
-            concat(FixedStringSource(*c0_fixed_string), ConstSource<StringSource>(*c1_const_string), StringSink(*c_res, c0->size()));
-        else if (c0_fixed_string && c1_const_fixed_string)
-            concat(FixedStringSource(*c0_fixed_string), ConstSource<FixedStringSource>(*c1_const_fixed_string), StringSink(*c_res, c0->size()));
-        else if (c0_const_string && c1_fixed_string)
-            concat(ConstSource<StringSource>(*c0_const_string), FixedStringSource(*c1_fixed_string), StringSink(*c_res, c0->size()));
-        else if (c0_const_fixed_string && c1_fixed_string)
-            concat(ConstSource<FixedStringSource>(*c0_const_fixed_string), FixedStringSource(*c1_fixed_string), StringSink(*c_res, c0->size()));
         else
-            throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName() + " and "
-                    + block.getByPosition(arguments[1]).column->getName()
-                    + " of arguments of function "
-                    + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+        {
+            /// Fallback: use generic implementation for not very important cases.
+            executeNAry(block, arguments, result);
+            return;
+        }
 
         block.getByPosition(result).column = c_res;
     }
