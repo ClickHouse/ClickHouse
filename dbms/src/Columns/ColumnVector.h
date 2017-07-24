@@ -221,6 +221,11 @@ public:
 
     UInt64 get64(size_t n) const override;
 
+    UInt64 getUInt(size_t n) const override
+    {
+        return UInt64(data[n]);
+    }
+
     Int64 getInt(size_t n) const override
     {
         return Int64(data[n]);
