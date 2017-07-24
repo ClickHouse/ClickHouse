@@ -87,12 +87,16 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         if (!task.size_predictor)
             return max_block_size_rows;
 
-        /// Limit in rows, calculated by preferred_max_column_in_block_size_bytes. Can't be less than index_granularity.
-        size_t rows_to_read = std::max(index_granularity, task.size_predictor->estimateNumRows(preferred_block_size_bytes));
+        /// Calculates number of rows will be read using preferred_max_column_in_block_size_bytes.
+        /// Can't be less than index_granularity.
+        size_t rows_to_read = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
+        if (!rows_to_read)
+            return rows_to_read;
+        rows_to_read = std::max(index_granularity, rows_to_read);
 
         if (preferred_max_column_in_block_size_bytes)
         {
-            /// Limit in rows, calculated by preferred_max_column_in_block_size_bytes.
+            /// Calculates number of rows will be read using preferred_max_column_in_block_size_bytes.
             size_t rows_to_read_for_max_size_column
                 = task.size_predictor->estimateNumRowsForMaxSizeColumn(preferred_max_column_in_block_size_bytes);
             double filtration_ratio = std::max(min_filtration_ratio, 1.0 - task.size_predictor->filtered_rows_ratio);
