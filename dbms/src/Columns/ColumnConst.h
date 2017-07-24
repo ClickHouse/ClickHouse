@@ -107,6 +107,11 @@ public:
         return data->get64(0);
     }
 
+    Int64 getInt(size_t n) const override
+    {
+        return data->getInt(0);
+    }
+
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
     {
         s += length;

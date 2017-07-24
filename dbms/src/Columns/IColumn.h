@@ -111,6 +111,14 @@ public:
         throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /** If column is numeric, return value of n-th element, casted to Int64.
+      * Otherwise throw an exception.
+      */
+    virtual Int64 getInt(size_t n) const
+    {
+        throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
     virtual ColumnPtr cut(size_t start, size_t length) const
