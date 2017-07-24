@@ -755,7 +755,7 @@ private:
     template <typename T>
     bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        return dispatchForFirstNumericType([&] (auto arg)
+        return dispatchForFirstNumericType([&, this] (auto arg)
             {
                 return executeNumberNumber<T, typename std::decay<decltype(*arg)>::type>(block, arguments, result);
             })
@@ -1138,7 +1138,7 @@ private:
     /// Perform function on the given block. Internal version.
     void perform(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (!(dispatchForFirstNumericType([&] (auto arg)
+        if (!(dispatchForFirstNumericType([&, this] (auto arg)
             {
                 return executeNumber<typename std::decay<decltype(*arg)>::type>(block, arguments, result);
             })

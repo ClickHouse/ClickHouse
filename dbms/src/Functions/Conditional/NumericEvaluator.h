@@ -206,7 +206,7 @@ private:
         {
             NumericSourcePtr<TResult> source;
 
-            if (!(dispatchForFirstNumericType([&] (auto arg)
+            if (!(dispatchForFirstNumericType([&, this] (auto arg)
                 {
                     return NumericSourceCreator<TResult, typename std::decay<decltype(*arg)>::type>::execute(source, block, args, br);
                 })

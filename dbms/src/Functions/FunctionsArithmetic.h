@@ -606,7 +606,7 @@ private:
     {
         if (typeid_cast<const T0 *>(arguments[0].get()))
         {
-            if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+            if (!dispatchForFirstNumericOrTimeDataType([&, this] (auto arg)
                 {
                     return checkRightType<T0, typename std::decay<decltype(*arg)>::type>(arguments, type_res);
                 }))
@@ -725,7 +725,7 @@ private:
     {
         if (auto col_left = checkAndGetColumn<ColumnVector<typename LeftDataType::FieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
-            if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+            if (!dispatchForFirstNumericOrTimeDataType([&, this] (auto arg)
                 {
                     return executeRightType<LeftDataType, typename std::decay<decltype(*arg)>::type>(block, arguments, result, col_left);
                 }))
@@ -736,7 +736,7 @@ private:
         }
         else if (auto col_left = checkAndGetColumnConst<ColumnVector<typename LeftDataType::FieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
-             if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+             if (!dispatchForFirstNumericOrTimeDataType([&, this] (auto arg)
                 {
                     return executeRightType<LeftDataType, typename std::decay<decltype(*arg)>::type>(block, arguments, result, col_left);
                 }))
@@ -761,7 +761,7 @@ public:
     {
         DataTypePtr type_res;
 
-        if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+        if (!dispatchForFirstNumericOrTimeDataType([&, this] (auto arg)
             {
                 return checkLeftType<typename std::decay<decltype(*arg)>::type>(arguments, type_res);
             }))
@@ -773,7 +773,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!dispatchForFirstNumericOrTimeDataType([&] (auto arg)
+        if (!dispatchForFirstNumericOrTimeDataType([&, this] (auto arg)
             {
                 return executeLeftType<typename std::decay<decltype(*arg)>::type>(block, arguments, result);
             }))
@@ -840,7 +840,7 @@ public:
     {
         DataTypePtr result;
 
-        if (!dispatchForFirstNumericDataType([&] (auto arg)
+        if (!dispatchForFirstNumericDataType([&, this] (auto arg)
             {
                 return checkType<typename std::decay<decltype(*arg)>::type>(arguments, result);
             }))
@@ -854,7 +854,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!dispatchForFirstNumericType([&] (auto arg)
+        if (!dispatchForFirstNumericType([&, this] (auto arg)
             {
                 return executeType<typename std::decay<decltype(*arg)>::type>(block, arguments, result);
             }))
@@ -1123,7 +1123,7 @@ public:
 
         const auto first_arg = arguments.front().get();
 
-        if (!dispatchForFirstIntegerDataType([&] (auto arg)
+        if (!dispatchForFirstIntegerDataType([&, this] (auto arg)
             {
                 return checkDataType<typename std::decay<decltype(*arg)>::type>(first_arg);
             }))
@@ -1152,7 +1152,7 @@ public:
     {
         const auto value_col = block.getByPosition(arguments.front()).column.get();
 
-        if (!dispatchForFirstIntegerType([&] (auto arg)
+        if (!dispatchForFirstIntegerType([&, this] (auto arg)
             {
                 return execute<typename std::decay<decltype(*arg)>::type>(block, arguments, result, value_col);
             }))
