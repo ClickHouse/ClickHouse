@@ -87,7 +87,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         if (!task.size_predictor)
             return max_block_size_rows;
 
-        /// Calculates number of rows will be read using preferred_max_column_in_block_size_bytes.
+        /// Calculates number of rows will be read using preferred_block_size_bytes.
         /// Can't be less than index_granularity.
         size_t rows_to_read = task.size_predictor->estimateNumRows(preferred_block_size_bytes);
         if (!rows_to_read)
