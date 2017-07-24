@@ -1,5 +1,7 @@
 #pragma once
 
+#include <type_traits>
+
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -677,11 +679,11 @@ void sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_c
 {
     while (!src.isEnd())
     {
-        Int64 offset = offset_column.get64(src.rowNum());
+        Int64 offset = offset_column.getInt(src.rowNum());
 
         if (offset != 0)
         {
-            typename Source::Slice slice;
+            typename std::decay<Source>::type::Slice slice;
 
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1);
@@ -702,12 +704,12 @@ void sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_col
     while (!src.isEnd())
     {
         size_t row_num = src.rowNum();
-        Int64 offset = offset_column.get64(row_num);
-        UInt64 size = length_column.get64(row_num);
+        Int64 offset = offset_column.getInt(row_num);
+        UInt64 size = length_column.getInt(row_num);
 
         if (offset != 0 && size < 0x8000000000000000ULL)
         {
-            typename Source::Slice slice;
+            typename std::decay<Source>::type::Slice slice;
 
             if (offset > 0)
                 slice = src.getSliceFromLeft(offset - 1, size);

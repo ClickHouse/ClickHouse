@@ -221,6 +221,11 @@ public:
 
     UInt64 get64(size_t n) const override;
 
+    Int64 getInt(size_t n) const override
+    {
+        return Int64(data[n]);
+    }
+
     void insert(const Field & x) override
     {
         data.push_back(DB::get<typename NearestFieldType<T>::Type>(x));
