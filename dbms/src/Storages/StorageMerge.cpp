@@ -107,6 +107,34 @@ static Names collectIdentifiersInFirstLevelOfSelectQuery(ASTPtr ast)
     return names;
 }
 
+
+namespace
+{
+    using NodeHashToSet = std::map<IAST::Hash, SetPtr>;
+
+    void relinkSetsImpl(const ASTPtr & query, const NodeHashToSet & node_hash_to_set, PreparedSets & new_sets)
+    {
+        auto hash = query->getTreeHash();
+        auto it = node_hash_to_set.find(hash);
+        if (node_hash_to_set.end() != it)
+            new_sets[query.get()] = it->second;
+
+        for (const auto & child : query->children)
+            relinkSetsImpl(child, node_hash_to_set, new_sets);
+    }
+
+    /// Re-link prepared sets onto cloned and modified AST.
+    void relinkSets(const ASTPtr & query, const PreparedSets & old_sets, PreparedSets & new_sets)
+    {
+        NodeHashToSet node_hash_to_set;
+        for (const auto & node_set : old_sets)
+            node_hash_to_set.emplace(node_set.first->getTreeHash(), node_set.second);
+
+        relinkSetsImpl(query, node_hash_to_set, new_sets);
+    }
+}
+
+
 BlockInputStreams StorageMerge::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
@@ -173,6 +201,11 @@ BlockInputStreams StorageMerge::read(
         ASTPtr modified_query_ast = query->clone();
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
+        SelectQueryInfo modified_query_info;
+        modified_query_info.query = modified_query_ast;
+
+        relinkSets(modified_query_info.query, query_info.sets, modified_query_info.sets);
+
         BlockInputStreams source_streams;
 
         if (curr_table_number < num_streams)
@@ -180,7 +213,7 @@ BlockInputStreams StorageMerge::read(
             QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
             source_streams = table->read(
                 real_column_names,
-                { modified_query_ast, query_info.sets },
+                modified_query_info,
                 modified_context,
                 processed_stage_in_source_table,
                 max_block_size,
@@ -208,7 +241,7 @@ BlockInputStreams StorageMerge::read(
                 QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
                 BlockInputStreams streams = table->read(
                     real_column_names,
-                    { modified_query_ast, query_info.sets },
+                    modified_query_info,
                     modified_context,
                     processed_stage_in_source_table,
                     max_block_size,
