@@ -11,7 +11,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 
-#include <Common/PODArrayArena.h>
+#include <Common/ArenaAllocator.h>
 
 #include <AggregateFunctions/IUnaryAggregateFunction.h>
 
@@ -39,7 +39,7 @@ struct GroupArrayNumericData
 {
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedArenaAllocator<4096>;
-    using Array = PODArrayArenaAllocator<T, 32, Allocator>;
+    using Array = PODArray<T, 32, Allocator>;
 
     Array value;
 };
