@@ -468,6 +468,7 @@ private:
     void assertNotReadonly() const;
 
     /// The name of an imaginary part covering all parts in the specified partition (at the call moment).
+    /// Returns empty string if partition is empy.
     String getFakePartNameCoveringAllPartsInPartition(const String & month_name);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
