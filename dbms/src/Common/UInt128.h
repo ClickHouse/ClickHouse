@@ -5,7 +5,6 @@
 #include <city.h>
 
 #include <Common/HashTable/Hash.h>
-#include <tuple>
 
 #if __SSE4_2__
 #include <nmmintrin.h>
