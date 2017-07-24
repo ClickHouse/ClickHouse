@@ -111,9 +111,14 @@ public:
         throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** If column is numeric, return value of n-th element, casted to Int64.
+    /** If column is numeric, return value of n-th element, casted to UInt64.
       * Otherwise throw an exception.
       */
+    virtual UInt64 getUInt(size_t n) const
+    {
+        throw Exception("Method getUInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     virtual Int64 getInt(size_t n) const
     {
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);

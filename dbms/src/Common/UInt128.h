@@ -50,13 +50,13 @@ struct UInt128
     template <typename T> bool inline operator<= (const T rhs) const { return *this <= UInt128(rhs); }
     template <typename T> bool inline operator<  (const T rhs) const { return *this <  UInt128(rhs); }
 
-    template<typename T> explicit operator T() const { return static_cast<T>(high); }
+    template<typename T> explicit operator T() const { return static_cast<T>(low); }
 
 #if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
-    UInt128 & operator= (const UInt64 rhs) { low = 0; high = rhs; return *this; }
+    UInt128 & operator= (const UInt64 rhs) { low = rhs; high = 0; return *this; }
 };
 
 template <typename T> bool inline operator== (T a, const UInt128 b) { return UInt128(a) == b; }

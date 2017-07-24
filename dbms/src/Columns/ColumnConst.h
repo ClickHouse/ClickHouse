@@ -107,6 +107,11 @@ public:
         return data->get64(0);
     }
 
+    UInt64 getUInt(size_t n) const override
+    {
+        return data->getUInt(0);
+    }
+
     Int64 getInt(size_t n) const override
     {
         return data->getInt(0);
