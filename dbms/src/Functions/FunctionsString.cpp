@@ -437,72 +437,6 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 }
 
 
-/** Selects a substring in a string, as a sequence of bytes.
-  */
-struct SubstringImpl
-{
-    static void vector(const ColumnString::Chars_t & data,
-        const ColumnString::Offsets_t & offsets,
-        size_t start,
-        size_t length,
-        ColumnString::Chars_t & res_data,
-        ColumnString::Offsets_t & res_offsets)
-    {
-        res_data.reserve(data.size());
-        size_t size = offsets.size();
-        res_offsets.resize(size);
-
-        ColumnString::Offset_t prev_offset = 0;
-        ColumnString::Offset_t res_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t string_size = offsets[i] - prev_offset;
-            if (start >= string_size + 1)
-            {
-                res_data.resize(res_data.size() + 1);
-                res_data[res_offset] = 0;
-                ++res_offset;
-            }
-            else
-            {
-                size_t bytes_to_copy = std::min(offsets[i] - prev_offset - start, length);
-                res_data.resize(res_data.size() + bytes_to_copy + 1);
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[prev_offset + start - 1], bytes_to_copy);
-                res_offset += bytes_to_copy + 1;
-                res_data[res_offset - 1] = 0;
-            }
-            res_offsets[i] = res_offset;
-            prev_offset = offsets[i];
-        }
-    }
-
-    static void vector_fixed(const ColumnString::Chars_t & data,
-        size_t n,
-        size_t start,
-        size_t length,
-        ColumnString::Chars_t & res_data,
-        ColumnString::Offsets_t & res_offsets)
-    {
-        if (length == 0 || start + length > n + 1)
-            throw Exception("Index out of bound for function substring of fixed size value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-        size_t size = data.size() / n;
-        res_offsets.resize(size);
-        res_data.resize(length * size + size);
-
-        ColumnString::Offset_t res_offset = 0;
-        for (size_t i = 0; i < size; ++i)
-        {
-            memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], &data[i * n + start - 1], length);
-            res_offset += length;
-            res_data[res_offset] = 0;
-            ++res_offset;
-            res_offsets[i] = res_offset;
-        }
-    }
-};
-
-
 /** If the string is encoded in UTF-8, then it selects a substring of code points in it.
   * Otherwise, the behavior is undefined.
   */
@@ -566,16 +500,6 @@ struct SubstringUTF8Impl
             res_offsets[i] = res_offset;
             prev_offset = offsets[i];
         }
-    }
-
-    static void vector_fixed(const ColumnString::Chars_t & data,
-        ColumnString::Offset_t n,
-        size_t start,
-        size_t length,
-        ColumnString::Chars_t & res_data,
-        ColumnString::Offsets_t & res_offsets)
-    {
-        throw Exception("Cannot apply function substringUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -842,14 +766,77 @@ private:
 };
 
 
-template <typename Impl, typename Name>
-class FunctionStringNumNumToString : public IFunction
+class FunctionSubstring : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = "substring";
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionStringNumNumToString>();
+        return std::make_shared<FunctionSubstring>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 3;
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (!arguments[1]->isNumeric() || !arguments[2]->isNumeric())
+            throw Exception("Illegal type " + (arguments[1]->isNumeric() ? arguments[2]->getName() : arguments[1]->getName())
+                    + " of argument of function "
+                    + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
+        const ColumnPtr column_start = block.getByPosition(arguments[1]).column;
+        const ColumnPtr column_length = block.getByPosition(arguments[2]).column;
+
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column_string))
+        {
+            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            block.getByPosition(result).column = col_res;
+
+            sliceDynamicOffsetBounded(StringSource(*col), StringSink(*col_res, block.rows()), *column_start, *column_length);
+        }
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column_string))
+        {
+            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            block.getByPosition(result).column = col_res;
+
+            sliceDynamicOffsetBounded(FixedStringSource(*col), StringSink(*col_res, block.rows()), *column_start, *column_length);
+        }
+        else
+            throw Exception(
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+
+class FunctionSubstringUTF8 : public IFunction
+{
+public:
+    static constexpr auto name = "substringUTF8";
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionSubstringUTF8>();
     }
 
     String getName() const override
@@ -867,7 +854,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -909,13 +896,7 @@ public:
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.getByPosition(result).column = col_res;
-            Impl::vector(col->getChars(), col->getOffsets(), start, length, col_res->getChars(), col_res->getOffsets());
-        }
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column_string))
-        {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
-            Impl::vector_fixed(col->getChars(), col->getN(), start, length, col_res->getChars(), col_res->getOffsets());
+            SubstringUTF8Impl::vector(col->getChars(), col->getOffsets(), start, length, col_res->getChars(), col_res->getOffsets());
         }
         else
             throw Exception(
@@ -1048,14 +1029,6 @@ struct NameReverseUTF8
 {
     static constexpr auto name = "reverseUTF8";
 };
-struct NameSubstring
-{
-    static constexpr auto name = "substring";
-};
-struct NameSubstringUTF8
-{
-    static constexpr auto name = "substringUTF8";
-};
 struct NameConcat
 {
     static constexpr auto name = "concat";
@@ -1072,8 +1045,6 @@ using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, NameLengthUT
 using FunctionLower = FunctionStringToString<LowerUpperImpl<'A', 'Z'>, NameLower>;
 using FunctionUpper = FunctionStringToString<LowerUpperImpl<'a', 'z'>, NameUpper>;
 using FunctionReverseUTF8 = FunctionStringToString<ReverseUTF8Impl, NameReverseUTF8, true>;
-using FunctionSubstring = FunctionStringNumNumToString<SubstringImpl, NameSubstring>;
-using FunctionSubstringUTF8 = FunctionStringNumNumToString<SubstringUTF8Impl, NameSubstringUTF8>;
 using FunctionConcat = ConcatImpl<NameConcat, false>;
 using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true>;
 
