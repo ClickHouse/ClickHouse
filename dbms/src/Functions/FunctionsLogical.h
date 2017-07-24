@@ -211,8 +211,15 @@ private:
 
     void convertToUInt8(const IColumn * column, UInt8Container & res)
     {
-        if (!dispatchForFirstType<UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>(
-           [&, this] (auto arg) { return convertTypeToUInt8<typename std::decay<decltype(*arg)>::type>(column, res); }))
+        if (!convertTypeToUInt8<  Int8 >(column, res) &&
+            !convertTypeToUInt8<  Int16>(column, res) &&
+            !convertTypeToUInt8<  Int32>(column, res) &&
+            !convertTypeToUInt8<  Int64>(column, res) &&
+            !convertTypeToUInt8< UInt16>(column, res) &&
+            !convertTypeToUInt8< UInt32>(column, res) &&
+            !convertTypeToUInt8< UInt64>(column, res) &&
+            !convertTypeToUInt8<Float32>(column, res) &&
+            !convertTypeToUInt8<Float64>(column, res))
             throw Exception("Unexpected type of column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
@@ -233,8 +240,15 @@ private:
 
     void executeUInt8Other(const UInt8Container & uint8_vec, IColumn * column, UInt8Container & res)
     {
-        if (!dispatchForFirstType<UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>(
-           [&, this] (auto arg) { return executeUInt8Type<typename std::decay<decltype(*arg)>::type>(uint8_vec, column, res); }))
+        if (!executeUInt8Type<  Int8 >(uint8_vec, column, res) &&
+            !executeUInt8Type<  Int16>(uint8_vec, column, res) &&
+            !executeUInt8Type<  Int32>(uint8_vec, column, res) &&
+            !executeUInt8Type<  Int64>(uint8_vec, column, res) &&
+            !executeUInt8Type< UInt16>(uint8_vec, column, res) &&
+            !executeUInt8Type< UInt32>(uint8_vec, column, res) &&
+            !executeUInt8Type< UInt64>(uint8_vec, column, res) &&
+            !executeUInt8Type<Float32>(uint8_vec, column, res) &&
+            !executeUInt8Type<Float64>(uint8_vec, column, res))
             throw Exception("Unexpected type of column: " + column->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
@@ -406,7 +420,16 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!dispatchForFirstNumericType([&, this] (auto arg) { return executeType<typename std::decay<decltype(*arg)>::type>(block, arguments, result); }))
+        if (!( executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);

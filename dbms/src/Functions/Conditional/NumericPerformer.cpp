@@ -197,19 +197,31 @@ struct ThenPredicate final : public PredicateBase<TType>
         if (index2 != elseArg(args))
         {
             /// We have a pair Cond-Then. Process the next Then.
-            if (!dispatchForFirstNumericType([&, this] (auto arg)
-                {
-                    return ThenPredicate<TCombined, typename std::decay<decltype(*arg)>::type>::execute(index2 + 1, block, args, result, builder, branches);
-                }))
+            if (! (ThenPredicate<TCombined, UInt8>::execute(index2 + 1, block, args, result, builder, branches)
+                || ThenPredicate<TCombined, UInt16>::execute(index2 + 1, block, args, result, builder, branches)
+                || ThenPredicate<TCombined, UInt32>::execute(index2 + 1, block, args, result, builder, branches)
+                || ThenPredicate<TCombined, UInt64>::execute(index2 + 1, block, args, result, builder, branches)
+                || ThenPredicate<TCombined, Int8>::execute(index2 + 1, block, args, result, builder, branches)
+                || ThenPredicate<TCombined, Int16>::execute(index2 + 1, block, args, result, builder, branches)
+                || ThenPredicate<TCombined, Int32>::execute(index2 + 1, block, args, result, builder, branches)
+                || ThenPredicate<TCombined, Int64>::execute(index2 + 1, block, args, result, builder, branches)
+                || ThenPredicate<TCombined, Float32>::execute(index2 + 1, block, args, result, builder, branches)
+                || ThenPredicate<TCombined, Float64>::execute(index2 + 1, block, args, result, builder, branches)))
                 return false;
         }
         else
         {
             /// We have an Else which ends the multiIf. Process it.
-            if (!dispatchForFirstNumericType([&, this] (auto arg)
-                {
-                    return ElsePredicate<TCombined, typename std::decay<decltype(*arg)>::type>::execute(index2, block, args, result, builder, branches);
-                }))
+            if (! (ElsePredicate<TCombined, UInt8>::execute(index2, block, args, result, builder, branches)
+                || ElsePredicate<TCombined, UInt16>::execute(index2, block, args, result, builder, branches)
+                || ElsePredicate<TCombined, UInt32>::execute(index2, block, args, result, builder, branches)
+                || ElsePredicate<TCombined, UInt64>::execute(index2, block, args, result, builder, branches)
+                || ElsePredicate<TCombined, Int8>::execute(index2, block, args, result, builder, branches)
+                || ElsePredicate<TCombined, Int16>::execute(index2, block, args, result, builder, branches)
+                || ElsePredicate<TCombined, Int32>::execute(index2, block, args, result, builder, branches)
+                || ElsePredicate<TCombined, Int64>::execute(index2, block, args, result, builder, branches)
+                || ElsePredicate<TCombined, Float32>::execute(index2, block, args, result, builder, branches)
+                || ElsePredicate<TCombined, Float64>::execute(index2, block, args, result, builder, branches)))
                 return false;
         }
 
@@ -247,10 +259,16 @@ struct FirstThenPredicate final
         using Void = NumberTraits::Enriched::Void<NumberTraits::HasNoNull>;
         Branches branches;
 
-        return dispatchForFirstNumericType([&, this] (auto arg)
-            {
-                return ThenPredicate<Void, typename std::decay<decltype(*arg)>::type>::execute(firstThen(), block, args, result, builder, branches);
-            })
+        return ThenPredicate<Void, UInt8>::execute(firstThen(), block, args, result, builder, branches)
+            || ThenPredicate<Void, UInt16>::execute(firstThen(), block, args, result, builder, branches)
+            || ThenPredicate<Void, UInt32>::execute(firstThen(), block, args, result, builder, branches)
+            || ThenPredicate<Void, UInt64>::execute(firstThen(), block, args, result, builder, branches)
+            || ThenPredicate<Void, Int8>::execute(firstThen(), block, args, result, builder, branches)
+            || ThenPredicate<Void, Int16>::execute(firstThen(), block, args, result, builder, branches)
+            || ThenPredicate<Void, Int32>::execute(firstThen(), block, args, result, builder, branches)
+            || ThenPredicate<Void, Int64>::execute(firstThen(), block, args, result, builder, branches)
+            || ThenPredicate<Void, Float32>::execute(firstThen(), block, args, result, builder, branches)
+            || ThenPredicate<Void, Float64>::execute(firstThen(), block, args, result, builder, branches)
             || ThenPredicate<Void, Null>::execute(firstThen(), block, args, result, builder, branches);
     }
 };

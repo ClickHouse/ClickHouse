@@ -95,31 +95,4 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
 Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result);
 
 
-template <typename F>
-bool dispatchForFirstType(F && f)
-{
-    return false;
-}
-
-template <typename HeadArg, typename... TailArgs, typename F>
-bool dispatchForFirstType(F && f)
-{
-    if (f(static_cast<HeadArg *>(nullptr)))
-        return true;
-    return dispatchForFirstType<TailArgs...>(std::forward<F>(f));
-}
-
-
-template <typename F>
-bool dispatchForFirstNumericType(F && f)
-{
-    return dispatchForFirstType<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>(std::forward<F>(f));
-}
-
-template <typename F>
-bool dispatchForFirstIntegerType(F && f)
-{
-    return dispatchForFirstType<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64>(std::forward<F>(f));
-}
-
 }
