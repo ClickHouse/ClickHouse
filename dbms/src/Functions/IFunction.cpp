@@ -163,10 +163,7 @@ bool defaultImplementationForConstantArguments(
     {
         const ColumnWithTypeAndName & column = block.getByPosition(args[arg_num]);
 
-        /// Don't materialize NULL constant column, because it is needed for subsequent defaultImplementationForNulls.
-
-        if (column.column->isNull()
-            || arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
+        if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
             temporary_block.insert(column);
         else
             temporary_block.insert({ static_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });

@@ -96,7 +96,7 @@ void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & argumen
     };
 
     FunctionIsNull{}.executeImpl(temp_block, {0}, 1);
-    FunctionNot{}.executeImpl(temp_block, {1}, 2);
+    FunctionNot{}.execute(temp_block, {1}, 2);
 
     block.getByPosition(result).column = std::move(temp_block.getByPosition(2).column);
 }
