@@ -9,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Core/Defines.h>
 
 
 namespace DB

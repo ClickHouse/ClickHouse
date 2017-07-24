@@ -36,7 +36,7 @@ inc="-I. \
 
 if [ -z $1 ]; then
     cd ..
-    find dbms libs utils -name *.h -exec sh $pwd/$0 {} \; ;
+    find dbms libs utils \( -name *.h -and -not -name *.inl.h \) -exec sh $pwd/$0 {} \; ;
 else
     echo -n "$1    "
     echo -n `grep "#include" $1| wc -l` "    "

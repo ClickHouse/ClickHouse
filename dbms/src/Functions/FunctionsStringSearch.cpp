@@ -502,7 +502,7 @@ struct MatchImpl
         const ColumnString::Offsets_t & needle_offsets,
         PaddedPODArray<UInt8> & res)
     {
-        throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
@@ -511,7 +511,7 @@ struct MatchImpl
         const ColumnString::Offsets_t & needle_offsets,
         PaddedPODArray<UInt8> & res)
     {
-        throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
