@@ -197,7 +197,7 @@ struct ThenPredicate final : public PredicateBase<TType>
         if (index2 != elseArg(args))
         {
             /// We have a pair Cond-Then. Process the next Then.
-            if (!dispatchForFirstNumericType([&] (auto arg)
+            if (!dispatchForFirstNumericType([&, this] (auto arg)
                 {
                     return ThenPredicate<TCombined, typename std::decay<decltype(*arg)>::type>::execute(index2 + 1, block, args, result, builder, branches);
                 }))
@@ -206,7 +206,7 @@ struct ThenPredicate final : public PredicateBase<TType>
         else
         {
             /// We have an Else which ends the multiIf. Process it.
-            if (!dispatchForFirstNumericType([&] (auto arg)
+            if (!dispatchForFirstNumericType([&, this] (auto arg)
                 {
                     return ElsePredicate<TCombined, typename std::decay<decltype(*arg)>::type>::execute(index2, block, args, result, builder, branches);
                 }))
@@ -247,7 +247,7 @@ struct FirstThenPredicate final
         using Void = NumberTraits::Enriched::Void<NumberTraits::HasNoNull>;
         Branches branches;
 
-        return dispatchForFirstNumericType([&] (auto arg)
+        return dispatchForFirstNumericType([&, this] (auto arg)
             {
                 return ThenPredicate<Void, typename std::decay<decltype(*arg)>::type>::execute(firstThen(), block, args, result, builder, branches);
             })

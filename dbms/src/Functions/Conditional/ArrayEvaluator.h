@@ -350,7 +350,7 @@ private:
 
         for (const auto & br : branches)
         {
-            if (!(dispatchForFirstNumericType([&] (auto arg)
+            if (!(dispatchForFirstNumericType([&, this] (auto arg)
                 {
                     return ArraySourceCreator<TResult, typename std::decay<decltype(*arg)>::type>::execute(sources, block, args, br);
                 })
