@@ -3,7 +3,7 @@
 
 // Rename!
 #define nv(VAR) #VAR "=" << VAR
-#define snv(VAR) std::cerr << nv(VAR) << "\n";
+#define snv(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << nv(VAR) << "\n";
 
 namespace DB { class IBlockInputStream; }
 std::ostream & operator<<(std::ostream & stream, const DB::IBlockInputStream & what);

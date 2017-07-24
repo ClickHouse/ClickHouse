@@ -53,7 +53,12 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     LOG_TRACE(log, "loadAll " + toString());
     auto lib = std::make_shared<SharedLibrary>(filename);
     //auto fptr = lib->get<void * (*) ()>("loadAll");
+    auto data_ptr = library->get<void*(*)()>("dataAllocate")();
+
     lib->get<void * (*) ()>("loadAll")();
+// TODO
+    library->get<void (*) (void * data_ptr)>("dataDelete")(data_ptr);
+
     //std::cerr << "LibDictionarySource::loadAll filename=" << filename << " fptr=" << fptr << "\n";
     //if (fptr)
     //    fptr();
@@ -65,15 +70,25 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
-    //struct {const uint64_t size; const uint64_t * data;} 
-    const VectorUint64 params {ids.size(), ids.data()};
+    //struct {const uint64_t size; const uint64_t * data;}
+    const ClickhouseVectorUint64 params {
+        ids.size(), ids.data()
+    };
     //c_data.size = ids.size();
     //for (size_t i = 0; i <= ids.size(); ++i) {
     //  data[i] = ids[i];
     //}
 
     //auto lib = std::make_shared<SharedLibrary>(filename);
-    library->get<void * (*) (decltype(params))>("loadIds")(params);
+
+    //auto data_ptr = library->get<void * (*) ()>("dataAllocate")();
+    auto data_ptr = library->get<void*(*)()>("dataAllocate")();
+
+    auto data = library->get<void * (*) (void * data_ptr, decltype(params))>("loadIds")(data_ptr, params);
+
+    if (data) {}
+
+    library->get<void (*) (void * data_ptr)>("dataDelete")(data_ptr);
 
     /*auto fptr = lib->get<void * (*) (const std::vector<UInt64> &)>("loadIds");
     std::cerr << "LibDictionarySource::loadIds filename=" << filename << " size=" << ids.size()<< " fptr=" << fptr<< "\n";
@@ -91,9 +106,48 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(
 
     //auto lib = std::make_shared<SharedLibrary>(filename);
 
-    const VectorUint64 params {requested_rows.size(), requested_rows.data()};
-    library->get<void * (*) (decltype(params))>("loadKeys")(params);
+    //std::cerr << Columns << "\n";
+    snv(key_columns);
+// getName
+    //auto col = new ClickhouseColumns[key_columns.size()];
+    //auto columns_c = new const char*[key_columns.size()+1];
+    //auto columns_c_container = std::make_shared<ClickhouseColumns>(new const char*[key_columns.size()+1]);
+    //auto columns_c_container = std::make_unique<ClickhouseColumns>(new const char*[key_columns.size()+1]);
+    //auto columns_c_container = std::make_unique<ClickhouseColumns>(key_columns.size()+1);
+    //ClickhouseColumn* columns_c = columns_c_container.get();
+    //auto columns_c = std::make_unique<ClickhouseColumns>(key_columns.size()+1);
+    auto columns_c = std::make_unique<const char*[]>(key_columns.size()+1);
 
+
+    size_t i = 0;
+    for (auto column : key_columns) {
+        // FIXME
+        columns_c[i] = column->getName().c_str();
+        std::cerr << "ptr"<<i<<"="<<(size_t)(columns_c[i]) << " T=" << typeid(columns_c[i]).name()
+                  << " s=" << column->getName() << " pc=" << (size_t)column->getName().c_str() << " pcs=" << column->getName().c_str() << " TF="<<
+                  typeid( column->getName().c_str()).name()    <<"\n";
+        ++i;
+    }
+    columns_c[i] = nullptr;
+
+
+    i = 0;
+    ClickhouseColumn column;
+    while ((column = columns_c[i++])) {
+        std::cerr << "T column i=" << i << " = [" << column << "] p=" << (size_t)column << "\n";
+    }
+
+
+    auto data_ptr = library->get<void*(*)()>("dataAllocate")();
+
+    const ClickhouseVectorUint64 params {
+        requested_rows.size(), requested_rows.data()
+    };
+    library->get<void * (*) (ClickhouseColumns, decltype(params))>("loadKeys")(columns_c.get(), params);
+// TODO
+    library->get<void (*) (void * data_ptr)>("dataDelete")(data_ptr);
+
+    //delete columns_c;
     //lib->get<void * (*) (const std::vector<std::size_t> &)>("loadKeys")(requested_rows);
     /*auto fptr = lib->get<void * (*) (const std::vector<std::size_t> &)>("loadKeys");
     std::cerr << "LibDictionarySource::loadKeys filename=" << filename << " size=" << requested_rows.size() << " fptr=" << fptr << "\n";
@@ -110,7 +164,7 @@ bool LibDictionarySource::isModified() const
     auto fptr = library->get<void * (*) ()>("isModified", true);
     if (fptr)
         return fptr();
-std::cerr << "no lib's isModified\n";
+    std::cerr << "no lib's isModified\n";
     return true;
 }
 
@@ -120,7 +174,7 @@ bool LibDictionarySource::supportsSelectiveLoad() const
     auto fptr = library->get<void * (*) ()>("supportsSelectiveLoad", true);
     if (fptr)
         return fptr();
-std::cerr << "no lib's supportsSelectiveLoad\n";
+    std::cerr << "no lib's supportsSelectiveLoad\n";
     return true;
 }
 
