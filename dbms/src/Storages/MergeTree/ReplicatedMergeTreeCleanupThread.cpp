@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/setThreadName.h>
+#include <Poco/Timestamp.h>
 
 
 namespace DB
@@ -22,7 +23,7 @@ void ReplicatedMergeTreeCleanupThread::run()
 {
     setThreadName("ReplMTCleanup");
 
-    const auto CLEANUP_SLEEP_MS = 30 * 1000;
+    const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000;
 
     while (!storage.shutdown_called)
     {
@@ -116,18 +117,13 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     if (!zookeeper->exists(storage.zookeeper_path + "/blocks", &stat))
         throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
-    int children_count = stat.numChildren;
-
-    /// To make "asymptotically" fewer `exists` requests, we will wait for 1.1 times more blocks to accumulate than necessary.
-    if (static_cast<double>(children_count) < storage.data.settings.replicated_deduplication_window * 1.1)
-        return;
-
-    LOG_TRACE(log, "Clearing about " << static_cast<size_t>(children_count) - storage.data.settings.replicated_deduplication_window
-        << " old blocks from ZooKeeper. This might take several minutes.");
+    LOG_TRACE(log, "Checking " << stat.numChildren << " blocks to clear old ones from ZooKeeper. This might take several minutes.");
 
     Strings blocks = zookeeper->getChildren(storage.zookeeper_path + "/blocks");
 
-    std::vector<std::pair<Int64, String> > timed_blocks;
+    using TimedBlock = std::pair<Int64, String>;
+    using TimedBlocksComparator = std::greater<TimedBlock>;
+    std::vector<TimedBlock> timed_blocks;
 
     for (const String & block : blocks)
     {
@@ -136,14 +132,27 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
         timed_blocks.push_back(std::make_pair(stat.ctime, block));
     }
 
-    std::sort(timed_blocks.begin(), timed_blocks.end(), std::greater<std::pair<Int64, String>>());
-    for (size_t i = storage.data.settings.replicated_deduplication_window; i < timed_blocks.size(); ++i)
+    if (timed_blocks.empty())
+        return;
+
+    std::sort(timed_blocks.begin(), timed_blocks.end(), TimedBlocksComparator());
+
+    /// Use ZooKeeper's first node (last according to time) timestamp as "current" time.
+    Int64 current_time = timed_blocks.front().first;
+    Int64 time_treshold = std::max(0L, current_time - static_cast<Int64>(storage.data.settings.replicated_deduplication_window_seconds));
+    TimedBlock block_treshold(time_treshold, "");
+
+    auto first_outdated_block_fixed_treshold = timed_blocks.begin() + storage.data.settings.replicated_deduplication_window;
+    auto first_outdated_block_time_treshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_treshold, TimedBlocksComparator());
+    auto first_outdated_block = std::min(first_outdated_block_fixed_treshold, first_outdated_block_time_treshold);
+
+    for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         /// TODO After about half a year, we could replace this to multi op, because there will be no obsolete children nodes.
-        zookeeper->removeRecursive(storage.zookeeper_path + "/blocks/" + timed_blocks[i].second);
+        zookeeper->removeRecursive(storage.zookeeper_path + "/blocks/" + it->second);
     }
 
-    LOG_TRACE(log, "Cleared " << blocks.size() - storage.data.settings.replicated_deduplication_window << " old blocks from ZooKeeper");
+    LOG_TRACE(log, "Cleared " << timed_blocks.end() - first_outdated_block << " old blocks from ZooKeeper");
 }
 
 }
