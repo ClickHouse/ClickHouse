@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// Fake Allocator which proxies all allocations to Arena. Used in aggregate functions.
+/// Allocator which proxies all allocations to Arena. Used in aggregate functions.
 class ArenaAllocator
 {
 public:
