@@ -59,8 +59,8 @@ add_headers_only(dbms src/Server)
 list (APPEND dbms_sources ${CONFIG_BUILD})
 list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp)
-list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h)
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
+list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
@@ -70,7 +70,8 @@ list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionForEach.cpp
     src/AggregateFunctions/AggregateFunctionIf.cpp
     src/AggregateFunctions/AggregateFunctionMerge.cpp
-    src/AggregateFunctions/AggregateFunctionCount.cpp)
+    src/AggregateFunctions/AggregateFunctionCount.cpp
+    src/AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
     src/AggregateFunctions/IAggregateFunction.h
@@ -81,7 +82,8 @@ list (APPEND dbms_headers
     src/AggregateFunctions/AggregateFunctionForEach.h
     src/AggregateFunctions/AggregateFunctionIf.h
     src/AggregateFunctions/AggregateFunctionMerge.h
-    src/AggregateFunctions/AggregateFunctionCount.h)
+    src/AggregateFunctions/AggregateFunctionCount.h
+    src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
 list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)

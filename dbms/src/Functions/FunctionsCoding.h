@@ -10,12 +10,14 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <arpa/inet.h>
@@ -1149,6 +1151,45 @@ public:
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+class FunctionGenerateUUIDv4 : public IFunction
+{
+public:
+    static constexpr auto name = "generateUUIDv4";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionGenerateUUIDv4>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return std::make_shared<DataTypeUUID>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        auto col_to = std::make_shared<ColumnVector<UInt128>>();
+        block.safeGetByPosition(result).column = col_to;
+
+        typename ColumnVector<UInt128>::Container_t & vec_to = col_to->getData();
+
+        size_t size = block.rows();
+        vec_to.resize(size);
+        Rand64Impl::execute(reinterpret_cast<UInt64 *>(&vec_to[0]), vec_to.size() * 2);
+
+        for (UInt128 & uuid: vec_to)
+        {
+            /** https://tools.ietf.org/html/rfc4122#section-4.4
+             */
+            uuid.low = (uuid.low & 0xffffffffffff0fffull) | 0x0000000000004000ull;
+            uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
+        }
     }
 };
 
