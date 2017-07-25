@@ -139,9 +139,8 @@ void ParallelAggregatingBlockInputStream::Handler::onFinishThread(size_t thread_
         if (data.isConvertibleToTwoLevel())
             data.convertToTwoLevel();
 
-        size_t rows = data.sizeWithoutOverflowRow();
-        if (rows)
-            parent.aggregator.writeToTemporaryFile(data, rows);
+        if (data.size())
+            parent.aggregator.writeToTemporaryFile(data);
     }
 }
 
@@ -156,9 +155,8 @@ void ParallelAggregatingBlockInputStream::Handler::onFinish()
             if (data->isConvertibleToTwoLevel())
                 data->convertToTwoLevel();
 
-            size_t rows = data->sizeWithoutOverflowRow();
-            if (rows)
-                parent.aggregator.writeToTemporaryFile(*data, rows);
+            if (data->size())
+                parent.aggregator.writeToTemporaryFile(*data);
         }
     }
 }

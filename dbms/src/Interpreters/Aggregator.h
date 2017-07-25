@@ -1090,7 +1090,7 @@ public:
     String getID() const;
 
     /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t rows);
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants);
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
