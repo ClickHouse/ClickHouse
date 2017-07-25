@@ -3,12 +3,21 @@
 #include <Parsers/formatAST.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/Block.h>
-#include <Interpreters/Cluster.h>
+#include <atomic>
+#include <memory>
+#include <chrono>
+
+namespace Poco
+{
+    class Logger;
+}
 
 namespace DB
 {
 
 class StorageDistributed;
+class Cluster;
+using ClusterPtr = std::shared_ptr<Cluster>;
 
 /** The write is asynchronous - the data is first written to the local filesystem, and then sent to the remote servers.
  *  If the Distributed table uses more than one shard, then in order to support the write,
@@ -21,9 +30,11 @@ class StorageDistributed;
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-    DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_);
+    DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_ = 0);
 
     void write(const Block & block) override;
+
+    void writePrefix() override { deadline = std::chrono::system_clock::now() + std::chrono::seconds(insert_timeout); }
 
 private:
     IColumn::Selector createSelector(Block block);
@@ -36,10 +47,18 @@ private:
 
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
+    void writeToShardDirect(const Block & block, const std::vector<std::string> & dir_names, std::atomic<bool> & timeout_exceeded);
+
 private:
     StorageDistributed & storage;
     ASTPtr query_ast;
     ClusterPtr cluster;
+    bool insert_sync = true;
+    UInt64 insert_timeout = 1;
+    size_t blocks_inserted = 0;
+    std::chrono::system_clock::time_point deadline;
+
+    Poco::Logger * log;
 };
 
 }

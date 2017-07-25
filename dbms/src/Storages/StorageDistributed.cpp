@@ -245,7 +245,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Setti
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster);
+        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings.insert_distributed_sync, settings.insert_distributed_timeout);
 }
 
 
@@ -456,9 +456,9 @@ bool StorageDistributed::hasColumn(const String & column_name) const
 }
 
 
-void StorageDistributed::createDirectoryMonitor(const std::string & name)
+StorageDistributedDirectoryMonitor & StorageDistributed::createDirectoryMonitor(const std::string & name)
 {
-    directory_monitors.emplace(name, std::make_unique<StorageDistributedDirectoryMonitor>(*this, name));
+    return *(directory_monitors.emplace(name, std::make_unique<StorageDistributedDirectoryMonitor>(*this, name)).first->second);
 }
 
 
@@ -477,10 +477,12 @@ void StorageDistributed::createDirectoryMonitors()
 }
 
 
-void StorageDistributed::requireDirectoryMonitor(const std::string & name)
+StorageDistributedDirectoryMonitor & StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
-    if (!directory_monitors.count(name))
-        createDirectoryMonitor(name);
+    auto it = directory_monitors.find(name);
+    if (it == directory_monitors.end())
+        return createDirectoryMonitor(name);
+    return *it->second;
 }
 
 size_t StorageDistributed::getShardCount() const

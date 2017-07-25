@@ -118,11 +118,11 @@ private:
 
 
     /// create directory monitor thread by subdirectory name
-    void createDirectoryMonitor(const std::string & name);
+    StorageDistributedDirectoryMonitor & createDirectoryMonitor(const std::string & name);
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors();
-    /// ensure directory monitor creation
-    void requireDirectoryMonitor(const std::string & name);
+    /// ensure directory monitor creation and return it
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & name);
 
     ClusterPtr getCluster() const;
 

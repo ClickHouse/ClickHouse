@@ -19,6 +19,8 @@ public:
     StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name);
     ~StorageDistributedDirectoryMonitor();
 
+    const ConnectionPoolPtr & getPool() const { return pool; }
+
 private:
     void run();
     ConnectionPoolPtr createPool(const std::string & name);
