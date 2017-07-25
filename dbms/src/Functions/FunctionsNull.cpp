@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 
 namespace DB
@@ -33,11 +32,6 @@ FunctionPtr FunctionIsNull::create(const Context & context)
 std::string FunctionIsNull::getName() const
 {
     return name;
-}
-
-bool FunctionIsNull::hasSpecialSupportForNulls() const
-{
-    return true;
 }
 
 DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes & arguments) const
@@ -79,11 +73,6 @@ std::string FunctionIsNotNull::getName() const
     return name;
 }
 
-bool FunctionIsNotNull::hasSpecialSupportForNulls() const
-{
-    return true;
-}
-
 DataTypePtr FunctionIsNotNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
     return std::make_shared<DataTypeUInt8>();
@@ -107,7 +96,7 @@ void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & argumen
     };
 
     FunctionIsNull{}.executeImpl(temp_block, {0}, 1);
-    FunctionNot{}.executeImpl(temp_block, {1}, 2);
+    FunctionNot{}.execute(temp_block, {1}, 2);
 
     block.getByPosition(result).column = std::move(temp_block.getByPosition(2).column);
 }
@@ -130,11 +119,6 @@ FunctionPtr FunctionCoalesce::create(const Context & context)
 std::string FunctionCoalesce::getName() const
 {
     return name;
-}
-
-bool FunctionCoalesce::hasSpecialSupportForNulls() const
-{
-    return true;
 }
 
 DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) const
@@ -267,11 +251,6 @@ std::string FunctionIfNull::getName() const
     return name;
 }
 
-bool FunctionIfNull::hasSpecialSupportForNulls() const
-{
-    return true;
-}
-
 DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments[0]->isNull())
@@ -327,11 +306,6 @@ std::string FunctionNullIf::getName() const
     return name;
 }
 
-bool FunctionNullIf::hasSpecialSupportForNulls() const
-{
-    return true;
-}
-
 DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 {
     return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeNull>(), arguments[0]});
@@ -376,11 +350,6 @@ std::string FunctionAssumeNotNull::getName() const
     return name;
 }
 
-bool FunctionAssumeNotNull::hasSpecialSupportForNulls() const
-{
-    return true;
-}
-
 DataTypePtr FunctionAssumeNotNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments[0]->isNull())
@@ -414,11 +383,6 @@ FunctionPtr FunctionToNullable::create(const Context & context)
 std::string FunctionToNullable::getName() const
 {
     return name;
-}
-
-bool FunctionToNullable::hasSpecialSupportForNulls() const
-{
-    return true;
 }
 
 DataTypePtr FunctionToNullable::getReturnTypeImpl(const DataTypes & arguments) const

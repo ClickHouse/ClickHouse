@@ -26,20 +26,14 @@ private:
     size_t s;
 
 public:
-    ColumnConst(ColumnPtr data, size_t s)
-        : data(data), s(s)
-    {
-    }
+    ColumnConst(ColumnPtr data, size_t s);
 
     bool isConst() const override
     {
         return true;
     }
 
-    ColumnPtr convertToFullColumn() const
-    {
-        return data->replicate(Offsets_t(1, s));
-    }
+    ColumnPtr convertToFullColumn() const;
 
     ColumnPtr convertToFullColumnIfConst() const override
     {
@@ -111,6 +105,16 @@ public:
     UInt64 get64(size_t n) const override
     {
         return data->get64(0);
+    }
+
+    UInt64 getUInt(size_t n) const override
+    {
+        return data->getUInt(0);
+    }
+
+    Int64 getInt(size_t n) const override
+    {
+        return data->getInt(0);
     }
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override

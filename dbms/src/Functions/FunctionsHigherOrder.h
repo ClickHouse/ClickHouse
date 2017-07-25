@@ -767,6 +767,11 @@ public:
         }
     }
 
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        executeImpl(block, arguments, {}, result);
+    }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
     {
         if (arguments.size() == 1)
