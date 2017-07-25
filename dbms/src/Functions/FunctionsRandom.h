@@ -77,21 +77,19 @@ struct RandImpl
 {
     using ReturnType = UInt32;
 
-    template<typename T>
-    static void execute(PaddedPODArray<T> & res)
+    static void execute(ReturnType * output, size_t size)
     {
         detail::LinearCongruentialGenerator generator0;
         detail::LinearCongruentialGenerator generator1;
         detail::LinearCongruentialGenerator generator2;
         detail::LinearCongruentialGenerator generator3;
 
-        detail::seed(generator0, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator1, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(&res[0]));
+        detail::seed(generator0, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(output));
+        detail::seed(generator1, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(output));
+        detail::seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(output));
+        detail::seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(output));
 
-        size_t size = res.size() * (sizeof(T) / sizeof(ReturnType));
-        ReturnType * pos = reinterpret_cast<ReturnType *>(&res[0]);
+        ReturnType * pos = output;
         ReturnType * end = pos + size;
         ReturnType * end4 = pos + size / 4 * 4;
 
@@ -116,36 +114,9 @@ struct Rand64Impl
 {
     using ReturnType = UInt64;
 
-    template<typename T>
-    static void execute(PaddedPODArray<T> & res)
+    static void execute(ReturnType * output, size_t size)
     {
-        detail::LinearCongruentialGenerator generator0;
-        detail::LinearCongruentialGenerator generator1;
-        detail::LinearCongruentialGenerator generator2;
-        detail::LinearCongruentialGenerator generator3;
-
-        detail::seed(generator0, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator1, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(&res[0]));
-
-        size_t size = res.size() * (sizeof(T) / sizeof(ReturnType));
-        ReturnType * pos = reinterpret_cast<ReturnType *>(&res[0]);
-        ReturnType * end = pos + size;
-        ReturnType * end2 = pos + size / 2 * 2;
-
-        while (pos < end2)
-        {
-            pos[0] = (static_cast<UInt64>(generator0.next()) << 32) | generator1.next();
-            pos[1] = (static_cast<UInt64>(generator2.next()) << 32) | generator3.next();
-            pos += 2;
-        }
-
-        while (pos < end)
-        {
-            pos[0] = (static_cast<UInt64>(generator0.next()) << 32) | generator1.next();
-            ++pos;
-        }
+        RandImpl::execute(reinterpret_cast<RandImpl::ReturnType *>(output), size * 2);
     }
 };
 
@@ -188,7 +159,7 @@ public:
 
         size_t size = block.rows();
         vec_to.resize(size);
-        Impl::execute(vec_to);
+        Impl::execute(&vec_to[0], vec_to.size());
     }
 };
 
@@ -231,7 +202,7 @@ public:
         {
             is_initialized = true;
             typename ColumnVector<ToType>::Container_t vec_to(1);
-            Impl::execute(vec_to);
+            Impl::execute(&vec_to[0], vec_to.size());
             value = vec_to[0];
         }
 

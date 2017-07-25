@@ -1420,7 +1420,7 @@ public:
 
         size_t size = block.rows();
         vec_to.resize(size);
-        Rand64Impl::execute(vec_to);
+        Rand64Impl::execute(reinterpret_cast<UInt64 *>(&vec_to[0]), vec_to.size() * 2);
 
         for (UInt128 & uuid: vec_to)
         {
