@@ -1,13 +1,14 @@
-#include <stdint.h>
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-struct ClickhouseVectorUint64 {
+struct ClickhouseVectorUint64
+{
     const uint64_t size;
     const uint64_t * data;
 };
-#define ClickhouseColumns const char**
+#define ClickhouseColumns const char **
 
 void loadIds(void * data_ptr, struct ClickhouseVectorUint64 ids)
 {
@@ -39,6 +40,6 @@ void * dataAllocate()
 void dataDelete(void * data_ptr)
 {
     printf("dataDelete c Runned!!! ptr=%p \n", data_ptr);
-    free(ptr);
+    free(data_ptr);
     return;
 }
