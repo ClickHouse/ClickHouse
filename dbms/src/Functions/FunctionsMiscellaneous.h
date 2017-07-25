@@ -39,10 +39,7 @@ public:
         return true;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -69,10 +66,7 @@ public:
         return 2;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 

@@ -153,9 +153,25 @@ public:
         executeImpl(block, arguments, result);
     }
 
-    /// Returns true if the function implementation directly handles the arguments
-    /// that correspond to nullable columns and null columns.
-    virtual bool hasSpecialSupportForNulls() const { return false; }
+    /** Default implementation in presense of Nullable arguments or NULL constants as arguments is the following:
+      *  if some of arguments are NULL constants then return NULL constant,
+      *  if some of arguments are Nullable, then execute function as usual for block,
+      *   where Nullable columns are substituted with nested columns (they have arbitary values in rows corresponding to NULL value)
+      *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
+      */
+    virtual bool useDefaultImplementationForNulls() const { return true; }
+
+    /** If the function have non-zero number of arguments,
+      *  and if all arguments are constant, that we could automatically provide default implementation:
+      *  arguments are converted to ordinary columns with single value, then function is executed as usual,
+      *  and then the result is converted to constant column.
+      */
+    virtual bool useDefaultImplementationForConstants() const { return false; }
+
+    /** Some arguments could remain constant during this implementation.
+      */
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
 
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
@@ -184,42 +200,6 @@ public:
     }
 
     virtual ~IFunction() {}
-
-protected:
-    /// Returns the copy of a given block in which each column specified in
-    /// the "arguments" parameter is replaced with its respective nested
-    /// column if it is nullable.
-    static Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
-    /// Similar function as above. Additionally transform the result type if needed.
-    static Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result);
-
-private:
-    /// Strategy to apply when executing a function.
-    enum Strategy
-    {
-        /// Merely perform the function on its columns.
-        DIRECTLY_EXECUTE = 0,
-        /// If at least one argument is nullable, call the function implementation
-        /// with a block in which nullable columns that correspond to function arguments
-        /// have been replaced with their respective nested columns. Subsequently, the
-        /// result column is wrapped into a nullable column.
-        PROCESS_NULLABLE_COLUMNS,
-        /// If at least one argument is NULL, return NULL.
-        RETURN_NULL
-    };
-
-private:
-    /// Choose the strategy for performing the function.
-    Strategy chooseStrategy(const Block & block, const ColumnNumbers & args);
-
-    /// If required by the specified strategy, process the given block, then
-    /// return the processed block. Otherwise return an empty block.
-    Block preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args,
-        size_t result);
-
-    /// If required by the specified strategy, post-process the result column.
-    void postProcessResult(Strategy strategy, Block & block, const Block & processed_block,
-        const ColumnNumbers & args, size_t result);
 };
 
 

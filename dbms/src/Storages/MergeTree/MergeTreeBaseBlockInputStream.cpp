@@ -116,7 +116,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     };
 
     // read rows from reader and clear columns
-    auto skipRows = [& preferred_block_size_bytes, & estimateNumRows](
+    auto skipRows = [&estimateNumRows](
         Block & block, MergeTreeRangeReader & reader, MergeTreeReadTask & task, size_t rows)
     {
         size_t recommended_rows = rows;

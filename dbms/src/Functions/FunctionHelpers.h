@@ -4,7 +4,8 @@
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
-
+#include <Core/Block.h>
+#include <Core/ColumnNumbers.h>
 
 
 namespace DB
@@ -83,5 +84,15 @@ inline Field toField(const T & x)
 
 
 ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column);
+
+
+/// Returns the copy of a given block in which each column specified in
+/// the "arguments" parameter is replaced with its respective nested
+/// column if it is nullable.
+Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
+
+/// Similar function as above. Additionally transform the result type if needed.
+Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result);
+
 
 }

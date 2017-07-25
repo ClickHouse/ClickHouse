@@ -109,19 +109,6 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 }
 
 
-void DecodeURLComponentImpl::constant(const std::string & str,
-    std::string & res_data)
-{
-    ColumnString src;
-    ColumnString dst;
-    src.insert(str);
-
-    vector(src.getChars(), src.getOffsets(), dst.getChars(), dst.getOffsets());
-
-    res_data = dst[0].get<String>();
-}
-
-
 void DecodeURLComponentImpl::vector_fixed(const ColumnString::Chars_t & data, size_t n,
     ColumnString::Chars_t & res_data)
 {

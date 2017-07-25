@@ -176,6 +176,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnWithTypeAndName & arg_from = block.getByPosition(arguments[0]);
@@ -198,16 +201,6 @@ public:
             auto col_to = std::make_shared<ColumnString>();
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());
             res.column = col_to;
-        }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnString>(arg_from.column.get()))
-        {
-            auto full_column_holder = col_from->cloneResized(1)->convertToFullColumnIfConst();
-            const ColumnString * col_from_full = static_cast<const ColumnString *>(full_column_holder.get());
-
-            auto col_to_full = std::make_shared<ColumnString>();
-            convert(charset_from, charset_to, col_from_full->getChars(), col_from_full->getOffsets(), col_to_full->getChars(), col_to_full->getOffsets());
-
-            res.column = DataTypeString().createConstColumn(col_from->size(), (*col_to_full)[0].get<String>());
         }
         else
             throw Exception("Illegal column passed as first argument of function " + getName() + " (must be ColumnString).",
