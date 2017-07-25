@@ -1198,7 +1198,7 @@ Block Aggregator::prepareBlockAndFill(
 }
 
 
-BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const
+Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const
 {
     size_t rows = 1;
 
@@ -1238,12 +1238,10 @@ BlocksList Aggregator::prepareBlocksAndFillWithoutKey(AggregatedDataVariants & d
     if (final)
         destroyWithoutKey(data_variants);
 
-    BlocksList blocks;
-    blocks.emplace_back(std::move(block));
-    return blocks;
+    return block;
 }
 
-BlocksList Aggregator::prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
+Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const
 {
     size_t rows = data_variants.sizeWithoutOverflowRow();
 
@@ -1266,9 +1264,7 @@ BlocksList Aggregator::prepareBlocksAndFillSingleLevel(AggregatedDataVariants & 
             throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
     };
 
-    BlocksList blocks;
-    blocks.emplace_back(prepareBlockAndFill(data_variants, final, rows, filler));
-    return blocks;
+    return prepareBlockAndFill(data_variants, final, rows, filler);
 }
 
 
@@ -1367,8 +1363,8 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     if (isCancelled())
         return BlocksList();
 
-    if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
-        blocks.splice(blocks.end(), prepareBlocksAndFillWithoutKey(
+    if (data_variants.without_key)
+        blocks.emplace_back(prepareBlockAndFillWithoutKey(
             data_variants, final, data_variants.type != AggregatedDataVariants::Type::without_key));
 
     if (isCancelled())
@@ -1377,7 +1373,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
     if (data_variants.type != AggregatedDataVariants::Type::without_key)
     {
         if (!data_variants.isTwoLevel())
-            blocks.splice(blocks.end(), prepareBlocksAndFillSingleLevel(data_variants, final));
+            blocks.emplace_back(prepareBlockAndFillSingleLevel(data_variants, final));
         else
             blocks.splice(blocks.end(), prepareBlocksAndFillTwoLevel(data_variants, final, thread_pool.get()));
     }
@@ -1639,8 +1635,8 @@ protected:
             if (first->type == AggregatedDataVariants::Type::without_key || aggregator.params.overflow_row)
             {
                 aggregator.mergeWithoutKeyDataImpl(data);
-                return aggregator.prepareBlocksAndFillWithoutKey(
-                    *first, final, first->type != AggregatedDataVariants::Type::without_key).front();
+                return aggregator.prepareBlockAndFillWithoutKey(
+                    *first, final, first->type != AggregatedDataVariants::Type::without_key);
             }
         }
 
@@ -1663,7 +1659,7 @@ protected:
             else
                 throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
-            return aggregator.prepareBlocksAndFillSingleLevel(*first, final).front();
+            return aggregator.prepareBlockAndFillSingleLevel(*first, final);
         }
         else
         {
@@ -2167,6 +2163,12 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     if (blocks.empty())
         return {};
 
+    auto bucket_num = blocks.front().info.bucket_num;
+    bool is_overflows = blocks.front().info.is_overflows;
+
+    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = " << bucket_num << ").");
+    Stopwatch watch;
+
     StringRefs key(params.keys_size);
     ConstColumnPlainPtrs key_columns(params.keys_size);
 
@@ -2215,12 +2217,12 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
-    auto bucket_num = blocks.front().info.bucket_num;
-    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = " << bucket_num << ").");
-
     for (Block & block : blocks)
     {
-        if (result.type == AggregatedDataVariants::Type::without_key || block.info.is_overflows)
+        if (isCancelled())
+            return {};
+
+        if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
             mergeWithoutKeyStreamsImpl(block, result);
 
     #define M(NAME, IS_TWO_LEVEL) \
@@ -2233,64 +2235,36 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
             throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
     }
 
-    BlocksList merged_blocks = convertToBlocks(result, final, 1);
-
-    if (merged_blocks.size() > 1)
-    {
-        /** There may be two blocks. One is with `is_overflows`, the other is not.
-          * If there is a non-empty block not is_overflows, then delete the block with is_overflows.
-          * If there is an empty block not is_overflows and a block with is_overflows, then delete the empty block.
-          *
-          * Do this, because we start from the assumption that the function is passed to the function
-          *  either all the blocks are not is_overflows, or all the blocks is_overflows.
-          */
-
-        bool has_nonempty_nonoverflows = false;
-        bool has_overflows = false;
-
-        for (const auto & block : merged_blocks)
-        {
-            if (block && block.rows() && !block.info.is_overflows)
-                has_nonempty_nonoverflows = true;
-            else if (block.info.is_overflows)
-                has_overflows = true;
-        }
-
-        if (has_nonempty_nonoverflows)
-        {
-            for (auto it = merged_blocks.begin(); it != merged_blocks.end(); ++it)
-            {
-                if (it->info.is_overflows)
-                {
-                    merged_blocks.erase(it);
-                    break;
-                }
-            }
-        }
-        else if (has_overflows)
-        {
-            for (auto it = merged_blocks.begin(); it != merged_blocks.end(); ++it)
-            {
-                if (!*it || it->rows() == 0)
-                {
-                    merged_blocks.erase(it);
-                    break;
-                }
-            }
-        }
-
-        if (merged_blocks.size() > 1)
-            throw Exception("Logical error: temporary result is not single-level", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    LOG_TRACE(log, "Merged partially aggregated blocks.");
-
-    if (merged_blocks.empty())
+    if (isCancelled())
         return {};
 
-    auto res = std::move(merged_blocks.front());
-    res.info.bucket_num = bucket_num;
-    return res;
+    Block block;
+    if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
+        block = prepareBlockAndFillWithoutKey(result, final, is_overflows);
+    else
+        block = prepareBlockAndFillSingleLevel(result, final);
+    /// NOTE: two-level data is not possible here - chooseAggregationMethod chooses only among single-level methods.
+
+    if (!final)
+    {
+        /// Pass ownership of aggregate function states from result to ColumnAggregateFunction objects in the resulting block.
+        result.aggregator = nullptr;
+    }
+
+    size_t rows = block.rows();
+    size_t bytes = block.bytes();
+    double elapsed_seconds = watch.elapsedSeconds();
+    LOG_TRACE(log, std::fixed << std::setprecision(3)
+        << "Merged partially aggregated blocks. "
+        << rows << " rows, " << bytes / 1048576.0 << " MiB."
+        << " in " << elapsed_seconds << " sec."
+        << " (" << rows / elapsed_seconds << " rows/sec., " << bytes / elapsed_seconds / 1048576.0 << " MiB/sec.)");
+
+    if (isCancelled())
+        return {};
+
+    block.info.bucket_num = bucket_num;
+    return block;
 }
 
 
