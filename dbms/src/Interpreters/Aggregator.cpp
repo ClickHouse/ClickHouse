@@ -2236,6 +2236,9 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
         if (isCancelled())
             return {};
 
+        if (bucket_num >= 0 && block.info.bucket_num != bucket_num)
+            bucket_num = -1;
+
         if (result.type == AggregatedDataVariants::Type::without_key || is_overflows)
             mergeWithoutKeyStreamsImpl(block, result);
 
