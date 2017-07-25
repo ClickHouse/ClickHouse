@@ -1393,11 +1393,11 @@ public:
     }
 };
 
-class FunctionGenerateUUIDV4 : public IFunction
+class FunctionGenerateUUIDv4 : public IFunction
 {
 public:
-    static constexpr auto name = "generateUUIDV4";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionGenerateUUIDV4>(); }
+    static constexpr auto name = "generateUUIDv4";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionGenerateUUIDv4>(); }
 
     String getName() const override
     {
