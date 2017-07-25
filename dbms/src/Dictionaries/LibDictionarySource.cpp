@@ -53,11 +53,17 @@ LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
 BlockInputStreamPtr LibDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
+
+    for (auto & a : dict_struct.attributes) {
+        DUMP(a.name);
+        DUMP(a.type);
+    }
+
     auto lib = std::make_shared<SharedLibrary>(filename);
     //auto fptr = lib->get<void * (*) ()>("loadAll");
     auto data_ptr = library->get<void * (*)()>("dataAllocate")();
 
-    lib->get<void * (*)()>("loadAll")();
+    lib->get<void * (*)(void *)>("loadAll")(data_ptr);
     // TODO
     library->get<void (*)(void *)>("dataDelete")(data_ptr);
 
@@ -84,7 +90,7 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     //auto data_ptr = library->get<void * (*) ()>("dataAllocate")();
     auto data_ptr = library->get<void * (*)()>("dataAllocate")();
 
-    auto data = library->get<void * (*)(void * data_ptr, decltype(params))>("loadIds")(data_ptr, params);
+    auto data = library->get<void * (*)(void *, decltype(params))>("loadIds")(data_ptr, params);
 
     if (data)
     {
@@ -104,11 +110,12 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
 BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
-
+    /*
+     * 
     //auto lib = std::make_shared<SharedLibrary>(filename);
 
     //std::cerr << Columns << "\n";
-    snv(key_columns);
+    DUMP(key_columns);
     // getName
     //auto col = new ClickhouseColumns[key_columns.size()];
     //auto columns_c = new const char*[key_columns.size()+1];
@@ -120,7 +127,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
     auto columns_c = std::make_unique<const char * []>(key_columns.size() + 1);
 
     size_t i = 0;
-    for (auto column : key_columns)
+    for (auto & column : key_columns)
     {
         // FIXME
         columns_c[i] = column->getName().c_str();
@@ -147,7 +154,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
 
     //delete columns_c;
     //lib->get<void * (*) (const std::vector<std::size_t> &)>("loadKeys")(requested_rows);
-    /*auto fptr = lib->get<void * (*) (const std::vector<std::size_t> &)>("loadKeys");
+    / *auto fptr = lib->get<void * (*) (const std::vector<std::size_t> &)>("loadKeys");
     std::cerr << "LibDictionarySource::loadKeys filename=" << filename << " size=" << requested_rows.size() << " fptr=" << fptr << "\n";
     if (fptr)
         fptr(requested_rows);

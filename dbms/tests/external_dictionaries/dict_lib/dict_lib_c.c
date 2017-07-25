@@ -12,21 +12,23 @@ struct ClickhouseVectorUint64
 
 void loadIds(void * data_ptr, struct ClickhouseVectorUint64 ids)
 {
-    printf("loadIds c Runned!!!=%" PRIu64 "\n", ids.size);
+    printf("loadIds c Runned!!! ptr=%p size=%" PRIu64 "\n", data_ptr, ids.size);
     return;
 }
 
-void loadAll()
+void loadAll(void * data_ptr)
 {
-    printf("loadAll c Runned!!! \n");
+    printf("loadAll c Runned!!! ptr=%p \n", data_ptr);
     return;
 }
 
+/*
 void loadKeys(ClickhouseColumns columns, struct ClickhouseVectorUint64 requested_rows)
 {
     printf("loadIds c Runned!!!=%" PRIu64 "\n", requested_rows.size);
     return;
 }
+*/
 
 
 void * dataAllocate()

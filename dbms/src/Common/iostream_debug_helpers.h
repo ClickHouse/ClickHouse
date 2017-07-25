@@ -2,8 +2,8 @@
 #include <iostream>
 
 // Rename!
-#define nv(VAR) #VAR "=" << VAR
-#define snv(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << nv(VAR) << "\n";
+#define DUMPS(VAR) #VAR " = " << VAR
+#define DUMP(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR) << "\n";
 
 namespace DB { class IBlockInputStream; }
 std::ostream & operator<<(std::ostream & stream, const DB::IBlockInputStream & what);
