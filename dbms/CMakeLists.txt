@@ -59,8 +59,8 @@ add_headers_only(dbms src/Server)
 list (APPEND dbms_sources ${CONFIG_BUILD})
 list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp)
-list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h)
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp src/Functions/DataTypeTraits.cpp)
+list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h   src/Functions/FunctionHelpers.h   src/Functions/DataTypeTraits.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
