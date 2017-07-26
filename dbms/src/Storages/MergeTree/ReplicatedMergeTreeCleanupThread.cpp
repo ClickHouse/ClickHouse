@@ -139,12 +139,12 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
     /// Use ZooKeeper's first node (last according to time) timestamp as "current" time.
     Int64 current_time = timed_blocks.front().first;
-    Int64 time_treshold = std::max(0L, current_time - static_cast<Int64>(storage.data.settings.replicated_deduplication_window_seconds));
-    TimedBlock block_treshold(time_treshold, "");
+    Int64 time_threshold = std::max(0L, current_time - static_cast<Int64>(storage.data.settings.replicated_deduplication_window_seconds));
+    TimedBlock block_threshold(time_threshold, "");
 
-    auto first_outdated_block_fixed_treshold = timed_blocks.begin() + storage.data.settings.replicated_deduplication_window;
-    auto first_outdated_block_time_treshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_treshold, TimedBlocksComparator());
-    auto first_outdated_block = std::min(first_outdated_block_fixed_treshold, first_outdated_block_time_treshold);
+    auto first_outdated_block_fixed_threshold = timed_blocks.begin() + storage.data.settings.replicated_deduplication_window;
+    auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, TimedBlocksComparator());
+    auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
