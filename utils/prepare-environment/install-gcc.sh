@@ -33,5 +33,7 @@ sudo ln -sf /usr/local/bin/g++ /usr/local/bin/g++-${VERSION_SHORT}
 sudo ln -sf /usr/local/bin/gcc /usr/local/bin/cc
 sudo ln -sf /usr/local/bin/g++ /usr/local/bin/c++
 
+echo "/usr/local/lib64" | sudo tee /etc/ld.so.conf.d/local-lib64.conf
+
 hash gcc g++
 gcc --version
