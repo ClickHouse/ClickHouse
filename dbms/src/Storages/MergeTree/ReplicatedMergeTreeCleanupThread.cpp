@@ -121,6 +121,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
     Strings blocks = zookeeper->getChildren(storage.zookeeper_path + "/blocks");
 
+    /// Time -> block hash from ZooKeeper (from node name)
     using TimedBlock = std::pair<Int64, String>;
     using TimedBlocksComparator = std::greater<TimedBlock>;
     std::vector<TimedBlock> timed_blocks;
