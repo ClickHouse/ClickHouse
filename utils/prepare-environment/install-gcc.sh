@@ -14,6 +14,8 @@ echo "Will download ${VERSION} (short version: $VERSION_SHORT)."
 THREADS=$(grep -c ^processor /proc/cpuinfo)
 
 cd ~
+mkdir gcc
+cd gcc
 
 wget https://ftpmirror.gnu.org/gcc/${VERSION}/${VERSION}.tar.bz2
 tar xf ${VERSION}.tar.bz2
