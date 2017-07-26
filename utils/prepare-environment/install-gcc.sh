@@ -28,10 +28,10 @@ cd gcc-build
 make -j $THREADS
 sudo make install
 
-sudo ln -s /usr/local/bin/gcc /usr/local/bin/gcc-${VERSION_SHORT}
-sudo ln -s /usr/local/bin/g++ /usr/local/bin/g++-${VERSION_SHORT}
-sudo ln -s /usr/local/bin/gcc /usr/local/bin/cc
-sudo ln -s /usr/local/bin/g++ /usr/local/bin/c++
+sudo ln -sf /usr/local/bin/gcc /usr/local/bin/gcc-${VERSION_SHORT}
+sudo ln -sf /usr/local/bin/g++ /usr/local/bin/g++-${VERSION_SHORT}
+sudo ln -sf /usr/local/bin/gcc /usr/local/bin/cc
+sudo ln -sf /usr/local/bin/g++ /usr/local/bin/c++
 
 hash gcc g++
 gcc --version
