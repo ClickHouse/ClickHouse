@@ -15,6 +15,7 @@ namespace DB
 
 class ASTAlterQuery;
 struct DDLLogEntry;
+struct DDLTask;
 
 
 BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, Context & context);
@@ -29,21 +30,22 @@ public:
     /// Pushes query into DDL queue, returns path to created node
     String enqueueQuery(DDLLogEntry & entry);
 
-    std::string getHostName() const
+    /// Host ID (name:port) for logging purposes
+    /// Note that in each entry hosts are identified by name:port from cluster config
+    std::string getCommonHostID() const
     {
-        return host_id;
+        return host_fqdn_id;
     }
 
 private:
     void processTasks();
 
-    void processTask(const DDLLogEntry & node, const std::string & node_path);
+    void processTask(DDLTask & task);
 
     void processTaskAlter(
+        DDLTask & task,
         const ASTAlterQuery * query_alter,
         const String & rewritten_query,
-        const std::shared_ptr<Cluster> & cluster,
-        ssize_t shard_num,
         const String & node_path);
 
     /// Checks and cleanups queue's nodes
@@ -58,9 +60,8 @@ private:
     Context & context;
     Logger * log = &Logger::get("DDLWorker");
 
-    std::string host_id;        /// host_name:port
-    std::string host_name;
-    UInt16 port;
+    std::string host_fqdn;      /// current host domain name
+    std::string host_fqdn_id;   /// host_name:port
 
     std::string queue_dir;      /// dir with queue of queries
     std::string master_dir;     /// dir with queries was initiated by the server
@@ -87,6 +88,7 @@ private:
     static const size_t cleanup_min_period_seconds;
 
     friend class DDLQueryStatusInputSream;
+    friend class DDLTask;
 };
 
 

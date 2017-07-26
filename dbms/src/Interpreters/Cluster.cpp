@@ -5,6 +5,7 @@
 #include <Common/StringUtils.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <openssl/sha.h>
@@ -18,6 +19,7 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int LOGICAL_ERROR;
     extern const int SHARD_HAS_NO_CONNECTIONS;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -111,6 +113,16 @@ String Cluster::Address::toString() const
 String Cluster::Address::toString(const String & host_name, UInt16 port)
 {
     return escapeForFileName(host_name) + ':' + DB::toString(port);
+}
+
+void Cluster::Address::fromString(const String & host_port_string, String & host_name, UInt16 & port)
+{
+    auto pos = host_port_string.find_last_of(':');
+    if (pos == std::string::npos)
+        throw Exception("Incorrect host ID format " + host_port_string, ErrorCodes::SYNTAX_ERROR);
+
+    host_name = unescapeForFileName(host_port_string.substr(0, pos));
+    port = parse<UInt16>(host_port_string.substr(0, pos));
 }
 
 
