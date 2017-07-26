@@ -7,7 +7,7 @@ sudo apt-get install -y curl
 VERSION=$(curl -sSL https://ftpmirror.gnu.org/gcc/ | grep -oE 'gcc-[0-9]+(\.[0-9]+)+' | sort -Vr | head -n1) #'
 #VERSION=gcc-7.1.0
 
-VERSION_SHORT=$(echo "$VERSION" | grep -oE '[0-9]')
+VERSION_SHORT=$(echo "$VERSION" | grep -oE '[0-9]' | head -n1)
 
 echo "Will download ${VERSION} (short version: $VERSION_SHORT)."
 
@@ -22,7 +22,7 @@ cd ${VERSION}
 cd ..
 mkdir gcc-build
 cd gcc-build
-../${VERSION}/configure --enable-languages=c,c++
+../${VERSION}/configure --enable-languages=c,c++ --disable-multilib
 make -j $THREADS
 sudo make install
 
