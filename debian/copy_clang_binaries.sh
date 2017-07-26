@@ -8,7 +8,7 @@ PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 LD=$(command -v gold || command -v ld.gold || command -v ld)
 
 if [ -z "$CLANG" ]; then
-    CLANG=$(which clang)
+    CLANG=$(which clang-4.0 || which clang)
 fi
 
 if [ ! -x "$CLANG" ]; then
@@ -21,8 +21,8 @@ if [ ! -x "$LD" ]; then
     exit 1
 fi
 
-cp "$CLANG" $DST
-cp "$LD" ${DST}/ld
+cp "$CLANG" $DST/clang
+cp "$LD" $DST/ld
 
 STDCPP=$(ldd $CLANG | grep -oE '/[^ ]+libstdc++[^ ]+')
 
