@@ -19,6 +19,14 @@ class Client:
         return QueryRequest(self, sql, stdin, timeout)
 
 
+class QueryTimeoutExceedException(Exception):
+    pass
+
+
+class QueryRuntimeException(Exception):
+    pass
+
+
 class QueryRequest:
     def __init__(self, client, sql, stdin=None, timeout=None):
         self.client = client
@@ -61,11 +69,11 @@ class QueryRequest:
         stdout = self.stdout_file.read()
         stderr = self.stderr_file.read()
 
-        if self.process.returncode != 0 or stderr:
-            raise Exception('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
-
         if self.timer is not None and not self.process_finished_before_timeout:
-            raise Exception('Client timed out!')
+            raise QueryTimeoutExceedException('Client timed out!')
+
+        if self.process.returncode != 0 or stderr:
+            raise QueryRuntimeException('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
 
         return stdout
 
