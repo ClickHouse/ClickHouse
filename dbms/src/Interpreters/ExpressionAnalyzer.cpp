@@ -929,6 +929,27 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
 
         aliases[alias] = ast;
     }
+    else if (typeid_cast<ASTSubquery *>(ast.get()))
+    {
+        /// Set unique aliases for all subqueries. This is needed, because content of subqueries could change after recursive analysis,
+        ///  and auto-generated column names could become incorrect.
+
+        size_t subquery_index = 1;
+        while (true)
+        {
+            alias = "_subquery" + toString(subquery_index);
+            if (!aliases.count("_subquery" + toString(subquery_index)))
+                break;
+            ++subquery_index;
+        }
+
+        std::cerr << ast->getColumnName() << "\n";
+
+        ast->setAlias(alias);
+        aliases[alias] = ast;
+
+        std::cerr << ast->getAliasOrColumnName() << "\n";
+    }
 }
 
 
