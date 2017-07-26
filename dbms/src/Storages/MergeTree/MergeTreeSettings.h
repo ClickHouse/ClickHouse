@@ -52,9 +52,11 @@ struct MergeTreeSettings
 
     /** Replication settings. */
 
-    /// How many last blocks of hashes should be kept in ZooKeeper.
+    /// How many last blocks of hashes should be kept in ZooKeeper (old blocks will be deleted).
     size_t replicated_deduplication_window = 100;
-    /// How many seconds from an INSERT to the last INSERT should pass to delete the block hash from ZooKeeper.
+    /// Similar to previous, but determines old blocks by their lifetime.
+    /// Hash of an inserted block will be deleted (and the block will not be deduplicated after) if it outside of one "window".
+    /// You can set very big replicated_deduplication_window to avoid duplicating INSERTs during that period of time.
     size_t replicated_deduplication_window_seconds = 7 * 24 * 60 * 60; /// one week
 
     /// Keep about this number of last records in ZooKeeper log, even if they are obsolete.
