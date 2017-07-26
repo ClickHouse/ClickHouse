@@ -129,7 +129,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     {
         zkutil::Stat stat;
         zookeeper->exists(storage.zookeeper_path + "/blocks/" + block, &stat);
-        timed_blocks.push_back(std::make_pair(stat.ctime, block));
+        timed_blocks.emplace_back(stat.ctime, block);
     }
 
     if (timed_blocks.empty())
