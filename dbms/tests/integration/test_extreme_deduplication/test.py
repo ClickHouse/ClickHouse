@@ -35,6 +35,7 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple2', '{replica}', date, 
         yield cluster
 
     finally:
+        pass
         cluster.shutdown()
 
 
@@ -42,21 +43,22 @@ def test_deduplication_window_in_seconds(started_cluster):
     node = node1
 
     node.query("INSERT INTO simple2 VALUES (0, 0)")
+    time.sleep(1)
+    node.query("INSERT INTO simple2 VALUES (0, 0)") # deduplication works here
     node.query("INSERT INTO simple2 VALUES (0, 1)")
-    node.query("INSERT INTO simple2 VALUES (0, 1)") # deduplication works here
-
     assert TSV(node.query("SELECT count() FROM simple2")) == TSV("2\n")
 
     # wait clean thread
     time.sleep(2)
 
-    node.query("INSERT INTO simple2 VALUES (0, 1)") # deduplication doesn't works here, hash node was deleted
-    assert TSV(node.query("SELECT count() FROM simple2")) == TSV("3\n")
+    assert TSV.toMat(node.query("SELECT count() FROM system.zookeeper WHERE path='/clickhouse/tables/0/simple2/blocks'"))[0][0] == "1"
+    node.query("INSERT INTO simple2 VALUES (0, 0)") # deduplication doesn't works here, the first hash node was deleted
+    assert TSV.toMat(node.query("SELECT count() FROM simple2"))[0][0] == "3"
 
 
 def check_timeout_exception(e):
     s = str(e)
-    print s
+    #print s
     assert s.find('timed out!') >= 0 or s.find('Return code: -9') >= 0
 
 

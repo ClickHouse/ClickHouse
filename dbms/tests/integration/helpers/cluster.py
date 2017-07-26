@@ -84,7 +84,8 @@ class ClickHouseCluster:
         if self.is_up:
             return
 
-        if destroy_dirs:
+        if destroy_dirs and p.exists(self.instances_dir):
+            print "Removing instances dir", self.instances_dir
             shutil.rmtree(self.instances_dir)
 
         for instance in self.instances.values():
