@@ -426,14 +426,14 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 break;
             rows_to_read = std::min(rows_to_read, std::max(1LU, recommended_rows));
 
-            task->current_range_reader->read(res, rows_to_read);
+            size_t rows_was_read = task->current_range_reader->read(res, rows_to_read);
             if (task->current_range_reader->isReadingFinished())
                 task->current_range_reader = std::experimental::nullopt;
 
-            if (task->size_predictor)
+            if (res && task->size_predictor)
                 task->size_predictor->update(res);
 
-            space_left -= rows_to_read;
+            space_left -= rows_was_read;
         }
 
         /// In the case of isCancelled.
