@@ -258,7 +258,8 @@ bool ExecutionStatus::tryDeserializeText(const std::string & data)
 
 ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message)
 {
-    return ExecutionStatus(getCurrentExceptionCode(), start_of_message + ": " + getCurrentExceptionMessage(false, true));
+    String msg = start_of_message.empty() ? "" : (start_of_message + ": " + getCurrentExceptionMessage(false, true));
+    return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
 

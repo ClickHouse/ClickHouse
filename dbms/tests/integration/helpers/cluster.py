@@ -89,6 +89,12 @@ class ClickHouseCluster:
             shutil.rmtree(self.instances_dir)
 
         for instance in self.instances.values():
+            # Kill unstopped containers from previous launch
+            try:
+                subprocess.check_call(self.base_cmd + ['kill'])
+                subprocess.check_call(self.base_cmd + ['down', '--volumes'])
+            except:
+                pass
             instance.create_dir(destroy_dir=destroy_dirs)
 
         subprocess.check_call(self.base_cmd + ['up', '-d'])

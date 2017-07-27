@@ -48,6 +48,8 @@ private:
         const String & rewritten_query,
         const String & node_path);
 
+    bool tryExecuteQuery(const String & query, const DDLTask & task, ExecutionStatus & status);
+
     /// Checks and cleanups queue's nodes
     void cleanupQueue(const Strings * node_names_to_check = nullptr);
 
