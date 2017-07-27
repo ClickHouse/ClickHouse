@@ -28,10 +28,10 @@ cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each dir
 cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 
 find_program(CCACHE_FOUND ccache)
-if(CCACHE_FOUND)
-  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-  set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
-endif(CCACHE_FOUND)
+if(CCACHE_FOUND AND NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
+  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "ccache")
+  set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK "ccache")
+endif()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
     message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
