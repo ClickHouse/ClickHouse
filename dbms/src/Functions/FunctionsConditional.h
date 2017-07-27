@@ -1580,7 +1580,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 3; }
 
-    bool hasSpecialSupportForNulls() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -1721,18 +1721,18 @@ public:
 
         if (cond_col)
         {
-            if (!(    executeLeftType<UInt8>(cond_col, block, arguments, result)
-                ||    executeLeftType<UInt16>(cond_col, block, arguments, result)
-                ||    executeLeftType<UInt32>(cond_col, block, arguments, result)
-                ||    executeLeftType<UInt64>(cond_col, block, arguments, result)
-                ||    executeLeftType<Int8>(cond_col, block, arguments, result)
-                ||    executeLeftType<Int16>(cond_col, block, arguments, result)
-                ||    executeLeftType<Int32>(cond_col, block, arguments, result)
-                ||    executeLeftType<Int64>(cond_col, block, arguments, result)
-                ||    executeLeftType<Float32>(cond_col, block, arguments, result)
-                ||    executeLeftType<Float64>(cond_col, block, arguments, result)
-                ||     executeString(cond_col, block, arguments, result)
-                ||  executeTuple(cond_col, block, arguments, result)))
+            if (!( executeLeftType<UInt8>(cond_col, block, arguments, result)
+                || executeLeftType<UInt16>(cond_col, block, arguments, result)
+                || executeLeftType<UInt32>(cond_col, block, arguments, result)
+                || executeLeftType<UInt64>(cond_col, block, arguments, result)
+                || executeLeftType<Int8>(cond_col, block, arguments, result)
+                || executeLeftType<Int16>(cond_col, block, arguments, result)
+                || executeLeftType<Int32>(cond_col, block, arguments, result)
+                || executeLeftType<Int64>(cond_col, block, arguments, result)
+                || executeLeftType<Float32>(cond_col, block, arguments, result)
+                || executeLeftType<Float64>(cond_col, block, arguments, result)
+                || executeString(cond_col, block, arguments, result)
+                || executeTuple(cond_col, block, arguments, result)))
                 throw Exception("Illegal columns " + arg_then.column->getName()
                     + " and " + arg_else.column->getName()
                     + " of second (then) and third (else) arguments of function " + getName(),
@@ -1777,7 +1777,7 @@ public:
     String getName() const override;
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool hasSpecialSupportForNulls() const override;
+    bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 
@@ -1828,7 +1828,7 @@ public:
     String getName() const override;
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool hasSpecialSupportForNulls() const override;
+    bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 };

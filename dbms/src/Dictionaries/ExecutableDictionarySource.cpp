@@ -111,7 +111,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 
     return std::make_shared<BlockInputStreamWithBackgroundThread>(
         input_stream, std::move(process), std::packaged_task<void()>(
-        [output_stream, &ids, this]() mutable
+        [output_stream, &ids]() mutable
         {
             formatIDs(output_stream, ids);
         }));

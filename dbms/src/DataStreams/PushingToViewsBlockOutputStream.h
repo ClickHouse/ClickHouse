@@ -5,15 +5,14 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Storages/StorageView.h>
+#include <Storages/StorageMaterializedView.h>
 
 
 namespace DB
 {
 
 
-/** Writes data to the specified table, recursively being called from all dependent views.
-  * If the view is not materialized, then the data is not written to it, only redirected further.
+/** Writes data to the specified table and to all dependent materialized views.
   */
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
@@ -30,24 +29,22 @@ public:
         addTableLock(storage->lockStructure(true));
 
         Dependencies dependencies = context.getDependencies(database, table);
-        for (size_t i = 0; i < dependencies.size(); ++i)
-        {
-            children.push_back(std::make_shared<PushingToViewsBlockOutputStream>(dependencies[i].first, dependencies[i].second, context, ASTPtr()));
-            queries.push_back(dynamic_cast<StorageView &>(*context.getTable(dependencies[i].first, dependencies[i].second)).getInnerQuery());
-        }
+        for (const auto & database_table : dependencies)
+            views.emplace_back(
+                dynamic_cast<const StorageMaterializedView &>(*context.getTable(database_table.first, database_table.second)).getInnerQuery(),
+                std::make_shared<PushingToViewsBlockOutputStream>(database_table.first, database_table.second, context, ASTPtr()));
 
-        if (storage->getName() != "View")
-            output = storage->write(query_ptr, context.getSettingsRef());
+        output = storage->write(query_ptr, context.getSettingsRef());
     }
 
     void write(const Block & block) override
     {
-        for (size_t i = 0; i < children.size(); ++i)
+        for (auto & view : views)
         {
             BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-            InterpreterSelectQuery select(queries[i], context, QueryProcessingStage::Complete, 0, from);
+            InterpreterSelectQuery select(view.first, context, QueryProcessingStage::Complete, 0, from);
             BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-            copyData(*data, *children[i]);
+            copyData(*data, *view.second);
         }
 
         if (output)
@@ -77,8 +74,7 @@ private:
     BlockOutputStreamPtr output;
     Context context;
     ASTPtr query_ptr;
-    std::vector<BlockOutputStreamPtr> children;
-    std::vector<ASTPtr> queries;
+    std::vector<std::pair<ASTPtr, BlockOutputStreamPtr>> views;
 };
 
 

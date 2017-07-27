@@ -28,17 +28,20 @@ def ddl_check_query(instance, query, num_hosts=None):
     return contents
 
 
-cluster = ClickHouseCluster(__file__)
 TEST_REPLICATED_ALTERS=True
+
+cluster = ClickHouseCluster(__file__)
+for i in xrange(4):
+    cluster.add_instance(
+        'ch{}'.format(i+1),
+        config_dir="configs",
+        macroses={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
+        with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        for i in xrange(4):
-            macroses = {"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1}
-            cluster.add_instance('ch{}'.format(i+1), config_dir="configs", macroses=macroses, with_zookeeper=True)
-
         cluster.start()
 
         # Initialize databases and service tables

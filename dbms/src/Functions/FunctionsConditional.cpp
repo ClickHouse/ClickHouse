@@ -104,11 +104,6 @@ String FunctionMultiIf::getName() const
     return name;
 }
 
-bool FunctionMultiIf::hasSpecialSupportForNulls() const
-{
-    return true;
-}
-
 DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
 {
     return getReturnTypeInternal(args);
@@ -485,11 +480,6 @@ FunctionPtr FunctionCaseWithoutExpr::create(const Context & context_)
 String FunctionCaseWithoutExpr::getName() const
 {
     return name;
-}
-
-bool FunctionCaseWithoutExpr::hasSpecialSupportForNulls() const
-{
-    return true;
 }
 
 DataTypePtr FunctionCaseWithoutExpr::getReturnTypeImpl(const DataTypes & args) const
