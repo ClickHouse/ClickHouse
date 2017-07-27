@@ -21,6 +21,7 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
     : name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
     require_nonempty(require_nonempty)
 {
+
     createAttributes();
 
     try
