@@ -107,6 +107,8 @@ struct ExecutionStatus
     std::string serializeText() const;
 
     void deserializeText(const std::string & data);
+
+    bool tryDeserializeText(const std::string & data);
 };
 
 
