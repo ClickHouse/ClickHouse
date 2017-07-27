@@ -54,7 +54,8 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
 
-    for (auto & a : dict_struct.attributes) {
+    for (auto & a : dict_struct.attributes)
+    {
         DUMP(a.name);
         DUMP(a.type);
     }
@@ -63,9 +64,13 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     //auto fptr = lib->get<void * (*) ()>("loadAll");
     auto data_ptr = library->get<void * (*)()>("dataAllocate")();
 
-    auto data =    lib->get<void * (*)(void *)>("loadAll")(data_ptr);
+    auto data = lib->get<void * (*)(void *)>("loadAll")(data_ptr);
+    //DUMP(data);
+
     if (data)
     {
+        auto columns = static_cast<ClickhouseColumnsUint64 *>(data);
+        DUMP(columns->size);
     }
     // TODO
     library->get<void (*)(void *)>("dataDelete")(data_ptr);
@@ -92,11 +97,25 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
 
     //auto data_ptr = library->get<void * (*) ()>("dataAllocate")();
     auto data_ptr = library->get<void * (*)()>("dataAllocate")();
-
     auto data = library->get<void * (*)(void *, decltype(params))>("loadIds")(data_ptr, params);
+    //DUMP(data);
 
     if (data)
     {
+        auto columns = static_cast<ClickhouseColumnsUint64 *>(data);
+        DUMP(columns->size);
+        for (size_t i = 0; i < columns->size; ++i)
+        {
+            DUMP(i);
+            DUMP(columns->columns[i].size);
+            DUMP(columns->columns[i].data);
+        DUMP("ONE:");
+        for (size_t ii = 0; ii < columns->columns[i].size; ++ii)
+        {
+            DUMP(ii);
+            DUMP(columns->columns[i].data[ii]);
+        }
+        }
     }
 
     library->get<void (*)(void * data_ptr)>("dataDelete")(data_ptr);

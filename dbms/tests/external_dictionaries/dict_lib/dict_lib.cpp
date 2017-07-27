@@ -3,7 +3,11 @@
 #include <memory>
 #include <vector>
 
-#include <common/iostream_debug_helpers.h>
+#define DUMPS(VAR) #VAR " = " << VAR                                                     
+#define DUMP(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR) << "\n"; 
+
+
+//#include <common/iostream_debug_helpers.h>
 
 
 struct ClickhouseVectorUint64
@@ -23,7 +27,8 @@ struct ClickhouseColumnsUint64
 
 struct DataHolder
 {
-    std::shared_ptr<std::vector<std::vector<uint64_t>>> vector;
+    //std::shared_ptr<std::vector<std::vector<uint64_t>>> vector;
+    std::vector<std::vector<uint64_t>> vector;
     std::unique_ptr<ClickhouseVectorUint64[]> columnsHolder;
     ClickhouseColumnsUint64 columns;
 };
@@ -34,22 +39,25 @@ extern "C" void * loadIds(void * data_ptr, const struct ClickhouseVectorUint64 i
     std::cerr << "loadIds Runned!!! ptr=" << data_ptr << " => " << ptr << " size=" << ids.size << "\n";
     if (ptr)
     {
-        ptr->vector->assign({{1, 2, 3, 4, 5, 6}, {11, 12, 13, 14}, {21, 22, 23, 24, 25}});
-        DUMP(ptr->vector);
+        DUMP("lol");
+        ptr->vector.assign({{1, 2, 3, 4, 5, 6}, {11, 12, 13, 14}, {21, 22, 23, 24, 25}});
+        //DUMP(ptr->vector);
         //std::make_unique<const char * []>(key_columns.size() + 1);
-        ptr->columnsHolder = std::make_unique<ClickhouseVectorUint64[]>(ptr->vector->size());
+        ptr->columnsHolder = std::make_unique<ClickhouseVectorUint64[]>(ptr->vector.size());
         size_t i = 0;
-        for (auto & col : *(ptr->vector))
+        for (auto & col : ptr->vector)
         {
             DUMP(i);
-            DUMP(col);
+            //DUMP(col);
 
             ptr->columnsHolder[i].size = col.size();
             ptr->columnsHolder[i].data = col.data();
             ++i;
         }
-        ptr->columns.size = ptr->vector->size();
+        ptr->columns.size = ptr->vector.size();
+        DUMP(ptr->columns.size);
         ptr->columns.columns = ptr->columnsHolder.get();
+        //DUMP(ptr->columns.columns);
         return static_cast<void *>(&ptr->columns);
     }
 
