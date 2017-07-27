@@ -19,6 +19,11 @@ private:
         return true;
     }
 
+    bool canBeInsideNullable() const override
+    {
+        return false;
+    }
+
     void throwNoSerialization() const
     {
         throw Exception("Serialization is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -52,11 +57,6 @@ public:
     ColumnPtr createColumn() const override
     {
         throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override
-    {
-        throw Exception("Method createConstColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     Field getDefault() const override

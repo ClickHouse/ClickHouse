@@ -15,16 +15,14 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionIPv4NumToStringClassC>();
     factory.registerFunction<FunctionIPv4ToIPv6>();
     factory.registerFunction<FunctionMACNumToString>();
-    factory.registerFunction<FunctionMACStringToNum>();
-    factory.registerFunction<FunctionMACStringToOUI>();
+    factory.registerFunction<FunctionMACStringTo<ParseMACImpl>>();
+    factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
     factory.registerFunction<FunctionUUIDNumToString>();
     factory.registerFunction<FunctionUUIDStringToNum>();
+    factory.registerFunction<FunctionGenerateUUIDv4>();
     factory.registerFunction<FunctionHex>();
     factory.registerFunction<FunctionUnhex>();
     factory.registerFunction<FunctionBitmaskToArray>();
-    factory.registerFunction<FunctionBitTest>();
-    factory.registerFunction<FunctionBitTestAny>();
-    factory.registerFunction<FunctionBitTestAll>();
 }
 
 }

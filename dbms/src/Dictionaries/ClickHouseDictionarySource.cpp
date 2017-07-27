@@ -83,7 +83,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadIds(const std::vector<UInt64
 
 
 BlockInputStreamPtr ClickHouseDictionarySource::loadKeys(
-    const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+    const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     return createStreamForSelectiveLoad(
         query_builder.composeLoadKeysQuery(

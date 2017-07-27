@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Columns/ColumnConst.h>
 #include <iostream>
 
 namespace DB

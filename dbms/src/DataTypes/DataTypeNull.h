@@ -21,6 +21,11 @@ public:
         return "Null";
     }
 
+    const char * getFamilyName() const override
+    {
+        return "Null";
+    }
+
     bool isNull() const override
     {
         return true;
@@ -29,6 +34,11 @@ public:
     bool notForTables() const override
     {
         return true;
+    }
+
+    bool canBeInsideNullable() const override
+    {
+        return false;
     }
 
     DataTypePtr clone() const override
@@ -40,7 +50,6 @@ public:
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
     Field getDefault() const override
     {

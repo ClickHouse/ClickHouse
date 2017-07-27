@@ -6,8 +6,7 @@
 namespace DB
 {
 
-/** Implements part of the IDataType interface, common to all numbers
-  * - input and output in text form.
+/** Implements part of the IDataType interface, common to all numbers and for Date and DateTime.
   */
 template <typename T>
 class DataTypeNumberBase : public IDataType
@@ -16,6 +15,7 @@ public:
     using FieldType = T;
 
     std::string getName() const override { return TypeName<T>::get(); }
+    const char * getFamilyName() const override { return TypeName<T>::get(); }
 
     bool isNumeric() const override { return true; }
     bool behavesAsNumber() const override { return true; }
@@ -42,7 +42,6 @@ public:
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 };
 
 }

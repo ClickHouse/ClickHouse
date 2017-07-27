@@ -111,14 +111,14 @@ BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64
 
     return std::make_shared<BlockInputStreamWithBackgroundThread>(
         input_stream, std::move(process), std::packaged_task<void()>(
-        [output_stream, &ids, this]() mutable
+        [output_stream, &ids]() mutable
         {
             formatIDs(output_stream, ids);
         }));
 }
 
 BlockInputStreamPtr ExecutableDictionarySource::loadKeys(
-    const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+    const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
     auto process = ShellCommand::execute(command);

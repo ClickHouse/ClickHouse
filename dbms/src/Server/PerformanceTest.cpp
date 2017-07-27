@@ -2,6 +2,7 @@
 #include <iostream>
 #include <limits>
 #include <regex>
+#include <thread>
 #include <unistd.h>
 
 #include <boost/program_options.hpp>
@@ -753,7 +754,7 @@ private:
             {
                 if (!checkPreconditions(test_config))
                 {
-                    std::cerr << "Preconditions are not fulfilled for test \"" + test_config->getString("name", "") + "\"";
+                    std::cerr << "Preconditions are not fulfilled for test \"" + test_config->getString("name", "") + "\" ";
                     continue;
                 }
 
@@ -927,11 +928,9 @@ private:
         else
             throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name, 1);
 
-        if (test_config->has("times_to_run"))
-        {
-            times_to_run = test_config->getUInt("times_to_run");
-        }
+        times_to_run = test_config->getUInt("times_to_run", 1);
 
+        stop_conditions_by_run.clear();
         TestStopConditions stop_conditions_template;
         if (test_config->has("stop_conditions"))
         {
@@ -950,6 +949,7 @@ private:
         Keys metrics;
         metrics_view->keys(metrics);
 
+        main_metric.clear();
         if (test_config->has("main_metric"))
         {
             Keys main_metrics;
@@ -1213,6 +1213,8 @@ public:
 
         json_output.set("hostname", getFQDNOrHostName());
         json_output.set("num_cores", getNumberOfPhysicalCPUCores());
+        json_output.set("num_threads", std::thread::hardware_concurrency());
+        json_output.set("ram", getMemoryAmount());
         json_output.set("server_version", server_version);
         json_output.set("time", DateLUT::instance().timeToString(time(0)));
         json_output.set("test_name", test_name);
@@ -1369,7 +1371,7 @@ public:
 };
 }
 
-static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_files)
+static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_files, const bool recursive = false)
 {
     if (dir.extension().string() == ".xml")
         std::cerr << "Warning: \"" + dir.string() + "\" is a directory, but has .xml extension" << std::endl;
@@ -1378,7 +1380,9 @@ static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_fi
     for (FS::directory_iterator it(dir); it != end; ++it)
     {
         const FS::path file = (*it);
-        if (!FS::is_directory(file) && file.extension().string() == ".xml")
+        if (recursive && FS::is_directory(file))
+            getFilesFromDir(file, input_files, recursive);
+        else if (!FS::is_directory(file) && file.extension().string() == ".xml")
             input_files.push_back(file.string());
     }
 }
@@ -1407,7 +1411,8 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             ("names",                value<Strings>()->multitoken(),                     "Run tests with specific name")
             ("skip-names",           value<Strings>()->multitoken(),                     "Do not run tests with name")
             ("names-regexp",         value<Strings>()->multitoken(),                     "Run tests with names matching regexp")
-            ("skip-names-regexp",    value<Strings>()->multitoken(),                     "Do not run tests with names matching regexp");
+            ("skip-names-regexp",    value<Strings>()->multitoken(),                     "Do not run tests with names matching regexp")
+            ("recursive,r",                                                              "Recurse in directories to find all xml's");
 
         /// These options will not be displayed in --help
         boost::program_options::options_description hidden("Hidden options");
@@ -1433,13 +1438,14 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
         }
 
         Strings input_files;
+        bool recursive = options.count("recursive");
 
         if (!options.count("input-files"))
         {
             std::cerr << "Trying to find test scenario files in the current folder...";
             FS::path curr_dir(".");
 
-            getFilesFromDir(curr_dir, input_files);
+            getFilesFromDir(curr_dir, input_files, recursive);
 
             if (input_files.empty())
             {
@@ -1463,7 +1469,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
                 if (FS::is_directory(file))
                 {
                     input_files.erase( std::remove(input_files.begin(), input_files.end(), filename) , input_files.end() );
-                    getFilesFromDir(file, input_files);
+                    getFilesFromDir(file, input_files, recursive);
                 }
                 else
                 {

@@ -36,6 +36,8 @@ public:
 
     std::string getName() const override;
 
+    const char * getFamilyName() const override { return "AggregateFunction"; }
+
     DataTypePtr getReturnType() const { return function->getReturnType(); };
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 
@@ -61,7 +63,6 @@ public:
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
     Field getDefault() const override;
 };

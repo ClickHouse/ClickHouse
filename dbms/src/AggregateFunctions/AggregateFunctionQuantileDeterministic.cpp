@@ -8,7 +8,7 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionQuantileDeterministic(const std::string & name, const DataTypes & argument_types)
+AggregateFunctionPtr createAggregateFunctionQuantileDeterministic(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     if (argument_types.size() != 2)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -44,7 +44,7 @@ AggregateFunctionPtr createAggregateFunctionQuantileDeterministic(const std::str
 }
 
 
-AggregateFunctionPtr createAggregateFunctionQuantilesDeterministic(const std::string & name, const DataTypes & argument_types)
+AggregateFunctionPtr createAggregateFunctionQuantilesDeterministic(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     if (argument_types.size() != 2)
         throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

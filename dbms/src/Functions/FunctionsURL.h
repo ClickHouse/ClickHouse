@@ -2,10 +2,10 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
 #include <Common/StringUtils.h>
 #include <Common/StringView.h>
 #include <Common/typeid_cast.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsString.h>
 #include <Functions/FunctionsStringArray.h>
 
@@ -434,7 +434,7 @@ struct ExtractURLParameterImpl
 
             const char * pos = nullptr;
             const char * begin = strpbrk(str, "?#");
-            if (begin != nullptr)
+            if (begin)
             {
                 pos = begin + 1;
                 while (true)
@@ -457,7 +457,7 @@ struct ExtractURLParameterImpl
                 }
             }
 
-            if (pos != nullptr)
+            if (pos)
             {
                 const char * end = strpbrk(pos, "&#");
                 if (end == nullptr)
@@ -567,7 +567,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -652,7 +652,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -729,7 +729,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -824,7 +824,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

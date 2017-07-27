@@ -501,10 +501,9 @@ void MergeTreeReader::readData(
                 LOG_ERROR(&Logger::get("MergeTreeReader"),
                     "Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
 
-            array.getDataPtr() = dynamic_cast<IColumnConst &>(
-                *type_arr->getNestedType()->createConstColumn(
+            array.getDataPtr() = type_arr->getNestedType()->createConstColumn(
                     required_internal_size,
-                    type_arr->getNestedType()->getDefault())).convertToFullColumn();
+                    type_arr->getNestedType()->getDefault())->convertToFullColumnIfConst();
 
             /// NOTE: we could zero this column so that it won't get added to the block
             /// and later be recreated with more correct default values (from the table definition).
@@ -600,8 +599,8 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
                     size_t nested_rows = offsets_column->empty() ? 0
                         : typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
 
-                    ColumnPtr nested_column = dynamic_cast<IColumnConst &>(*nested_type->createConstColumn(
-                        nested_rows, nested_type->getDefault())).convertToFullColumn();
+                    ColumnPtr nested_column = nested_type->createConstColumn(
+                        nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
 
                     column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
                 }
@@ -609,8 +608,8 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
                 {
                     /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
                     /// but in some blocks (from other parts) it can be a full column.
-                    column_to_add.column = dynamic_cast<IColumnConst &>(*column_to_add.type->createConstColumn(
-                        res.rows(), column_to_add.type->getDefault())).convertToFullColumn();
+                    column_to_add.column = column_to_add.type->createConstColumn(
+                        res.rows(), column_to_add.type->getDefault())->convertToFullColumnIfConst();
                 }
 
                 res.insert(std::move(column_to_add));

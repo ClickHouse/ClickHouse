@@ -22,6 +22,7 @@
 
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnExpression.h>
+#include <Columns/ColumnConst.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -33,6 +34,7 @@
 #include <Interpreters/Join.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMemory.h>
@@ -191,7 +193,7 @@ void ExpressionAnalyzer::init()
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries();
 
-    /// Optimize if with constant condition after constats are substituted instead of sclalar subqueries
+    /// Optimize if with constant condition after constants was substituted instead of sclalar subqueries.
     optimizeIfWithConstantCondition();
 
     /// GROUP BY injective function elimination.
@@ -926,6 +928,27 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
             throw Exception("Different expressions with the same alias " + alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
         aliases[alias] = ast;
+    }
+    else if (typeid_cast<ASTSubquery *>(ast.get()))
+    {
+        /// Set unique aliases for all subqueries. This is needed, because content of subqueries could change after recursive analysis,
+        ///  and auto-generated column names could become incorrect.
+
+        size_t subquery_index = 1;
+        while (true)
+        {
+            alias = "_subquery" + toString(subquery_index);
+            if (!aliases.count("_subquery" + toString(subquery_index)))
+                break;
+            ++subquery_index;
+        }
+
+        std::cerr << ast->getColumnName() << "\n";
+
+        ast->setAlias(alias);
+        aliases[alias] = ast;
+
+        std::cerr << ast->getAliasOrColumnName() << "\n";
     }
 }
 
@@ -2030,7 +2053,7 @@ void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool onl
             if (node->name == "indexHint")
             {
                 actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
-                    std::make_shared<ColumnConstUInt8>(1, 1), std::make_shared<DataTypeUInt8>(), node->getColumnName())));
+                    std::make_shared<ColumnConst>(std::make_shared<ColumnUInt8>(1, 1), 1), std::make_shared<DataTypeUInt8>(), node->getColumnName())));
                 return;
             }
 
@@ -2249,26 +2272,11 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
             aggregate.argument_names[i] = name;
         }
 
-        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types);
+        aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
+        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters);
 
-        if (node->parameters)
-        {
-            const ASTs & parameters = typeid_cast<const ASTExpressionList &>(*node->parameters).children;
-            Array params_row(parameters.size());
-
-            for (size_t i = 0; i < parameters.size(); ++i)
-            {
-                const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(parameters[i].get());
-                if (!lit)
-                    throw Exception("Parameters to aggregate functions must be literals",
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
-
-                params_row[i] = lit->value;
-            }
-
-            aggregate.parameters = params_row;
-            aggregate.function->setParameters(params_row);
-        }
+        if (!aggregate.parameters.empty())
+            aggregate.function->setParameters(aggregate.parameters);
 
         aggregate.function->setArguments(types);
 

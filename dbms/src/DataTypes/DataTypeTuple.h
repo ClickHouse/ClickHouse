@@ -19,7 +19,10 @@ public:
     DataTypeTuple(DataTypes elems_) : elems(elems_) {}
 
     std::string getName() const override;
+    const char * getFamilyName() const override { return "Tuple"; }
     DataTypePtr clone() const override { return std::make_shared<DataTypeTuple>(elems); }
+
+    bool canBeInsideNullable() const override { return false; }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
@@ -48,7 +51,6 @@ public:
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
     Field getDefault() const override;
     const DataTypes & getElements() const { return elems; }

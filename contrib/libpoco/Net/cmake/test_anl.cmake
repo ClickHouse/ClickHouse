@@ -3,7 +3,11 @@
 #
 
 include (CheckCXXSourceRuns)
+include (CMakePushCheckState)
+
 find_package (Threads)
+
+cmake_push_check_state ()
 
 if (USE_STATIC_LIBRARIES)
 	set (ANL_LIB_NAME "libanl.a")
@@ -32,3 +36,5 @@ check_cxx_source_runs("
 if (HAVE_GETADDRINFO_A)
 	add_definitions (-DHAVE_GETADDRINFO_A=1)
 endif ()
+
+cmake_pop_check_state ()

@@ -240,12 +240,6 @@ ColumnPtr DataTypeNumberBase<T>::createColumn() const
     return std::make_shared<ColumnVector<T>>();
 }
 
-template <typename T>
-ColumnPtr DataTypeNumberBase<T>::createConstColumn(size_t size, const Field & field) const
-{
-    return std::make_shared<ColumnConst<FieldType>>(size, get<typename NearestFieldType<FieldType>::Type>(field));
-}
-
 
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class DataTypeNumberBase<UInt8>;
@@ -259,4 +253,5 @@ template class DataTypeNumberBase<Int32>;
 template class DataTypeNumberBase<Int64>;
 template class DataTypeNumberBase<Float32>;
 template class DataTypeNumberBase<Float64>;
+
 }

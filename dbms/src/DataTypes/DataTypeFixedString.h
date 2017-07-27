@@ -26,6 +26,8 @@ public:
 
     std::string getName() const override;
 
+    const char * getFamilyName() const override { return "FixedString"; }
+
     DataTypePtr clone() const override
     {
         return std::make_shared<DataTypeFixedString>(n);
@@ -61,7 +63,6 @@ public:
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
     Field getDefault() const override
     {

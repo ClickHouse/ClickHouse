@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -75,5 +76,11 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     readCSV(value, istr);
     static_cast<ColumnUInt32 &>(column).getData().push_back(static_cast<time_t>(value));
 }
+
+void registerDataTypeDateTime(DataTypeFactory & factory)
+{
+    factory.registerSimpleDataType("DateTime", [] { return DataTypePtr(std::make_shared<DataTypeDateTime>()); }, DataTypeFactory::CaseInsensitive);
+}
+
 
 }

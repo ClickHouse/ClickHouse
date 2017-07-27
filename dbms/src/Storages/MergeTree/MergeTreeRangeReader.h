@@ -38,8 +38,6 @@ public:
 private:
     MergeTreeRangeReader(MergeTreeReader & merge_tree_reader, size_t from_mark, size_t to_mark, size_t index_granularity);
 
-    Poco::Logger * logger;
-
     std::reference_wrapper<MergeTreeReader> merge_tree_reader;
     size_t current_mark;
     size_t last_mark;
