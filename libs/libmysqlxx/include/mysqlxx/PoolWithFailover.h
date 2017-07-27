@@ -70,12 +70,11 @@ namespace mysqlxx
         struct Replica
         {
             PoolPtr pool;
-            int priority;
-            int error_count;
+            int priority = 0;
 
-            Replica() : priority(0), error_count(0) {}
+            Replica() {}
             Replica(PoolPtr pool_, int priority_)
-                : pool(pool_), priority(priority_), error_count(0) {}
+                : pool(pool_), priority(priority_) {}
         };
 
         using Replicas = std::vector<Replica>;

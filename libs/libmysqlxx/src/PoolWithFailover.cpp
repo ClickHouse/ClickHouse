@@ -18,15 +18,20 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg
             if (replica_config_key == "replica")    /// There could be another elements in the same level in configuration file.
             {
                 std::string replica_name = config_name + "." + replica_config_key;
-                Replica replica(std::make_shared<Pool>(cfg, replica_name, default_connections, max_connections, config_name.c_str()),
-                                cfg.getInt(replica_name + ".priority", 0));
-                replicas_by_priority[replica.priority].push_back(replica);
+
+                int priority = cfg.getInt(replica_name + ".priority", 0);
+
+                replicas_by_priority[priority].emplace_back(
+                    std::make_shared<Pool>(cfg, replica_name, default_connections, max_connections, config_name.c_str()),
+                    priority);
             }
         }
     }
     else
     {
-        replicas_by_priority[0].push_back(Replica(std::make_shared<Pool>(cfg, config_name, default_connections, max_connections), 0));
+        replicas_by_priority[0].emplace_back(
+            std::make_shared<Pool>(cfg, config_name, default_connections, max_connections),
+            0);
     }
 }
 
@@ -62,10 +67,10 @@ PoolWithFailover::Entry PoolWithFailover::Get()
     {
         full_pool = nullptr;
 
-        for (ReplicasByPriority::iterator it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
+        for (auto & priority_replicas : replicas_by_priority)
         {
-            Replicas & replicas = it->second;
-            for (size_t i = 0; i < replicas.size(); ++i)
+            Replicas & replicas = priority_replicas.second;
+            for (size_t i = 0, size = replicas.size(); i < size; ++i)
             {
                 Replica & replica = replicas[i];
 
@@ -84,7 +89,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
                 }
                 catch (const Poco::Exception & e)
                 {
-                    if (e.displayText() == "mysqlxx::Pool is full")
+                    if (e.displayText() == "mysqlxx::Pool is full") /// NOTE: String comparison is trashy code.
                     {
                         full_pool = &replica;
                     }
