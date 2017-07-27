@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int TOO_MUCH_ARGUMENTS_FOR_FUNCTION;
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 /// helper type for comparing `std::pair`s using solely the .first member
@@ -460,14 +461,12 @@ protected:
             else
                 throw Exception{
                     "Unknown PatternActionType",
-                    ErrorCodes::LOGICAL_ERROR
-                };
+                    ErrorCodes::LOGICAL_ERROR};
 
             if (++i > sequence_match_max_iterations)
                 throw Exception{
                     "Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
-                    ErrorCodes::TOO_SLOW
-                };
+                    ErrorCodes::TOO_SLOW};
         }
 
         /// if there are some actions remaining
