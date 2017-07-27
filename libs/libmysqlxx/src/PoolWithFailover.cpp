@@ -13,11 +13,11 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg
     {
         Poco::Util::AbstractConfiguration::Keys replica_keys;
         cfg.keys(config_name, replica_keys);
-        for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = replica_keys.begin(); it != replica_keys.end(); ++it)
+        for (const auto & replica_config_key : replica_keys)
         {
-            if (*it == "replica")    /// На том же уровне могут быть другие параметры.
+            if (replica_config_key == "replica")    /// There could be another elements in the same level in configuration file.
             {
-                std::string replica_name = config_name + "." + *it;
+                std::string replica_name = config_name + "." + replica_config_key;
                 Replica replica(std::make_shared<Pool>(cfg, replica_name, default_connections, max_connections, config_name.c_str()),
                                 cfg.getInt(replica_name + ".priority", 0));
                 replicas_by_priority[replica.priority].push_back(replica);
@@ -34,8 +34,7 @@ PoolWithFailover::PoolWithFailover(const std::string & config_name, const unsign
     const unsigned max_connections, const size_t max_tries)
     : PoolWithFailover{
         Poco::Util::Application::instance().config(), config_name,
-        default_connections, max_connections, max_tries
-      }
+        default_connections, max_connections, max_tries}
 {}
 
 PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
@@ -56,7 +55,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
     std::lock_guard<std::mutex> locker(mutex);
     Poco::Util::Application & app = Poco::Util::Application::instance();
 
-    /// Если к какой-то реплике не подключились, потому что исчерпан лимит соединений, можно подождать и подключиться к ней.
+    /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     Replica * full_pool = nullptr;
 
     for (size_t try_no = 0; try_no < max_tries; ++try_no)
@@ -76,8 +75,8 @@ PoolWithFailover::Entry PoolWithFailover::Get()
 
                     if (!entry.isNull())
                     {
-                        /// Переместим все пройденные реплики в конец очереди.
-                        /// Пройденные реплики с другим приоритетом перемещать незачем.
+                        /// Move all traversed replicas to the end of queue.
+                        /// (No need to move replicas with another priority)
                         std::rotate(replicas.begin(), replicas.begin() + i + 1, replicas.end());
 
                         return entry;
