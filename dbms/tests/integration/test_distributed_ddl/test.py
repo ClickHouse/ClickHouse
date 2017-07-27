@@ -27,6 +27,11 @@ def ddl_check_query(instance, query, num_hosts=None):
     check_all_hosts_sucesfully_executed(contents, num_hosts)
     return contents
 
+def ddl_check_there_are_no_dublicates(instance):
+    answer = instance.query("SELECT max(c), argMax(q, c) FROM (SELECT lower(query) AS q, count() AS c FROM system.query_log WHERE type=2 AND q LIKE '/*ddl_entry=query-%' GROUP BY query)")
+    row = TSV.toMat(answer)[0]
+    assert row[0] == "1", "dublicates on {} {}, query {}".format(instance.name, instance.ip_address, row[1])
+
 
 TEST_REPLICATED_ALTERS=True
 
@@ -61,7 +66,10 @@ CREATE TABLE IF NOT EXISTS all_tables ON CLUSTER 'cluster_no_replicas'
         ddl_check_query(instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'")
 
     finally:
-        pass
+        # Check query log to ensure that DDL queries are not executed twice
+        time.sleep(1)
+        for instance in cluster.instances.values():
+            ddl_check_there_are_no_dublicates(instance)
         #cluster.shutdown()
 
 
@@ -98,7 +106,7 @@ def test_on_server_fail(started_cluster):
     contents = instance.query("SELECT hostName() AS h FROM all_tables WHERE database='test' AND name='test_server_fail' ORDER BY h")
     assert TSV(contents) == TSV("ch1\nch2\nch3\nch4\n")
 
-    ddl_check_query(instance, "DROP TABLE IF EXISTS test.test_server_fail ON CLUSTER 'cluster'")
+    ddl_check_query(instance, "DROP TABLE test.test_server_fail ON CLUSTER 'cluster'")
 
 
 def _test_on_connection_losses(cluster, zk_timeout):

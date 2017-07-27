@@ -119,10 +119,10 @@ void Cluster::Address::fromString(const String & host_port_string, String & host
 {
     auto pos = host_port_string.find_last_of(':');
     if (pos == std::string::npos)
-        throw Exception("Incorrect host ID format " + host_port_string, ErrorCodes::SYNTAX_ERROR);
+        throw Exception("Incorrect <host>:<port> format " + host_port_string, ErrorCodes::SYNTAX_ERROR);
 
     host_name = unescapeForFileName(host_port_string.substr(0, pos));
-    port = parse<UInt16>(host_port_string.substr(0, pos));
+    port = parse<UInt16>(host_port_string.substr(pos + 1));
 }
 
 
