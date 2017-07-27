@@ -242,6 +242,20 @@ void ExecutionStatus::deserializeText(const std::string & data)
     rb >> code >> "\n" >> escape >> message;
 }
 
+bool ExecutionStatus::tryDeserializeText(const std::string & data)
+{
+    try
+    {
+        deserializeText(data);
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    return true;
+}
+
 ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message)
 {
     return ExecutionStatus(getCurrentExceptionCode(), start_of_message + ": " + getCurrentExceptionMessage(false, true));

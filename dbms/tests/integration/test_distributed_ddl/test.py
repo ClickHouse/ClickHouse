@@ -13,9 +13,9 @@ def check_all_hosts_sucesfully_executed(tsv_content, num_hosts=None):
         num_hosts = len(cluster.instances)
 
     M = TSV.toMat(tsv_content)
-    hosts = [l[0] for l in M]
-    codes = [l[1] for l in M]
-    messages = [l[2] for l in M]
+    hosts = [(l[0], l[1]) for l in M] # (host, port)
+    codes = [l[2] for l in M]
+    messages = [l[3] for l in M]
 
     assert len(hosts) == num_hosts and len(set(hosts)) == num_hosts, tsv_content
     assert len(set(codes)) == 1, tsv_content
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS all_tables ON CLUSTER 'cluster_no_replicas'
 
     finally:
         pass
-        cluster.shutdown()
+        #cluster.shutdown()
 
 
 def test_default_database(started_cluster):

@@ -624,7 +624,7 @@ void DDLWorker::run()
         }
         catch (zkutil::KeeperException &)
         {
-            LOG_DEBUG(log, "Recovering ZooKeeper session");
+            LOG_DEBUG(log, "Recovering ZooKeeper session after " << getCurrentExceptionMessage());
             zookeeper = context.getZooKeeper();
         }
         catch (...)
@@ -641,12 +641,12 @@ class DDLQueryStatusInputSream : public IProfilingBlockInputStream
 public:
 
     DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, Context & context)
-    : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE)
+    : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},
             {std::make_shared<DataTypeUInt16>(),    "port"},
-            {std::make_shared<DataTypeUInt64>(),    "status"},
+            {std::make_shared<DataTypeInt64>(),     "status"},
             {std::make_shared<DataTypeString>(),    "error"},
             {std::make_shared<DataTypeUInt64>(),    "num_hosts_remaining"},
             {std::make_shared<DataTypeUInt64>(),    "num_hosts_active"},
@@ -671,7 +671,7 @@ public:
     Block readImpl() override
     {
         Block res;
-        if (num_hosts_finished >= total_rows_approx)
+        if (num_hosts_finished >= waiting_hosts.size())
             return res;
 
         auto zookeeper = context.getZooKeeper();
@@ -707,11 +707,11 @@ public:
             res = sample.cloneEmpty();
             for (const String & host_id : new_hosts)
             {
-                ExecutionStatus status(1, "Cannot obtain error message");
+                ExecutionStatus status(-1, "Cannot obtain error message");
                 {
                     String status_data;
                     if (zookeeper->tryGet(node_path + "/finished/" + host_id, status_data))
-                        status.deserializeText(status_data);
+                        status.tryDeserializeText(status_data);
                 }
 
                 String host;
@@ -719,10 +719,10 @@ public:
                 Cluster::Address::fromString(host_id, host, port);
 
                 res.getByName("host").column->insert(host);
-                res.getByName("port").column->insert(port);
-                res.getByName("status").column->insert(static_cast<UInt64>(status.code));
+                res.getByName("port").column->insert(static_cast<UInt64>(port));
+                res.getByName("status").column->insert(static_cast<Int64>(status.code));
                 res.getByName("error").column->insert(status.message);
-                res.getByName("num_hosts_remaining").column->insert(total_rows_approx - (++num_hosts_finished));
+                res.getByName("num_hosts_remaining").column->insert(waiting_hosts.size() - (++num_hosts_finished));
                 res.getByName("num_hosts_active").column->insert(cur_active_hosts.size());
             }
         }
@@ -766,18 +766,18 @@ public:
 
     ~DDLQueryStatusInputSream() override = default;
 
-    Block sample;
-
 private:
     String node_path;
     Context & context;
+    Stopwatch watch;
+    Logger * log;
+
+    Block sample;
 
     NameSet waiting_hosts;  /// hosts from task host list
     NameSet finished_hosts; /// finished hosts from host list
     NameSet ignoring_hosts; /// appeared hosts that are not in hosts list
     size_t num_hosts_finished = 0;
-
-    Stopwatch watch;
 };
 
 
