@@ -2,6 +2,13 @@
 #include <mysqlxx/PoolWithFailover.h>
 
 
+/// Duplicate of code from StringUtils.h. Copied here for lower dependencies.
+static bool startsWith(const std::string & s, const char * prefix)
+{
+    return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
+}
+
+
 using namespace mysqlxx;
 
 PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg,
@@ -15,7 +22,8 @@ PoolWithFailover::PoolWithFailover(const Poco::Util::AbstractConfiguration & cfg
         cfg.keys(config_name, replica_keys);
         for (const auto & replica_config_key : replica_keys)
         {
-            if (replica_config_key == "replica")    /// There could be another elements in the same level in configuration file.
+            /// There could be another elements in the same level in configuration file, like "password", "port"...
+            if (startsWith(replica_config_key, "replica"))
             {
                 std::string replica_name = config_name + "." + replica_config_key;
 
@@ -55,8 +63,8 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
 
 PoolWithFailover::Entry PoolWithFailover::Get()
 {
-    std::lock_guard<std::mutex> locker(mutex);
     Poco::Util::Application & app = Poco::Util::Application::instance();
+    std::lock_guard<std::mutex> locker(mutex);
 
     /// If we cannot connect to some replica due to pool overflow, than we will wait and connect.
     PoolPtr * full_pool = nullptr;
