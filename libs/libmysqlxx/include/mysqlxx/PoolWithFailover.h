@@ -66,18 +66,8 @@ namespace mysqlxx
     {
     private:
         using PoolPtr = std::shared_ptr<Pool>;
+        using Replicas = std::vector<PoolPtr>;
 
-        struct Replica
-        {
-            PoolPtr pool;
-            int priority = 0;
-
-            Replica() {}
-            Replica(PoolPtr pool_, int priority_)
-                : pool(pool_), priority(priority_) {}
-        };
-
-        using Replicas = std::vector<Replica>;
         /// [priority][index] -> replica.
         using ReplicasByPriority = std::map<int, Replicas>;
 
