@@ -352,11 +352,13 @@ private:
         update(key_columns,
             keys_array,
             required_rows,
-            [&](const StringRef key, const size_t cell_idx) {
+            [&](const StringRef key, const size_t cell_idx)
+            {
                 for (const auto row : outdated_keys[key])
                     out[row] = attribute_array[cell_idx];
             },
-            [&](const StringRef key, const size_t cell_idx) {
+            [&](const StringRef key, const size_t cell_idx)
+            {
                 for (const auto row : outdated_keys[key])
                     out[row] = get_default(row);
             });
