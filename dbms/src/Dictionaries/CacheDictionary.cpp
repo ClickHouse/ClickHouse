@@ -1,3 +1,5 @@
+#include <Dictionaries/CacheDictionary.h>
+
 #include <functional>
 #include <sstream>
 #include <memory>
@@ -13,7 +15,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Dictionaries/CacheDictionary.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
 #include <ext/size.h>
 #include <ext/range.h>
@@ -448,75 +449,6 @@ void CacheDictionary::createAttributes()
     }
 }
 
-CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
-{
-    Attribute attr{type};
-
-    switch (type)
-    {
-        case AttributeUnderlyingType::UInt8:
-            std::get<UInt8>(attr.null_values) = null_value.get<UInt64>();
-            std::get<ContainerPtrType<UInt8>>(attr.arrays) = std::make_unique<ContainerType<UInt8>>(size);
-            bytes_allocated += size * sizeof(UInt8);
-            break;
-        case AttributeUnderlyingType::UInt16:
-            std::get<UInt16>(attr.null_values) = null_value.get<UInt64>();
-            std::get<ContainerPtrType<UInt16>>(attr.arrays) = std::make_unique<ContainerType<UInt16>>(size);
-            bytes_allocated += size * sizeof(UInt16);
-            break;
-        case AttributeUnderlyingType::UInt32:
-            std::get<UInt32>(attr.null_values) = null_value.get<UInt64>();
-            std::get<ContainerPtrType<UInt32>>(attr.arrays) = std::make_unique<ContainerType<UInt32>>(size);
-            bytes_allocated += size * sizeof(UInt32);
-            break;
-        case AttributeUnderlyingType::UInt64:
-            std::get<UInt64>(attr.null_values) = null_value.get<UInt64>();
-            std::get<ContainerPtrType<UInt64>>(attr.arrays) = std::make_unique<ContainerType<UInt64>>(size);
-            bytes_allocated += size * sizeof(UInt64);
-            break;
-        case AttributeUnderlyingType::Int8:
-            std::get<Int8>(attr.null_values) = null_value.get<Int64>();
-            std::get<ContainerPtrType<Int8>>(attr.arrays) = std::make_unique<ContainerType<Int8>>(size);
-            bytes_allocated += size * sizeof(Int8);
-            break;
-        case AttributeUnderlyingType::Int16:
-            std::get<Int16>(attr.null_values) = null_value.get<Int64>();
-            std::get<ContainerPtrType<Int16>>(attr.arrays) = std::make_unique<ContainerType<Int16>>(size);
-            bytes_allocated += size * sizeof(Int16);
-            break;
-        case AttributeUnderlyingType::Int32:
-            std::get<Int32>(attr.null_values) = null_value.get<Int64>();
-            std::get<ContainerPtrType<Int32>>(attr.arrays) = std::make_unique<ContainerType<Int32>>(size);
-            bytes_allocated += size * sizeof(Int32);
-            break;
-        case AttributeUnderlyingType::Int64:
-            std::get<Int64>(attr.null_values) = null_value.get<Int64>();
-            std::get<ContainerPtrType<Int64>>(attr.arrays) = std::make_unique<ContainerType<Int64>>(size);
-            bytes_allocated += size * sizeof(Int64);
-            break;
-        case AttributeUnderlyingType::Float32:
-            std::get<Float32>(attr.null_values) = null_value.get<Float64>();
-            std::get<ContainerPtrType<Float32>>(attr.arrays) = std::make_unique<ContainerType<Float32>>(size);
-            bytes_allocated += size * sizeof(Float32);
-            break;
-        case AttributeUnderlyingType::Float64:
-            std::get<Float64>(attr.null_values) = null_value.get<Float64>();
-            std::get<ContainerPtrType<Float64>>(attr.arrays) = std::make_unique<ContainerType<Float64>>(size);
-            bytes_allocated += size * sizeof(Float64);
-            break;
-        case AttributeUnderlyingType::String:
-            std::get<String>(attr.null_values) = null_value.get<String>();
-            std::get<ContainerPtrType<StringRef>>(attr.arrays) = std::make_unique<ContainerType<StringRef>>(size);
-            bytes_allocated += size * sizeof(StringRef);
-            if (!string_arena)
-                string_arena = std::make_unique<ArenaWithFreeLists>();
-            break;
-    }
-
-    return attr;
-}
-
-
 template <typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumber(
     Attribute & attribute,
@@ -881,78 +813,6 @@ void CacheDictionary::update(
     ProfileEvents::increment(ProfileEvents::DictCacheRequests);
 }
 
-
-void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key idx) const
-{
-    switch (attribute.type)
-    {
-        case AttributeUnderlyingType::UInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = std::get<UInt8>(attribute.null_values); break;
-        case AttributeUnderlyingType::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values); break;
-        case AttributeUnderlyingType::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values); break;
-        case AttributeUnderlyingType::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values); break;
-        case AttributeUnderlyingType::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values); break;
-        case AttributeUnderlyingType::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values); break;
-        case AttributeUnderlyingType::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values); break;
-        case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values); break;
-        case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values); break;
-        case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values); break;
-        case AttributeUnderlyingType::String:
-        {
-            const auto & null_value_ref = std::get<String>(attribute.null_values);
-            auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
-
-            if (string_ref.data != null_value_ref.data())
-            {
-                if (string_ref.data)
-                    string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
-
-                string_ref = StringRef{null_value_ref};
-            }
-
-            break;
-        }
-    }
-}
-
-void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, const Field & value) const
-{
-    switch (attribute.type)
-    {
-        case AttributeUnderlyingType::UInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-        case AttributeUnderlyingType::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-        case AttributeUnderlyingType::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-        case AttributeUnderlyingType::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-        case AttributeUnderlyingType::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-        case AttributeUnderlyingType::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-        case AttributeUnderlyingType::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-        case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-        case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-        case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-        case AttributeUnderlyingType::String:
-        {
-            const auto & string = value.get<String>();
-            auto & string_ref = std::get<ContainerPtrType<StringRef>>(attribute.arrays)[idx];
-            const auto & null_value_ref = std::get<String>(attribute.null_values);
-
-            /// free memory unless it points to a null_value
-            if (string_ref.data && string_ref.data != null_value_ref.data())
-                string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
-
-            const auto size = string.size();
-            if (size != 0)
-            {
-                auto string_ptr = string_arena->alloc(size + 1);
-                std::copy(string.data(), string.data() + size + 1, string_ptr);
-                string_ref = StringRef{string_ptr, size};
-            }
-            else
-                string_ref = {};
-
-            break;
-        }
-    }
-}
-
 CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & attribute_name) const
 {
     const auto it = attribute_index_by_name.find(attribute_name);
@@ -992,6 +852,7 @@ BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_na
     using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);
 }
+
 
 
 }
