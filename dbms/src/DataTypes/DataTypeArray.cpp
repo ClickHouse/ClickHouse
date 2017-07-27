@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 
