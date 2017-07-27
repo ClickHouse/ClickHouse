@@ -300,6 +300,8 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     const auto & id = typeid_cast<const ASTIdentifier &>(*identifier).name;
+
+    /// TODO This is ridiculous. Please get rid of this.
     if (id.length() != strlen(name) || 0 != strcasecmp(id.c_str(), name))
     {
         /// Parse as a CASE expression.
@@ -340,6 +342,8 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     }
     else
     {
+        pos = contents_begin;
+
         /// CAST(expression, 'type')
         /// Reparse argument list from scratch
         ParserExpressionWithOptionalAlias expression{false};
