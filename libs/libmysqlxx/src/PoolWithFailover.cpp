@@ -2,7 +2,7 @@
 #include <mysqlxx/PoolWithFailover.h>
 
 
-/// Duplicate of code from StringUtils.h. Copied here for lower dependencies.
+/// Duplicate of code from StringUtils.h. Copied here for less dependencies.
 static bool startsWith(const std::string & s, const char * prefix)
 {
     return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
