@@ -71,6 +71,52 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const ComplexKeyCacheDictio
     : ComplexKeyCacheDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.size}
 {}
 
+void ComplexKeyCacheDictionary::getString(
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
+    ColumnString * out) const
+{
+    dict_struct.validateKeyTypes(key_types);
+
+    auto & attribute = getAttribute(attribute_name);
+    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
+        throw Exception{
+            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+            ErrorCodes::TYPE_MISMATCH};
+
+    const auto null_value = StringRef{std::get<String>(attribute.null_values)};
+
+    getItemsString(attribute, key_columns, out, [&] (const size_t) { return null_value; });
+}
+
+void ComplexKeyCacheDictionary::getString(
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
+    const ColumnString * const def, ColumnString * const out) const
+{
+    dict_struct.validateKeyTypes(key_types);
+
+    auto & attribute = getAttribute(attribute_name);
+    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
+        throw Exception{
+            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+            ErrorCodes::TYPE_MISMATCH};
+
+    getItemsString(attribute, key_columns, out, [&] (const size_t row) { return def->getDataAt(row); });
+}
+
+void ComplexKeyCacheDictionary::getString(
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
+    const String & def, ColumnString * const out) const
+{
+    dict_struct.validateKeyTypes(key_types);
+
+    auto & attribute = getAttribute(attribute_name);
+    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
+        throw Exception{
+            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+            ErrorCodes::TYPE_MISMATCH};
+
+    getItemsString(attribute, key_columns, out, [&] (const size_t) { return StringRef{def}; });
+}
 
 /// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag,
 /// true  false   found and valid
@@ -114,7 +160,6 @@ ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx(con
     oldest_id &= size_overlap_mask;
     return {oldest_id, false, false};
 }
-
 
 void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const
 {
@@ -189,7 +234,6 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
                 out[out_idx] = false;
         });
 }
-
 
 void ComplexKeyCacheDictionary::createAttributes()
 {
@@ -279,9 +323,6 @@ ComplexKeyCacheDictionary::Attribute ComplexKeyCacheDictionary::createAttributeW
     return attr;
 }
 
-
-
-
 void ComplexKeyCacheDictionary::setDefaultAttributeValue(Attribute & attribute, const size_t idx) const
 {
     switch (attribute.type)
@@ -363,7 +404,6 @@ ComplexKeyCacheDictionary::Attribute & ComplexKeyCacheDictionary::getAttribute(c
 
     return attributes[it->second];
 }
-
 
 StringRef ComplexKeyCacheDictionary::allocKey(const size_t row, const Columns & key_columns, StringRefs & keys) const
 {
@@ -478,6 +518,5 @@ BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names &
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyCacheDictionary, UInt64>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
 }
-
 
 }

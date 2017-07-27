@@ -37,22 +37,4 @@ DECLARE(Float32)
 DECLARE(Float64)
 #undef DECLARE
 
-void ComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
-    ColumnString * out) const
-{
-    dict_struct.validateKeyTypes(key_types);
-
-    auto & attribute = getAttribute(attribute_name);
-    if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
-
-    const auto null_value = StringRef{std::get<String>(attribute.null_values)};
-
-    getItemsString(attribute, key_columns, out, [&] (const size_t) { return null_value; });
-}
-
-
 }
