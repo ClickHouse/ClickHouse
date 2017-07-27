@@ -325,7 +325,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (function_name.empty())
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types);
+    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
     if (!params_row.empty())
         function->setParameters(params_row);
     function->setArguments(argument_types);

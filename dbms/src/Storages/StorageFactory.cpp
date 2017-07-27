@@ -34,6 +34,7 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageDictionary.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <unistd.h>
 
@@ -155,16 +156,22 @@ static void appendGraphitePattern(const Context & context,
         }
         else if (key == "function")
         {
+            String aggregate_function_name_with_params = config.getString(config_element + ".function");
+            String aggregate_function_name;
+            Array params_row;
+            getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
+                                                       aggregate_function_name, params_row, "GraphiteMergeTree storage initialization");
+
             /// TODO Not only Float64
-            pattern.function = AggregateFunctionFactory::instance().get(
-                config.getString(config_element + ".function"), { std::make_shared<DataTypeFloat64>() });
+            pattern.function = AggregateFunctionFactory::instance().get(aggregate_function_name, {std::make_shared<DataTypeFloat64>()},
+                                                                        params_row);
         }
         else if (startsWith(key, "retention"))
         {
             pattern.retentions.emplace_back(
                 Graphite::Retention{
-                    .age         = config.getUInt(config_element + "." + key + ".age"),
-                    .precision     = config.getUInt(config_element + "." + key + ".precision")});
+                    .age        = config.getUInt(config_element + "." + key + ".age"),
+                    .precision  = config.getUInt(config_element + "." + key + ".precision")});
         }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);

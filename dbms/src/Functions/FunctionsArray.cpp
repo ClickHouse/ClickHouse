@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
 #include <Functions/Conditional/getArrayType.h>
@@ -2772,52 +2773,13 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
             throw Exception("First argument for function " + getName() + " (name of aggregate function) cannot be empty.",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        bool has_parameters = ')' == aggregate_function_name_with_params.back();
-
-        String aggregate_function_name = aggregate_function_name_with_params;
-        String parameters;
+        String aggregate_function_name;
         Array params_row;
+        getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
+                                                   aggregate_function_name, params_row, "function " + getName());
 
-        if (has_parameters)
-        {
-            size_t pos = aggregate_function_name_with_params.find('(');
-            if (pos == std::string::npos || pos + 2 >= aggregate_function_name_with_params.size())
-                throw Exception("First argument for function " + getName() + " doesn't look like aggregate function name.",
-                    ErrorCodes::BAD_ARGUMENTS);
-
-            aggregate_function_name = aggregate_function_name_with_params.substr(0, pos);
-            parameters = aggregate_function_name_with_params.substr(pos + 1, aggregate_function_name_with_params.size() - pos - 2);
-
-            if (aggregate_function_name.empty())
-                throw Exception("First argument for function " + getName() + " doesn't look like aggregate function name.",
-                    ErrorCodes::BAD_ARGUMENTS);
-
-            ParserExpressionList params_parser(false);
-            ASTPtr args_ast = parseQuery(params_parser,
-                parameters.data(), parameters.data() + parameters.size(),
-                "parameters of aggregate function");
-
-            ASTExpressionList & args_list = typeid_cast<ASTExpressionList &>(*args_ast);
-
-            if (args_list.children.empty())
-                throw Exception("Incorrect list of parameters to aggregate function "
-                    + aggregate_function_name, ErrorCodes::BAD_ARGUMENTS);
-
-            params_row.reserve(args_list.children.size());
-            for (const auto & child : args_list.children)
-            {
-                const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(child.get());
-                if (!lit)
-                    throw Exception("Parameters to aggregate functions must be literals",
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
-
-                params_row.push_back(lit->value);
-            }
-        }
-
-        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types);
-
-        if (has_parameters)
+        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row);
+        if (!params_row.empty())
             aggregate_function->setParameters(params_row);
         aggregate_function->setArguments(argument_types);
     }

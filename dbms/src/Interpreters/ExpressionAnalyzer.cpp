@@ -34,6 +34,7 @@
 #include <Interpreters/Join.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMemory.h>
@@ -927,6 +928,27 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
             throw Exception("Different expressions with the same alias " + alias, ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
 
         aliases[alias] = ast;
+    }
+    else if (typeid_cast<ASTSubquery *>(ast.get()))
+    {
+        /// Set unique aliases for all subqueries. This is needed, because content of subqueries could change after recursive analysis,
+        ///  and auto-generated column names could become incorrect.
+
+        size_t subquery_index = 1;
+        while (true)
+        {
+            alias = "_subquery" + toString(subquery_index);
+            if (!aliases.count("_subquery" + toString(subquery_index)))
+                break;
+            ++subquery_index;
+        }
+
+        std::cerr << ast->getColumnName() << "\n";
+
+        ast->setAlias(alias);
+        aliases[alias] = ast;
+
+        std::cerr << ast->getAliasOrColumnName() << "\n";
     }
 }
 
@@ -2250,26 +2272,11 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
             aggregate.argument_names[i] = name;
         }
 
-        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types);
+        aggregate.parameters = (node->parameters) ? getAggregateFunctionParametersArray(node->parameters) : Array();
+        aggregate.function = AggregateFunctionFactory::instance().get(node->name, types, aggregate.parameters);
 
-        if (node->parameters)
-        {
-            const ASTs & parameters = typeid_cast<const ASTExpressionList &>(*node->parameters).children;
-            Array params_row(parameters.size());
-
-            for (size_t i = 0; i < parameters.size(); ++i)
-            {
-                const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(parameters[i].get());
-                if (!lit)
-                    throw Exception("Parameters to aggregate functions must be literals",
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
-
-                params_row[i] = lit->value;
-            }
-
-            aggregate.parameters = params_row;
-            aggregate.function->setParameters(params_row);
-        }
+        if (!aggregate.parameters.empty())
+            aggregate.function->setParameters(aggregate.parameters);
 
         aggregate.function->setArguments(types);
 

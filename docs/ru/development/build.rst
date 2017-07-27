@@ -18,7 +18,7 @@ Install Git and CMake
 
 .. code-block:: bash
 
-    sudo apt-get install git cmake
+    sudo apt-get install git cmake3
 
 
 Detect number of threads
