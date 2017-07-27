@@ -116,13 +116,12 @@ private:
         const ASTPtr & sharding_key_ = nullptr,
         const String & data_path_ = String{});
 
-
-    /// create directory monitor thread by subdirectory name
-    StorageDistributedDirectoryMonitor & createDirectoryMonitor(const std::string & name);
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors();
-    /// ensure directory monitor creation and return it
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & name);
+    /// ensure directory monitor thread by subdirectory name creation
+    void requireDirectoryMonitor(const std::string & name);
+    /// ensure connection pool creation and return it
+    ConnectionPoolPtr requireConnectionPool(const std::string & name);
 
     ClusterPtr getCluster() const;
 
@@ -146,7 +145,17 @@ private:
     String sharding_key_column_name;
     String path;    /// Can be empty if data_path_ is empty. In this case, a directory for the data to be sent is not created.
 
-    std::unordered_map<std::string, std::unique_ptr<StorageDistributedDirectoryMonitor>> directory_monitors;
+    struct ClusterNodeData
+    {
+        std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
+        ConnectionPoolPtr conneciton_pool;
+
+        /// Creates connection_pool if not exists.
+        void requireConnectionPool(const std::string & name, const StorageDistributed & storage);
+        /// Creates directory_monitor if not exists.
+        void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage);
+    };
+    std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;

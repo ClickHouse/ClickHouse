@@ -7,6 +7,8 @@
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/RemoteBlockOutputStream.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -18,6 +20,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <common/logger_useful.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -30,6 +33,10 @@ namespace CurrentMetrics
     extern const Metric DistributedSend;
 }
 
+namespace ProfileEvents
+{
+    extern const Event DistributedSyncInsertionTimeoutExceeded;
+}
 
 namespace DB
 {
@@ -41,9 +48,7 @@ namespace ErrorCodes
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast,
                                                            const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_)
-    : storage(storage), query_ast(query_ast), cluster(cluster_), insert_sync(insert_sync_), insert_timeout(insert_timeout_),
-      deadline(std::chrono::system_clock::now() + std::chrono::seconds(insert_timeout)),
-      log(&Poco::Logger::get("DistributedBlockOutputStream"))
+    : storage(storage), query_ast(query_ast), cluster(cluster_), insert_sync(insert_sync_), insert_timeout(insert_timeout_)
 {
 }
 
@@ -132,8 +137,9 @@ void DistributedBlockOutputStream::writeImpl(const Block & block, const size_t s
         else
         {
             std::atomic<bool> timeout_exceeded(false);
-            auto result = std::async(std::launch::async, &DistributedBlockOutputStream::writeToShardDirect,
-                                     this, std::cref(block), std::cref(shard_info.dir_names), std::ref(timeout_exceeded));
+            auto launch = insert_timeout ? std::launch::async : std::launch::deferred;
+            auto result = std::async(launch, &DistributedBlockOutputStream::writeToShardSync, this, std::cref(block),
+                                     std::cref(shard_info.dir_names), shard_id, std::ref(timeout_exceeded));
             if (insert_timeout && result.wait_until(deadline) == std::future_status::timeout)
                 timeout_exceeded = true;
             result.get();
@@ -156,19 +162,34 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 }
 
 
-void DistributedBlockOutputStream::writeToShardDirect(const Block & block, const std::vector<std::string> & dir_names, std::atomic<bool> & timeout_exceeded)
+void DistributedBlockOutputStream::writeToShardSync(const Block & block, const std::vector<std::string> & dir_names,
+                                                    size_t shard_id, const std::atomic<bool> & timeout_exceeded)
 {
+    auto & blocks_inserted = this->blocks_inserted;
+    auto writeNodeDescription = [shard_id, & blocks_inserted](WriteBufferFromString & out, const Connection & connection)
+    {
+        out << " (While insertion to " << connection.getDescription() << " shard " << shard_id;
+        out << " Inserted blocks: " << blocks_inserted << ")";
+    };
+
     const auto & query_string = queryToString(query_ast);
     for (const auto & dir_name : dir_names)
     {
-        auto & monitor = storage.requireDirectoryMonitor(dir_name);
-        auto & pool = monitor.getPool();
+        auto pool = storage.requireConnectionPool(dir_name);
         auto connection = pool->get();
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
         if (timeout_exceeded)
-            throw Exception("Timeout exceeded. Inserted blocks: " + std::to_string(blocks_inserted), ErrorCodes::TIMEOUT_EXCEEDED);
+        {
+            ProfileEvents::increment(ProfileEvents::DistributedSyncInsertionTimeoutExceeded);
+
+            String message;
+            WriteBufferFromString out(message);
+            out << "Timeout exceeded.";
+            writeNodeDescription(out, *connection);
+            throw Exception(message, ErrorCodes::TIMEOUT_EXCEEDED);
+        }
 
         try
         {
@@ -180,11 +201,10 @@ void DistributedBlockOutputStream::writeToShardDirect(const Block & block, const
         }
         catch (Exception & exception)
         {
-            std::string message = "\nWhile insertion to ";
-            message += connection->getDescription();
-            message += " Inserted blocks: " + std::to_string(blocks_inserted);
+            String message;
+            WriteBufferFromString out(message);
+            writeNodeDescription(out, *connection);
             exception.addMessage(message);
-            LOG_ERROR(log, message);
             exception.rethrow();
         }
     }

@@ -86,8 +86,8 @@ namespace
 }
 
 
-StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name)
-    : storage(storage), pool{createPool(name)}, path{storage.path + name + '/'}
+StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, ConnectionPoolPtr pool)
+    : storage(storage), pool{pool}, path{storage.path + name + '/'}
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
@@ -150,11 +150,11 @@ void StorageDistributedDirectoryMonitor::run()
 }
 
 
-ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name)
+ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
-    const auto pool_factory = [this, &name] (const std::string & host, const UInt16 port,
-                                             const std::string & user, const std::string & password,
-                                             const std::string & default_database)
+    const auto pool_factory = [&storage, &name] (const std::string & host, const UInt16 port,
+                                                 const std::string & user, const std::string & password,
+                                                 const std::string & default_database)
     {
         return std::make_shared<ConnectionPool>(
             1, host, port, default_database,

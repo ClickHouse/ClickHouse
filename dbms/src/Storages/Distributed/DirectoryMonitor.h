@@ -16,14 +16,13 @@ namespace DB
 class StorageDistributedDirectoryMonitor
 {
 public:
-    StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name);
+    StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, ConnectionPoolPtr pool);
     ~StorageDistributedDirectoryMonitor();
 
-    const ConnectionPoolPtr & getPool() const { return pool; }
+    static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
 private:
     void run();
-    ConnectionPoolPtr createPool(const std::string & name);
     bool findFiles();
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);

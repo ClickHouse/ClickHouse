@@ -273,7 +273,7 @@ void StorageDistributed::startup()
 
 void StorageDistributed::shutdown()
 {
-    directory_monitors.clear();
+    cluster_nodes_data.clear();
 }
 
 
@@ -455,13 +455,6 @@ bool StorageDistributed::hasColumn(const String & column_name) const
     return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
-
-StorageDistributedDirectoryMonitor & StorageDistributed::createDirectoryMonitor(const std::string & name)
-{
-    return *(directory_monitors.emplace(name, std::make_unique<StorageDistributedDirectoryMonitor>(*this, name)).first->second);
-}
-
-
 void StorageDistributed::createDirectoryMonitors()
 {
     if (path.empty())
@@ -473,16 +466,20 @@ void StorageDistributed::createDirectoryMonitors()
     boost::filesystem::directory_iterator end;
     for (auto it = begin; it != end; ++it)
         if (it->status().type() == boost::filesystem::directory_file)
-            createDirectoryMonitor(it->path().filename().string());
+            requireDirectoryMonitor(it->path().filename().string());
 }
 
 
-StorageDistributedDirectoryMonitor & StorageDistributed::requireDirectoryMonitor(const std::string & name)
+void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
-    auto it = directory_monitors.find(name);
-    if (it == directory_monitors.end())
-        return createDirectoryMonitor(name);
-    return *it->second;
+    cluster_nodes_data[name].requireDirectoryMonitor(name, *this);
+}
+
+ConnectionPoolPtr StorageDistributed::requireConnectionPool(const std::string & name)
+{
+    auto & node_data = cluster_nodes_data[name];
+    node_data.requireConnectionPool(name, *this);
+    return node_data.conneciton_pool;
 }
 
 size_t StorageDistributed::getShardCount() const
@@ -494,6 +491,19 @@ size_t StorageDistributed::getShardCount() const
 ClusterPtr StorageDistributed::getCluster() const
 {
     return (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
+}
+
+void StorageDistributed::ClusterNodeData::requireConnectionPool(const std::string & name, const StorageDistributed & storage)
+{
+    if (!conneciton_pool)
+        conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, storage);
+}
+
+void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::string & name, StorageDistributed & storage)
+{
+    requireConnectionPool(name, storage);
+    if (!directory_monitor)
+        directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
 }
 
 }

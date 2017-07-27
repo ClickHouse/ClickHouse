@@ -19,7 +19,8 @@ class StorageDistributed;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
-/** The write is asynchronous - the data is first written to the local filesystem, and then sent to the remote servers.
+/** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.
+ *  Otherwise, the write is asynchronous - the data is first written to the local filesystem, and then sent to the remote servers.
  *  If the Distributed table uses more than one shard, then in order to support the write,
  *  when creating the table, an additional parameter must be specified for ENGINE - the sharding key.
  *  Sharding key is an arbitrary expression from the columns. For example, rand() or UserID.
@@ -30,11 +31,11 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class DistributedBlockOutputStream : public IBlockOutputStream
 {
 public:
-    DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_ = 0);
+    DistributedBlockOutputStream(StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_, bool insert_sync_, UInt64 insert_timeout_);
 
     void write(const Block & block) override;
 
-    void writePrefix() override { deadline = std::chrono::system_clock::now() + std::chrono::seconds(insert_timeout); }
+    void writePrefix() override { deadline = std::chrono::steady_clock::now() + std::chrono::seconds(insert_timeout); }
 
 private:
     IColumn::Selector createSelector(Block block);
@@ -47,18 +48,18 @@ private:
 
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
-    void writeToShardDirect(const Block & block, const std::vector<std::string> & dir_names, std::atomic<bool> & timeout_exceeded);
+    /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
+    void writeToShardSync(const Block & block, const std::vector<std::string> & dir_names,
+                          size_t shard_id, const std::atomic<bool> & timeout_exceeded);
 
 private:
     StorageDistributed & storage;
     ASTPtr query_ast;
     ClusterPtr cluster;
-    bool insert_sync = true;
-    UInt64 insert_timeout = 1;
+    bool insert_sync;
+    UInt64 insert_timeout;
     size_t blocks_inserted = 0;
-    std::chrono::system_clock::time_point deadline;
-
-    Poco::Logger * log;
+    std::chrono::steady_clock::time_point deadline;
 };
 
 }
