@@ -1,6 +1,9 @@
 #pragma once
 #include <iostream>
 
+#define DUMPS(VAR) #VAR " = " << VAR
+#define DUMP(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR) << "\n";
+
 
 #include <utility>
 

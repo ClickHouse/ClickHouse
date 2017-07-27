@@ -63,7 +63,10 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     //auto fptr = lib->get<void * (*) ()>("loadAll");
     auto data_ptr = library->get<void * (*)()>("dataAllocate")();
 
-    lib->get<void * (*)(void *)>("loadAll")(data_ptr);
+    auto data =    lib->get<void * (*)(void *)>("loadAll")(data_ptr);
+    if (data)
+    {
+    }
     // TODO
     library->get<void (*)(void *)>("dataDelete")(data_ptr);
 

@@ -1,35 +1,72 @@
 #include <cstdint>
 #include <iostream>
-#include <vector>
 #include <memory>
+#include <vector>
+
+#include <common/iostream_debug_helpers.h>
+
 
 struct ClickhouseVectorUint64
 {
-    const uint64_t size;
-    const uint64_t * data;
+    uint64_t size = 0;
+    uint64_t * data = nullptr;
 };
-using ClickhouseColumn = const char *;
-using ClickhouseColumns = ClickhouseColumn[];
+
+struct ClickhouseColumnsUint64
+{
+    uint64_t size = 0;
+    ClickhouseVectorUint64 * columns = nullptr;
+};
+
+//using ClickhouseColumnName = const char *;
+//using ClickhouseColumnNames = ClickhouseColumnName[];
 
 struct DataHolder
 {
-    std::shared_ptr<std::vector<uint64_t>> vectorPtr;
+    std::shared_ptr<std::vector<std::vector<uint64_t>>> vector;
+    std::unique_ptr<ClickhouseVectorUint64[]> columnsHolder;
+    ClickhouseColumnsUint64 columns;
 };
 
-extern "C" void loadIds(void * data_ptr, const struct ClickhouseVectorUint64 ids)
+extern "C" void * loadIds(void * data_ptr, const struct ClickhouseVectorUint64 ids)
 {
-    auto ptr = static_cast<DataHolder*>(data_ptr);
+    auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadIds Runned!!! ptr=" << data_ptr << " => " << ptr << " size=" << ids.size << "\n";
-    if (ptr) {}
-    return;
+    if (ptr)
+    {
+        ptr->vector->assign({{1, 2, 3, 4, 5, 6}, {11, 12, 13, 14}, {21, 22, 23, 24, 25}});
+        DUMP(ptr->vector);
+        //std::make_unique<const char * []>(key_columns.size() + 1);
+        ptr->columnsHolder = std::make_unique<ClickhouseVectorUint64[]>(ptr->vector->size());
+        size_t i = 0;
+        for (auto & col : *(ptr->vector))
+        {
+            DUMP(i);
+            DUMP(col);
+
+            ptr->columnsHolder[i].size = col.size();
+            ptr->columnsHolder[i].data = col.data();
+            ++i;
+        }
+        ptr->columns.size = ptr->vector->size();
+        ptr->columns.columns = ptr->columnsHolder.get();
+        return static_cast<void *>(&ptr->columns);
+    }
+
+    // {ptr->size(), ptr->data()};
+    return nullptr;
 }
 
-extern "C" void loadAll(void * data_ptr)
+extern "C" void * loadAll(void * data_ptr)
 {
-    auto ptr = static_cast<DataHolder*>(data_ptr);
+    auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadAll Runned!!! ptr=" << data_ptr << " => " << ptr << "\n";
-    if (ptr) {}
-    return;
+    if (ptr)
+    {
+        return static_cast<void *>(&ptr->columns);
+    }
+    //return;
+    return nullptr;
 }
 
 /*
@@ -61,7 +98,7 @@ extern "C" void * dataAllocate()
 
 extern "C" void dataDelete(void * data_ptr)
 {
-    auto ptr = static_cast<DataHolder*>(data_ptr);
+    auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "dataDelete Runned!!! ptr=" << data_ptr << " => " << ptr << "\n";
     delete ptr;
     return;

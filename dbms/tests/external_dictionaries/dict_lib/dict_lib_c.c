@@ -10,16 +10,16 @@ struct ClickhouseVectorUint64
 };
 #define ClickhouseColumns const char **
 
-void loadIds(void * data_ptr, struct ClickhouseVectorUint64 ids)
+void * loadIds(void * data_ptr, struct ClickhouseVectorUint64 ids)
 {
     printf("loadIds c Runned!!! ptr=%p size=%" PRIu64 "\n", data_ptr, ids.size);
-    return;
+    return 0;
 }
 
-void loadAll(void * data_ptr)
+void * loadAll(void * data_ptr)
 {
     printf("loadAll c Runned!!! ptr=%p \n", data_ptr);
-    return;
+    return 0;
 }
 
 /*
