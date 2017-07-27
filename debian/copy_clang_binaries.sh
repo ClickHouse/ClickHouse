@@ -7,8 +7,9 @@ DST=${1:-.};
 PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 LD=$(command -v gold || command -v ld.gold || command -v ld)
 
+# Should be runned with correct path to clang
 if [ -z "$CLANG" ]; then
-    CLANG=$(which clang-3.8 || which clang)
+    CLANG=$(which clang)
 fi
 
 if [ ! -x "$CLANG" ]; then
