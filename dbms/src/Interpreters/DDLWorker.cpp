@@ -249,9 +249,21 @@ void DDLWorker::processTasks()
         }
         catch (...)
         {
-            auto status = ExecutionStatus::fromCurrentException();
-            /// We even cannot parse host name and can't properly submit execution status.
+            /// We even cannot parse host name and therefore cannot properly submit execution status.
             /// What should we do?
+            /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be sucessfull.
+            /// Otherwise, that node will be ignored by DDLQueryStatusInputSream.
+
+            tryLogCurrentException(log, "Cannot parse DDL task " + node_data + ", will try to send error status");
+
+            ExecutionStatus status = ExecutionStatus::fromCurrentException();
+            String host_id = task.host_id_in_cluster.empty() ? host_fqdn_id : task.host_id_in_cluster;
+
+            createStatusDirs(node_path);
+            zookeeper->create(node_path + "/finished/" + host_id, current_node_execution_status.serializeText(), zkutil::CreateMode::Persistent);
+
+            last_processed_node_name = node_name;
+            continue;
         }
 
         const auto & hosts = task.entry.hosts;
@@ -628,18 +640,20 @@ class DDLQueryStatusInputSream : public IProfilingBlockInputStream
 {
 public:
 
-    DDLQueryStatusInputSream(const String & zk_node_path, Context & context, size_t num_hosts)
+    DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, Context & context)
     : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE)
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},
+            {std::make_shared<DataTypeUInt16>(),    "port"},
             {std::make_shared<DataTypeUInt64>(),    "status"},
             {std::make_shared<DataTypeString>(),    "error"},
             {std::make_shared<DataTypeUInt64>(),    "num_hosts_remaining"},
             {std::make_shared<DataTypeUInt64>(),    "num_hosts_active"},
         };
 
-        setTotalRowsApprox(num_hosts);
+        waiting_hosts.insert(entry.hosts.cbegin(), entry.hosts.cend());
+        setTotalRowsApprox(entry.hosts.size());
     }
 
     String getName() const override
@@ -683,7 +697,7 @@ public:
                                 ErrorCodes::UNFINISHED);
             }
 
-            Strings new_hosts = getNewAndUpdate(finished_hosts_set, getChildrenAllowNoNode(zookeeper, node_path + "/finished"));
+            Strings new_hosts = getNewAndUpdate(getChildrenAllowNoNode(zookeeper, node_path + "/finished"));
             ++try_number;
             if (new_hosts.empty())
                 continue;
@@ -705,6 +719,7 @@ public:
                 Cluster::Address::fromString(host_id, host, port);
 
                 res.getByName("host").column->insert(host);
+                res.getByName("port").column->insert(port);
                 res.getByName("status").column->insert(static_cast<UInt64>(status.code));
                 res.getByName("error").column->insert(status.message);
                 res.getByName("num_hosts_remaining").column->insert(total_rows_approx - (++num_hosts_finished));
@@ -724,15 +739,25 @@ public:
         return res;
     }
 
-    static Strings getNewAndUpdate(NameSet & prev, const Strings & cur_list)
+    Strings getNewAndUpdate(const Strings & current_list_of_finished_hosts)
     {
         Strings diff;
-        for (const String & elem : cur_list)
+        for (const String & host : current_list_of_finished_hosts)
         {
-            if (!prev.count(elem))
+            if (!waiting_hosts.count(host))
             {
-                diff.emplace_back(elem);
-                prev.emplace(elem);
+                if (!ignoring_hosts.count(host))
+                {
+                    ignoring_hosts.emplace(host);
+                    LOG_INFO(log, "Unexpected host " << host << " appeared " << " in task " << node_path);
+                }
+                continue;
+            }
+
+            if (!finished_hosts.count(host))
+            {
+                diff.emplace_back(host);
+                finished_hosts.emplace(host);
             }
         }
 
@@ -747,10 +772,12 @@ private:
     String node_path;
     Context & context;
 
-    Stopwatch watch;
-
-    NameSet finished_hosts_set;
+    NameSet waiting_hosts;  /// hosts from task host list
+    NameSet finished_hosts; /// finished hosts from host list
+    NameSet ignoring_hosts; /// appeared hosts that are not in hosts list
     size_t num_hosts_finished = 0;
+
+    Stopwatch watch;
 };
 
 
@@ -793,7 +820,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, Context & context)
     if (node_path.empty())
         return io;
 
-    auto stream = std::make_shared<DDLQueryStatusInputSream>(node_path, context, entry.hosts.size());
+    auto stream = std::make_shared<DDLQueryStatusInputSream>(node_path, entry, context);
     io.in_sample = stream->sample.cloneEmpty();
     io.in = std::move(stream);
     return io;
