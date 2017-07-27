@@ -8,7 +8,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-
 #define DECLARE(TYPE)\
 void ComplexKeyCacheDictionary::get##TYPE(\
     const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
