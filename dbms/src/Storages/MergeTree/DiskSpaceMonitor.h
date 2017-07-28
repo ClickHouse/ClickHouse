@@ -107,7 +107,7 @@ public:
 
         /// Heuristic by Michael Kolupaev: reserve 30 MB more, because statvfs shows few megabytes more space than df.
         //res -= std::min(res, static_cast<size_t>(30 * (1ul << 20)));
-        res -= std::min(res, 30 * (1ul << 20));
+        res -= std::min(res, decltype(res)(30 * (1ul << 20)));
 
         std::lock_guard<std::mutex> lock(mutex);
 

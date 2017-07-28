@@ -600,7 +600,7 @@ public:
                 throw Exception("Watching query is executing too long (" + toString(std::round(elapsed_seconds)) + " sec.)", ErrorCodes::TIMEOUT_EXCEEDED);
 
             if (num_hosts_finished != 0 || try_number != 0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(20LU, try_number + 1)));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(20, try_number + 1)));
 
             /// TODO: add shared lock
             if (!zookeeper->exists(node_path))
