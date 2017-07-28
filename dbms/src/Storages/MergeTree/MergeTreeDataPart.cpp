@@ -589,7 +589,7 @@ void MergeTreeDataPart::loadChecksums(bool require)
 
 void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
 {
-    Poco::ScopedReadRWLock part_lock(columns_lock);
+    std::shared_lock<std::shared_mutex> part_lock(columns_lock);
     for (const NameAndTypePair & column : *storage.columns)
         if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
             column_to_size[column.name] += Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").getSize();

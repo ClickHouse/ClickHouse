@@ -135,10 +135,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     ParserQuery parser(end);
     ASTPtr ast;
     size_t query_size;
-    size_t max_query_size = settings.max_query_size;
+
+    /// Don't limit the size of internal queries.
+    size_t max_query_size = 0;
+    if (!internal)
+        max_query_size = settings.max_query_size;
 
     try
     {
+        /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "");
 
         /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
@@ -150,9 +155,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
-        /// Anyway log query.
         if (!internal)
         {
+            /// Anyway log the query.
             String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
             logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
             onExceptionBeforeStart(query, context, current_time);
