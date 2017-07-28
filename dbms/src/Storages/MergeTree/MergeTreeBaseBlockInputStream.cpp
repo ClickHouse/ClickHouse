@@ -135,8 +135,11 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 {
                     if (ColumnArray * column_array = typeid_cast<ColumnArray *>(col.column.get()))
                     {
-                        /// ColumnArray columns in block have common offset column, which is used while reading.
+                        /// ColumnArray columns in block could have common offset column, which is used while reading.
+                        /// This is in case of nested data structures.
+                        
                         /// Have to call resize(0) instead of cloneEmpty to save structure.
+                        /// (To keep offsets possibly shared between different arrays.)
                         column_array->getOffsets().resize(0);
                         /// It's ok until multidimensional arrays are not stored in MergeTree.
                         column_array->getDataPtr() = column_array->getDataPtr()->cloneEmpty();
