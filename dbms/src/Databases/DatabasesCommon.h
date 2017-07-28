@@ -46,6 +46,9 @@ public:
     DatabaseSnaphotIterator(Tables & tables_)
         : tables(tables_), it(tables.begin()) {}
 
+    DatabaseSnaphotIterator(Tables && tables_)
+        : tables(tables_), it(tables.begin()) {}
+
     void next() override
     {
         ++it;

@@ -32,14 +32,19 @@ struct PartLogElement
 
     static Block createBlock();
     void appendToBlock(Block & block) const;
-
 };
+
+struct MergeTreeDataPart;
 
 
 /// Instead of typedef - to allow forward declaration.
 class PartLog : public SystemLog<PartLogElement>
 {
     using SystemLog<PartLogElement>::SystemLog;
+
+public:
+    /// Add a record about creation of new part.
+    void addNewPart(const MergeTreeDataPart & part, double elapsed);
 };
 
 }

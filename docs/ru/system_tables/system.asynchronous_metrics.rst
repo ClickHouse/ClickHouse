@@ -1,3 +1,5 @@
+.. _system_tables-system.asynchronous_metrics:
+
 system.asynchronous_metrics
 ---------------------------
 

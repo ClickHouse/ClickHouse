@@ -10,8 +10,13 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
+#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <DataStreams/CastTypeBlockInputStream.h>
+#include <DataStreams/FilterColumnsBlockInputStream.h>
+#include <DataStreams/RemoveColumnsBlockInputStream.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 
 
 namespace DB
@@ -84,9 +89,55 @@ bool StorageMerge::hasColumn(const String & column_name) const
     return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
+static Names collectIdentifiersInFirstLevelOfSelectQuery(ASTPtr ast)
+{
+    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
+    ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
+    ASTs & asts = node.children;
+
+    Names names;
+    for (size_t i = 0; i < asts.size(); ++i)
+    {
+        if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
+        {
+            if (identifier->kind == ASTIdentifier::Kind::Column)
+                names.push_back(identifier->name);
+        }
+    }
+    return names;
+}
+
+
+namespace
+{
+    using NodeHashToSet = std::map<IAST::Hash, SetPtr>;
+
+    void relinkSetsImpl(const ASTPtr & query, const NodeHashToSet & node_hash_to_set, PreparedSets & new_sets)
+    {
+        auto hash = query->getTreeHash();
+        auto it = node_hash_to_set.find(hash);
+        if (node_hash_to_set.end() != it)
+            new_sets[query.get()] = it->second;
+
+        for (const auto & child : query->children)
+            relinkSetsImpl(child, node_hash_to_set, new_sets);
+    }
+
+    /// Re-link prepared sets onto cloned and modified AST.
+    void relinkSets(const ASTPtr & query, const PreparedSets & old_sets, PreparedSets & new_sets)
+    {
+        NodeHashToSet node_hash_to_set;
+        for (const auto & node_set : old_sets)
+            node_hash_to_set.emplace(node_set.first->getTreeHash(), node_set.second);
+
+        relinkSetsImpl(query, node_hash_to_set, new_sets);
+    }
+}
+
+
 BlockInputStreams StorageMerge::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -107,6 +158,8 @@ BlockInputStreams StorageMerge::read(
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
     StorageListWithLocks selected_tables = getSelectedTables();
+
+    const ASTPtr & query = query_info.query;
 
     /// If PREWHERE is used in query, you need to make sure that all tables support this.
     if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
@@ -148,6 +201,11 @@ BlockInputStreams StorageMerge::read(
         ASTPtr modified_query_ast = query->clone();
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
+        SelectQueryInfo modified_query_info;
+        modified_query_info.query = modified_query_ast;
+
+        relinkSets(modified_query_info.query, query_info.sets, modified_query_info.sets);
+
         BlockInputStreams source_streams;
 
         if (curr_table_number < num_streams)
@@ -155,7 +213,7 @@ BlockInputStreams StorageMerge::read(
             QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
             source_streams = table->read(
                 real_column_names,
-                modified_query_ast,
+                modified_query_info,
                 modified_context,
                 processed_stage_in_source_table,
                 max_block_size,
@@ -183,7 +241,7 @@ BlockInputStreams StorageMerge::read(
                 QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
                 BlockInputStreams streams = table->read(
                     real_column_names,
-                    modified_query_ast,
+                    modified_query_info,
                     modified_context,
                     processed_stage_in_source_table,
                     max_block_size,
@@ -225,7 +283,31 @@ BlockInputStreams StorageMerge::read(
     if (processed_stage_in_source_tables)
         processed_stage = processed_stage_in_source_tables.value();
 
-    return narrowBlockInputStreams(res, num_streams);
+    res = narrowBlockInputStreams(res, num_streams);
+
+    /// Added to avoid different block structure from different sources
+    if (!processed_stage_in_source_tables || processed_stage_in_source_tables.value() == QueryProcessingStage::FetchColumns)
+    {
+        for (auto & stream : res)
+            stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names, true);
+    }
+    else
+    {
+        /// Blocks from distributed tables may have extra columns.
+        /// We need to remove them to make blocks compatible.
+        auto identifiers = collectIdentifiersInFirstLevelOfSelectQuery(query);
+        std::set<String> identifiers_set(identifiers.begin(), identifiers.end());
+        Names columns_to_remove;
+        for (const auto & column : column_names)
+            if (!identifiers_set.count(column))
+                columns_to_remove.push_back(column);
+
+        if (!columns_to_remove.empty())
+            for (auto & stream : res)
+                stream = std::make_shared<RemoveColumnsBlockInputStream>(stream, columns_to_remove);
+    }
+
+    return res;
 }
 
 /// Construct a block consisting only of possible values of virtual columns

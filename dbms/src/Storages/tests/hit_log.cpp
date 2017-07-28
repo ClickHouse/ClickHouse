@@ -2,8 +2,8 @@
 #include <list>
 #include <iostream>
 
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -117,7 +117,7 @@ try
     /// read the data from tsv file and simultaneously write to table
     if (argc == 2 && 0 == strcmp(argv[1], "write"))
     {
-        ReadBufferFromIStream in_buf(std::cin);
+        ReadBufferFromFileDescriptor in_buf(STDIN_FILENO);
 
         RowInputStreamPtr in_ = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
         BlockInputStreamFromRowInputStream in(in_, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);
@@ -128,11 +128,11 @@ try
     /// read from it
     if (argc == 2 && 0 == strcmp(argv[1], "read"))
     {
-        WriteBufferFromOStream out_buf(std::cout);
+        WriteBufferFromFileDescriptor out_buf(STDOUT_FILENO);
 
         QueryProcessingStage::Enum stage;
 
-        BlockInputStreamPtr in = table->read(column_names, 0, Context::createGlobal(), stage, 8192, 1)[0];
+        BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
         RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
         BlockOutputStreamFromRowOutputStream out(out_);
         copyData(*in, out);

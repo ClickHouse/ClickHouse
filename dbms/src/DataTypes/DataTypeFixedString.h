@@ -26,6 +26,8 @@ public:
 
     std::string getName() const override;
 
+    const char * getFamilyName() const override { return "FixedString"; }
+
     DataTypePtr clone() const override
     {
         return std::make_shared<DataTypeFixedString>(n);
@@ -52,7 +54,7 @@ public:
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -61,7 +63,6 @@ public:
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
     Field getDefault() const override
     {

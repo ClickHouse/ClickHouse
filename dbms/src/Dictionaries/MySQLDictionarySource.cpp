@@ -67,7 +67,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & i
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadKeys(
-    const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+    const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
 

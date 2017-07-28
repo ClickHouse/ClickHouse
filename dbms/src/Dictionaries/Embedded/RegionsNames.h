@@ -4,7 +4,7 @@
 #include <vector>
 #include <Poco/Exception.h>
 #include <common/Types.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 
 
 /** A class that allows you to recognize by region id its text name in one of the supported languages: ru, en, ua, by, kz, tr.

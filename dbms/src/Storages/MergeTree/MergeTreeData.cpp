@@ -13,6 +13,7 @@
 #include <IO/HexWriteBuffer.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNested.h>
@@ -27,6 +28,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
+#include <Common/typeid_cast.h>
 #include <IO/Operators.h>
 
 #include <algorithm>
@@ -240,6 +242,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                     && !typeid_cast<const DataTypeUInt16 *>(column.type.get())
                     && !typeid_cast<const DataTypeUInt32 *>(column.type.get())
                     && !typeid_cast<const DataTypeUInt64 *>(column.type.get())
+                    && !typeid_cast<const DataTypeUUID *>(column.type.get())
                     && !typeid_cast<const DataTypeDate *>(column.type.get())
                     && !typeid_cast<const DataTypeDateTime *>(column.type.get()))
                     throw Exception("Version column (" + version_column + ")"
@@ -622,6 +625,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
             { typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
             { typeid(DataTypeDate),     typeid(DataTypeUInt16)   },
+            { typeid(DataTypeUUID),     typeid(DataTypeUUID)     },
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 
@@ -824,7 +828,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 /// @todo invent the name more safely
                 const auto new_type_name_column = '#' + new_type_name + "_column";
                 out_expression->add(ExpressionAction::addColumn(
-                    { std::make_shared<ColumnConstString>(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
+                    { DataTypeString().createConstColumn(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
                 const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
                 out_expression->add(ExpressionAction::applyFunction(
@@ -1023,7 +1027,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     {
         MarkRanges ranges{MarkRange(0, part->size)};
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
-            *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, expression->getRequiredColumns(), ranges,
+            *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         ExpressionBlockInputStream in(part_in, expression);
@@ -1181,8 +1185,6 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     if (out_transaction && out_transaction->data)
         throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid", ErrorCodes::LOGICAL_ERROR);
 
-    LOG_TRACE(log, "Renaming temporary part " << part->relative_path << ".");
-
     DataPartsVector replaced;
     {
         std::lock_guard<std::mutex> lock(data_parts_mutex);
@@ -1195,6 +1197,8 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
         String old_name = part->name;
         String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
+
+        LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << new_name << ".");
 
         /// Check that new part doesn't exist yet.
         {
@@ -1444,34 +1448,6 @@ size_t MergeTreeData::getMaxPartsCountForMonth() const
     return res;
 }
 
-
-std::pair<Int64, bool> MergeTreeData::getMinBlockNumberForMonth(DayNum_t month) const
-{
-    std::lock_guard<std::mutex> lock(all_data_parts_mutex);
-
-    for (const auto & part : all_data_parts)    /// The search can be done better.
-        if (part->month == month)
-            return { part->left, true };    /// Blocks in data_parts are sorted by month and left.
-
-    return { 0, false };
-}
-
-
-bool MergeTreeData::hasBlockNumberInMonth(Int64 block_number, DayNum_t month) const
-{
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
-
-    for (const auto & part : data_parts)    /// The search can be done better.
-    {
-        if (part->month == month && part->left <= block_number && part->right >= block_number)
-            return true;
-
-        if (part->month > month)
-            break;
-    }
-
-    return false;
-}
 
 void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 {
@@ -1731,7 +1707,7 @@ static std::pair<String, DayNum_t> getMonthNameAndDayNum(const Field & partition
         ? toString(partition.get<UInt64>())
         : partition.safeGet<String>();
 
-    if (month_name.size() != 6 || !std::all_of(month_name.begin(), month_name.end(), isdigit))
+    if (month_name.size() != 6 || !std::all_of(month_name.begin(), month_name.end(), isNumericASCII))
         throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
             ErrorCodes::INVALID_PARTITION_NAME);
 

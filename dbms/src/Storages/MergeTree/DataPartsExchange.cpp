@@ -2,6 +2,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
+#include <Common/typeid_cast.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
 #include <ext/scope_guard.h>

@@ -2,7 +2,6 @@
 
 #include <Poco/RWLock.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Limits.h>

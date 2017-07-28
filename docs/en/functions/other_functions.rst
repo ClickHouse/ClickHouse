@@ -50,10 +50,10 @@ isNaN(x)
 ~~~~~~~~
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is a NaN, otherwise 0.
 
-hasColumnInTable('database', 'table', 'column')
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Accepts constant String columns - database name, table name and column name. Returns constant UInt8 value, equal to 1 if column exists,
-otherwise 0.
+otherwise 0. If hostname is specified, the check will proceed on remote host.
 If table doesn't exist than exception is thrown.
 For elements of nested data structure function checks existence of column. For nested data structure 0 is returned.
 

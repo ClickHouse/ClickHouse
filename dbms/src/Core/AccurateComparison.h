@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <Core/Types.h>
+#include <Common/UInt128.h>
 
 /** Preceptually-correct number comparisons.
   * Example: Int8(-1) != UInt8(255)
@@ -225,6 +226,29 @@ inline bool greaterOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
     return greaterOp(u, static_cast<DB::Float64>(f));
 }
 
+template<>
+inline bool greaterOp<DB::Float64, DB::UInt128>(DB::Float64 f, DB::UInt128 u)
+{
+    return u.low == 0 && greaterOp(f, u.high);
+}
+
+template<>
+inline bool greaterOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
+{
+    return u.low != 0 || greaterOp(u.high, f);
+}
+
+template<>
+inline bool greaterOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
+{
+    return greaterOp(static_cast<DB::Float64>(f), u);
+}
+
+template<>
+inline bool greaterOp<DB::UInt128, DB::Float32>(DB::UInt128 u, DB::Float32 f)
+{
+    return greaterOp(u, static_cast<DB::Float64>(f));
+}
 
 template <typename A, typename B>
 inline bool_if_not_safe_conversion<A, B> equalsOp(A a, B b)
@@ -284,6 +308,30 @@ template<>
 inline bool equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, DB::Float32 f)
 {
     return u == static_cast<DB::Int64>(f) && static_cast<DB::Float32>(u) == f;
+}
+
+template<>
+inline bool equalsOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
+{
+    return u.low == 0 && equalsOp(static_cast<UInt64>(u.high), f);
+}
+
+template<>
+inline bool equalsOp<DB::UInt128, DB::Float32>(DB::UInt128 u, DB::Float32 f)
+{
+    return equalsOp(u, static_cast<DB::Float64>(f));
+}
+
+template<>
+inline bool equalsOp<DB::Float64, DB::UInt128>(DB::Float64 f, DB::UInt128 u)
+{
+    return equalsOp(u, f);
+}
+
+template<>
+inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
+{
+    return equalsOp(static_cast<DB::Float64>(f), u);
 }
 
 

@@ -11,8 +11,10 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <Common/VirtualColumnUtils.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -157,7 +159,7 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
     if (!expression_ast)
         return false;
 
-    /// Let's parse and calculate the expression.
+    /// Let's analyze and calculate the expression.
     ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getColumnsList());
     ExpressionActionsPtr actions = analyzer.getActions(false);
     actions->execute(block);
@@ -167,7 +169,7 @@ bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
     ColumnPtr filter_column = block.getByName(filter_column_name).column;
     if (auto converted = filter_column->convertToFullColumnIfConst())
         filter_column = converted;
-    const IColumn::Filter & filter = dynamic_cast<ColumnUInt8 &>(*filter_column).getData();
+    const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
 
     if (countBytesInFilter(filter) == 0)
         return false;

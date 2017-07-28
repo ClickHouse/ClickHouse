@@ -62,8 +62,7 @@ public:
             throw Exception{
                 "Invalid type of second argument to function " + getName() +
                     ", got " + arguments[1]->getName() + ", expected numeric",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
     void setParameters(const Array & params) override
@@ -142,8 +141,7 @@ public:
             throw Exception{
                 "Invalid type of second argument to function " + getName() +
                     ", got " + arguments[1]->getName() + ", expected numeric",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
     void setParameters(const Array & params) override

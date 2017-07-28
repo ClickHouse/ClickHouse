@@ -4,7 +4,6 @@
 #include <DataStreams/IRowInputStream.h>
 #include <Common/HashTable/HashMap.h>
 
-
 namespace DB
 {
 

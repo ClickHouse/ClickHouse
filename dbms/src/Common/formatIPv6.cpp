@@ -26,7 +26,7 @@ static void print_integer(char *& out, T value)
 
         while (value > 0)
         {
-            *ptr++ = hexLowercase(value % base);
+            *ptr++ = hexDigitLowercase(value % base);
             value /= base;
         }
 

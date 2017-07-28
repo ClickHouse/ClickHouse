@@ -1,7 +1,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/typeid_cast.h>
 
 #include <DataStreams/FilterBlockInputStream.h>
 
@@ -57,17 +59,12 @@ static void analyzeConstantFilter(const IColumn & column, bool & filter_always_f
     {
         filter_always_false = true;
     }
-    else
+    else if (column.isConst())
     {
-        const ColumnConstUInt8 * column_const = typeid_cast<const ColumnConstUInt8 *>(&column);
-
-        if (column_const)
-        {
-            if (column_const->getData())
-                filter_always_true = true;
-            else
-                filter_always_false = true;
-        }
+        if (static_cast<const ColumnConst &>(column).getValue<UInt8>())
+            filter_always_true = true;
+        else
+            filter_always_false = true;
     }
 }
 

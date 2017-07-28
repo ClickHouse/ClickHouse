@@ -24,11 +24,22 @@ private:
     ConnectionPoolPtr createPool(const std::string & name);
     bool findFiles();
     void processFile(const std::string & file_path);
+    void processFilesWithBatching(const std::map<UInt64, std::string> & files);
+    bool maybeMarkAsBroken(const std::string & file_path, const Exception &e) const;
     std::string getLoggerName() const;
 
     StorageDistributed & storage;
     ConnectionPoolPtr pool;
     std::string path;
+
+    bool should_batch_inserts = false;
+    size_t min_batched_block_size_rows = 0;
+    size_t min_batched_block_size_bytes = 0;
+    String current_batch_file_path;
+
+    struct BatchHeader;
+    struct Batch;
+
     size_t error_count{};
     std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;

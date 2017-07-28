@@ -137,7 +137,7 @@ public:
 
     size_t byteSize() const override;
 
-    size_t allocatedSize() const override;
+    size_t allocatedBytes() const override;
 
     void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
 
@@ -150,6 +150,8 @@ public:
     ColumnPtr replicate(const Offsets_t & offsets) const override;
 
     Columns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
     {

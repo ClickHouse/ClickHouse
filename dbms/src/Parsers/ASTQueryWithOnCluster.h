@@ -25,7 +25,7 @@ public:
     void formatOnCluster(const IAST::FormatSettings & settings) const;
 
     /// Parses " CLUSTER [cluster|'cluster'] " clause
-    static bool parse(Pos & pos, Pos end, std::string & cluster_str, Pos & max_parsed_pos, Expected & expected);
+    static bool parse(Pos & pos, std::string & cluster_str, Expected & expected);
 
     virtual ~ASTQueryWithOnCluster() = default;
 };

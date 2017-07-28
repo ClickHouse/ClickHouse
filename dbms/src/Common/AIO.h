@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 #include <Poco/Logger.h>
 #include <boost/range/iterator_range.hpp>
 #include <boost/noncopyable.hpp>
@@ -69,9 +69,9 @@ namespace ErrorCodes
 }
 
 
-class AIOContextPool : public Singleton<AIOContextPool>
+class AIOContextPool : public ext::singleton<AIOContextPool>
 {
-    friend class Singleton<AIOContextPool>;
+    friend class ext::singleton<AIOContextPool>;
 
     static const auto max_concurrent_events = 128;
     static const auto timeout_sec = 1;

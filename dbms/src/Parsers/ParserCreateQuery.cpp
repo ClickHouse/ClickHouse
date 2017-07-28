@@ -10,11 +10,10 @@
 namespace DB
 {
 
-bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserWhitespaceOrComments ws;
-    ParserString open("(");
-    ParserString close(")");
+    ParserToken open(TokenType::OpeningRoundBracket);
+    ParserToken close(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
     ParserNameTypePairList columns_p;
 
@@ -24,22 +23,16 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     Pos begin = pos;
 
     /// For now `name == 'Nested'`, probably alternative nested data structures will appear
-    if (!name_p.parse(pos, end, name, max_parsed_pos, expected))
+    if (!name_p.parse(pos, name, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!open.ignore(pos, end))
+    if (!open.ignore(pos))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
+    if (!columns_p.parse(pos, columns, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!close.ignore(pos, end))
+    if (!close.ignore(pos))
         return false;
 
     auto func = std::make_shared<ASTFunction>(StringRange(begin, pos));
@@ -52,34 +45,34 @@ bool ParserNestedTable::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 }
 
 
-bool ParserIdentifierWithParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserIdentifierWithParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserFunction function_or_array;
-    if (function_or_array.parse(pos, end, node, max_parsed_pos, expected))
+    if (function_or_array.parse(pos, node, expected))
         return true;
 
     ParserNestedTable nested;
-    if (nested.parse(pos, end, node, max_parsed_pos, expected))
+    if (nested.parse(pos, node, expected))
         return true;
 
     return false;
 }
 
 
-bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier non_parametric;
     ParserIdentifierWithParameters parametric;
 
     Pos begin = pos;
 
-    if (parametric.parse(pos, end, node, max_parsed_pos, expected))
+    if (parametric.parse(pos, node, expected))
         return true;
 
     ASTPtr ident;
-    if (non_parametric.parse(pos, end, ident, max_parsed_pos, expected))
+    if (non_parametric.parse(pos, ident, expected))
     {
-        auto func = std::make_shared<ASTFunction>(StringRange(begin, pos));
+        auto func = std::make_shared<ASTFunction>(StringRange(begin));
         func->name = typeid_cast<ASTIdentifier &>(*ident).name;
         node = func;
         return true;
@@ -88,9 +81,9 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, Pos end, ASTPt
     return false;
 }
 
-bool ParserTypeInCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserTypeInCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (ParserIdentifierWithOptionalParameters::parseImpl(pos, end, node, max_parsed_pos, expected))
+    if (ParserIdentifierWithOptionalParameters::parseImpl(pos, node, expected))
     {
         const auto & id_with_params = typeid_cast<const ASTFunction &>(*node);
         node = std::make_shared<ASTIdentifier>(id_with_params.range, String{ id_with_params.range.first, id_with_params.range.second });
@@ -100,52 +93,42 @@ bool ParserTypeInCastExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
     return false;
 }
 
-bool ParserNameTypePairList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserNameTypePair>(), std::make_unique<ParserString>(","), false)
-        .parse(pos, end, node, max_parsed_pos, expected);
+    return ParserList(std::make_unique<ParserNameTypePair>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
 }
 
-bool ParserColumnDeclarationList::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(std::make_unique<ParserColumnDeclaration>(), std::make_unique<ParserString>(","), false)
-        .parse(pos, end, node, max_parsed_pos, expected);
+    return ParserList(std::make_unique<ParserColumnDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
 }
 
 
-bool ParserEngine::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserEngine::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserWhitespaceOrComments ws;
     ParserKeyword s_engine("ENGINE");
-    ParserString s_eq("=");
+    ParserToken s_eq(TokenType::Equals);
     ParserIdentifierWithOptionalParameters storage_p;
 
-    ws.ignore(pos, end);
-
-    if (s_engine.ignore(pos, end, max_parsed_pos, expected))
+    if (s_engine.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (!s_eq.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_eq.ignore(pos, expected))
             return false;
 
-        ws.ignore(pos, end);
-
-        if (!storage_p.parse(pos, end, node, max_parsed_pos, expected))
+        if (!storage_p.parse(pos, node, expected))
             return false;
-
-        ws.ignore(pos, end);
     }
 
     return true;
 }
 
 
-bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhitespaceOrComments ws;
     ParserKeyword s_create("CREATE");
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_attach("ATTACH");
@@ -157,9 +140,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
     ParserKeyword s_populate("POPULATE");
-    ParserString s_dot(".");
-    ParserString s_lparen("(");
-    ParserString s_rparen(")");
+    ParserToken s_dot(TokenType::Dot);
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserEngine engine_p;
     ParserIdentifier name_p;
     ParserColumnDeclarationList columns_p;
@@ -180,218 +163,167 @@ bool ParserCreateQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
     bool is_populate = false;
     bool is_temporary = false;
 
-    ws.ignore(pos, end);
-
-    if (!s_create.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_create.ignore(pos, expected))
     {
-        if (s_attach.ignore(pos, end, max_parsed_pos, expected))
+        if (s_attach.ignore(pos, expected))
             attach = true;
         else
             return false;
     }
 
-    ws.ignore(pos, end);
-
-    if (s_temporary.ignore(pos, end, max_parsed_pos, expected))
+    if (s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
-        ws.ignore(pos, end);
     }
 
-    if (s_database.ignore(pos, end, max_parsed_pos, expected))
+    if (s_database.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
+        if (s_if_not_exists.ignore(pos, expected))
             if_not_exists = true;
 
-        ws.ignore(pos, end);
-
-        if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
+        if (!name_p.parse(pos, database, expected))
             return false;
 
-        ws.ignore(pos, end);
-
-        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
         {
-            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
 
-        ws.ignore(pos, end);
-
-        engine_p.parse(pos, end, storage, max_parsed_pos, expected);
+        engine_p.parse(pos, storage, expected);
     }
-    else if (s_table.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_table.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
+        if (s_if_not_exists.ignore(pos, expected))
             if_not_exists = true;
 
-        ws.ignore(pos, end);
-
-        if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
 
-        ws.ignore(pos, end);
-
-        if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+        if (s_dot.ignore(pos, expected))
         {
             database = table;
-            if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+            if (!name_p.parse(pos, table, expected))
                 return false;
-
-            ws.ignore(pos, end);
         }
 
-        if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
         {
-            if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
                 return false;
         }
-
-        ws.ignore(pos, end);
 
         /// List of columns.
-        if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
+        if (s_lparen.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
+            if (!columns_p.parse(pos, columns, expected))
                 return false;
 
-            ws.ignore(pos, end);
-
-            if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
+            if (!s_rparen.ignore(pos, expected))
                 return false;
 
-
-            ws.ignore(pos, end);
-
-            if (!engine_p.parse(pos, end, storage, max_parsed_pos, expected))
+            if (!engine_p.parse(pos, storage, expected))
                 return false;
 
             /// For engine VIEW, you also need to read AS SELECT
             if (storage && (typeid_cast<ASTFunction &>(*storage).name == "View"
                         || typeid_cast<ASTFunction &>(*storage).name == "MaterializedView"))
             {
-                if (!s_as.ignore(pos, end, max_parsed_pos, expected))
+                if (!s_as.ignore(pos, expected))
                     return false;
-                ws.ignore(pos, end);
                 Pos before_select = pos;
-                if (!s_select.ignore(pos, end, max_parsed_pos, expected))
+                if (!s_select.ignore(pos, expected))
                     return false;
                 pos = before_select;
                 ParserSelectQuery select_p;
-                select_p.parse(pos, end, select, max_parsed_pos, expected);
+                select_p.parse(pos, select, expected);
             }
         }
         else
         {
-            engine_p.parse(pos, end, storage, max_parsed_pos, expected);
+            engine_p.parse(pos, storage, expected);
 
-            if (!s_as.ignore(pos, end, max_parsed_pos, expected))
+            if (!s_as.ignore(pos, expected))
                 return false;
-
-            ws.ignore(pos, end);
 
             /// AS SELECT ...
             Pos before_select = pos;
-            if (s_select.ignore(pos, end, max_parsed_pos, expected))
+            if (s_select.ignore(pos, expected))
             {
                 pos = before_select;
                 ParserSelectQuery select_p;
-                select_p.parse(pos, end, select, max_parsed_pos, expected);
+                select_p.parse(pos, select, expected);
             }
             else
             {
                 /// AS [db.]table
-                if (!name_p.parse(pos, end, as_table, max_parsed_pos, expected))
+                if (!name_p.parse(pos, as_table, expected))
                     return false;
 
-                ws.ignore(pos, end);
-
-                if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+                if (s_dot.ignore(pos, expected))
                 {
                     as_database = as_table;
-                    if (!name_p.parse(pos, end, as_table, max_parsed_pos, expected))
+                    if (!name_p.parse(pos, as_table, expected))
                         return false;
-
-                    ws.ignore(pos, end);
                 }
 
-                ws.ignore(pos, end);
-
                 /// Optional - ENGINE can be specified.
-                engine_p.parse(pos, end, storage, max_parsed_pos, expected);
+                engine_p.parse(pos, storage, expected);
             }
         }
     }
     else
     {
         /// VIEW or MATERIALIZED VIEW
-        if (s_materialized.ignore(pos, end, max_parsed_pos, expected) && ws.ignore(pos, end, max_parsed_pos, expected))
+        if (s_materialized.ignore(pos, expected))
+        {
             is_materialized_view = true;
+        }
         else
             is_view = true;
 
-        if (!s_view.ignore(pos, end, max_parsed_pos, expected) || !ws.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_view.ignore(pos, expected))
             return false;
 
-        if (s_if_not_exists.ignore(pos, end, max_parsed_pos, expected))
+        if (s_if_not_exists.ignore(pos, expected))
             if_not_exists = true;
 
-        if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
-        ws.ignore(pos, end);
 
-        if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+        if (s_dot.ignore(pos, expected))
         {
             database = table;
-            if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+            if (!name_p.parse(pos, table, expected))
                 return false;
-
-            ws.ignore(pos, end);
         }
 
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
-        if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
+        if (s_lparen.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
+            if (!columns_p.parse(pos, columns, expected))
                 return false;
 
-            ws.ignore(pos, end);
-
-            if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
+            if (!s_rparen.ignore(pos, expected))
                 return false;
         }
 
         /// Optional - internal ENGINE for MATERIALIZED VIEW can be specified
-        engine_p.parse(pos, end, inner_storage, max_parsed_pos, expected);
+        engine_p.parse(pos, inner_storage, expected);
 
-        ws.ignore(pos, end);
-
-        if (s_populate.ignore(pos, end, max_parsed_pos, expected))
+        if (s_populate.ignore(pos, expected))
             is_populate = true;
 
-        ws.ignore(pos, end);
-
         /// AS SELECT ...
-        if (!s_as.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_as.ignore(pos, expected))
             return false;
-        ws.ignore(pos, end);
         Pos before_select = pos;
-        if (!s_select.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_select.ignore(pos, expected))
             return false;
         pos = before_select;
         ParserSelectQuery select_p;
-        select_p.parse(pos, end, select, max_parsed_pos, expected);
+        select_p.parse(pos, select, expected);
     }
-
-    ws.ignore(pos, end);
 
     auto query = std::make_shared<ASTCreateQuery>(StringRange(begin, pos));
     node = query;

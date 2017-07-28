@@ -1,7 +1,10 @@
 #pragma once
 
+#include <boost/core/noncopyable.hpp>
+
 #include <dlfcn.h>
 
+#include <iostream>
 #include <string>
 #include <mutex>
 #include <functional>
@@ -13,7 +16,7 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 
 namespace DB

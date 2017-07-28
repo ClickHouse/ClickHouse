@@ -7,6 +7,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
 #include <Poco/File.h>
 

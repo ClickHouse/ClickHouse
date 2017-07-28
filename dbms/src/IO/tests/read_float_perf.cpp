@@ -5,7 +5,7 @@
 
 #include <Core/Types.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromFile.h>
 #include <IO/CompressedReadBuffer.h>
 
 
@@ -13,8 +13,7 @@ int main(int argc, char ** argv)
 {
     try
     {
-        std::ifstream istr("DevicePixelRatio");
-        DB::ReadBufferFromIStream in(istr);
+        DB::ReadBufferFromFile in("DevicePixelRatio");
 
         DB::Float32 b = 0;
 

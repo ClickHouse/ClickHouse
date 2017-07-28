@@ -13,7 +13,7 @@
 #include <Poco/Util/Application.h>
 
 #include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 
 #include <boost/program_options.hpp>

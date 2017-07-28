@@ -20,9 +20,11 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeExpression.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -166,9 +168,9 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
     }
 
     /// Aggregate function.
-    if (AggregateFunctionPtr aggregate_function_ptr = AggregateFunctionFactory::instance().tryGet(function->name, argument_types))
+    Array parameters = (function->parameters) ? getAggregateFunctionParametersArray(function->parameters) : Array();
+    if (AggregateFunctionPtr aggregate_function_ptr = AggregateFunctionFactory::instance().tryGet(function->name, argument_types, parameters))
     {
-        /// NOTE Not considering aggregate function parameters in type inference. It could become needed in future.
         /// Note that aggregate function could never be constant expression.
 
         aggregate_function_ptr->setArguments(argument_types);

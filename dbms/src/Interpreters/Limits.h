@@ -171,6 +171,19 @@ struct Limits
     #undef TRY_SET
     }
 
+    bool tryGet(const String & name, String & value) const
+    {
+    #define TRY_GET(TYPE, NAME, DEFAULT) \
+        else if (name == #NAME) { value = NAME.toString(); return true; }
+
+        if (false) {}
+        APPLY_FOR_LIMITS(TRY_GET)
+
+        return false;
+
+    #undef TRY_GET
+    }
+
 private:
     friend struct Settings;
 

@@ -1,4 +1,5 @@
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -71,14 +72,14 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
     readText(count, buf);
     assertString(" columns:\n", buf);
 
-    ParserTernaryOperatorExpression expr_parser;
+    ParserExpression expr_parser;
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     ColumnsDescription<true> result{};
     for (size_t i = 0; i < count; ++i)
     {
         String column_name;
-        readBackQuotedString(column_name, buf);
+        readBackQuotedStringWithSQLStyle(column_name, buf);
         assertChar(' ', buf);
 
         String type_name;
@@ -102,13 +103,9 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
         readText(default_expr_str, buf);
         assertChar('\n', buf);
 
-        ASTPtr default_expr;
-        Expected expected{};
         const char * begin = default_expr_str.data();
         const auto end = begin + default_expr_str.size();
-        const char * max_parsed_pos = begin;
-        if (!expr_parser.parse(begin, end, default_expr, max_parsed_pos, expected))
-            throw Exception{"Could not parse default expression", DB::ErrorCodes::CANNOT_PARSE_TEXT};
+        ASTPtr default_expr = parseQuery(expr_parser, begin, end, "default expression");
 
         if (ColumnDefaultType::Default == default_type)
             result.columns.emplace_back(column_name, std::move(type));

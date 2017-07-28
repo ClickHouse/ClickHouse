@@ -8,8 +8,10 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnExpression.h>
+#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace DB
@@ -48,7 +50,7 @@ struct ArrayMapImpl
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
         return mapped->isConst()
-            ? std::make_shared<ColumnArray>(dynamic_cast<const IColumnConst &>(*mapped).convertToFullColumn(), array.getOffsetsColumn())
+            ? std::make_shared<ColumnArray>(mapped->convertToFullColumnIfConst(), array.getOffsetsColumn())
             : std::make_shared<ColumnArray>(mapped, array.getOffsetsColumn());
     }
 };
@@ -71,12 +73,12 @@ struct ArrayFilterImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
                 return array.clone();
             else
                 return std::make_shared<ColumnArray>(
@@ -125,12 +127,12 @@ struct ArrayCountImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
                 auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
@@ -146,7 +148,7 @@ struct ArrayCountImpl
                 return out_column;
             }
             else
-                return std::make_shared<ColumnConstUInt32>(array.size(), 0);
+                return DataTypeUInt32().createConstColumn(array.size(), UInt64(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
@@ -187,12 +189,12 @@ struct ArrayExistsImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
                 auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
@@ -208,7 +210,7 @@ struct ArrayExistsImpl
                 return out_column;
             }
             else
-                return std::make_shared<ColumnConstUInt8>(array.size(), 0);
+                return DataTypeUInt8().createConstColumn(array.size(), UInt64(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
@@ -253,13 +255,13 @@ struct ArrayAllImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
-                return std::make_shared<ColumnConstUInt8>(array.size(), 1);
+            if (column_filter_const->getValue<UInt8>())
+                return DataTypeUInt8().createConstColumn(array.size(), UInt64(1));
             else
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
@@ -310,20 +312,20 @@ struct ArraySumImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
     {
-        if (typeid_cast<const DataTypeUInt8 *>(&*expression_return) ||
-            typeid_cast<const DataTypeUInt16 *>(&*expression_return) ||
-            typeid_cast<const DataTypeUInt32 *>(&*expression_return) ||
-            typeid_cast<const DataTypeUInt64 *>(&*expression_return))
+        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
+            checkDataType<DataTypeUInt16>(&*expression_return) ||
+            checkDataType<DataTypeUInt32>(&*expression_return) ||
+            checkDataType<DataTypeUInt64>(&*expression_return))
             return std::make_shared<DataTypeUInt64>();
 
-        if (typeid_cast<const DataTypeInt8 *>(&*expression_return) ||
-            typeid_cast<const DataTypeInt16 *>(&*expression_return) ||
-            typeid_cast<const DataTypeInt32 *>(&*expression_return) ||
-            typeid_cast<const DataTypeInt64 *>(&*expression_return))
+        if (checkDataType<DataTypeInt8>(&*expression_return) ||
+            checkDataType<DataTypeInt16>(&*expression_return) ||
+            checkDataType<DataTypeInt32>(&*expression_return) ||
+            checkDataType<DataTypeInt64>(&*expression_return))
             return std::make_shared<DataTypeInt64>();
 
-        if (typeid_cast<const DataTypeFloat32 *>(&*expression_return) ||
-            typeid_cast<const DataTypeFloat64 *>(&*expression_return))
+        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
+            checkDataType<DataTypeFloat64>(&*expression_return))
             return std::make_shared<DataTypeFloat64>();
 
         throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -332,16 +334,16 @@ struct ArraySumImpl
     template <class Element, class Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets_t & offsets, ColumnPtr & res_ptr)
     {
-        const ColumnVector<Element> * column = typeid_cast<const ColumnVector<Element> *>(&*mapped);
+        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
 
         if (!column)
         {
-            const ColumnConst<Element> * column_const = typeid_cast<const ColumnConst<Element> *>(&*mapped);
+            const ColumnConst * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
 
             if (!column_const)
                 return false;
 
-            const Element x = column_const->getData();
+            const Element x = column_const->template getValue<Element>();
 
             auto res_column = std::make_shared<ColumnVector<Result>>(offsets.size());
             res_ptr = res_column;
@@ -414,12 +416,12 @@ struct ArrayFirstImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
             {
                 const auto & offsets = array.getOffsets();
                 const auto & data = array.getData();
@@ -491,12 +493,12 @@ struct ArrayFirstIndexImpl
 
         if (!column_filter)
         {
-            const ColumnConstUInt8 * column_filter_const = typeid_cast<const ColumnConstUInt8 *>(&*mapped);
+            auto column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
             if (!column_filter_const)
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
-            if (column_filter_const->getData())
+            if (column_filter_const->getValue<UInt8>())
             {
                 const auto & offsets = array.getOffsets();
                 auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
@@ -512,7 +514,7 @@ struct ArrayFirstIndexImpl
                 return out_column;
             }
             else
-                return std::make_shared<ColumnConstUInt32>(array.size(), 0);
+                return DataTypeUInt32().createConstColumn(array.size(), UInt64(0));
         }
 
         const auto & filter = column_filter->getData();
@@ -626,14 +628,14 @@ public:
         DataTypes nested_types(arguments.size() - 1);
         for (size_t i = 0; i < nested_types.size(); ++i)
         {
-            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[i + 1]);
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[i + 1]);
             if (!array_type)
                 throw Exception("Argument " + toString(i + 2) + " of function " + getName() + " must be array. Found "
                                 + arguments[i + 1]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             nested_types[i] = array_type->getNestedType();
         }
 
-        const DataTypeExpression * expression_type = typeid_cast<const DataTypeExpression *>(&*arguments[0]);
+        const DataTypeExpression * expression_type = checkAndGetDataType<DataTypeExpression>(&*arguments[0]);
         if (!expression_type || expression_type->getArgumentTypes().size() != nested_types.size())
             throw Exception("First argument for this overload of " + getName() + " must be an expression with "
                             + toString(nested_types.size()) + " arguments. Found "
@@ -653,7 +655,7 @@ public:
 
         if (arguments.size() == 1)
         {
-            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
 
             if (!array_type)
                 throw Exception("The only argument for function " + getName() + " must be array. Found "
@@ -661,7 +663,7 @@ public:
 
             DataTypePtr nested_type = array_type->getNestedType();
 
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*nested_type))
+            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*nested_type))
                 throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
                     + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -673,7 +675,7 @@ public:
                 throw Exception("Function " + getName() + " needs one array argument.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            const DataTypeExpression * expression = typeid_cast<const DataTypeExpression *>(arguments[0].get());
+            const DataTypeExpression * expression = checkAndGetDataType<DataTypeExpression>(arguments[0].get());
 
             if (!expression)
                 throw Exception("Type of first argument for function " + getName() + " must be an expression.",
@@ -682,11 +684,11 @@ public:
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
             DataTypePtr return_type = expression->getReturnType();
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*return_type))
+            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*return_type))
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                     + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const DataTypeArray * first_array_type = typeid_cast<const DataTypeArray *>(arguments[1].get());
+            const DataTypeArray * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
 
             return Impl::getReturnType(return_type, first_array_type->getNestedType());
         }
@@ -705,7 +707,7 @@ public:
 
         if (arguments.size() == 1)
         {
-            const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(&*arguments[0].type);
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[0].type);
 
             if (!array_type)
                 throw Exception("The only argument for function " + getName() + " must be array. Found "
@@ -713,7 +715,7 @@ public:
 
             DataTypePtr nested_type = array_type->getNestedType();
 
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*nested_type))
+            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*nested_type))
                 throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
                                 + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -755,37 +757,42 @@ public:
             }
 
             DataTypePtr return_type = column_expression->getReturnType();
-            if (Impl::needBoolean() && !typeid_cast<const DataTypeUInt8 *>(&*return_type))
+            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*return_type))
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                                 + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const DataTypeArray * first_array_type = typeid_cast<const DataTypeArray *>(&*arguments[1].type);
+            const DataTypeArray * first_array_type = checkAndGetDataType<DataTypeArray>(&*arguments[1].type);
 
             out_return_type = Impl::getReturnType(return_type, first_array_type->getNestedType());
         }
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        executeImpl(block, arguments, {}, result);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result) override
     {
         if (arguments.size() == 1)
         {
-            ColumnPtr column_array_ptr = block.safeGetByPosition(arguments[0]).column;
-            const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*column_array_ptr);
+            ColumnPtr column_array_ptr = block.getByPosition(arguments[0]).column;
+            const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
             if (!column_array)
             {
-                const ColumnConstArray * column_const_array = typeid_cast<const ColumnConstArray *>(&*column_array_ptr);
+                const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
                 if (!column_const_array)
                     throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                 column_array_ptr = column_const_array->convertToFullColumn();
-                column_array = static_cast<const ColumnArray *>(&*column_array_ptr);
+                column_array = static_cast<const ColumnArray *>(column_array_ptr.get());
             }
 
-            block.safeGetByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());
+            block.getByPosition(result).column = Impl::execute(*column_array, column_array->getDataPtr());
         }
         else
         {
-            const auto & column_with_type_and_name = block.safeGetByPosition(arguments[0]);
+            const auto & column_with_type_and_name = block.getByPosition(arguments[0]);
 
             if (!column_with_type_and_name.column)
                 throw Exception("First argument for function " + getName() + " must be an expression.",
@@ -810,16 +817,16 @@ public:
                 const std::string & argument_name = expression_arguments[i].name;
                 DataTypePtr argument_type = expression_arguments[i].type;
 
-                ColumnPtr column_array_ptr = block.safeGetByPosition(arguments[i + 1]).column;
-                const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&*column_array_ptr);
+                ColumnPtr column_array_ptr = block.getByPosition(arguments[i + 1]).column;
+                const ColumnArray * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
                 if (!column_array)
                 {
-                    const ColumnConstArray * column_const_array = typeid_cast<const ColumnConstArray *>(&*column_array_ptr);
+                    const ColumnConst * column_const_array = checkAndGetColumnConst<ColumnArray>(column_array_ptr.get());
                     if (!column_const_array)
                         throw Exception("Expected array column, found " + column_array_ptr->getName(), ErrorCodes::ILLEGAL_COLUMN);
                     column_array_ptr = column_const_array->convertToFullColumn();
-                    column_array = typeid_cast<const ColumnArray *>(&*column_array_ptr);
+                    column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
 
                 if (!offsets_column)
@@ -860,7 +867,7 @@ public:
                 if (argument_names.count(name))
                     continue;
 
-                ColumnWithTypeAndName replicated_column = block.safeGetByPosition(prerequisites[prerequisite_index]);
+                ColumnWithTypeAndName replicated_column = block.getByPosition(prerequisites[prerequisite_index]);
 
                 replicated_column.name = name;
                 replicated_column.column = typeid_cast<ColumnArray &>(*replicated_column.column).getDataPtr();
@@ -872,7 +879,7 @@ public:
 
             expression.execute(temp_block);
 
-            block.safeGetByPosition(result).column = Impl::execute(*column_first_array, temp_block.getByName(column_expression->getReturnName()).column);
+            block.getByPosition(result).column = Impl::execute(*column_first_array, temp_block.getByName(column_expression->getReturnName()).column);
         }
     }
 };

@@ -1,9 +1,6 @@
 add_executable (expression expression.cpp)
 target_link_libraries (expression dbms)
 
-add_executable (expression_analyzer expression_analyzer.cpp)
-target_link_libraries (expression_analyzer dbms)
-
 add_executable (create_query create_query.cpp)
 target_link_libraries (create_query dbms)
 
@@ -30,6 +27,8 @@ target_link_libraries (hash_map_string_2 dbms)
 
 add_executable (hash_map_string_3 hash_map_string_3.cpp)
 target_link_libraries (hash_map_string_3 dbms)
+target_include_directories (hash_map_string_3 BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
+target_include_directories (hash_map_string_3 BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 
 add_executable (hash_map_string_small hash_map_string_small.cpp)
 target_link_libraries (hash_map_string_small dbms)

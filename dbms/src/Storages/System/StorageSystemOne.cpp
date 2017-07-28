@@ -18,7 +18,7 @@ StorageSystemOne::StorageSystemOne(const std::string & name_)
 
 BlockInputStreams StorageSystemOne::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -31,7 +31,7 @@ BlockInputStreams StorageSystemOne::read(
     ColumnWithTypeAndName col;
     col.name = "dummy";
     col.type = std::make_shared<DataTypeUInt8>();
-    col.column = ColumnConstUInt8(1, 0).convertToFullColumn();
+    col.column = DataTypeUInt8().createConstColumn(1, UInt64(0))->convertToFullColumnIfConst();
     block.insert(std::move(col));
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));

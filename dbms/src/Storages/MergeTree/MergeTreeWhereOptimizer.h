@@ -5,15 +5,13 @@
 #include <set>
 #include <boost/noncopyable.hpp>
 #include <Core/Block.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace Poco { class Logger; }
 
 namespace DB
 {
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class ASTSelectQuery;
 class ASTFunction;
@@ -35,7 +33,10 @@ class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
     MergeTreeWhereOptimizer(
-        ASTPtr & query, const Context & context, const MergeTreeData & data, const Names & column_names,
+        SelectQueryInfo & query_info,
+        const Context & context,
+        const MergeTreeData & data,
+        const Names & column_names,
         Poco::Logger * log);
 
 private:
@@ -47,7 +48,7 @@ private:
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
-    std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const;
+    size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const;
 
     bool isConditionGood(const IAST * condition) const;
 
@@ -76,9 +77,10 @@ private:
     const string_set_t primary_key_columns;
     const string_set_t table_columns;
     const Block block_with_constants;
+    const PreparedSets & prepared_sets;
     Poco::Logger * log;
-    std::unordered_map<std::string, std::size_t> column_sizes{};
-    std::size_t total_column_size{};
+    std::unordered_map<std::string, size_t> column_sizes{};
+    size_t total_column_size{};
     NameSet array_joined_names;
 };
 

@@ -26,7 +26,7 @@ In a column-oriented DBMS, data is stored like this:
 
 These examples only show the order that data is arranged in.
 The values from different columns are stored separately, and data from the same column is stored together.
-Examples of a column-oriented DBMS: ``Vertica``, ``Paraccel (Actian Matrix) (Amazon Redshift)``, ``Sybase IQ``, ``Exasol``, ``Infobright``, ``InfiniDB``, ``MonetDB (VectorWise) (Actian Vector)``, ``LucidDB``, ``SAP HANA``, ``Google Dremel``, ``Google PowerDrill``, ``Druid``, ``kdb+`` и т. п.
+Examples of a column-oriented DBMS: ``Vertica``, ``Paraccel (Actian Matrix) (Amazon Redshift)``, ``Sybase IQ``, ``Exasol``, ``Infobright``, ``InfiniDB``, ``MonetDB (VectorWise) (Actian Vector)``, ``LucidDB``, ``SAP HANA``, ``Google Dremel``, ``Google PowerDrill``, ``Druid``, ``kdb+``, etc.
 
 Different orders for storing data are better suited to different scenarios.
 The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query - rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
@@ -113,6 +113,7 @@ Since executing a query requires processing a large number of rows, it helps to 
 It makes sense to both store data in columns and process it, when possible, by columns.
 
 There are two ways to do this:
+
 #. A vector engine. All operations are written for vectors, instead of for separate values. This means you don't need to call operations very often, and dispatching costs are negligible. Operation code contains an optimized internal cycle.
 #. Code generation. The code generated for the query has all the indirect calls in it.
 

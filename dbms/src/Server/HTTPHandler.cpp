@@ -30,6 +30,7 @@
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
+#include <Common/typeid_cast.h>
 
 #include "HTTPHandler.h"
 
@@ -136,14 +137,9 @@ static std::chrono::steady_clock::duration parseSessionTimeout(const HTMLForm & 
         unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
         std::string session_timeout_str = params.get("session_timeout");
 
-        try
-        {
-            session_timeout = parse<unsigned>(session_timeout_str);
-        }
-        catch (...)
-        {
-            throw Exception(getCurrentExceptionMessage(false) + ". Invalid session timeout", ErrorCodes::INVALID_SESSION_TIMEOUT);
-        }
+        ReadBufferFromString buf(session_timeout_str);
+        if (!tryReadIntText(session_timeout, buf) || !buf.eof())
+            throw Exception("Invalid session timeout: '" + session_timeout_str + "'", ErrorCodes::INVALID_SESSION_TIMEOUT);
 
         if (session_timeout > max_session_timeout)
             throw Exception("Session timeout '" + session_timeout_str + "' is larger than max_session_timeout: " + toString(max_session_timeout)
@@ -434,6 +430,8 @@ void HTTPHandler::processQuery(
         "session_id", "session_timeout", "session_check"
     };
 
+    const Settings & settings = context.getSettingsRef();
+
     for (auto it = params.begin(); it != params.end(); ++it)
     {
         if (it->first == "database")
@@ -450,18 +448,20 @@ void HTTPHandler::processQuery(
         else
         {
             /// All other query parameters are treated as settings.
+            String value;
+            /// Setting is skipped if value wasn't changed.
+            if (!settings.tryGet(it->first, value) || it->second != value)
+            {
+                if (readonly_before_query == 1)
+                    throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
 
-            if (readonly_before_query == 1)
-                throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
+                if (readonly_before_query && it->first == "readonly")
+                    throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
 
-            if (readonly_before_query && it->first == "readonly")
-                throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
-
-            context.setSetting(it->first, it->second);
+                context.setSetting(it->first, it->second);
+            }
         }
     }
-
-    const Settings & settings = context.getSettingsRef();
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.

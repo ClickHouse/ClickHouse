@@ -14,16 +14,7 @@ get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
 
-
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
-
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libdivide)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libbtrie/include)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
-include_directories (${ClickHouse_BINARY_DIR}/dbms/src)
+include_directories (${DBMS_INCLUDE_DIR})
 
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
@@ -68,8 +59,8 @@ add_headers_only(dbms src/Server)
 list (APPEND dbms_sources ${CONFIG_BUILD})
 list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp)
-list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h)
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
+list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
@@ -79,7 +70,8 @@ list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionForEach.cpp
     src/AggregateFunctions/AggregateFunctionIf.cpp
     src/AggregateFunctions/AggregateFunctionMerge.cpp
-    src/AggregateFunctions/AggregateFunctionCount.cpp)
+    src/AggregateFunctions/AggregateFunctionCount.cpp
+    src/AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
     src/AggregateFunctions/IAggregateFunction.h
@@ -90,7 +82,8 @@ list (APPEND dbms_headers
     src/AggregateFunctions/AggregateFunctionForEach.h
     src/AggregateFunctions/AggregateFunctionIf.h
     src/AggregateFunctions/AggregateFunctionMerge.h
-    src/AggregateFunctions/AggregateFunctionCount.h)
+    src/AggregateFunctions/AggregateFunctionCount.h
+    src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
 list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
@@ -211,9 +204,14 @@ target_link_libraries (dbms
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
-target_include_directories (dbms
-    INTERFACE include
-)
+target_include_directories (dbms BEFORE PRIVATE ${CPUID_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${BTRIE_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${CITYHASH_INCLUDE_DIR})
+target_include_directories (dbms PUBLIC ${MYSQLXX_INCLUDE_DIR})
+target_include_directories (dbms PRIVATE ${POCOEXT_INCLUDE_DIR})
+target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
+target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)

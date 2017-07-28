@@ -10,7 +10,7 @@ namespace DB
 class Context;
 
 
-/** Implements a repository for the system table Numbers.
+/** Implements a table engine for the system table "numbers".
   * The table contains the only column number UInt64.
   * From this table, you can read all natural numbers, starting from 0 (to 2^64 - 1, and then again).
   *
@@ -30,7 +30,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,

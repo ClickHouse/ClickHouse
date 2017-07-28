@@ -713,7 +713,7 @@ size_t MergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
     size_t res = 0;
     for (const ColumnPtr & column : index)
-        res += column->allocatedSize();
+        res += column->allocatedBytes();
     return res;
 }
 

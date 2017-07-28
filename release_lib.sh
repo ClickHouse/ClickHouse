@@ -69,14 +69,14 @@ function gen_revision_author {
 
     fi
 
-    AUTHOR=$(git config --get user.name)
+    AUTHOR=$(git config --get user.name || echo ${USER})
     export REVISION
     export AUTHOR
 }
 
 function get_revision_author {
     REVISION=$(get_revision)
-    AUTHOR=$(git config --get user.name)
+    AUTHOR=$(git config --get user.name || echo ${USER})
     export REVISION
     export AUTHOR
 }

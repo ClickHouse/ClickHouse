@@ -26,24 +26,32 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
 
 void ReplicatedMergeTreePartCheckThread::start()
 {
-    need_stop = false;
-    thread = std::thread([this] { run(); });
+    std::lock_guard<std::mutex> lock(start_stop_mutex);
+
+    if (need_stop)
+        need_stop = false;
+    else
+        thread = std::thread([this] { run(); });
 }
 
 
 void ReplicatedMergeTreePartCheckThread::stop()
 {
-    need_stop = true;
-    wakeup_event.set();
+    std::lock_guard<std::mutex> lock(start_stop_mutex);
 
+    need_stop = true;
     if (thread.joinable())
+    {
+        wakeup_event.set();
         thread.join();
+        need_stop = false;
+    }
 }
 
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> lock(parts_mutex);
 
     if (parts_set.count(name))
         return;
@@ -56,7 +64,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> lock(parts_mutex);
     return parts_set.size();
 }
 
@@ -184,12 +192,6 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         return;
     }
 
-    if (part_info.left <= RESERVED_BLOCK_NUMBERS)
-    {
-        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part is one of first in partition");
-        return;
-    }
-
     const auto partition_str = part_name.substr(0, 6);
     for (auto i = part_info.left; i <= part_info.right; ++i)
     {
@@ -310,7 +312,7 @@ void ReplicatedMergeTreePartCheckThread::run()
             time_t min_check_time = std::numeric_limits<time_t>::max();
 
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::lock_guard<std::mutex> lock(parts_mutex);
 
                 if (parts_queue.empty())
                 {
@@ -356,7 +358,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
             /// Remove the part from check queue.
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::lock_guard<std::mutex> lock(parts_mutex);
 
                 if (parts_queue.empty())
                 {

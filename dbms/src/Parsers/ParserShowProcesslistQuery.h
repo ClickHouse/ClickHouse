@@ -17,20 +17,14 @@ class ParserShowProcesslistQuery : public IParserBase
 protected:
     const char * getName() const { return "SHOW PROCESSLIST query"; }
 
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         Pos begin = pos;
 
-        ParserWhitespaceOrComments ws;
-
         auto query = std::make_shared<ASTShowProcesslistQuery>();
 
-        ws.ignore(pos, end);
-
-        if (!ParserKeyword("SHOW PROCESSLIST").ignore(pos, end, max_parsed_pos, expected))
+        if (!ParserKeyword("SHOW PROCESSLIST").ignore(pos, expected))
             return false;
-
-        ws.ignore(pos, end);
 
         query->range = StringRange(begin, pos);
         node = query;

@@ -4,7 +4,7 @@
 #include <lz4hc.h>
 #include <zstd.h>
 
-#include <Common/unaligned.h>
+#include <common/unaligned.h>
 #include <Core/Types.h>
 
 #include <IO/CompressedWriteBuffer.h>

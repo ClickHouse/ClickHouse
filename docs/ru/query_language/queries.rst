@@ -420,6 +420,8 @@ ALTER
 Для запросов ``ALTER ... ATTACH|DETACH|DROP`` можно настроить ожидание, с помощью настройки ``replication_alter_partitions_sync``.
 Возможные значения: ``0`` - не ждать, ``1`` - ждать выполнения только у себя (по умолчанию), ``2`` - ждать всех.
 
+.. _query_language_queries_show_databases:
+
 SHOW DATABASES
 ~~~~~~~~~~~~~~
 

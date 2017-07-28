@@ -13,7 +13,7 @@ import xml.dom.minidom
 
 import docker
 
-from .client import Client
+from .client import Client, CommandRequest
 
 
 HELPERS_DIR = p.dirname(__file__)
@@ -39,6 +39,7 @@ class ClickHouseCluster:
         self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
+        self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
 
         self.base_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name', self.project_name]
         self.instances = {}
@@ -82,6 +83,10 @@ class ClickHouseCluster:
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
+
+        if destroy_dirs and p.exists(self.instances_dir):
+            print "Removing instances dir", self.instances_dir
+            shutil.rmtree(self.instances_dir)
 
         for instance in self.instances.values():
             instance.create_dir(destroy_dir=destroy_dirs)
@@ -158,8 +163,7 @@ class ClickHouseInstance:
         self.base_configs_dir = base_configs_dir
         self.server_bin_path = server_bin_path
 
-        suffix = '_instances' + ('' if not self.cluster.name else '_' + self.cluster.name)
-        self.path = p.abspath(p.join(base_path, suffix, name))
+        self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
 
         self.docker_client = None
@@ -167,11 +171,11 @@ class ClickHouseInstance:
         self.client = None
         self.default_timeout = 20.0 # 20 sec
 
-
+    # Conntects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, *args, **kwargs):
         return self.client.query(*args, **kwargs)
 
-
+    # As query() but doesn't wait response and returns response handler
     def get_query_request(self, *args, **kwargs):
         return self.client.get_query_request(*args, **kwargs)
 
@@ -249,6 +253,7 @@ class ClickHouseInstance:
         config_d_dir = p.join(configs_dir, 'config.d')
         users_d_dir = p.join(configs_dir, 'users.d')
         os.mkdir(config_d_dir)
+        os.mkdir(users_d_dir)
 
         shutil.copy(p.join(HELPERS_DIR, 'common_instance_config.xml'), config_d_dir)
 

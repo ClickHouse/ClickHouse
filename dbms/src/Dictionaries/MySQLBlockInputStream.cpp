@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 MySQLBlockInputStream::MySQLBlockInputStream(
     const mysqlxx::PoolWithFailover::Entry & entry, const std::string & query_str, const Block & sample_block,
-    const std::size_t max_block_size)
+    const size_t max_block_size)
     : entry{entry}, query{this->entry->query(query_str)}, result{query.use()},
         max_block_size{max_block_size}
 {
@@ -78,7 +78,7 @@ Block MySQLBlockInputStream::readImpl()
     for (const auto i : ext::range(0, columns.size()))
         columns[i] = block.getByPosition(i).column.get();
 
-    std::size_t num_rows = 0;
+    size_t num_rows = 0;
     while (row)
     {
         for (const auto idx : ext::range(0, row.size()))
