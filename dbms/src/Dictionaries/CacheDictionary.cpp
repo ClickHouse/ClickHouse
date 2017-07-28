@@ -52,7 +52,7 @@ namespace ErrorCodes
 }
 
 
-inline UInt64 CacheDictionary::getCellIdx(const Key id) const
+inline size_t CacheDictionary::getCellIdx(const Key id) const
 {
     const auto hash = intHash64(id);
     const auto idx = hash & size_overlap_mask;

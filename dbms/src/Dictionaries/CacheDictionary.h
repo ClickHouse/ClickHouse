@@ -214,7 +214,7 @@ private:
 
     bool isEmptyCell(const UInt64 idx) const;
 
-    UInt64 getCellIdx(const Key id) const;
+    size_t getCellIdx(const Key id) const;
 
     void setDefaultAttributeValue(Attribute & attribute, const Key idx) const;
 
@@ -253,7 +253,7 @@ private:
     /// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
     static constexpr size_t max_collision_length = 10;
 
-    const UInt64 zero_cell_idx{getCellIdx(0)};
+    const size_t zero_cell_idx{getCellIdx(0)};
     std::map<std::string, size_t> attribute_index_by_name;
     mutable std::vector<Attribute> attributes;
     mutable std::vector<CellMetadata> cells;
