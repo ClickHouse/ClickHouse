@@ -10,6 +10,8 @@
             static constexpr bool is_specialized = true;
             static constexpr bool is_signed = false;
             static constexpr bool is_integer = true;
+            static constexpr int radix = 2;
+            static constexpr int digits = 8 * sizeof(char) * 2;
         };
     }
 #endif
@@ -122,7 +124,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
     const ASTSampleRatio & node_sample = typeid_cast<const ASTSampleRatio &>(*node);
 
     auto absolute_sample_size = node_sample.ratio.numerator / node_sample.ratio.denominator;
-    return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / approx_total_rows);
+    return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / RelativeSize(approx_total_rows));
 }
 
 
@@ -366,7 +368,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
                 relative_sample_size = 1;
 
             relative_sample_size /= settings.parallel_replicas_count.value;
-            relative_sample_offset += relative_sample_size * settings.parallel_replica_offset.value;
+            relative_sample_offset += relative_sample_size * RelativeSize(settings.parallel_replica_offset.value);
         }
 
         if (relative_sample_offset >= RelativeSize(1))
