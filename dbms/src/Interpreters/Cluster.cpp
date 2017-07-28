@@ -115,6 +115,11 @@ String Cluster::Address::toString(const String & host_name, UInt16 port)
     return escapeForFileName(host_name) + ':' + DB::toString(port);
 }
 
+String Cluster::Address::readableString() const
+{
+    return host_name + ':' + DB::toString(port);
+}
+
 void Cluster::Address::fromString(const String & host_port_string, String & host_name, UInt16 & port)
 {
     auto pos = host_port_string.find_last_of(':');

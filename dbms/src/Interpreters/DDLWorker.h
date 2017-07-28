@@ -31,7 +31,7 @@ public:
     String enqueueQuery(DDLLogEntry & entry);
 
     /// Host ID (name:port) for logging purposes
-    /// Note that in each entry hosts are identified by name:port from cluster config
+    /// Note that in each task hosts are identified individually by name:port from initiator server cluster config
     std::string getCommonHostID() const
     {
         return host_fqdn_id;
@@ -40,21 +40,29 @@ public:
 private:
     void processTasks();
 
+    bool initAndCheckTask(DDLTask & task, const String & entry_name);
+
+
     void processTask(DDLTask & task);
 
     void processTaskAlter(
         DDLTask & task,
-        const ASTAlterQuery * query_alter,
+        const ASTAlterQuery * ast_alter,
         const String & rewritten_query,
         const String & node_path);
 
+    void parseQueryAndResolveHost(DDLTask & task);
+
     bool tryExecuteQuery(const String & query, const DDLTask & task, ExecutionStatus & status);
+
 
     /// Checks and cleanups queue's nodes
     void cleanupQueue(const Strings * node_names_to_check = nullptr);
 
+
     void createStatusDirs(const std::string & node_name);
     ASTPtr getRewrittenQuery(const DDLLogEntry & node);
+
 
     void run();
 
@@ -68,15 +76,14 @@ private:
     std::string queue_dir;      /// dir with queue of queries
     std::string master_dir;     /// dir with queries was initiated by the server
 
-    /// Used to omit already processed nodes. Maybe usage of set is more obvious.
-    std::string last_processed_node_name;
+    /// Last task that was skipped or sucesfully executed
+    std::string last_processed_task_name;
 
     std::shared_ptr<zkutil::ZooKeeper> zookeeper;
 
     /// Save state of executed task to avoid duplicate execution on ZK error
-    std::string current_node = {};
-    bool current_node_was_executed = false;
-    ExecutionStatus current_node_execution_status;
+    using DDLTaskPtr = std::unique_ptr<DDLTask>;
+    DDLTaskPtr current_task;
 
     std::shared_ptr<Poco::Event> event_queue_updated;
     std::atomic<bool> stop_flag{false};

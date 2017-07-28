@@ -61,8 +61,11 @@ public:
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
         Address(const String & host_port_, const String & user_, const String & password_);
 
-        /// Returns escaped 'host_name:port'
+        /// Returns 'escaped_host_name:port'
         String toString() const;
+
+        /// Returns 'host_name:port'
+        String readableString() const;
 
         static String toString(const String & host_name, UInt16 port);
 
