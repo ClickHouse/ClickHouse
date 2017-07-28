@@ -160,7 +160,7 @@ public:
 
 private:
     StorageStripeLog & storage;
-    Poco::ScopedWriteRWLock lock;
+    std::unique_lock<std::shared_mutex> lock;
 
     WriteBufferFromFile data_out_compressed;
     CompressedWriteBuffer data_out;
@@ -202,7 +202,7 @@ StorageStripeLog::StorageStripeLog(
 
 void StorageStripeLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     /// Rename directory with data.
     Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
@@ -221,7 +221,7 @@ BlockInputStreams StorageStripeLog::read(
     const size_t max_block_size,
     unsigned num_streams)
 {
-    Poco::ScopedReadRWLock lock(rwlock);
+    std::shared_lock<std::shared_mutex> lock(rwlock);
 
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -267,7 +267,7 @@ BlockOutputStreamPtr StorageStripeLog::write(
 
 bool StorageStripeLog::checkData() const
 {
-    Poco::ScopedReadRWLock lock(const_cast<Poco::RWLock &>(rwlock));
+    std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
 }
 
