@@ -1,4 +1,4 @@
-#include <Interpreters/ClusterProxy/SelectQueryConstructor.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
@@ -16,7 +16,7 @@ constexpr PoolMode pool_mode = PoolMode::GET_MANY;
 namespace ClusterProxy
 {
 
-SelectQueryConstructor::SelectQueryConstructor(
+SelectStreamFactory::SelectStreamFactory(
         QueryProcessingStage::Enum processed_stage_,
         QualifiedTableName main_table_,
         const Tables & external_tables_)
@@ -26,7 +26,7 @@ SelectQueryConstructor::SelectQueryConstructor(
 {
 }
 
-BlockInputStreamPtr SelectQueryConstructor::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
+BlockInputStreamPtr SelectStreamFactory::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
 {
     InterpreterSelectQuery interpreter{query_ast, context, processed_stage};
     BlockInputStreamPtr stream = interpreter.execute().in;
@@ -38,7 +38,7 @@ BlockInputStreamPtr SelectQueryConstructor::createLocal(const ASTPtr & query_ast
     return std::make_shared<MaterializingBlockInputStream>(stream);
 }
 
-BlockInputStreamPtr SelectQueryConstructor::createRemote(
+BlockInputStreamPtr SelectStreamFactory::createRemote(
         const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
         const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
@@ -48,7 +48,7 @@ BlockInputStreamPtr SelectQueryConstructor::createRemote(
     return stream;
 }
 
-BlockInputStreamPtr SelectQueryConstructor::createRemote(
+BlockInputStreamPtr SelectStreamFactory::createRemote(
         ConnectionPoolWithFailoverPtrs && pools, const std::string & query,
         const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
@@ -58,7 +58,7 @@ BlockInputStreamPtr SelectQueryConstructor::createRemote(
     return stream;
 }
 
-PoolMode SelectQueryConstructor::getPoolMode() const
+PoolMode SelectStreamFactory::getPoolMode() const
 {
     return pool_mode;
 }

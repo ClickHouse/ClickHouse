@@ -1,4 +1,4 @@
-#include <Interpreters/ClusterProxy/DescribeQueryConstructor.h>
+#include <Interpreters/ClusterProxy/DescribeStreamFactory.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/BlockExtraInfoInputStream.h>
@@ -28,7 +28,7 @@ BlockExtraInfo toBlockExtraInfo(const Cluster::Address & address)
 namespace ClusterProxy
 {
 
-BlockInputStreamPtr DescribeQueryConstructor::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
+BlockInputStreamPtr DescribeStreamFactory::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
 {
     InterpreterDescribeQuery interpreter{query_ast, context};
     BlockInputStreamPtr stream = interpreter.execute().in;
@@ -42,7 +42,7 @@ BlockInputStreamPtr DescribeQueryConstructor::createLocal(const ASTPtr & query_a
     return std::make_shared<BlockExtraInfoInputStream>(materialized_stream, toBlockExtraInfo(address));
 }
 
-BlockInputStreamPtr DescribeQueryConstructor::createRemote(
+BlockInputStreamPtr DescribeStreamFactory::createRemote(
         const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
         const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
@@ -52,7 +52,7 @@ BlockInputStreamPtr DescribeQueryConstructor::createRemote(
     return stream;
 }
 
-BlockInputStreamPtr DescribeQueryConstructor::createRemote(
+BlockInputStreamPtr DescribeStreamFactory::createRemote(
         ConnectionPoolWithFailoverPtrs && pools, const std::string & query,
         const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
@@ -62,7 +62,7 @@ BlockInputStreamPtr DescribeQueryConstructor::createRemote(
     return stream;
 }
 
-PoolMode DescribeQueryConstructor::getPoolMode() const
+PoolMode DescribeStreamFactory::getPoolMode() const
 {
     return pool_mode;
 }
