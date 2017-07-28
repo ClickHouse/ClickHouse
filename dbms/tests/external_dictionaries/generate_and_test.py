@@ -302,8 +302,16 @@ def generate_dictionaries(args):
 
     source_mysql = '''
     <mysql>
-        <host>localhost</host>
-        <port>3306</port>
+        <replica>
+            <priority>1</priority>
+            <host>127.0.0.1</host>
+            <port>3333</port>   <!-- Wrong port, for testing basic failover to work. -->
+        </replica>
+        <replica>
+            <priority>2</priority>
+            <host>localhost</host>
+            <port>3306</port>
+        </replica>
         <user>root</user>
         <password></password>
         <db>test</db>
