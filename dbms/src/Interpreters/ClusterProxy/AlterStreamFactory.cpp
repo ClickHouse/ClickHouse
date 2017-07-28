@@ -1,4 +1,4 @@
-#include <Interpreters/ClusterProxy/AlterQueryConstructor.h>
+#include <Interpreters/ClusterProxy/AlterStreamFactory.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/LazyBlockInputStream.h>
@@ -16,7 +16,7 @@ constexpr PoolMode pool_mode = PoolMode::GET_ONE;
 namespace ClusterProxy
 {
 
-BlockInputStreamPtr AlterQueryConstructor::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
+BlockInputStreamPtr AlterStreamFactory::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
 {
     /// The ALTER query may be a resharding query that is a part of a distributed
     /// job. Since the latter heavily relies on synchronization among its participating
@@ -31,7 +31,7 @@ BlockInputStreamPtr AlterQueryConstructor::createLocal(const ASTPtr & query_ast,
     return stream;
 }
 
-BlockInputStreamPtr AlterQueryConstructor::createRemote(
+BlockInputStreamPtr AlterStreamFactory::createRemote(
         const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
         const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
@@ -40,7 +40,7 @@ BlockInputStreamPtr AlterQueryConstructor::createRemote(
     return stream;
 }
 
-BlockInputStreamPtr AlterQueryConstructor::createRemote(
+BlockInputStreamPtr AlterStreamFactory::createRemote(
         ConnectionPoolWithFailoverPtrs && pools, const std::string & query,
         const Settings & settings, ThrottlerPtr throttler, const Context & context)
 {
@@ -49,7 +49,7 @@ BlockInputStreamPtr AlterQueryConstructor::createRemote(
     return stream;
 }
 
-PoolMode AlterQueryConstructor::getPoolMode() const
+PoolMode AlterStreamFactory::getPoolMode() const
 {
     return pool_mode;
 }

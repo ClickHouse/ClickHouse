@@ -28,10 +28,10 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ClusterProxy/Query.h>
-#include <Interpreters/ClusterProxy/SelectQueryConstructor.h>
-#include <Interpreters/ClusterProxy/DescribeQueryConstructor.h>
-#include <Interpreters/ClusterProxy/AlterQueryConstructor.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/DescribeStreamFactory.h>
+#include <Interpreters/ClusterProxy/AlterStreamFactory.h>
 
 #include <Core/Field.h>
 
@@ -222,11 +222,11 @@ BlockInputStreams StorageDistributed::read(
     //bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
     bool enable_shard_multiplexing = false;
 
-    ClusterProxy::SelectQueryConstructor select_query_constructor(
+    ClusterProxy::SelectStreamFactory select_stream_factory(
         processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
 
-    return ClusterProxy::Query{select_query_constructor, cluster, modified_query_ast,
-        context, settings, enable_shard_multiplexing}.execute();
+    return ClusterProxy::executeQuery(
+            select_stream_factory, cluster, modified_query_ast, context, settings, enable_shard_multiplexing);
 }
 
 
@@ -356,10 +356,10 @@ void StorageDistributed::reshardPartitions(
         */
         bool enable_shard_multiplexing = false;
 
-        ClusterProxy::AlterQueryConstructor alter_query_constructor;
+        ClusterProxy::AlterStreamFactory alter_stream_factory;
 
-        BlockInputStreams streams = ClusterProxy::Query{alter_query_constructor, cluster, alter_query_ptr,
-            context, context.getSettingsRef(), enable_shard_multiplexing}.execute();
+        BlockInputStreams streams = ClusterProxy::executeQuery(
+                alter_stream_factory, cluster, alter_query_ptr, context, context.getSettingsRef(), enable_shard_multiplexing);
 
         /// This callback is called if an exception has occurred while attempting to read
         /// a block from a shard. This is to avoid a potential deadlock if other shards are
@@ -434,10 +434,10 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
       */
     bool enable_shard_multiplexing = false;
 
-    ClusterProxy::DescribeQueryConstructor describe_query_constructor;
+    ClusterProxy::DescribeStreamFactory describe_stream_factory;
 
-    return ClusterProxy::Query{describe_query_constructor, cluster, describe_query_ptr,
-        context, settings, enable_shard_multiplexing}.execute();
+    return ClusterProxy::executeQuery(
+            describe_stream_factory, cluster, describe_query_ptr, context, settings, enable_shard_multiplexing);
 }
 
 

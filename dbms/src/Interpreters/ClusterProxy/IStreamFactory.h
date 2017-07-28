@@ -18,10 +18,10 @@ namespace ClusterProxy
 
 /// Base class for the implementation of the details of distributed query
 /// execution that are specific to the query type.
-class IQueryConstructor
+class IStreamFactory
 {
 public:
-    virtual ~IQueryConstructor() {}
+    virtual ~IStreamFactory() {}
 
     /// Create an input stream for local query execution.
     virtual BlockInputStreamPtr createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address) = 0;

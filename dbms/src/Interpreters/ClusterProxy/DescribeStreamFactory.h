@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/ClusterProxy/IQueryConstructor.h>
+#include <Interpreters/ClusterProxy/IStreamFactory.h>
 
 namespace DB
 {
@@ -8,10 +8,10 @@ namespace DB
 namespace ClusterProxy
 {
 
-class AlterQueryConstructor final : public IQueryConstructor
+class DescribeStreamFactory final : public IStreamFactory
 {
 public:
-    AlterQueryConstructor() = default;
+    DescribeStreamFactory() = default;
 
     BlockInputStreamPtr createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address) override;
     BlockInputStreamPtr createRemote(
