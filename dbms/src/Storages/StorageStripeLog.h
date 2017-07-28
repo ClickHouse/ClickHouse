@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <shared_mutex>
 
 #include <ext/shared_ptr_helper.h>
 
@@ -61,7 +62,7 @@ private:
     size_t max_compress_block_size;
 
     FileChecker file_checker;
-    Poco::RWLock rwlock;
+    mutable std::shared_mutex rwlock;
 
     Logger * log;
 

@@ -5,7 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Storages/ITableDeclaration.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Poco/RWLock.h>
+#include <shared_mutex>
 #include <memory>
 #include <experimental/optional>
 
@@ -54,8 +54,8 @@ private:
 
     StoragePtr storage;
     /// Order is important.
-    std::experimental::optional<Poco::ScopedReadRWLock> data_lock;
-    std::experimental::optional<Poco::ScopedReadRWLock> structure_lock;
+    std::shared_lock<std::shared_mutex> data_lock;
+    std::shared_lock<std::shared_mutex> structure_lock;
 
 public:
     TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data);
@@ -64,9 +64,9 @@ public:
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
-using TableStructureWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
-using TableDataWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
-using TableFullWriteLockPtr = std::pair<TableDataWriteLockPtr, TableStructureWriteLockPtr>;
+using TableStructureWriteLock = std::unique_lock<std::shared_mutex>;
+using TableDataWriteLock = std::unique_lock<std::shared_mutex>;
+using TableFullWriteLock = std::pair<TableDataWriteLock, TableStructureWriteLock>;
 
 
 /** Storage. Responsible for
@@ -117,7 +117,7 @@ public:
 
     /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP.
       */
-    TableFullWriteLockPtr lockForAlter()
+    TableFullWriteLock lockForAlter()
     {
         /// The calculation order is important.
         auto data_lock = lockDataForAlter();
@@ -130,17 +130,17 @@ public:
       * It is taken during write temporary data in ALTER MODIFY.
       * Under this lock, you can take lockStructureForAlter() to change the structure of the table.
       */
-    TableDataWriteLockPtr lockDataForAlter()
+    TableDataWriteLock lockDataForAlter()
     {
-        auto res = std::make_unique<Poco::ScopedWriteRWLock>(data_lock);
+        std::unique_lock<std::shared_mutex> res(data_lock);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
     }
 
-    TableStructureWriteLockPtr lockStructureForAlter()
+    TableStructureWriteLock lockStructureForAlter()
     {
-        auto res = std::make_unique<Poco::ScopedWriteRWLock>(structure_lock);
+        std::unique_lock<std::shared_mutex> res(structure_lock);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -316,7 +316,7 @@ private:
       *  2) all changes to the data after releasing the lock will be based on the structure of the table at the time after the lock was released.
       * You need to take for read for the entire time of the operation that changes the data.
       */
-    mutable Poco::RWLock data_lock;
+    mutable std::shared_mutex data_lock;
 
     /** Lock for multiple columns and path to table. It is taken for write at RENAME, ALTER (for ALTER MODIFY for a while) and DROP.
       * It is taken for read for the whole time of SELECT, INSERT and merge parts (for MergeTree).
@@ -325,7 +325,7 @@ private:
       * That is, if this lock is taken for write, you should not worry about `parts_writing_lock`.
       * parts_writing_lock is only needed for cases when you do not want to take `table_structure_lock` for long operations (ALTER MODIFY).
       */
-    mutable Poco::RWLock structure_lock;
+    mutable std::shared_mutex structure_lock;
 };
 
 /// table name -> table
