@@ -21,6 +21,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 NativeBlockOutputStream::NativeBlockOutputStream(
     WriteBuffer & ostr_, UInt64 client_revision_,
     WriteBuffer * index_ostr_, size_t initial_size_of_file_)

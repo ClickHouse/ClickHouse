@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 ParserKeyword::ParserKeyword(const char * s_) : s(s_)
 {

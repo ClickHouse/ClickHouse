@@ -35,7 +35,7 @@
 #include <Storages/StorageTinyLog.h>
 #include <Poco/DirectoryIterator.h>
 
-#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION     ".bin"
+#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null.bin"
 
 
@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int DUPLICATE_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 

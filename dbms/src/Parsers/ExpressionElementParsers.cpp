@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 
