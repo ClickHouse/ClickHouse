@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
@@ -131,7 +132,18 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             {
                 auto & col = block.getByPosition(i);
                 if (task.column_name_set.count(col.name))
-                    col.column = col.column->cloneEmpty();
+                {
+                    if (ColumnArray * column_array = typeid_cast<ColumnArray *>(col.column.get()))
+                    {
+                        /// ColumnArray columns in block have common offset column, which is used while reading.
+                        /// Have to call resize(0) instead of cloneEmpty to save structure.
+                        column_array->getOffsets().resize(0);
+                        /// It's ok until multidimensional arrays are not stored in MergeTree.
+                        column_array->getDataPtr() = column_array->getDataPtr()->cloneEmpty();
+                    }
+                    else
+                        col.column = col.column->cloneEmpty();
+                }
             }
         }
     };
