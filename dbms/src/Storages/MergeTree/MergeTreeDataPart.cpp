@@ -374,6 +374,9 @@ size_t MergeTreeDataPart::getExactSizeRows() const
 
 String MergeTreeDataPart::getFullPath() const
 {
+    if (relative_path.empty())
+        throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
+
     return storage.full_path + relative_path + "/";
 }
 
@@ -431,7 +434,10 @@ size_t MergeTreeDataPart::calcTotalSize(const String & from)
 
 void MergeTreeDataPart::remove() const
 {
-    String from = storage.full_path + name;
+    if (relative_path.empty())
+        throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
+
+    String from = storage.full_path + relative_path;
     String to = storage.full_path + "tmp_delete_" + name;
 
     Poco::File from_dir{from};
