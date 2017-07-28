@@ -18,6 +18,11 @@ struct AggregateFunctionCountData
     UInt64 count = 0;
 };
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 /// Simply count number of calls.
 class AggregateFunctionCount final : public INullaryAggregateFunction<AggregateFunctionCountData, AggregateFunctionCount>

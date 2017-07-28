@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+    extern const int LOGICAL_ERROR;
 }
 
 
