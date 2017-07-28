@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include <string.h>
 #include <city.h>
 
 #ifdef USE_QUICKLZ
@@ -57,7 +58,11 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     size_t & size_compressed = size_compressed_without_checksum;
 
-    if (method < 0x80)
+    if (method == static_cast<UInt8> (CompressionMethodByte::NONE)) {
+      size_compressed = unalignedLoad<UInt32>(&own_compressed_buffer[1]);
+      size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);
+    }
+    else if (method < 0x80)
     {
     #ifdef USE_QUICKLZ
         size_compressed = qlz_size_compressed(&own_compressed_buffer[0]);
@@ -108,7 +113,10 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
 
     UInt8 method = compressed_buffer[0];    /// See CompressedWriteBuffer.h
 
-    if (method < 0x80)
+    if (method == static_cast<UInt8> (CompressionMethodByte::NONE)) {
+      memcpy(to, &compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], size_decompressed);
+    }
+    else if (method < 0x80)
     {
     #ifdef USE_QUICKLZ
         if (!qlz_state)

@@ -138,7 +138,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
     }
 
     NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
-    MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, CompressionMethod::LZ4);
+    MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, CompressionMethod::NONE);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

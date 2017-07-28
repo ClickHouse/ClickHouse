@@ -59,6 +59,7 @@ int main(int argc, char ** argv)
         ("qlz", "use QuickLZ (level 1) instead of LZ4")
     #endif
         ("zstd", "use ZSTD instead of LZ4")
+        ("none", "use no compression instead of LZ4")
         ("stat", "print block statistics of compressed data")
     ;
 
@@ -85,6 +86,7 @@ int main(int argc, char ** argv)
         bool use_lz4hc = options.count("hc");
         bool use_zstd = options.count("zstd");
         bool stat_mode = options.count("stat");
+        bool use_none = options.count("none");
         unsigned block_size = options["block-size"].as<unsigned>();
 
         DB::CompressionMethod method = DB::CompressionMethod::LZ4;
@@ -95,6 +97,8 @@ int main(int argc, char ** argv)
             method = DB::CompressionMethod::LZ4HC;
         else if (use_zstd)
             method = DB::CompressionMethod::ZSTD;
+        else if (use_none)
+            method = DB::CompressionMethod::NONE;
 
         DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
         DB::WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
