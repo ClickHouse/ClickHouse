@@ -56,6 +56,7 @@ namespace ProfileEvents
     extern const Event ReplicatedPartFetchesOfMerged;
     extern const Event ObsoleteReplicatedParts;
     extern const Event ReplicatedPartFetches;
+    extern const Event DataAfterMergeDiffersFromReplica;
 }
 
 namespace DB
@@ -1092,6 +1093,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 {
                     do_fetch = true;
                     part->remove();
+
+                    ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
                     LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "
                         "Data after merge is not byte-identical to data on another replicas. "
