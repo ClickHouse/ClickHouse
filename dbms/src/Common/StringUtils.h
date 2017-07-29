@@ -1,14 +1,9 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <string>
 #include <cstring>
+#include <cstddef>
 
-namespace DB { namespace ErrorCodes {
-
-extern const int LOGICAL_ERROR;
-
-}}
 
 namespace detail
 {
@@ -48,27 +43,19 @@ std::string getOrdinalSuffix(T n)
     static_assert(std::is_integral<T>::value && std::is_unsigned<T>::value,
         "Unsigned integer value required");
 
-    const auto val = n % 10;
+    const auto last_digit = n % 10;
 
-    bool is_th;
-    if ((val >= 1) && (val <= 3))
-        is_th = (n > 10) && (((n / 10) % 10) == 1);
-    else
-        is_th = true;
-
-    if (is_th)
+    if ((last_digit < 1 || last_digit > 3)
+        || ((n > 10) && (((n / 10) % 10) == 1)))
         return "th";
-    else
+
+    switch (last_digit)
     {
-        switch (val)
-        {
-            case 1: return "st";
-            case 2: return "nd";
-            case 3: return "rd";
-            default: throw DB::Exception{"getOrdinalSuffix: internal error",
-                DB::ErrorCodes::LOGICAL_ERROR};
-        };
-    }
+        case 1: return "st";
+        case 2: return "nd";
+        case 3: return "rd";
+        default: return "th";
+    };
 }
 
 /// More efficient than libc, because doesn't respect locale. But for some functions table implementation could be better.

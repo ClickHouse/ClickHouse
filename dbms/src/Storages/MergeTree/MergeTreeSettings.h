@@ -52,8 +52,12 @@ struct MergeTreeSettings
 
     /** Replication settings. */
 
-    /// How many last blocks of hashes should be kept in ZooKeeper.
+    /// How many last blocks of hashes should be kept in ZooKeeper (old blocks will be deleted).
     size_t replicated_deduplication_window = 100;
+    /// Similar to previous, but determines old blocks by their lifetime.
+    /// Hash of an inserted block will be deleted (and the block will not be deduplicated after) if it outside of one "window".
+    /// You can set very big replicated_deduplication_window to avoid duplicating INSERTs during that period of time.
+    size_t replicated_deduplication_window_seconds = 7 * 24 * 60 * 60; /// one week
 
     /// Keep about this number of last records in ZooKeeper log, even if they are obsolete.
     /// It doesn't affect work of tables: used only to diagnose ZooKeeper log before cleaning.
@@ -94,6 +98,9 @@ struct MergeTreeSettings
 
     /// Period to check replication delay and compare with other replicas.
     size_t check_delay_period = 60;
+
+    /// Period to clean old queue logs, blocks hashes and parts
+    size_t cleanup_delay_period = 30;
 
     /// Minimal delay from other replicas to yield leadership. Here and further 0 means unlimited.
     size_t min_relative_delay_to_yield_leadership = 120;
@@ -138,6 +145,7 @@ struct MergeTreeSettings
         SET(parts_to_throw_insert, getUInt64);
         SET(max_delay_to_insert, getUInt64);
         SET(replicated_deduplication_window, getUInt64);
+        SET(replicated_deduplication_window_seconds, getUInt64);
         SET(replicated_logs_to_keep, getUInt64);
         SET(prefer_fetch_merged_part_time_threshold, getUInt64);
         SET(prefer_fetch_merged_part_size_threshold, getUInt64);
@@ -152,6 +160,7 @@ struct MergeTreeSettings
         SET(replicated_can_become_leader, getBool);
         SET(zookeeper_session_expiration_check_period, getUInt64);
         SET(check_delay_period, getUInt64);
+        SET(cleanup_delay_period, getUInt64);
         SET(min_relative_delay_to_yield_leadership, getUInt64);
         SET(min_relative_delay_to_close, getUInt64);
         SET(min_absolute_delay_to_close, getUInt64);

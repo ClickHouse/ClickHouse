@@ -9,6 +9,9 @@
         {
             static constexpr bool is_specialized = true;
             static constexpr bool is_signed = false;
+            static constexpr bool is_integer = true;
+            static constexpr int radix = 2;
+            static constexpr int digits = 8 * sizeof(char) * 2;
         };
     }
 #endif
@@ -107,12 +110,10 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
 
 using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
-static std::ostream & operator<<(std::ostream & ostr, const RelativeSize & x)
+std::string toString(const RelativeSize & x)
 {
-    ostr << ASTSampleRatio::toString(x.numerator()) << "/" << ASTSampleRatio::toString(x.denominator());
-    return ostr;
+    return ASTSampleRatio::toString(x.numerator()) + "/" + ASTSampleRatio::toString(x.denominator());
 }
-
 
 /// Converts sample size to an approximate number of rows (ex. `SAMPLE 1000000`) to relative value (ex. `SAMPLE 0.1`).
 static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, size_t approx_total_rows)
@@ -123,7 +124,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
     const ASTSampleRatio & node_sample = typeid_cast<const ASTSampleRatio &>(*node);
 
     auto absolute_sample_size = node_sample.ratio.numerator / node_sample.ratio.denominator;
-    return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / approx_total_rows);
+    return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / RelativeSize(approx_total_rows));
 }
 
 
@@ -285,11 +286,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         if (relative_sample_size > 1)
         {
             relative_sample_size = convertAbsoluteSampleSizeToRelative(select_sample_size, approx_total_rows);
-            LOG_DEBUG(log, "Selected relative sample size: " << relative_sample_size);
+            LOG_DEBUG(log, "Selected relative sample size: " << toString(relative_sample_size));
         }
 
         /// SAMPLE 1 is the same as the absence of SAMPLE.
-        if (relative_sample_size == 1)
+        if (relative_sample_size == RelativeSize(1))
             relative_sample_size = 0;
 
         if (relative_sample_offset > 0 && 0 == relative_sample_size)
@@ -298,7 +299,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         if (relative_sample_offset > 1)
         {
             relative_sample_offset = convertAbsoluteSampleSizeToRelative(select_sample_offset, approx_total_rows);
-            LOG_DEBUG(log, "Selected relative sample offset: " << relative_sample_offset);
+            LOG_DEBUG(log, "Selected relative sample offset: " << toString(relative_sample_offset));
         }
     }
 
@@ -350,27 +351,27 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
 
         if (typeid_cast<const DataTypeUInt64 *>(type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + 1;
+            size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
         else if (typeid_cast<const DataTypeUInt32 *>(type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + 1;
+            size_of_universum = RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
         else if (typeid_cast<const DataTypeUInt16 *>(type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + 1;
+            size_of_universum = RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
         else if (typeid_cast<const DataTypeUInt8 *>(type.get()))
-            size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + 1;
+            size_of_universum = RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
         else
             throw Exception("Invalid sampling column type in storage parameters: " + type->getName() + ". Must be unsigned integer type.",
                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
         if (settings.parallel_replicas_count > 1)
         {
-            if (relative_sample_size == 0)
+            if (relative_sample_size == RelativeSize(0))
                 relative_sample_size = 1;
 
-            relative_sample_size /= settings.parallel_replicas_count;
-            relative_sample_offset += relative_sample_size * settings.parallel_replica_offset;
+            relative_sample_size /= settings.parallel_replicas_count.value;
+            relative_sample_offset += relative_sample_size * RelativeSize(settings.parallel_replica_offset.value);
         }
 
-        if (relative_sample_offset >= 1)
+        if (relative_sample_offset >= RelativeSize(1))
             no_data = true;
 
         /// Calculate the half-interval of `[lower, upper)` column values.

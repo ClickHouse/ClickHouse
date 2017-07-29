@@ -177,8 +177,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         per_part_sum_marks.push_back(sum_marks);
 
-        per_part_columns_lock.push_back(std::make_unique<Poco::ScopedReadRWLock>(
-            part.data_part->columns_lock));
+        per_part_columns_lock.emplace_back(part.data_part->columns_lock);
 
         /// inject column names required for DEFAULT evaluation in current part
         auto required_column_names = column_names;

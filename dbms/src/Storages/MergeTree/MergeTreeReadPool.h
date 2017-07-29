@@ -88,7 +88,7 @@ private:
         const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
         RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
 
-    std::vector<std::unique_ptr<Poco::ScopedReadRWLock>> per_part_columns_lock;
+    std::vector<std::shared_lock<std::shared_mutex>> per_part_columns_lock;
     MergeTreeData & data;
     Names column_names;
     bool do_not_steal_tasks;

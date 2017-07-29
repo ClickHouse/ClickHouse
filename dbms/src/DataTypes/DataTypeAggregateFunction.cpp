@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+    extern const int LOGICAL_ERROR;
 }
 
 

@@ -41,7 +41,7 @@ public:
     std::string toString() const override;
 
 private:
-    BlockInputStreamPtr createStreamForSelectiveLoad(const std::string query);
+    BlockInputStreamPtr createStreamForSelectiveLoad(const std::string & query);
 
     const DictionaryStructure dict_struct;
     const std::string host;
