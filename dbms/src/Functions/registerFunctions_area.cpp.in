@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void registerFunctionsArithmetic(FunctionFactory & factory)
+void registerFunctions@FUNCTION_AREA@(FunctionFactory & factory)
 {
 
 @REGISTER_FUNCTIONS@
