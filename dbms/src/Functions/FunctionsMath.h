@@ -209,6 +209,8 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathBinaryFloat64>(); }
     static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
 private:
     String getName() const override { return name; }
 
@@ -273,18 +275,6 @@ private:
 
                 memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
             }
-
-            return true;
-        }
-        else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
-        {
-            const LeftType left_src[Impl::rows_per_iteration] { left_arg->template getValue<LeftType>() };
-            const RightType right_src[Impl::rows_per_iteration] { right_arg_typed->template getValue<RightType>() };
-            Float64 dst[Impl::rows_per_iteration];
-
-            Impl::execute(left_src, right_src, dst);
-
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(left_arg->size(), dst[0]);
 
             return true;
         }
@@ -366,11 +356,36 @@ private:
         return false;
     }
 
-    template <typename LeftType, typename LeftColumnType>
-    bool executeLeftImpl(Block & block, const ColumnNumbers & arguments, const size_t result,
+    template <typename LeftType>
+    bool executeLeft(Block & block, const ColumnNumbers & arguments, const size_t result,
         const IColumn * left_arg)
     {
-        if (const auto left_arg_typed = typeid_cast<const LeftColumnType *>(left_arg))
+        if (const auto left_arg_typed = checkAndGetColumn<ColumnVector<LeftType>>(left_arg))
+        {
+            const auto right_arg = block.getByPosition(arguments[1]).column.get();
+
+            if (executeRight<LeftType, UInt8>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, UInt16>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, UInt32>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, UInt64>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Int8>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Int16>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Int32>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Int64>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Float32>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Float64>(block, result, left_arg_typed, right_arg))
+            {
+                return true;
+            }
+            else
+            {
+                throw Exception{
+                    "Illegal column " + block.getByPosition(arguments[1]).column->getName() +
+                    " of second argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN};
+            }
+        }
+        else if (const auto left_arg_typed = checkAndGetColumnConst<ColumnVector<LeftType>>(left_arg))
         {
             const auto right_arg = block.getByPosition(arguments[1]).column.get();
 
@@ -399,17 +414,6 @@ private:
         return false;
     }
 
-    template <typename LeftType>
-    bool executeLeft(Block & block, const ColumnNumbers & arguments, const size_t result,
-        const IColumn * left_arg)
-    {
-        if (executeLeftImpl<LeftType, ColumnVector<LeftType>>(block, arguments, result, left_arg) ||
-            executeLeftImpl<LeftType, ColumnConst>(block, arguments, result, left_arg))
-            return true;
-
-        return false;
-    }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         const auto left_arg = block.getByPosition(arguments[0]).column.get();
@@ -427,8 +431,7 @@ private:
         {
             throw Exception{
                 "Illegal column " + left_arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
         }
     }
 };
