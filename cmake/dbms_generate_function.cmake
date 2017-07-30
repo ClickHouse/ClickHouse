@@ -9,6 +9,6 @@ function(generate_function_register FUNCTION_AREA)
     set(REGISTER_FUNCTIONS "${REGISTER_FUNCTIONS} register${FUNCTION}(factory);\n")
   endforeach()
 
-  configure_file (Functions${FUNCTION_AREA}.cpp.in register${FUNCTION_AREA}.cpp)
+  configure_file (registerFunctions_area.cpp.in registerFunctions${FUNCTION_AREA}.cpp)
 
 endfunction()
