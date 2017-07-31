@@ -3,7 +3,8 @@
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Poco/RWLock.h>
+#include <Columns/IColumn.h>
+#include <shared_mutex>
 
 
 class SipHash;
@@ -144,7 +145,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /** It is blocked for writing when changing columns, checksums or any part files.
         * Locked to read when reading columns, checksums or any part files.
         */
-    mutable Poco::RWLock columns_lock;
+    mutable std::shared_mutex columns_lock;
 
     /** It is taken for the whole time ALTER a part: from the beginning of the recording of the temporary files to their renaming to permanent.
         * It is taken with unlocked `columns_lock`.

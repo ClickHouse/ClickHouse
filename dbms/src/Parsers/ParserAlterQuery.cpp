@@ -10,7 +10,7 @@
 namespace DB
 {
 
-bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
@@ -40,11 +40,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
     ParserKeyword s_with("WITH");
     ParserKeyword s_name("NAME");
 
-    ParserString s_dot(".");
-    ParserString s_comma(",");
-    ParserString s_doubledot("..");
-
-    ParserWhitespaceOrComments ws;
+    ParserToken s_dot(TokenType::Dot);
+    ParserToken s_comma(TokenType::Comma);
 
     ParserIdentifier table_parser;
     ParserCompoundIdentifier parser_name;
@@ -62,19 +59,16 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
 
     auto query = std::make_shared<ASTAlterQuery>();
 
-    ws.ignore(pos, end);
-    if (!s_alter_table.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_alter_table.ignore(pos, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!table_parser.parse(pos, end, database, max_parsed_pos, expected))
+    if (!table_parser.parse(pos, database, expected))
         return false;
 
     /// Parse [db].name
-    if (s_dot.ignore(pos, end))
+    if (s_dot.ignore(pos))
     {
-        if (!table_parser.parse(pos, end, table, max_parsed_pos, expected))
+        if (!table_parser.parse(pos, table, expected))
             return false;
 
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
@@ -86,11 +80,9 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
     }
 
-    ws.ignore(pos, end);
-
-    if (ParserKeyword{"ON"}.ignore(pos, end, max_parsed_pos, expected))
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, end, cluster_str, max_parsed_pos, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
     }
 
@@ -98,244 +90,164 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
     do
     {
         ASTAlterQuery::Parameters params;
-        ws.ignore(pos, end);
 
-        if (s_add_column.ignore(pos, end, max_parsed_pos, expected))
+        if (s_add_column.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_col_decl.parse(pos, end, params.col_decl, max_parsed_pos, expected))
+            if (!parser_col_decl.parse(pos, params.col_decl, expected))
                 return false;
 
-            ws.ignore(pos, end);
-            if (s_after.ignore(pos, end, max_parsed_pos, expected))
+            if (s_after.ignore(pos, expected))
             {
-                ws.ignore(pos, end);
-
-                if(!parser_name.parse(pos, end, params.column, max_parsed_pos, expected))
+                if(!parser_name.parse(pos, params.column, expected))
                     return false;
             }
 
             params.type = ASTAlterQuery::ADD_COLUMN;
         }
-        else if (s_drop_partition.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_drop_partition.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_literal.parse(pos, end, params.partition, max_parsed_pos, expected))
+            if (!parser_literal.parse(pos, params.partition, expected))
                 return false;
 
             params.type = ASTAlterQuery::DROP_PARTITION;
         }
-        else if (s_drop_column.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_drop_column.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_name.parse(pos, end, params.column, max_parsed_pos, expected))
+            if (!parser_name.parse(pos, params.column, expected))
                 return false;
 
             params.type = ASTAlterQuery::DROP_COLUMN;
             params.detach = false;
         }
-        else if (s_clear_column.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_clear_column.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_name.parse(pos, end, params.column, max_parsed_pos, expected))
+            if (!parser_name.parse(pos, params.column, expected))
                 return false;
 
             params.type = ASTAlterQuery::DROP_COLUMN;
             params.clear_column = true;
             params.detach = false;
 
-            ws.ignore(pos, end);
-
-            if (s_in_partition.ignore(pos, end, max_parsed_pos, expected))
+            if (s_in_partition.ignore(pos, expected))
             {
-                ws.ignore(pos, end);
-
-                if (!parser_literal.parse(pos, end, params.partition, max_parsed_pos, expected))
+                if (!parser_literal.parse(pos, params.partition, expected))
                     return false;
             }
         }
-        else if (s_detach_partition.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_detach_partition.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_literal.parse(pos, end, params.partition, max_parsed_pos, expected))
+            if (!parser_literal.parse(pos, params.partition, expected))
                 return false;
 
             params.type = ASTAlterQuery::DROP_PARTITION;
             params.detach = true;
         }
-        else if (s_attach_partition.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_attach_partition.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_literal.parse(pos, end, params.partition, max_parsed_pos, expected))
+            if (!parser_literal.parse(pos, params.partition, expected))
                 return false;
 
             params.type = ASTAlterQuery::ATTACH_PARTITION;
         }
-        else if (s_attach_part.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_attach_part.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_literal.parse(pos, end, params.partition, max_parsed_pos, expected))
+            if (!parser_literal.parse(pos, params.partition, expected))
                 return false;
 
             params.part = true;
             params.type = ASTAlterQuery::ATTACH_PARTITION;
         }
-        else if (s_fetch_partition.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_fetch_partition.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_literal.parse(pos, end, params.partition, max_parsed_pos, expected))
+            if (!parser_literal.parse(pos, params.partition, expected))
                 return false;
 
-            ws.ignore(pos, end);
-
-            if (!s_from.ignore(pos, end, max_parsed_pos, expected))
+            if (!s_from.ignore(pos, expected))
                 return false;
-
-            ws.ignore(pos, end);
 
             ASTPtr ast_from;
-            if (!parser_string_literal.parse(pos, end, ast_from, max_parsed_pos, expected))
+            if (!parser_string_literal.parse(pos, ast_from, expected))
                 return false;
 
             params.from = typeid_cast<const ASTLiteral &>(*ast_from).value.get<const String &>();
             params.type = ASTAlterQuery::FETCH_PARTITION;
         }
-        else if (s_freeze_partition.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_freeze_partition.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_literal.parse(pos, end, params.partition, max_parsed_pos, expected))
+            if (!parser_literal.parse(pos, params.partition, expected))
                 return false;
 
-            ws.ignore(pos, end);
-
             /// WITH NAME 'name' - place local backup to directory with specified name
-            if (s_with.ignore(pos, end, max_parsed_pos, expected))
+            if (s_with.ignore(pos, expected))
             {
-                ws.ignore(pos, end);
-
-                if (!s_name.ignore(pos, end, max_parsed_pos, expected))
+                if (!s_name.ignore(pos, expected))
                     return false;
 
-                ws.ignore(pos, end);
-
                 ASTPtr ast_with_name;
-                if (!parser_string_literal.parse(pos, end, ast_with_name, max_parsed_pos, expected))
+                if (!parser_string_literal.parse(pos, ast_with_name, expected))
                     return false;
 
                 params.with_name = typeid_cast<const ASTLiteral &>(*ast_with_name).value.get<const String &>();
-
-                ws.ignore(pos, end);
             }
 
             params.type = ASTAlterQuery::FREEZE_PARTITION;
         }
-        else if (s_modify_column.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_modify_column.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!parser_col_decl.parse(pos, end, params.col_decl, max_parsed_pos, expected))
+            if (!parser_col_decl.parse(pos, params.col_decl, expected))
                 return false;
-
-            ws.ignore(pos, end);
 
             params.type = ASTAlterQuery::MODIFY_COLUMN;
         }
-        else if (s_modify_primary_key.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_modify_primary_key.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
+            if (pos->type != TokenType::OpeningRoundBracket)
+                return false;
+            ++pos;
 
-            if (!ParserString("(").ignore(pos, end, max_parsed_pos, expected))
+            if (!ParserNotEmptyExpressionList(false).parse(pos, params.primary_key, expected))
                 return false;
 
-            ws.ignore(pos, end);
-
-            if (!ParserNotEmptyExpressionList(false).parse(pos, end, params.primary_key, max_parsed_pos, expected))
+            if (pos->type != TokenType::ClosingRoundBracket)
                 return false;
-
-            ws.ignore(pos, end);
-
-            if (!ParserString(")").ignore(pos, end, max_parsed_pos, expected))
-                return false;
-
-            ws.ignore(pos, end);
+            ++pos;
 
             params.type = ASTAlterQuery::MODIFY_PRIMARY_KEY;
         }
-        else if (s_reshard.ignore(pos, end, max_parsed_pos, expected))
+        else if (s_reshard.ignore(pos, expected))
         {
-            ParserList weighted_zookeeper_paths_p(std::make_unique<ParserWeightedZooKeeperPath>(), std::make_unique<ParserString>(","), false);
-            ParserExpressionWithOptionalAlias parser_sharding_key_expr(false);
+            ParserList weighted_zookeeper_paths_p(std::make_unique<ParserWeightedZooKeeperPath>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+            ParserExpression parser_sharding_key_expr;
             ParserStringLiteral parser_coordinator;
 
-            ws.ignore(pos, end);
-
-            if (s_copy.ignore(pos, end, max_parsed_pos, expected))
+            if (s_copy.ignore(pos, expected))
                 params.do_copy = true;
 
-            ws.ignore(pos, end);
-
-            if (s_partition.ignore(pos, end, max_parsed_pos, expected))
+            if (s_partition.ignore(pos, expected))
             {
-                ws.ignore(pos, end);
-
-                if (!parser_uint.parse(pos, end, params.partition, max_parsed_pos, expected))
+                if (!parser_uint.parse(pos, params.partition, expected))
                     return false;
-
-                ws.ignore(pos, end);
-
-                if (s_doubledot.ignore(pos, end, max_parsed_pos, expected))
-                {
-                    ws.ignore(pos, end);
-
-                    if (!parser_uint.parse(pos, end, params.last_partition, max_parsed_pos, expected))
-                        return false;
-                }
             }
 
-            ws.ignore(pos, end);
-
-            if (!s_to.ignore(pos, end, max_parsed_pos, expected))
+            if (!s_to.ignore(pos, expected))
                 return false;
 
-            ws.ignore(pos, end);
-
-            if (!weighted_zookeeper_paths_p.parse(pos, end, params.weighted_zookeeper_paths, max_parsed_pos, expected))
+            if (!weighted_zookeeper_paths_p.parse(pos, params.weighted_zookeeper_paths, expected))
                 return false;
 
-            ws.ignore(pos, end);
-
-            if (!s_using.ignore(pos, end, max_parsed_pos, expected))
+            if (!s_using.ignore(pos, expected))
                 return false;
 
-            ws.ignore(pos, end);
-
-            if (!parser_sharding_key_expr.parse(pos, end, params.sharding_key_expr, max_parsed_pos, expected))
+            if (!parser_sharding_key_expr.parse(pos, params.sharding_key_expr, expected))
                 return false;
 
-            ws.ignore(pos, end);
-
-            if (s_coordinate.ignore(pos, end, max_parsed_pos, expected))
+            if (s_coordinate.ignore(pos, expected))
             {
-                ws.ignore(pos, end);
-
-                if (!s_with.ignore(pos, end, max_parsed_pos, expected))
+                if (!s_with.ignore(pos, expected))
                     return false;
 
-                ws.ignore(pos, end);
-
-                if (!parser_coordinator.parse(pos, end, params.coordinator, max_parsed_pos, expected))
+                if (!parser_coordinator.parse(pos, params.coordinator, expected))
                     return false;
-
-                ws.ignore(pos, end);
             }
 
             params.type = ASTAlterQuery::RESHARD_PARTITION;
@@ -343,19 +255,14 @@ bool ParserAlterQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_pa
         else
             return false;
 
-        ws.ignore(pos, end);
-
-        if (!s_comma.ignore(pos, end, max_parsed_pos, expected))
-        {
-            ws.ignore(pos, end);
+        if (!s_comma.ignore(pos, expected))
             parsing_finished = true;
-        }
 
         query->addParameters(params);
     }
     while (!parsing_finished);
 
-    query->range = StringRange(begin, end);
+    query->range = StringRange(begin, pos);
     query->cluster = cluster_str;
     node = query;
 

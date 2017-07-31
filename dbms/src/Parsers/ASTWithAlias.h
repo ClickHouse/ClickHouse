@@ -17,9 +17,9 @@ public:
 
     using IAST::IAST;
 
-    String getAliasOrColumnName() const override     { return alias.empty() ? getColumnName() : alias; }
-    String tryGetAlias() const override             { return alias; }
-    void setAlias(const String & to) override         { alias = to; }
+    String getAliasOrColumnName() const override { return alias.empty() ? getColumnName() : alias; }
+    String tryGetAlias() const override { return alias; }
+    void setAlias(const String & to) override { alias = to; }
 
     /// Calls formatImplWithoutAlias, and also outputs an alias. If necessary, encloses the entire expression in brackets.
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override final;

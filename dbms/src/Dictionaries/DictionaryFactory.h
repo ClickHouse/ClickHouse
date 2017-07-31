@@ -2,7 +2,7 @@
 
 #include <Dictionaries/IDictionary.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 
 namespace DB
@@ -10,7 +10,7 @@ namespace DB
 
 class Context;
 
-class DictionaryFactory : public Singleton<DictionaryFactory>
+class DictionaryFactory : public ext::singleton<DictionaryFactory>
 {
 public:
     DictionaryPtr create(const std::string & name, Poco::Util::AbstractConfiguration & config,

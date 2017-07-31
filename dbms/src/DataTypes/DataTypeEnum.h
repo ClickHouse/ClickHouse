@@ -31,7 +31,6 @@ class DataTypeEnum final : public IDataTypeEnum
 public:
     using FieldType = Type;
     using ColumnType = ColumnVector<FieldType>;
-    using ConstColumnType = ColumnConst<FieldType>;
     using Value = std::pair<std::string, FieldType>;
     using Values = std::vector<Value>;
     using NameToValueMap = HashMap<StringRef, FieldType, StringRefHash>;
@@ -52,6 +51,7 @@ public:
 
     const Values & getValues() const { return values; }
     std::string getName() const override { return name; }
+    const char * getFamilyName() const override;
     bool isNumeric() const override { return true; }
     bool behavesAsNumber() const override { return true; }
 
@@ -61,8 +61,7 @@ public:
         if (it == std::end(value_to_name_map))
             throw Exception{
                 "Unexpected value " + toString(value) + " for type " + getName(),
-                ErrorCodes::LOGICAL_ERROR
-            };
+                ErrorCodes::LOGICAL_ERROR};
 
         return it->second;
     }
@@ -93,7 +92,7 @@ public:
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -105,7 +104,6 @@ public:
     size_t getSizeOfField() const override { return sizeof(FieldType); }
 
     ColumnPtr createColumn() const override { return std::make_shared<ColumnType>(); }
-    ColumnPtr createConstColumn(const size_t size, const Field & field) const override;
 
     Field getDefault() const override;
 };

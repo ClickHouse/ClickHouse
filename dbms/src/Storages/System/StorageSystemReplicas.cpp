@@ -6,6 +6,7 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/VirtualColumnUtils.h>
+#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 
 
@@ -49,7 +50,7 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 
 BlockInputStreams StorageSystemReplicas::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -97,14 +98,14 @@ BlockInputStreams StorageSystemReplicas::read(
     {
         Block filtered_block { col_database, col_table, col_engine };
 
-        VirtualColumnUtils::filterBlockWithQuery(query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
             return BlockInputStreams();
 
-        col_database     = filtered_block.getByName("database");
-        col_table         = filtered_block.getByName("table");
-        col_engine         = filtered_block.getByName("engine");
+        col_database = filtered_block.getByName("database");
+        col_table = filtered_block.getByName("table");
+        col_engine = filtered_block.getByName("engine");
     }
 
     ColumnWithTypeAndName col_is_leader{std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "is_leader"};

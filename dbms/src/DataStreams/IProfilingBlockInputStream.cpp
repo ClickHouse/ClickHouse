@@ -1,7 +1,6 @@
 #include <iomanip>
 #include <random>
 
-#include <Columns/ColumnConst.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -15,6 +14,7 @@ namespace ErrorCodes
     extern const int TOO_MUCH_BYTES;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TOO_SLOW;
+    extern const int LOGICAL_ERROR;
 }
 
 

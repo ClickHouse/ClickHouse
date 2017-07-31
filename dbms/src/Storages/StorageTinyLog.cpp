@@ -28,12 +28,14 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
+#include <Common/typeid_cast.h>
+
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageTinyLog.h>
 #include <Poco/DirectoryIterator.h>
 
-#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION     ".bin"
+#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null.bin"
 
 
@@ -46,6 +48,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int DUPLICATE_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -525,7 +528,7 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
 
 BlockInputStreams StorageTinyLog::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,

@@ -1,6 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -184,9 +186,9 @@ size_t ColumnAggregateFunction::byteSize() const
 
 
 /// Like byteSize(), highly overestimates size
-size_t ColumnAggregateFunction::allocatedSize() const
+size_t ColumnAggregateFunction::allocatedBytes() const
 {
-    size_t res = getData().allocated_size() * sizeof(getData()[0]);
+    size_t res = getData().allocated_bytes();
 
     for (const auto & arena : arenas)
         res += arena.get()->size();
@@ -306,7 +308,29 @@ void ColumnAggregateFunction::popBack(size_t n)
 
 ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & offsets) const
 {
-    throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+    size_t size = data.size();
+    if (size != offsets.size())
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+
+    if (size == 0)
+        return res;
+
+    auto & res_data = res->getData();
+    res_data.reserve(offsets.back());
+
+    IColumn::Offset_t prev_offset = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        size_t size_to_replicate = offsets[i] - prev_offset;
+        prev_offset = offsets[i];
+
+        for (size_t j = 0; j < size_to_replicate; ++j)
+            res_data.push_back(data[i]);
+    }
+
+    return res;
 }
 
 Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
@@ -340,9 +364,35 @@ void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan
         res[i] = i;
 }
 
+void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
+
 void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 {
-    throw Exception("Method getExtremes is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+    /// Place serialized default values into min/max.
+
+    PODArrayWithStackMemory<char, 16> place_buffer(func->sizeOfData());
+    AggregateDataPtr place = place_buffer.data();
+
+    String serialized;
+
+    func->create(place);
+    try
+    {
+        WriteBufferFromString buffer(serialized);
+        func->serialize(place, buffer);
+    }
+    catch (...)
+    {
+        func->destroy(place);
+        throw;
+    }
+    func->destroy(place);
+
+    min = serialized;
+    max = serialized;
 }
 
 }

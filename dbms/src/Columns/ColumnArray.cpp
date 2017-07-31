@@ -5,11 +5,15 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
+
+#include <DataStreams/ColumnGathererStream.h>
 
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 
 
@@ -23,6 +27,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -296,9 +301,9 @@ size_t ColumnArray::byteSize() const
 }
 
 
-size_t ColumnArray::allocatedSize() const
+size_t ColumnArray::allocatedBytes() const
 {
-    return getData().allocatedSize() + getOffsets().allocated_size() * sizeof(getOffsets()[0]);
+    return getData().allocatedBytes() + getOffsets().allocated_bytes();
 }
 
 
@@ -608,7 +613,6 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
     return res;
 }
 
-
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     size_t s = size();
@@ -649,7 +653,7 @@ ColumnPtr ColumnArray::replicate(const Offsets_t & replicate_offsets) const
     if (typeid_cast<const ColumnFloat32 *>(data.get()))   return replicateNumber<Float32>(replicate_offsets);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))   return replicateNumber<Float64>(replicate_offsets);
     if (typeid_cast<const ColumnString *>(data.get()))    return replicateString(replicate_offsets);
-    if (dynamic_cast<const IColumnConst *>(data.get()))   return replicateConst(replicate_offsets);
+    if (typeid_cast<const ColumnConst *>(data.get()))     return replicateConst(replicate_offsets);
     if (typeid_cast<const ColumnNullable *>(data.get()))  return replicateNullable(replicate_offsets);
     if (typeid_cast<const ColumnTuple *>(data.get()))     return replicateTuple(replicate_offsets);
     return replicateGeneric(replicate_offsets);
@@ -831,11 +835,10 @@ ColumnPtr ColumnArray::replicateGeneric(const Offsets_t & replicate_offsets) con
         return res;
 
     IColumn::Offset_t prev_offset = 0;
-    const auto & offsets_data = getOffsets();
     for (size_t i = 0; i < col_size; ++i)
     {
-        size_t size_to_replicate = offsets_data[i] - prev_offset;
-        prev_offset = offsets_data[i];
+        size_t size_to_replicate = replicate_offsets[i] - prev_offset;
+        prev_offset = replicate_offsets[i];
 
         for (size_t j = 0; j < size_to_replicate; ++j)
             res_concrete.insertFrom(*this, i);
@@ -887,5 +890,10 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets_t & replicate_offsets) const
         static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
 }
 
+
+void ColumnArray::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
 
 }

@@ -20,6 +20,7 @@ public:
         : argument_types(argument_types_), return_type(return_type_) {}
 
     std::string getName() const override;
+    const char * getFamilyName() const override { return "Expression"; }
 
     DataTypePtr clone() const override
     {

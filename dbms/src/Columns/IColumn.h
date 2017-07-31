@@ -1,11 +1,10 @@
 #pragma once
 
 #include <memory>
-
-#include <Common/PODArray.h>
-#include <Common/typeid_cast.h>
+#include <boost/noncopyable.hpp>
 
 #include <Core/Field.h>
+#include <Common/PODArray.h>
 #include <Common/Exception.h>
 #include <common/StringRef.h>
 
@@ -31,7 +30,7 @@ using ColumnPlainPtrs = std::vector<IColumn *>;
 using ConstColumnPlainPtrs = std::vector<const IColumn *>;
 
 class Arena;
-
+class ColumnGathererStream;
 
 /// Declares interface to store columns in memory.
 class IColumn : private boost::noncopyable
@@ -110,6 +109,19 @@ public:
     virtual UInt64 get64(size_t n) const
     {
         throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /** If column is numeric, return value of n-th element, casted to UInt64.
+      * Otherwise throw an exception.
+      */
+    virtual UInt64 getUInt(size_t n) const
+    {
+        throw Exception("Method getUInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    virtual Int64 getInt(size_t n) const
+    {
+        throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Removes all elements outside of specified range.
@@ -225,6 +237,12 @@ public:
     using Selector = PaddedPODArray<ColumnIndex>;
     virtual Columns scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
 
+    /// Insert data from several other columns according to source mask (used in vertical merge).
+    /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
+    /// (descendants should call gatherer_stream.gather(*this) to implement this function.)
+    /// TODO: interface decoupled from ColumnGathererStream that allows non-generic specializations.
+    virtual void gather(ColumnGathererStream & gatherer_stream) = 0;
+
     /** Computes minimum and maximum element of the column.
       * In addition to numeric types, the funtion is completely implemented for Date and DateTime.
       * For strings and arrays function should retrurn default value.
@@ -243,7 +261,7 @@ public:
     /// Size of memory, allocated for column.
     /// This is greater or equals to byteSize due to memory reservation in containers.
     /// Zero, if could be determined.
-    virtual size_t allocatedSize() const = 0;
+    virtual size_t allocatedBytes() const = 0;
 
     virtual ~IColumn() {}
 

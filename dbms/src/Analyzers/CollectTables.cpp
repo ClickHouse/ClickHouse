@@ -11,6 +11,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

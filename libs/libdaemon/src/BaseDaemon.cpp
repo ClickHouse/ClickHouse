@@ -336,13 +336,12 @@ private:
         if (frames_size)
         {
 #else
-        int frames_size = backtrace(frames, max_frames);
-
-        if (frames_size >= 2)
+        /// No libunwind means no backtrace, because we are in a different thread from the one where the signal happened.
+        /// So at least print the function where the signal happened.
+        if (caller_address)
         {
-            /// Overwrite sigaction with caller's address
-            if (caller_address && (frames_size < 3 || caller_address != frames[2]))
-                frames[1] = caller_address;
+            frames[0] = caller_address;
+            int frames_size = 1;
 #endif
 
             char ** symbols = backtrace_symbols(frames, frames_size);
@@ -354,7 +353,7 @@ private:
             }
             else
             {
-                for (int i = 1; i < frames_size; ++i)
+                for (int i = 0; i < frames_size; ++i)
                 {
                     /// Делаем demangling имён. Имя находится в скобках, до символа '+'.
 

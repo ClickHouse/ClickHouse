@@ -17,6 +17,7 @@ using DataTypeUInt8 = DataTypeNumber<UInt8>;
 using DataTypeUInt16 = DataTypeNumber<UInt16>;
 using DataTypeUInt32 = DataTypeNumber<UInt32>;
 using DataTypeUInt64 = DataTypeNumber<UInt64>;
+using DataTypeUInt128 = DataTypeNumber<UInt128>;
 using DataTypeInt8 = DataTypeNumber<Int8>;
 using DataTypeInt16 = DataTypeNumber<Int16>;
 using DataTypeInt32 = DataTypeNumber<Int32>;
@@ -34,6 +35,7 @@ public:
     using FieldType = void;
 
     std::string getName() const override { return "Void"; }
+    const char * getFamilyName() const override { return "Void"; }
     DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<void>>(); }
 };
 
@@ -46,6 +48,7 @@ public:
     using FieldType = Null;
 
     std::string getName() const override { return "Null"; }
+    const char * getFamilyName() const override { return "Null"; }
     DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<Null>>(); }
 };
 

@@ -44,7 +44,6 @@ private:
         String from; /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
 
         /// For RESHARD PARTITION.
-        Field last_partition;
         WeightedZooKeeperPaths weighted_zookeeper_paths;
         ASTPtr sharding_key_expr;
         bool do_copy = false;
@@ -98,14 +97,13 @@ private:
             return res;
         }
 
-        static PartitionCommand reshardPartitions(const Field & first_partition_, const Field & last_partition_,
+        static PartitionCommand reshardPartitions(const Field & partition_,
             const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const ASTPtr & sharding_key_expr_,
             bool do_copy_, const Field & coordinator_)
         {
             PartitionCommand res;
             res.type = RESHARD_PARTITION;
-            res.partition = first_partition_;
-            res.last_partition = last_partition_;
+            res.partition = partition_;
             res.weighted_zookeeper_paths = weighted_zookeeper_paths_;
             res.sharding_key_expr = sharding_key_expr_;
             res.do_copy = do_copy_;
@@ -114,7 +112,11 @@ private:
         }
     };
 
-    using PartitionCommands = std::vector<PartitionCommand>;
+    class PartitionCommands : public std::vector<PartitionCommand>
+    {
+    public:
+        void validate(const IStorage * table);
+    };
 
     ASTPtr query_ptr;
 

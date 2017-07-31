@@ -258,7 +258,9 @@ public:
         std::future<Result> future;
 
         template <typename... Args>
-        Future(Args &&... args) : task(new TaskPtr(new Task(std::forward<Args>(args)...))), future((*task)->get_future()) {}
+        Future(Args &&... args) :
+            task(std::make_unique<TaskPtr>(std::make_unique<Task>(std::forward<Args>(args)...))),
+            future((*task)->get_future()) {}
 
     public:
         Result get()
@@ -344,7 +346,7 @@ private:
     static void destroyContext(WatchContext * context);
     static void processCallback(zhandle_t * zh, int type, int state, const char * path, void * watcher_ctx);
 
-    template <class T>
+    template <typename T>
     int32_t retry(T && operation, size_t * attempt = nullptr)
     {
         int32_t code = operation();

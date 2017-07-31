@@ -4,9 +4,6 @@
 #include <map>
 #include <experimental/optional>
 
-#include <Poco/Path.h>
-#include <Poco/Util/XMLConfiguration.h>
-
 #include <Common/escapeForFileName.h>
 
 #include <Common/Exception.h>
@@ -17,9 +14,6 @@
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -32,7 +26,6 @@
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageStripeLog.h>
-#include <Poco/DirectoryIterator.h>
 
 
 namespace DB
@@ -167,7 +160,7 @@ public:
 
 private:
     StorageStripeLog & storage;
-    Poco::ScopedWriteRWLock lock;
+    std::unique_lock<std::shared_mutex> lock;
 
     WriteBufferFromFile data_out_compressed;
     CompressedWriteBuffer data_out;
@@ -209,7 +202,7 @@ StorageStripeLog::StorageStripeLog(
 
 void StorageStripeLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     /// Rename directory with data.
     Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
@@ -222,13 +215,13 @@ void StorageStripeLog::rename(const String & new_path_to_db, const String & new_
 
 BlockInputStreams StorageStripeLog::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     unsigned num_streams)
 {
-    Poco::ScopedReadRWLock lock(rwlock);
+    std::shared_lock<std::shared_mutex> lock(rwlock);
 
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -274,7 +267,7 @@ BlockOutputStreamPtr StorageStripeLog::write(
 
 bool StorageStripeLog::checkData() const
 {
-    Poco::ScopedReadRWLock lock(const_cast<Poco::RWLock &>(rwlock));
+    std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
 }
 

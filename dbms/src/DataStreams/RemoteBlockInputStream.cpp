@@ -102,7 +102,7 @@ void RemoteBlockInputStream::sendExternalTables()
             {
                 StoragePtr cur = table.second;
                 QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-                DB::BlockInputStreams input = cur->read(cur->getColumnNamesList(), ASTPtr(), context,
+                BlockInputStreams input = cur->read(cur->getColumnNamesList(), {}, context,
                     stage, DEFAULT_BLOCK_SIZE, 1);
                 if (input.size() == 0)
                     res.push_back(std::make_pair(std::make_shared<OneBlockInputStream>(cur->getSampleBlock()), table.first));

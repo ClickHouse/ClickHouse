@@ -38,13 +38,13 @@ public:
 
     std::string getTypeName() const override { return "Trie"; }
 
-    std::size_t getBytesAllocated() const override { return bytes_allocated; }
+    size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override { return 1.0; }
 
-    std::size_t getElementCount() const override { return element_count; }
+    size_t getElementCount() const override { return element_count; }
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
@@ -207,14 +207,14 @@ private:
     const std::string key_description{dict_struct.getKeyDescription()};
 
 
-    btrie_t *trie;
-    std::map<std::string, std::size_t> attribute_index_by_name;
+    btrie_t * trie = nullptr;
+    std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
 
-    std::size_t bytes_allocated = 0;
-    std::size_t element_count = 0;
-    std::size_t bucket_count = 0;
-    mutable std::atomic<std::size_t> query_count{0};
+    size_t bytes_allocated = 0;
+    size_t element_count = 0;
+    size_t bucket_count = 0;
+    mutable std::atomic<size_t> query_count{0};
 
     std::chrono::time_point<std::chrono::system_clock> creation_time;
 

@@ -123,7 +123,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
@@ -143,7 +143,7 @@ public:
 
     void reshardPartitions(
         const ASTPtr & query, const String & database_name,
-        const Field & first_partition, const Field & last_partition,
+        const Field & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
         Context & context) override;
@@ -257,7 +257,7 @@ private:
       */
     int columns_version = -1;
 
-    /** Is this replica "master". The master replica selects the parts to merge.
+    /** Is this replica "leading". The leader replica selects the parts to merge.
       */
     bool is_leader_node = false;
     std::mutex leader_node_mutex;
@@ -468,6 +468,7 @@ private:
     void assertNotReadonly() const;
 
     /// The name of an imaginary part covering all parts in the specified partition (at the call moment).
+    /// Returns empty string if partition is empy.
     String getFakePartNameCoveringAllPartsInPartition(const String & month_name);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.

@@ -22,6 +22,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
+#include <Common/typeid_cast.h>
+
 #include <Interpreters/Context.h>
 
 #include <Poco/Path.h>
@@ -159,7 +161,7 @@ public:
 
 private:
     StorageLog & storage;
-    Poco::ScopedWriteRWLock lock;
+    std::unique_lock<std::shared_mutex> lock;
     bool done = false;
 
     struct Stream
@@ -216,7 +218,7 @@ Block LogBlockInputStream::readImpl()
     /// If the files are not open, then open them.
     if (streams.empty())
     {
-        Poco::ScopedReadRWLock lock(storage.rwlock);
+        std::shared_lock<std::shared_mutex> lock(storage.rwlock);
 
         for (size_t i = 0, size = column_names.size(); i < size; ++i)
         {
@@ -653,7 +655,7 @@ void StorageLog::addFile(const String & column_name, const IDataType & type, siz
 
 void StorageLog::loadMarks()
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     if (loaded_marks)
         return;
@@ -719,7 +721,7 @@ size_t StorageLog::marksCount()
 
 void StorageLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     /// Rename directory with data.
     Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
@@ -773,7 +775,7 @@ const Marks & StorageLog::getMarksWithRealRowCount() const
 
 BlockInputStreams StorageLog::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
@@ -783,7 +785,7 @@ BlockInputStreams StorageLog::read(
     processed_stage = QueryProcessingStage::FetchColumns;
     loadMarks();
 
-    Poco::ScopedReadRWLock lock(rwlock);
+    std::shared_lock<std::shared_mutex> lock(rwlock);
 
     BlockInputStreams res;
 
@@ -870,8 +872,7 @@ BlockOutputStreamPtr StorageLog::write(
 
 bool StorageLog::checkData() const
 {
-    Poco::ScopedReadRWLock lock(const_cast<Poco::RWLock &>(rwlock));
-
+    std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
 }
 

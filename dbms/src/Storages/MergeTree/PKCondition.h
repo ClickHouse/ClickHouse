@@ -3,11 +3,14 @@
 #include <sstream>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -187,9 +190,6 @@ public:
 };
 
 
-class ASTSet;
-
-
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -202,8 +202,12 @@ class PKCondition
 {
 public:
     /// Does not include the SAMPLE section. all_columns - the set of all columns of the table.
-    PKCondition(const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr,
-        const Block & pk_sample_block);
+    PKCondition(
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        const NamesAndTypesList & all_columns,
+        const SortDescription & sort_descr,
+        ExpressionActionsPtr pk_expr);
 
     /// Whether the condition is feasible in the key range.
     /// left_pk and right_pk must contain all fields in the sort_descr in the appropriate order.
@@ -313,11 +317,20 @@ private:
         DataTypePtr & out_primary_key_column_type,
         std::vector<const ASTFunction *> & out_functions_chain);
 
+    bool canConstantBeWrappedByMonotonicFunctions(
+        const ASTPtr & node,
+        const Context & context,
+        size_t & out_primary_key_column_num,
+        DataTypePtr & out_primary_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type);
+
     RPN rpn;
 
     SortDescription sort_descr;
     ColumnIndices pk_columns;
-    const Block & pk_sample_block;
+    ExpressionActionsPtr pk_expr;
+    PreparedSets prepared_sets;
 };
 
 }

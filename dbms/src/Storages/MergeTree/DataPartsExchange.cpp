@@ -2,6 +2,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
+#include <Common/typeid_cast.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
 #include <ext/scope_guard.h>
@@ -87,7 +88,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
         else
             part = findPart(part_name);
 
-        Poco::ScopedReadRWLock part_lock(part->columns_lock);
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 

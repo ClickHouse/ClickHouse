@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -104,7 +105,7 @@ static String extractPath(const ASTPtr & query)
 
 BlockInputStreams StorageSystemZooKeeper::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -113,7 +114,7 @@ BlockInputStreams StorageSystemZooKeeper::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    String path = extractPath(query);
+    String path = extractPath(query_info.query);
     if (path.empty())
         throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.");
 

@@ -1,5 +1,7 @@
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -7,6 +9,8 @@
 
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/VirtualColumnFactory.h>
+
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -18,22 +22,35 @@ namespace ErrorCodes
 }
 
 
-StoragePtr StorageMaterializedView::create(
-    const String & table_name_,
-    const String & database_name_,
-    Context & context_,
-    ASTPtr & query_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach_)
+static void extractDependentTable(const ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
-    return ext::shared_ptr_helper<StorageMaterializedView>::make_shared(
-        table_name_, database_name_, context_, query_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_, attach_
-    );
+    auto query_table = query.table();
+
+    if (!query_table)
+        return;
+
+    if (const ASTIdentifier * ast_id = typeid_cast<const ASTIdentifier *>(query_table.get()))
+    {
+        auto query_database = query.database();
+
+        if (!query_database)
+            throw Exception("Logical error while creating StorageMaterializedView."
+                " Could not retrieve database name from select query.",
+                DB::ErrorCodes::LOGICAL_ERROR);
+
+        select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
+        select_table_name = ast_id->name;
+    }
+    else if (const ASTSelectQuery * ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
+    {
+        extractDependentTable(*ast_select, select_database_name, select_table_name);
+    }
+    else
+        throw Exception("Logical error while creating StorageMaterializedView."
+            " Could not retrieve table name from select query.",
+            DB::ErrorCodes::LOGICAL_ERROR);
 }
+
 
 StorageMaterializedView::StorageMaterializedView(
     const String & table_name_,
@@ -45,9 +62,23 @@ StorageMaterializedView::StorageMaterializedView(
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     bool attach_)
-    : StorageView{table_name_, database_name_, context_, query_, columns_, materialized_columns_, alias_columns_, column_defaults_}
+    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
+    database_name(database_name_), context(context_), columns(columns_)
 {
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
+    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*create.select);
+
+    /// If the internal query does not specify a database, retrieve it from the context and write it to the query.
+    select.setDatabaseIfNeeded(database_name);
+
+    inner_query = create.select;
+
+    extractDependentTable(select, select_database_name, select_table_name);
+
+    if (!select_table_name.empty())
+        context.getGlobalContext().addDependency(
+            DatabaseAndTableName(select_database_name, select_table_name),
+            DatabaseAndTableName(database_name, table_name));
 
     auto inner_table_name = getInnerTableName();
 
@@ -82,8 +113,7 @@ StorageMaterializedView::StorageMaterializedView(
         }
         catch (...)
         {
-            /// In case of any error we should remove dependency to the view
-            /// which was added in the constructor of StorageView.
+            /// In case of any error we should remove dependency to the view.
             if (!select_table_name.empty())
                 context.getGlobalContext().removeDependency(
                     DatabaseAndTableName(select_database_name, select_table_name),
@@ -96,27 +126,23 @@ StorageMaterializedView::StorageMaterializedView(
 
 NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
 {
-    auto type = VirtualColumnFactory::tryGetType(column_name);
-    if (type)
-        return NameAndTypePair(column_name, type);
-
-    return getRealColumn(column_name);
+    return getInnerTable()->getColumn(column_name);
 }
 
 bool StorageMaterializedView::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
+    return getInnerTable()->hasColumn(column_name);
 }
 
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return getInnerTable()->read(column_names, query, context, processed_stage, max_block_size, num_streams);
+    return getInnerTable()->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)

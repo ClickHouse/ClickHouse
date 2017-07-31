@@ -56,7 +56,7 @@ public:
     void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
-    size_t allocatedSize() const override;
+    size_t allocatedBytes() const override;
     ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
     ColumnPtr convertToFullColumnIfConst() const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
@@ -66,6 +66,8 @@ public:
     {
         return scatterImpl<ColumnNullable>(num_columns, selector);
     }
+
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
     /// Return the column that represents values.
     ColumnPtr & getNestedColumn() { return nested_column; }

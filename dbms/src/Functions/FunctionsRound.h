@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Functions/FunctionsArithmetic.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <cmath>
@@ -152,7 +153,7 @@ private:
     using U = typename Extend<T>::Type;
 
 public:
-    using Divisor = std::pair<size_t, typename libdivide::divider<U> >;
+    using Divisor = std::pair<size_t, typename libdivide::divider<U>>;
 
     static inline Divisor prepare(size_t b)
     {
@@ -178,9 +179,9 @@ enum ScaleMode
 };
 
 #if !defined(_MM_FROUND_NINT)
-#define _MM_FROUND_NINT        0
-#define _MM_FROUND_FLOOR     1
-#define _MM_FROUND_CEIL        2
+#define _MM_FROUND_NINT  0
+#define _MM_FROUND_FLOOR 1
+#define _MM_FROUND_CEIL  2
 #endif
 
 /** Implementing low-level rounding functions for integer values.
@@ -820,13 +821,12 @@ struct ScaleForRightType<T, U,
     static inline bool apply(const ColumnPtr & column, ScaleMode & scale_mode, size_t & scale)
     {
         using PowersOf10 = typename FillArray<std::numeric_limits<T>::digits10 + 1>::result;
-        using ColumnType = ColumnConst<U>;
 
-        const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
-        if (precision_col == nullptr)
+        auto precision_col = checkAndGetColumnConst<ColumnVector<U>>(column.get());
+        if (!precision_col)
             return false;
 
-        U val = precision_col->getData();
+        U val = precision_col->template getValue<U>();
         if (val < 0)
         {
             if (val < -static_cast<U>(std::numeric_limits<T>::digits10))
@@ -866,13 +866,11 @@ struct ScaleForRightType<T, U,
     static inline bool apply(const ColumnPtr & column, ScaleMode & scale_mode, size_t & scale)
     {
         using PowersOf10 = typename FillArray<std::numeric_limits<T>::digits10 + 1>::result;
-        using ColumnType = ColumnConst<U>;
-
-        const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
-        if (precision_col == nullptr)
+        auto precision_col = checkAndGetColumnConst<ColumnVector<U>>(column.get());
+        if (!precision_col)
             return false;
 
-        U val = precision_col->getData();
+        U val = precision_col->template getValue<U>();
         if (val == 0)
         {
             scale_mode = ZeroScale;
@@ -899,13 +897,11 @@ struct ScaleForRightType<T, U,
     static inline bool apply(const ColumnPtr & column, ScaleMode & scale_mode, size_t & scale)
     {
         using PowersOf10 = typename FillArray<std::numeric_limits<T>::digits10 + 1>::result;
-        using ColumnType = ColumnConst<U>;
+        auto precision_col = checkAndGetColumnConst<ColumnVector<U>>(column.get());
+        if (!precision_col)
+            return false;
 
-        const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
-        if (precision_col == nullptr)
-                return false;
-
-        U val = precision_col->getData();
+        U val = precision_col->template getValue<U>();
         if (val < 0)
         {
             if (val < -std::numeric_limits<T>::digits10)
@@ -937,10 +933,8 @@ struct ScaleForRightType<T, U,
 {
     static inline bool apply(const ColumnPtr & column, ScaleMode & scale_mode, size_t & scale)
     {
-        using ColumnType = ColumnConst<U>;
-
-        const ColumnType * precision_col = typeid_cast<const ColumnType *>(&*column);
-        if (precision_col == nullptr)
+        auto precision_col = checkAndGetColumnConst<ColumnVector<U>>(column.get());
+        if (!precision_col)
             return false;
 
         scale_mode = ZeroScale;
@@ -957,17 +951,17 @@ struct ScaleForLeftType
 {
     static inline void apply(const ColumnPtr & column, ScaleMode & scale_mode, size_t & scale)
     {
-        if (!(    ScaleForRightType<T, UInt8>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, UInt16>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, UInt16>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, UInt32>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, UInt64>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, Int8>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, Int16>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, Int32>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, Int64>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, Float32>::apply(column, scale_mode, scale)
-            ||    ScaleForRightType<T, Float64>::apply(column, scale_mode, scale)))
+        if (!( ScaleForRightType<T, UInt8>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, UInt16>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, UInt16>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, UInt32>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, UInt64>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, Int8>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, Int16>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, Int32>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, Int64>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, Float32>::apply(column, scale_mode, scale)
+            || ScaleForRightType<T, Float64>::apply(column, scale_mode, scale)))
         {
             throw Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
         }
@@ -976,15 +970,15 @@ struct ScaleForLeftType
 
 /** The main template that applies the rounding function to a value or column.
     */
-template<typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, int rounding_mode, ScaleMode scale_mode>
 struct Cruncher
 {
     using Op = FunctionRoundingImpl<T, rounding_mode, scale_mode>;
 
-    static inline void apply(Block & block, ColumnVector<T> * col, const ColumnNumbers & arguments, size_t result, size_t scale)
+    static inline void apply(Block & block, const ColumnVector<T> * col, const ColumnNumbers & arguments, size_t result, size_t scale)
     {
         auto col_res = std::make_shared<ColumnVector<T>>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
 
         typename ColumnVector<T>::Container_t & vec_res = col_res->getData();
         vec_res.resize(col->getData().size());
@@ -994,27 +988,20 @@ struct Cruncher
 
         Op::apply(col->getData(), scale, vec_res);
     }
-
-    static inline void apply(Block & block, ColumnConst<T> * col, const ColumnNumbers & arguments, size_t result, size_t scale)
-    {
-        T res = Op::apply(col->getData(), scale);
-        auto col_res = std::make_shared<ColumnConst<T>>(col->size(), res);
-        block.safeGetByPosition(result).column = col_res;
-    }
 };
 
 /** Select the appropriate processing algorithm depending on the scale.
-    */
-template<typename T, template <typename> class U, int rounding_mode>
+  */
+template <typename T, typename ColumnType, int rounding_mode>
 struct Dispatcher
 {
-    static inline void apply(Block & block, U<T> * col, const ColumnNumbers & arguments, size_t result)
+    static inline void apply(Block & block, const ColumnType * col, const ColumnNumbers & arguments, size_t result)
     {
         ScaleMode scale_mode;
         size_t scale;
 
         if (arguments.size() == 2)
-            ScaleForLeftType<T>::apply(block.safeGetByPosition(arguments[1]).column, scale_mode, scale);
+            ScaleForLeftType<T>::apply(block.getByPosition(arguments[1]).column, scale_mode, scale);
         else
         {
             scale_mode = ZeroScale;
@@ -1049,24 +1036,18 @@ private:
     template<typename T>
     bool checkType(const IDataType * type) const
     {
-        return typeid_cast<const T *>(type) != nullptr;
+        return typeid_cast<const T *>(type);
     }
 
     template<typename T>
     bool executeForType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            Dispatcher<T, ColumnVector, rounding_mode>::apply(block, col, arguments, result);
+            Dispatcher<T, ColumnVector<T>, rounding_mode>::apply(block, col, arguments, result);
             return true;
         }
-        else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
-        {
-            Dispatcher<T, ColumnConst, rounding_mode>::apply(block, col, arguments, result);
-            return true;
-        }
-        else
-            return false;
+        return false;
     }
 
 public:
@@ -1113,6 +1094,9 @@ public:
         return arguments[0];
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (!(    executeForType<UInt8>(block, arguments, result)
@@ -1126,7 +1110,7 @@ public:
             ||    executeForType<Float32>(block, arguments, result)
             ||    executeForType<Float64>(block, arguments, result)))
         {
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
@@ -1139,16 +1123,16 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        return { true };
+        return { true, true, true };
     }
 };
 
-struct NameRoundToExp2        { static constexpr auto name = "roundToExp2"; };
-struct NameRoundDuration    { static constexpr auto name = "roundDuration"; };
-struct NameRoundAge         { static constexpr auto name = "roundAge"; };
-struct NameRound            { static constexpr auto name = "round"; };
-struct NameCeil                { static constexpr auto name = "ceil"; };
-struct NameFloor            { static constexpr auto name = "floor"; };
+struct NameRoundToExp2 { static constexpr auto name = "roundToExp2"; };
+struct NameRoundDuration { static constexpr auto name = "roundDuration"; };
+struct NameRoundAge { static constexpr auto name = "roundAge"; };
+struct NameRound { static constexpr auto name = "round"; };
+struct NameCeil { static constexpr auto name = "ceil"; };
+struct NameFloor { static constexpr auto name = "floor"; };
 
 using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
 using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl, NameRoundDuration, false>;

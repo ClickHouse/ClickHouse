@@ -12,7 +12,7 @@ static size_t decodeURL(const char * src, size_t src_size, char * dst)
 {
     const char * src_prev_pos = src;
     const char * src_curr_pos = src;
-    const char * const src_end = src + src_size;
+    const char * src_end = src + src_size;
     char * dst_pos = dst;
 
     while (true)
@@ -109,65 +109,52 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 }
 
 
-void DecodeURLComponentImpl::constant(const std::string & str,
-    std::string & res_data)
-{
-    ColumnString src;
-    ColumnString dst;
-    src.insert(str);
-
-    vector(src.getChars(), src.getOffsets(), dst.getChars(), dst.getOffsets());
-
-    res_data = dst[0].get<String>();
-}
-
-
 void DecodeURLComponentImpl::vector_fixed(const ColumnString::Chars_t & data, size_t n,
     ColumnString::Chars_t & res_data)
 {
     throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
 }
 
-struct NameProtocol                     { static constexpr auto name = "protocol"; };
+struct NameProtocol                       { static constexpr auto name = "protocol"; };
 struct NameDomain                         { static constexpr auto name = "domain"; };
-struct NameDomainWithoutWWW             { static constexpr auto name = "domainWithoutWWW"; };
-struct NameFirstSignificantSubdomain    { static constexpr auto name = "firstSignificantSubdomain"; };
+struct NameDomainWithoutWWW               { static constexpr auto name = "domainWithoutWWW"; };
+struct NameFirstSignificantSubdomain      { static constexpr auto name = "firstSignificantSubdomain"; };
 struct NameTopLevelDomain                 { static constexpr auto name = "topLevelDomain"; };
-struct NamePath                         { static constexpr auto name = "path"; };
-struct NamePathFull                        { static constexpr auto name = "pathFull"; };
+struct NamePath                           { static constexpr auto name = "path"; };
+struct NamePathFull                       { static constexpr auto name = "pathFull"; };
 struct NameQueryString                    { static constexpr auto name = "queryString"; };
-struct NameFragment                     { static constexpr auto name = "fragment"; };
-struct NameQueryStringAndFragment        { static constexpr auto name = "queryStringAndFragment"; };
-struct NameDecodeURLComponent           { static constexpr auto name = "decodeURLComponent"; };
+struct NameFragment                       { static constexpr auto name = "fragment"; };
+struct NameQueryStringAndFragment         { static constexpr auto name = "queryStringAndFragment"; };
+struct NameDecodeURLComponent             { static constexpr auto name = "decodeURLComponent"; };
 
 struct NameCutToFirstSignificantSubdomain { static constexpr auto name = "cutToFirstSignificantSubdomain"; };
 
 struct NameCutWWW                         { static constexpr auto name = "cutWWW"; };
-struct NameCutQueryString                { static constexpr auto name = "cutQueryString"; };
-struct NameCutFragment                     { static constexpr auto name = "cutFragment"; };
-struct NameCutQueryStringAndFragment     { static constexpr auto name = "cutQueryStringAndFragment"; };
+struct NameCutQueryString                 { static constexpr auto name = "cutQueryString"; };
+struct NameCutFragment                    { static constexpr auto name = "cutFragment"; };
+struct NameCutQueryStringAndFragment      { static constexpr auto name = "cutQueryStringAndFragment"; };
 
 struct NameExtractURLParameter            { static constexpr auto name = "extractURLParameter"; };
-struct NameCutURLParameter                 { static constexpr auto name = "cutURLParameter"; };
+struct NameCutURLParameter                { static constexpr auto name = "cutURLParameter"; };
 
-using FunctionProtocol = FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>,                 NameProtocol>         ;
-using FunctionDomain = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false> >,         NameDomain>             ;
-using FunctionDomainWithoutWWW = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>  >,         NameDomainWithoutWWW>;
+using FunctionProtocol = FunctionStringToString<ExtractSubstringImpl<ExtractProtocol>, NameProtocol>;
+using FunctionDomain = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<false>>, NameDomain>;
+using FunctionDomainWithoutWWW = FunctionStringToString<ExtractSubstringImpl<ExtractDomain<true>>, NameDomainWithoutWWW>;
 using FunctionFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<ExtractFirstSignificantSubdomain>, NameFirstSignificantSubdomain>;
-using FunctionTopLevelDomain = FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>,         NameTopLevelDomain>    ;
-using FunctionPath = FunctionStringToString<ExtractSubstringImpl<ExtractPath>,                     NamePath>            ;
-using FunctionPathFull = FunctionStringToString<ExtractSubstringImpl<ExtractPathFull>,                NamePathFull>        ;
-using FunctionQueryString = FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true> >,     NameQueryString>    ;
-using FunctionFragment = FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true> >,         NameFragment>        ;
-using FunctionQueryStringAndFragment = FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true> >, NameQueryStringAndFragment>;
+using FunctionTopLevelDomain = FunctionStringToString<ExtractSubstringImpl<ExtractTopLevelDomain>, NameTopLevelDomain>;
+using FunctionPath = FunctionStringToString<ExtractSubstringImpl<ExtractPath>, NamePath>;
+using FunctionPathFull = FunctionStringToString<ExtractSubstringImpl<ExtractPathFull>, NamePathFull>;
+using FunctionQueryString = FunctionStringToString<ExtractSubstringImpl<ExtractQueryString<true>>, NameQueryString>;
+using FunctionFragment = FunctionStringToString<ExtractSubstringImpl<ExtractFragment<true>>, NameFragment>;
+using FunctionQueryStringAndFragment = FunctionStringToString<ExtractSubstringImpl<ExtractQueryStringAndFragment<true>>, NameQueryStringAndFragment>;
 using FunctionDecodeURLComponent = FunctionStringToString<DecodeURLComponentImpl, NameDecodeURLComponent>;
 
 using FunctionCutToFirstSignificantSubdomain = FunctionStringToString<ExtractSubstringImpl<CutToFirstSignificantSubdomain>, NameCutToFirstSignificantSubdomain>;
 
-using FunctionCutWWW = FunctionStringToString<CutSubstringImpl<ExtractWWW>,                         NameCutWWW>            ;
-using FunctionCutQueryString = FunctionStringToString<CutSubstringImpl<ExtractQueryString<false> >,         NameCutQueryString>    ;
-using FunctionCutFragment = FunctionStringToString<CutSubstringImpl<ExtractFragment<false> >,             NameCutFragment>    ;
-using FunctionCutQueryStringAndFragment = FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<false> >, NameCutQueryStringAndFragment>;
+using FunctionCutWWW = FunctionStringToString<CutSubstringImpl<ExtractWWW>, NameCutWWW>;
+using FunctionCutQueryString = FunctionStringToString<CutSubstringImpl<ExtractQueryString<false>>, NameCutQueryString>;
+using FunctionCutFragment = FunctionStringToString<CutSubstringImpl<ExtractFragment<false>>, NameCutFragment>;
+using FunctionCutQueryStringAndFragment = FunctionStringToString<CutSubstringImpl<ExtractQueryStringAndFragment<false>>, NameCutQueryStringAndFragment>;
 
 using FunctionExtractURLParameter = FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter>;
 using FunctionCutURLParameter = FunctionsStringSearchToString<CutURLParameterImpl, NameCutURLParameter>;

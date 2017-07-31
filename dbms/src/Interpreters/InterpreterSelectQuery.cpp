@@ -43,6 +43,7 @@
 
 #include <Core/Field.h>
 #include <Common/Collator.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
@@ -441,7 +442,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
     if (to_stage > QueryProcessingStage::FetchColumns)
     {
-        bool has_join        = false;
+        bool has_join       = false;
         bool has_where      = false;
         bool need_aggregate = false;
         bool has_having     = false;
@@ -835,13 +836,17 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
+        SelectQueryInfo query_info;
+        query_info.query = query_ptr;
+        query_info.sets = query_analyzer->getPreparedSets();
+
         /// PREWHERE optimization
         {
             auto optimize_prewhere = [&](auto & merge_tree)
             {
                 /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
                 if (settings.optimize_move_to_prewhere && query.where_expression && !query.prewhere_expression && !query.final())
-                    MergeTreeWhereOptimizer{query_ptr, context, merge_tree.getData(), required_columns, log};
+                    MergeTreeWhereOptimizer{query_info, context, merge_tree.getData(), required_columns, log};
             };
 
             if (const StorageMergeTree * merge_tree = typeid_cast<const StorageMergeTree *>(storage.get()))
@@ -850,7 +855,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
                 optimize_prewhere(*merge_tree);
         }
 
-        streams = storage->read(required_columns, query_ptr, context, from_stage, max_block_size, max_streams);
+        streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
         if (alias_actions)
         {
@@ -947,7 +952,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
             max_streams,
             settings.aggregation_memory_efficient_merge_threads
                 ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
-                : max_streams);
+                : static_cast<size_t>(settings.max_threads));
 
         stream_with_non_joined_data = nullptr;
         streams.resize(1);
@@ -1001,15 +1006,15 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
         executeUnion();
 
         /// Now merge the aggregated blocks
-        streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, max_streams);
+        streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, settings.max_threads);
     }
     else
     {
         streams[0] = std::make_shared<MergingAggregatedMemoryEfficientBlockInputStream>(streams, params, final,
             max_streams,
             settings.aggregation_memory_efficient_merge_threads
-                ? size_t(settings.aggregation_memory_efficient_merge_threads)
-                : size_t(settings.max_threads));
+                ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                : static_cast<size_t>(settings.max_threads));
 
         streams.resize(1);
     }

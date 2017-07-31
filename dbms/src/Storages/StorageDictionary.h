@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Core/Defines.h>
 #include <common/MultiVersion.h>
 #include <ext/shared_ptr_helper.h>
 
@@ -41,7 +42,7 @@ public:
     std::string getTableName() const override { return table_name; }
     const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     BlockInputStreams read(const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size = DEFAULT_BLOCK_SIZE,

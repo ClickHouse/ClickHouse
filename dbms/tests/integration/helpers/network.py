@@ -90,12 +90,12 @@ class _NetworkManager:
         return cls._instance
 
     def add_iptables_rule(self, **kwargs):
-        cmd = ['iptables', '-A', 'DOCKER']
+        cmd = ['iptables', '-I', 'DOCKER-USER', '1']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
 
     def delete_iptables_rule(self, **kwargs):
-        cmd = ['iptables', '-D', 'DOCKER']
+        cmd = ['iptables', '-D', 'DOCKER-USER']
         cmd.extend(self._iptables_cmd_suffix(**kwargs))
         self._exec_run(cmd, privileged=True)
 

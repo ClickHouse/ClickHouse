@@ -24,7 +24,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
 
-#include <DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/copyData.h>
@@ -35,6 +34,7 @@
 #include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -56,6 +56,7 @@ namespace ProfileEvents
     extern const Event ReplicatedPartFetchesOfMerged;
     extern const Event ObsoleteReplicatedParts;
     extern const Event ReplicatedPartFetches;
+    extern const Event DataAfterMergeDiffersFromReplica;
 }
 
 namespace DB
@@ -1092,6 +1093,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 {
                     do_fetch = true;
                     part->remove();
+
+                    ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
                     LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "
                         "Data after merge is not byte-identical to data on another replicas. "
@@ -2214,6 +2217,9 @@ void StorageReplicatedMergeTree::startup()
         data.getDataParts(), current_zookeeper);
 
     queue.pullLogsToQueue(current_zookeeper, nullptr);
+    last_queue_update_finish_time.store(time(nullptr));
+    /// NOTE: not updating last_queue_update_start_time because it must contain the time when
+    /// the notification of queue change was received. In the beginning it is effectively infinite.
 
     /// In this thread replica will be activated.
     restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
@@ -2284,7 +2290,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
 
 BlockInputStreams StorageReplicatedMergeTree::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -2336,7 +2342,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     }
 
     return reader.read(
-        column_names, query, context, processed_stage, max_block_size, num_streams, &part_index, max_block_number_to_read);
+        column_names, query_info, context, processed_stage, max_block_size, num_streams, &part_index, max_block_number_to_read);
 }
 
 
@@ -2614,11 +2620,11 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(co
         block_number_lock.unlock();
     }
 
-    /// This should never happen.
+    /// Empty partition.
     if (right == 0)
-        throw Exception("Logical error: newly allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
-    --right;
+        return {};
 
+    --right;
     return getFakePartNameCoveringPartRange(month_name, left, right);
 }
 
@@ -2632,6 +2638,12 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
 
     String month_name = MergeTreeData::getMonthName(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
+
+    if (fake_part_name.empty())
+    {
+        LOG_INFO(log, "Will not clear partition " << month_name << ", it is empty.");
+        return;
+    }
 
     /// We allocated new block number for this part, so new merges can't merge clearing parts with new ones
 
@@ -2666,6 +2678,12 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field
 
     String month_name = MergeTreeData::getMonthName(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
+
+    if (fake_part_name.empty())
+    {
+        LOG_INFO(log, "Will not drop partition " << month_name << ", it is empty.");
+        return;
+    }
 
     /** Forbid to choose the parts to be deleted for merging.
       * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
@@ -3372,7 +3390,7 @@ void StorageReplicatedMergeTree::freezePartition(const Field & partition, const 
 
 void StorageReplicatedMergeTree::reshardPartitions(
     const ASTPtr & query, const String & database_name,
-    const Field & first_partition, const Field & last_partition,
+    const Field & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
     Context & context)
@@ -3452,19 +3470,9 @@ void StorageReplicatedMergeTree::reshardPartitions(
                 throw Exception{"Shard paths must be distinct", ErrorCodes::DUPLICATE_SHARD_PATHS};
         }
 
-        DayNum_t first_partition_num = !first_partition.isNull() ? MergeTreeData::getMonthDayNum(first_partition) : DayNum_t();
-        DayNum_t last_partition_num = !last_partition.isNull() ? MergeTreeData::getMonthDayNum(last_partition) : DayNum_t();
+        DayNum_t partition_num = !partition.isNull() ? MergeTreeData::getMonthDayNum(partition) : DayNum_t();
 
-        if (first_partition_num && last_partition_num)
-        {
-            if (first_partition_num > last_partition_num)
-                throw Exception{"Invalid interval of partitions", ErrorCodes::INVALID_PARTITIONS_INTERVAL};
-        }
-
-        if (!first_partition_num && last_partition_num)
-            throw Exception{"Received invalid parameters for resharding", ErrorCodes::RESHARDING_INVALID_PARAMETERS};
-
-        bool include_all = !first_partition_num;
+        bool include_all = !partition_num;
 
         /// Make a list of local partitions that need to be resharded.
         std::set<std::string> unique_partition_list;
@@ -3473,7 +3481,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
         {
             const MergeTreeData::DataPartPtr & current_part = *it;
             DayNum_t month = current_part->month;
-            if (include_all || ((month >= first_partition_num) && (month <= last_partition_num)))
+            if (include_all || month == partition_num)
                 unique_partition_list.insert(MergeTreeData::getMonthName(month));
         }
 

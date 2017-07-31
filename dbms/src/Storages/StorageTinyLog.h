@@ -9,6 +9,7 @@
 #include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Core/Defines.h>
 
 
 namespace DB
@@ -31,7 +32,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,

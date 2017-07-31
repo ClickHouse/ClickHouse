@@ -69,6 +69,37 @@ void Settings::set(const String & name, const String & value)
 #undef TRY_SET
 }
 
+String Settings::get(const String & name) const
+{
+#define GET(TYPE, NAME, DEFAULT) \
+    else if (name == #NAME) return NAME.toString();
+
+    if (false) {}
+    APPLY_FOR_SETTINGS(GET)
+    else
+    {
+        String value;
+        if (!limits.tryGet(name, value))
+            throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
+        return value;
+    }
+
+#undef GET
+}
+
+bool Settings::tryGet(const String & name, String & value) const
+{
+#define TRY_GET(TYPE, NAME, DEFAULT) \
+    else if (name == #NAME) { value = NAME.toString(); return true; }
+
+    if (false) {}
+    APPLY_FOR_SETTINGS(TRY_GET)
+    else
+        return limits.tryGet(name, value);
+
+#undef TRY_GET
+}
+
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
     * The profile can also be set using the `set` functions, like the `profile` setting.
     */

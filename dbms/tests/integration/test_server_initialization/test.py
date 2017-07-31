@@ -13,6 +13,7 @@ def started_cluster():
         instance_fail = cluster_fail.add_instance('dummy_fail', clickhouse_path_dir='clickhouse_path_fail')
         with pytest.raises(Exception):
             cluster_fail.start()
+        cluster_fail.shutdown() # cleanup
 
         yield cluster
 

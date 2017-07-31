@@ -1,11 +1,10 @@
 #pragma once
 
 #include <map>
-
+#include <shared_mutex>
 #include <ext/shared_ptr_helper.h>
 
 #include <Poco/File.h>
-#include <Poco/RWLock.h>
 
 #include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
@@ -52,7 +51,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
@@ -81,7 +80,7 @@ protected:
     String name;
     NamesAndTypesListPtr columns;
 
-    Poco::RWLock rwlock;
+    mutable std::shared_mutex rwlock;
 
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (the correctness of names and paths is not verified)

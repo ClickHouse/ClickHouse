@@ -31,6 +31,8 @@
 #include <Interpreters/InterpreterKillQueryQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
+#include <Common/typeid_cast.h>
+
 namespace DB
 {
 
