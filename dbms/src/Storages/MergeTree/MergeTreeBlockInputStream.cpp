@@ -39,7 +39,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names},
     ordered_names{column_names},
     data_part{owned_data_part_},
-    part_columns_lock{new Poco::ScopedReadRWLock(data_part->columns_lock)},
+    part_columns_lock(data_part->columns_lock),
     all_mark_ranges(mark_ranges_),
     part_index_in_query(part_index_in_query_),
     check_columns(check_columns),
@@ -196,7 +196,7 @@ void MergeTreeBlockInputStream::finish()
     */
     reader.reset();
     pre_reader.reset();
-    part_columns_lock.reset();
+    part_columns_lock.unlock();
     data_part.reset();
 }
 

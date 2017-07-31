@@ -496,7 +496,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        Poco::ScopedReadRWLock part_lock(part->columns_lock);
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         merge_entry->total_size_bytes_compressed += part->size_in_bytes;
         merge_entry->total_size_marks += part->size;
@@ -873,7 +873,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        Poco::ScopedReadRWLock part_lock(part->columns_lock);
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         merge_entry->total_size_bytes_compressed += part->size_in_bytes;
         merge_entry->total_size_marks += part->size;

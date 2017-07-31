@@ -264,7 +264,7 @@ static void convertColumnToNullable(ColumnWithTypeAndName & column)
 
 void Join::setSampleBlock(const Block & block)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     if (!empty())
         return;
@@ -430,7 +430,7 @@ namespace
 
 bool Join::insertFromBlock(const Block & block)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     if (empty())
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
@@ -878,7 +878,7 @@ void Join::joinBlock(Block & block) const
 {
 //    std::cerr << "joinBlock: " << block.dumpStructure() << "\n";
 
-    Poco::ScopedReadRWLock lock(rwlock);
+    std::shared_lock<std::shared_mutex> lock(rwlock);
 
     checkTypesOfKeys(block, sample_block_with_keys);
 

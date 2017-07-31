@@ -1084,7 +1084,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
         return;
     try
     {
-        Poco::ScopedWriteRWLock lock(data_part->columns_lock);
+        std::unique_lock<std::shared_mutex> lock(data_part->columns_lock);
 
         String path = data_part->storage.full_path + data_part->name + "/";
 

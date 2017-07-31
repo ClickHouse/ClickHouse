@@ -6,6 +6,7 @@
 #include <random>
 #include <tuple>
 #include <vector>
+#include <shared_mutex>
 #include <Columns/ColumnString.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/HashMap.h>
@@ -14,7 +15,6 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
-#include <Poco/RWLock.h>
 #include <common/StringRef.h>
 #include <ext/bit_cast.h>
 #include <ext/map.h>
@@ -700,7 +700,7 @@ private:
     const DictionaryLifetime dict_lifetime;
     const std::string key_description{dict_struct.getKeyDescription()};
 
-    mutable Poco::RWLock rw_lock;
+    mutable std::shared_mutex rw_lock;
 
     /// Actual size will be increased to match power of 2
     const size_t size;

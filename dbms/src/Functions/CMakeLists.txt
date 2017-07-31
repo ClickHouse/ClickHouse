@@ -26,6 +26,35 @@ generate_function_register(Arithmetic
   FunctionBitTestAll
 )
 
+generate_function_register(Array
+  FunctionArray
+  FunctionArrayElement
+  FunctionHas
+  FunctionIndexOf
+  FunctionCountEqual
+  FunctionArrayEnumerate
+  FunctionArrayEnumerateUniq
+  FunctionArrayUniq
+  FunctionEmptyArrayUInt8
+  FunctionEmptyArrayUInt16
+  FunctionEmptyArrayUInt32
+  FunctionEmptyArrayUInt64
+  FunctionEmptyArrayInt8
+  FunctionEmptyArrayInt16
+  FunctionEmptyArrayInt32
+  FunctionEmptyArrayInt64
+  FunctionEmptyArrayFloat32
+  FunctionEmptyArrayFloat64
+  FunctionEmptyArrayDate
+  FunctionEmptyArrayDateTime
+  FunctionEmptyArrayString
+  FunctionEmptyArrayToSingle
+  FunctionRange
+  FunctionArrayReduce
+  FunctionArrayReverse
+)
+
+
 add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions ./Conditional)
 add_headers_and_sources(clickhouse_functions ${ClickHouse_BINARY_DIR}/dbms/src/Functions)
