@@ -323,7 +323,7 @@ void DDLWorker::processTasks()
         DDLTask & task = *current_task;
 
         bool already_processed = zookeeper->exists(task.entry_path + "/finished/" + task.host_id_str);
-        if (!server_startup && already_processed)
+        if (!server_startup && !task.was_executed && already_processed)
         {
             throw Exception(
                 "Server expects that DDL task " + task.entry_name + " should be processed, but it was already processed according to ZK",
@@ -723,8 +723,16 @@ void DDLWorker::run()
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Started DDLWorker thread");
 
-    zookeeper = context.getZooKeeper();
-    zookeeper->createAncestors(queue_dir + "/");
+    try
+    {
+        zookeeper = context.getZooKeeper();
+        zookeeper->createAncestors(queue_dir + "/");
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Terminating. Cannot initialize DDL queue");
+        throw;
+    }
 
     while (!stop_flag)
     {
@@ -742,7 +750,7 @@ void DDLWorker::run()
         }
         catch (zkutil::KeeperException & e)
         {
-            if (e.code == ZCONNECTIONLOSS || e.code == ZSESSIONEXPIRED)
+            if (e.isHardwareError())
             {
                 LOG_DEBUG(log, "Recovering ZooKeeper session after " << getCurrentExceptionMessage(false));
                 zookeeper = context.getZooKeeper();

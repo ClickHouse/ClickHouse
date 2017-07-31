@@ -28,9 +28,8 @@ def ddl_check_query(instance, query, num_hosts=None):
     return contents
 
 def ddl_check_there_are_no_dublicates(instance):
-    answer = instance.query("SELECT max(c), argMax(q, c) FROM (SELECT lower(query) AS q, count() AS c FROM system.query_log WHERE type=2 AND q LIKE '/*ddl_entry=query-%' GROUP BY query)")
-    row = TSV.toMat(answer)[0]
-    assert row[0] == "1", "dublicates on {} {}, query {}".format(instance.name, instance.ip_address, row[1])
+    rows = instance.query("SELECT max(c), argMax(q, c) FROM (SELECT lower(query) AS q, count() AS c FROM system.query_log WHERE type=2 AND q LIKE '/*ddl_entry=query-%' GROUP BY query)")
+    assert len(rows) == 0 or rows[0][0] == "1", "dublicates on {} {}, query {}".format(instance.name, instance.ip_address)
 
 
 TEST_REPLICATED_ALTERS=True
@@ -49,6 +48,12 @@ def started_cluster():
 
         cluster.start()
 
+        # Select sacrifice instance to test CONNECTION_LOSS and server fail on it
+        sacrifice = cluster.instances['ch2']
+        cluster.pm_random_drops = PartitionManager()
+        cluster.pm_random_drops._add_rule({'probability': 0.05, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
+        cluster.pm_random_drops._add_rule({'probability': 0.05, 'source': sacrifice.ip_address, 'destination_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
+
         # Initialize databases and service tables
         instance = cluster.instances['ch1']
 
@@ -66,10 +71,14 @@ CREATE TABLE IF NOT EXISTS all_tables ON CLUSTER 'cluster_no_replicas'
         ddl_check_query(instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'")
 
     finally:
+        # Remove iptables rules for sacrifice instance
+        cluster.pm_random_drops.heal_all()
+
         # Check query log to ensure that DDL queries are not executed twice
-        time.sleep(1)
+        time.sleep(1.5)
         for instance in cluster.instances.values():
             ddl_check_there_are_no_dublicates(instance)
+
         #cluster.shutdown()
 
 

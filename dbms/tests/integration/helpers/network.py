@@ -29,6 +29,7 @@ class PartitionManager:
         self._add_rule({'source': instance.ip_address, 'destination_port': 2181, 'action': action})
         self._add_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
 
+
     def restore_instance_zk_connections(self, instance, action='DROP'):
         self._check_instance(instance)
 
@@ -109,8 +110,11 @@ class _NetworkManager:
     def _iptables_cmd_suffix(
             source=None, destination=None,
             source_port=None, destination_port=None,
-            action=None):
-        ret = ['-p', 'tcp']
+            action=None, probability=None):
+        ret = []
+        if probability is not None:
+            ret.extend(['-m', 'statistic', '--mode', 'random', '--probability', str(probability)])
+        ret.extend(['-p', 'tcp'])
         if source is not None:
             ret.extend(['-s', source])
         if destination is not None:
