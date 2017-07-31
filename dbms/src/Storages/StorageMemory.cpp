@@ -94,27 +94,9 @@ StorageMemory::StorageMemory(
 }
 
 
-StoragePtr StorageMemory::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_)
-{
-    return make_shared(name_, columns_);
-}
-
-StoragePtr StorageMemory::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-{
-    return make_shared(name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
-}
-
-
 BlockInputStreams StorageMemory::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,

@@ -14,6 +14,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <Poco/File.h>
 
 

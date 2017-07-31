@@ -3,11 +3,11 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <atomic>
 #include <memory>
 #include <tuple>
@@ -15,6 +15,7 @@
 
 namespace DB
 {
+
 
 class ComplexKeyHashedDictionary final : public IDictionaryBase
 {
@@ -33,13 +34,13 @@ public:
 
     std::string getTypeName() const override { return "ComplexKeyHashed"; }
 
-    std::size_t getBytesAllocated() const override { return bytes_allocated; }
+    size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override { return 1.0; }
 
-    std::size_t getElementCount() const override { return element_count; }
+    size_t getElementCount() const override { return element_count; }
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
@@ -125,6 +126,8 @@ public:
 
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+
 private:
     template <typename Value> using ContainerType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
@@ -183,10 +186,15 @@ private:
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     static StringRef placeKeysInPool(
-        const std::size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool);
+        const size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool);
 
     template <typename T>
     void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
+
+    std::vector<StringRef> getKeys() const;
+
+    template <typename T>
+    std::vector<StringRef> getKeys(const Attribute & attribute) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;
@@ -195,14 +203,14 @@ private:
     const bool require_nonempty;
     const std::string key_description{dict_struct.getKeyDescription()};
 
-    std::map<std::string, std::size_t> attribute_index_by_name;
+    std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
     Arena keys_pool;
 
-    std::size_t bytes_allocated = 0;
-    std::size_t element_count = 0;
-    std::size_t bucket_count = 0;
-    mutable std::atomic<std::size_t> query_count{0};
+    size_t bytes_allocated = 0;
+    size_t element_count = 0;
+    size_t bucket_count = 0;
+    mutable std::atomic<size_t> query_count{0};
 
     std::chrono::time_point<std::chrono::system_clock> creation_time;
 

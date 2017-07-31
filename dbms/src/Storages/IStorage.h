@@ -4,7 +4,8 @@
 #include <Common/Exception.h>
 #include <Core/QueryProcessingStage.h>
 #include <Storages/ITableDeclaration.h>
-#include <Poco/RWLock.h>
+#include <Storages/SelectQueryInfo.h>
+#include <shared_mutex>
 #include <memory>
 #include <experimental/optional>
 
@@ -30,10 +31,6 @@ class IStorage;
 
 using StoragePtr = std::shared_ptr<IStorage>;
 
-class IAST;
-
-using ASTPtr = std::shared_ptr<IAST>;
-
 struct Settings;
 
 class AlterCommands;
@@ -57,8 +54,8 @@ private:
 
     StoragePtr storage;
     /// Order is important.
-    std::experimental::optional<Poco::ScopedReadRWLock> data_lock;
-    std::experimental::optional<Poco::ScopedReadRWLock> structure_lock;
+    std::shared_lock<std::shared_mutex> data_lock;
+    std::shared_lock<std::shared_mutex> structure_lock;
 
 public:
     TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data);
@@ -67,15 +64,15 @@ public:
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
-using TableStructureWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
-using TableDataWriteLockPtr = std::unique_ptr<Poco::ScopedWriteRWLock>;
-using TableFullWriteLockPtr = std::pair<TableDataWriteLockPtr, TableStructureWriteLockPtr>;
+using TableStructureWriteLock = std::unique_lock<std::shared_mutex>;
+using TableDataWriteLock = std::unique_lock<std::shared_mutex>;
+using TableFullWriteLock = std::pair<TableDataWriteLock, TableStructureWriteLock>;
 
 
 /** Storage. Responsible for
   * - storage of the table data;
-  * - the definition in which file (or not the file) the data is stored;
-  * - search for data and update data;
+  * - the definition in which files (or not in files) the data is stored;
+  * - data lookups and appends;
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
@@ -85,7 +82,7 @@ public:
     /// The main name of the table type (for example, StorageMergeTree).
     virtual std::string getName() const = 0;
 
-    /** Returns true if the store receives data from a remote server or servers. */
+    /** Returns true if the storage receives data from a remote server or servers. */
     virtual bool isRemote() const { return false; }
 
     /** Returns true if the storage supports queries with the SAMPLE section. */
@@ -97,8 +94,11 @@ public:
     /** Returns true if the storage supports queries with the PREWHERE section. */
     virtual bool supportsPrewhere() const { return false; }
 
-    /** Returns true if the storage supports multiple replicas. */
+    /** Returns true if the storage supports read from multiple replicas. Assumed isRemote. */
     virtual bool supportsParallelReplicas() const { return false; }
+
+    /** Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas. */
+    virtual bool supportsReplication() const { return false; }
 
     /** Does not allow you to change the structure or name of the table.
       * If you change the data in the table, you will need to specify will_modify_data = true.
@@ -117,7 +117,7 @@ public:
 
     /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP.
       */
-    TableFullWriteLockPtr lockForAlter()
+    TableFullWriteLock lockForAlter()
     {
         /// The calculation order is important.
         auto data_lock = lockDataForAlter();
@@ -130,17 +130,17 @@ public:
       * It is taken during write temporary data in ALTER MODIFY.
       * Under this lock, you can take lockStructureForAlter() to change the structure of the table.
       */
-    TableDataWriteLockPtr lockDataForAlter()
+    TableDataWriteLock lockDataForAlter()
     {
-        auto res = std::make_unique<Poco::ScopedWriteRWLock>(data_lock);
+        std::unique_lock<std::shared_mutex> res(data_lock);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
     }
 
-    TableStructureWriteLockPtr lockStructureForAlter()
+    TableStructureWriteLock lockStructureForAlter()
     {
-        auto res = std::make_unique<Poco::ScopedWriteRWLock>(structure_lock);
+        std::unique_lock<std::shared_mutex> res(structure_lock);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -153,7 +153,7 @@ public:
       *  (indexes, locks, etc.)
       * Returns a stream with which you can read data sequentially
       *  or multiple streams for parallel data reading.
-      * The into `processed_stage` info is also written to what stage the request was processed.
+      * The `processed_stage` info is also written to what stage the request was processed.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server.)
       *
@@ -168,7 +168,7 @@ public:
       */
     virtual BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
@@ -214,8 +214,8 @@ public:
         throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Execute DROP COLUMN ... FROM PARTITION query witch drops column from given partition. */
-    virtual void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
+    /** Execute CLEAR COLUMN ... IN PARTITION query which removes column from given partition. */
+    virtual void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
     {
         throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -252,7 +252,7 @@ public:
       */
     virtual void reshardPartitions(
         const ASTPtr & query, const String & database_name,
-        const Field & first_partition, const Field & last_partition,
+        const Field & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
         Context & context)
@@ -263,14 +263,24 @@ public:
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
-    virtual bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+    virtual bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** If you have to do some complicated work when destroying an object - do it in advance.
+    /** If the table have to do some complicated work on startup,
+      *  that must be postponed after creation of table object
+      *  (like launching some background threads),
+      *  do it in this method.
+      * You should call this method after creation of object.
+      * By default, does nothing.
+      * Cannot be called simultaneously by multiple threads.
+      */
+    virtual void startup() {}
+
+    /** If the table have to do some complicated work when destroying an object - do it in advance.
       * For example, if the table contains any threads for background work - ask them to complete and wait for completion.
-      * By default, do nothing.
+      * By default, does nothing.
       * Can be called simultaneously from different threads, even after a call to drop().
       */
     virtual void shutdown() {}
@@ -306,7 +316,7 @@ private:
       *  2) all changes to the data after releasing the lock will be based on the structure of the table at the time after the lock was released.
       * You need to take for read for the entire time of the operation that changes the data.
       */
-    mutable Poco::RWLock data_lock;
+    mutable std::shared_mutex data_lock;
 
     /** Lock for multiple columns and path to table. It is taken for write at RENAME, ALTER (for ALTER MODIFY for a while) and DROP.
       * It is taken for read for the whole time of SELECT, INSERT and merge parts (for MergeTree).
@@ -315,7 +325,7 @@ private:
       * That is, if this lock is taken for write, you should not worry about `parts_writing_lock`.
       * parts_writing_lock is only needed for cases when you do not want to take `table_structure_lock` for long operations (ALTER MODIFY).
       */
-    mutable Poco::RWLock structure_lock;
+    mutable std::shared_mutex structure_lock;
 };
 
 /// table name -> table

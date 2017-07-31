@@ -5,16 +5,15 @@
 
 #include <Core/Types.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromString.h>
 
 
 int main(int argc, char ** argv)
 {
     try
     {
-        std::stringstream s;
-        s << "-123456 123.456 вася пе\\tтя\t'\\'xyz\\\\'";
-        DB::ReadBufferFromIStream in(s);
+        std::string s = "-123456 123.456 вася пе\\tтя\t'\\'xyz\\\\'";
+        DB::ReadBufferFromString in(s);
 
         DB::Int64 a;
         DB::Float64 b;

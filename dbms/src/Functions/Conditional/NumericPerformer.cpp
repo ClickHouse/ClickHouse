@@ -1,16 +1,16 @@
 #include <Functions/Conditional/NumericPerformer.h>
 #include <Functions/Conditional/NullMapBuilder.h>
-#include <Functions/Conditional/CondException.h>
 #include <Functions/Conditional/ArgsInfo.h>
 #include <Functions/Conditional/NumericEvaluator.h>
 #include <Functions/Conditional/ArrayEvaluator.h>
-#include <Functions/NumberTraits.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/NumberTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -47,71 +47,26 @@ protected:
     static bool appendBranchInfo(size_t index, const Block & block,
         const ColumnNumbers & args, Branches & branches)
     {
-        const IColumn * col = block.safeGetByPosition(args[index]).column.get();
-
-        const ColumnVector<TType> * vec_col = nullptr;
-        const ColumnConst<TType> * const_col = nullptr;
-
-        const ColumnArray * arr_col = nullptr;
-        const ColumnVector<TType> * arr_vec_col = nullptr;
-        const ColumnConstArray * arr_const_col = nullptr;
+        const IColumn * col = block.getByPosition(args[index]).column.get();
 
         Branch branch;
+        branch.is_const = col->isConst();
 
-        vec_col = typeid_cast<const ColumnVector<TType> *>(col);
-        if (vec_col != nullptr)
-            branch.is_const = false;
-        else
+        if (checkColumn<ColumnVector<TType>>(col) || checkColumnConst<ColumnVector<TType>>(col))
         {
-            const_col = typeid_cast<const ColumnConst<TType> *>(col);
-            if (const_col != nullptr)
-                branch.is_const = true;
-            else
-            {
-                arr_col = typeid_cast<const ColumnArray *>(col);
-                if (arr_col != nullptr)
-                {
-                    arr_vec_col = typeid_cast<const ColumnVector<TType> *>(&arr_col->getData());
-                    if (arr_vec_col != nullptr)
-                        branch.is_const = false;
-                    else
-                        return false;
-                }
-                else
-                {
-                    arr_const_col = typeid_cast<const ColumnConstArray *>(col);
-                    if (arr_const_col != nullptr)
-                    {
-                        const IDataType * data = arr_const_col->getDataType().get();
-                        const DataTypeArray * arr = typeid_cast<const DataTypeArray *>(data);
-                        if (arr == nullptr)
-                            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
-                        const IDataType * nested_type = arr->getNestedType().get();
-
-                        using ElementType = DataTypeNumber<TType>;
-
-                        if (typeid_cast<const ElementType *>(nested_type) == nullptr)
-                            return false;
-
-                        branch.is_const = true;
-                    }
-                    else
-                        return false;
-                }
-            }
+            branch.category = Category::NUMERIC;
         }
+        else if ((branch.is_const && checkColumnConst<ColumnArray>(col)
+                && checkColumn<ColumnVector<TType>>(&static_cast<const ColumnArray &>(static_cast<const ColumnConst *>(col)->getDataColumn()).getData()))
+            || (!branch.is_const && checkColumn<ColumnArray>(col) && checkColumn<ColumnVector<TType>>(&static_cast<const ColumnArray &>(*col).getData())))
+        {
+            branch.category = Category::NUMERIC_ARRAY;
+        }
+        else
+            return false;
 
         branch.index = index;
         branch.type = DataTypeTraits::DataTypeFromFieldTypeOrError<TType>::getDataType();
-
-        if ((vec_col != nullptr) || (const_col != nullptr))
-            branch.category = Category::NUMERIC;
-        else if ((arr_vec_col != nullptr) || (arr_const_col != nullptr))
-            branch.category = Category::NUMERIC_ARRAY;
-        else
-            throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-
         branches.push_back(branch);
 
         return true;
@@ -125,12 +80,6 @@ protected:
     static bool appendBranchInfo(size_t index, const Block & block,
         const ColumnNumbers & args, Branches & branches)
     {
-        const IColumn * col = block.safeGetByPosition(args[index]).column.get();
-        const ColumnNull * const_col = typeid_cast<const ColumnNull *>(col);
-
-        if (const_col == nullptr)
-            return false;
-
         Branch branch;
         branch.is_const = true;
         branch.index = index;
@@ -198,7 +147,7 @@ struct ElsePredicate<NumberTraits::Enriched::Void<Nullity>, Null> final : public
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
@@ -209,7 +158,7 @@ struct ElsePredicate<TResult, NumberTraits::Error> : public PredicateBase<Number
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
@@ -220,7 +169,7 @@ struct ElsePredicate<NumberTraits::Error, TType>
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
@@ -257,8 +206,7 @@ struct ThenPredicate final : public PredicateBase<TType>
                 || ThenPredicate<TCombined, Int32>::execute(index2 + 1, block, args, result, builder, branches)
                 || ThenPredicate<TCombined, Int64>::execute(index2 + 1, block, args, result, builder, branches)
                 || ThenPredicate<TCombined, Float32>::execute(index2 + 1, block, args, result, builder, branches)
-                || ThenPredicate<TCombined, Float64>::execute(index2 + 1, block, args, result, builder, branches)
-                || ThenPredicate<TCombined, Null>::execute(index2 + 1, block, args, result, builder, branches)))
+                || ThenPredicate<TCombined, Float64>::execute(index2 + 1, block, args, result, builder, branches)))
                 return false;
         }
         else
@@ -273,8 +221,7 @@ struct ThenPredicate final : public PredicateBase<TType>
                 || ElsePredicate<TCombined, Int32>::execute(index2, block, args, result, builder, branches)
                 || ElsePredicate<TCombined, Int64>::execute(index2, block, args, result, builder, branches)
                 || ElsePredicate<TCombined, Float32>::execute(index2, block, args, result, builder, branches)
-                || ElsePredicate<TCombined, Float64>::execute(index2, block, args, result, builder, branches)
-                || ElsePredicate<TCombined, Null>::execute(index2, block, args, result, builder, branches)))
+                || ElsePredicate<TCombined, Float64>::execute(index2, block, args, result, builder, branches)))
                 return false;
         }
 
@@ -289,7 +236,7 @@ struct ThenPredicate<TResult, NumberTraits::Error>
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
@@ -300,7 +247,7 @@ struct ThenPredicate<NumberTraits::Error, TType>
     static bool execute(size_t index, Block & block, const ColumnNumbers & args,
         size_t result, NullMapBuilder & builder, Branches & branches)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 

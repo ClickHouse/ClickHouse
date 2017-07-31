@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/StorageSet.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -20,7 +20,7 @@ using JoinPtr = std::shared_ptr<Join>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin : private ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
+class StorageJoin : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
 friend class ext::shared_ptr_helper<StorageJoin>;
 

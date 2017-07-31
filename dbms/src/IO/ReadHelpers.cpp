@@ -6,7 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <common/find_first_symbols.h>
-
+#include <stdlib.h>
 
 namespace DB
 {
@@ -19,6 +19,42 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+template <class IteratorSrc, class IteratorDst>
+void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
+{
+    size_t src_pos = 0;
+    size_t dst_pos = 0;
+    for (; dst_pos < num_bytes; ++dst_pos)
+    {
+        dst[dst_pos] = unhex(src[src_pos]) * 16 + unhex(src[src_pos + 1]);
+        src_pos += 2;
+    }
+}
+
+void parseUUID(const UInt8 * src36, UInt8 * dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    parseHex(&src36[0], &dst16[0], 4);
+    parseHex(&src36[9], &dst16[4], 2);
+    parseHex(&src36[14], &dst16[6], 2);
+    parseHex(&src36[19], &dst16[8], 2);
+    parseHex(&src36[24], &dst16[10], 6);
+}
+
+/** Function used when byte ordering is important when parsing uuid
+ *  ex: When we create an UUID type
+ */
+void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
+{
+    /// If string is not like UUID - implementation specific behaviour.
+
+    parseHex(&src36[0], dst16 + 8, 4);
+    parseHex(&src36[9], dst16 + 12, 2);
+    parseHex(&src36[14], dst16 + 14, 2);
+    parseHex(&src36[19], dst16, 2);
+    parseHex(&src36[24], dst16 + 2, 6);
+}
 
 static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
@@ -357,7 +393,13 @@ template void readEscapedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8>
 template void readEscapedStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
-template <char quote, typename Vector>
+/** If enable_sql_style_quoting == true,
+  *  strings like 'abc''def' will be parsed as abc'def.
+  * Please note, that even with SQL style quoting enabled,
+  *  backslash escape sequences are also parsed,
+  *  that could be slightly confusing.
+  */
+template <char quote, bool enable_sql_style_quoting, typename Vector>
 static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
     if (buf.eof() || *buf.position() != quote)
@@ -378,6 +420,14 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
         if (*buf.position() == quote)
         {
             ++buf.position();
+
+            if (enable_sql_style_quoting && !buf.eof() && *buf.position() == quote)
+            {
+                s.push_back(quote);
+                ++buf.position();
+                continue;
+            }
+
             return;
         }
 
@@ -389,49 +439,64 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
         ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readAnyQuotedStringInto<'\''>(s, buf);
+    readAnyQuotedStringInto<'\'', enable_sql_style_quoting>(s, buf);
 }
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readDoubleQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readAnyQuotedStringInto<'"'>(s, buf);
+    readAnyQuotedStringInto<'"', enable_sql_style_quoting>(s, buf);
 }
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readBackQuotedStringInto(Vector & s, ReadBuffer & buf)
 {
-    readAnyQuotedStringInto<'`'>(s, buf);
+    readAnyQuotedStringInto<'`', enable_sql_style_quoting>(s, buf);
 }
 
 
 void readQuotedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readQuotedStringInto(s, buf);
+    readQuotedStringInto<false>(s, buf);
 }
 
-template void readQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
-template void readDoubleQuotedStringInto(NullSink & s, ReadBuffer & buf);
+void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readQuotedStringInto<true>(s, buf);
+}
+
+
+template void readQuotedStringInto<true>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readDoubleQuotedStringInto<false>(NullSink & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readDoubleQuotedStringInto(s, buf);
+    readDoubleQuotedStringInto<false>(s, buf);
 }
 
-template void readDoubleQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+void readDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readDoubleQuotedStringInto<true>(s, buf);
+}
 
 void readBackQuotedString(String & s, ReadBuffer & buf)
 {
     s.clear();
-    readBackQuotedStringInto(s, buf);
+    readBackQuotedStringInto<false>(s, buf);
 }
 
-template void readBackQuotedStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readBackQuotedStringInto<true>(s, buf);
+}
 
 
 template <typename Vector>
@@ -615,7 +680,7 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
         NullSink sink;
         readJSONStringInto(sink, buf);
     }
-    else if (isNumericASCII(*buf.position())) /// skip number
+    else if (isNumericASCII(*buf.position()) || *buf.position() == '-' || *buf.position() == '+') /// skip number
     {
         double v;
         if (!tryReadFloatText(v, buf))
@@ -669,7 +734,7 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
     }
     else
     {
-        throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception("Unexpected symbol '" + std::string(*buf.position(), 1) + "' for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
     }
 }
 

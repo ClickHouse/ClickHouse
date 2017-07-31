@@ -3,6 +3,7 @@
 
 #include <Core/FieldVisitors.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -31,7 +32,9 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageDictionary.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <unistd.h>
 
@@ -153,16 +156,22 @@ static void appendGraphitePattern(const Context & context,
         }
         else if (key == "function")
         {
+            String aggregate_function_name_with_params = config.getString(config_element + ".function");
+            String aggregate_function_name;
+            Array params_row;
+            getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
+                                                       aggregate_function_name, params_row, "GraphiteMergeTree storage initialization");
+
             /// TODO Not only Float64
-            pattern.function = AggregateFunctionFactory::instance().get(
-                config.getString(config_element + ".function"), { std::make_shared<DataTypeFloat64>() });
+            pattern.function = AggregateFunctionFactory::instance().get(aggregate_function_name, {std::make_shared<DataTypeFloat64>()},
+                                                                        params_row);
         }
         else if (startsWith(key, "retention"))
         {
             pattern.retentions.emplace_back(
                 Graphite::Retention{
-                    .age         = config.getUInt(config_element + "." + key + ".age"),
-                    .precision     = config.getUInt(config_element + "." + key + ".precision")});
+                    .age        = config.getUInt(config_element + "." + key + ".age"),
+                    .precision  = config.getUInt(config_element + "." + key + ".precision")});
         }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -278,6 +287,13 @@ StoragePtr StorageFactory::get(
             table_name, database_name, context, query, columns,
             materialized_columns, alias_columns, column_defaults,
             attach);
+    }
+    else if (name == "Dictionary")
+    {
+
+        return StorageDictionary::create(
+            table_name, context, query, columns,
+            materialized_columns, alias_columns, column_defaults);
     }
     else if (name == "TinyLog")
     {
@@ -518,7 +534,7 @@ StoragePtr StorageFactory::get(
           *
           * db, table - in which table to put data from buffer.
           * num_buckets - level of parallelism.
-          * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for pushing out from the buffer.
+          * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer.
           */
 
         ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
@@ -554,7 +570,9 @@ StoragePtr StorageFactory::get(
             table_name, columns,
             materialized_columns, alias_columns, column_defaults,
             context,
-            num_buckets, {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
+            num_buckets,
+            StorageBuffer::Thresholds{min_time, min_rows, min_bytes},
+            StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_database, destination_table);
     }
     else if (name == "TrivialBuffer")
@@ -602,7 +620,8 @@ StoragePtr StorageFactory::get(
             table_name, columns,
             materialized_columns, alias_columns, column_defaults,
             context, num_blocks_to_deduplicate, path_in_zk_for_deduplication,
-            {min_time, min_rows, min_bytes}, {max_time, max_rows, max_bytes},
+            StorageTrivialBuffer::Thresholds{min_time, min_rows, min_bytes},
+            StorageTrivialBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_database, destination_table);
     }
     else if (endsWith(name, "MergeTree"))

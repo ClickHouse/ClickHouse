@@ -18,59 +18,44 @@ namespace ErrorCodes
 }
 
 
-bool ParserTableExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
     auto res = std::make_shared<ASTTableExpression>();
 
-    ws.ignore(pos, end);
-
     if (ParserWithOptionalAlias(std::make_unique<ParserSubquery>(), true)
-        .parse(pos, end, res->subquery, max_parsed_pos, expected))
+        .parse(pos, res->subquery, expected))
     {
     }
     else if (ParserWithOptionalAlias(std::make_unique<ParserFunction>(), true)
-        .parse(pos, end, res->table_function, max_parsed_pos, expected))
+        .parse(pos, res->table_function, expected))
     {
         static_cast<ASTFunction &>(*res->table_function).kind = ASTFunction::TABLE_FUNCTION;
     }
     else if (ParserWithOptionalAlias(std::make_unique<ParserCompoundIdentifier>(), true)
-        .parse(pos, end, res->database_and_table_name, max_parsed_pos, expected))
+        .parse(pos, res->database_and_table_name, expected))
     {
         static_cast<ASTIdentifier &>(*res->database_and_table_name).kind = ASTIdentifier::Table;
     }
     else
         return false;
 
-    ws.ignore(pos, end);
-
     /// FINAL
-    if (ParserString("FINAL", true, true).ignore(pos, end, max_parsed_pos, expected))
+    if (ParserKeyword("FINAL").ignore(pos, expected))
         res->final = true;
 
-    ws.ignore(pos, end);
-
     /// SAMPLE number
-    if (ParserString("SAMPLE", true, true).ignore(pos, end, max_parsed_pos, expected))
+    if (ParserKeyword("SAMPLE").ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
         ParserSampleRatio ratio;
 
-        if (!ratio.parse(pos, end, res->sample_size, max_parsed_pos, expected))
+        if (!ratio.parse(pos, res->sample_size, expected))
             return false;
 
-        ws.ignore(pos, end);
-
         /// OFFSET number
-        if (ParserString("OFFSET", true, true).ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword("OFFSET").ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!ratio.parse(pos, end, res->sample_offset, max_parsed_pos, expected))
+            if (!ratio.parse(pos, res->sample_offset, expected))
                 return false;
-
-            ws.ignore(pos, end);
         }
     }
 
@@ -90,22 +75,15 @@ bool ParserTableExpression::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 }
 
 
-bool ParserArrayJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserArrayJoin::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
     auto res = std::make_shared<ASTArrayJoin>();
-
-    ws.ignore(pos, end);
 
     /// [LEFT] ARRAY JOIN expr list
     Pos saved_pos = pos;
     bool has_array_join = false;
 
-    if (ParserString("LEFT", true, true).ignore(pos, end, max_parsed_pos, expected)
-        && ws.ignore(pos, end)
-        && ParserString("ARRAY", true, true).ignore(pos, end, max_parsed_pos, expected)
-        && ws.ignore(pos, end)
-        && ParserString("JOIN", true, true).ignore(pos, end, max_parsed_pos, expected))
+    if (ParserKeyword("LEFT ARRAY JOIN").ignore(pos, expected))
     {
         res->kind = ASTArrayJoin::Kind::Left;
         has_array_join = true;
@@ -115,12 +93,9 @@ bool ParserArrayJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
         pos = saved_pos;
 
         /// INNER may be specified explicitly, otherwise it is assumed as default.
-        ParserString("INNER", true, true).ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end);
+        ParserKeyword("INNER").ignore(pos, expected);
 
-        if (ParserString("ARRAY", true, true).ignore(pos, end, max_parsed_pos, expected)
-            && ws.ignore(pos, end)
-            && ParserString("JOIN", true, true).ignore(pos, end, max_parsed_pos, expected))
+        if (ParserKeyword("ARRAY JOIN").ignore(pos, expected))
         {
             res->kind = ASTArrayJoin::Kind::Inner;
             has_array_join = true;
@@ -130,12 +105,8 @@ bool ParserArrayJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
     if (!has_array_join)
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!ParserExpressionList(false).parse(pos, end, res->expression_list, max_parsed_pos, expected))
+    if (!ParserExpressionList(false).parse(pos, res->expression_list, expected))
         return false;
-
-    ws.ignore(pos, end);
 
     if (res->expression_list)
         res->children.emplace_back(res->expression_list);
@@ -145,59 +116,52 @@ bool ParserArrayJoin::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_par
 }
 
 
-bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserWhiteSpaceOrComments ws;
     auto res = std::make_shared<ASTTablesInSelectQueryElement>();
 
-    ws.ignore(pos, end);
-
-    if (ParserArrayJoin().parse(pos, end, res->array_join, max_parsed_pos, expected))
+    if (ParserArrayJoin().parse(pos, res->array_join, expected))
     {
     }
     else if (is_first)
     {
-        if (!ParserTableExpression().parse(pos, end, res->table_expression, max_parsed_pos, expected))
+        if (!ParserTableExpression().parse(pos, res->table_expression, expected))
             return false;
     }
     else
     {
         auto table_join = std::make_shared<ASTTableJoin>();
 
-        if (ParserString(",").ignore(pos, end, max_parsed_pos, expected))
+        if (pos->type == TokenType::Comma)
         {
+            ++pos;
             table_join->kind = ASTTableJoin::Kind::Comma;
         }
         else
         {
-            if (ParserString("GLOBAL", true, true).ignore(pos, end))
+            if (ParserKeyword("GLOBAL").ignore(pos))
                 table_join->locality = ASTTableJoin::Locality::Global;
-            else if (ParserString("LOCAL", true, true).ignore(pos, end))
+            else if (ParserKeyword("LOCAL").ignore(pos))
                 table_join->locality = ASTTableJoin::Locality::Local;
 
-            ws.ignore(pos, end);
-
-            if (ParserString("ANY", true, true).ignore(pos, end))
+            if (ParserKeyword("ANY").ignore(pos))
                 table_join->strictness = ASTTableJoin::Strictness::Any;
-            else if (ParserString("ALL", true, true).ignore(pos, end))
+            else if (ParserKeyword("ALL").ignore(pos))
                 table_join->strictness = ASTTableJoin::Strictness::All;
 
-            ws.ignore(pos, end);
-
-            if (ParserString("INNER", true, true).ignore(pos, end))
+            if (ParserKeyword("INNER").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Inner;
-            else if (ParserString("LEFT", true, true).ignore(pos, end))
+            else if (ParserKeyword("LEFT").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Left;
-            else if (ParserString("RIGHT", true, true).ignore(pos, end))
+            else if (ParserKeyword("RIGHT").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Right;
-            else if (ParserString("FULL", true, true).ignore(pos, end))
+            else if (ParserKeyword("FULL").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Full;
-            else if (ParserString("CROSS", true, true).ignore(pos, end))
+            else if (ParserKeyword("CROSS").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Cross;
             else
             {
                 /// Maybe need use INNER by default as in another DBMS.
-                expected = "INNER|LEFT|RIGHT|FULL|CROSS";
                 return false;
             }
 
@@ -205,65 +169,49 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, Pos end, ASTPtr & no
                 && table_join->kind == ASTTableJoin::Kind::Cross)
                 throw Exception("You must not specify ANY or ALL for CROSS JOIN.", ErrorCodes::SYNTAX_ERROR);
 
-            ws.ignore(pos, end);
-
             /// Optional OUTER keyword for outer joins.
             if (table_join->kind == ASTTableJoin::Kind::Left
                 || table_join->kind == ASTTableJoin::Kind::Right
                 || table_join->kind == ASTTableJoin::Kind::Full)
             {
-                ParserString("OUTER", true, true).ignore(pos, end)
-                    && ws.ignore(pos, end);
+                ParserKeyword("OUTER").ignore(pos);
             }
 
-            if (!ParserString("JOIN", true, true).ignore(pos, end, max_parsed_pos, expected))
+            if (!ParserKeyword("JOIN").ignore(pos, expected))
                 return false;
-
-            ws.ignore(pos, end);
         }
 
-        if (!ParserTableExpression().parse(pos, end, res->table_expression, max_parsed_pos, expected))
+        if (!ParserTableExpression().parse(pos, res->table_expression, expected))
             return false;
 
         if (table_join->kind != ASTTableJoin::Kind::Comma
             && table_join->kind != ASTTableJoin::Kind::Cross)
         {
-            ws.ignore(pos, end);
-
-            if (ParserString("USING", true, true).ignore(pos, end, max_parsed_pos, expected))
+            if (ParserKeyword("USING").ignore(pos, expected))
             {
-                ws.ignore(pos, end);
-
                 /// Expression for USING could be in parentheses or not.
-                bool in_parens = ParserString("(").ignore(pos, end);
+                bool in_parens = pos->type == TokenType::OpeningRoundBracket;
                 if (in_parens)
-                    ws.ignore(pos, end);
+                    ++pos;
 
-                if (!ParserExpressionList(false).parse(pos, end, table_join->using_expression_list, max_parsed_pos, expected))
+                if (!ParserExpressionList(false).parse(pos, table_join->using_expression_list, expected))
                     return false;
 
                 if (in_parens)
                 {
-                    ws.ignore(pos, end);
-                    if (!ParserString(")").ignore(pos, end))
+                    if (pos->type != TokenType::ClosingRoundBracket)
                         return false;
+                    ++pos;
                 }
-
-                ws.ignore(pos, end);
             }
-            else if (ParserString("ON", true, true).ignore(pos, end, max_parsed_pos, expected))
+            else if (ParserKeyword("ON").ignore(pos, expected))
             {
-                ws.ignore(pos, end);
-
                 /// OR is operator with lowest priority, so start parsing from it.
-                if (!ParserLogicalOrExpression().parse(pos, end, table_join->on_expression, max_parsed_pos, expected))
+                if (!ParserLogicalOrExpression().parse(pos, table_join->on_expression, expected))
                     return false;
-
-                ws.ignore(pos, end);
             }
             else
             {
-                expected = "USING or ON";
                 return false;
             }
         }
@@ -275,8 +223,6 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, Pos end, ASTPtr & no
 
         res->table_join = table_join;
     }
-
-    ws.ignore(pos, end);
 
     if (res->table_expression)
         res->children.emplace_back(res->table_expression);
@@ -290,18 +236,18 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, Pos end, ASTPtr & no
 }
 
 
-bool ParserTablesInSelectQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto res = std::make_shared<ASTTablesInSelectQuery>();
 
     ASTPtr child;
 
-    if (ParserTablesInSelectQueryElement(true).parse(pos, end, child, max_parsed_pos, expected))
+    if (ParserTablesInSelectQueryElement(true).parse(pos, child, expected))
         res->children.emplace_back(child);
     else
         return false;
 
-    while (ParserTablesInSelectQueryElement(false).parse(pos, end, child, max_parsed_pos, expected))
+    while (ParserTablesInSelectQueryElement(false).parse(pos, child, expected))
         res->children.emplace_back(child);
 
     node = res;

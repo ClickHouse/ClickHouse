@@ -22,9 +22,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/typeid_cast.h>
 
 #include <Poco/Event.h>
 #include <Poco/DirectoryIterator.h>
@@ -82,12 +83,12 @@ public:
         for (const auto & key : keys)
         {
             if (key == "task_queue_path")
-                task_queue_path = config.getString(config_name + "." + key);
+                ddl_queries_root = config.getString(config_name + "." + key);
             else
                 throw Exception{"Unknown parameter in resharding configuration", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
         }
 
-        if (task_queue_path.empty())
+        if (ddl_queries_root.empty())
             throw Exception{"Resharding: missing parameter task_queue_path", ErrorCodes::INVALID_CONFIG_PARAMETER};
     }
 
@@ -96,11 +97,11 @@ public:
 
     std::string getTaskQueuePath() const
     {
-        return task_queue_path;
+        return ddl_queries_root;
     }
 
 private:
-    std::string task_queue_path;
+    std::string ddl_queries_root;
 };
 
 /// Helper class we use to read and write the status of a coordinator
@@ -420,16 +421,12 @@ void ReshardingWorker::trackAndPerform()
             else
                 LOG_ERROR(log, ex.message());
         }
-        catch (const std::exception & ex)
-        {
-            LOG_ERROR(log, ex.what());
-        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        while (true)
+        while (!must_stop)
         {
             try
             {
@@ -460,10 +457,6 @@ void ReshardingWorker::trackAndPerform()
                 else
                     LOG_ERROR(log, ex.message());
             }
-            catch (const std::exception & ex)
-            {
-                LOG_ERROR(log, ex.what());
-            }
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -475,13 +468,9 @@ void ReshardingWorker::trackAndPerform()
         if (ex.code() != ErrorCodes::ABORTED)
             error_msg = ex.message();
     }
-    catch (const std::exception & ex)
-    {
-        error_msg = ex.what();
-    }
     catch (...)
     {
-        error_msg = "unspecified";
+        error_msg = getCurrentExceptionMessage(false);
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -769,18 +758,10 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
             LOG_ERROR(log, dumped_coordinator_state);
         throw;
     }
-    catch (const std::exception & ex)
-    {
-        /// An error has occurred on this performer.
-        handle_exception("Resharding job cancelled", ex.what());
-        if (current_job.isCoordinated())
-            LOG_ERROR(log, dumped_coordinator_state);
-        throw;
-    }
     catch (...)
     {
         /// An error has occurred on this performer.
-        handle_exception("Resharding job cancelled", "An unspecified error has occurred");
+        handle_exception("Resharding job cancelled", getCurrentExceptionMessage(false));
         if (current_job.isCoordinated())
             LOG_ERROR(log, dumped_coordinator_state);
         throw;
@@ -1496,7 +1477,7 @@ void ReshardingWorker::electLeader()
     /// sequential znode onto ZooKeeper persistent storage. When all the performers
     /// have entered the game, i.e. the election barrier is released, the winner
     /// is the performer having the znode with the lowest ID.
-    /// Then one of the nodes publishes this piece of information as a new znode.
+    /// Then one of the nodes publishes this part of information as a new znode.
     ///
     /// In case of failure this election scheme is guaranteed to always succeed:
     ///

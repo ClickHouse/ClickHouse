@@ -4,11 +4,11 @@
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
-#include <Poco/RWLock.h>
 
 #include <common/logger_useful.h>
 
 #include <atomic>
+#include <shared_mutex>
 
 
 namespace DB
@@ -74,7 +74,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
@@ -108,7 +108,7 @@ private:
     std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
     off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 
-    mutable Poco::RWLock rwlock;
+    mutable std::shared_mutex rwlock;
 
     Logger * log = &Logger::get("StorageFile");
 };

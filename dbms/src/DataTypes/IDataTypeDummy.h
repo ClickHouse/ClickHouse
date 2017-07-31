@@ -19,6 +19,11 @@ private:
         return true;
     }
 
+    bool canBeInsideNullable() const override
+    {
+        return false;
+    }
+
     void throwNoSerialization() const
     {
         throw Exception("Serialization is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -43,7 +48,7 @@ public:
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override     { throwNoSerialization(); }
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override                          { throwNoSerialization(); }
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override { throwNoSerialization(); }
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const override { throwNoSerialization(); }
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override                            { throwNoSerialization(); }
 
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override        { throwNoSerialization(); }
@@ -52,11 +57,6 @@ public:
     ColumnPtr createColumn() const override
     {
         throw Exception("Method createColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override
-    {
-        throw Exception("Method createConstColumn() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     Field getDefault() const override

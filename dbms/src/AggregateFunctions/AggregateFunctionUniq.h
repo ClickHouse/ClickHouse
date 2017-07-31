@@ -20,6 +20,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/typeid_cast.h>
 
 #include <AggregateFunctions/IUnaryAggregateFunction.h>
 #include <AggregateFunctions/UniqCombinedBiasData.h>
@@ -266,7 +267,7 @@ struct OneAdder<T, Data, typename std::enable_if<
         typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
     {
         StringRef value = column.getDataAt(row_num);
-        data.set.insert(CityHash64(value.data, value.size));
+        data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
     }
 };
 
@@ -290,7 +291,7 @@ struct OneAdder<T, Data, typename std::enable_if<
         typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
     {
         StringRef value = column.getDataAt(row_num);
-        data.set.insert(CityHash64(value.data, value.size));
+        data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
     }
 };
 
@@ -314,7 +315,7 @@ struct OneAdder<T, Data, typename std::enable_if<
         UInt128 key;
         SipHash hash;
         hash.update(value.data, value.size);
-        hash.get128(key.first, key.second);
+        hash.get128(key.low, key.high);
 
         data.set.insert(key);
     }

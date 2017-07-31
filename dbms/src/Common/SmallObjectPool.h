@@ -2,9 +2,9 @@
 
 #include <Common/Arena.h>
 #include <common/likely.h>
-#include <ext/range.hpp>
-#include <ext/size.hpp>
-#include <ext/bit_cast.hpp>
+#include <ext/range.h>
+#include <ext/size.h>
+#include <ext/bit_cast.h>
 #include <cstdlib>
 #include <memory>
 
@@ -21,14 +21,14 @@ private:
     struct Block { Block * next; };
     static constexpr auto getMinAllocationSize() { return sizeof(Block); }
 
-    const std::size_t object_size;
+    const size_t object_size;
     Arena pool;
     Block * free_list{};
 
 public:
     SmallObjectPool(
-        const std::size_t object_size_, const std::size_t initial_size = 4096, const std::size_t growth_factor = 2,
-        const std::size_t linear_growth_threshold = 128 * 1024 * 1024)
+        const size_t object_size_, const size_t initial_size = 4096, const size_t growth_factor = 2,
+        const size_t linear_growth_threshold = 128 * 1024 * 1024)
         : object_size{std::max(object_size_, getMinAllocationSize())},
           pool{initial_size, growth_factor, linear_growth_threshold}
     {

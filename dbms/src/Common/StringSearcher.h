@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/UTF8Helpers.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 #include <stdint.h>
@@ -56,7 +56,7 @@ private:
 
     /// substring to be searched for
     const UInt8 * const needle;
-    const std::size_t needle_size;
+    const size_t needle_size;
     const UInt8 * const needle_end = needle + needle_size;
     /// lower and uppercase variants of the first octet of the first character in `needle`
     bool first_needle_symbol_is_ascii{};
@@ -69,12 +69,12 @@ private:
     /// lower and uppercase vectors of first 16 characters of `needle`
     __m128i cachel = _mm_setzero_si128(), cacheu = _mm_setzero_si128();
     int cachemask{};
-    std::size_t cache_valid_len{};
-    std::size_t cache_actual_len{};
+    size_t cache_valid_len{};
+    size_t cache_actual_len{};
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const std::size_t needle_size)
+    StringSearcher(const char * const needle_, const size_t needle_size)
         : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
     {
         if (0 == needle_size)
@@ -110,7 +110,7 @@ public:
 
         auto needle_pos = needle;
 
-        for (std::size_t i = 0; i < n;)
+        for (size_t i = 0; i < n;)
         {
             if (needle_pos == needle_end)
             {
@@ -140,7 +140,7 @@ public:
             if (cache_actual_len < n)
                 cache_valid_len += src_len;
 
-            for (std::size_t j = 0; j < src_len && i < n; ++j, ++i)
+            for (size_t j = 0; j < src_len && i < n; ++j, ++i)
             {
                 cachel = _mm_srli_si128(cachel, 1);
                 cacheu = _mm_srli_si128(cacheu, 1);
@@ -326,7 +326,7 @@ class StringSearcher<false, true> : private StringSearcherBase
 private:
     /// string to be searched for
     const UInt8 * const needle;
-    const std::size_t needle_size;
+    const size_t needle_size;
     const UInt8 * const needle_end = needle + needle_size;
     /// lower and uppercase variants of the first character in `needle`
     UInt8 l{};
@@ -341,7 +341,7 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const std::size_t needle_size)
+    StringSearcher(const char * const needle_, const size_t needle_size)
         : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
     {
         if (0 == needle_size)
@@ -513,7 +513,7 @@ class StringSearcher<true, ASCII> : private StringSearcherBase
 private:
     /// string to be searched for
     const UInt8 * const needle;
-    const std::size_t needle_size;
+    const size_t needle_size;
     const UInt8 * const needle_end = needle + needle_size;
     /// first character in `needle`
     UInt8 first{};
@@ -527,7 +527,7 @@ private:
 #endif
 
 public:
-    StringSearcher(const char * const needle_, const std::size_t needle_size)
+    StringSearcher(const char * const needle_, const size_t needle_size)
         : needle{reinterpret_cast<const UInt8 *>(needle_)}, needle_size{needle_size}
     {
         if (0 == needle_size)

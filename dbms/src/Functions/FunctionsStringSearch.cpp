@@ -502,7 +502,7 @@ struct MatchImpl
         const ColumnString::Offsets_t & needle_offsets,
         PaddedPODArray<UInt8> & res)
     {
-        throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
@@ -511,7 +511,7 @@ struct MatchImpl
         const ColumnString::Offsets_t & needle_offsets,
         PaddedPODArray<UInt8> & res)
     {
-        throw Exception("Functions 'like' and 'match' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -587,7 +587,7 @@ struct ReplaceRegexpImpl
         {
             if (s[i] == '\\' && i + 1 < s.size())
             {
-                if (isdigit(s[i + 1])) /// Substitution
+                if (isNumericASCII(s[i + 1])) /// Substitution
                 {
                     if (!now.empty())
                     {
@@ -960,17 +960,20 @@ public:
         return 3;
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!typeid_cast<const DataTypeString *>(&*arguments[1]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[1]))
+        if (!checkDataType<DataTypeString>(&*arguments[1]) && !checkDataType<DataTypeFixedString>(&*arguments[1]))
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!typeid_cast<const DataTypeString *>(&*arguments[2]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[2]))
+        if (!checkDataType<DataTypeString>(&*arguments[2]) && !checkDataType<DataTypeFixedString>(&*arguments[2]))
             throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -979,45 +982,38 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const ColumnPtr column_src = block.safeGetByPosition(arguments[0]).column;
-        const ColumnPtr column_needle = block.safeGetByPosition(arguments[1]).column;
-        const ColumnPtr column_replacement = block.safeGetByPosition(arguments[2]).column;
+        const ColumnPtr column_src = block.getByPosition(arguments[0]).column;
+        const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
+        const ColumnPtr column_replacement = block.getByPosition(arguments[2]).column;
 
         if (!column_needle->isConst() || !column_replacement->isConst())
             throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
-        const IColumn * c1 = block.safeGetByPosition(arguments[1]).column.get();
-        const IColumn * c2 = block.safeGetByPosition(arguments[2]).column.get();
-        const ColumnConstString * c1_const = typeid_cast<const ColumnConstString *>(c1);
-        const ColumnConstString * c2_const = typeid_cast<const ColumnConstString *>(c2);
-        String needle = c1_const->getData();
-        String replacement = c2_const->getData();
+        const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
+        const IColumn * c2 = block.getByPosition(arguments[2]).column.get();
+        const ColumnConst * c1_const = typeid_cast<const ColumnConst *>(c1);
+        const ColumnConst * c2_const = typeid_cast<const ColumnConst *>(c2);
+        String needle = c1_const->getValue<String>();
+        String replacement = c2_const->getValue<String>();
 
         if (needle.size() == 0)
             throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column_src))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
             Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column_src))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
-        }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column_src))
-        {
-            String res;
-            Impl::constant(col->getData(), needle, replacement, res);
-            auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
-            block.safeGetByPosition(result).column = col_res;
         }
         else
             throw Exception(
-                "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };

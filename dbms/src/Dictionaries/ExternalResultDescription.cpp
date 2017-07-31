@@ -1,9 +1,10 @@
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <Dictionaries/ExternalResultDescription.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

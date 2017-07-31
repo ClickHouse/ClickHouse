@@ -16,8 +16,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <DataStreams/FormatFactory.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
@@ -46,7 +44,7 @@
 #include <Databases/IDatabase.h>
 
 #include <Common/ConfigProcessor.h>
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 
 
@@ -82,8 +80,6 @@ namespace ErrorCodes
     extern const int SESSION_IS_LOCKED;
 }
 
-class TableFunctionFactory;
-
 
 /** Set of known objects (environment), that could be used in query.
   * Shared (global) part. Order of members (especially, order of destruction) is very important.
@@ -109,7 +105,6 @@ struct ContextShared
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
     Databases databases;                                    /// List of databases and tables in them.
-    TableFunctionFactory table_function_factory;            /// Table functions.
     FormatFactory format_factory;                           /// Formats.
     mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaeis. Have lazy initialization.
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
@@ -125,12 +120,14 @@ struct ContextShared
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
     ReshardingWorkerPtr resharding_worker;
-    Macros macros;                                          /// Substitutions from config. Can be used for parameters of ReplicatedMergeTree.
+    Macros macros;                                          /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
+    std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression method, depending on the size of the part.
     mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
+
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -176,6 +173,18 @@ struct ContextShared
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
     std::mt19937_64 rng{randomSeed()};
+
+    ContextShared()
+    {
+        /// TODO: make it singleton (?)
+        static std::atomic<size_t> num_calls{0};
+        if (++num_calls > 1)
+        {
+            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << StackTrace().toString();
+            std::cerr.flush();
+            std::terminate();
+        }
+    }
 
 
     ~ContextShared()
@@ -223,12 +232,18 @@ struct ContextShared
 };
 
 
-Context::Context()
-    : shared(std::make_shared<ContextShared>()),
-    quota(std::make_shared<QuotaForIntervals>()),
-    system_logs(std::make_shared<SystemLogs>())
+Context::Context() = default;
+
+
+Context Context::createGlobal()
 {
+    Context res;
+    res.shared = std::make_shared<ContextShared>();
+    res.quota = std::make_shared<QuotaForIntervals>();
+    res.system_logs = std::make_shared<SystemLogs>();
+    return res;
 }
+
 
 Context::~Context()
 {
@@ -244,7 +259,6 @@ Context::~Context()
 }
 
 
-const TableFunctionFactory & Context::getTableFunctionFactory() const            { return shared->table_function_factory; }
 InterserverIOHandler & Context::getInterserverIOHandler()                        { return shared->interserver_io_handler; }
 
 std::unique_lock<Poco::Mutex> Context::getLock() const
@@ -485,24 +499,42 @@ ConfigurationPtr Context::getUsersConfig()
 }
 
 
+void Context::calculateUserSettings()
+{
+    auto lock = getLock();
+
+    String profile = shared->users.get(client_info.current_user).profile;
+
+    /// 1) Set default settings (hardcoded values)
+    /// NOTE: we ignore global_context settings (from which it is usually copied)
+    /// NOTE: global_context settings are immutable and not auto updated
+    settings = Settings();
+
+    /// 2) Apply settings from default profile
+    auto default_profile_name = getDefaultProfileName();
+    if (profile != default_profile_name)
+        settings.setProfile(default_profile_name, *shared->users_config);
+
+    /// 3) Apply settings from current user
+    settings.setProfile(profile, *shared->users_config);
+}
+
+
 void Context::setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key)
 {
     auto lock = getLock();
 
     const User & user_props = shared->users.get(name, password, address.host());
 
-    /// Firstly set default settings from default profile
-    auto default_profile_name = getDefaultProfileName();
-    if (user_props.profile != default_profile_name)
-        settings.setProfile(default_profile_name, *shared->users_config);
-    settings.setProfile(user_props.profile, *shared->users_config);
-    setQuota(user_props.quota, quota_key, name, address.host());
-
     client_info.current_user = name;
     client_info.current_address = address;
 
     if (!quota_key.empty())
         client_info.quota_key = quota_key;
+
+    calculateUserSettings();
+
+    setQuota(user_props.quota, quota_key, name, address.host());
 }
 
 
@@ -1105,6 +1137,22 @@ ReshardingWorker & Context::getReshardingWorker()
     return *shared->resharding_worker;
 }
 
+void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
+{
+    auto lock = getLock();
+    if (shared->ddl_worker)
+        throw Exception("DDL background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
+    shared->ddl_worker = ddl_worker;
+}
+
+DDLWorker & Context::getDDLWorker()
+{
+    auto lock = getLock();
+    if (!shared->ddl_worker)
+        throw Exception("DDL background thread not initialized.", ErrorCodes::LOGICAL_ERROR);
+    return *shared->ddl_worker;
+}
+
 void Context::resetCaches() const
 {
     auto lock = getLock();
@@ -1134,6 +1182,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+bool Context::hasZooKeeper() const
+{
+    std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
+    return shared->zookeeper != nullptr;
 }
 
 

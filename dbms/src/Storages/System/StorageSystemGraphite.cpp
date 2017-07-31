@@ -124,14 +124,10 @@ StorageSystemGraphite::StorageSystemGraphite(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemGraphite::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
 
 BlockInputStreams StorageSystemGraphite::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,

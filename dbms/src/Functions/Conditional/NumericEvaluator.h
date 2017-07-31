@@ -4,10 +4,12 @@
 #include <Functions/Conditional/common.h>
 #include <Functions/Conditional/NullMapBuilder.h>
 #include <Functions/Conditional/CondSource.h>
-#include <Functions/NumberTraits.h>
+#include <Functions/FunctionHelpers.h>
+#include <DataTypes/NumberTraits.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -39,10 +41,10 @@ public:
 };
 
 template <typename TResult>
-using NumericSourcePtr = std::unique_ptr<NumericSource<TResult> >;
+using NumericSourcePtr = std::unique_ptr<NumericSource<TResult>>;
 
 template <typename TResult>
-using NumericSources = std::vector<NumericSourcePtr<TResult> >;
+using NumericSources = std::vector<NumericSourcePtr<TResult>>;
 
 /// Column type-specific implementation of NumericSource.
 template <typename TResult, typename TType, bool IsConst>
@@ -56,18 +58,12 @@ public:
     {
         size_t index = br.index;
 
-        const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
-        const auto * const_col = typeid_cast<const ColumnConst<TType> *>(&*col);
-        if (const_col == nullptr)
+        const ColumnPtr & col = block.getByPosition(args[index]).column;
+        auto const_col = checkAndGetColumnConst<ColumnVector<TType>>(&*col);
+        if (!const_col)
             throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-        data = const_col->getData();
+        data = const_col->template getValue<TType>();
     }
-
-    NumericSourceImpl(const NumericSourceImpl &) = delete;
-    NumericSourceImpl & operator=(const NumericSourceImpl &) = delete;
-
-    NumericSourceImpl(NumericSourceImpl &&) = default;
-    NumericSourceImpl & operator=(NumericSourceImpl &&) = default;
 
     TResult get(size_t i) const override
     {
@@ -87,12 +83,6 @@ public:
     {
     }
 
-    NumericSourceImpl(const NumericSourceImpl &) = delete;
-    NumericSourceImpl & operator=(const NumericSourceImpl &) = delete;
-
-    NumericSourceImpl(NumericSourceImpl &&) = default;
-    NumericSourceImpl & operator=(NumericSourceImpl &&) = default;
-
     TResult get(size_t i) const override
     {
         return static_cast<TResult>(data_array[i]);
@@ -103,9 +93,9 @@ private:
         const ColumnNumbers & args, const Branch & br)
     {
         size_t index = br.index;
-        const ColumnPtr & col = block.safeGetByPosition(args[index]).column;
+        const ColumnPtr & col = block.getByPosition(args[index]).column;
         const auto * vec_col = typeid_cast<const ColumnVector<TType> *>(&*col);
-        if (vec_col == nullptr)
+        if (!vec_col)
             throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
         return vec_col->getData();
     }
@@ -127,9 +117,9 @@ public:
         if (TypeName<TType>::get() == type_name)
         {
             if (br.is_const)
-                source = std::make_unique<NumericSourceImpl<TResult, TType, true> >(block, args, br);
+                source = std::make_unique<NumericSourceImpl<TResult, TType, true>>(block, args, br);
             else
-                source = std::make_unique<NumericSourceImpl<TResult, TType, false> >(block, args, br);
+                source = std::make_unique<NumericSourceImpl<TResult, TType, false>>(block, args, br);
             return true;
         }
         else
@@ -186,7 +176,7 @@ private:
     static PaddedPODArray<TResult> & createSink(Block & block, size_t result, size_t size)
     {
         std::shared_ptr<ColumnVector<TResult>> col_res = std::make_shared<ColumnVector<TResult>>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
 
         typename ColumnVector<TResult>::Container_t & vec_res = col_res->getData();
         vec_res.resize(size);
@@ -244,7 +234,7 @@ public:
     /// For the meaning of the builder parameter, see the FunctionMultiIf::perform() declaration.
     static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
     {
-        throw Exception{"Internal logic error", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 

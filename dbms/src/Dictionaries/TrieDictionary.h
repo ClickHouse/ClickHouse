@@ -3,16 +3,18 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
-#include <ext/range.hpp>
-#include <btrie.h>
+#include <ext/range.h>
 #include <atomic>
 #include <memory>
 #include <tuple>
+#include <common/logger_useful.h>
 
+struct btrie_s;
+typedef struct btrie_s btrie_t;
 
 namespace DB
 {
@@ -36,13 +38,13 @@ public:
 
     std::string getTypeName() const override { return "Trie"; }
 
-    std::size_t getBytesAllocated() const override { return bytes_allocated; }
+    size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override { return 1.0; }
 
-    std::size_t getElementCount() const override { return element_count; }
+    size_t getElementCount() const override { return element_count; }
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
@@ -128,6 +130,8 @@ public:
 
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+
 private:
     template <typename Value> using ContainerType = std::vector<Value>;
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
@@ -190,6 +194,11 @@ private:
     template <typename T>
     void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
 
+    template <typename Getter, typename KeyType>
+    void trieTraverse(const btrie_t * trie, Getter && getter) const;
+
+    Columns getKeyColumns() const;
+
     const std::string name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -198,18 +207,20 @@ private:
     const std::string key_description{dict_struct.getKeyDescription()};
 
 
-    btrie_t *trie;
-    std::map<std::string, std::size_t> attribute_index_by_name;
+    btrie_t * trie = nullptr;
+    std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
 
-    std::size_t bytes_allocated = 0;
-    std::size_t element_count = 0;
-    std::size_t bucket_count = 0;
-    mutable std::atomic<std::size_t> query_count{0};
+    size_t bytes_allocated = 0;
+    size_t element_count = 0;
+    size_t bucket_count = 0;
+    mutable std::atomic<size_t> query_count{0};
 
     std::chrono::time_point<std::chrono::system_clock> creation_time;
 
     std::exception_ptr creation_exception;
+
+    Logger * logger;
 };
 
 

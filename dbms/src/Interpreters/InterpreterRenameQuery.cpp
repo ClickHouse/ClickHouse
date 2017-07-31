@@ -3,7 +3,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
-
+#include <Interpreters/DDLWorker.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -35,10 +36,13 @@ struct RenameDescription
 
 BlockIO InterpreterRenameQuery::execute()
 {
+    ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
+
+    if (!rename.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
+
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
-
-    ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
 
     /** In case of error while renaming, it is possible that only part of tables was renamed
       *  or we will be in inconsistent state. (It is worth to be fixed.)
@@ -91,7 +95,7 @@ BlockIO InterpreterRenameQuery::execute()
                     "Some table right now is being renamed to " + to.database_name + "." + to.table_name));
     }
 
-    std::vector<TableFullWriteLockPtr> locks;
+    std::vector<TableFullWriteLock> locks;
     locks.reserve(unique_tables_from.size());
 
     for (const auto & names : unique_tables_from)

@@ -12,14 +12,8 @@ function make_control {
 # set environment variables REVISION, AUTHOR
 function gen_revision_author {
     REVISION=$(get_revision)
-
-    if [ -z $VERSION_PREFIX ] ; then
-        VERSION_PREFIX="v1.1."
-    fi
-
-    if [ -z $VERSION_POSTFIX ] ; then
-        VERSION_POSTFIX="-testing"
-    fi
+    VERSION_PREFIX="${VERSION_PREFIX:-v1.1.}"
+    VERSION_POSTFIX="${VERSION_POSTFIX:--testing}"
 
     if [[ $STANDALONE != 'yes' ]]; then
 
@@ -75,14 +69,14 @@ function gen_revision_author {
 
     fi
 
-    AUTHOR=$(git config --get user.name)
+    AUTHOR=$(git config --get user.name || echo ${USER})
     export REVISION
     export AUTHOR
 }
 
 function get_revision_author {
     REVISION=$(get_revision)
-    AUTHOR=$(git config --get user.name)
+    AUTHOR=$(git config --get user.name || echo ${USER})
     export REVISION
     export AUTHOR
 }

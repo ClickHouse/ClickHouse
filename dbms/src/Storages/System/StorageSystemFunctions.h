@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -13,20 +13,17 @@ class Context;
 /** Implements `functions`system table, which allows you to get a list
   * all normal and aggregate functions.
   */
-class StorageSystemFunctions : private ext::shared_ptr_helper<StorageSystemFunctions>, public IStorage
+class StorageSystemFunctions : public ext::shared_ptr_helper<StorageSystemFunctions>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageSystemFunctions>;
-
 public:
-    static StoragePtr create(const std::string & name_);
-
     std::string getName() const override { return "SystemFunctions"; }
     std::string getTableName() const override { return name; }
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,

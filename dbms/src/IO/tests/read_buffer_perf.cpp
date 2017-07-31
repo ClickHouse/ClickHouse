@@ -5,15 +5,14 @@
 
 #include <Core/Types.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromFile.h>
 
 
 int main(int argc, char ** argv)
 {
     try
     {
-        std::ifstream istr("test");
-        DB::ReadBufferFromIStream in(istr);
+        DB::ReadBufferFromFile in("test");
 
         DB::Int64 a = 0;
         DB::Float64 b = 0;

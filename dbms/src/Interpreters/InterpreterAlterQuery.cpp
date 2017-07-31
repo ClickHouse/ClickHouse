@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -28,6 +29,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -39,6 +42,10 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Co
 BlockIO InterpreterAlterQuery::execute()
 {
     auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
+
+    if (!alter.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
+
     const String & table_name = alter.table;
     String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
     StoragePtr table = context.getTable(database_name, table_name);
@@ -47,6 +54,7 @@ BlockIO InterpreterAlterQuery::execute()
     PartitionCommands partition_commands;
     parseAlter(alter.parameters, alter_commands, partition_commands);
 
+    partition_commands.validate(table.get());
     for (const PartitionCommand & command : partition_commands)
     {
         switch (command.type)
@@ -68,13 +76,13 @@ BlockIO InterpreterAlterQuery::execute()
                 break;
 
             case PartitionCommand::RESHARD_PARTITION:
-                table->reshardPartitions(query_ptr, database_name, command.partition, command.last_partition,
+                table->reshardPartitions(query_ptr, database_name, command.partition,
                     command.weighted_zookeeper_paths, command.sharding_key_expr, command.do_copy,
                     command.coordinator, context);
                 break;
 
-            case PartitionCommand::DROP_COLUMN:
-                table->dropColumnFromPartition(query_ptr, command.partition, command.column_name, context.getSettingsRef());
+            case PartitionCommand::CLEAR_COLUMN:
+                table->clearColumnInPartition(query_ptr, command.partition, command.column_name, context.getSettingsRef());
                 break;
         }
     }
@@ -83,7 +91,6 @@ BlockIO InterpreterAlterQuery::execute()
         return {};
 
     alter_commands.validate(table.get(), context);
-
     table->alter(alter_commands, database_name, table_name, context);
 
     return {};
@@ -126,13 +133,19 @@ void InterpreterAlterQuery::parseAlter(
         {
             if (params.partition)
             {
+                if (!params.clear_column)
+                    throw Exception("Can't DROP COLUMN from partition. It is possible only CLEAR COLUMN in partition", ErrorCodes::BAD_ARGUMENTS);
+
                 const Field & partition = typeid_cast<const ASTLiteral &>(*(params.partition)).value;
                 const Field & column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 
-                out_partition_commands.emplace_back(PartitionCommand::dropColumnFromPartition(partition, column_name));
+                out_partition_commands.emplace_back(PartitionCommand::clearColumn(partition, column_name));
             }
             else
             {
+                if (params.clear_column)
+                    throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+
                 AlterCommand command;
                 command.type = AlterCommand::DROP_COLUMN;
                 command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
@@ -192,15 +205,9 @@ void InterpreterAlterQuery::parseAlter(
         }
         else if (params.type == ASTAlterQuery::RESHARD_PARTITION)
         {
-            Field first_partition;
+            Field partition;
             if (params.partition)
-                first_partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-
-            Field last_partition;
-            if (params.last_partition)
-                last_partition = dynamic_cast<const ASTLiteral &>(*params.last_partition).value;
-            else
-                last_partition = first_partition;
+                partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
 
             WeightedZooKeeperPaths weighted_zookeeper_paths;
 
@@ -216,12 +223,31 @@ void InterpreterAlterQuery::parseAlter(
                 coordinator = dynamic_cast<const ASTLiteral &>(*params.coordinator).value;
 
             out_partition_commands.emplace_back(PartitionCommand::reshardPartitions(
-                first_partition, last_partition, weighted_zookeeper_paths, params.sharding_key_expr,
+                partition, weighted_zookeeper_paths, params.sharding_key_expr,
                 params.do_copy, coordinator));
         }
         else
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
     }
 }
+
+
+void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
+{
+    for (const PartitionCommand & command : *this)
+    {
+        if (command.type == PartitionCommand::CLEAR_COLUMN)
+        {
+            String column_name = command.column_name.safeGet<String>();
+
+            if (!table->hasRealColumn(column_name))
+            {
+                throw Exception("Wrong column name. Cannot find column " + column_name + " to clear it from partition",
+                    DB::ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+    }
+}
+
 
 }

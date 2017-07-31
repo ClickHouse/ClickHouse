@@ -5,11 +5,13 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/typeid_cast.h>
+
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -93,7 +95,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
 bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     size_t keys_size = block.columns();
     ConstColumnPlainPtrs key_columns;
@@ -296,7 +298,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     ColumnUInt8::Container_t & vec_res = res->getData();
     vec_res.resize(block.safeGetByPosition(0).column->size());
 
-    Poco::ScopedReadRWLock lock(rwlock);
+    std::shared_lock<std::shared_mutex> lock(rwlock);
 
     /// If the set is empty.
     if (data_types.empty())

@@ -43,6 +43,7 @@
 
 #include <Core/Field.h>
 #include <Common/Collator.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
@@ -78,6 +79,8 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
     if (settings.limits.max_subquery_depth && subquery_depth > settings.limits.max_subquery_depth)
         throw Exception("Too deep subqueries. Maximum: " + settings.limits.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
+
+    max_streams = settings.max_threads;
 
     if (is_first_select_inside_union_all)
     {
@@ -139,7 +142,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
         if (query_table && typeid_cast<const ASTFunction *>(query_table.get()))
         {
             /// Get the table function
-            TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
+            TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(typeid_cast<const ASTFunction *>(query_table.get())->name, context);
             /// Run it and remember the result
             storage = table_function_ptr->execute(query_table, context);
         }
@@ -439,7 +442,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
     if (to_stage > QueryProcessingStage::FetchColumns)
     {
-        bool has_join        = false;
+        bool has_join       = false;
         bool has_where      = false;
         bool need_aggregate = false;
         bool has_having     = false;
@@ -785,7 +788,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
     getLimitLengthAndOffset(query, limit_length, limit_offset);
 
     size_t max_block_size = settings.max_block_size;
-    size_t max_streams = settings.max_threads;
 
     /** With distributed query processing, almost no computations are done in the threads,
      *  but wait and receive data from remote servers.
@@ -793,10 +795,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
      *  connect and ask only 8 servers at a time.
      *  To simultaneously query more remote servers,
      *  instead of max_threads, max_distributed_connections is used.
-     *
-     *  Save the initial value of max_threads in settings_for_storage
-     *  - these settings will be passed to remote servers for distributed query processing,
-     *  and there must be an original value of max_threads, not an increased value.
      */
     bool is_remote = false;
     if (storage && storage->isRemote())
@@ -838,24 +836,17 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        ASTPtr actual_query_ptr;
-        if (storage->isRemote())
-        {
-            /// In case of a remote query, we send only SELECT, which will be executed.
-            actual_query_ptr = query.cloneFirstSelect();
-        }
-        else
-            actual_query_ptr = query_ptr;
+        SelectQueryInfo query_info;
+        query_info.query = query_ptr;
+        query_info.sets = query_analyzer->getPreparedSets();
 
         /// PREWHERE optimization
         {
             auto optimize_prewhere = [&](auto & merge_tree)
             {
-                const ASTSelectQuery & actual_select = typeid_cast<const ASTSelectQuery &>(*actual_query_ptr);
-
                 /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
-                if (settings.optimize_move_to_prewhere && actual_select.where_expression && !actual_select.prewhere_expression && !actual_select.final())
-                    MergeTreeWhereOptimizer{actual_query_ptr, context, merge_tree.getData(), required_columns, log};
+                if (settings.optimize_move_to_prewhere && query.where_expression && !query.prewhere_expression && !query.final())
+                    MergeTreeWhereOptimizer{query_info, context, merge_tree.getData(), required_columns, log};
             };
 
             if (const StorageMergeTree * merge_tree = typeid_cast<const StorageMergeTree *>(storage.get()))
@@ -864,8 +855,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
                 optimize_prewhere(*merge_tree);
         }
 
-        streams = storage->read(required_columns, actual_query_ptr,
-            context, from_stage, max_block_size, max_streams);
+        streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
         if (alias_actions)
         {
@@ -942,8 +932,8 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
     const Settings & settings = context.getSettingsRef();
 
     /** Two-level aggregation is useful in two cases:
-      * 1. Parallel aggregation is done, and the results should be measured in parallel.
-      * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged memory efficient.
+      * 1. Parallel aggregation is done, and the results should be merged in parallel.
+      * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
     bool allow_to_use_two_level_group_by = streams.size() > 1 || settings.limits.max_bytes_before_external_group_by != 0;
 
@@ -959,10 +949,10 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
     {
         streams[0] = std::make_shared<ParallelAggregatingBlockInputStream>(
             streams, stream_with_non_joined_data, params, final,
-            settings.max_threads,
+            max_streams,
             settings.aggregation_memory_efficient_merge_threads
-                ? settings.aggregation_memory_efficient_merge_threads
-                : settings.max_threads);
+                ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                : static_cast<size_t>(settings.max_threads));
 
         stream_with_non_joined_data = nullptr;
         streams.resize(1);
@@ -1021,10 +1011,10 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
     else
     {
         streams[0] = std::make_shared<MergingAggregatedMemoryEfficientBlockInputStream>(streams, params, final,
-            settings.max_threads,
+            max_streams,
             settings.aggregation_memory_efficient_merge_threads
-                ? size_t(settings.aggregation_memory_efficient_merge_threads)
-                : size_t(settings.max_threads));
+                ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                : static_cast<size_t>(settings.max_threads));
 
         streams.resize(1);
     }
@@ -1197,9 +1187,7 @@ void InterpreterSelectQuery::executeUnion()
     /// If there are still several streams, then we combine them into one
     if (hasMoreThanOneStream())
     {
-        const Settings & settings = context.getSettingsRef();
-
-        streams[0] = std::make_shared<UnionBlockInputStream<>>(streams, stream_with_non_joined_data, settings.max_threads);
+        streams[0] = std::make_shared<UnionBlockInputStream<>>(streams, stream_with_non_joined_data, max_streams);
         stream_with_non_joined_data = nullptr;
         streams.resize(1);
         union_within_single_query = false;
@@ -1316,11 +1304,6 @@ void InterpreterSelectQuery::executeLimit()
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(SubqueriesForSets & subqueries_for_sets)
 {
-    /// If the query is not distributed, then remove the creation of temporary tables from subqueries (intended for sending to remote servers).
-    if (!(storage && storage->isRemote()))
-        for (auto & elem : subqueries_for_sets)
-            elem.second.table.reset();
-
     const Settings & settings = context.getSettingsRef();
 
     executeUnion();

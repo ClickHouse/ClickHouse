@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/ReshardingWorker.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -60,8 +61,8 @@ namespace
 /// Creates a copy of query, changes database and table names.
 ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 {
-    auto modified_query_ast = query->clone();
-    typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
+    auto modified_query_ast = typeid_cast<const ASTSelectQuery &>(*query).cloneFirstSelect();
+    modified_query_ast->replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
@@ -122,6 +123,10 @@ void initializeFileNamesIncrement(const std::string & path, SimpleIncrement & in
 }
 
 
+/// For destruction of std::unique_ptr of type that is incomplete in class definition.
+StorageDistributed::~StorageDistributed() = default;
+
+
 StorageDistributed::StorageDistributed(
     const std::string & name_,
     NamesAndTypesListPtr columns_,
@@ -138,8 +143,6 @@ StorageDistributed::StorageDistributed(
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
-    createDirectoryMonitors();
-    initializeFileNamesIncrement(path, file_names_increment);
 }
 
 
@@ -163,35 +166,10 @@ StorageDistributed::StorageDistributed(
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
-    createDirectoryMonitors();
-    initializeFileNamesIncrement(path, file_names_increment);
 }
 
 
-StoragePtr StorageDistributed::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    const String & remote_database_,
-    const String & remote_table_,
-    const String & cluster_name_,
-    const Context & context_,
-    const ASTPtr & sharding_key_,
-    const String & data_path_)
-{
-    return make_shared(
-        name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        remote_database_, remote_table_,
-        cluster_name_, context_,
-        sharding_key_, data_path_
-    );
-}
-
-
-StoragePtr StorageDistributed::create(
+StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & name_,
     NamesAndTypesListPtr columns_,
     const String & remote_database_,
@@ -201,8 +179,7 @@ StoragePtr StorageDistributed::create(
 {
     auto res = make_shared(
         name_, columns_, remote_database_,
-        remote_table_, String{}, context_
-    );
+        remote_table_, String{}, context_);
 
     res->owned_cluster = owned_cluster_;
 
@@ -212,7 +189,7 @@ StoragePtr StorageDistributed::create(
 
 BlockInputStreams StorageDistributed::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
@@ -229,7 +206,7 @@ BlockInputStreams StorageDistributed::read(
         : QueryProcessingStage::WithMergeableState;
 
     const auto & modified_query_ast = rewriteSelectQuery(
-        query, remote_database, remote_table);
+        query_info.query, remote_database, remote_table);
 
     Tables external_tables;
 
@@ -241,13 +218,12 @@ BlockInputStreams StorageDistributed::read(
 
     /** The functionality of shard_multiplexing is not completed - turn it off.
       * (Because connecting to different shards within a single thread is not done in parallel.)
-      * For more information, see https: //███████████.yandex-team.ru/METR-18300
       */
     //bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
     bool enable_shard_multiplexing = false;
 
     ClusterProxy::SelectQueryConstructor select_query_constructor(
-            processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
+        processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
 
     return ClusterProxy::Query{select_query_constructor, cluster, modified_query_ast,
         context, settings, enable_shard_multiplexing}.execute();
@@ -288,6 +264,13 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 }
 
 
+void StorageDistributed::startup()
+{
+    createDirectoryMonitors();
+    initializeFileNamesIncrement(path, file_names_increment);
+}
+
+
 void StorageDistributed::shutdown()
 {
     directory_monitors.clear();
@@ -296,7 +279,7 @@ void StorageDistributed::shutdown()
 
 void StorageDistributed::reshardPartitions(
     const ASTPtr & query, const String & database_name,
-    const Field & first_partition, const Field & last_partition,
+    const Field & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
     Context & context)
@@ -348,10 +331,8 @@ void StorageDistributed::reshardPartitions(
         ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
 
         parameters.type = ASTAlterQuery::RESHARD_PARTITION;
-        if (!first_partition.isNull())
-            parameters.partition = std::make_shared<ASTLiteral>(StringRange(), first_partition);
-        if (!last_partition.isNull())
-            parameters.last_partition = std::make_shared<ASTLiteral>(StringRange(), last_partition);
+        if (!partition.isNull())
+            parameters.partition = std::make_shared<ASTLiteral>(StringRange(), partition);
 
         ASTPtr expr_list = std::make_shared<ASTExpressionList>();
         for (const auto & entry : weighted_zookeeper_paths)
@@ -372,7 +353,6 @@ void StorageDistributed::reshardPartitions(
 
         /** The functionality of shard_multiplexing is not completed - turn it off.
         * (Because connecting to different shards within a single thread is not done in parallel.)
-        * For more information, see https: //███████████.yandex-team.ru/METR-18300
         */
         bool enable_shard_multiplexing = false;
 
@@ -451,7 +431,6 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
 
     /** The functionality of shard_multiplexing is not completed - turn it off.
       * (Because connecting connections to different shards within a single thread is not done in parallel.)
-      * For more information, see https://███████████.yandex-team.ru/METR-18300
       */
     bool enable_shard_multiplexing = false;
 

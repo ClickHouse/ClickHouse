@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Poco/RWLock.h>
+#include <shared_mutex>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Limits.h>
@@ -113,7 +112,7 @@ private:
       *  and StorageSet calls only these two functions.
       * Therefore, the rest of the functions for working with set are not protected.
       */
-    mutable Poco::RWLock rwlock;
+    mutable std::shared_mutex rwlock;
 
 
     template <typename Method>

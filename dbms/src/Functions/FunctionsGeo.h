@@ -3,8 +3,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
-#include <ext/range.hpp>
+#include <Functions/FunctionHelpers.h>
+#include <ext/range.h>
 #include <math.h>
 #include <array>
 
@@ -16,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_COLUMN;
 }
 
 const Float64 EARTH_RADIUS_IN_METERS = 6372797.560856;
@@ -57,7 +60,7 @@ private:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!typeid_cast<const DataTypeFloat64 *>(arg))
+            if (!checkDataType<DataTypeFloat64>(arg))
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -73,14 +76,14 @@ private:
 
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
-            const auto column = block.safeGetByPosition(arguments[arg_idx]).column.get();
+            const auto column = block.getByPosition(arguments[arg_idx]).column.get();
 
-            if (const auto col = typeid_cast<const ColumnVector<Float64> *>(column))
+            if (const auto col = checkAndGetColumn<ColumnVector<Float64>>(column))
             {
                 out_const = false;
                 result[arg_idx] = instr_t{instr_type::get_float_64, col};
             }
-            else if (const auto col = typeid_cast<const ColumnConst<Float64> *>(column))
+            else if (const auto col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
             {
                 result[arg_idx] = instr_t{instr_type::get_const_float_64, col};
             }
@@ -122,18 +125,18 @@ private:
 
         if (result_is_const)
         {
-            const auto & colLon1 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[0]).column.get())->getData();
-            const auto & colLat1 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[1]).column.get())->getData();
-            const auto & colLon2 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[2]).column.get())->getData();
-            const auto & colLat2 = static_cast<const ColumnConst<Float64> *>(block.safeGetByPosition(arguments[3]).column.get())->getData();
+            const auto & colLon1 = static_cast<const ColumnConst *>(block.getByPosition(arguments[0]).column.get())->getValue<Float64>();
+            const auto & colLat1 = static_cast<const ColumnConst *>(block.getByPosition(arguments[1]).column.get())->getValue<Float64>();
+            const auto & colLon2 = static_cast<const ColumnConst *>(block.getByPosition(arguments[2]).column.get())->getValue<Float64>();
+            const auto & colLat2 = static_cast<const ColumnConst *>(block.getByPosition(arguments[3]).column.get())->getValue<Float64>();
 
             Float64 res = greatCircleDistance(colLon1, colLat1, colLon2, colLat2);
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(size, res);
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, res);
         }
         else
         {
             const auto dst = std::make_shared<ColumnVector<Float64>>();
-            block.safeGetByPosition(result).column = dst;
+            block.getByPosition(result).column = dst;
             auto & dst_data = dst->getData();
             dst_data.resize(size);
             Float64 vals[instrs.size()];
@@ -144,7 +147,7 @@ private:
                     if (instr_type::get_float_64 == instrs[idx].first)
                         vals[idx] = static_cast<const ColumnVector<Float64> *>(instrs[idx].second)->getData()[row];
                     else if (instr_type::get_const_float_64 == instrs[idx].first)
-                        vals[idx] = static_cast<const ColumnConst<Float64> *>(instrs[idx].second)->getData();
+                        vals[idx] = static_cast<const ColumnConst *>(instrs[idx].second)->getValue<Float64>();
                     else
                         throw std::logic_error{"unknown instr_type"};
                 }
@@ -208,7 +211,7 @@ private:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!typeid_cast<const DataTypeFloat64 *>(arg))
+            if (!checkDataType<DataTypeFloat64>(arg))
             {
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
@@ -233,10 +236,10 @@ private:
             for (const auto idx : ext::range(0, 4))
             {
                 int arg_idx = 2 + 4 * ellipse_idx + idx;
-                const auto column = block.safeGetByPosition(arguments[arg_idx]).column.get();
-                if (const auto col = typeid_cast<const ColumnConst<Float64> *>(column))
+                const auto column = block.getByPosition(arguments[arg_idx]).column.get();
+                if (const auto col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
                 {
-                    ellipse_data[idx] = col->getData();
+                    ellipse_data[idx] = col->getValue<Float64>();
                 }
                 else
                 {
@@ -251,8 +254,8 @@ private:
         int const_cnt = 0;
         for (const auto idx : ext::range(0, 2))
         {
-            const auto column = block.safeGetByPosition(arguments[idx]).column.get();
-            if (typeid_cast<const ColumnConst<Float64> *> (column))
+            const auto column = block.getByPosition(arguments[idx]).column.get();
+            if (typeid_cast<const ColumnConst *> (column))
             {
                 ++const_cnt;
             }
@@ -263,15 +266,15 @@ private:
             }
         }
 
-        const auto col_x = block.safeGetByPosition(arguments[0]).column.get();
-        const auto col_y = block.safeGetByPosition(arguments[1]).column.get();
+        const auto col_x = block.getByPosition(arguments[0]).column.get();
+        const auto col_y = block.getByPosition(arguments[1]).column.get();
         if (const_cnt == 0)
         {
                 const auto col_vec_x = static_cast<const ColumnVector<Float64> *> (col_x);
                 const auto col_vec_y = static_cast<const ColumnVector<Float64> *> (col_y);
 
                 const auto dst = std::make_shared<ColumnVector<UInt8>>();
-                block.safeGetByPosition(result).column = dst;
+                block.getByPosition(result).column = dst;
                 auto & dst_data = dst->getData();
                 dst_data.resize(size);
 
@@ -283,11 +286,11 @@ private:
             }
             else if (const_cnt == 2)
             {
-                const auto col_const_x = static_cast<const ColumnConst<Float64> *> (col_x);
-                const auto col_const_y = static_cast<const ColumnConst<Float64> *> (col_y);
+                const auto col_const_x = static_cast<const ColumnConst *> (col_x);
+                const auto col_const_y = static_cast<const ColumnConst *> (col_y);
                 size_t start_index = 0;
-                UInt8 res = isPointInEllipses(col_const_x->getData(), col_const_y->getData(), ellipses, ellipses_count, start_index);
-                block.safeGetByPosition(result).column = std::make_shared<ColumnConst<UInt8>>(size, res);
+                UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses, ellipses_count, start_index);
+                block.getByPosition(result).column = DataTypeUInt8().createConstColumn(size, UInt64(res));
             }
             else
             {

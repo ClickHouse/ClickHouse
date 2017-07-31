@@ -2,7 +2,7 @@
 
 #include <mutex>
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
@@ -20,24 +20,13 @@ class StorageMemory;
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory : private ext::shared_ptr_helper<StorageMemory>, public IStorage
+class StorageMemory : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageMemory>;
 friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 
 public:
-    static StoragePtr create(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_);
-
-    static StoragePtr create(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
-
     std::string getName() const override { return "Memory"; }
     std::string getTableName() const override { return name; }
 
@@ -47,7 +36,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,

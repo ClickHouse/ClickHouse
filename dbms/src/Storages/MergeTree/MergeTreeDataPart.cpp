@@ -175,13 +175,13 @@ bool MergeTreeDataPartChecksums::read_v3(ReadBuffer & in)
 
         readBinary(name, in);
         readVarUInt(sum.file_size, in);
-        readBinary(sum.file_hash, in);
+        readPODBinary(sum.file_hash, in);
         readBinary(sum.is_compressed, in);
 
         if (sum.is_compressed)
         {
             readVarUInt(sum.uncompressed_size, in);
-            readBinary(sum.uncompressed_hash, in);
+            readPODBinary(sum.uncompressed_hash, in);
         }
 
         files.emplace(std::move(name), sum);
@@ -210,18 +210,18 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
 
         writeBinary(name, out);
         writeVarUInt(sum.file_size, out);
-        writeBinary(sum.file_hash, out);
+        writePODBinary(sum.file_hash, out);
         writeBinary(sum.is_compressed, out);
 
         if (sum.is_compressed)
         {
             writeVarUInt(sum.uncompressed_size, out);
-            writeBinary(sum.uncompressed_hash, out);
+            writePODBinary(sum.uncompressed_hash, out);
         }
     }
 }
 
-void MergeTreeDataPartChecksums::addFile(const String & file_name, size_t file_size, uint128 file_hash)
+void MergeTreeDataPartChecksums::addFile(const String & file_name, size_t file_size, MergeTreeDataPartChecksum::uint128 file_hash)
 {
     files[file_name] = Checksum(file_size, file_hash);
 }
@@ -305,12 +305,13 @@ size_t MergeTreeDataPart::getColumnUncompressedSize(const String & name) const
 
 
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
-    *    If no checksums are present returns the name of the first physically existing column. */
+  * If no checksums are present returns the name of the first physically existing column.
+  */
 String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 {
     const auto & columns = storage.getColumnsList();
     const std::string * minimum_size_column = nullptr;
-    auto minimum_size = std::numeric_limits<size_t>::max();
+    size_t minimum_size = std::numeric_limits<size_t>::max();
 
     for (const auto & column : columns)
     {
@@ -373,6 +374,9 @@ size_t MergeTreeDataPart::getExactSizeRows() const
 
 String MergeTreeDataPart::getFullPath() const
 {
+    if (relative_path.empty())
+        throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
+
     return storage.full_path + relative_path + "/";
 }
 
@@ -430,7 +434,10 @@ size_t MergeTreeDataPart::calcTotalSize(const String & from)
 
 void MergeTreeDataPart::remove() const
 {
-    String from = storage.full_path + name;
+    if (relative_path.empty())
+        throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
+
+    String from = storage.full_path + relative_path;
     String to = storage.full_path + "tmp_delete_" + name;
 
     Poco::File from_dir{from};
@@ -588,7 +595,7 @@ void MergeTreeDataPart::loadChecksums(bool require)
 
 void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
 {
-    Poco::ScopedReadRWLock part_lock(columns_lock);
+    std::shared_lock<std::shared_mutex> part_lock(columns_lock);
     for (const NameAndTypePair & column : *storage.columns)
         if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
             column_to_size[column.name] += Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").getSize();
@@ -712,7 +719,7 @@ size_t MergeTreeDataPart::getIndexSizeInAllocatedBytes() const
 {
     size_t res = 0;
     for (const ColumnPtr & column : index)
-        res += column->allocatedSize();
+        res += column->allocatedBytes();
     return res;
 }
 

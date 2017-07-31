@@ -302,8 +302,16 @@ def generate_dictionaries(args):
 
     source_mysql = '''
     <mysql>
-        <host>localhost</host>
-        <port>3306</port>
+        <replica>
+            <priority>1</priority>
+            <host>127.0.0.1</host>
+            <port>3333</port>   <!-- Wrong port, for testing basic failover to work. -->
+        </replica>
+        <replica>
+            <priority>2</priority>
+            <host>localhost</host>
+            <port>3306</port>
+        </replica>
         <user>root</user>
         <password></password>
         <db>test</db>
@@ -336,6 +344,14 @@ def generate_dictionaries(args):
     source_executable = '''
     <executable>
         <command>cat %s</command>
+        <format>TabSeparated</format>
+    </executable>
+    '''
+
+    # ignore stdin, then print file
+    source_executable_cache = '''
+    <executable>
+        <command>cat ->/dev/null; cat %s</command>
         <format>TabSeparated</format>
     </executable>
     '''
@@ -416,7 +432,7 @@ def generate_dictionaries(args):
         [ source_http % (files[0]), layout_hashed ],
 
         [ source_clickhouse, layout_cache ],
-        [ source_executable % (generated_prefix + files[0]), layout_cache ],
+        [ source_executable_cache % (generated_prefix + files[0]), layout_cache ],
         [ source_http % (files[0]), layout_cache ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
@@ -426,7 +442,7 @@ def generate_dictionaries(args):
         [ source_http % (files[1]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
-        [ source_executable % (generated_prefix + files[1]), layout_complex_key_cache ],
+        [ source_executable_cache % (generated_prefix + files[1]), layout_complex_key_cache ],
         [ source_http % (files[1]), layout_complex_key_cache ],
 
         # Complex key dictionaries with (String, UInt8) key
@@ -436,7 +452,7 @@ def generate_dictionaries(args):
         [ source_http % (files[2]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
-        [ source_executable % (generated_prefix + files[2]), layout_complex_key_cache ],
+        [ source_executable_cache % (generated_prefix + files[2]), layout_complex_key_cache ],
         [ source_http % (files[2]), layout_complex_key_cache ],
     ]
 

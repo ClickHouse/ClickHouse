@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 
 namespace DB
@@ -10,10 +10,11 @@ namespace DB
 class Context;
 
 
-/** Allows you to create a table by the name of the engine.
+/** Allows you to create a table by the name and parameters of the engine.
   * In 'columns', 'materialized_columns', etc., Nested data structures must be flattened.
+  * You should subsequently call IStorage::startup method to work with table.
   */
-class StorageFactory : public Singleton<StorageFactory>
+class StorageFactory : public ext::singleton<StorageFactory>
 {
 public:
     StoragePtr get(

@@ -32,7 +32,6 @@ struct AggregateFunctionTopKData
     using Set = SpaceSaving
     <
         T,
-        T,
         HashCRC32<T>,
         HashTableGrower<4>,
         HashTableAllocatorWithStackMemory<sizeof(T) * (1 << 4)>
@@ -67,7 +66,7 @@ public:
         if (params.size() != 1)
             throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        std::size_t k = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[0]);
+        size_t k = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[0]);
 
         if (k > TOP_K_MAX_SIZE)
             throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
@@ -129,7 +128,6 @@ struct AggregateFunctionTopKGenericData
 {
     using Set = SpaceSaving
     <
-        std::string,
         StringRef,
         StringRefHash,
         HashTableGrower<4>,
@@ -199,12 +197,12 @@ public:
         size_t count = 0;
         readVarUInt(count, buf);
         for (size_t i = 0; i < count; ++i) {
-            std::string key_string;
-            readStringBinary(key_string, buf);
+            auto ref = readStringBinaryInto(*arena, buf);
             UInt64 count, error;
             readVarUInt(count, buf);
             readVarUInt(error, buf);
-            set.insert(key_string, count, error);
+            set.insert(ref, count, error);
+            arena->rollback(ref.size);
         }
     }
 
@@ -216,7 +214,7 @@ public:
         }
 
         StringRef str_serialized = column.getDataAt(row_num);
-        set.insert(str_serialized.toString());
+        set.insert(str_serialized);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override

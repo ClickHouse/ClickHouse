@@ -1,4 +1,5 @@
 #include <Analyzers/AnalyzeResultOfQuery.h>
+#include <Analyzers/ExecuteTableFunctions.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -27,16 +28,19 @@ try
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "query");
 
-    Context context;
+    Context context = Context::createGlobal();
 
     auto system_database = std::make_shared<DatabaseMemory>("system");
     context.addDatabase("system", system_database);
     context.setCurrentDatabase("system");
-    system_database->attachTable("one",            StorageSystemOne::create("one"));
-    system_database->attachTable("numbers",     StorageSystemNumbers::create("numbers"));
+    system_database->attachTable("one", StorageSystemOne::create("one"));
+    system_database->attachTable("numbers", StorageSystemNumbers::create("numbers", false));
+
+    ExecuteTableFunctions execute_table_functions;
+    execute_table_functions.process(ast, context);
 
     AnalyzeResultOfQuery analyzer;
-    analyzer.process(ast, context);
+    analyzer.process(ast, context, execute_table_functions);
 
     analyzer.dump(out);
 

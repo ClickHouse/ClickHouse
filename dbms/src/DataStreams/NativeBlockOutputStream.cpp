@@ -5,7 +5,6 @@
 #include <IO/VarInt.h>
 #include <IO/CompressedWriteBuffer.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -17,9 +16,16 @@
 #include <DataStreams/MarkInCompressedFile.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 NativeBlockOutputStream::NativeBlockOutputStream(
     WriteBuffer & ostr_, UInt64 client_revision_,
@@ -69,12 +75,12 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
-        /** For arrays, you first need to serialize the offsets, and then the values.
+        /** For arrays, we serialize the offsets first, and then the values.
           */
         const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
         type_arr->getOffsetsType()->serializeBinaryBulk(*column_array.getOffsetsColumn(), ostr, offset, limit);
 
-        if (!typeid_cast<const ColumnArray &>(*full_column).getData().empty())
+        if (!column_array.getData().empty())
         {
             const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
 
@@ -98,17 +104,8 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 
             const DataTypePtr & nested_type = type_arr->getNestedType();
 
-            DataTypePtr actual_type;
-            if (nested_type->isNull())
-            {
-                /// Special case: an array of Null is actually an array of Nullable(UInt8).
-                actual_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-            }
-            else
-                actual_type = nested_type;
-
             if (limit == 0 || nested_limit)
-                writeData(*actual_type, typeid_cast<const ColumnArray &>(*full_column).getDataPtr(), ostr, nested_offset, nested_limit);
+                writeData(*nested_type, column_array.getDataPtr(), ostr, nested_offset, nested_limit);
         }
     }
     else

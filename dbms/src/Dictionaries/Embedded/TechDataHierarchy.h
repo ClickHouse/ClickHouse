@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/singleton.h>
+#include <ext/singleton.h>
 #include <common/Types.h>
 
 
@@ -67,4 +67,4 @@ public:
 };
 
 
-class TechDataHierarchySingleton : public Singleton<TechDataHierarchySingleton>, public TechDataHierarchy {};
+class TechDataHierarchySingleton : public ext::singleton<TechDataHierarchySingleton>, public TechDataHierarchy {};

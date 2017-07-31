@@ -630,6 +630,7 @@ bool TCPHandler::receiveData()
             {
                 NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(block.getColumnsList());
                 storage = StorageMemory::create(external_table_name, columns);
+                storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }
             /// The data will be written directly to the table.

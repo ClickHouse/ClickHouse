@@ -9,27 +9,20 @@
 
 namespace DB
 {
-bool ParserUseQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_use("USE", true, true);
+    ParserKeyword s_use("USE");
     ParserIdentifier name_p;
 
     ASTPtr database;
 
-    ws.ignore(pos, end);
-
-    if (!s_use.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_use.ignore(pos, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
+    if (!name_p.parse(pos, database, expected))
         return false;
-
-    ws.ignore(pos, end);
 
     auto query = std::make_shared<ASTUseQuery>(StringRange(begin, pos));
     query->database = typeid_cast<ASTIdentifier &>(*database).name;

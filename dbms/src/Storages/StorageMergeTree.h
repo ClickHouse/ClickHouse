@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -16,38 +16,13 @@ namespace DB
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree : private ext::shared_ptr_helper<StorageMergeTree>, public IStorage
+class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageMergeTree>;
 friend class MergeTreeBlockOutputStream;
 
 public:
-    /** hook the table with the appropriate name, along the appropriate path (with  / at the end),
-      *  (correctness of names and paths are not checked)
-      *  consisting of the specified columns.
-      *
-      * primary_expr_ast      - expression for sorting;
-      * date_column_name      - the name of the column with the date;
-      * index_granularity     - fow how many rows one index value is written.
-      */
-    static StoragePtr create(
-        const String & path_,
-        const String & database_name_,
-        const String & table_name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        bool attach,
-        Context & context_,
-        ASTPtr & primary_expr_ast_,
-        const String & date_column_name_,
-        const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-        size_t index_granularity_,
-        const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
-
+    void startup() override;
     void shutdown() override;
     ~StorageMergeTree() override;
 
@@ -76,7 +51,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
@@ -86,13 +61,13 @@ public:
 
     /** Perform the next step in combining the parts.
       */
-    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override
+    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override
     {
         return merge(settings.min_bytes_to_use_direct_io, true, partition, final, deduplicate);
     }
 
     void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
-    void dropColumnFromPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
+    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
     void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
     void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
 
@@ -140,6 +115,14 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
+    /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
+      *  (correctness of names and paths are not checked)
+      *  consisting of the specified columns.
+      *
+      * primary_expr_ast      - expression for sorting;
+      * date_column_name      - the name of the column with the date;
+      * index_granularity     - fow how many rows one index value is written.
+      */
     StorageMergeTree(
         const String & path_,
         const String & database_name_,

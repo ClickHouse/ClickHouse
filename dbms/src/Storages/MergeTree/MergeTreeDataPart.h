@@ -3,7 +3,8 @@
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Poco/RWLock.h>
+#include <Columns/IColumn.h>
+#include <shared_mutex>
 
 
 class SipHash;
@@ -16,6 +17,8 @@ namespace DB
 /// Checksum of one file.
 struct MergeTreeDataPartChecksum
 {
+    using uint128 = CityHash_v1_0_2::uint128;
+
     size_t file_size {};
     uint128 file_hash {};
 
@@ -44,7 +47,7 @@ struct MergeTreeDataPartChecksums
     using FileChecksums = std::map<String, Checksum>;
     FileChecksums files;
 
-    void addFile(const String & file_name, size_t file_size, uint128 file_hash);
+    void addFile(const String & file_name, size_t file_size, Checksum::uint128 file_hash);
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 
@@ -142,7 +145,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /** It is blocked for writing when changing columns, checksums or any part files.
         * Locked to read when reading columns, checksums or any part files.
         */
-    mutable Poco::RWLock columns_lock;
+    mutable std::shared_mutex columns_lock;
 
     /** It is taken for the whole time ALTER a part: from the beginning of the recording of the temporary files to their renaming to permanent.
         * It is taken with unlocked `columns_lock`.
@@ -165,7 +168,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = true) const;
 
-    /// Renames a piece by appending a prefix to the name. To_detached - also moved to the detached directory.
+    /// Renames a part by appending a prefix to the name. To_detached - also moved to the detached directory.
     void renameAddPrefix(bool to_detached, const String & prefix) const;
 
     /// Loads index file. Also calculates this->size if size=0

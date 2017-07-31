@@ -31,11 +31,6 @@ protected:
     void writeTotals();
     void writeExtremes();
 
-    using Widths_t = std::vector<size_t>;
-
-    /// Evaluate the visible width (when outputting to the console with UTF-8 encoding) the width of the values and column names.
-    void calculateWidths(Block & block, Widths_t & max_widths, Widths_t & name_widths);
-
     WriteBuffer & ostr;
     size_t max_rows;
     size_t total_rows = 0;
@@ -47,6 +42,12 @@ protected:
     Block extremes;
 
     const Context & context;
+
+    using Widths = PODArray<size_t>;
+    using WidthsPerColumn = std::vector<Widths>;
+
+    static void calculateWidths(const Block & block, WidthsPerColumn & widths, Widths & max_widths, Widths & name_widths);
+    void writeValueWithPadding(const ColumnWithTypeAndName & elem, size_t row_num, size_t value_width, size_t pad_to_width);
 };
 
 }

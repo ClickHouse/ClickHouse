@@ -6,7 +6,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnsNumber.h>
-
+#include <IO/ReadHelpers.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -107,7 +108,7 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
     {
         /// Keep in mind that calculations are approximate.
         StringRef value = column.getDataAt(row_num);
-        insert(CityHash64(value.data, value.size), threshold);
+        insert(CityHash_v1_0_2::CityHash64(value.data, value.size), threshold);
     }
 };
 

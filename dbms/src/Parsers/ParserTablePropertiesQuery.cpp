@@ -11,39 +11,34 @@ namespace DB
 {
 
 
-bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_exists("EXISTS", true, true);
-    ParserString s_describe("DESCRIBE", true, true);
-    ParserString s_desc("DESC", true, true);
-    ParserString s_show("SHOW", true, true);
-    ParserString s_create("CREATE", true, true);
-    ParserString s_table("TABLE", true, true);
-    ParserString s_dot(".");
+    ParserKeyword s_exists("EXISTS");
+    ParserKeyword s_describe("DESCRIBE");
+    ParserKeyword s_desc("DESC");
+    ParserKeyword s_show("SHOW");
+    ParserKeyword s_create("CREATE");
+    ParserKeyword s_table("TABLE");
+    ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p;
 
     ASTPtr database;
     ASTPtr table;
     std::shared_ptr<ASTQueryWithTableAndOutput> query;
 
-    ws.ignore(pos, end);
-
-    if (s_exists.ignore(pos, end, max_parsed_pos, expected))
+    if (s_exists.ignore(pos, expected))
     {
         query = std::make_shared<ASTExistsQuery>();
     }
-    else if (s_describe.ignore(pos, end, max_parsed_pos, expected) || s_desc.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_describe.ignore(pos, expected) || s_desc.ignore(pos, expected))
     {
         query = std::make_shared<ASTDescribeQuery>();
     }
-    else if (s_show.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_show.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (!s_create.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_create.ignore(pos, expected))
             return false;
 
         query = std::make_shared<ASTShowCreateQuery>();
@@ -53,27 +48,17 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Po
         return false;
     }
 
-    ws.ignore(pos, end);
+    s_table.ignore(pos, expected);
 
-    s_table.ignore(pos, end, max_parsed_pos, expected);
-
-    ws.ignore(pos, end);
-
-    if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+    if (!name_p.parse(pos, table, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+    if (s_dot.ignore(pos, expected))
     {
         database = table;
-        if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
-
-        ws.ignore(pos, end);
     }
-
-    ws.ignore(pos, end);
 
     query->range = StringRange(begin, pos);
 

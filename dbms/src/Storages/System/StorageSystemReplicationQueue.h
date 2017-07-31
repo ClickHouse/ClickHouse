@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -12,13 +12,10 @@ class Context;
 
 /** Implements the `replication_queue` system table, which allows you to view the replication queues for the replicated tables.
   */
-class StorageSystemReplicationQueue : private ext::shared_ptr_helper<StorageSystemReplicationQueue>, public IStorage
+class StorageSystemReplicationQueue : public ext::shared_ptr_helper<StorageSystemReplicationQueue>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageSystemReplicationQueue>;
-
 public:
-    static StoragePtr create(const std::string & name_);
-
     std::string getName() const override { return "SystemReplicationQueue"; }
     std::string getTableName() const override { return name; }
 
@@ -26,7 +23,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,

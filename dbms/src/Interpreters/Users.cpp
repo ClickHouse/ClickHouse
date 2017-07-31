@@ -21,7 +21,7 @@
 
 #include <common/logger_useful.h>
 
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -317,22 +317,22 @@ void Users::loadFromConfig(Poco::Util::AbstractConfiguration & config)
         cont[key] = User(key, "users." + key, config);
 }
 
-const User & Users::get(const String & name, const String & password, const Poco::Net::IPAddress & address) const
+const User & Users::get(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const
 {
-    Container::const_iterator it = cont.find(name);
+    auto it = cont.find(user_name);
 
     if (cont.end() == it)
-        throw Exception("Unknown user " + name, ErrorCodes::UNKNOWN_USER);
+        throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
 
     if (!it->second.addresses.contains(address))
-        throw Exception("User " + name + " is not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
+        throw Exception("User " + user_name + " is not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
     auto on_wrong_password = [&]()
     {
         if (password.empty())
-            throw Exception("Password required for user " + name, ErrorCodes::REQUIRED_PASSWORD);
+            throw Exception("Password required for user " + user_name, ErrorCodes::REQUIRED_PASSWORD);
         else
-            throw Exception("Wrong password for user " + name, ErrorCodes::WRONG_PASSWORD);
+            throw Exception("Wrong password for user " + user_name, ErrorCodes::WRONG_PASSWORD);
     };
 
     if (!it->second.password_sha256_hex.empty())
@@ -363,6 +363,18 @@ const User & Users::get(const String & name, const String & password, const Poco
 
     return it->second;
 }
+
+
+const User & Users::get(const String & user_name)
+{
+    auto it = cont.find(user_name);
+
+    if (cont.end() == it)
+        throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
+
+    return it->second;
+}
+
 
 bool Users::isAllowedDatabase(const std::string & user_name, const std::string & database_name) const
 {

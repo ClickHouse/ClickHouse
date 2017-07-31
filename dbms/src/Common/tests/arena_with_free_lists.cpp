@@ -11,11 +11,11 @@
 #include <memory>
 #include <array>
 #include <sys/resource.h>
-#include <ext/bit_cast.hpp>
-#include <ext/size.hpp>
+#include <ext/bit_cast.h>
+#include <ext/size.h>
 #include <Common/Arena.h>
 
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -33,9 +33,9 @@ class ArenaWithFreeLists : private Allocator<false>
 private:
     struct Block { Block * next; };
 
-    static const std::array<std::size_t, 14> & getSizes()
+    static const std::array<size_t, 14> & getSizes()
     {
-        static constexpr std::array<std::size_t, 14> sizes{
+        static constexpr std::array<size_t, 14> sizes{
             8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536
         };
 
@@ -61,7 +61,7 @@ private:
     Arena pool;
     const std::unique_ptr<Block * []> free_lists = std::make_unique<Block * []>(ext::size(getSizes()));
 
-    static std::size_t findFreeListIndex(const std::size_t size)
+    static size_t findFreeListIndex(const size_t size)
     {
         /// shift powers of two into previous bucket by subtracting 1
         const auto bucket_num = sizeToPreviousPowerOfTwo(size);
@@ -71,13 +71,13 @@ private:
 
 public:
     ArenaWithFreeLists(
-        const std::size_t initial_size = 4096, const std::size_t growth_factor = 2,
-        const std::size_t linear_growth_threshold = 128 * 1024 * 1024)
+        const size_t initial_size = 4096, const size_t growth_factor = 2,
+        const size_t linear_growth_threshold = 128 * 1024 * 1024)
         : pool{initial_size, growth_factor, linear_growth_threshold}
     {
     }
 
-    char * alloc(const std::size_t size)
+    char * alloc(const size_t size)
     {
         if (size > getMaxFixedBlockSize())
             return static_cast<char *>(Allocator::alloc(size));
@@ -96,7 +96,7 @@ public:
         return pool.alloc(getSizes()[list_idx]);
     }
 
-    void free(const void * ptr, const std::size_t size)
+    void free(const void * ptr, const size_t size)
     {
         if (size > getMaxFixedBlockSize())
             return Allocator::free(const_cast<void *>(ptr), size);

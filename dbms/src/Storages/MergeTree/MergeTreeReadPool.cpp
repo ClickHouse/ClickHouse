@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace ProfileEvents
@@ -14,7 +14,7 @@ namespace DB
 
 
 MergeTreeReadPool::MergeTreeReadPool(
-    const std::size_t threads, const std::size_t sum_marks, const std::size_t min_marks_for_concurrent_read,
+    const size_t threads, const size_t sum_marks, const size_t min_marks_for_concurrent_read,
     RangesInDataParts parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
     const String & prewhere_column_name, const bool check_columns, const Names & column_names,
     const BackoffSettings & backoff_settings, size_t preferred_block_size_bytes,
@@ -27,7 +27,7 @@ MergeTreeReadPool::MergeTreeReadPool(
 }
 
 
-MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const std::size_t min_marks_to_read, const std::size_t thread)
+MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread)
 {
     const std::lock_guard<std::mutex> lock{mutex};
 
@@ -86,8 +86,8 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const std::size_t min_marks_to_r
         {
             auto & range = thread_task.ranges.back();
 
-            const std::size_t marks_in_range = range.end - range.begin;
-            const std::size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
+            const size_t marks_in_range = range.end - range.begin;
+            const size_t marks_to_get_from_range = std::min(marks_in_range, need_marks);
 
             ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
             range.begin += marks_to_get_from_range;
@@ -158,11 +158,11 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
 }
 
 
-std::vector<std::size_t> MergeTreeReadPool::fillPerPartInfo(
+std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
     RangesInDataParts & parts, const ExpressionActionsPtr & prewhere_actions, const String & prewhere_column_name,
     const bool check_columns)
 {
-    std::vector<std::size_t> per_part_sum_marks;
+    std::vector<size_t> per_part_sum_marks;
     Block sample_block = data.getSampleBlock();
 
     for (const auto i : ext::range(0, parts.size()))
@@ -177,8 +177,7 @@ std::vector<std::size_t> MergeTreeReadPool::fillPerPartInfo(
 
         per_part_sum_marks.push_back(sum_marks);
 
-        per_part_columns_lock.push_back(std::make_unique<Poco::ScopedReadRWLock>(
-            part.data_part->columns_lock));
+        per_part_columns_lock.emplace_back(part.data_part->columns_lock);
 
         /// inject column names required for DEFAULT evaluation in current part
         auto required_column_names = column_names;
@@ -260,14 +259,14 @@ std::vector<std::size_t> MergeTreeReadPool::fillPerPartInfo(
 
 
 void MergeTreeReadPool::fillPerThreadInfo(
-    const std::size_t threads, const std::size_t sum_marks, std::vector<std::size_t> per_part_sum_marks,
-    RangesInDataParts & parts, const std::size_t min_marks_for_concurrent_read)
+    const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
+    RangesInDataParts & parts, const size_t min_marks_for_concurrent_read)
 {
     threads_tasks.resize(threads);
 
     const size_t min_marks_per_thread = (sum_marks - 1) / threads + 1;
 
-    for (std::size_t i = 0; i < threads && !parts.empty(); ++i)
+    for (size_t i = 0; i < threads && !parts.empty(); ++i)
     {
         auto need_marks = min_marks_per_thread;
 

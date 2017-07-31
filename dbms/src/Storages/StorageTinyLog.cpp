@@ -28,12 +28,14 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
+#include <Common/typeid_cast.h>
+
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageTinyLog.h>
 #include <Poco/DirectoryIterator.h>
 
-#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION     ".bin"
+#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null.bin"
 
 
@@ -46,6 +48,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int DUPLICATE_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -464,24 +467,6 @@ StorageTinyLog::StorageTinyLog(
 }
 
 
-StoragePtr StorageTinyLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        attach, max_compress_block_size_
-    );
-}
-
-
 void StorageTinyLog::addFile(const String & column_name, const IDataType & type, size_t level)
 {
     if (files.end() != files.find(column_name))
@@ -543,7 +528,7 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
 
 BlockInputStreams StorageTinyLog::read(
     const Names & column_names,
-    const ASTPtr & query,
+    const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,

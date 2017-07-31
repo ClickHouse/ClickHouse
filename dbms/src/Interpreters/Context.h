@@ -33,8 +33,6 @@ namespace DB
 
 struct ContextShared;
 class QuotaForIntervals;
-class TableFunctionFactory;
-class AggregateFunctionFactory;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
 class InterserverIOHandler;
@@ -55,6 +53,7 @@ class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
+class DDLWorker;
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
@@ -111,8 +110,13 @@ private:
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
-public:
+    /// Use copy constructor or createGlobal() instead
     Context();
+
+public:
+    /// Create initial Context with ContextShared and etc.
+    static Context createGlobal();
+
     ~Context();
 
     String getPath() const;
@@ -134,6 +138,8 @@ public:
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+    /// Compute and set actual user settings, client_info.current_user should be set
+    void calculateUserSettings();
 
     ClientInfo & getClientInfo() { return client_info; };
     const ClientInfo & getClientInfo() const { return client_info; };
@@ -196,7 +202,6 @@ public:
     /// Set a setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
     void setSetting(const String & name, const std::string & value);
 
-    const TableFunctionFactory & getTableFunctionFactory() const;
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
     void tryCreateEmbeddedDictionaries() const;
@@ -272,6 +277,8 @@ public:
     void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
+    /// Has ready or expired ZooKeeper
+    bool hasZooKeeper() const;
 
     /// Create a cache of marks of specified size. This can be done only once.
     void setMarkCache(size_t cache_size_in_bytes);
@@ -281,6 +288,9 @@ public:
 
     void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
     ReshardingWorker & getReshardingWorker();
+
+    void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
+    DDLWorker & getDDLWorker();
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -319,7 +329,7 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
-        LOCAL_SERVER    /// clickhouse-local
+        LOCAL           /// clickhouse-local
     };
 
     ApplicationType getApplicationType() const;
@@ -386,8 +396,8 @@ private:
 
     std::mutex mutex;
     std::condition_variable cond;
-    std::thread thread{&SessionCleaner::run, this};
     std::atomic<bool> quit{false};
+    std::thread thread{&SessionCleaner::run, this};
 };
 
 }

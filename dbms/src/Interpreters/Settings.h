@@ -45,7 +45,7 @@ struct Settings
     M(SettingUInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256)) \
     /** The maximum number of threads to execute the request. By default, it is determined automatically. */ \
     M(SettingMaxThreads, max_threads, 0) \
-    /** The maximum size of the buffer to read from the file system. */ \
+    /** The maximum size of the buffer to read from the filesystem. */ \
     M(SettingUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE) \
     /** The maximum number of connections for distributed processing of one query (should be greater than max_threads). */ \
     M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
@@ -78,6 +78,9 @@ struct Settings
     \
     /** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
     M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
+    \
+    /** Should StorageDistributed DirectoryMonitors try to batch individual inserts into bigger ones. */ \
+    M(SettingBool, distributed_directory_monitor_batch_inserts, false) \
     \
     /** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
     M(SettingBool, optimize_move_to_prewhere, true) \
@@ -233,6 +236,9 @@ struct Settings
     /** Controls quoting of 64-bit integers in JSON output format. */ \
     M(SettingBool, output_format_json_quote_64bit_integers, true) \
     \
+    /** Enables "+nan", "-nan", "+inf", "-inf" outputs in JSON output format. */ \
+    M(SettingBool, output_format_json_quote_denormals, false) \
+    \
     /** Rows limit for Pretty formats. */ \
     M(SettingUInt64, output_format_pretty_max_rows, 10000) \
     \
@@ -275,7 +281,12 @@ struct Settings
    /** Suppose max_replica_delay_for_distributed_queries is set and all replicas for the queried table are stale. \
      * If this setting is enabled, the query will be performed anyway, otherwise the error will be reported. \
      */ \
-    M(SettingBool, fallback_to_stale_replicas_for_distributed_queries, 1)
+    M(SettingBool, fallback_to_stale_replicas_for_distributed_queries, 1) \
+    /** For development and testing purposes only still */ \
+    M(SettingBool, distributed_ddl_allow_replicated_alter, 0) \
+    /** Limit on max column size in block while reading. Helps to decrease cache misses count. \
+      * Should be close to L2 cache size. */ \
+    M(SettingUInt64, preferred_max_column_in_block_size_bytes, 0)
 
 
     /// Possible limits for query execution.
@@ -299,6 +310,11 @@ struct Settings
 
     /// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
     void set(const String & name, const String & value);
+
+    /// Get setting by name. Converts value to String.
+    String get(const String & name) const;
+
+    bool tryGet(const String & name, String & value) const;
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
       * The profile can also be set using the `set` functions, like the profile setting.

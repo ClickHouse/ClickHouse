@@ -1,11 +1,13 @@
 #include <Poco/File.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/DDLWorker.h>
 
 
 namespace DB
@@ -27,10 +29,13 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & 
 
 BlockIO InterpreterDropQuery::execute()
 {
+    ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
+
+    if (!drop.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
+
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
-
-    ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
 
     bool drop_database = drop.table.empty() && !drop.database.empty();
 
@@ -85,6 +90,13 @@ BlockIO InterpreterDropQuery::execute()
 
     for (auto & table : tables_to_drop)
     {
+        if (!drop.detach)
+        {
+            if (!table.first->checkTableCanBeDropped())
+                throw Exception("Table " + database_name  + "." + table.first->getTableName() + " couldn't be dropped due to failed pre-drop check",
+                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+        }
+
         table.first->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
@@ -99,10 +111,6 @@ BlockIO InterpreterDropQuery::execute()
         }
         else
         {
-            if (!table.first->checkTableCanBeDropped())
-                throw Exception("Table " + database_name  + "." + current_table_name + " couldn't be dropped due to failed pre-drop check",
-                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
-
             /// Delete table metdata and table itself from memory
             database->removeTable(current_table_name);
             /// Delete table data

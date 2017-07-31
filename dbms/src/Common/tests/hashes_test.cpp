@@ -48,12 +48,12 @@ int main(int argc, char ** argv)
 
         for (size_t i = 0; i < rows; ++i)
         {
-            *reinterpret_cast<UInt64*>(&hashes[i * 16]) = CityHash64(strings[i].data(), strings[i].size());
+            *reinterpret_cast<UInt64*>(&hashes[i * 16]) = CityHash_v1_0_2::CityHash64(strings[i].data(), strings[i].size());
         }
 
         watch.stop();
 
-        UInt64 check = CityHash64(&hashes[0], hashes.size());
+        UInt64 check = CityHash_v1_0_2::CityHash64(&hashes[0], hashes.size());
 
         std::cerr << std::fixed << std::setprecision(2)
             << "CityHash64 (check = " << check << ")"
@@ -78,7 +78,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
 
-        UInt64 check = CityHash64(&hashes[0], hashes.size());
+        UInt64 check = CityHash_v1_0_2::CityHash64(&hashes[0], hashes.size());
 
         std::cerr << std::fixed << std::setprecision(2)
             << "SipHash (check = " << check << ")"
@@ -99,7 +99,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
 
-        UInt64 check = CityHash64(&hashes[0], hashes.size());
+        UInt64 check = CityHash_v1_0_2::CityHash64(&hashes[0], hashes.size());
 
         std::cerr << std::fixed << std::setprecision(2)
             << "SipHash, stream (check = " << check << ")"
@@ -121,7 +121,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
 
-        UInt64 check = CityHash64(&hashes[0], hashes.size());
+        UInt64 check = CityHash_v1_0_2::CityHash64(&hashes[0], hashes.size());
 
         std::cerr << std::fixed << std::setprecision(2)
             << "MD5 (check = " << check << ")"

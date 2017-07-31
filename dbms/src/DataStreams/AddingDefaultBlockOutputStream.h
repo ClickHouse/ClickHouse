@@ -40,7 +40,7 @@ private:
     BlockOutputStreamPtr output;
     NamesAndTypesListPtr required_columns;
     const ColumnDefaults column_defaults;
-    const Context & context;
+    Context context;
     bool only_explicit_column_defaults;
 };
 

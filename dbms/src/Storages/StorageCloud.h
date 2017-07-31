@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
@@ -16,19 +16,11 @@ class Context;
 /** Cloud table. It can only be in the cloud database.
   * When writing to a table, data is written to local tables on multiple cloud servers.
   */
-class StorageCloud : private ext::shared_ptr_helper<StorageCloud>, public IStorage
+class StorageCloud : public ext::shared_ptr_helper<StorageCloud>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageCloud>;
 
 public:
-    static StoragePtr create(
-        DatabasePtr & database_ptr_,
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
-
     std::string getName() const override { return "Cloud"; }
     std::string getTableName() const override { return name; }
 
@@ -43,7 +35,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,

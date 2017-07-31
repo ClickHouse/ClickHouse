@@ -1,0 +1,10 @@
+#pragma once
+
+namespace DB
+{
+
+class FunctionFactory;
+
+void register@FUNCTION@(FunctionFactory & factory);
+
+}

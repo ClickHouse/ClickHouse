@@ -1,11 +1,14 @@
-#include <Columns/ColumnConst.h>
-
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeNull.h>
+#include <DataTypes/DataTypeFactory.h>
+
+#include <Columns/IColumn.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 
 
 namespace DB
@@ -25,23 +28,18 @@ void DataTypeNull::serializeBinaryBulk(const IColumn & column, WriteBuffer & ost
 
 void DataTypeNull::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
 {
-    ColumnNull & null_col = static_cast<ColumnNull &>(column);
-
     istr.ignore(sizeof(UInt8) * limit);
-    null_col.insertRangeFrom(ColumnNull{0, Null()}, 0, limit);
+
+    for (size_t i = 0; i < limit; ++i)
+        column.insertDefault();
 }
 
 ColumnPtr DataTypeNull::createColumn() const
 {
-    return std::make_shared<ColumnNull>(0, Null());
+    return std::make_shared<ColumnNullable>(std::make_shared<ColumnUInt8>(), std::make_shared<ColumnUInt8>());
 }
 
-ColumnPtr DataTypeNull::createConstColumn(size_t size, const Field & field) const
-{
-    return std::make_shared<ColumnNull>(size, Null());
-}
-
-size_t DataTypeNull::getSizeOfField() const        /// TODO Check where it is needed.
+size_t DataTypeNull::getSizeOfField() const
 {
     /// NULL has the size of the smallest non-null type.
     return sizeof(UInt8);
@@ -108,8 +106,7 @@ void DataTypeNull::serializeText(const IColumn & column, size_t row_num, WriteBu
     writeCString("NULL", ostr);
 }
 
-void DataTypeNull::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-    bool force_quoting_64bit_integers) const
+void DataTypeNull::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     writeCString("null", ostr);
 }
@@ -117,6 +114,12 @@ void DataTypeNull::serializeTextJSON(const IColumn & column, size_t row_num, Wri
 void DataTypeNull::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
     assertString("null", istr);
+}
+
+
+void registerDataTypeNull(DataTypeFactory & factory)
+{
+    factory.registerSimpleDataType("Null", [] { return DataTypePtr(std::make_shared<DataTypeNull>()); });
 }
 
 }

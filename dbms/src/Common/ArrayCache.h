@@ -10,10 +10,15 @@
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/set.hpp>
 #include <boost/noncopyable.hpp>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
+
+/// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
 
 
 namespace DB

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -11,14 +11,11 @@ class Context;
 
 
 /** Implements `metrics` system table, which provides information about the operation of the server.
-    */
-class StorageSystemMetrics : private ext::shared_ptr_helper<StorageSystemMetrics>, public IStorage
+  */
+class StorageSystemMetrics : public ext::shared_ptr_helper<StorageSystemMetrics>, public IStorage
 {
 friend class ext::shared_ptr_helper<StorageSystemMetrics>;
-
 public:
-    static StoragePtr create(const std::string & name_);
-
     std::string getName() const override { return "SystemMetrics"; }
     std::string getTableName() const override { return name; }
 
@@ -26,7 +23,7 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        const ASTPtr & query,
+        const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,

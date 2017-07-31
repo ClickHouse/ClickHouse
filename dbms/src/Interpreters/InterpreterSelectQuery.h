@@ -172,6 +172,9 @@ private:
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
     NamesAndTypesList table_column_names;
 
+    /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
+    size_t max_streams = 1;
+
     /** Streams of data.
       * The source data streams are produced in the executeFetchColumns function.
       * Then they are converted (wrapped in other streams) using the `execute*` functions,

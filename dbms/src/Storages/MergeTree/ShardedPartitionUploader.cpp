@@ -91,8 +91,8 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
             throw Exception{"Fetching of part was cancelled", ErrorCodes::ABORTED};
         }
 
-        uint128 expected_hash;
-        readBinary(expected_hash, body);
+        MergeTreeDataPartChecksum::uint128 expected_hash;
+        readPODBinary(expected_hash, body);
 
         if (expected_hash != hashing_out.getHash())
             throw Exception{"Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path};
@@ -151,7 +151,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
     MergeTreeData::DataPartPtr part = findShardedPart(part_name, shard_no);
 
-    Poco::ScopedReadRWLock part_lock{part->columns_lock};
+    std::shared_lock<std::shared_mutex> part_lock{part->columns_lock};
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
@@ -182,7 +182,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
         if (hashing_out.count() != size)
             throw Exception{"Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART};
 
-        writeBinary(hashing_out.getHash(), out);
+        writePODBinary(hashing_out.getHash(), out);
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt")

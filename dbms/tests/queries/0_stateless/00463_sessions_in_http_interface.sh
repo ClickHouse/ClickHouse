@@ -44,14 +44,21 @@ check "$url$session&session_check=0" "$select" "Exception" 0 "session_check=0 do
 request $url$session "SET max_rows_to_read=7777777"
 
 check "$url$session&session_timeout=string" "$select" "Exception.*Invalid session timeout" 1 "Non-numeric value accepted as a timeout."
-check "$url$session&session_timeout=3601" "$select" "Exception.*Invalid session timeout" 1 "More then 3600 seconds accepted as a timeout."
+check "$url$session&session_timeout=3601" "$select" "Exception.*Maximum session timeout*" 1 "More then 3600 seconds accepted as a timeout."
 check "$url$session&session_timeout=-1" "$select" "Exception.*Invalid session timeout" 1 "Negative timeout accepted."
 check "$url$session&session_timeout=0" "$select" "Exception" 0 "Zero timeout not accepted."
 check "$url$session&session_timeout=3600" "$select" "Exception" 0 "3600 second timeout not accepted."
 check "$url$session&session_timeout=60" "$select" "Exception" 0 "60 second timeout not accepted."
 
 check $url$session "$select" "7777777" 1 "Failed to reuse session."
-check "$url$session&user=readonly&session_check=1" "$select" "Exception.*Session not found" 1 "Session is accessable for another user."
+# Workaround here
+# TODO: move the test to integration test or add readonly user to test environment
+if [[ -z `request "$url?user=readonly" "SELECT ''"` ]]; then
+    # We have readonly user
+    check "$url$session&user=readonly&session_check=1" "$select" "Exception.*Session not found" 1 "Session is accessable for another user."
+else
+    check "$url$session&user=readonly&session_check=1" "$select" "Exception.*Unknown user*" 1 "Session is accessable for unknown user."
+fi
 
 create_temporary_table $url$session
 check $url$session "$select_from_temporary_table" "Hello" 1 "Failed to reuse a temporary table for session."

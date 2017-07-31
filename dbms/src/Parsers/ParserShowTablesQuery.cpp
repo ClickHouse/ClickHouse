@@ -13,17 +13,16 @@ namespace DB
 {
 
 
-bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_show("SHOW", true, true);
-    ParserString s_tables("TABLES", true, true);
-    ParserString s_databases("DATABASES", true, true);
-    ParserString s_from("FROM", true, true);
-    ParserString s_not("NOT", true, true);
-    ParserString s_like("LIKE", true, true);
+    ParserKeyword s_show("SHOW");
+    ParserKeyword s_tables("TABLES");
+    ParserKeyword s_databases("DATABASES");
+    ParserKeyword s_from("FROM");
+    ParserKeyword s_not("NOT");
+    ParserKeyword s_like("LIKE");
     ParserStringLiteral like_p;
     ParserIdentifier name_p;
 
@@ -32,43 +31,27 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
 
     auto query = std::make_shared<ASTShowTablesQuery>();
 
-    ws.ignore(pos, end);
-
-    if (!s_show.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_show.ignore(pos, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (s_databases.ignore(pos, end))
+    if (s_databases.ignore(pos))
     {
         query->databases = true;
     }
-    else if (s_tables.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_tables.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (s_from.ignore(pos, end, max_parsed_pos, expected))
+        if (s_from.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!name_p.parse(pos, end, database, max_parsed_pos, expected))
+            if (!name_p.parse(pos, database, expected))
                 return false;
         }
 
-        ws.ignore(pos, end);
-
-        if (s_not.ignore(pos, end, max_parsed_pos, expected))
-        {
-            ws.ignore(pos, end);
-
+        if (s_not.ignore(pos, expected))
             query->not_like = true;
-        }
 
-        if (s_like.ignore(pos, end, max_parsed_pos, expected))
+        if (s_like.ignore(pos, expected))
         {
-            ws.ignore(pos, end);
-
-            if (!like_p.parse(pos, end, like, max_parsed_pos, expected))
+            if (!like_p.parse(pos, like, expected))
                 return false;
         }
         else if (query->not_like)
@@ -76,8 +59,6 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & m
     }
     else
         return false;
-
-    ws.ignore(pos, end);
 
     query->range = StringRange(begin, pos);
 

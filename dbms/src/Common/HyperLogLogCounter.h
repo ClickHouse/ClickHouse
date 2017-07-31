@@ -70,11 +70,11 @@ template<> struct MinCounterTypeHelper<3>    { using Type = UInt64; };
 /// Used in HyperLogLogCounter in order to spend memory efficiently.
 template<UInt64 MaxValue> struct MinCounterType
 {
-    typedef typename MinCounterTypeHelper<
+    using Type = typename MinCounterTypeHelper<
         (MaxValue >= 1 << 8) +
         (MaxValue >= 1 << 16) +
         (MaxValue >= 1ULL << 32)
-        >::Type Type;
+        >::Type;
 };
 
 /// Denominator of expression for HyperLogLog algorithm.

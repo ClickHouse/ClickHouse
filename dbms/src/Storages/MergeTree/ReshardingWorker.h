@@ -4,8 +4,8 @@
 #include <Storages/AlterCommands.h>
 #include <common/logger_useful.h>
 
-#include <zkutil/RWLock.h>
-#include <zkutil/SingleBarrier.h>
+#include <Common/ZooKeeper/RWLock.h>
+#include <Common/ZooKeeper/SingleBarrier.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
