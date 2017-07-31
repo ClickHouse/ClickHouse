@@ -46,7 +46,7 @@ void DescribeStreamFactory::createForShard(
     }
 
     auto remote_stream = std::make_shared<RemoteBlockInputStream>(
-            shard_info.pool, query, &context.getSettingsRef(), context, throttler);
+            shard_info.pool, query, context, nullptr, throttler);
     remote_stream->setPoolMode(PoolMode::GET_ALL);
     remote_stream->appendExtraInfo();
     res.emplace_back(std::move(remote_stream));

@@ -38,7 +38,7 @@ void SelectStreamFactory::createForShard(
     }
     else
     {
-        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, &context.getSettingsRef(), context, throttler, external_tables, processed_stage);
+        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, context, nullptr, throttler, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
         stream->setMainTable(main_table);
         res.emplace_back(std::move(stream));
