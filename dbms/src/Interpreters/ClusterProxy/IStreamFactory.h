@@ -23,18 +23,11 @@ class IStreamFactory
 public:
     virtual ~IStreamFactory() {}
 
-    /// Create an input stream for local query execution.
-    virtual BlockInputStreamPtr createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address) = 0;
-    /// Create an input stream for remote query execution on one shard.
-    virtual BlockInputStreamPtr createRemote(
-            const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
-            const Settings & settings, ThrottlerPtr throttler, const Context & context) = 0;
-    /// Create an input stream for remote query execution on one or more shards.
-    virtual BlockInputStreamPtr createRemote(
-            ConnectionPoolWithFailoverPtrs && pools, const std::string & query,
-            const Settings & new_settings, ThrottlerPtr throttler, const Context & context) = 0;
-    /// Specify how we allocate connections on a shard.
-    virtual PoolMode getPoolMode() const = 0;
+    virtual void createForShard(
+            const Cluster::ShardInfo & shard_info,
+            const String & query, const ASTPtr & query_ast, const Context & context,
+            const ThrottlerPtr & throttler,
+            BlockInputStreams & res) = 0;
 };
 
 }

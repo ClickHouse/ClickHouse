@@ -30,11 +30,6 @@ public:
         const Context & context_, ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
-    /// Takes a pool for each shard and gets one or several connections from it
-    RemoteBlockInputStream(ConnectionPoolWithFailoverPtrs && pools_, const String & query_, const Settings * settings_,
-        const Context & context_, ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
-
     ~RemoteBlockInputStream() override;
 
     /// Specify how we allocate connections on a shard.
@@ -100,9 +95,6 @@ private:
 
     /// One shard's connections pool
     ConnectionPoolWithFailoverPtr pool = nullptr;
-
-    /// Connections pools of one or several shards
-    ConnectionPoolWithFailoverPtrs pools;
 
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;
 
