@@ -244,12 +244,6 @@ a:hover, a:active {
     color: #ededed;
 }
 
-#ubuntu-install {
-    overflow: auto;
-    overflow-y: hidden;
-    -ms-overflow-y: hidden;
-}
-
 #footer {
     text-align: right;
     padding: 8px 0 0 0;
@@ -266,6 +260,7 @@ pre {
     border-left: 5px solid #ffdb4d;
     padding: 5px 10px;
     background-color: #fff8e8;
+    overflow: scroll;
 }
 
 ul {
@@ -285,6 +280,10 @@ ul.dashed > li {
 ul.dashed > li:before {
     content: '— ';
     text-indent: 1em;
+}
+
+img {
+    width: 100%;
 }
 
 .warranty {
