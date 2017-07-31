@@ -128,7 +128,7 @@ html_theme_options = {
         ('Switch to Russian <img id="svg-flag" src="/docs/en/_static/ru.svg" width="20" height="12" />', '#ru'),
         ('Single page documentation', '/docs/en/single/'),
         ('Website home', '/'),
-        ('ClickHouse repository', 'https://github.com/yandex/ClickHouse'),
+        ('Source code', 'https://github.com/yandex/ClickHouse'),
         ('Edit this page', '#edit'),
     ])
 }

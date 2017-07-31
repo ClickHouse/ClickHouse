@@ -128,7 +128,7 @@ html_theme_options = {
         ('Switch to English <img id="svg-flag" src="/docs/ru/_static/en.svg" width="20" height="12" />', '#en'),
         ('Документация на одной странице', '/docs/ru/single/'),
         ('Главная страница сайта', '/'),
-        ('Репозиторий ClickHouse', 'https://github.com/yandex/ClickHouse'),
+        ('Исходный код', 'https://github.com/yandex/ClickHouse'),
         ('Редактировать страницу', '#edit'),
     ])
 }
