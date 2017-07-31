@@ -188,7 +188,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             size_t recommended_rows = estimateNumRows(*task, *pre_range_reader);
             if (res && recommended_rows < 1)
                 break;
-            size_t space_left = std::max(1LU, std::min(max_block_size_rows, recommended_rows));
+            size_t space_left = std::max(static_cast<decltype(max_block_size_rows)>(1), std::min(max_block_size_rows, recommended_rows));
 
             while ((pre_range_reader || !task->mark_ranges.empty()) && space_left && !isCancelled())
             {
@@ -424,7 +424,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
     }
     else
     {
-        size_t space_left = std::max(1LU, max_block_size_rows);
+        size_t space_left = std::max(static_cast<decltype(max_block_size_rows)>(1), max_block_size_rows);
         while (!task->isFinished() && space_left && !isCancelled())
         {
             if (!task->current_range_reader)
@@ -438,7 +438,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             size_t recommended_rows = estimateNumRows(*task, *task->current_range_reader);
             if (res && recommended_rows < 1)
                 break;
-            rows_to_read = std::min(rows_to_read, std::max(1LU, recommended_rows));
+            rows_to_read = std::min(rows_to_read, std::max(static_cast<decltype(recommended_rows)>(1), recommended_rows));
 
             size_t rows_was_read = task->current_range_reader->read(res, rows_to_read);
             if (task->current_range_reader->isReadingFinished())
