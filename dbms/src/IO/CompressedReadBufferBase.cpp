@@ -59,7 +59,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         size_compressed = unalignedLoad<UInt32>(&own_compressed_buffer[1]);
         size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);
     }
-    else if (method == static_cast<UInt8> (CompressionMethodByte::NONE))
+    else if (method == static_cast<UInt8>(CompressionMethodByte::NONE))
     {
         size_compressed = unalignedLoad<UInt32>(&own_compressed_buffer[1]);
         size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);
