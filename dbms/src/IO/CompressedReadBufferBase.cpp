@@ -115,7 +115,7 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
         if (ZSTD_isError(res))
             throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);
     }
-    else if (method == static_cast<UInt8> (CompressionMethodByte::NONE))
+    else if (method == static_cast<UInt8>(CompressionMethodByte::NONE))
     {
         memcpy(to, &compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], size_decompressed);
     }
