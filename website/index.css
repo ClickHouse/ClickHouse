@@ -305,6 +305,13 @@ img {
     border-bottom: 1px solid #08f;
 }
 
+#tutorial_logo {
+    float: left;
+    margin-right: -100%;
+    margin-top: 34px;
+    margin-left: 3px;
+}
+
 #tutorial_title {
     font: normal 100px 'Yandex Sans Display Web', Arial, sans-serif;
     margin-top: 25px;
@@ -459,4 +466,18 @@ img {
         width: 100%;
         float: none;
     }
+
+    #tutorial_logo, #tutorial_title, #tutorial_subtitle {
+        float: none;
+        text-align: left;
+        margin: 10px 0;
+        padding: 0;
+    }
+
+    #tutorial_title {
+        font-size: 75px;
+    }
+
+
+
 }
