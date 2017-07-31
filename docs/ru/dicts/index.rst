@@ -7,6 +7,6 @@
 Существуют встроенные и подключаемые (внешние) словари.
 
 .. toctree::
-    :glob:
 
-    *
+   external_dicts
+   internal_dicts
