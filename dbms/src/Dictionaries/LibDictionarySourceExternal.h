@@ -4,7 +4,14 @@
 //using ClickhouseColumns = const char**;
 
 using ClickhouseColumn = const char *;
-using ClickhouseColumns = ClickhouseColumn[];
+using ClickhouseString = const char *;
+//using ClickhouseColumns = ClickhouseColumn[];
+
+struct ClickhouseStrings
+{
+    uint64_t size = 0;
+    ClickhouseString * strings = nullptr;
+};
 
 struct ClickhouseVectorUint64
 {

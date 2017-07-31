@@ -3,13 +3,15 @@
 #include <memory>
 #include <vector>
 
-#define DUMPS(VAR) #VAR " = " << VAR                                                     
-#define DUMP(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR) << "\n"; 
+#include <Dictionaries/LibDictionarySourceExternal.h>
+
+#define DUMPS(VAR) #VAR " = " << VAR
+#define DUMP(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR) << "\n";
 
 
 //#include <common/iostream_debug_helpers.h>
 
-
+/*
 struct ClickhouseVectorUint64
 {
     uint64_t size = 0;
@@ -21,7 +23,7 @@ struct ClickhouseColumnsUint64
     uint64_t size = 0;
     ClickhouseVectorUint64 * columns = nullptr;
 };
-
+*/
 //using ClickhouseColumnName = const char *;
 //using ClickhouseColumnNames = ClickhouseColumnName[];
 
@@ -33,10 +35,18 @@ struct DataHolder
     ClickhouseColumnsUint64 columns;
 };
 
-extern "C" void * loadIds(void * data_ptr, const struct ClickhouseVectorUint64 ids)
+extern "C" void * loadIds(void * data_ptr, ClickhouseStrings * columns, const struct ClickhouseVectorUint64 ids)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadIds Runned!!! ptr=" << data_ptr << " => " << ptr << " size=" << ids.size << "\n";
+    if (columns)
+    {
+        std::cerr << "columns passed:" << columns->size << "\n";
+        for (size_t i = 0; i < columns->size; ++i)
+        {
+            std::cerr << "col " << i << " :" << columns->strings[i] << "\n";
+        }
+    }
     if (ptr)
     {
         DUMP("lol");
