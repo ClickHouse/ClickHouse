@@ -47,7 +47,7 @@ int main(int argc, char ** argv)
         DB::WriteBufferFromOwnString wb;
         cont.writeText(wb);
 
-        std::cerr << "dump: " << wb.str(); << std::endl;
+        std::cerr << "dump: " << wb.str() << std::endl;
     }
 
     {
