@@ -109,7 +109,7 @@ void CompressedWriteBuffer::nextImpl()
 
             compressed_buffer.resize(compressed_size);
 
-            compressed_buffer[0] = static_cast<UInt8> (CompressionMethodByte::NONE);
+            compressed_buffer[0] = static_cast<UInt8>(CompressionMethodByte::NONE);
 
             unalignedStore(&compressed_buffer[1], compressed_size_32);
             unalignedStore(&compressed_buffer[5], uncompressed_size_32);
