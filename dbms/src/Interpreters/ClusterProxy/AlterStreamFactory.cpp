@@ -6,54 +6,35 @@
 namespace DB
 {
 
-namespace
-{
-
-constexpr PoolMode pool_mode = PoolMode::GET_ONE;
-
-}
-
 namespace ClusterProxy
 {
 
-BlockInputStreamPtr AlterStreamFactory::createLocal(const ASTPtr & query_ast, const Context & context, const Cluster::Address & address)
+void AlterStreamFactory::createForShard(
+        const Cluster::ShardInfo & shard_info,
+        const String & query, const ASTPtr & query_ast,
+        const Context & context, const ThrottlerPtr & throttler,
+        BlockInputStreams & res)
 {
-    /// The ALTER query may be a resharding query that is a part of a distributed
-    /// job. Since the latter heavily relies on synchronization among its participating
-    /// nodes, it is very important to defer the execution of a local query so as
-    /// to prevent any deadlock.
-    auto interpreter = std::make_shared<InterpreterAlterQuery>(query_ast, context);
-    auto stream = std::make_shared<LazyBlockInputStream>(
-        [interpreter]() mutable
-        {
-            return interpreter->execute().in;
-        });
-    return stream;
-}
-
-BlockInputStreamPtr AlterStreamFactory::createRemote(
-        const ConnectionPoolWithFailoverPtr & pool, const std::string & query,
-        const Settings & settings, ThrottlerPtr throttler, const Context & context)
-{
-    auto stream = std::make_shared<RemoteBlockInputStream>(pool, query, &settings, context, throttler);
-    stream->setPoolMode(pool_mode);
-    return stream;
-}
-
-BlockInputStreamPtr AlterStreamFactory::createRemote(
-        ConnectionPoolWithFailoverPtrs && pools, const std::string & query,
-        const Settings & settings, ThrottlerPtr throttler, const Context & context)
-{
-    auto stream = std::make_shared<RemoteBlockInputStream>(std::move(pools), query, &settings, context, throttler);
-    stream->setPoolMode(pool_mode);
-    return stream;
-}
-
-PoolMode AlterStreamFactory::getPoolMode() const
-{
-    return pool_mode;
+    if (shard_info.isLocal())
+    {
+        /// The ALTER query may be a resharding query that is a part of a distributed
+        /// job. Since the latter heavily relies on synchronization among its participating
+        /// nodes, it is very important to defer the execution of a local query so as
+        /// to prevent any deadlock.
+        auto interpreter = std::make_shared<InterpreterAlterQuery>(query_ast, context);
+        res.emplace_back(std::make_shared<LazyBlockInputStream>(
+            [interpreter]() mutable
+            {
+                return interpreter->execute().in;
+            }));
+    }
+    else
+    {
+        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, &context.getSettingsRef(), context, throttler);
+        stream->setPoolMode(PoolMode::GET_ONE);
+        res.emplace_back(std::move(stream));
+    }
 }
 
 }
-
 }

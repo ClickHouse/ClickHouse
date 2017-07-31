@@ -34,15 +34,6 @@ RemoteBlockInputStream::RemoteBlockInputStream(const ConnectionPoolWithFailoverP
     init(settings_);
 }
 
-RemoteBlockInputStream::RemoteBlockInputStream(ConnectionPoolWithFailoverPtrs && pools_, const String & query_,
-    const Settings * settings_, const Context & context_, ThrottlerPtr throttler_,
-    const Tables & external_tables_, QueryProcessingStage::Enum stage_)
-    : pools(std::move(pools_)), query(query_), throttler(throttler_), external_tables(external_tables_),
-    stage(stage_), context(context_)
-{
-    init(settings_);
-}
-
 RemoteBlockInputStream::~RemoteBlockInputStream()
 {
     /** If interrupted in the middle of the loop of communication with replicas, then interrupt
@@ -232,10 +223,6 @@ void RemoteBlockInputStream::createMultiplexedConnections()
     else if (pool != nullptr)
         multiplexed_connections = std::make_unique<MultiplexedConnections>(
                 *pool, multiplexed_connections_settings, throttler,
-                append_extra_info, pool_mode, main_table_ptr);
-    else if (!pools.empty())
-        multiplexed_connections = std::make_unique<MultiplexedConnections>(
-                pools, multiplexed_connections_settings, throttler,
                 append_extra_info, pool_mode, main_table_ptr);
     else
         throw Exception("Internal error", ErrorCodes::LOGICAL_ERROR);

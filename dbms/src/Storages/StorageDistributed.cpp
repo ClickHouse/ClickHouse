@@ -213,20 +213,11 @@ BlockInputStreams StorageDistributed::read(
     if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
         external_tables = context.getExternalTables();
 
-    /// Disable multiplexing of shards if there is an ORDER BY without GROUP BY.
-    //const ASTSelectQuery & ast = *(static_cast<const ASTSelectQuery *>(modified_query_ast.get()));
-
-    /** The functionality of shard_multiplexing is not completed - turn it off.
-      * (Because connecting to different shards within a single thread is not done in parallel.)
-      */
-    //bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
-    bool enable_shard_multiplexing = false;
-
     ClusterProxy::SelectStreamFactory select_stream_factory(
         processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
 
     return ClusterProxy::executeQuery(
-            select_stream_factory, cluster, modified_query_ast, context, settings, enable_shard_multiplexing);
+            select_stream_factory, cluster, modified_query_ast, context, settings);
 }
 
 
@@ -351,15 +342,10 @@ void StorageDistributed::reshardPartitions(
 
         resharding_worker.registerQuery(coordinator_id, queryToString(alter_query_ptr));
 
-        /** The functionality of shard_multiplexing is not completed - turn it off.
-        * (Because connecting to different shards within a single thread is not done in parallel.)
-        */
-        bool enable_shard_multiplexing = false;
-
         ClusterProxy::AlterStreamFactory alter_stream_factory;
 
         BlockInputStreams streams = ClusterProxy::executeQuery(
-                alter_stream_factory, cluster, alter_query_ptr, context, context.getSettingsRef(), enable_shard_multiplexing);
+                alter_stream_factory, cluster, alter_query_ptr, context, context.getSettingsRef());
 
         /// This callback is called if an exception has occurred while attempting to read
         /// a block from a shard. This is to avoid a potential deadlock if other shards are
@@ -429,15 +415,10 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
     describe_query.database = remote_database;
     describe_query.table = remote_table;
 
-    /** The functionality of shard_multiplexing is not completed - turn it off.
-      * (Because connecting connections to different shards within a single thread is not done in parallel.)
-      */
-    bool enable_shard_multiplexing = false;
-
     ClusterProxy::DescribeStreamFactory describe_stream_factory;
 
     return ClusterProxy::executeQuery(
-            describe_stream_factory, cluster, describe_query_ptr, context, settings, enable_shard_multiplexing);
+            describe_stream_factory, cluster, describe_query_ptr, context, settings);
 }
 
 

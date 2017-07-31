@@ -22,7 +22,7 @@ class IStreamFactory;
 /// (currently SELECT, DESCRIBE, or ALTER (for resharding)).
 BlockInputStreams executeQuery(
         IStreamFactory & stream_factory, const ClusterPtr & cluster,
-        const ASTPtr & query_ast, const Context & context, const Settings & settings, bool enable_shard_multiplexing);
+        const ASTPtr & query_ast, const Context & context, const Settings & settings);
 
 }
 
