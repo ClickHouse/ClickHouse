@@ -17,21 +17,23 @@ namespace ErrorCodes
 
 
 RemoteBlockInputStream::RemoteBlockInputStream(Connection & connection_, const String & query_,
-    const Settings * settings_, const Context & context_, ThrottlerPtr throttler_,
+    const Context & context_, const Settings * settings, ThrottlerPtr throttler_,
     const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : connection(&connection_), query(query_), throttler(throttler_), external_tables(external_tables_),
     stage(stage_), context(context_)
 {
-    init(settings_);
+    if (settings)
+        context.setSettings(*settings);
 }
 
 RemoteBlockInputStream::RemoteBlockInputStream(const ConnectionPoolWithFailoverPtr & pool_, const String & query_,
-    const Settings * settings_, const Context & context_, ThrottlerPtr throttler_,
+    const Context & context_, const Settings * settings, ThrottlerPtr throttler_,
     const Tables & external_tables_, QueryProcessingStage::Enum stage_)
     : pool(pool_), query(query_), throttler(throttler_), external_tables(external_tables_),
     stage(stage_), context(context_)
 {
-    init(settings_);
+    if (settings)
+        context.setSettings(*settings);
 }
 
 RemoteBlockInputStream::~RemoteBlockInputStream()
@@ -215,28 +217,16 @@ void RemoteBlockInputStream::readSuffixImpl()
 
 void RemoteBlockInputStream::createMultiplexedConnections()
 {
-    Settings * multiplexed_connections_settings = send_settings ? &context.getSettingsRef() : nullptr;
     const QualifiedTableName * main_table_ptr = main_table ? &main_table.value() : nullptr;
     if (connection != nullptr)
         multiplexed_connections = std::make_unique<MultiplexedConnections>(
-                connection, multiplexed_connections_settings, throttler);
+                *connection, context.getSettingsRef(), throttler);
     else if (pool != nullptr)
         multiplexed_connections = std::make_unique<MultiplexedConnections>(
-                *pool, multiplexed_connections_settings, throttler,
+                *pool, context.getSettingsRef(), throttler,
                 append_extra_info, pool_mode, main_table_ptr);
     else
         throw Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
-}
-
-void RemoteBlockInputStream::init(const Settings * settings)
-{
-    if (settings)
-    {
-        send_settings = true;
-        context.setSettings(*settings);
-    }
-    else
-        send_settings = false;
 }
 
 void RemoteBlockInputStream::sendQuery()

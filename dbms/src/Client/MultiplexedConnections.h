@@ -20,22 +20,20 @@ class MultiplexedConnections final : private boost::noncopyable
 {
 public:
     /// Accepts ready connection.
-    MultiplexedConnections(Connection * connection_, const Settings * settings_, ThrottlerPtr throttler_);
+    MultiplexedConnections(Connection & connection, const Settings & settings_, ThrottlerPtr throttler_);
 
     /** Accepts a pool from which it will be necessary to get one or more connections.
       * If the append_extra_info flag is set, additional information appended to each received block.
-      * If the get_all_replicas flag is set, all connections are selected.
       */
     MultiplexedConnections(
-            ConnectionPoolWithFailover & pool_, const Settings * settings_, ThrottlerPtr throttler_,
+            ConnectionPoolWithFailover & pool_, const Settings & settings_, ThrottlerPtr throttler_,
             bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table = nullptr);
 
     /** Accepts pools, one for each shard, from which one will need to get one or more connections.
       * If the append_extra_info flag is set, additional information appended to each received block.
-      * If the do_broadcast flag is set, all connections are received.
       */
     MultiplexedConnections(
-            const ConnectionPoolWithFailoverPtrs & pools_, const Settings * settings_, ThrottlerPtr throttler_,
+            const ConnectionPoolWithFailoverPtrs & pools_, const Settings & settings_, ThrottlerPtr throttler_,
             bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table = nullptr);
 
     /// Send all content of external tables to replicas.
@@ -131,7 +129,7 @@ private:
     void invalidateReplica(ReplicaMap::iterator it);
 
 private:
-    const Settings * settings;
+    const Settings & settings;
 
     Connections connections;
     ReplicaMap replica_map;

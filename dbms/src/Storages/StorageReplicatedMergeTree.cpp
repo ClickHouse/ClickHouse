@@ -3086,7 +3086,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.database,
         "", "", "ClickHouse replica");
 
-    RemoteBlockInputStream stream(connection, formattedAST(new_query), &settings, context);
+    RemoteBlockInputStream stream(connection, formattedAST(new_query), context, &settings);
     NullBlockOutputStream output;
 
     copyData(stream, output);

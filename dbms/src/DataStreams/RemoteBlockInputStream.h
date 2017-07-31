@@ -20,14 +20,16 @@ namespace DB
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    /// Takes already set connection
-    RemoteBlockInputStream(Connection & connection_, const String & query_, const Settings * settings_,
-        const Context & context_, ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
+    /// Takes already set connection.
+    /// If `settings` is nullptr, settings will be taken from context.
+    RemoteBlockInputStream(Connection & connection_, const String & query_, const Context & context_,
+        const Settings * settings = nullptr, ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
-    /// Takes a pool and gets one or several connections from it
-    RemoteBlockInputStream(const ConnectionPoolWithFailoverPtr & pool_, const String & query_, const Settings * settings_,
-        const Context & context_, ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
+    /// Takes a pool and gets one or several connections from it.
+    /// If `settings` is nullptr, settings will be taken from context.
+    RemoteBlockInputStream(const ConnectionPoolWithFailoverPtr & pool_, const String & query_, const Context & context_,
+        const Settings * settings = nullptr, ThrottlerPtr throttler_ = nullptr, const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
     ~RemoteBlockInputStream() override;
@@ -82,8 +84,6 @@ protected:
     bool hasThrownException() const;
 
 private:
-    void init(const Settings * settings);
-
     void sendQuery();
 
     /// If wasn't sent yet, send request to cancell all connections to replicas
@@ -99,7 +99,6 @@ private:
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;
 
     const String query;
-    bool send_settings;
     /// If != nullptr, used to limit network trafic
     ThrottlerPtr throttler;
     /// Temporary tables needed to be sent to remote servers

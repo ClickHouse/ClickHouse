@@ -30,7 +30,7 @@ void AlterStreamFactory::createForShard(
     }
     else
     {
-        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, &context.getSettingsRef(), context, throttler);
+        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, context, nullptr, throttler);
         stream->setPoolMode(PoolMode::GET_ONE);
         res.emplace_back(std::move(stream));
     }

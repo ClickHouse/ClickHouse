@@ -12,12 +12,9 @@ namespace ErrorCodes
 }
 
 
-MultiplexedConnections::MultiplexedConnections(Connection * connection_, const Settings * settings_, ThrottlerPtr throttler_)
+MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, ThrottlerPtr throttler_)
     : settings(settings_), throttler(throttler_), supports_parallel_execution(false)
 {
-    if (connection_ == nullptr)
-        throw Exception("Invalid connection specified", ErrorCodes::LOGICAL_ERROR);
-
     active_connection_total_count = 1;
 
     ShardState shard_state;
@@ -30,8 +27,8 @@ MultiplexedConnections::MultiplexedConnections(Connection * connection_, const S
     replica_state.connection_index = 0;
     replica_state.shard_state = &shard_states[0];
 
-    connection_->setThrottler(throttler);
-    connections.push_back(connection_);
+    connection.setThrottler(throttler);
+    connections.push_back(&connection);
 
     auto res = replica_map.emplace(connections[0]->socket.impl()->sockfd(), replica_state);
     if (!res.second)
@@ -39,7 +36,7 @@ MultiplexedConnections::MultiplexedConnections(Connection * connection_, const S
 }
 
 MultiplexedConnections::MultiplexedConnections(
-        ConnectionPoolWithFailover & pool_, const Settings * settings_, ThrottlerPtr throttler_,
+        ConnectionPoolWithFailover & pool_, const Settings & settings_, ThrottlerPtr throttler_,
         bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table)
     : settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
 {
@@ -53,7 +50,7 @@ MultiplexedConnections::MultiplexedConnections(
 }
 
 MultiplexedConnections::MultiplexedConnections(
-        const ConnectionPoolWithFailoverPtrs & pools_, const Settings * settings_, ThrottlerPtr throttler_,
+        const ConnectionPoolWithFailoverPtrs & pools_, const Settings & settings_, ThrottlerPtr throttler_,
         bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table)
     : settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
 {
@@ -110,42 +107,25 @@ void MultiplexedConnections::sendQuery(
 
     if (supports_parallel_execution)
     {
-        if (settings == nullptr)
+        /// Each shard has one or more replicas.
+        auto it = connections.begin();
+        for (const auto & shard_state : shard_states)
         {
-            /// Each shard has one address.
-            auto it = connections.begin();
-            for (size_t i = 0; i < shard_states.size(); ++i)
+            Settings query_settings = settings;
+            query_settings.parallel_replicas_count = shard_state.active_connection_count;
+
+            UInt64 offset = 0;
+
+            for (size_t i = 0; i < shard_state.allocated_connection_count; ++i)
             {
                 Connection * connection = *it;
                 if (connection == nullptr)
                     throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
-                connection->sendQuery(query, query_id, stage, nullptr, client_info, with_pending_data);
+                query_settings.parallel_replica_offset = offset;
+                connection->sendQuery(query, query_id, stage, &query_settings, client_info, with_pending_data);
+                ++offset;
                 ++it;
-            }
-        }
-        else
-        {
-            /// Each shard has one or more replicas.
-            auto it = connections.begin();
-            for (const auto & shard_state : shard_states)
-            {
-                Settings query_settings = *settings;
-                query_settings.parallel_replicas_count = shard_state.active_connection_count;
-
-                UInt64 offset = 0;
-
-                for (size_t i = 0; i < shard_state.allocated_connection_count; ++i)
-                {
-                    Connection * connection = *it;
-                    if (connection == nullptr)
-                        throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
-
-                    query_settings.parallel_replica_offset = offset;
-                    connection->sendQuery(query, query_id, stage, &query_settings, client_info, with_pending_data);
-                    ++offset;
-                    ++it;
-                }
             }
         }
     }
@@ -155,7 +135,7 @@ void MultiplexedConnections::sendQuery(
         if (connection == nullptr)
             throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
-        connection->sendQuery(query, query_id, stage, settings, client_info, with_pending_data);
+        connection->sendQuery(query, query_id, stage, &settings, client_info, with_pending_data);
     }
 
     sent_query = true;
@@ -280,9 +260,9 @@ void MultiplexedConnections::initFromShard(ConnectionPoolWithFailover & pool, co
 {
     std::vector<IConnectionPool::Entry> entries;
     if (main_table)
-        entries = pool.getManyChecked(settings, pool_mode, *main_table);
+        entries = pool.getManyChecked(&settings, pool_mode, *main_table);
     else
-        entries = pool.getMany(settings, pool_mode);
+        entries = pool.getMany(&settings, pool_mode);
 
     /// If getMany() did not allocate connections and did not throw exceptions, this means that
     /// `skip_unavailable_shards` was set. Then just return.
@@ -424,7 +404,7 @@ MultiplexedConnections::ReplicaMap::iterator MultiplexedConnections::waitForRead
                 read_list.push_back(connection->socket);
         }
 
-        int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings->receive_timeout);
+        int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.receive_timeout);
 
         if (n == 0)
             throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
