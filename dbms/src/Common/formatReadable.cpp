@@ -35,10 +35,9 @@ void formatReadableSizeWithBinarySuffix(double value, DB::WriteBuffer & out, int
 
 std::string formatReadableSizeWithBinarySuffix(double value, int precision)
 {
-    std::string res;
-    DB::WriteBufferFromString out(res);
+    DB::WriteBufferFromOwnString out;
     formatReadableSizeWithBinarySuffix(value, out, precision);
-    return res;
+    return out.str();
 }
 
 
@@ -50,10 +49,9 @@ void formatReadableSizeWithDecimalSuffix(double value, DB::WriteBuffer & out, in
 
 std::string formatReadableSizeWithDecimalSuffix(double value, int precision)
 {
-    std::string res;
-    DB::WriteBufferFromString out(res);
+    DB::WriteBufferFromOwnString out;
     formatReadableSizeWithDecimalSuffix(value, out, precision);
-    return res;
+    return out.str();
 }
 
 
@@ -65,8 +63,7 @@ void formatReadableQuantity(double value, DB::WriteBuffer & out, int precision)
 
 std::string formatReadableQuantity(double value, int precision)
 {
-    std::string res;
-    DB::WriteBufferFromString out(res);
+    DB::WriteBufferFromOwnString out;
     formatReadableQuantity(value, out, precision);
-    return res;
+    return out.str();
 }

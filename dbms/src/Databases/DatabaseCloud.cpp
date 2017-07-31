@@ -115,12 +115,9 @@ Hash DatabaseCloud::getTableHash(const String & table_name) const
 String DatabaseCloud::getNameOfNodeWithTables(const String & table_name) const
 {
     Hash hash = getTableHash(table_name);
-    String res;
-    {
-        WriteBufferFromString out(res);
-        writeText(hash.first % TABLE_TO_NODE_DIVISOR, out);
-    }
-    return res;
+    WriteBufferFromOwnString out;
+    writeText(hash.first % TABLE_TO_NODE_DIVISOR, out);
+    return out.str();
 }
 
 
@@ -187,12 +184,9 @@ struct TableSet
 
     String toString() const
     {
-        String res;
-        {
-            WriteBufferFromString out(res);
-            write(out);
-        }
-        return res;
+        WriteBufferFromOwnString out;
+        write(out);
+        return out.str();
     }
 
     void write(WriteBuffer & buf) const
@@ -241,12 +235,9 @@ struct LocalTableSet
 
     String toString() const
     {
-        String res;
-        {
-            WriteBufferFromString out(res);
-            write(out);
-        }
-        return res;
+        WriteBufferFromOwnString out;
+        write(out);
+        return out.str();
     }
 
     void write(WriteBuffer & buf) const

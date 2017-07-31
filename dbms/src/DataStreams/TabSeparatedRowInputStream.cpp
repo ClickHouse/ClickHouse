@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
 #include <DataStreams/TabSeparatedRowInputStream.h>
@@ -109,8 +110,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
     if (istr.eof())        /// Buffer has gone, cannot extract information about what has been parsed.
         return {};
 
-    String res;
-    WriteBufferFromString out(res);
+    WriteBufferFromOwnString out;
     Block block = sample.cloneEmpty();
 
     /// It is possible to display detailed diagnostics only if the last and next to last lines are still in the read buffer.
@@ -118,7 +118,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
     if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
     {
         out << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
-        return res;
+        return out.str();
     }
 
     size_t max_length_of_column_name = 0;
@@ -139,14 +139,14 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
 
         out << "\nRow " << (row_num - 1) << ":\n";
         if (!parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name))
-            return res;
+            return out.str();
     }
     else
     {
         if (!pos_of_current_row)
         {
             out << "Could not print diagnostic info because parsing of data hasn't started.\n";
-            return res;
+            return out.str();
         }
 
         istr.position() = pos_of_current_row;
@@ -156,7 +156,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
     parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name);
     out << "\n";
 
-    return res;
+    return out.str();
 }
 
 

@@ -61,12 +61,9 @@ struct ReplicatedMergeTreeQuorumEntry
 
     String toString() const
     {
-        String res;
-        {
-            WriteBufferFromString out(res);
-            writeText(out);
-        }
-        return res;
+        WriteBufferFromOwnString out;
+        writeText(out);
+        return out.str();
     }
 
     void fromString(const String & str)
