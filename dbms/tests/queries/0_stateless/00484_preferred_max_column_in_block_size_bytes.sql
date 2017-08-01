@@ -12,3 +12,9 @@ set preferred_max_column_in_block_size_bytes = 2097152;
 select max(blockSize()), min(blockSize()), any(ignore(*)) from test.tab;
 set preferred_max_column_in_block_size_bytes = 4194304;
 select max(blockSize()), min(blockSize()), any(ignore(*)) from test.tab;
+
+drop table if exists test.tab;
+create table test.tab (date Date, x UInt64, s FixedString(128)) engine = MergeTree(date, (date, x), 32);
+insert into test.tab select today(), number, toFixedString('', 128) from system.numbers limit 47;
+set preferred_max_column_in_block_size_bytes = 1152;
+select blockSize(), * from test.tab where x = 1 or x > 36 format Null;
