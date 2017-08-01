@@ -115,12 +115,12 @@ void CSVRowInputStream::readPrefix()
 
 bool CSVRowInputStream::read(Block & block)
 {
+    if (istr.eof())
+        return false;
+
     updateDiagnosticInfo();
 
     size_t size = data_types.size();
-
-    if (istr.eof())
-        return false;
 
     for (size_t i = 0; i < size; ++i)
     {
