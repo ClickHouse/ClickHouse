@@ -64,18 +64,15 @@ struct DDLLogEntry
 
     String toString()
     {
-        String res;
-        {
-            WriteBufferFromString wb(res);
+        WriteBufferFromOwnString wb;
 
-            auto version = CURRENT_VERSION;
-            wb << "version: " << version << "\n";
-            wb << "query: " << escape << query << "\n";
-            wb << "hosts: " << hosts << "\n";
-            wb << "initiator: " << initiator << "\n";
-        }
+        auto version = CURRENT_VERSION;
+        wb << "version: " << version << "\n";
+        wb << "query: " << escape << query << "\n";
+        wb << "hosts: " << hosts << "\n";
+        wb << "initiator: " << initiator << "\n";
 
-        return res;
+        return wb.str();
     }
 
     void parse(const String & data)

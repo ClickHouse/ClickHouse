@@ -165,12 +165,9 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
 /// Is required to support operations with Set
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    String buf;
-    {
-        WriteBufferFromString wbuf(buf);
-        func->serialize(getData()[n], wbuf);
-    }
-    hash.update(buf.c_str(), buf.size());
+    WriteBufferFromOwnString wbuf;
+    func->serialize(getData()[n], wbuf);
+    hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
 /// NOTE: Highly overestimates size of a column if it was produced in AggregatingBlockInputStream (it contains size of other columns)

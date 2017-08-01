@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
 
@@ -156,18 +157,14 @@ std::string getSyntaxErrorMessage(
     bool hilite,
     const std::string & query_description)
 {
-    String message;
+    WriteBufferFromOwnString out;
+    writeCommonErrorMessage(out, begin, end, last_token, query_description);
+    writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
 
-    {
-        WriteBufferFromString out(message);
-        writeCommonErrorMessage(out, begin, end, last_token, query_description);
-        writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
+    if (!expected.variants.empty())
+        out << "Expected " << expected;
 
-        if (!expected.variants.empty())
-            out << "Expected " << expected;
-    }
-
-    return message;
+    return out.str();
 }
 
 
@@ -178,17 +175,13 @@ std::string getLexicalErrorMessage(
     bool hilite,
     const std::string & query_description)
 {
-    String message;
+    WriteBufferFromOwnString out;
+    writeCommonErrorMessage(out, begin, end, last_token, query_description);
+    writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
 
-    {
-        WriteBufferFromString out(message);
-        writeCommonErrorMessage(out, begin, end, last_token, query_description);
-        writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
+    out << getErrorTokenDescription(last_token.type);
 
-        out << getErrorTokenDescription(last_token.type);
-    }
-
-    return message;
+    return out.str();
 }
 
 
@@ -199,19 +192,15 @@ std::string getUnmatchedParenthesesErrorMessage(
     bool hilite,
     const std::string & query_description)
 {
-    String message;
+    WriteBufferFromOwnString out;
+    writeCommonErrorMessage(out, begin, end, unmatched_parens[0], query_description);
+    writeQueryAroundTheError(out, begin, end, hilite, unmatched_parens.data(), unmatched_parens.size());
 
-    {
-        WriteBufferFromString out(message);
-        writeCommonErrorMessage(out, begin, end, unmatched_parens[0], query_description);
-        writeQueryAroundTheError(out, begin, end, hilite, unmatched_parens.data(), unmatched_parens.size());
+    out << "Unmatched parentheses: ";
+    for (const Token & paren : unmatched_parens)
+        out << *paren.begin;
 
-        out << "Unmatched parentheses: ";
-        for (const Token & paren : unmatched_parens)
-            out << *paren.begin;
-    }
-
-    return message;
+    return out.str();
 }
 
 }

@@ -6,6 +6,7 @@
 
 #define WRITE_BUFFER_FROM_STRING_INITIAL_SIZE_IF_EMPTY 32
 
+
 namespace DB
 {
 
@@ -25,6 +26,7 @@ private:
         working_buffer = internal_buffer;
     }
 
+protected:
     void finish()
     {
         s.resize(count());
@@ -44,6 +46,23 @@ public:
     ~WriteBufferFromString() override
     {
         finish();
+    }
+};
+
+
+/// Creates the string by itself and allows to get it.
+class WriteBufferFromOwnString : public WriteBufferFromString
+{
+private:
+    std::string s;
+
+public:
+    WriteBufferFromOwnString() : WriteBufferFromString(s) {}
+
+    std::string & str()
+    {
+        finish();
+        return s;
     }
 };
 

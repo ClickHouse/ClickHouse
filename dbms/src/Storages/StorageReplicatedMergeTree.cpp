@@ -395,10 +395,9 @@ namespace
 
         String toString() const
         {
-            String res;
-            WriteBufferFromString out(res);
+            WriteBufferFromOwnString out;
             write(out);
-            return res;
+            return out.str();
         }
 
         void check(ReadBuffer & in) const

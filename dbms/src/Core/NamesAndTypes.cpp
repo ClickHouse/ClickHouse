@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <sparsehash/dense_hash_map>
 
 
@@ -53,12 +54,9 @@ void NamesAndTypesList::writeText(WriteBuffer & buf) const
 
 String NamesAndTypesList::toString() const
 {
-    String s;
-    {
-        WriteBufferFromString out(s);
-        writeText(out);
-    }
-    return s;
+    WriteBufferFromOwnString out;
+    writeText(out);
+    return out.str();
 }
 
 NamesAndTypesList NamesAndTypesList::parse(const String & s)

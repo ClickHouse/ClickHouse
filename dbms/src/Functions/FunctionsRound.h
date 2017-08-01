@@ -179,9 +179,9 @@ enum ScaleMode
 };
 
 #if !defined(_MM_FROUND_NINT)
-#define _MM_FROUND_NINT        0
-#define _MM_FROUND_FLOOR     1
-#define _MM_FROUND_CEIL        2
+#define _MM_FROUND_NINT  0
+#define _MM_FROUND_FLOOR 1
+#define _MM_FROUND_CEIL  2
 #endif
 
 /** Implementing low-level rounding functions for integer values.
@@ -1127,12 +1127,12 @@ public:
     }
 };
 
-struct NameRoundToExp2        { static constexpr auto name = "roundToExp2"; };
-struct NameRoundDuration    { static constexpr auto name = "roundDuration"; };
-struct NameRoundAge         { static constexpr auto name = "roundAge"; };
-struct NameRound            { static constexpr auto name = "round"; };
-struct NameCeil                { static constexpr auto name = "ceil"; };
-struct NameFloor            { static constexpr auto name = "floor"; };
+struct NameRoundToExp2 { static constexpr auto name = "roundToExp2"; };
+struct NameRoundDuration { static constexpr auto name = "roundDuration"; };
+struct NameRoundAge { static constexpr auto name = "roundAge"; };
+struct NameRound { static constexpr auto name = "round"; };
+struct NameCeil { static constexpr auto name = "ceil"; };
+struct NameFloor { static constexpr auto name = "floor"; };
 
 using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
 using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl, NameRoundDuration, false>;

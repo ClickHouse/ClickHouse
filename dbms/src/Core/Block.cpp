@@ -317,39 +317,33 @@ size_t Block::allocatedBytes() const
 
 std::string Block::dumpNames() const
 {
-    std::string res;
+    WriteBufferFromOwnString out;
+    for (auto it = data.begin(); it != data.end(); ++it)
     {
-        WriteBufferFromString out(res);
-        for (auto it = data.begin(); it != data.end(); ++it)
-        {
-            if (it != data.begin())
-                out << ", ";
-            out << it->name;
-        }
+        if (it != data.begin())
+            out << ", ";
+        out << it->name;
     }
-    return res;
+    return out.str();
 }
 
 
 std::string Block::dumpStructure() const
 {
-    std::string res;
+    WriteBufferFromOwnString out;
+    for (auto it = data.begin(); it != data.end(); ++it)
     {
-        WriteBufferFromString out(res);
-        for (auto it = data.begin(); it != data.end(); ++it)
-        {
-            if (it != data.begin())
-                out << ", ";
+        if (it != data.begin())
+            out << ", ";
 
-            out << it->name << ' ' << it->type->getName();
+        out << it->name << ' ' << it->type->getName();
 
-            if (it->column)
-                out << ' ' << it->column->getName() << ' ' << it->column->size();
-            else
-                out << " nullptr";
-        }
+        if (it->column)
+            out << ' ' << it->column->getName() << ' ' << it->column->size();
+        else
+            out << " nullptr";
     }
-    return res;
+    return out.str();
 }
 
 

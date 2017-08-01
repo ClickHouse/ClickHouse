@@ -77,8 +77,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
     const auto max_block_size_rows = this->max_block_size_rows;
     const auto preferred_block_size_bytes = this->preferred_block_size_bytes;
-    const auto preferred_max_column_in_block_size_bytes =
-        this->preferred_max_column_in_block_size_bytes ? this->preferred_max_column_in_block_size_bytes : max_block_size_rows;
+    const auto preferred_max_column_in_block_size_bytes = this->preferred_max_column_in_block_size_bytes;
     const auto index_granularity = storage.index_granularity;
     const double min_filtration_ratio = 0.00001;
 
