@@ -10,7 +10,7 @@ using ClickhouseString = const char *;
 struct ClickhouseStrings
 {
     uint64_t size = 0;
-    ClickhouseString * strings = nullptr;
+    ClickhouseString * data = nullptr;
 };
 
 struct ClickhouseVectorUint64
@@ -22,5 +22,5 @@ struct ClickhouseVectorUint64
 struct ClickhouseColumnsUint64
 {
     uint64_t size = 0;
-    ClickhouseVectorUint64 * columns = nullptr;
+    ClickhouseVectorUint64 * data = nullptr;
 };

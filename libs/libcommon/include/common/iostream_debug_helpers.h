@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 
+// TODO: https://stackoverflow.com/questions/16464032/how-to-enhance-this-variable-dumping-debug-macro-to-be-variadic
 #define DUMPS(VAR) #VAR " = " << VAR
 #define DUMP(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR) << "\n";
 

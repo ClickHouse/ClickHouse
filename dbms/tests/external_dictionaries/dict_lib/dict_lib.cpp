@@ -35,21 +35,29 @@ struct DataHolder
     ClickhouseColumnsUint64 columns;
 };
 
-extern "C" void * loadIds(void * data_ptr, ClickhouseStrings * columns, const struct ClickhouseVectorUint64 ids)
+extern "C" void * loadIds(void * data_ptr, ClickhouseStrings * columns, const struct ClickhouseVectorUint64 * ids)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
-    std::cerr << "loadIds Runned!!! ptr=" << data_ptr << " => " << ptr << " size=" << ids.size << "\n";
+    std::cerr << "loadIds Runned!!! ptr=" << data_ptr << " => " << ptr << " size=" << ids->size << "\n";
     if (columns)
     {
         std::cerr << "columns passed:" << columns->size << "\n";
         for (size_t i = 0; i < columns->size; ++i)
         {
-            std::cerr << "col " << i << " :" << columns->strings[i] << "\n";
+            std::cerr << "col " << i << " :" << columns->data[i] << "\n";
         }
+    }
+    if (ids) {
+        std::cerr << "ids passed: " << ids->size << "\n";
+        for (size_t i = 0; i < ids->size; ++i)
+        {
+            std::cerr << "id " << i << " :" << ids->data[i] << "\n";
+        }
+        
+    
     }
     if (ptr)
     {
-        DUMP("lol");
         ptr->vector.assign({{1, 2, 3, 4, 5, 6}, {11, 12, 13, 14}, {21, 22, 23, 24, 25}});
         //DUMP(ptr->vector);
         //std::make_unique<const char * []>(key_columns.size() + 1);
@@ -66,7 +74,7 @@ extern "C" void * loadIds(void * data_ptr, ClickhouseStrings * columns, const st
         }
         ptr->columns.size = ptr->vector.size();
         DUMP(ptr->columns.size);
-        ptr->columns.columns = ptr->columnsHolder.get();
+        ptr->columns.data = ptr->columnsHolder.get();
         //DUMP(ptr->columns.columns);
         return static_cast<void *>(&ptr->columns);
     }
@@ -75,7 +83,7 @@ extern "C" void * loadIds(void * data_ptr, ClickhouseStrings * columns, const st
     return nullptr;
 }
 
-extern "C" void * loadAll(void * data_ptr)
+extern "C" void * loadAll(void * data_ptr, ClickhouseStrings * columns)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadAll Runned!!! ptr=" << data_ptr << " => " << ptr << "\n";

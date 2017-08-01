@@ -54,17 +54,24 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
 
-    for (auto & a : dict_struct.attributes)
-    {
-        DUMP(a.name);
-        DUMP(a.type);
-    }
+    //for (auto & a : dict_struct.attributes) { DUMP(a.name); DUMP(a.type); }
 
     auto lib = std::make_shared<SharedLibrary>(filename);
     //auto fptr = lib->get<void * (*) ()>("loadAll");
     auto data_ptr = library->get<void * (*)()>("dataAllocate")();
 
-    auto data = lib->get<void * (*)(void *)>("loadAll")(data_ptr);
+    auto columns_holder = std::make_unique<ClickhouseString[]>(dict_struct.attributes.size());
+    ClickhouseStrings columns{dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::data)>(columns_holder.get())};
+    size_t i = 0;
+    for (auto & a : dict_struct.attributes)
+    {
+        //DUMP(i);        DUMP(a.name);        DUMP(a.type);
+        columns.data[i] = a.name.c_str();
+        ++i;
+    }
+    
+    
+    auto data = lib->get<void * (*)(decltype(data_ptr), decltype(&columns))>("loadAll")(data_ptr, &columns);
     //DUMP(data);
 
     if (data)
@@ -89,27 +96,25 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     //DUMP(key_columns);
     //ClickhouseStrings
     //struct {const uint64_t size; const uint64_t * data;}
-    const ClickhouseVectorUint64 params{ids.size(), ids.data()};
+    const ClickhouseVectorUint64 ids_data{ids.size(), ids.data()};
     //c_data.size = ids.size();
     //for (size_t i = 0; i <= ids.size(); ++i) {
     //  data[i] = ids[i];
     //}
-    auto strings_holder = std::make_unique<ClickhouseString[]>(dict_struct.attributes.size());
-    ClickhouseStrings columns{dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::strings)>(strings_holder.get())};
+    auto columns_holder = std::make_unique<ClickhouseString[]>(dict_struct.attributes.size());
+    ClickhouseStrings columns{dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::data)>(columns_holder.get())};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
-        DUMP(i);
-        DUMP(a.name);
-        DUMP(a.type);
-        columns.strings[i] = a.name.c_str();
+        //DUMP(i); DUMP(a.name); DUMP(a.type);
+        columns.data[i] = a.name.c_str();
         //++columns.size;
         ++i;
     }
     //auto lib = std::make_shared<SharedLibrary>(filename);
     //auto data_ptr = library->get<void * (*) ()>("dataAllocate")();
     auto data_ptr = library->get<void * (*)()>("dataAllocate")();
-    auto data = library->get<void * (*)(decltype(data_ptr), decltype(&columns), decltype(params))>("loadIds")(data_ptr, &columns, params);
+    auto data = library->get<void * (*)(decltype(data_ptr), decltype(&columns), decltype(&ids_data))>("loadIds")(data_ptr, &columns, &ids_data);
     //DUMP(data);
 
     if (data)
@@ -119,13 +124,13 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
         for (size_t i = 0; i < columns->size; ++i)
         {
             DUMP(i);
-            DUMP(columns->columns[i].size);
-            DUMP(columns->columns[i].data);
+            DUMP(columns->data[i].size);
+            DUMP(columns->data[i].data);
             DUMP("ONE:");
-            for (size_t ii = 0; ii < columns->columns[i].size; ++ii)
+            for (size_t ii = 0; ii < columns->data[i].size; ++ii)
             {
                 DUMP(ii);
-                DUMP(columns->columns[i].data[ii]);
+                DUMP(columns->data[i].data[ii]);
             }
         }
     }
