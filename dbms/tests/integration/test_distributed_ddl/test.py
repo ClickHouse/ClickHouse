@@ -31,6 +31,20 @@ def ddl_check_there_are_no_dublicates(instance):
     rows = instance.query("SELECT max(c), argMax(q, c) FROM (SELECT lower(query) AS q, count() AS c FROM system.query_log WHERE type=2 AND q LIKE '/*ddl_entry=query-%' GROUP BY query)")
     assert len(rows) == 0 or rows[0][0] == "1", "dublicates on {} {}, query {}".format(instance.name, instance.ip_address)
 
+# Make retries in case of UNKNOWN_STATUS_OF_INSERT or zkutil::KeeperException errors
+def insert_reliable(instance, query_insert):
+    for i in xrange(100):
+        try:
+            instance.query(query_insert)
+            return
+        except Exception as e:
+            last_exception = e
+            s = str(e)
+            if not (s.find('Unknown status, client must retry') >= 0 or s.find('zkutil::KeeperException')):
+                raise e
+
+    raise last_exception
+
 
 TEST_REPLICATED_ALTERS=True
 cluster = ClickHouseCluster(__file__)
@@ -49,7 +63,7 @@ def started_cluster():
         cluster.start()
 
         # Select sacrifice instance to test CONNECTION_LOSS and server fail on it
-        sacrifice = cluster.instances['ch2']
+        sacrifice = cluster.instances['ch4']
         cluster.pm_random_drops = PartitionManager()
         cluster.pm_random_drops._add_rule({'probability': 0.05, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
         cluster.pm_random_drops._add_rule({'probability': 0.05, 'source': sacrifice.ip_address, 'destination_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
@@ -164,7 +178,7 @@ ENGINE = Distributed(cluster, default, merge, i)
 
     for i in xrange(4):
         k = (i / 2) * 2
-        cluster.instances['ch{}'.format(i + 1)].query("INSERT INTO merge (i) VALUES ({})({})".format(k, k+1))
+        insert_reliable(cluster.instances['ch{}'.format(i + 1)], "INSERT INTO merge (i) VALUES ({})({})".format(k, k+1))
 
     assert TSV(instance.query("SELECT i FROM all_merge_32 ORDER BY i")) == TSV(''.join(['{}\n'.format(x) for x in xrange(4)]))
 
@@ -177,7 +191,7 @@ ENGINE = Distributed(cluster, default, merge, i)
 
     for i in xrange(4):
         k = (i / 2) * 2 + 4
-        cluster.instances['ch{}'.format(i + 1)].query("INSERT INTO merge (p, i) VALUES (31, {})(31, {})".format(k, k+1))
+        insert_reliable(cluster.instances['ch{}'.format(i + 1)], "INSERT INTO merge (p, i) VALUES (31, {})(31, {})".format(k, k+1))
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(8)]))
 

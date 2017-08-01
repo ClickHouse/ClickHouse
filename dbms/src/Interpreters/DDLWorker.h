@@ -24,7 +24,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, Context & context);
 class DDLWorker
 {
 public:
-    DDLWorker(const std::string & zk_root_dir, Context & context_);
+    DDLWorker(const std::string & zk_root_dir, Context & context_, const Poco::Util::AbstractConfiguration * config, const String & prefix);
     ~DDLWorker();
 
     /// Pushes query into DDL queue, returns path to created node
@@ -40,7 +40,9 @@ public:
 private:
     void processTasks();
 
-    bool initAndCheckTask(DDLTask & task, const String & entry_name);
+    /// Reads entry and check that the host belongs to host list of the task
+    /// Returns true and sets current_task if entry parsed and the check is passed
+    bool initAndCheckTask(const String & entry_name);
 
 
     void processTask(DDLTask & task);
@@ -92,9 +94,9 @@ private:
     size_t last_cleanup_time_seconds = 0;
 
     /// Delete node if its age is greater than that
-    static const size_t node_max_lifetime_seconds;
+    size_t task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
-    static const size_t cleanup_min_period_seconds;
+    size_t cleanup_delay_period = 60; // minute (in seconds)
 
     friend class DDLQueryStatusInputSream;
     friend class DDLTask;
