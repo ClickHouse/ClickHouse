@@ -2,8 +2,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <Core/Field.h>
 #include <Core/FieldVisitors.h>

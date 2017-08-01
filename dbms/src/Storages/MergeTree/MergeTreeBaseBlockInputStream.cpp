@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
@@ -75,8 +76,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
     const auto max_block_size_rows = this->max_block_size_rows;
     const auto preferred_block_size_bytes = this->preferred_block_size_bytes;
-    const auto preferred_max_column_in_block_size_bytes =
-        this->preferred_max_column_in_block_size_bytes ? this->preferred_max_column_in_block_size_bytes : max_block_size_rows;
+    const auto preferred_max_column_in_block_size_bytes = this->preferred_max_column_in_block_size_bytes;
     const auto index_granularity = storage.index_granularity;
     const double min_filtration_ratio = 0.00001;
 
@@ -131,7 +131,21 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             {
                 auto & col = block.getByPosition(i);
                 if (task.column_name_set.count(col.name))
-                    col.column = col.column->cloneEmpty();
+                {
+                    if (ColumnArray * column_array = typeid_cast<ColumnArray *>(col.column.get()))
+                    {
+                        /// ColumnArray columns in block could have common offset column, which is used while reading.
+                        /// This is in case of nested data structures.
+
+                        /// Have to call resize(0) instead of cloneEmpty to save structure.
+                        /// (To keep offsets possibly shared between different arrays.)
+                        column_array->getOffsets().resize(0);
+                        /// It's ok until multidimensional arrays are not stored in MergeTree.
+                        column_array->getDataPtr() = column_array->getDataPtr()->cloneEmpty();
+                    }
+                    else
+                        col.column = col.column->cloneEmpty();
+                }
             }
         }
     };

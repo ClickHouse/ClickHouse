@@ -131,21 +131,18 @@ void FileChecker::load(Map & map) const
     if (!Poco::File(files_info_path).exists())
         return;
 
-    std::string content;
-    {
-        ReadBufferFromFile in(files_info_path);
-        WriteBufferFromString out(content);
+    ReadBufferFromFile in(files_info_path);
+    WriteBufferFromOwnString out;
 
-        /// The JSON library does not support whitespace. We delete them. Inefficient.
-        while (!in.eof())
-        {
-            char c;
-            readChar(c, in);
-            if (!isspace(c))
-                writeChar(c, out);
-        }
+    /// The JSON library does not support whitespace. We delete them. Inefficient.
+    while (!in.eof())
+    {
+        char c;
+        readChar(c, in);
+        if (!isspace(c))
+            writeChar(c, out);
     }
-    JSON json(content);
+    JSON json(out.str());
 
     JSON files = json["yandex"];
     for (const auto & name_value : files)

@@ -15,6 +15,7 @@
 #include <Common/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
@@ -352,10 +353,9 @@ catch (const Exception & e)
 
 inline String getQuotedString(const String & s)
 {
-    String res;
-    WriteBufferFromString buf(res);
+    WriteBufferFromOwnString buf;
     writeQuotedString(s, buf);
-    return res;
+    return buf.str();
 }
 
 

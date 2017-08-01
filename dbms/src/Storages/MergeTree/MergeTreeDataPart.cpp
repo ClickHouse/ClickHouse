@@ -256,12 +256,9 @@ void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 
 String MergeTreeDataPartChecksums::toString() const
 {
-    String s;
-    {
-        WriteBufferFromString out(s);
-        write(out);
-    }
-    return s;
+    WriteBufferFromOwnString out;
+    write(out);
+    return out.str();
 }
 
 MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
@@ -374,6 +371,9 @@ size_t MergeTreeDataPart::getExactSizeRows() const
 
 String MergeTreeDataPart::getFullPath() const
 {
+    if (relative_path.empty())
+        throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
+
     return storage.full_path + relative_path + "/";
 }
 
@@ -431,7 +431,10 @@ size_t MergeTreeDataPart::calcTotalSize(const String & from)
 
 void MergeTreeDataPart::remove() const
 {
-    String from = storage.full_path + name;
+    if (relative_path.empty())
+        throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
+
+    String from = storage.full_path + relative_path;
     String to = storage.full_path + "tmp_delete_" + name;
 
     Poco::File from_dir{from};
@@ -589,7 +592,7 @@ void MergeTreeDataPart::loadChecksums(bool require)
 
 void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
 {
-    Poco::ScopedReadRWLock part_lock(columns_lock);
+    std::shared_lock<std::shared_mutex> part_lock(columns_lock);
     for (const NameAndTypePair & column : *storage.columns)
         if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
             column_to_size[column.name] += Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").getSize();

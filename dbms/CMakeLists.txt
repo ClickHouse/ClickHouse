@@ -150,7 +150,7 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-if (NOT AARCH64)
+if (NOT ARM)
     set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
 

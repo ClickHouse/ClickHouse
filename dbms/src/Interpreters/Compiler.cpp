@@ -67,14 +67,9 @@ static Compiler::HashedKey getHash(const std::string & key)
 /// Without .so extension.
 static std::string hashedKeyToFileName(Compiler::HashedKey hashed_key)
 {
-    std::string file_name;
-
-    {
-        WriteBufferFromString out(file_name);
-        out << hashed_key.low << '_' << hashed_key.high;
-    }
-
-    return file_name;
+    WriteBufferFromOwnString out;
+    out << hashed_key.low << '_' << hashed_key.high;
+    return out.str();
 }
 
 

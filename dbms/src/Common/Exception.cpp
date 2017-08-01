@@ -231,12 +231,9 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
 
 std::string ExecutionStatus::serializeText() const
 {
-    std::string res;
-    {
-        WriteBufferFromString wb(res);
-        wb << code << "\n" << escape << message;
-    }
-    return res;
+    WriteBufferFromOwnString wb;
+    wb << code << "\n" << escape << message;
+    return wb.str();
 }
 
 void ExecutionStatus::deserializeText(const std::string & data)

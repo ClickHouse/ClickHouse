@@ -7,7 +7,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Columns/ColumnString.h>
 #include <ext/bit_cast.h>
-#include <Poco/RWLock.h>
 #include <cmath>
 #include <atomic>
 #include <chrono>
@@ -15,6 +14,7 @@
 #include <map>
 #include <tuple>
 #include <random>
+#include <shared_mutex>
 
 
 namespace DB
@@ -242,7 +242,7 @@ private:
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
 
-    mutable Poco::RWLock rw_lock;
+    mutable std::shared_mutex rw_lock;
 
     /// Actual size will be increased to match power of 2
     const size_t size;

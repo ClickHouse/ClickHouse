@@ -47,6 +47,9 @@ set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBS
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
     set (AARCH64 1)
 endif ()
+if (AARCH64 OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
+    set (ARM 1)
+endif ()
 
 set (COMMON_WARNING_FLAGS "-Wall")    # -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")

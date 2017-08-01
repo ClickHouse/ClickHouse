@@ -286,7 +286,7 @@ struct Settings
     M(SettingBool, distributed_ddl_allow_replicated_alter, 0) \
     /** Limit on max column size in block while reading. Helps to decrease cache misses count. \
       * Should be close to L2 cache size. */ \
-    M(SettingUInt64, preferred_max_column_in_block_size_bytes, 250000)
+    M(SettingUInt64, preferred_max_column_in_block_size_bytes, 0)
 
 
     /// Possible limits for query execution.

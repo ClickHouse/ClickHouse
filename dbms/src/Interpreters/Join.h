@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/RWLock.h>
+#include <shared_mutex>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -406,7 +406,7 @@ private:
       *  and StorageJoin only calls these two methods.
       * That's why another methods are not guarded.
       */
-    mutable Poco::RWLock rwlock;
+    mutable std::shared_mutex rwlock;
 
     void init(Type type_);
 

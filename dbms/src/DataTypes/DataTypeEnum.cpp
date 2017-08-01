@@ -36,31 +36,27 @@ const char * DataTypeEnum<Type>::getFamilyName() const
 template <typename Type>
 std::string DataTypeEnum<Type>::generateName(const Values & values)
 {
-    std::string name;
+    WriteBufferFromOwnString out;
 
+    writeString(EnumName<FieldType>::value, out);
+    writeChar('(', out);
+
+    auto first = true;
+    for (const auto & name_and_value : values)
     {
-        WriteBufferFromString out{name};
+        if (!first)
+            writeString(", ", out);
 
-        writeString(EnumName<FieldType>::value, out);
-        writeChar('(', out);
+        first = false;
 
-        auto first = true;
-        for (const auto & name_and_value : values)
-        {
-            if (!first)
-                writeString(", ", out);
-
-            first = false;
-
-            writeQuotedString(name_and_value.first, out);
-            writeString(" = ", out);
-            writeText(name_and_value.second, out);
-        }
-
-        writeChar(')', out);
+        writeQuotedString(name_and_value.first, out);
+        writeString(" = ", out);
+        writeText(name_and_value.second, out);
     }
 
-    return name;
+    writeChar(')', out);
+
+    return out.str();
 }
 
 template <typename Type>
