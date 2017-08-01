@@ -50,19 +50,27 @@ public:
 };
 
 
-/// Creates the string by itself and allows to get it.
-class WriteBufferFromOwnString : public WriteBufferFromString
+namespace detail
 {
-private:
-    std::string s;
+    /// For correct order of initialization.
+    class StringHolder
+    {
+    protected:
+        std::string value;
+    };
+}
+
+/// Creates the string by itself and allows to get it.
+class WriteBufferFromOwnString : public detail::StringHolder, public WriteBufferFromString
+{
 
 public:
-    WriteBufferFromOwnString() : WriteBufferFromString(s) {}
+    WriteBufferFromOwnString() : WriteBufferFromString(value) {}
 
     std::string & str()
     {
         finish();
-        return s;
+        return value;
     }
 };
 
