@@ -36,12 +36,18 @@ class PartitionManager:
         self._delete_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
 
 
-    def partition_instances(self, left, right, action='DROP'):
+    def partition_instances(self, left, right, port=None, action='DROP'):
         self._check_instance(left)
         self._check_instance(right)
 
-        self._add_rule({'source': left.ip_address, 'destination': right.ip_address, 'action': action})
-        self._add_rule({'source': right.ip_address, 'destination': left.ip_address, 'action': action})
+        def create_rule(src, dst):
+            rule = {'source': src.ip_address, 'destination': dst.ip_address, 'action': action}
+            if port is not None:
+                rule['destination_port'] = port
+            return rule
+
+        self._add_rule(create_rule(left, right))
+        self._add_rule(create_rule(right, left))
 
 
     def heal_all(self):
