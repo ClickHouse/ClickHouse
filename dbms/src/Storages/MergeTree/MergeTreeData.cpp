@@ -1028,8 +1028,11 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
+        auto compression_method = this->context.chooseCompressionMethod(
+            part->size_in_bytes,
+            static_cast<double>(part->size_in_bytes) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, expression);
-        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4, false);
+        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_method, false);
         in.readPrefix();
         out.writePrefix();
 
