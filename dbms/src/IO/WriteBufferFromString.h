@@ -50,19 +50,22 @@ public:
 };
 
 
+class StringHolder {
+protected:
+    std::string ss;
+};
+
 /// Creates the string by itself and allows to get it.
-class WriteBufferFromOwnString : public WriteBufferFromString
+class WriteBufferFromOwnString : public StringHolder, public WriteBufferFromString
 {
-private:
-    std::string s;
 
 public:
-    WriteBufferFromOwnString() : WriteBufferFromString(s) {}
+    WriteBufferFromOwnString() : WriteBufferFromString(ss) {}
 
     std::string & str()
     {
         finish();
-        return s;
+        return ss;
     }
 };
 
