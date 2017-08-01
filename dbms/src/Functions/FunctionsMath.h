@@ -165,7 +165,7 @@ private:
 };
 
 
-template <typename Name, Float64(&Function)(Float64)>
+template <typename Name, Float64(Function)(Float64)>
 struct UnaryFunctionPlain
 {
     static constexpr auto name = Name::name;
@@ -180,7 +180,7 @@ struct UnaryFunctionPlain
 
 #if USE_VECTORCLASS
 
-template <typename Name, Vec2d(&Function)(const Vec2d &)>
+template <typename Name, Vec2d(Function)(const Vec2d &)>
 struct UnaryFunctionVectorized
 {
     static constexpr auto name = Name::name;
@@ -437,7 +437,7 @@ private:
 };
 
 
-template <typename Name, Float64(&Function)(Float64, Float64)>
+template <typename Name, Float64(Function)(Float64, Float64)>
 struct BinaryFunctionPlain
 {
     static constexpr auto name = Name::name;
@@ -452,7 +452,7 @@ struct BinaryFunctionPlain
 
 #if USE_VECTORCLASS
 
-template <typename Name, Vec2d(&Function)(const Vec2d &, const Vec2d &)>
+template <typename Name, Vec2d(Function)(const Vec2d &, const Vec2d &)>
 struct BinaryFunctionVectorized
 {
     static constexpr auto name = Name::name;

@@ -38,6 +38,10 @@ class NamesAndTypesList : public std::list<NameAndTypePair>
 public:
     using std::list<NameAndTypePair>::list;
 
+    /// Without this constructor, gcc 7.1.0 get confused.
+    template <typename Iterator>
+    NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
+
     void readText(ReadBuffer & buf);
     void writeText(WriteBuffer & buf) const;
 
