@@ -34,6 +34,7 @@
     M(StorageBufferRows) \
     M(StorageBufferBytes) \
     M(DictCacheRequests) \
+    M(Revision) \
 
 
 namespace CurrentMetrics
