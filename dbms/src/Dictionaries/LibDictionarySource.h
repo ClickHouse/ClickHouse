@@ -4,6 +4,8 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
 
+#include <iostream>
+
 namespace Poco
 {
 class Logger;
@@ -12,7 +14,20 @@ class Logger;
 
 namespace DB
 {
-/// Allows loading dictionaries from .so
+    class OneBlockInputStream : public IBlockInputStream
+    {
+        Block block;
+    public:
+        OneBlockInputStream(Block && block_) : block(block_) {};
+        Block read() override {
+            std::cerr << "OneBlockInputStream: reading block from" << getID() << "\n";
+            return block; }
+        String getName() const override { return "OneBlock"; }
+        
+        //String getID() const override;
+    };
+    
+    /// Allows loading dictionaries from .so
 class LibDictionarySource final : public IDictionarySource
 {
 public:

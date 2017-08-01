@@ -74,10 +74,10 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     auto data = lib->get<void * (*)(decltype(data_ptr), decltype(&columns))>("loadAll")(data_ptr, &columns);
     //DUMP(data);
 
+    auto columns_recieved = static_cast<ClickhouseColumnsUint64 *>(data);
     if (data)
     {
-        auto columns = static_cast<ClickhouseColumnsUint64 *>(data);
-        DUMP(columns->size);
+        DUMP(columns_recieved->size);
     }
     // TODO
     library->get<void (*)(void *)>("dataDelete")(data_ptr);
@@ -86,7 +86,7 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     //if (fptr)
     //    fptr();
 
-    return std::make_shared<NullBlockInputStream>();
+    return std::make_shared<OneBlockInputStream>(std::move(Block()));
 }
 
 BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -123,14 +123,14 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
         DUMP(columns->size);
         for (size_t i = 0; i < columns->size; ++i)
         {
-            DUMP(i);
-            DUMP(columns->data[i].size);
-            DUMP(columns->data[i].data);
-            DUMP("ONE:");
+            //DUMP(i);
+            //DUMP(columns->data[i].size);
+            //DUMP(columns->data[i].data);
+            //DUMP("ONE:");
             for (size_t ii = 0; ii < columns->data[i].size; ++ii)
             {
-                DUMP(ii);
-                DUMP(columns->data[i].data[ii]);
+                //DUMP(ii);
+                //DUMP(columns->data[i].data[ii]);
             }
         }
     }
@@ -143,7 +143,8 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
         fptr(ids);
     */
 
-    return std::make_shared<NullBlockInputStream>();
+    //return std::make_shared<NullBlockInputStream>();
+    return std::make_shared<OneBlockInputStream>(std::move(Block()));
 }
 
 BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)

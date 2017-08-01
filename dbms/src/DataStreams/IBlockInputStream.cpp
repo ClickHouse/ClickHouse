@@ -134,6 +134,12 @@ void IBlockInputStream::getLeavesImpl(BlockInputStreams & res, BlockInputStreamP
             (*it)->getLeavesImpl(res, *it);
 }
 
+String IBlockInputStream::getID() const
+{
+        std::stringstream res;
+        res << getName() << "(" << this << ")";
+        return res.str();
+};
 
 }
 

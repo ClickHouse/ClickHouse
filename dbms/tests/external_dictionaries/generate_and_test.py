@@ -392,13 +392,13 @@ def generate_dictionaries(args):
     <lib>
         <filename>{filename}</filename>
     </lib>
-    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_lib.so'))
+    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_libd.so'))
 
     source_lib_c = '''
     <lib>
         <filename>{filename}</filename>
     </lib>
-    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_lib_c.so'))
+    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_lib_cd.so'))
 
 
 
