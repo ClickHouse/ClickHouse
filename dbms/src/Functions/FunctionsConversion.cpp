@@ -25,26 +25,23 @@ const DateLUTImpl * extractTimeZoneFromFunctionArguments(Block & block, const Co
 void throwExceptionForIncompletelyParsedValue(
     ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    std::string message;
-    {
-        const IDataType & to_type = *block.getByPosition(result).type;
+    const IDataType & to_type = *block.getByPosition(result).type;
 
-        WriteBufferFromString message_buf(message);
-        message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
-            << " as " << to_type.getName()
-            << ": syntax error";
+    WriteBufferFromOwnString message_buf;
+    message_buf << "Cannot parse string " << quote << String(read_buffer.buffer().begin(), read_buffer.buffer().size())
+        << " as " << to_type.getName()
+        << ": syntax error";
 
-        if (read_buffer.offset())
-            message_buf << " at position " << read_buffer.offset()
-                << " (parsed just " << quote << String(read_buffer.buffer().begin(), read_buffer.offset()) << ")";
-        else
-            message_buf << " at begin of string";
+    if (read_buffer.offset())
+        message_buf << " at position " << read_buffer.offset()
+            << " (parsed just " << quote << String(read_buffer.buffer().begin(), read_buffer.offset()) << ")";
+    else
+        message_buf << " at begin of string";
 
-        if (to_type.behavesAsNumber())
-            message_buf << ". Note: there are to" << to_type.getName() << "OrZero function, which returns zero instead of throwing exception.";
-    }
+    if (to_type.behavesAsNumber())
+        message_buf << ". Note: there are to" << to_type.getName() << "OrZero function, which returns zero instead of throwing exception.";
 
-    throw Exception(message, ErrorCodes::CANNOT_PARSE_TEXT);
+    throw Exception(message_buf.str(), ErrorCodes::CANNOT_PARSE_TEXT);
 }
 
 

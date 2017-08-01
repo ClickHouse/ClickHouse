@@ -45,13 +45,11 @@ public:
     /// Serializes the location.
     std::string toString() const
     {
-        std::string serialized_location;
-        WriteBufferFromString buf(serialized_location);
+        WriteBufferFromOwnString buf;
         writeBinary(name, buf);
         writeBinary(host, buf);
         writeBinary(port, buf);
-        buf.next();
-        return serialized_location;
+        return buf.str();
     }
 
 public:

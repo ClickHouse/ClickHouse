@@ -120,25 +120,23 @@ String ActiveDataPartSet::getPartName(DayNum_t left_date, DayNum_t right_date, I
     const auto & date_lut = DateLUT::instance();
 
     /// Directory name for the part has form: `YYYYMMDD_YYYYMMDD_N_N_L`.
-    String res;
-    {
-        unsigned left_date_id = date_lut.toNumYYYYMMDD(left_date);
-        unsigned right_date_id = date_lut.toNumYYYYMMDD(right_date);
 
-        WriteBufferFromString wb(res);
+    unsigned left_date_id = date_lut.toNumYYYYMMDD(left_date);
+    unsigned right_date_id = date_lut.toNumYYYYMMDD(right_date);
 
-        writeIntText(left_date_id, wb);
-        writeChar('_', wb);
-        writeIntText(right_date_id, wb);
-        writeChar('_', wb);
-        writeIntText(left_id, wb);
-        writeChar('_', wb);
-        writeIntText(right_id, wb);
-        writeChar('_', wb);
-        writeIntText(level, wb);
-    }
+    WriteBufferFromOwnString wb;
 
-    return res;
+    writeIntText(left_date_id, wb);
+    writeChar('_', wb);
+    writeIntText(right_date_id, wb);
+    writeChar('_', wb);
+    writeIntText(left_id, wb);
+    writeChar('_', wb);
+    writeIntText(right_id, wb);
+    writeChar('_', wb);
+    writeIntText(level, wb);
+
+    return wb.str();
 }
 
 

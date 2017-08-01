@@ -144,14 +144,11 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         /// Send all common headers before our special progress headers.
         startSendHeaders();
 
-        std::string progress_string;
-        {
-            WriteBufferFromString progress_string_writer(progress_string);
-            accumulated_progress.writeJSON(progress_string_writer);
-        }
+        WriteBufferFromOwnString progress_string_writer;
+        accumulated_progress.writeJSON(progress_string_writer);
 
 #if POCO_CLICKHOUSE_PATCH
-        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
+        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
 #endif
     }
 }

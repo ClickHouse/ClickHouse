@@ -16,7 +16,6 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>

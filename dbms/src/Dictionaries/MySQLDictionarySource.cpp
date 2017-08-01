@@ -1,6 +1,8 @@
+#include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/config.h>
+
 #if USE_MYSQL
 
 #include <common/logger_useful.h>
@@ -119,12 +121,9 @@ std::string MySQLDictionarySource::quoteForLike(const std::string s)
         tmp.push_back(c);
     }
 
-    std::string res;
-    {
-        WriteBufferFromString out(res);
-        writeQuoted(tmp, out);
-    }
-    return res;
+    WriteBufferFromOwnString out;
+    writeQuoted(tmp, out);
+    return out.str();
 }
 
 LocalDateTime MySQLDictionarySource::getLastModification() const

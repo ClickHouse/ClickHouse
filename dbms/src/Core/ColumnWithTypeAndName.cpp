@@ -29,22 +29,19 @@ bool ColumnWithTypeAndName::operator== (const ColumnWithTypeAndName & other) con
 
 String ColumnWithTypeAndName::prettyPrint() const
 {
-    String res;
+    WriteBufferFromOwnString out;
+    writeString(name, out);
+    if (type)
     {
-        WriteBufferFromString out(res);
-        writeString(name, out);
-        if (type)
-        {
-            writeChar(' ', out);
-            writeString(type->getName(), out);
-        }
-        if (column)
-        {
-            writeChar(' ', out);
-            writeString(column->getName(), out);
-        }
+        writeChar(' ', out);
+        writeString(type->getName(), out);
     }
-    return res;
+    if (column)
+    {
+        writeChar(' ', out);
+        writeString(column->getName(), out);
+    }
+    return out.str();
 }
 
 }

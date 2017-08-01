@@ -9,6 +9,7 @@
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/CompressedReadBuffer.h>
 #include <IO/HexWriteBuffer.h>
 #include <DataTypes/DataTypeDate.h>
@@ -879,21 +880,18 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
     if (part && !out_rename_map.empty())
     {
-        std::string message;
+        WriteBufferFromOwnString out;
+        out << "Will rename ";
+        bool first = true;
+        for (const auto & from_to : out_rename_map)
         {
-            WriteBufferFromString out(message);
-            out << "Will rename ";
-            bool first = true;
-            for (const auto & from_to : out_rename_map)
-            {
-                if (!first)
-                    out << ", ";
-                first = false;
-                out << from_to.first << " to " << from_to.second;
-            }
-            out << " in part " << part->name;
+            if (!first)
+                out << ", ";
+            first = false;
+            out << from_to.first << " to " << from_to.second;
         }
-        LOG_DEBUG(log, message);
+        out << " in part " << part->name;
+        LOG_DEBUG(log, out.str());
     }
 }
 
