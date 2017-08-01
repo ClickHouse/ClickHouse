@@ -10,8 +10,7 @@ namespace DB
 
 String ASTFunction::getColumnName() const
 {
-    String res;
-    WriteBufferFromString wb(res);
+    WriteBufferFromOwnString wb;
     writeString(name, wb);
 
     if (parameters)
@@ -34,8 +33,7 @@ String ASTFunction::getColumnName() const
         writeString((*it)->getColumnName(), wb);
     }
     writeChar(')', wb);
-
-    return res;
+    return wb.str();
 }
 
 /** Get the text that identifies this element. */

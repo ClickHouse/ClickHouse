@@ -21,8 +21,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
 #include <IO/VarInt.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/DoubleConverter.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -754,12 +754,9 @@ void writeException(const Exception & e, WriteBuffer & buf);
 template <typename T>
 inline String toString(const T & x)
 {
-    String res;
-    {
-        WriteBufferFromString buf(res);
-        writeText(x, buf);
-    }
-    return res;
+    WriteBufferFromOwnString buf;
+    writeText(x, buf);
+    return buf.str();
 }
 
 }

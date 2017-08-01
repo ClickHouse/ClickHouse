@@ -72,8 +72,7 @@ ReshardingJob::operator bool() const
 
 std::string ReshardingJob::toString() const
 {
-    std::string serialized_job;
-    WriteBufferFromString buf{serialized_job};
+    WriteBufferFromOwnString buf;
 
     writeBinary(database_name, buf);
     writeBinary(table_name, buf);
@@ -89,9 +88,8 @@ std::string ReshardingJob::toString() const
         writeBinary(path.first, buf);
         writeVarUInt(path.second, buf);
     }
-    buf.next();
 
-    return serialized_job;
+    return buf.str();
 }
 
 bool ReshardingJob::isCoordinated() const

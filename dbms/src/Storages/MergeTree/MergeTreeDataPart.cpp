@@ -256,12 +256,9 @@ void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 
 String MergeTreeDataPartChecksums::toString() const
 {
-    String s;
-    {
-        WriteBufferFromString out(s);
-        write(out);
-    }
-    return s;
+    WriteBufferFromOwnString out;
+    write(out);
+    return out.str();
 }
 
 MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
