@@ -148,7 +148,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
 
     auto compression_method = data.context.chooseCompressionMethod(
         data.getTotalActiveSizeInBytes(),
-        static_cast<double>(data.getTotalCompressedSize()) / data.getTotalActiveSizeInBytes());
+        static_cast<double>(data.getTotalActiveSizeInBytes()) / data.getTotalCompressedSize());
 
     NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
     MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_method);

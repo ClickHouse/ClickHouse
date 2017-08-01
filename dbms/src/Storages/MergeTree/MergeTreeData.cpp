@@ -1032,7 +1032,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
         auto compression_method = this->context.chooseCompressionMethod(
             this->getTotalActiveSizeInBytes(),
-            static_cast<double>(this->getTotalCompressedSize()) / this->getTotalActiveSizeInBytes());
+            static_cast<double>(this->getTotalActiveSizeInBytes()) / this->getTotalCompressedSize());
         ExpressionBlockInputStream in(part_in, expression);
         MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_method, false);
         in.readPrefix();
