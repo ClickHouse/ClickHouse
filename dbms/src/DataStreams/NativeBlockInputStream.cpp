@@ -65,8 +65,8 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
-        /** For arrays, you first need to deserialize the offsets, and then the values.
-        */
+        /** For arrays, we deserialize the offsets first, and then the values.
+          */
         IColumn & offsets_column = *typeid_cast<ColumnArray &>(column).getOffsetsColumn();
         type_arr->getOffsetsType()->deserializeBinaryBulk(offsets_column, istr, rows, 0);
 

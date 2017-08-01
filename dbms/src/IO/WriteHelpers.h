@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <limits>
 #include <algorithm>
+#include <iterator>
 
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>
@@ -20,8 +21,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
 #include <IO/VarInt.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/DoubleConverter.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -474,15 +475,16 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
     writeXMLString(s.data, s.data + s.size, buf);
 }
 
-void formatHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes);
+template <typename IteratorSrc, typename IteratorDst>
+void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
-void formatUUID(const UInt128 & uuid, UInt8 * dst36);
+void formatUUID(std::reverse_iterator<const UInt8 *> dst16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
     char s[36];
 
-    formatUUID(uuid, reinterpret_cast<UInt8 *>(s));
+    formatUUID(std::reverse_iterator<const UInt8 *>(reinterpret_cast<const UInt8 *>(&uuid) + 16), reinterpret_cast<UInt8 *>(s));
     buf.write(s, sizeof(s));
 }
 
@@ -752,12 +754,9 @@ void writeException(const Exception & e, WriteBuffer & buf);
 template <typename T>
 inline String toString(const T & x)
 {
-    String res;
-    {
-        WriteBufferFromString buf(res);
-        writeText(x, buf);
-    }
-    return res;
+    WriteBufferFromOwnString buf;
+    writeText(x, buf);
+    return buf.str();
 }
 
 }

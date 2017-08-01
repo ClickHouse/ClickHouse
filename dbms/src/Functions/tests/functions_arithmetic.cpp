@@ -72,7 +72,7 @@ try
 
     Float64 x = 0;
     for (size_t i = 0; i < n; ++i)
-        x += get<Float64>((*block.safeGetByPosition(2).column)[i]);
+        x += get<Float64>((*block.getByPosition(2).column)[i]);
 
     std::cout << x << std::endl;
     return 0;

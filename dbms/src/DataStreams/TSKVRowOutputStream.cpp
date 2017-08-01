@@ -1,4 +1,5 @@
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <DataStreams/TSKVRowOutputStream.h>
 
 
@@ -13,13 +14,10 @@ TSKVRowOutputStream::TSKVRowOutputStream(WriteBuffer & ostr_, const Block & samp
 
     for (auto & field : fields)
     {
-        String prepared_field_name;
-        {
-            WriteBufferFromString wb(prepared_field_name);
-            writeAnyEscapedString<'='>(field.name.data(), field.name.data() + field.name.size(), wb);
-            writeCString("=", wb);
-        }
-        field.name = prepared_field_name;
+        WriteBufferFromOwnString wb;
+        writeAnyEscapedString<'='>(field.name.data(), field.name.data() + field.name.size(), wb);
+        writeCString("=", wb);
+        field.name = wb.str();
     }
 }
 

@@ -442,7 +442,7 @@ void InterpreterSelectQuery::executeSingleQuery()
 
     if (to_stage > QueryProcessingStage::FetchColumns)
     {
-        bool has_join        = false;
+        bool has_join       = false;
         bool has_where      = false;
         bool need_aggregate = false;
         bool has_having     = false;
@@ -952,7 +952,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
             max_streams,
             settings.aggregation_memory_efficient_merge_threads
                 ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
-                : max_streams);
+                : static_cast<size_t>(settings.max_threads));
 
         stream_with_non_joined_data = nullptr;
         streams.resize(1);
@@ -1006,15 +1006,15 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
         executeUnion();
 
         /// Now merge the aggregated blocks
-        streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, max_streams);
+        streams[0] = std::make_shared<MergingAggregatedBlockInputStream>(streams[0], params, final, settings.max_threads);
     }
     else
     {
         streams[0] = std::make_shared<MergingAggregatedMemoryEfficientBlockInputStream>(streams, params, final,
             max_streams,
             settings.aggregation_memory_efficient_merge_threads
-                ? size_t(settings.aggregation_memory_efficient_merge_threads)
-                : size_t(settings.max_threads));
+                ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                : static_cast<size_t>(settings.max_threads));
 
         streams.resize(1);
     }

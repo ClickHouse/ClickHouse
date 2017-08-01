@@ -206,12 +206,6 @@ ColumnPtr DataTypeFixedString::createColumn() const
 }
 
 
-ColumnPtr DataTypeFixedString::createConstColumn(size_t size, const Field & field) const
-{
-    return std::make_shared<ColumnConstString>(size, get<const String &>(field), clone());
-}
-
-
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (arguments->children.size() != 1)

@@ -154,8 +154,6 @@ SELECT multiIf(NULL, NULL, NULL);
 
 SELECT multiIf(1, 'A', 1, NULL, 'DEF');
 SELECT multiIf(1, toFixedString('A', 16), 1, NULL, toFixedString('DEF', 16));
-SELECT multiIf(1, [1,2], 1, NULL, [5,6]);
-SELECT multiIf(1, ['A', 'B'], 1, NULL, ['E', 'F']);
 
 SELECT multiIf(NULL, 2, 1, 3, 4);
 SELECT multiIf(1, 2, NULL, 3, 4);

@@ -49,110 +49,11 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 
 std::string ExternalQueryBuilder::composeLoadAllQuery() const
 {
-    std::string query;
+    WriteBufferFromOwnString out;
+    writeString("SELECT ", out);
 
+    if (dict_struct.id)
     {
-        WriteBufferFromString out{query};
-        writeString("SELECT ", out);
-
-        if (dict_struct.id)
-        {
-            if (!dict_struct.id.value().expression.empty())
-            {
-                writeParenthesisedString(dict_struct.id.value().expression, out);
-                writeString(" AS ", out);
-            }
-
-            writeQuoted(dict_struct.id.value().name, out);
-
-            if (dict_struct.range_min && dict_struct.range_max)
-            {
-                writeString(", ", out);
-
-                if (!dict_struct.range_min.value().expression.empty())
-                {
-                    writeParenthesisedString(dict_struct.range_min.value().expression, out);
-                    writeString(" AS ", out);
-                }
-
-                writeQuoted(dict_struct.range_min.value().name, out);
-
-                writeString(", ", out);
-
-                if (!dict_struct.range_max.value().expression.empty())
-                {
-                    writeParenthesisedString(dict_struct.range_max.value().expression, out);
-                    writeString(" AS ", out);
-                }
-
-                writeQuoted(dict_struct.range_max.value().name, out);
-            }
-        }
-        else if (dict_struct.key)
-        {
-            auto first = true;
-            for (const auto & key : *dict_struct.key)
-            {
-                if (!first)
-                    writeString(", ", out);
-
-                first = false;
-
-                if (!key.expression.empty())
-                {
-                    writeParenthesisedString(key.expression, out);
-                    writeString(" AS ", out);
-                }
-
-                writeQuoted(key.name, out);
-            }
-        }
-
-        for (const auto & attr : dict_struct.attributes)
-        {
-            writeString(", ", out);
-
-            if (!attr.expression.empty())
-            {
-                writeParenthesisedString(attr.expression, out);
-                writeString(" AS ", out);
-            }
-
-            writeQuoted(attr.name, out);
-        }
-
-        writeString(" FROM ", out);
-        if (!db.empty())
-        {
-            writeQuoted(db, out);
-            writeChar('.', out);
-        }
-        writeQuoted(table, out);
-
-        if (!where.empty())
-        {
-            writeString(" WHERE ", out);
-            writeString(where, out);
-        }
-
-        writeChar(';', out);
-    }
-
-    return query;
-}
-
-
-std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> & ids)
-{
-    if (!dict_struct.id)
-        throw Exception{"Simple key required for method", ErrorCodes::UNSUPPORTED_METHOD};
-
-    std::string query;
-
-    {
-        WriteBufferFromString out{query};
-        writeString("SELECT ", out);
-
         if (!dict_struct.id.value().expression.empty())
         {
             writeParenthesisedString(dict_struct.id.value().expression, out);
@@ -161,146 +62,233 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 
         writeQuoted(dict_struct.id.value().name, out);
 
-        for (const auto & attr : dict_struct.attributes)
+        if (dict_struct.range_min && dict_struct.range_max)
         {
             writeString(", ", out);
 
-            if (!attr.expression.empty())
+            if (!dict_struct.range_min.value().expression.empty())
             {
-                writeParenthesisedString(attr.expression, out);
+                writeParenthesisedString(dict_struct.range_min.value().expression, out);
                 writeString(" AS ", out);
             }
 
-            writeQuoted(attr.name, out);
+            writeQuoted(dict_struct.range_min.value().name, out);
+
+            writeString(", ", out);
+
+            if (!dict_struct.range_max.value().expression.empty())
+            {
+                writeParenthesisedString(dict_struct.range_max.value().expression, out);
+                writeString(" AS ", out);
+            }
+
+            writeQuoted(dict_struct.range_max.value().name, out);
         }
-
-        writeString(" FROM ", out);
-        if (!db.empty())
-        {
-            writeQuoted(db, out);
-            writeChar('.', out);
-        }
-        writeQuoted(table, out);
-
-        writeString(" WHERE ", out);
-
-        if (!where.empty())
-        {
-            writeString(where, out);
-            writeString(" AND ", out);
-        }
-
-        writeQuoted(dict_struct.id.value().name, out);
-        writeString(" IN (", out);
-
+    }
+    else if (dict_struct.key)
+    {
         auto first = true;
-        for (const auto id : ids)
+        for (const auto & key : *dict_struct.key)
         {
             if (!first)
                 writeString(", ", out);
 
             first = false;
-            writeString(DB::toString(id), out);
-        }
 
-        writeString(");", out);
+            if (!key.expression.empty())
+            {
+                writeParenthesisedString(key.expression, out);
+                writeString(" AS ", out);
+            }
+
+            writeQuoted(key.name, out);
+        }
     }
 
-    return query;
+    for (const auto & attr : dict_struct.attributes)
+    {
+        writeString(", ", out);
+
+        if (!attr.expression.empty())
+        {
+            writeParenthesisedString(attr.expression, out);
+            writeString(" AS ", out);
+        }
+
+        writeQuoted(attr.name, out);
+    }
+
+    writeString(" FROM ", out);
+    if (!db.empty())
+    {
+        writeQuoted(db, out);
+        writeChar('.', out);
+    }
+    writeQuoted(table, out);
+
+    if (!where.empty())
+    {
+        writeString(" WHERE ", out);
+        writeString(where, out);
+    }
+
+    writeChar(';', out);
+
+    return out.str();
+}
+
+
+std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> & ids)
+{
+    if (!dict_struct.id)
+        throw Exception{"Simple key required for method", ErrorCodes::UNSUPPORTED_METHOD};
+
+    WriteBufferFromOwnString out;
+    writeString("SELECT ", out);
+
+    if (!dict_struct.id.value().expression.empty())
+    {
+        writeParenthesisedString(dict_struct.id.value().expression, out);
+        writeString(" AS ", out);
+    }
+
+    writeQuoted(dict_struct.id.value().name, out);
+
+    for (const auto & attr : dict_struct.attributes)
+    {
+        writeString(", ", out);
+
+        if (!attr.expression.empty())
+        {
+            writeParenthesisedString(attr.expression, out);
+            writeString(" AS ", out);
+        }
+
+        writeQuoted(attr.name, out);
+    }
+
+    writeString(" FROM ", out);
+    if (!db.empty())
+    {
+        writeQuoted(db, out);
+        writeChar('.', out);
+    }
+    writeQuoted(table, out);
+
+    writeString(" WHERE ", out);
+
+    if (!where.empty())
+    {
+        writeString(where, out);
+        writeString(" AND ", out);
+    }
+
+    writeQuoted(dict_struct.id.value().name, out);
+    writeString(" IN (", out);
+
+    auto first = true;
+    for (const auto id : ids)
+    {
+        if (!first)
+            writeString(", ", out);
+
+        first = false;
+        writeString(DB::toString(id), out);
+    }
+
+    writeString(");", out);
+
+    return out.str();
 }
 
 
 std::string ExternalQueryBuilder::composeLoadKeysQuery(
     const Columns & key_columns,
-    const std::vector<std::size_t> & requested_rows,
+    const std::vector<size_t> & requested_rows,
     LoadKeysMethod method)
 {
     if (!dict_struct.key)
         throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
 
-    std::string query;
+    WriteBufferFromOwnString out;
+    writeString("SELECT ", out);
 
+    auto first = true;
+    for (const auto & key_or_attribute : boost::join(*dict_struct.key, dict_struct.attributes))
     {
-        WriteBufferFromString out{query};
-        writeString("SELECT ", out);
+        if (!first)
+            writeString(", ", out);
 
-        auto first = true;
-        for (const auto & key_or_attribute : boost::join(*dict_struct.key, dict_struct.attributes))
+        first = false;
+
+        if (!key_or_attribute.expression.empty())
+        {
+            writeParenthesisedString(key_or_attribute.expression, out);
+            writeString(" AS ", out);
+        }
+
+        writeQuoted(key_or_attribute.name, out);
+    }
+
+    writeString(" FROM ", out);
+    if (!db.empty())
+    {
+        writeQuoted(db, out);
+        writeChar('.', out);
+    }
+    writeQuoted(table, out);
+
+    writeString(" WHERE ", out);
+
+    if (!where.empty())
+    {
+        writeString("(", out);
+        writeString(where, out);
+        writeString(") AND (", out);
+    }
+
+    if (method == AND_OR_CHAIN)
+    {
+        first = true;
+        for (const auto row : requested_rows)
+        {
+            if (!first)
+                writeString(" OR ", out);
+
+            first = false;
+            composeKeyCondition(key_columns, row, out);
+        }
+    }
+    else if (method == IN_WITH_TUPLES)
+    {
+        writeString(composeKeyTupleDefinition(), out);
+        writeString(" IN (", out);
+
+        first = true;
+        for (const auto row : requested_rows)
         {
             if (!first)
                 writeString(", ", out);
 
             first = false;
-
-            if (!key_or_attribute.expression.empty())
-            {
-                writeParenthesisedString(key_or_attribute.expression, out);
-                writeString(" AS ", out);
-            }
-
-            writeQuoted(key_or_attribute.name, out);
+            composeKeyTuple(key_columns, row, out);
         }
 
-        writeString(" FROM ", out);
-        if (!db.empty())
-        {
-            writeQuoted(db, out);
-            writeChar('.', out);
-        }
-        writeQuoted(table, out);
-
-        writeString(" WHERE ", out);
-
-        if (!where.empty())
-        {
-            writeString("(", out);
-            writeString(where, out);
-            writeString(") AND (", out);
-        }
-
-        if (method == AND_OR_CHAIN)
-        {
-            first = true;
-            for (const auto row : requested_rows)
-            {
-                if (!first)
-                    writeString(" OR ", out);
-
-                first = false;
-                composeKeyCondition(key_columns, row, out);
-            }
-        }
-        else if (method == IN_WITH_TUPLES)
-        {
-            writeString(composeKeyTupleDefinition(), out);
-            writeString(" IN (", out);
-
-            first = true;
-            for (const auto row : requested_rows)
-            {
-                if (!first)
-                    writeString(", ", out);
-
-                first = false;
-                composeKeyTuple(key_columns, row, out);
-            }
-
-            writeString(")", out);
-        }
-
-        if (!where.empty())
-        {
-            writeString(")", out);
-        }
-
-        writeString(";", out);
+        writeString(")", out);
     }
 
-    return query;
+    if (!where.empty())
+    {
+        writeString(")", out);
+    }
+
+    writeString(";", out);
+
+    return out.str();
 }
 
 
-void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, const std::size_t row, WriteBuffer & out) const
+void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, const size_t row, WriteBuffer & out) const
 {
     writeString("(", out);
 
@@ -348,7 +336,7 @@ std::string ExternalQueryBuilder::composeKeyTupleDefinition() const
 }
 
 
-void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const std::size_t row, WriteBuffer & out) const
+void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const size_t row, WriteBuffer & out) const
 {
     writeString("(", out);
 

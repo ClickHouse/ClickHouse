@@ -15,8 +15,8 @@ void HexWriteBuffer::nextImpl()
     for (Position p = working_buffer.begin(); p != pos; ++p)
     {
         UInt8 byte = *p;
-        out.write(hexUppercase(byte / 16));
-        out.write(hexUppercase(byte % 16));
+        out.write(hexDigitUppercase(byte / 16));
+        out.write(hexDigitUppercase(byte % 16));
     }
 }
 

@@ -51,7 +51,7 @@ void verbosePrintString(const char * begin, const char * end, WriteBuffer & out)
             default:
             {
                 if (*pos >= 0 && *pos < 32)
-                    out << "<0x" << hexUppercase(*pos / 16) << hexUppercase(*pos % 16) << ">";
+                    out << "<0x" << hexDigitUppercase(*pos / 16) << hexDigitUppercase(*pos % 16) << ">";
                 else
                     out << *pos;
             }

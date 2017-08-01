@@ -34,13 +34,13 @@ struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
 
     virtual std::string getTypeName() const = 0;
 
-    virtual std::size_t getBytesAllocated() const = 0;
+    virtual size_t getBytesAllocated() const = 0;
 
-    virtual std::size_t getQueryCount() const = 0;
+    virtual size_t getQueryCount() const = 0;
 
     virtual double getHitRate() const = 0;
 
-    virtual std::size_t getElementCount() const = 0;
+    virtual size_t getElementCount() const = 0;
 
     virtual double getLoadFactor() const = 0;
 

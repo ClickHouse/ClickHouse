@@ -19,7 +19,8 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-static void parseHex(const UInt8 * __restrict src, UInt8 * __restrict dst, const size_t num_bytes)
+template <class IteratorSrc, class IteratorDst>
+void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
 {
     size_t src_pos = 0;
     size_t dst_pos = 0;
@@ -41,38 +42,31 @@ void parseUUID(const UInt8 * src36, UInt8 * dst16)
     parseHex(&src36[24], &dst16[10], 6);
 }
 
-void parseUUID(const UInt8 * src36, UInt128 & uuid)
+/** Function used when byte ordering is important when parsing uuid
+ *  ex: When we create an UUID type
+ */
+void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
 {
-   char s[16 + 1];
+    /// If string is not like UUID - implementation specific behaviour.
 
-   s[16] = '\0';
-
-   memcpy(&s[0], &src36[0], 8);
-   memcpy(&s[8], &src36[9], 4);
-   memcpy(&s[12], &src36[14], 4);
-
-   uuid.low = strtoull(s, nullptr, 16);
-
-   memcpy(&s[0], &src36[19], 4);
-   memcpy(&s[4], &src36[24], 12);
-
-   uuid.high = strtoull(s, nullptr, 16);
+    parseHex(&src36[0], dst16 + 8, 4);
+    parseHex(&src36[9], dst16 + 12, 2);
+    parseHex(&src36[14], dst16 + 14, 2);
+    parseHex(&src36[19], dst16, 2);
+    parseHex(&src36[24], dst16 + 2, 6);
 }
 
 static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
-    std::string message;
-    {
-        WriteBufferFromString out(message);
-        out <<  "Cannot parse input: expected " << escape << s;
+    WriteBufferFromOwnString out;
+    out <<  "Cannot parse input: expected " << escape << s;
 
-        if (buf.eof())
-            out << " at end of stream.";
-        else
-            out << " before: " << escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
-    }
+    if (buf.eof())
+        out << " at end of stream.";
+    else
+        out << " before: " << escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw Exception(message, ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+    throw Exception(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 
@@ -756,28 +750,25 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
     readBinary(stack_trace, buf);
     readBinary(has_nested, buf);
 
-    std::string new_message;
-    {
-        WriteBufferFromString out(new_message);
+    WriteBufferFromOwnString out;
 
-        if (!additional_message.empty())
-            out << additional_message << ". ";
+    if (!additional_message.empty())
+        out << additional_message << ". ";
 
-        if (name != "DB::Exception")
-            out << name << ". ";
+    if (name != "DB::Exception")
+        out << name << ". ";
 
-        out << message
-            << ". Stack trace:\n\n" << stack_trace;
-    }
+    out << message
+        << ". Stack trace:\n\n" << stack_trace;
 
     if (has_nested)
     {
         Exception nested;
         readException(nested, buf);
-        e = Exception(new_message, nested, code);
+        e = Exception(out.str(), nested, code);
     }
     else
-        e = Exception(new_message, code);
+        e = Exception(out.str(), code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)

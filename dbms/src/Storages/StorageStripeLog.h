@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <shared_mutex>
 
 #include <ext/shared_ptr_helper.h>
 
@@ -9,6 +10,7 @@
 #include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Core/Defines.h>
 
 
 namespace DB
@@ -60,7 +62,7 @@ private:
     size_t max_compress_block_size;
 
     FileChecker file_checker;
-    Poco::RWLock rwlock;
+    mutable std::shared_mutex rwlock;
 
     Logger * log;
 

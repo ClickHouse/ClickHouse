@@ -367,6 +367,17 @@ public:
         return lut[index].date + time_offset;
     }
 
+    inline UInt32 toNumYYYYMM(time_t t) const
+    {
+        const Values & values = find(t);
+        return values.year * 100 + values.month;
+    }
+
+    inline UInt32 toNumYYYYMM(DayNum_t d) const
+    {
+        const Values & values = lut[fixDay(d)];
+        return values.year * 100 + values.month;
+    }
 
     inline UInt32 toNumYYYYMMDD(time_t t) const
     {

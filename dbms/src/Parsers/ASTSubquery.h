@@ -31,7 +31,7 @@ public:
         return ptr;
     }
 
-    String getColumnName() const override { return getTreeID(); }
+    String getColumnName() const override;
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override

@@ -20,8 +20,8 @@ std::string escapeForFileName(const std::string & s)
         else
         {
             res += '%';
-            res += hexUppercase(c / 16);
-            res += hexUppercase(c % 16);
+            res += hexDigitUppercase(c / 16);
+            res += hexDigitUppercase(c % 16);
         }
 
         ++pos;

@@ -321,6 +321,10 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
         key_columns.emplace(merging_params.sign_column);
 
+    /// Force version column for Replacing mode
+    if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
+        key_columns.emplace(merging_params.version_column);
+
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
     for (auto & column : all_columns)
@@ -492,7 +496,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        Poco::ScopedReadRWLock part_lock(part->columns_lock);
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         merge_entry->total_size_bytes_compressed += part->size_in_bytes;
         merge_entry->total_size_marks += part->size;
@@ -595,7 +599,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
         case MergeTreeData::MergingParams::Replacing:
             merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_desc, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
             break;
 
         case MergeTreeData::MergingParams::Graphite:
@@ -773,7 +777,8 @@ MergeTreeDataMerger::MergeAlgorithm MergeTreeDataMerger::chooseMergeAlgorithm(
 
     bool is_supported_storage =
         data.merging_params.mode == MergeTreeData::MergingParams::Ordinary ||
-        data.merging_params.mode == MergeTreeData::MergingParams::Collapsing;
+        data.merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+        data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 
     bool enough_ordinary_cols = gathering_columns.size() >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_columns_to_activate;
 
@@ -868,7 +873,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        Poco::ScopedReadRWLock part_lock(part->columns_lock);
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         merge_entry->total_size_bytes_compressed += part->size_in_bytes;
         merge_entry->total_size_marks += part->size;

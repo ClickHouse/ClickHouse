@@ -80,9 +80,9 @@ void BackgroundProcessingPool::removeTask(const TaskHandle & task)
     if (task->removed.exchange(true))
         return;
 
-    /// Wait for all execution of this task.
+    /// Wait for all executions of this task.
     {
-        Poco::ScopedWriteRWLock wlock(task->rwlock);
+        std::unique_lock<std::shared_mutex> wlock(task->rwlock);
     }
 
     {
@@ -165,7 +165,7 @@ void BackgroundProcessingPool::threadFunction()
                     min_time - current_time + std::uniform_int_distribution<uint64_t>(0, sleep_seconds_random_part * 1000000)(rng)));
             }
 
-            Poco::ScopedReadRWLock rlock(task->rwlock);
+            std::shared_lock<std::shared_mutex> rlock(task->rwlock);
 
             if (task->removed)
                 continue;

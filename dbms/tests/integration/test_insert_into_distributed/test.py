@@ -24,7 +24,7 @@ def started_cluster():
 CREATE TABLE distributed (x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local1')
 ''')
 
-        remote.query("CREATE TABLE local2 (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)")
+        remote.query("CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree(d, x, 8192)")
         instance_test_inserts_batching.query('''
 CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local2')
 ''')
@@ -78,6 +78,12 @@ def test_inserts_batching(started_cluster):
 
         instance.query("INSERT INTO distributed(d, x) VALUES ('2000-01-01', 9)")
 
+        # After ALTER the structure of the saved blocks will be different
+        instance.query("ALTER TABLE distributed ADD COLUMN s String")
+
+        for i in range(10, 13):
+            instance.query("INSERT INTO distributed(d, x) VALUES ('2000-01-01', {})".format(i))
+
     time.sleep(1.0)
 
     result = remote.query("SELECT _part, groupArray(x) FROM local2 GROUP BY _part ORDER BY _part")
@@ -89,11 +95,13 @@ def test_inserts_batching(started_cluster):
     # 1. Failed batch that is retried with the same contents.
     # 2. Full batch of inserts with (d, x) order of columns.
     # 3. Full batch of inserts with (x, d) order of columns.
-    # 4. What is left to insert with (d, x) order.
+    # 4. Full batch of inserts after ALTER (that have different block structure).
+    # 5. What was left to insert with (d, x) order before ALTER.
     expected = '''\
 20000101_20000101_1_1_0	[1]
 20000101_20000101_2_2_0	[3,4,5]
 20000101_20000101_3_3_0	[2,7,8]
-20000101_20000101_4_4_0	[6,9]
+20000101_20000101_4_4_0	[10,11,12]
+20000101_20000101_5_5_0	[6,9]
 '''
     assert TSV(result) == TSV(expected)

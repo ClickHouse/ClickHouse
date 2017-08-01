@@ -1069,8 +1069,10 @@ public:
       */
     void mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads);
 
-    /** Merge several partially aggregated blocks into one.
-      */
+    /// Merge several partially aggregated blocks into one.
+    /// Precondition: for all blocks block.info.is_overflows flag must be the same.
+    /// (either all blocks are from overflow data or none blocks are).
+    /// The resulting block has the same value of is_overflows flag.
     Block mergeBlocks(BlocksList & blocks, bool final);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
@@ -1088,7 +1090,7 @@ public:
     String getID() const;
 
     /// For external aggregation.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t rows);
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants);
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
@@ -1343,8 +1345,8 @@ protected:
         bool final,
         size_t bucket) const;
 
-    BlocksList prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
-    BlocksList prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
+    Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
+    Block prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
 
     template <typename Method>

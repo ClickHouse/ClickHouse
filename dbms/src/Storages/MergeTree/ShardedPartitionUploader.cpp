@@ -151,7 +151,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
     MergeTreeData::DataPartPtr part = findShardedPart(part_name, shard_no);
 
-    Poco::ScopedReadRWLock part_lock{part->columns_lock};
+    std::shared_lock<std::shared_mutex> part_lock{part->columns_lock};
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 

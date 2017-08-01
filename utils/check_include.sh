@@ -1,4 +1,5 @@
 #!/bin/sh
+# sudo apt install time
 # Small .h isolated compile checker
 # Finds missing #include <...>
 # prints compile time, number of includes, use with sort: ./check_include.sh 2>&1 | sort -rk3
@@ -36,9 +37,9 @@ inc="-I. \
 
 if [ -z $1 ]; then
     cd ..
-    find dbms libs utils -name *.h -exec sh $pwd/$0 {} \; ;
+    find dbms libs utils \( -name *.h -and -not -name *.inl.h \) -exec sh $pwd/$0 {} \; ;
 else
     echo -n "$1    "
     echo -n `grep "#include" $1| wc -l` "    "
-    echo -e "#include <$1> \n int main() {return 0;}" | bash -c "TIMEFORMAT='%3R'; time g++-6 -c -std=gnu++1z $inc -x c++ -"
+    echo -e "#include <$1> \n int main() {return 0;}" | time --format "%e %M" g++-6 -c -std=gnu++1z $inc -x c++ -
 fi

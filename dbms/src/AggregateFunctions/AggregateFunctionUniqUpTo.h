@@ -6,7 +6,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnsNumber.h>
-
+#include <IO/ReadHelpers.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

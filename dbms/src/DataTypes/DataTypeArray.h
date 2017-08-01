@@ -86,7 +86,6 @@ public:
     void deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
     Field getDefault() const override
     {

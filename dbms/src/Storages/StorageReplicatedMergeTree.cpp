@@ -24,7 +24,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
 
-#include <DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
 #include <DataStreams/copyData.h>
@@ -57,6 +56,7 @@ namespace ProfileEvents
     extern const Event ReplicatedPartFetchesOfMerged;
     extern const Event ObsoleteReplicatedParts;
     extern const Event ReplicatedPartFetches;
+    extern const Event DataAfterMergeDiffersFromReplica;
 }
 
 namespace DB
@@ -395,10 +395,9 @@ namespace
 
         String toString() const
         {
-            String res;
-            WriteBufferFromString out(res);
+            WriteBufferFromOwnString out;
             write(out);
-            return res;
+            return out.str();
         }
 
         void check(ReadBuffer & in) const
@@ -1093,6 +1092,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 {
                     do_fetch = true;
                     part->remove();
+
+                    ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
 
                     LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "
                         "Data after merge is not byte-identical to data on another replicas. "
@@ -2618,11 +2619,11 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(co
         block_number_lock.unlock();
     }
 
-    /// This should never happen.
+    /// Empty partition.
     if (right == 0)
-        throw Exception("Logical error: newly allocated block number is zero", ErrorCodes::LOGICAL_ERROR);
-    --right;
+        return {};
 
+    --right;
     return getFakePartNameCoveringPartRange(month_name, left, right);
 }
 
@@ -2636,6 +2637,12 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
 
     String month_name = MergeTreeData::getMonthName(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
+
+    if (fake_part_name.empty())
+    {
+        LOG_INFO(log, "Will not clear partition " << month_name << ", it is empty.");
+        return;
+    }
 
     /// We allocated new block number for this part, so new merges can't merge clearing parts with new ones
 
@@ -2670,6 +2677,12 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field
 
     String month_name = MergeTreeData::getMonthName(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(month_name);
+
+    if (fake_part_name.empty())
+    {
+        LOG_INFO(log, "Will not drop partition " << month_name << ", it is empty.");
+        return;
+    }
 
     /** Forbid to choose the parts to be deleted for merging.
       * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.

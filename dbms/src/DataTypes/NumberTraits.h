@@ -566,7 +566,7 @@ constexpr bool areSimilarPairs()
 template <typename A, typename B>
 constexpr bool isExceptionalPair()
 {
-    return    areSimilarPairs<A, B, Enriched::Int8, Enriched::UInt16>() ||
+    return areSimilarPairs<A, B, Enriched::Int8, Enriched::UInt16>() ||
         areSimilarPairs<A, B, Enriched::Int8, Enriched::UInt32>() ||
         areSimilarPairs<A, B, Enriched::Int16, Enriched::UInt16>() ||
         areSimilarPairs<A, B, Enriched::Int16, Enriched::UInt32>() ||
@@ -579,7 +579,7 @@ constexpr bool isExceptionalPair()
 template <typename A, typename B>
 constexpr bool isOrdinaryPair()
 {
-    return    std::is_same<typename std::tuple_element<1, A>::type, void>::value &&
+    return std::is_same<typename std::tuple_element<1, A>::type, void>::value &&
         std::is_same<typename std::tuple_element<1, B>::type, void>::value &&
         !isExceptionalPair<A, B>();
 }

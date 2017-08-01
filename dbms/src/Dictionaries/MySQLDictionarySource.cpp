@@ -1,6 +1,8 @@
+#include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/config.h>
+
 #if USE_MYSQL
 
 #include <common/logger_useful.h>
@@ -67,7 +69,7 @@ BlockInputStreamPtr MySQLDictionarySource::loadIds(const std::vector<UInt64> & i
 }
 
 BlockInputStreamPtr MySQLDictionarySource::loadKeys(
-    const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+    const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     /// We do not log in here and do not update the modification time, as the request can be large, and often called.
 
@@ -119,12 +121,9 @@ std::string MySQLDictionarySource::quoteForLike(const std::string s)
         tmp.push_back(c);
     }
 
-    std::string res;
-    {
-        WriteBufferFromString out(res);
-        writeQuoted(tmp, out);
-    }
-    return res;
+    WriteBufferFromOwnString out;
+    writeQuoted(tmp, out);
+    return out.str();
 }
 
 LocalDateTime MySQLDictionarySource::getLastModification() const
