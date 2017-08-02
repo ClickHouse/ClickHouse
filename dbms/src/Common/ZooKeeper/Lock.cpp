@@ -138,3 +138,8 @@ void Lock::unlockOrMoveIfFailed(std::vector<zkutil::Lock> & failed_to_unlock_loc
     }
 }
 
+void Lock::unlockAssumeLockNodeRemovedManually()
+{
+    locked.reset(nullptr);
+}
+
