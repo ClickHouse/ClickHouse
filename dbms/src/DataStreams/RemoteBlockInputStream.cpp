@@ -58,9 +58,21 @@ RemoteBlockInputStream::RemoteBlockInputStream(
 
     create_multiplexed_connections = [this, pool, throttler]()
     {
-        const QualifiedTableName * main_table_ptr = main_table ? &main_table.value() : nullptr;
+        const Settings & settings = context.getSettingsRef();
+
+        std::vector<IConnectionPool::Entry> connections;
+        if (main_table)
+        {
+            auto try_results = pool->getManyChecked(&settings, pool_mode, main_table.value());
+            connections.reserve(try_results.size());
+            for (auto & try_result : try_results)
+                connections.emplace_back(std::move(try_result.entry));
+        }
+        else
+            connections = pool->getMany(&settings, pool_mode);
+
         return std::make_unique<MultiplexedConnections>(
-                *pool, context.getSettingsRef(), throttler, append_extra_info, pool_mode, main_table_ptr);
+                std::move(connections), settings, throttler, append_extra_info);
     };
 }
 
