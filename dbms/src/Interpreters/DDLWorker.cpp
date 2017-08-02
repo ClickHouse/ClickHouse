@@ -920,6 +920,8 @@ public:
             waiting_hosts.emplace(host.toString());
 
         setTotalRowsApprox(entry.hosts.size());
+
+        timeout_seconds = context.getSettingsRef().distributed_ddl_task_timeout;
     }
 
     String getName() const override
@@ -931,8 +933,6 @@ public:
     {
         return "DDLQueryStatusInputSream(" + node_path + ")";
     }
-
-    static constexpr size_t timeout_seconds = 120;
 
     Block readImpl() override
     {
@@ -949,7 +949,7 @@ public:
                 return res;
 
             auto elapsed_seconds = watch.elapsedSeconds();
-            if (elapsed_seconds > timeout_seconds)
+            if (timeout_seconds >= 0 && elapsed_seconds > timeout_seconds)
                 throw Exception("Watching query is executing too long (" + toString(std::round(elapsed_seconds)) + " sec.)", ErrorCodes::TIMEOUT_EXCEEDED);
 
             if (num_hosts_finished != 0 || try_number != 0)
@@ -1051,6 +1051,8 @@ private:
     NameSet finished_hosts; /// finished hosts from host list
     NameSet ignoring_hosts; /// appeared hosts that are not in hosts list
     size_t num_hosts_finished = 0;
+
+    Int64 timeout_seconds = 120;
 };
 
 
@@ -1090,7 +1092,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, Context & context)
     String node_path = ddl_worker.enqueueQuery(entry);
 
     BlockIO io;
-    if (node_path.empty())
+    if (context.getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
     auto stream = std::make_shared<DDLQueryStatusInputSream>(node_path, entry, context);
