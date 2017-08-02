@@ -59,7 +59,7 @@ private:
 
 
     /// Checks and cleanups queue's nodes
-    void cleanupQueue(const Strings * node_names_to_check = nullptr);
+    void cleanupQueue();
 
 
     void createStatusDirs(const std::string & node_name);
@@ -93,10 +93,12 @@ private:
 
     size_t last_cleanup_time_seconds = 0;
 
-    /// Delete node if its age is greater than that
-    size_t task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
     size_t cleanup_delay_period = 60; // minute (in seconds)
+    /// Delete node if its age is greater than that
+    size_t task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
+    /// How many tasks could be in the queue
+    size_t max_tasks_in_queue = 1000;
 
     friend class DDLQueryStatusInputSream;
     friend class DDLTask;

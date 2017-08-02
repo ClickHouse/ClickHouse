@@ -56,6 +56,15 @@ class PartitionManager:
             rule = self._iptables_rules.pop()
             _NetworkManager.get().delete_iptables_rule(**rule)
 
+    def pop_rules(self):
+        res = self._iptables_rules[:]
+        self.heal_all()
+        return res
+
+    def push_rules(self, rules):
+        for rule in rules:
+            self._add_rule(rule)
+
 
     @staticmethod
     def _check_instance(instance):
@@ -75,6 +84,18 @@ class PartitionManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.heal_all()
+
+
+class PartitionManagerDisbaler:
+    def __init__(self, manager):
+        self.manager = manager
+        self.rules = self.manager.pop_rules()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.manager.push_rules(self.rules)
 
 
 class _NetworkManager:

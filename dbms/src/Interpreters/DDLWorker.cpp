@@ -49,8 +49,9 @@ namespace ErrorCodes
     extern const int INCONSISTENT_TABLE_ACCROSS_SHARDS;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int UNFINISHED;
     extern const int UNKNOWN_TYPE_OF_QUERY;
+    extern const int UNFINISHED;
+    extern const int UNKNOWN_STATUS_OF_DISTRIBUTED_DDL_TASK;
 }
 
 
@@ -189,6 +190,15 @@ struct DDLTask
 };
 
 
+static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
+    std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
+{
+    auto zookeeper_holder = std::make_shared<zkutil::ZooKeeperHolder>();
+    zookeeper_holder->initFromInstance(zookeeper);
+    return std::make_unique<zkutil::Lock>(std::move(zookeeper_holder), lock_prefix, lock_name, lock_message);
+}
+
+
 static bool isSupportedAlterType(int type)
 {
     static const std::unordered_set<int> supported_alter_types{
@@ -214,6 +224,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
     {
         task_max_lifetime = config->getUInt64(prefix + "task_max_lifetime", task_max_lifetime);
         cleanup_delay_period = config->getUInt64(prefix + "cleanup_delay_period", cleanup_delay_period);
+        max_tasks_in_queue = std::max(1UL, config->getUInt64(prefix + "max_tasks_in_queue ", max_tasks_in_queue));
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -301,18 +312,24 @@ bool DDLWorker::initAndCheckTask(const String & entry_name)
 }
 
 
+static void filterAndSortQueueNodes(Strings & all_nodes)
+{
+    all_nodes.erase(std::remove_if(all_nodes.begin(), all_nodes.end(), [] (const String & s) { return !startsWith(s, "query-"); }), all_nodes.end());
+    std::sort(all_nodes.begin(), all_nodes.end());
+}
+
+
 void DDLWorker::processTasks()
 {
     LOG_DEBUG(log, "Processing tasks");
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, event_queue_updated);
-    queue_nodes.erase(std::remove_if(queue_nodes.begin(), queue_nodes.end(), [&] (const String & s) { return !startsWith(s, "query-"); }), queue_nodes.end());
+    filterAndSortQueueNodes(queue_nodes);
     if (queue_nodes.empty())
         return;
 
     bool server_startup = last_processed_task_name.empty();
 
-    std::sort(queue_nodes.begin(), queue_nodes.end());
     auto begin_node = server_startup
         ? queue_nodes.begin()
         : std::upper_bound(queue_nodes.begin(), queue_nodes.end(), last_processed_task_name);
@@ -434,7 +451,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         return;
 
     LOG_WARNING(log, "Not found the exact match of host " << task.host_id.readableString() << " from task " << task.entry_name
-        << " in " << " cluster " << task.cluster_name << " definition. Will try to find it using host name resolving.");
+        << " in cluster " << task.cluster_name << " definition. Will try to find it using host name resolving.");
 
     bool found_via_resolving = false;
     for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
@@ -505,12 +522,25 @@ void DDLWorker::processTask(DDLTask & task)
 {
     LOG_DEBUG(log, "Processing task " << task.entry_name << " (" << task.entry.query << ")");
 
-    createStatusDirs(task.entry_path);
-
+    String dummy;
     String active_node_path = task.entry_path + "/active/" + task.host_id_str;
-    auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral);
-    if (code != ZOK && code != ZNODEEXISTS)
+    String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
+
+    auto code = zookeeper->tryCreateWithRetries(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
+    if (code == ZOK || code == ZNODEEXISTS)
+    {
+        // Ok
+    }
+    else if (code == ZNONODE)
+    {
+        /// There is no parent
+        createStatusDirs(task.entry_path);
+        if (ZOK != zookeeper->tryCreateWithRetries(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
+            throw zkutil::KeeperException(code, active_node_path);
+    }
+    else
         throw zkutil::KeeperException(code, active_node_path);
+
 
     if (!task.was_executed)
     {
@@ -548,13 +578,10 @@ void DDLWorker::processTask(DDLTask & task)
 
     /// Delete active flag and create finish flag
     zkutil::Ops ops;
-    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(task.entry_path + "/active/" + task.host_id_str, -1));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(task.entry_path + "/finished/" + task.host_id_str,
-        task.execution_status.serializeText(), zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
-
-    code = zookeeper->tryMulti(ops);
-    if (code != ZOK)
-        throw zkutil::KeeperException("Cannot commit executed task to ZooKeeper " + task.entry_name, code);
+    ops.emplace_back(std::make_unique<zkutil::Op::Remove>(active_node_path, -1));
+    ops.emplace_back(std::make_unique<zkutil::Op::Create>(finished_node_path, task.execution_status.serializeText(),
+                                                          zookeeper->getDefaultACL(), zkutil::CreateMode::Persistent));
+    zookeeper->multi(ops);
 }
 
 
@@ -617,10 +644,7 @@ void DDLWorker::processTaskAlter(
 
         bool alter_executed_by_replica = false;
         {
-            auto zookeeper_holder = std::make_shared<zkutil::ZooKeeperHolder>();
-            zookeeper_holder->initFromInstance(zookeeper);
-
-            zkutil::Lock lock(zookeeper_holder, shard_path, "lock", task.host_id_str);
+            auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
             std::mt19937 rng(std::hash<String>{}(task.host_id_str) + reinterpret_cast<intptr_t>(&rng));
 
             for (int num_tries = 0; num_tries < 10; ++num_tries)
@@ -631,7 +655,7 @@ void DDLWorker::processTaskAlter(
                     break;
                 }
 
-                if (lock.tryLock())
+                if (lock->tryLock())
                 {
                     tryExecuteQuery(rewritten_query, task, task.execution_status);
 
@@ -641,7 +665,7 @@ void DDLWorker::processTaskAlter(
                     }
 
                     zookeeper->create(is_executed_path, task.host_id_str, zkutil::CreateMode::Persistent);
-                    lock.unlock();
+                    lock->unlock();
                     alter_executed_by_replica = true;
                     break;
                 }
@@ -660,7 +684,7 @@ void DDLWorker::processTaskAlter(
 }
 
 
-void DDLWorker::cleanupQueue(const Strings * node_names_to_check)
+void DDLWorker::cleanupQueue()
 {
     /// Both ZK and Poco use Unix epoch
     size_t current_time_seconds = Poco::Timestamp().epochTime();
@@ -674,111 +698,70 @@ void DDLWorker::cleanupQueue(const Strings * node_names_to_check)
 
     LOG_DEBUG(log, "Cleaning queue");
 
-    Strings node_names_fetched = node_names_to_check ? Strings{} : zookeeper->getChildren(queue_dir);
-    const Strings & node_names = (node_names_to_check) ? *node_names_to_check : node_names_fetched;
+    Strings queue_nodes = zookeeper->getChildren(queue_dir);
+    filterAndSortQueueNodes(queue_nodes);
 
-    for (const String & node_name : node_names)
+    size_t num_outdated_nodes = (queue_nodes.size() > max_tasks_in_queue) ? queue_nodes.size() - max_tasks_in_queue : 0;
+    auto first_non_outdated_node = queue_nodes.begin() + num_outdated_nodes;
+
+    for (auto it = queue_nodes.cbegin(); it < queue_nodes.cend(); ++it)
     {
+        String node_name = *it;
         String node_path = queue_dir + "/" + node_name;
-        String lock_path = node_path + "/lock_write"; /// per-node lock to avoid concurrent cleaning
-        bool node_was_deleted = false;
+        String lock_path = node_path + "/lock";
 
-        auto delete_node = [&] ()
-        {
-            Strings childs = zookeeper->getChildren(node_path);
-            for (const String & child : childs)
-            {
-                if (child != "lock_write")
-                    zookeeper->removeRecursive(node_path + "/" + child);
-            }
-
-            zkutil::Ops ops;
-            ops.emplace_back(std::make_unique<zkutil::Op::Remove>(lock_path, -1));
-            ops.emplace_back(std::make_unique<zkutil::Op::Remove>(node_path, -1));
-            zookeeper->multi(ops);
-
-            node_was_deleted = true;
-        };
+        zkutil::Stat stat;
+        String dummy;
 
         try
         {
-            zkutil::Ops ops;
-            ops.emplace_back(std::make_unique<zkutil::Op::Check>(node_path, -1));
-            ops.emplace_back(std::make_unique<zkutil::Op::Create>(lock_path, host_fqdn_id, zookeeper->getDefaultACL(),
-                                                                  zkutil::CreateMode::Ephemeral));
-            auto code = zookeeper->tryMulti(ops);
-            if (code != ZOK)
+            /// To avoid concurrent checks and cleans
+            auto lock = createSimpleZooKeeperLock(zookeeper, node_path, "lock", host_fqdn_id);
+            if (!lock->tryLock())
+                continue;
+
+            auto delete_node = [&] ()
             {
-                if (code == ZNONODE)
+                Strings childs = zookeeper->getChildren(node_path);
+                for (const String & child : childs)
                 {
-                    /// Task node was deleted
-                    continue;
+                    if (child != "lock")
+                        zookeeper->tryRemoveRecursive(node_path + "/" + child);
                 }
-                else if (code == ZNODEEXISTS)
-                {
-                    /// Is it our lock?
-                    String owner;
-                    if (!zookeeper->tryGet(lock_path, owner) || owner != host_fqdn_id)
-                        continue;
-                }
-                else
-                    throw zkutil::KeeperException(code);
+
+                /// Remove the lock node and its parent atomically
+                zkutil::Ops ops;
+                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(lock_path, -1));
+                ops.emplace_back(std::make_unique<zkutil::Op::Remove>(node_path, -1));
+                zookeeper->multi(ops);
+
+                lock->unlockAssumeLockNodeRemovedManually();
+            };
+
+            /// Skip if there are active nodes (it is weak guard)
+            if (zookeeper->tryGet(node_path + "/active", dummy, &stat) && stat.numChildren > 0)
+                continue;
+
+            /// Delete if too many (max_tasks_in_queue) task in queue
+            if (it < first_non_outdated_node)
+            {
+                LOG_INFO(log, "Task " << node_name << " is outdated, deleting it");
+
+                delete_node();
+                continue;
             }
 
-            SCOPE_EXIT({
-                if (!node_was_deleted && !zookeeper->expired())
-                {
-                    try
-                    {
-                        zookeeper->tryRemoveWithRetries(lock_path, -1);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, "Can't remove lock for cleaning");
-                    }
-                }
-            });
-
-            zkutil::Stat stat;
-            String node_data = zookeeper->get(node_path, &stat);
-
+            zookeeper->get(node_path, &stat);
             size_t zookeeper_time_seconds = stat.mtime / zookeeper_time_resolution;
+
+            /// Delte if node lifetmie (task_max_lifetime) is expired
             if (zookeeper_time_seconds + task_max_lifetime < current_time_seconds)
             {
                 size_t lifetime_seconds = current_time_seconds - zookeeper_time_seconds;
                 LOG_INFO(log, "Lifetime of task " << node_name << " (" << lifetime_seconds << " sec.) is expired, deleting it");
+
                 delete_node();
                 continue;
-            }
-
-            Strings active_hosts = zookeeper->getChildren(node_path + "/active");
-            if (!active_hosts.empty())
-                continue;
-
-            Strings finished_hosts = zookeeper->getChildren(node_path + "/finished");
-            DDLLogEntry entry;
-            entry.parse(node_data);
-
-            /// Not all nodes were finished
-            if (finished_hosts.size() < entry.hosts.size())
-                continue;
-
-            /// Could be childs that are not from host list
-            bool all_finished = true;
-            NameSet finished_hosts_set(finished_hosts.begin(), finished_hosts.end());
-            for (const HostID & host : entry.hosts)
-            {
-                if (!finished_hosts_set.count(host.toString()))
-                {
-                    all_finished = false;
-                    break;
-                }
-            }
-
-            if (all_finished)
-            {
-                LOG_INFO(log, "Task " << node_name << " had been executed by each host, deleting it");
-                delete_node();
             }
         }
         catch (...)
@@ -806,13 +789,35 @@ void DDLWorker::createStatusDirs(const std::string & node_path)
 String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 {
     if (entry.hosts.empty())
-        return {};
+        throw Exception("Empty host list in a distributed DDL task", ErrorCodes::LOGICAL_ERROR);
 
     String query_path_prefix = queue_dir + "/query-";
     zookeeper->createAncestors(query_path_prefix);
 
-    String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
-    createStatusDirs(node_path);
+    String node_path;
+    try
+    {
+        node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        /// TODO: This condition could be relaxed with additional post-checks
+        if (e.isTemporaryError())
+            throw Exception("Unknown status of distributed DDL task", ErrorCodes::UNKNOWN_STATUS_OF_DISTRIBUTED_DDL_TASK);
+
+        throw;
+    }
+
+    /// Optional step
+    try
+    {
+        createStatusDirs(node_path);
+    }
+    catch (...)
+    {
+        LOG_INFO(log, "An error occurred while creating auxiliary ZooKeeper directories in " << node_path << " . They will be created later"
+            << ". Error : " << getCurrentExceptionMessage(true));
+    }
 
     return node_path;
 }

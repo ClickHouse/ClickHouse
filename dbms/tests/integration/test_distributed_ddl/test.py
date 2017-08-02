@@ -4,7 +4,7 @@ import datetime
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
+from helpers.network import PartitionManager, PartitionManagerDisbaler
 from helpers.test_tools import TSV
 
 
@@ -17,9 +17,9 @@ def check_all_hosts_sucesfully_executed(tsv_content, num_hosts=None):
     codes = [l[2] for l in M]
     messages = [l[3] for l in M]
 
-    assert len(hosts) == num_hosts and len(set(hosts)) == num_hosts, tsv_content
-    assert len(set(codes)) == 1, tsv_content
-    assert codes[0] == "0", tsv_content
+    assert len(hosts) == num_hosts and len(set(hosts)) == num_hosts, "\n" + tsv_content
+    assert len(set(codes)) == 1, "\n" + tsv_content
+    assert codes[0] == "0", "\n" + tsv_content
 
 
 def ddl_check_query(instance, query, num_hosts=None):
@@ -50,8 +50,19 @@ TEST_REPLICATED_ALTERS=True
 cluster = ClickHouseCluster(__file__)
 
 
-@pytest.fixture(scope="module")
-def started_cluster():
+def replace_domains_to_ip_addresses_in_cluster_config(instances_to_replace):
+    clusters_config = open(p.join(cluster.base_dir, 'configs/config.d/clusters.xml')).read()
+
+    for inst_name, inst in cluster.instances.items():
+        clusters_config = clusters_config.replace(inst_name, str(inst.ip_address))
+
+    for inst_name in instances_to_replace:
+        inst = cluster.instances[inst_name]
+        cluster.instances[inst_name].exec_in_container(['bash', '-c', 'echo "$NEW_CONFIG" > /etc/clickhouse-server/config.d/clusters.xml'], environment={"NEW_CONFIG": clusters_config}, privileged=True)
+        # print cluster.instances[inst_name].exec_in_container(['cat', "/etc/clickhouse-server/config.d/clusters.xml"])
+
+
+def init_cluster(cluster):
     try:
         for i in xrange(4):
             cluster.add_instance(
@@ -62,15 +73,19 @@ def started_cluster():
 
         cluster.start()
 
+        # Replace config files for testing ability to set host in DNS and IP formats
+        replace_domains_to_ip_addresses_in_cluster_config(['ch1', 'ch3'])
+
         # Select sacrifice instance to test CONNECTION_LOSS and server fail on it
         sacrifice = cluster.instances['ch4']
         cluster.pm_random_drops = PartitionManager()
-        cluster.pm_random_drops._add_rule({'probability': 0.05, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
-        cluster.pm_random_drops._add_rule({'probability': 0.05, 'source': sacrifice.ip_address, 'destination_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
+        cluster.pm_random_drops._add_rule({'probability': 0.01, 'destination': sacrifice.ip_address, 'source_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
+        cluster.pm_random_drops._add_rule({'probability': 0.01, 'source': sacrifice.ip_address, 'destination_port': 2181, 'action': 'REJECT --reject-with tcp-reset'})
 
         # Initialize databases and service tables
         instance = cluster.instances['ch1']
 
+        instance.query("SELECT 1")
         ddl_check_query(instance, """
 CREATE TABLE IF NOT EXISTS all_tables ON CLUSTER 'cluster_no_replicas'
     (database String, name String, engine String, metadata_modification_time DateTime)
@@ -79,19 +94,30 @@ CREATE TABLE IF NOT EXISTS all_tables ON CLUSTER 'cluster_no_replicas'
 
         ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS test ON CLUSTER 'cluster'")
 
+    except Exception as e:
+        print e
+        raise
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        init_cluster(cluster)
+
         yield cluster
 
+        instance = cluster.instances['ch1']
         ddl_check_query(instance, "DROP DATABASE test ON CLUSTER 'cluster'")
         ddl_check_query(instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'")
-
-    finally:
-        # Remove iptables rules for sacrifice instance
-        cluster.pm_random_drops.heal_all()
 
         # Check query log to ensure that DDL queries are not executed twice
         time.sleep(1.5)
         for instance in cluster.instances.values():
             ddl_check_there_are_no_dublicates(instance)
+
+    finally:
+        # Remove iptables rules for sacrifice instance
+        cluster.pm_random_drops.heal_all()
 
         #cluster.shutdown()
 
@@ -163,10 +189,14 @@ def test_replicated_alters(started_cluster):
     if not TEST_REPLICATED_ALTERS:
         return
 
+    # Temporarily disable random ZK packet drops, they might broke creation if ReplicatedMergeTree replicas
+    firewall_drops_rules = cluster.pm_random_drops.pop_rules()
+
     ddl_check_query(instance, """
 CREATE TABLE IF NOT EXISTS merge ON CLUSTER cluster (p Date, i Int32)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', p, p, 1)
 """)
+
     ddl_check_query(instance, """
 CREATE TABLE IF NOT EXISTS all_merge_32 ON CLUSTER cluster (p Date, i Int32)
 ENGINE = Distributed(cluster, default, merge, i)
@@ -200,6 +230,10 @@ ENGINE = Distributed(cluster, default, merge, i)
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(4)]))
 
     ddl_check_query(instance, "DROP TABLE merge ON CLUSTER cluster")
+
+    # Enable random ZK packet drops
+    cluster.pm_random_drops.push_rules(firewall_drops_rules)
+
     ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER cluster")
     ddl_check_query(instance, "DROP TABLE all_merge_64 ON CLUSTER cluster")
 
