@@ -136,6 +136,14 @@ def test_default_database(started_cluster):
     ddl_check_query(instance, "DROP DATABASE IF EXISTS test2 ON CLUSTER 'cluster'")
 
 
+def test_create_view(started_cluster):
+    instance = cluster.instances['ch3']
+    ddl_check_query(instance, "CREATE VIEW test.super_simple_view ON CLUSTER 'cluster' AS SELECT * FROM system.numbers")
+    ddl_check_query(instance, "CREATE MATERIALIZED VIEW test.simple_mat_view ON CLUSTER 'cluster' ENGINE = Memory AS SELECT * FROM system.numbers")
+    ddl_check_query(instance, "DROP TABLE test.simple_mat_view ON CLUSTER 'cluster'")
+    ddl_check_query(instance, "DROP TABLE test.super_simple_view ON CLUSTER 'cluster'")
+
+
 def test_on_server_fail(started_cluster):
     instance = cluster.instances['ch1']
     kill_instance = cluster.instances['ch2']
