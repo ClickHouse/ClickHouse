@@ -3,6 +3,7 @@
 #include <lz4.h>
 #include <lz4hc.h>
 #include <zstd.h>
+#include <string.h>
 
 #include <common/unaligned.h>
 #include <Core/Types.h>
@@ -94,6 +95,25 @@ void CompressedWriteBuffer::nextImpl()
 
             unalignedStore(&compressed_buffer[1], compressed_size_32);
             unalignedStore(&compressed_buffer[5], uncompressed_size_32);
+
+            compressed_buffer_ptr = &compressed_buffer[0];
+            break;
+        }
+        case CompressionMethod::NONE:
+        {
+            static constexpr size_t header_size = 1 + sizeof (UInt32) + sizeof (UInt32);
+
+            compressed_size = header_size + uncompressed_size;
+            UInt32 uncompressed_size_32 = uncompressed_size;
+            UInt32 compressed_size_32 = compressed_size;
+
+            compressed_buffer.resize(compressed_size);
+
+            compressed_buffer[0] = static_cast<UInt8>(CompressionMethodByte::NONE);
+
+            unalignedStore(&compressed_buffer[1], compressed_size_32);
+            unalignedStore(&compressed_buffer[5], uncompressed_size_32);
+            memcpy(&compressed_buffer[9], working_buffer.begin(), uncompressed_size);
 
             compressed_buffer_ptr = &compressed_buffer[0];
             break;

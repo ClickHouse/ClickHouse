@@ -620,8 +620,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, Limits(), 0 /*limit_hint*/, Names());
 
     auto compression_method = data.context.chooseCompressionMethod(
-        merge_entry->total_size_bytes_compressed,
-        static_cast<double>(merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+            merge_entry->total_size_bytes_compressed,
+            static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
     MergedBlockOutputStream to{
         data, new_part_tmp_path, merging_columns, compression_method, merged_column_to_size, aio_threshold};

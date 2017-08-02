@@ -60,7 +60,7 @@ void TabSeparatedRowInputStream::readPrefix()
 }
 
 
- /** Check for a common error case - usage of Windows line feed.
+/** Check for a common error case - usage of Windows line feed.
   */
 static void checkForCarriageReturn(ReadBuffer & istr)
 {
@@ -75,12 +75,12 @@ static void checkForCarriageReturn(ReadBuffer & istr)
 
 bool TabSeparatedRowInputStream::read(Block & block)
 {
+    if (istr.eof())
+        return false;
+
     updateDiagnosticInfo();
 
     size_t size = data_types.size();
-
-    if (istr.eof())
-        return false;
 
     for (size_t i = 0; i < size; ++i)
     {
@@ -307,15 +307,17 @@ void TabSeparatedRowInputStream::syncAfterError()
 {
     skipToUnescapedNextLineOrEOF(istr);
 }
+
+
 void TabSeparatedRowInputStream::updateDiagnosticInfo()
-    {
-        ++row_num;
+{
+    ++row_num;
 
-        bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
-        bytes_read_at_start_of_buffer_on_current_row = istr.count() - istr.offset();
+    bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
+    bytes_read_at_start_of_buffer_on_current_row = istr.count() - istr.offset();
 
-        pos_of_prev_row = pos_of_current_row;
-        pos_of_current_row = istr.position();
-    }
+    pos_of_prev_row = pos_of_current_row;
+    pos_of_current_row = istr.position();
+}
 
 }
