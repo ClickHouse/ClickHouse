@@ -68,6 +68,10 @@ target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOUR
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
 
+if (USE_VECTORCLASS)
+    target_include_directories (clickhouse_functions BEFORE PUBLIC ${VECTORCLASS_INCLUDE_DIR})
+endif ()
+
 if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()
