@@ -421,7 +421,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
             + " in cluster " + task.cluster_name + ", but there are no such cluster here.", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
 
-    /// Try find host from task host list in cluster
+    /// Try to find host from task host list in cluster
     /// At the first, try find exact match (host name and ports should be literally equal)
     /// If the attempt fails, try find it resolving host name of each instance
     const auto & shards = task.cluster->getShardsWithFailoverAddresses();
@@ -629,16 +629,20 @@ void DDLWorker::processTaskAlter(
         if (!context.getSettingsRef().distributed_ddl_allow_replicated_alter)
             throw Exception("Distributed DDL alters don't work properly yet", ErrorCodes::NOT_IMPLEMENTED);
 
+        /// Generate unique name for shard node, it will be used to execute the query by only single host
+        /// Shard node name has format 'replica_name1,replica_name2,...,replica_nameN'
+        /// Where replica_name is 'escape(replica_ip_address):replica_port'
+        /// FIXME: this replica_name could be changed after replica restart
         Strings replica_names;
-        for (const auto & address : task.cluster->getShardsAddresses().at(task.host_shard_num))
-            replica_names.emplace_back(address.toString());
+        for (const Cluster::Address & address : task.cluster->getShardsAddresses().at(task.host_shard_num))
+            replica_names.emplace_back(address.resolved_address.host().toString());
         std::sort(replica_names.begin(), replica_names.end());
 
-        String shard_dir_name;
+        String shard_node_name;
         for (auto it = replica_names.begin(); it != replica_names.end(); ++it)
-            shard_dir_name += *it + (std::next(it) != replica_names.end() ? "," : "");
+            shard_node_name += *it + (std::next(it) != replica_names.end() ? "," : "");
 
-        String shard_path = node_path + "/shards/" + shard_dir_name;
+        String shard_path = node_path + "/shards/" + shard_node_name;
         String is_executed_path = shard_path + "/executed";
         zookeeper->createAncestors(shard_path + "/");
 
