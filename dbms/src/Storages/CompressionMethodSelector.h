@@ -51,6 +51,8 @@ private:
                 method = CompressionMethod::LZ4;
             else if (name == "zstd")
                 method = CompressionMethod::ZSTD;
+            else if (name == "none")
+              method = CompressionMethod::NONE;
             else
                 throw Exception("Unknown compression method " + name, ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
         }

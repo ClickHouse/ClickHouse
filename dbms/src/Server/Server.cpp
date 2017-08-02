@@ -18,6 +18,8 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <common/getMemoryAmount.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ClickHouseRevision.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ProcessList.h>
@@ -46,9 +48,15 @@
 #include <TableFunctions/registerTableFunctions.h>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric Revision;
+}
+
 namespace DB
 {
-namespace ErrorCodes
+
+    namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
@@ -220,6 +228,8 @@ int Server::main(const std::vector<std::string> & args)
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+
+    CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
