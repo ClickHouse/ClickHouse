@@ -21,7 +21,7 @@ add_library(cctz
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
     # yes, need linux, because bsd check inside linux in time_zone_libc.cc:24
-    target_compile_definitions (cctz INTERFACE __USE_BSD linux _XOPEN_SOURCE=600)
+    target_compile_definitions (cctz PRIVATE __USE_BSD linux _XOPEN_SOURCE=600)
 endif ()
 
 target_include_directories (cctz PUBLIC include)
