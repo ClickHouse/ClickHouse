@@ -16,9 +16,6 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         set (Boost_SYSTEM_LIBRARY "")
     endif ()
 
-    if (Boost_INCLUDE_DIRS)
-        include_directories (${Boost_INCLUDE_DIRS})
-    endif ()
 endif ()
 
 if (NOT Boost_SYSTEM_LIBRARY)
@@ -28,7 +25,6 @@ if (NOT Boost_SYSTEM_LIBRARY)
     set (Boost_SYSTEM_LIBRARY boost_system_internal)
     set (Boost_FILESYSTEM_LIBRARY boost_filesystem_internal)
     set (Boost_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/libboost/boost_1_62_0/")
-    include_directories (BEFORE ${Boost_INCLUDE_DIRS})
 endif ()
 
 message (STATUS "Using Boost: ${Boost_INCLUDE_DIRS} : ${Boost_PROGRAM_OPTIONS_LIBRARY},${Boost_SYSTEM_LIBRARY},${Boost_FILESYSTEM_LIBRARY}")
