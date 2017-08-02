@@ -291,7 +291,9 @@ struct Settings
     /** Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. \
      *  Zero value means no timeout. \
      */ \
-    M(SettingUInt64, insert_distributed_timeout, 0)
+    M(SettingUInt64, insert_distributed_timeout, 0) \
+    /* Timeout for DDL query responses from all hosts in cluster. Negative value means infinite. */ \
+    M(SettingInt64, distributed_ddl_task_timeout, 120)
 
 
     /// Possible limits for query execution.
