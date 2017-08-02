@@ -75,6 +75,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else if (s_format.ignore(pos, expected))
     {
+        auto name_pos = pos;
+
         if (!name_p.parse(pos, format, expected))
             return false;
 
@@ -88,7 +90,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 "Note that there is no ';' in first line.", ErrorCodes::SYNTAX_ERROR);
 
         /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
-        data = pos->begin;
+
+        data = name_pos->end;
 
         while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
             ++data;
