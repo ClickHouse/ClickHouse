@@ -3,6 +3,7 @@
 #include <Common/SharedLibrary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/ExternalResultDescription.h>
 
 #include <iostream>
 
@@ -14,7 +15,7 @@ class Logger;
 
 namespace DB
 {
-    class OneBlockInputStream : public IBlockInputStream
+    /*class OneBlockInputStream : public IBlockInputStream
     {
         Block block;
     public:
@@ -25,7 +26,7 @@ namespace DB
         String getName() const override { return "OneBlock"; }
         
         //String getID() const override;
-    };
+    };*/
     
     /// Allows loading dictionaries from .so
 class LibDictionarySource final : public IDictionarySource
@@ -64,5 +65,6 @@ private:
     Block sample_block;
     const Context & context;
     SharedLibraryPtr library;
+    ExternalResultDescription description;
 };
 }

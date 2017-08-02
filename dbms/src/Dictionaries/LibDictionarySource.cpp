@@ -9,7 +9,8 @@
 
 //dev:
 #include <Common/iostream_debug_helpers.h>
-#include <DataStreams/NullBlockInputStream.h>
+//#include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 
 
 namespace DB
@@ -37,6 +38,7 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
         LOG_ERROR(log, "LibDictionarySource: Cant load lib " << toString() << " : " << Poco::File(filename).path());
         //throw;
     }
+    description.init(sample_block);
     library = std::make_shared<SharedLibrary>(filename);
 }
 
@@ -86,7 +88,11 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     //if (fptr)
     //    fptr();
 
-    return std::make_shared<OneBlockInputStream>(std::move(Block()));
+    //return std::make_shared<OneBlockInputStream>(std::move(Block()));
+    auto block = description.sample_block.cloneEmpty();
+    return std::make_shared<OneBlockInputStream>(std::move(block));
+
+    //return std::make_shared<OneBlockInputStream>(block);
 }
 
 BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -144,7 +150,11 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     */
 
     //return std::make_shared<NullBlockInputStream>();
-    return std::make_shared<OneBlockInputStream>(std::move(Block()));
+    //return std::make_shared<OneBlockInputStream>(std::move(Block()));
+    auto block = description.sample_block.cloneEmpty();
+    std::cerr << "blout=" << block << "\n";
+    return std::make_shared<OneBlockInputStream>(std::move(block));
+    //return std::make_shared<OneBlockInputStream>(block);
 }
 
 BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
@@ -200,7 +210,8 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
         fptr(requested_rows);
     */
 
-    return std::make_shared<NullBlockInputStream>();
+    //return std::make_shared<NullBlockInputStream>();
+    return std::make_shared<OneBlockInputStream>(Block());
 }
 
 bool LibDictionarySource::isModified() const
