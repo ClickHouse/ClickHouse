@@ -191,9 +191,6 @@ struct Settings
     M(SettingUInt64, select_sequential_consistency, 0) \
     /** The maximum number of different shards and the maximum number of replicas of one shard in the `remote` function. */ \
     M(SettingUInt64, table_function_remote_max_addresses, 1000) \
-    /** Maximum number of threads for distributed processing of one query */ \
-    M(SettingUInt64, max_distributed_processing_threads, 8) \
-    \
     /** Settings to reduce the number of threads in case of slow reads. */ \
     /** Pay attention only to readings that took at least that much time. */ \
     M(SettingMilliseconds,     read_backoff_min_latency_ms, 1000) \
