@@ -103,7 +103,7 @@ BlockInputStreams StorageSystemDictionaries::read(
             col_hit_rate.column->insert(dict_ptr->getHitRate());
             col_element_count.column->insert(dict_ptr->getElementCount());
             col_load_factor.column->insert(dict_ptr->getLoadFactor());
-            col_creation_time.column->insert(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime()));
+            col_creation_time.column->insert(static_cast<UInt32>(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime())));
             col_source.column->insert(dict_ptr->getSource()->toString());
         }
         else
