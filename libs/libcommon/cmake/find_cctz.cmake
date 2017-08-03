@@ -6,11 +6,9 @@ if (NOT USE_INTERNAL_CCTZ_LIBRARY)
 endif ()
 
 if (CCTZ_LIBRARY AND CCTZ_INCLUDE_DIR)
-    #include_directories (${CCTZ_INCLUDE_DIR})
 else ()
     set (USE_INTERNAL_CCTZ_LIBRARY 1)
     set (CCTZ_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libcctz/include")
-    #include_directories (BEFORE ${CCTZ_INCLUDE_DIR})
     set (CCTZ_LIBRARY cctz)
 endif ()
 

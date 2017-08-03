@@ -1,5 +1,3 @@
-include_directories (include)
-
 add_library (daemon
     src/BaseDaemon.cpp
     src/GraphiteWriter.cpp
@@ -11,10 +9,12 @@ add_library (daemon
 )
 
 if (USE_UNWIND)
+    target_compile_definitions (daemon PRIVATE USE_UNWIND=1)
     target_include_directories (daemon BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
-    add_definitions(-DUSE_UNWIND=1)
     target_link_libraries (daemon ${UNWIND_LIBRARY})
 endif ()
 
-target_link_libraries (daemon dbms)
+target_include_directories (daemon PUBLIC include)
 target_include_directories (daemon PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)
+
+target_link_libraries (daemon dbms)
