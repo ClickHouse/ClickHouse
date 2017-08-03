@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
-ASTAlterQuery::Parameters::Parameters() : type(NO_TYPE) {}
+ASTAlterQuery::Parameters::Parameters() {}
 
 void ASTAlterQuery::Parameters::clone(Parameters & p) const
 {
@@ -42,7 +42,7 @@ void ASTAlterQuery::addParameters(const Parameters & params)
         children.push_back(params.primary_key);
 }
 
-ASTAlterQuery::ASTAlterQuery(StringRange range_) : IAST(range_)
+ASTAlterQuery::ASTAlterQuery(StringRange range_) : ASTQueryWithOutput(range_)
 {
 }
 
@@ -57,13 +57,14 @@ ASTPtr ASTAlterQuery::clone() const
     auto res = std::make_shared<ASTAlterQuery>(*this);
     for (ParameterContainer::size_type i = 0; i < parameters.size(); ++i)
         parameters[i].clone(res->parameters[i]);
+    cloneOutputOptions(*res);
     return res;
 }
 
 ASTPtr ASTAlterQuery::getRewrittenASTWithoutOnCluster(const std::string & new_database) const
 {
     auto query_ptr = clone();
-    ASTAlterQuery & query = static_cast<ASTAlterQuery &>(*query_ptr);
+    auto & query = static_cast<ASTAlterQuery &>(*query_ptr);
 
     query.cluster.clear();
     if (query.database.empty())
@@ -72,11 +73,11 @@ ASTPtr ASTAlterQuery::getRewrittenASTWithoutOnCluster(const std::string & new_da
     return query_ptr;
 }
 
-void ASTAlterQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
 
