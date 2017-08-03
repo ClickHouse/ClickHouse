@@ -568,7 +568,20 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
 OpResultsPtr ZooKeeper::multi(const Ops & ops)
 {
     OpResultsPtr results;
-    check(tryMulti(ops, &results));
+    int code = tryMulti(ops, &results);
+    if (code != ZOK)
+    {
+        if (results && results->size() == ops.size())
+        {
+            for (size_t i = 0; i < ops.size(); ++i)
+            {
+                if (results->at(i).err == code)
+                    throw KeeperException("multi() failed at op #" + std::to_string(i) + ", " + ops[i]->describe(), code);
+            }
+        }
+
+        throw KeeperException(code);
+    }
     return results;
 }
 
