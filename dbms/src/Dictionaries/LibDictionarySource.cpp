@@ -71,8 +71,8 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
         columns.data[i] = a.name.c_str();
         ++i;
     }
-    
-    
+
+
     auto data = lib->get<void * (*)(decltype(data_ptr), decltype(&columns))>("loadAll")(data_ptr, &columns);
     //DUMP(data);
 
@@ -108,35 +108,48 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     //  data[i] = ids[i];
     //}
     auto columns_holder = std::make_unique<ClickhouseString[]>(dict_struct.attributes.size());
-    ClickhouseStrings columns{dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::data)>(columns_holder.get())};
+    ClickhouseStrings columns_pass{
+        dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::data)>(columns_holder.get())};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
         //DUMP(i); DUMP(a.name); DUMP(a.type);
-        columns.data[i] = a.name.c_str();
+        columns_pass.data[i] = a.name.c_str();
         //++columns.size;
         ++i;
     }
     //auto lib = std::make_shared<SharedLibrary>(filename);
     //auto data_ptr = library->get<void * (*) ()>("dataAllocate")();
     auto data_ptr = library->get<void * (*)()>("dataAllocate")();
-    auto data = library->get<void * (*)(decltype(data_ptr), decltype(&columns), decltype(&ids_data))>("loadIds")(data_ptr, &columns, &ids_data);
+    auto data = library->get<void * (*)(decltype(data_ptr), decltype(&columns_pass), decltype(&ids_data))>("loadIds")(
+        data_ptr, &columns_pass, &ids_data);
     //DUMP(data);
+
+    auto block = description.sample_block.cloneEmpty();
+
+
+    std::vector<IColumn *> columns(block.columns());
+    for (const auto i : ext::range(0, columns.size()))
+        columns[i] = block.getByPosition(i).column.get();
+    DUMP(columns.size());
+    //std::cerr << "bl clean=" << block << "\n";
+    
 
     if (data)
     {
-        auto columns = static_cast<ClickhouseColumnsUint64 *>(data);
-        DUMP(columns->size);
-        for (size_t i = 0; i < columns->size; ++i)
+        auto columns_recd = static_cast<ClickhouseColumnsUint64 *>(data);
+        DUMP(columns_recd->size);
+        for (size_t i = 0; i < columns_recd->size; ++i)
         {
-            //DUMP(i);
-            //DUMP(columns->data[i].size);
-            //DUMP(columns->data[i].data);
+            DUMP(i);
+            DUMP(columns_recd->data[i].size);
+            DUMP(columns_recd->data[i].data);
             //DUMP("ONE:");
-            for (size_t ii = 0; ii < columns->data[i].size; ++ii)
+            for (size_t ii = 0; ii < columns_recd->data[i].size; ++ii)
             {
-                //DUMP(ii);
-                //DUMP(columns->data[i].data[ii]);
+                DUMP(ii);
+                DUMP(columns_recd->data[i].data[ii]);
+                columns[ii]->insert(columns_recd->data[i].data[ii]);
             }
         }
     }
@@ -151,7 +164,6 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
 
     //return std::make_shared<NullBlockInputStream>();
     //return std::make_shared<OneBlockInputStream>(std::move(Block()));
-    auto block = description.sample_block.cloneEmpty();
     std::cerr << "blout=" << block << "\n";
     return std::make_shared<OneBlockInputStream>(std::move(block));
     //return std::make_shared<OneBlockInputStream>(block);
