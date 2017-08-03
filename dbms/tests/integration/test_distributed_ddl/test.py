@@ -125,8 +125,8 @@ def started_cluster():
 def test_default_database(started_cluster):
     instance = cluster.instances['ch3']
 
-    ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS test2 ON CLUSTER 'cluster'")
-    ddl_check_query(instance, "DROP TABLE IF EXISTS null ON CLUSTER 'cluster'")
+    ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS test2 ON CLUSTER 'cluster' FORMAT TSV")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS null ON CLUSTER 'cluster' FORMAT TSV")
     ddl_check_query(instance, "CREATE TABLE null ON CLUSTER 'cluster2' (s String DEFAULT 'escape\t\nme') ENGINE = Null")
 
     contents = instance.query("SELECT hostName() AS h, database FROM all_tables WHERE name = 'null' ORDER BY h")
@@ -138,10 +138,14 @@ def test_default_database(started_cluster):
 
 def test_create_view(started_cluster):
     instance = cluster.instances['ch3']
-    ddl_check_query(instance, "CREATE VIEW test.super_simple_view ON CLUSTER 'cluster' AS SELECT * FROM system.numbers")
-    ddl_check_query(instance, "CREATE MATERIALIZED VIEW test.simple_mat_view ON CLUSTER 'cluster' ENGINE = Memory AS SELECT * FROM system.numbers")
-    ddl_check_query(instance, "DROP TABLE test.simple_mat_view ON CLUSTER 'cluster'")
-    ddl_check_query(instance, "DROP TABLE test.super_simple_view ON CLUSTER 'cluster'")
+    ddl_check_query(instance, "CREATE VIEW test.super_simple_view ON CLUSTER 'cluster' AS SELECT * FROM system.numbers FORMAT TSV")
+    ddl_check_query(instance, "CREATE MATERIALIZED VIEW test.simple_mat_view ON CLUSTER 'cluster' ENGINE = Memory AS SELECT * FROM system.numbers FORMAT TSV")
+    ddl_check_query(instance, "DROP TABLE test.simple_mat_view ON CLUSTER 'cluster' FORMAT TSV")
+    ddl_check_query(instance, "DROP TABLE test.super_simple_view2 ON CLUSTER 'cluster' FORMAT TSV")
+
+    ddl_check_query(instance, "CREATE TABLE test.super_simple (i Int8) ON CLUSTER 'cluster'")
+    ddl_check_query(instance, "RENAME TABLE test.super_simple TO test.super_simple2 ON CLUSTER 'cluster' FORMAT TSV")
+    ddl_check_query(instance, "DROP TABLE test.super_simple2 ON CLUSTER 'cluster'")
 
 
 def test_on_server_fail(started_cluster):
@@ -274,7 +278,7 @@ ENGINE = Distributed(cluster_without_replication, default, merge, i)
 
 
     ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER cluster_without_replication MODIFY COLUMN i Int64")
-    ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER cluster_without_replication ADD COLUMN s DEFAULT toString(i)")
+    ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER cluster_without_replication ADD COLUMN s DEFAULT toString(i) FORMAT TSV")
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(4)]))
 
