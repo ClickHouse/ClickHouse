@@ -14,6 +14,7 @@ if (APPLE)
         src/apple_rt.cpp
         include/common/apple_rt.h
     )
+    target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
 endif ()
 
 add_library (common
