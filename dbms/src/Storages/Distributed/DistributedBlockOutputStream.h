@@ -3,9 +3,11 @@
 #include <Parsers/formatAST.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/Block.h>
+#include <common/ThreadPool.h>
 #include <atomic>
 #include <memory>
 #include <chrono>
+#include <experimental/optional>
 
 namespace Poco
 {
@@ -35,10 +37,24 @@ public:
 
     void write(const Block & block) override;
 
-    void writePrefix() override { deadline = std::chrono::steady_clock::now() + std::chrono::seconds(insert_timeout); }
+    void writePrefix() override;
 
 private:
+    void writeAsync(const Block & block);
+
+    void writeSync(const Block & block);
+
+    ThreadPool::Job createWritingJob(std::vector<bool> & done_jobs, std::atomic<unsigned> & finished_jobs_count,
+                                     std::condition_variable & cond_var, const Block & block, size_t job_id,
+                                     const Cluster::ShardInfo & shard_info, size_t replica_id);
+
+    void writeToLocal(const Blocks & blocks);
+
+    std::string getCurrentStateDescription(const std::vector<bool> & done_jobs);
+
     IColumn::Selector createSelector(Block block);
+
+    Blocks splitBlock(const Block & block);
 
     void writeSplit(const Block & block);
 
@@ -60,6 +76,8 @@ private:
     UInt64 insert_timeout;
     size_t blocks_inserted = 0;
     std::chrono::steady_clock::time_point deadline;
+    size_t remote_jobs_count;
+    std::experimental::optional<ThreadPool> pool;
 };
 
 }

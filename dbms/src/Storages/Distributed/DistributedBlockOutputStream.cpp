@@ -21,12 +21,15 @@
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/MemoryTracker.h>
 #include <common/logger_useful.h>
 
 #include <Poco/DirectoryIterator.h>
 
 #include <iostream>
 #include <future>
+#include <condition_variable>
+#include <mutex>
 
 namespace CurrentMetrics
 {
@@ -52,8 +55,27 @@ DistributedBlockOutputStream::DistributedBlockOutputStream(StorageDistributed & 
 {
 }
 
+DistributedBlockOutputStream::writePrefix()
+{
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(insert_timeout);
+    remote_jobs_count = 0;
+    if (storage.getShardingKeyExpr())
+    {
+        const auto & shards_info = cluster->getShardsInfo();
+        for (const auto & shard_info : shards_info)
+            remote_jobs_count += shard_info.dir_names.size();
+    }
+}
 
 void DistributedBlockOutputStream::write(const Block & block)
+{
+    if (insert_sync)
+        writeSync(block);
+    else
+        writeAsync(block);
+}
+
+void DistributedBlockOutputStream::writeAsync(const Block & block)
 {
     if (storage.getShardingKeyExpr() && (cluster->getShardsInfo().size() > 1))
         return writeSplit(block);
@@ -62,6 +84,85 @@ void DistributedBlockOutputStream::write(const Block & block)
     ++blocks_inserted;
 }
 
+ThreadPool::Job createWritingJob(std::vector<bool> & done_jobs, std::atomic<unsigned> & finished_jobs_count,
+                                 std::condition_variable & cond_var, const Block & block, size_t job_id,
+                                 const Cluster::ShardInfo & shard_info, size_t replica_id)
+{
+    auto memory_tracker = current_memory_tracker;
+    return [this, memory_tracker, & done_jobs, & finished_jobs_count, & cond_var, & block,
+            size_t job_id, const Cluster::ShardInfo & shard_info, size_t replica_id]()
+    {
+        if (!current_memory_tracker)
+        {
+            current_memory_tracker = memory_tracker;
+            setThreadName("DistributedBlockOutputStreamProc");
+        }
+        try
+        {
+            this->writeToShardSync(block, shard_info, replica_id);
+            ++finished_jobs_count;
+            done_jobs[job_id] = true;
+            cond_var.notify_one();
+        }
+        catch (...)
+        {
+            ++finished_jobs_count;
+            cond_var.notify_one();
+            throw;
+        }
+    };
+}
+
+void DistributedBlockOutputStream::writeToLocal(const Blocks & blocks)
+{
+    const Cluster::ShardInfo & shard_info = cluster->getShardsInfo();
+    for (size_t shard_id: ext::range(0, shards_info.size()))
+    {
+        const auto & shard_info = shards_info[shard_id];
+        if (shard_info.getLocalNodeCount() > 0)
+            writeToLocal(blocks[shard_id], shard_info.getLocalNodeCount());
+    }
+}
+
+
+std::string getCurrentStateDescription(const std::vector<bool> & done_jobs)
+{
+}
+
+void DistributedBlockOutputStream::writeSync(const Block & block)
+{
+    if (!pool)
+        pool = ThreadPool(remote_jobs_count);
+
+    std::vector<bool> done_jobs(remote_jobs_count, false);
+    std::atomic<unsigned> finished_jobs_count = 0;
+    std::mutex mutex;
+    std::condition_variable cond_var;
+
+    const Cluster::ShardInfo & shard_info = cluster->getShardsInfo();
+    Blocks blocks = shard_info.size() > 1 ? splitBlocks(block) : Blocks({block});
+
+    size_t job_id = 0;
+    for (size_t shard_id: ext::range(0, blocks.size()))
+        for (size_t replica_id : ext::range(0, shards_info[shard_id].dir_names.size()))
+            pool->schledule(createWritingJob(jobs_done, finished_jobs_count, cond_var,
+                                             blocks[shard_id], job_id++, shards_info[shard_id], replica_id));
+    try
+        writeToLocal(blocks);
+    catch(Exception & exception)
+    {
+        try
+            pool->wait();
+        catch(Exception & exception)
+        {
+
+            throw;
+        }
+        throw;
+    }
+
+    ++blocks_inserted;
+}
 
 IColumn::Selector DistributedBlockOutputStream::createSelector(Block block)
 {
@@ -89,7 +190,7 @@ IColumn::Selector DistributedBlockOutputStream::createSelector(Block block)
 }
 
 
-void DistributedBlockOutputStream::writeSplit(const Block & block)
+Blocks DistributedBlockOutputStream::splitBlocks(const Block & block)
 {
     const auto num_cols = block.columns();
     /// cache column pointers for later reuse
@@ -114,6 +215,15 @@ void DistributedBlockOutputStream::writeSplit(const Block & block)
         for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
             splitted_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(splitted_columns[shard_idx]);
     }
+
+    return splitted_blocks;
+}
+
+
+void DistributedBlockOutputStream::writeSplit(const Block & block)
+{
+    Blocks splitted_blocks = splitBlocks(block);
+    const size_t num_shards = splitted_blocks.size();
 
     for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
         if (splitted_blocks[shard_idx].rows())
@@ -185,7 +295,7 @@ void DistributedBlockOutputStream::writeToShardSync(const Block & block, const s
             ProfileEvents::increment(ProfileEvents::DistributedSyncInsertionTimeoutExceeded);
 
             String message;
-            WriteBufferFromString out(message);
+            ut(message);
             out << "Timeout exceeded.";
             writeNodeDescription(out, *connection);
             throw Exception(message, ErrorCodes::TIMEOUT_EXCEEDED);
