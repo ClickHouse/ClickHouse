@@ -128,7 +128,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     QueryProcessingStage::Enum stage)
 {
     ProfileEvents::increment(ProfileEvents::Query);
-    time_t current_time = time(0);
+    time_t current_time = time(nullptr);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -253,7 +253,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElement::QUERY_FINISH;
 
-                elem.event_time = time(0);
+                elem.event_time = time(nullptr);
                 elem.query_duration_ms = elapsed_seconds * 1000;
 
                 elem.read_rows = process_list_elem->progress_in.rows;
@@ -305,7 +305,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
 
-                elem.event_time = time(0);
+                elem.event_time = time(nullptr);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception = getCurrentExceptionMessage(false);
 

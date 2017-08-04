@@ -305,7 +305,7 @@ void ReplicatedMergeTreePartCheckThread::run()
     {
         try
         {
-            time_t current_time = time(0);
+            time_t current_time = time(nullptr);
 
             /// Take part from the queue for verification.
             PartsToCheckQueue::iterator selected = parts_queue.end();    /// end from std::list is not get invalidated

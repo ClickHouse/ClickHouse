@@ -182,7 +182,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     StorageReplicatedMergeTree::LogEntry log_entry;
     log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
-    log_entry.create_time = time(0);
+    log_entry.create_time = time(nullptr);
     log_entry.source_replica = storage.replica_name;
     log_entry.new_part_name = part_name;
     log_entry.quorum = quorum;
