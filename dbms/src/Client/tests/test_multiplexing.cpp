@@ -5,10 +5,10 @@
 #include <Core/FieldVisitors.h>
 #include <Common/Stopwatch.h>
 
+#include <daemon/OwnPatternFormatter.h>
 #include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
-#include <Poco/PatternFormatter.h>
 #include <Poco/AutoPtr.h>
 
 #include <iostream>
@@ -19,8 +19,7 @@ using namespace DB;
 static void setupLogging(const std::string & log_level)
 {
     Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel);
-    Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter);
-    formatter->setProperty("pattern", "%L%Y-%m-%d %H:%M:%S.%i <%p> %s: %t");
+    Poco::AutoPtr<Poco::PatternFormatter> formatter(new OwnPatternFormatter(nullptr));
     Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter, channel));
     Poco::Logger::root().setChannel(formatting_channel);
     Poco::Logger::root().setLevel(log_level);
@@ -51,6 +50,9 @@ try
         shard_pools.emplace_back(std::make_shared<ConnectionPoolWithFailover>(
             std::move(replica_pools), LoadBalancing::RANDOM));
     }
+
+    for (size_t round = 0; round < 3; ++round)
+    {
 
     Stopwatch stopwatch;
 
@@ -121,6 +123,8 @@ try
         thread.join();
 
     LOG_INFO(log, "ELAPSED " << stopwatch.elapsedSeconds());
+
+    }
 }
 catch (const Poco::Exception & e)
 {

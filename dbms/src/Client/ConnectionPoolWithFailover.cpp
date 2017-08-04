@@ -128,23 +128,31 @@ ConnectionPoolWithFailover::tryGetEntry(
         const Settings * settings,
         const QualifiedTableName * table_to_check)
 {
+    auto * log = &Logger::get("ConnectionPoolWithFailover");
+
     TryResult result;
     try
     {
+        LOG_TRACE(log, "1");
         result.entry = pool.get(settings, /* force_connected = */ false);
+
+        LOG_TRACE(log, "2");
 
         String server_name;
         UInt64 server_version_major;
         UInt64 server_version_minor;
-        UInt64 server_revision;
+        UInt64 server_revision = 0;
         if (table_to_check)
             result.entry->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+
+        LOG_TRACE(log, "3");
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
             result.entry->forceConnected();
             result.is_usable = true;
             result.is_up_to_date = true;
+            LOG_TRACE(log, "4");
             return result;
         }
 

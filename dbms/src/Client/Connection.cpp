@@ -63,6 +63,8 @@ void Connection::connect()
 
         connected = true;
 
+        LOG_TRACE(log_wrapper.get(), "Sending Hello...");
+
         sendHello();
         receiveHello();
 
@@ -231,7 +233,7 @@ struct TimeoutSetter
 
 bool Connection::ping()
 {
-    // LOG_TRACE(log_wrapper.get(), "Ping");
+    LOG_TRACE(log_wrapper.get(), "Ping");
 
     TimeoutSetter timeout_setter(socket, sync_request_timeout);
     try
@@ -265,6 +267,7 @@ bool Connection::ping()
         return false;
     }
 
+    LOG_TRACE(log_wrapper.get(), "Pong");
     return true;
 }
 
