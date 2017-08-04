@@ -82,11 +82,17 @@ gulp.task('htmls', ['docs', 'docstxt'], function () {
         .pipe(gulp.dest(outputDir))
 });
 
-gulp.task('scripts', ['docs'], function () {
+gulp.task('sourcemaps', ['docs'], function () {
     return gulp.src(paths.scripts)
         .pipe(sourcemaps.init())
         .pipe(uglify())
         .pipe(sourcemaps.write())
+        .pipe(gulp.dest(outputDir))
+});
+
+gulp.task('scripts', ['docs'], function () {
+    return gulp.src(paths.scripts)
+        .pipe(uglify())
         .pipe(gulp.dest(outputDir))
 });
 
