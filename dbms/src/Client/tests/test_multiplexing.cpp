@@ -11,6 +11,9 @@
 #include <Poco/FormattingChannel.h>
 #include <Poco/AutoPtr.h>
 
+#include <boost/fiber/all.hpp>
+#include <boost/asio.hpp>
+
 #include <iostream>
 #include <thread>
 
@@ -36,6 +39,14 @@ try
 
     size_t num_shards = std::stoul(argv[1]);
     size_t num_replicas = std::stoul(argv[2]);
+
+    boost::fibers::fiber fiber([] { std::cerr << "ololo!" << std::endl; });
+    fiber.join();
+
+    boost::asio::io_service io;
+    boost::asio::deadline_timer t(io, boost::posix_time::seconds(5));
+    t.wait();
+    std::cout << "Hello, world!" << std::endl;
 
     setupLogging("trace");
     auto * log = &Logger::get("main");
