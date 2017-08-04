@@ -163,7 +163,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
     new_data_part->right = temp_index;
     new_data_part->level = 0;
     new_data_part->size = part_size;
-    new_data_part->modification_time = time(0);
+    new_data_part->modification_time = time(nullptr);
     new_data_part->month = min_month;
     new_data_part->columns = columns;
     new_data_part->checksums = checksums;

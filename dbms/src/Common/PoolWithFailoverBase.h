@@ -350,7 +350,7 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates()
         for (auto & state : shared_pool_states)
             state.randomize();
 
-        time_t current_time = time(0);
+        time_t current_time = time(nullptr);
 
         if (last_error_decrease_time)
         {

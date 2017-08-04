@@ -265,7 +265,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
     assertEOF(in);
 
     ActiveDataPartSet::parsePartName(part_name, *new_data_part);
-    new_data_part->modification_time = time(0);
+    new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumns(true);
     new_data_part->loadChecksums(true);
     new_data_part->loadIndex();
