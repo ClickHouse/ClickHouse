@@ -390,7 +390,7 @@ struct FixedStringSink
     ColumnString::Offset_t current_offset = 0;
 
     FixedStringSink(ColumnFixedString & col, size_t column_size)
-        : elements(col.getChars()), total_rows(column_size)
+        : elements(col.getChars()), string_size(col.getN()), total_rows(column_size)
     {
         elements.resize(column_size * string_size);
     }
@@ -589,6 +589,11 @@ inline void writeSlice(const StringSource::Slice & slice, StringSink & sink)
     sink.current_offset += slice.size;
 }
 
+inline void writeSlice(const StringSource::Slice & slice, FixedStringSink & sink)
+{
+    memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size);
+}
+
 /// Assuming same types of underlying columns for slice and sink.
 inline void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
 {
@@ -720,6 +725,27 @@ void sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_col
 
         sink.next();
         src.next();
+    }
+}
+
+
+template <typename SourceA, typename SourceB, typename Sink>
+void conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
+{
+    const UInt8 * cond_pos = &condition[0];
+    const UInt8 * cond_end = cond_pos + condition.size();
+
+    while (cond_pos < cond_end)
+    {
+        if (*cond_pos)
+            writeSlice(src_a.getWhole(), sink);
+        else
+            writeSlice(src_b.getWhole(), sink);
+
+        ++cond_pos;
+        src_a.next();
+        src_b.next();
+        sink.next();
     }
 }
 
