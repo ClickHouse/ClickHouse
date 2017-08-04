@@ -29,7 +29,6 @@ if (ENABLE_MYSQL)
 
     if (MYSQL_INCLUDE_DIR AND (STATIC_MYSQLCLIENT_LIB OR MYSQLCLIENT_LIB))
         set (MYSQL_FOUND 1)
-        include_directories (${MYSQL_INCLUDE_DIR})
     endif ()
 
     if (MYSQL_FOUND)

@@ -262,7 +262,7 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     /// Enough disk space to cover the new merge with a margin.
     if (available_disk_space <= sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT)
     {
-        time_t now = time(0);
+        time_t now = time(nullptr);
         if (now - disk_space_warning_time > 3600)
         {
             disk_space_warning_time = now;
@@ -758,7 +758,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
 
     new_data_part->size = to.marksCount();
-    new_data_part->modification_time = time(0);
+    new_data_part->modification_time = time(nullptr);
     new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part_tmp_path);
     new_data_part->is_sharded = false;
 
@@ -1080,7 +1080,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         data_part->checksums = output_stream->writeSuffixAndGetChecksums();
         data_part->index.swap(output_stream->getIndex());
         data_part->size = output_stream->marksCount();
-        data_part->modification_time = time(0);
+        data_part->modification_time = time(nullptr);
         data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(output_stream->getPartPath());
         data_part->is_sharded = true;
         data_part->shard_no = shard_no;

@@ -112,7 +112,7 @@ void ReplicatedMergeTreeRestartingThread::run()
                 first_time = false;
             }
 
-            time_t current_time = time(0);
+            time_t current_time = time(nullptr);
             if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage.data.settings.check_delay_period))
             {
                 /// Find out lag of replicas.

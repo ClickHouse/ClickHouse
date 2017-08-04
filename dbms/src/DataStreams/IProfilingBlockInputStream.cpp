@@ -203,7 +203,7 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
 
         case LIMITS_CURRENT:
         {
-            time_t current_time = time(0);
+            time_t current_time = time(nullptr);
             double total_elapsed = info.total_stopwatch.elapsedSeconds();
 
             quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());

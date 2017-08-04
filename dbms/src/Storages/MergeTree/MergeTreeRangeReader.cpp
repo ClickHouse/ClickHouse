@@ -15,6 +15,8 @@ size_t MergeTreeRangeReader::skipToNextMark()
     auto unread_rows_in_current_part = unreadRowsInCurrentGranule();
     continue_reading = false;
     ++current_mark;
+    if (current_mark == last_mark)
+        is_reading_finished = true;
     read_rows_after_current_mark = 0;
     return unread_rows_in_current_part;
 }

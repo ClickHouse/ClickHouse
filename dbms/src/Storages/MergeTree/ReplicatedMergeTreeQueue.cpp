@@ -341,7 +341,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
                     insertUnlocked(copied_entries[i]);
                 }
 
-                last_queue_update = time(0);
+                last_queue_update = time(nullptr);
             }
             catch (...)
             {
@@ -644,7 +644,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(ReplicatedMerge
 {
     entry->currently_executing = true;
     ++entry->num_tries;
-    entry->last_attempt_time = time(0);
+    entry->last_attempt_time = time(nullptr);
 
     if (!queue.future_parts.insert(entry->new_part_name).second)
         throw Exception("Tagging already tagged future part " + entry->new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -708,7 +708,7 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
         else
         {
             ++(*it)->num_postponed;
-            (*it)->last_postpone_time = time(0);
+            (*it)->last_postpone_time = time(nullptr);
         }
     }
 
