@@ -1431,9 +1431,16 @@ private:
                     if (0 == id)
                         continue;
 
+
+                    auto & hierarchy = hierarchies[i];
+
+                    //Checking for loop
+                    if (std::find(std::begin(hierarchy), std::end(hierarchy), id) != std::end(hierarchy))
+                        continue;
+
                     all_zeroes = false;
                     /// place id at it's corresponding place
-                    hierarchies[i].push_back(id);
+                    hierarchy.push_back(id);
 
                     ++total_count;
                 }
