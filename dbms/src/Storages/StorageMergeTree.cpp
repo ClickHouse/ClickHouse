@@ -343,7 +343,7 @@ bool StorageMergeTree::merge(
     if (auto part_log = context.getPartLog(database_name, table_name))
     {
         PartLogElement elem;
-        elem.event_time = time(0);
+        elem.event_time = time(nullptr);
 
         elem.merged_from.reserve(merging_tagger->parts.size());
         for (const auto & part : merging_tagger->parts)

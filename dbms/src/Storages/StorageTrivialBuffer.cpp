@@ -191,7 +191,7 @@ void StorageTrivialBuffer::addBlock(const Block & block, DeduplicationController
 void StorageTrivialBuffer::flush(bool check_thresholds, bool is_called_from_background)
 {
     Block block_to_write;
-    time_t current_time = time(0);
+    time_t current_time = time(nullptr);
 
     time_t time_passed = 0;
 
@@ -316,7 +316,7 @@ public:
             }
         }
 
-        time_t current_time = time(0);
+        time_t current_time = time(nullptr);
         if (buffer.checkThresholds(current_time, rows, bytes))
         {
             /** We'll try to flush the buffer if thresholds are overdrafted.
