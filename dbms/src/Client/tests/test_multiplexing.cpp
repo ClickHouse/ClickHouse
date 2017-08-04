@@ -5,9 +5,26 @@
 #include <Core/FieldVisitors.h>
 #include <Common/Stopwatch.h>
 
+#include <Poco/Logger.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/FormattingChannel.h>
+#include <Poco/PatternFormatter.h>
+#include <Poco/AutoPtr.h>
+
 #include <iostream>
+#include <thread>
 
 using namespace DB;
+
+static void setupLogging(const std::string & log_level)
+{
+    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel);
+    Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter);
+    formatter->setProperty("pattern", "%L%Y-%m-%d %H:%M:%S.%i <%p> %s: %t");
+    Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter, channel));
+    Poco::Logger::root().setChannel(formatting_channel);
+    Poco::Logger::root().setLevel(log_level);
+}
 
 int main(int argc, char ** argv)
 try
@@ -20,6 +37,9 @@ try
 
     size_t num_shards = std::stoul(argv[1]);
     size_t num_replicas = std::stoul(argv[2]);
+
+    setupLogging("trace");
+    auto * log = &Logger::get("main");
 
     ConnectionPoolWithFailoverPtrs shard_pools;
     for (size_t i = 0; i < num_shards; ++i)
@@ -37,15 +57,28 @@ try
     Settings settings;
     settings.max_parallel_replicas = num_replicas;
 
+    LOG_TRACE(log, "Starting...");
+
+    std::vector<std::thread> shard_threads;
+
     for (size_t i = 0; i < num_shards; ++i)
     {
+        shard_threads.emplace_back([&](size_t i)
+        {
 
         auto connections = shard_pools[i]->getMany(&settings, PoolMode::GET_MANY);
+
+        std::vector<std::thread> replica_threads;
+
         for (size_t r = 0; r < connections.size(); ++r)
         {
+            replica_threads.emplace_back([&](size_t r)
+            {
+
             auto & entry = connections[r];
 
-            entry->sendQuery("SELECT 12 union all SELECT 34", "test_ztlpn", QueryProcessingStage::Complete, &settings);
+            LOG_TRACE(log, "SHARD " << i << " REPLICA " << r << " sending query...");
+            entry->sendQuery("SELECT 12 union all SELECT 34", "", QueryProcessingStage::Complete, &settings);
 
             bool eof = false;
             while (!eof)
@@ -54,32 +87,40 @@ try
                 switch (packet.type)
                 {
                 case Protocol::Server::Data:
-                    std::cerr << "SHARD " << i << " REPLICA " << r << " DATA" << std::endl;
-                    if (packet.block)
+                    LOG_TRACE(log, "SHARD " << i << " REPLICA " << r << " DATA rows: " << packet.block.rows());
+                    for (size_t r = 0; r < packet.block.rows(); ++r)
                     {
-                        for (size_t r = 0; r < packet.block.rows(); ++r)
-                        {
-                            std::cerr << "ROW " << r << " "
-                                      << applyVisitor(FieldVisitorToString(), (*packet.block.safeGetByPosition(0).column)[r])
-                                      << std::endl;
-                        }
+                        LOG_TRACE(log,
+                            "SHARD " << i << " REPLICA " << r << " ROW " << r << " "
+                            << applyVisitor(FieldVisitorToString(), (*packet.block.safeGetByPosition(0).column)[r]));
                     }
                     break;
                 case Protocol::Server::Exception:
-                    packet.exception->rethrow();
+                    LOG_ERROR(log, packet.exception->displayText());
+                    break;
                 case Protocol::Server::EndOfStream:
-                    std::cerr << "SHARD " << i << " REPLICA " << r << " EOF" << std::endl;
+                    LOG_TRACE(log, "SHARD " << i << " REPLICA " << r << " EOF");
                     eof = true;
                     break;
                 default:
-                    std::cerr << "SHARD " << i << " REPLICA " << r << " PACKET TYPE " << packet.type << std::endl;
+                    LOG_TRACE(log, "SHARD " << i << " REPLICA " << r << " PACKET TYPE " << packet.type);
                     break;
                 }
             }
+
+            }, r);
         }
+
+        for (auto & thread : replica_threads)
+            thread.join();
+
+        }, i);
     }
 
-    std::cerr << "ELAPSED " << stopwatch.elapsedSeconds() << std::endl;
+    for (auto & thread : shard_threads)
+        thread.join();
+
+    LOG_INFO(log, "ELAPSED " << stopwatch.elapsedSeconds());
 }
 catch (const Poco::Exception & e)
 {
