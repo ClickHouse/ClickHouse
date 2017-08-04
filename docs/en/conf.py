@@ -292,5 +292,10 @@ texinfo_documents = [
 # If true, do not generate a @detailmenu in the "Top" node's menu.
 #texinfo_no_detailmenu = False
 
+def add_filters(app):
+    import json
+    app.builder.templates.environment.filters[str('escapejs')] = lambda x: json.dumps(unicode(x))
+
 def setup(app):
     app.add_javascript('custom.js')
+    app.connect(str('builder-inited'), add_filters)

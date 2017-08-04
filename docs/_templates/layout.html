@@ -72,7 +72,7 @@
                     clickmap:true,
                     trackLinks:true,
                     accurateTrackBounce:true,
-                    webvisor:true
+                    webvisor: {% if builder != "singlehtml" %}true{% else %}false{% endif %}
                 });
             } catch(e) { }
         });
@@ -93,5 +93,11 @@
     <div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=""/></div>
 </noscript>
 <!-- /Yandex.Metrika counter -->
-
+{% if builder == "singlehtml" %}
+<script type="text/javascript" async="async">
+    $(function() {
+        $(".body").html({{ body|escapejs }});
+    });
+</script>
+{% endif %}
 {%- endblock %}
