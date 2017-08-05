@@ -140,209 +140,6 @@ public:
 };
 
 
-/** Implementation for string arrays.
-  * NOTE: The code is too complex because it works with the internals of the arrays of strings.
-  * NOTE: Arrays of FixedString are not supported.
-  */
-struct StringArrayIfImpl
-{
-    static ALWAYS_INLINE void copy_from_vector(
-        size_t i,
-        const ColumnString::Chars_t & from_data,
-        const ColumnString::Offsets_t & from_string_offsets,
-        const ColumnArray::Offsets_t & from_array_offsets,
-        const ColumnArray::Offset_t & from_array_prev_offset,
-        const ColumnString::Offset_t & from_string_prev_offset,
-        ColumnString::Chars_t & to_data,
-        ColumnString::Offsets_t & to_string_offsets,
-        ColumnArray::Offsets_t & to_array_offsets,
-        ColumnArray::Offset_t & to_array_prev_offset,
-        ColumnString::Offset_t & to_string_prev_offset)
-    {
-        size_t array_size = from_array_offsets[i] - from_array_prev_offset;
-
-        size_t bytes_to_copy = 0;
-        size_t from_string_prev_offset_local = from_string_prev_offset;
-        for (size_t j = 0; j < array_size; ++j)
-        {
-            size_t string_size = from_string_offsets[from_array_prev_offset + j] - from_string_prev_offset_local;
-
-            to_string_prev_offset += string_size;
-            to_string_offsets.push_back(to_string_prev_offset);
-
-            from_string_prev_offset_local += string_size;
-            bytes_to_copy += string_size;
-        }
-
-        size_t to_data_old_size = to_data.size();
-        to_data.resize(to_data_old_size + bytes_to_copy);
-        memcpy(&to_data[to_data_old_size], &from_data[from_string_prev_offset], bytes_to_copy);
-
-        to_array_prev_offset += array_size;
-        to_array_offsets[i] = to_array_prev_offset;
-    }
-
-    static ALWAYS_INLINE void copy_from_constant(
-        size_t i,
-        const Array & from_data,
-        ColumnString::Chars_t & to_data,
-        ColumnString::Offsets_t & to_string_offsets,
-        ColumnArray::Offsets_t & to_array_offsets,
-        ColumnArray::Offset_t & to_array_prev_offset,
-        ColumnString::Offset_t & to_string_prev_offset)
-    {
-        size_t array_size = from_data.size();
-
-        for (size_t j = 0; j < array_size; ++j)
-        {
-            const String & str = from_data[j].get<const String &>();
-            size_t string_size = str.size() + 1;    /// Including 0 at the end.
-
-            to_data.resize(to_string_prev_offset + string_size);
-            memcpy(&to_data[to_string_prev_offset], str.data(), string_size);
-
-            to_string_prev_offset += string_size;
-            to_string_offsets.push_back(to_string_prev_offset);
-        }
-
-        to_array_prev_offset += array_size;
-        to_array_offsets[i] = to_array_prev_offset;
-    }
-
-
-    static void vector_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_string_offsets, const ColumnArray::Offsets_t & a_array_offsets,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_string_offsets, const ColumnArray::Offsets_t & b_array_offsets,
-        ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)
-    {
-        size_t size = cond.size();
-        c_array_offsets.resize(size);
-        c_string_offsets.reserve(std::max(a_string_offsets.size(), b_string_offsets.size()));
-        c_data.reserve(std::max(a_data.size(), b_data.size()));
-
-        ColumnArray::Offset_t a_array_prev_offset = 0;
-        ColumnArray::Offset_t b_array_prev_offset = 0;
-        ColumnArray::Offset_t c_array_prev_offset = 0;
-
-        ColumnString::Offset_t a_string_prev_offset = 0;
-        ColumnString::Offset_t b_string_prev_offset = 0;
-        ColumnString::Offset_t c_string_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (cond[i])
-                copy_from_vector(i,
-                    a_data, a_string_offsets, a_array_offsets, a_array_prev_offset, a_string_prev_offset,
-                    c_data, c_string_offsets, c_array_offsets, c_array_prev_offset, c_string_prev_offset);
-            else
-                copy_from_vector(i,
-                    b_data, b_string_offsets, b_array_offsets, b_array_prev_offset, b_string_prev_offset,
-                    c_data, c_string_offsets, c_array_offsets, c_array_prev_offset, c_string_prev_offset);
-
-            a_array_prev_offset = a_array_offsets[i];
-            b_array_prev_offset = b_array_offsets[i];
-
-            if (a_array_prev_offset)
-                a_string_prev_offset = a_string_offsets[a_array_prev_offset - 1];
-
-            if (b_array_prev_offset)
-                b_string_prev_offset = b_string_offsets[b_array_prev_offset - 1];
-        }
-    }
-
-    template <bool reverse>
-    static void vector_constant_impl(
-        const PaddedPODArray<UInt8> & cond,
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_string_offsets, const ColumnArray::Offsets_t & a_array_offsets,
-        const Array & b,
-        ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)
-    {
-        size_t size = cond.size();
-        c_array_offsets.resize(size);
-        c_string_offsets.reserve(a_string_offsets.size());
-        c_data.reserve(a_data.size());
-
-        ColumnArray::Offset_t a_array_prev_offset = 0;
-        ColumnArray::Offset_t c_array_prev_offset = 0;
-
-        ColumnString::Offset_t a_string_prev_offset = 0;
-        ColumnString::Offset_t c_string_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (reverse != cond[i])
-                copy_from_vector(i,
-                    a_data, a_string_offsets, a_array_offsets, a_array_prev_offset, a_string_prev_offset,
-                    c_data, c_string_offsets, c_array_offsets, c_array_prev_offset, c_string_prev_offset);
-            else
-                copy_from_constant(i,
-                     b,
-                     c_data, c_string_offsets, c_array_offsets, c_array_prev_offset, c_string_prev_offset);
-
-            a_array_prev_offset = a_array_offsets[i];
-
-            if (a_array_prev_offset)
-                a_string_prev_offset = a_string_offsets[a_array_prev_offset - 1];
-        }
-    }
-
-    static void vector_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_string_offsets, const ColumnArray::Offsets_t & a_array_offsets,
-        const Array & b,
-        ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)
-    {
-        vector_constant_impl<false>(cond, a_data, a_string_offsets, a_array_offsets, b, c_data, c_string_offsets, c_array_offsets);
-    }
-
-    static void constant_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const Array & a,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_string_offsets, const ColumnArray::Offsets_t & b_array_offsets,
-        ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)
-    {
-        vector_constant_impl<true>(cond, b_data, b_string_offsets, b_array_offsets, a, c_data, c_string_offsets, c_array_offsets);
-    }
-
-    static void constant_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const Array & a,
-        const Array & b,
-        ColumnString::Chars_t & c_data, ColumnString::Offsets_t & c_string_offsets, ColumnArray::Offsets_t & c_array_offsets)
-    {
-        size_t size = cond.size();
-        c_array_offsets.resize(size);
-        c_string_offsets.reserve(std::max(a.size(), b.size()) * size);
-
-        size_t sum_size_a = 0;
-        for (const auto & s : a)
-            sum_size_a += s.get<const String &>().size() + 1;
-
-        size_t sum_size_b = 0;
-        for (const auto & s : b)
-            sum_size_b += s.get<const String &>().size() + 1;
-
-        c_data.reserve(std::max(sum_size_a, sum_size_b) * size);
-
-        ColumnArray::Offset_t c_array_prev_offset = 0;
-        ColumnString::Offset_t c_string_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (cond[i])
-                copy_from_constant(i,
-                    a,
-                    c_data, c_string_offsets, c_array_offsets, c_array_prev_offset, c_string_prev_offset);
-            else
-                copy_from_constant(i,
-                    b,
-                    c_data, c_string_offsets, c_array_offsets, c_array_prev_offset, c_string_prev_offset);
-        }
-    }
-};
-
-
 class FunctionIf : public IFunction
 {
 public:
@@ -736,8 +533,12 @@ private:
         return false;
     }
 
-    bool executeGeneric(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeGenericArray(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
+        /// For generic implementation, arrays must be of same type.
+        if (!block.getByPosition(arguments[1]).type->equals(*block.getByPosition(arguments[2]).type))
+            return false;
+
         const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
         const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
 
@@ -1249,7 +1050,7 @@ public:
                 || executeLeftType<Float32>(cond_col, block, arguments, result)
                 || executeLeftType<Float64>(cond_col, block, arguments, result)
                 || executeString(cond_col, block, arguments, result)
-                || executeGeneric(cond_col, block, arguments, result)
+                || executeGenericArray(cond_col, block, arguments, result)
                 || executeTuple(cond_col, block, arguments, result)))
                 throw Exception("Illegal columns " + arg_then.column->getName()
                     + " and " + arg_else.column->getName()
