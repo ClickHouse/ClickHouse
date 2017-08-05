@@ -140,223 +140,6 @@ public:
 };
 
 
-template <typename A, typename B, typename ResultType>
-struct NumArrayIfImpl
-{
-    template <typename FromT>
-    static ALWAYS_INLINE void copy_from_vector(
-        size_t i,
-        const PaddedPODArray<FromT> & from_data, const ColumnArray::Offsets_t & from_offsets, ColumnArray::Offset_t from_prev_offset,
-        PaddedPODArray<ResultType> & to_data, ColumnArray::Offsets_t & to_offsets, ColumnArray::Offset_t & to_prev_offset)
-    {
-        size_t size_to_write = from_offsets[i] - from_prev_offset;
-        to_data.resize(to_data.size() + size_to_write);
-
-        for (size_t i = 0; i < size_to_write; ++i)
-            to_data[to_prev_offset + i] = static_cast<ResultType>(from_data[from_prev_offset + i]);
-
-        to_prev_offset += size_to_write;
-        to_offsets[i] = to_prev_offset;
-    }
-
-    static ALWAYS_INLINE void copy_from_constant(
-        size_t i,
-        const PaddedPODArray<ResultType> & from_data,
-        PaddedPODArray<ResultType> & to_data, ColumnArray::Offsets_t & to_offsets, ColumnArray::Offset_t & to_prev_offset)
-    {
-        size_t size_to_write = from_data.size();
-        to_data.resize(to_data.size() + size_to_write);
-        memcpy(&to_data[to_prev_offset], from_data.data(), size_to_write * sizeof(from_data[0]));
-        to_prev_offset += size_to_write;
-        to_offsets[i] = to_prev_offset;
-    }
-
-    static void create_result_column(
-        Block & block, size_t result,
-        PaddedPODArray<ResultType> ** c_data, ColumnArray::Offsets_t ** c_offsets)
-    {
-        auto col_res_vec = std::make_shared<ColumnVector<ResultType>>();
-        auto col_res_array = std::make_shared<ColumnArray>(col_res_vec);
-        block.getByPosition(result).column = col_res_array;
-
-        *c_data = &col_res_vec->getData();
-        *c_offsets = &col_res_array->getOffsets();
-    }
-
-
-    static void vector_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
-        const PaddedPODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
-        Block & block, size_t result)
-    {
-        PaddedPODArray<ResultType> * c_data = nullptr;
-        ColumnArray::Offsets_t * c_offsets = nullptr;
-        create_result_column(block, result, &c_data, &c_offsets);
-
-        size_t size = cond.size();
-        c_offsets->resize(size);
-        c_data->reserve(std::max(a_data.size(), b_data.size()));
-
-        ColumnArray::Offset_t a_prev_offset = 0;
-        ColumnArray::Offset_t b_prev_offset = 0;
-        ColumnArray::Offset_t c_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (cond[i])
-                copy_from_vector(i, a_data, a_offsets, a_prev_offset, *c_data, *c_offsets, c_prev_offset);
-            else
-                copy_from_vector(i, b_data, b_offsets, b_prev_offset, *c_data, *c_offsets, c_prev_offset);
-
-            a_prev_offset = a_offsets[i];
-            b_prev_offset = b_offsets[i];
-        }
-    }
-
-    static void vector_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
-        const Array & b,
-        Block & block, size_t result)
-    {
-        PaddedPODArray<ResultType> * c_data = nullptr;
-        ColumnArray::Offsets_t * c_offsets = nullptr;
-        create_result_column(block, result, &c_data, &c_offsets);
-
-        PaddedPODArray<ResultType> b_converted(b.size());
-        for (size_t i = 0, size = b.size(); i < size; ++i)
-            b_converted[i] = b[i].get<typename NearestFieldType<B>::Type>();
-
-        size_t size = cond.size();
-        c_offsets->resize(size);
-        c_data->reserve(a_data.size());
-
-        ColumnArray::Offset_t a_prev_offset = 0;
-        ColumnArray::Offset_t c_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (cond[i])
-                copy_from_vector(i, a_data, a_offsets, a_prev_offset, *c_data, *c_offsets, c_prev_offset);
-            else
-                copy_from_constant(i, b_converted, *c_data, *c_offsets, c_prev_offset);
-
-            a_prev_offset = a_offsets[i];
-        }
-    }
-
-    static void constant_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const Array & a,
-        const PaddedPODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
-        Block & block, size_t result)
-    {
-        PaddedPODArray<ResultType> * c_data = nullptr;
-        ColumnArray::Offsets_t * c_offsets = nullptr;
-        create_result_column(block, result, &c_data, &c_offsets);
-
-        PaddedPODArray<ResultType> a_converted(a.size());
-        for (size_t i = 0, size = a.size(); i < size; ++i)
-            a_converted[i] = a[i].get<typename NearestFieldType<A>::Type>();
-
-        size_t size = cond.size();
-        c_offsets->resize(size);
-        c_data->reserve(b_data.size());
-
-        ColumnArray::Offset_t b_prev_offset = 0;
-        ColumnArray::Offset_t c_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (cond[i])
-                copy_from_constant(i, a_converted, *c_data, *c_offsets, c_prev_offset);
-            else
-                copy_from_vector(i, b_data, b_offsets, b_prev_offset, *c_data, *c_offsets, c_prev_offset);
-
-            b_prev_offset = b_offsets[i];
-        }
-    }
-
-    static void constant_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const Array & a, const Array & b,
-        Block & block, size_t result)
-    {
-        PaddedPODArray<ResultType> * c_data = nullptr;
-        ColumnArray::Offsets_t * c_offsets = nullptr;
-        create_result_column(block, result, &c_data, &c_offsets);
-
-        PaddedPODArray<ResultType> a_converted(a.size());
-        for (size_t i = 0, size = a.size(); i < size; ++i)
-            a_converted[i] = a[i].get<typename NearestFieldType<A>::Type>();
-
-        PaddedPODArray<ResultType> b_converted(b.size());
-        for (size_t i = 0, size = b.size(); i < size; ++i)
-            b_converted[i] = b[i].get<typename NearestFieldType<B>::Type>();
-
-        size_t size = cond.size();
-        c_offsets->resize(size);
-        c_data->reserve((std::max(a.size(), b.size())) * size);
-
-        ColumnArray::Offset_t c_prev_offset = 0;
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            if (cond[i])
-                copy_from_constant(i, a_converted, *c_data, *c_offsets, c_prev_offset);
-            else
-                copy_from_constant(i, b_converted, *c_data, *c_offsets, c_prev_offset);
-        }
-    }
-};
-
-template <typename A, typename B>
-struct NumArrayIfImpl<A, B, NumberTraits::Error>
-{
-private:
-    static void throw_error()
-    {
-        throw Exception("Internal logic error: invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-public:
-    static void vector_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
-        const PaddedPODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
-        Block & block, size_t result)
-    {
-        throw_error();
-    }
-
-    static void vector_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a_data, const ColumnArray::Offsets_t & a_offsets,
-        const Array & b,
-        Block & block, size_t result)
-    {
-        throw_error();
-    }
-
-    static void constant_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const Array & a,
-        const PaddedPODArray<B> & b_data, const ColumnArray::Offsets_t & b_offsets,
-        Block & block, size_t result)
-    {
-        throw_error();
-    }
-
-    static void constant_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const Array & a, const Array & b,
-        Block & block, size_t result)
-    {
-        throw_error();
-    }
-};
-
-
 /** Implementation for string arrays.
   * NOTE: The code is too complex because it works with the internals of the arrays of strings.
   * NOTE: Arrays of FixedString are not supported.
@@ -654,7 +437,8 @@ private:
     }
 
     template <typename T0, typename T1>
-    bool executeRightTypeArray(
+    typename std::enable_if<!std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
+    executeRightTypeArray(
         const ColumnUInt8 * cond_col,
         Block & block,
         const ColumnNumbers & arguments,
@@ -679,11 +463,13 @@ private:
             if (!col_right_vec)
                 return false;
 
-            NumArrayIfImpl<T0, T1, ResultType>::vector_vector(
-                cond_col->getData(),
-                col_left->getData(), col_left_array->getOffsets(),
-                col_right_vec->getData(), col_right_array->getOffsets(),
-                block, result);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+
+            conditional(
+                NumericArraySource<T0>(*col_left_array),
+                NumericArraySource<T1>(*col_right_array),
+                NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                cond_col->getData());
         }
         else
         {
@@ -691,18 +477,21 @@ private:
             if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
                 return false;
 
-            NumArrayIfImpl<T0, T1, ResultType>::vector_constant(
-                cond_col->getData(),
-                col_left->getData(), col_left_array->getOffsets(),
-                col_right_const_array->getValue<Array>(),
-                block, result);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+
+            conditional(
+                NumericArraySource<T0>(*col_left_array),
+                ConstSource<NumericArraySource<T1>>(*col_right_const_array),
+                NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                cond_col->getData());
         }
 
         return true;
     }
 
     template <typename T0, typename T1>
-    bool executeConstRightTypeArray(
+    typename std::enable_if<!std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
+    executeConstRightTypeArray(
         const ColumnUInt8 * cond_col,
         Block & block,
         const ColumnNumbers & arguments,
@@ -726,11 +515,13 @@ private:
             if (!col_right_vec)
                 return false;
 
-            NumArrayIfImpl<T0, T1, ResultType>::constant_vector(
-                cond_col->getData(),
-                col_left_const_array->getValue<Array>(),
-                col_right_vec->getData(), col_right_array->getOffsets(),
-                block, result);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+
+            conditional(
+                ConstSource<NumericArraySource<T0>>(*col_left_const_array),
+                NumericArraySource<T1>(*col_right_array),
+                NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                cond_col->getData());
         }
         else
         {
@@ -738,14 +529,31 @@ private:
             if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
                 return false;
 
-            NumArrayIfImpl<T0, T1, ResultType>::constant_constant(
-                cond_col->getData(),
-                col_left_const_array->getValue<Array>(),
-                col_right_const_array->getValue<Array>(),
-                block, result);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+
+            conditional(
+                ConstSource<NumericArraySource<T0>>(*col_left_const_array),
+                ConstSource<NumericArraySource<T1>>(*col_right_const_array),
+                NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                cond_col->getData());
         }
 
         return true;
+    }
+
+    /// Specializations for incompatible data types. Example: if(cond, Int64, UInt64) cannot be executed, because Int64 and UInt64 are incompatible.
+    template <typename T0, typename T1, typename... Args>
+    typename std::enable_if<std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
+    executeRightTypeArray(Args &&... args)
+    {
+        return false;
+    }
+
+    template <typename T0, typename T1, typename... Args>
+    typename std::enable_if<std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
+    executeConstRightTypeArray(Args &&... args)
+    {
+        return false;
     }
 
     template <typename T0>

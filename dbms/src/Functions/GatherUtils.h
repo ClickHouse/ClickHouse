@@ -9,6 +9,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/NumberTraits.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
@@ -609,6 +610,90 @@ struct GenericArraySink
 };
 
 
+template <typename T>
+using NumericSlice = const T *;
+
+template <typename T>
+struct NumericSource
+{
+    using Slice = NumericSlice<T>;
+    using Column = ColumnVector<T>;
+
+    const T * begin;
+    const T * pos;
+    const T * end;
+
+    NumericSource(const Column & col)
+    {
+        const auto & container = col.getData();
+        begin = container.data();
+        pos = begin;
+        end = begin + container.size();
+    }
+
+    void next()
+    {
+        ++pos;
+    }
+
+    bool isEnd() const
+    {
+        return pos == end;
+    }
+
+    size_t rowNum() const
+    {
+        return pos - begin;
+    }
+
+    size_t getSizeForReserve() const
+    {
+        return 0;   /// Simple numeric columns are resized before fill, no need to reserve.
+    }
+
+    Slice getWhole() const
+    {
+        return pos;
+    }
+};
+
+template <typename T>
+struct NumericSink
+{
+    T * begin;
+    T * pos;
+    T * end;
+
+    NumericSink(ColumnVector<T> & col, size_t column_size)
+    {
+        auto & container = col.getData();
+        container.resize(column_size);
+        begin = container.data();
+        pos = begin;
+        end = begin + container.size();
+    }
+
+    void next()
+    {
+        ++pos;
+    }
+
+    bool isEnd() const
+    {
+        return pos == end;
+    }
+
+    size_t rowNum() const
+    {
+        return pos - begin;
+    }
+
+    void reserve(size_t num_elements)
+    {
+    }
+};
+
+
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
 
 template <typename T>
@@ -647,6 +732,12 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
 {
     sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
     sink.current_offset += slice.size;
+}
+
+template <typename T, typename U>
+void ALWAYS_INLINE writeSlice(const NumericSlice<T> & slice, NumericSink<U> & sink)
+{
+    *sink.pos = *slice;
 }
 
 
@@ -726,7 +817,6 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
         src.next();
     }
 }
-
 
 template <typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_column)
