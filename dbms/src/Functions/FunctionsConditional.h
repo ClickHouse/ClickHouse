@@ -1129,7 +1129,7 @@ private:
         {
             /// The result is FixedString.
 
-            auto col_res_untyped = col_then_untyped->cloneEmpty();
+            auto col_res_untyped = block.getByPosition(result).type->createColumn();
             block.getByPosition(result).column = col_res_untyped;
             ColumnFixedString * col_res = static_cast<ColumnFixedString *>(col_res_untyped.get());
             auto sink = FixedStringSink(*col_res, rows);
