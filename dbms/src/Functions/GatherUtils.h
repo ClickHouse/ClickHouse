@@ -736,7 +736,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
 }
 
 template <typename T, typename U>
-void ALWAYS_INLINE writeSlice(const NumericSlice<T> & slice, NumericSink<U> & sink)
+void writeSlice(const NumericSlice<T> & slice, NumericSink<U> & sink)
 {
     *sink.pos = *slice;
 }
