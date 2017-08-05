@@ -733,48 +733,36 @@ private:
             return true;
         }
 
+        return false;
+    }
+
+    bool executeGeneric(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    {
+        const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
+        const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
+
         const ColumnArray * col_arr_then = checkAndGetColumn<ColumnArray>(col_then_untyped);
         const ColumnArray * col_arr_else = checkAndGetColumn<ColumnArray>(col_else_untyped);
         const ColumnConst * col_arr_then_const = checkAndGetColumnConst<ColumnArray>(col_then_untyped);
         const ColumnConst * col_arr_else_const = checkAndGetColumnConst<ColumnArray>(col_else_untyped);
-        const ColumnString * col_then_elements = col_arr_then ? checkAndGetColumn<ColumnString>(&col_arr_then->getData()) : nullptr;
-        const ColumnString * col_else_elements = col_arr_else ? checkAndGetColumn<ColumnString>(&col_arr_else->getData()) : nullptr;
 
-        if (((col_arr_then && col_then_elements) || col_arr_then_const)
-            && ((col_arr_else && col_else_elements) || col_arr_else_const))
+        const PaddedPODArray<UInt8> & cond_data = cond_col->getData();
+        size_t rows = cond_data.size();
+
+        if ((col_arr_then || col_arr_then_const)
+            && (col_arr_else || col_arr_else_const))
         {
-            auto col_res_elements = std::make_shared<ColumnString>();
-            auto col_res = std::make_shared<ColumnArray>(col_res_elements);
-            block.getByPosition(result).column = col_res;
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+            auto col_res = static_cast<ColumnArray *>(block.getByPosition(result).column.get());
 
-            ColumnString::Chars_t & res_chars = col_res_elements->getChars();
-            ColumnString::Offsets_t & res_string_offsets = col_res_elements->getOffsets();
-            ColumnArray::Offsets_t & res_array_offsets = col_res->getOffsets();
-
-            if (col_then_elements && col_else_elements)
-                StringArrayIfImpl::vector_vector(
-                    cond_data,
-                    col_then_elements->getChars(), col_then_elements->getOffsets(), col_arr_then->getOffsets(),
-                    col_else_elements->getChars(), col_else_elements->getOffsets(), col_arr_else->getOffsets(),
-                    res_chars, res_string_offsets, res_array_offsets);
-            else if (col_then_elements && col_arr_else_const)
-                StringArrayIfImpl::vector_constant(
-                    cond_data,
-                    col_then_elements->getChars(), col_then_elements->getOffsets(), col_arr_then->getOffsets(),
-                    col_arr_else_const->getValue<Array>(),
-                    res_chars, res_string_offsets, res_array_offsets);
-            else if (col_arr_then_const && col_else_elements)
-                StringArrayIfImpl::constant_vector(
-                    cond_data,
-                    col_arr_then_const->getValue<Array>(),
-                    col_else_elements->getChars(), col_else_elements->getOffsets(), col_arr_else->getOffsets(),
-                    res_chars, res_string_offsets, res_array_offsets);
+            if (col_arr_then && col_arr_else)
+                conditional(GenericArraySource(*col_arr_then), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
+            else if (col_arr_then && col_arr_else_const)
+                conditional(GenericArraySource(*col_arr_then), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(*col_res, rows), cond_data);
+            else if (col_arr_then_const && col_arr_else)
+                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), GenericArraySource(*col_arr_else), GenericArraySink(*col_res, rows), cond_data);
             else if (col_arr_then_const && col_arr_else_const)
-                StringArrayIfImpl::constant_constant(
-                    cond_data,
-                    col_arr_then_const->getValue<Array>(),
-                    col_arr_else_const->getValue<Array>(),
-                    res_chars, res_string_offsets, res_array_offsets);
+                conditional(ConstSource<GenericArraySource>(*col_arr_then_const), ConstSource<GenericArraySource>(*col_arr_else_const), GenericArraySink(*col_res, rows), cond_data);
             else
                 return false;
 
@@ -1261,6 +1249,7 @@ public:
                 || executeLeftType<Float32>(cond_col, block, arguments, result)
                 || executeLeftType<Float64>(cond_col, block, arguments, result)
                 || executeString(cond_col, block, arguments, result)
+                || executeGeneric(cond_col, block, arguments, result)
                 || executeTuple(cond_col, block, arguments, result)))
                 throw Exception("Illegal columns " + arg_then.column->getName()
                     + " and " + arg_else.column->getName()

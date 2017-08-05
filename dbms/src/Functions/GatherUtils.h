@@ -502,6 +502,7 @@ struct GenericArraySlice
 struct GenericArraySource
 {
     using Slice = GenericArraySlice;
+    using Column = ColumnArray;
 
     const IColumn & elements;
     const typename ColumnArray::Offsets_t & offsets;
