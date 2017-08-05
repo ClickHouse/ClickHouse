@@ -28,118 +28,6 @@ namespace DB
   * then, else - numeric types for which there is a general type, or dates, datetimes, or strings, or arrays of these types.
   */
 
-
-template <typename A, typename B, typename ResultType>
-struct NumIfImpl
-{
-private:
-    static PaddedPODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
-    {
-        auto col_res = std::make_shared<ColumnVector<ResultType>>();
-        block.getByPosition(result).column = col_res;
-
-        typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
-        vec_res.resize(size);
-
-        return vec_res;
-    }
-public:
-    static void vector_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a, const PaddedPODArray<B> & b,
-        Block & block,
-        size_t result)
-    {
-        size_t size = cond.size();
-        PaddedPODArray<ResultType> & res = result_vector(block, result, size);
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
-    }
-
-    static void vector_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a, B b,
-        Block & block,
-        size_t result)
-    {
-        size_t size = cond.size();
-        PaddedPODArray<ResultType> & res = result_vector(block, result, size);
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
-    }
-
-    static void constant_vector(
-        const PaddedPODArray<UInt8> & cond,
-        A a, const PaddedPODArray<B> & b,
-        Block & block,
-        size_t result)
-    {
-        size_t size = cond.size();
-        PaddedPODArray<ResultType> & res = result_vector(block, result, size);
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
-    }
-
-    static void constant_constant(
-        const PaddedPODArray<UInt8> & cond,
-        A a, B b,
-        Block & block,
-        size_t result)
-    {
-        size_t size = cond.size();
-        PaddedPODArray<ResultType> & res = result_vector(block, result, size);
-        for (size_t i = 0; i < size; ++i)
-            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
-    }
-};
-
-template <typename A, typename B>
-struct NumIfImpl<A, B, NumberTraits::Error>
-{
-private:
-    static void throw_error()
-    {
-        throw Exception("Internal logic error: invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-public:
-    static void vector_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a, const PaddedPODArray<B> & b,
-        Block & block,
-        size_t result)
-    {
-        throw_error();
-    }
-
-    static void vector_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a, B b,
-        Block & block,
-        size_t result)
-    {
-        throw_error();
-    }
-
-    static void constant_vector(
-        const PaddedPODArray<UInt8> & cond,
-        A a, const PaddedPODArray<B> & b,
-        Block & block,
-        size_t result)
-    {
-        throw_error();
-    }
-
-    static void constant_constant(
-        const PaddedPODArray<UInt8> & cond,
-        A a, B b,
-        Block & block,
-        size_t result)
-    {
-        throw_error();
-    }
-};
-
-
 class FunctionIf : public IFunction
 {
 public:
@@ -186,7 +74,8 @@ private:
     }
 
     template <typename T0, typename T1>
-    bool executeRightType(
+    typename std::enable_if<!std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
+    executeRightType(
         const ColumnUInt8 * cond_col,
         Block & block,
         const ColumnNumbers & arguments,
@@ -201,16 +90,29 @@ private:
 
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+        auto & col_res = static_cast<ColumnVector<ResultType> &>(*block.getByPosition(result).column);
+        size_t rows = block.rows();
+
         if (col_right_vec)
-            NumIfImpl<T0, T1, ResultType>::vector_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
+            conditional(
+                NumericSource<T0>(*col_left),
+                NumericSource<T1>(*col_right_vec),
+                NumericSink<ResultType>(col_res, rows),
+                cond_col->getData());
         else
-            NumIfImpl<T0, T1, ResultType>::vector_constant(cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), block, result);
+            conditional(
+                NumericSource<T0>(*col_left),
+                ConstSource<NumericSource<T1>>(*col_right_const),
+                NumericSink<ResultType>(col_res, rows),
+                cond_col->getData());
 
         return true;
     }
 
     template <typename T0, typename T1>
-    bool executeConstRightType(
+    typename std::enable_if<!std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
+    executeConstRightType(
         const ColumnUInt8 * cond_col,
         Block & block,
         const ColumnNumbers & arguments,
@@ -225,10 +127,22 @@ private:
 
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+        auto & col_res = static_cast<ColumnVector<ResultType> &>(*block.getByPosition(result).column);
+        size_t rows = block.rows();
+
         if (col_right_vec)
-            NumIfImpl<T0, T1, ResultType>::constant_vector(cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), block, result);
+            conditional(
+                ConstSource<NumericSource<T0>>(*col_left),
+                NumericSource<T1>(*col_right_vec),
+                NumericSink<ResultType>(col_res, rows),
+                cond_col->getData());
         else
-            NumIfImpl<T0, T1, ResultType>::constant_constant(cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), block, result);
+            conditional(
+                ConstSource<NumericSource<T0>>(*col_left),
+                ConstSource<NumericSource<T1>>(*col_right_const),
+                NumericSink<ResultType>(col_res, rows),
+                cond_col->getData());
 
         return true;
     }
@@ -339,6 +253,20 @@ private:
     }
 
     /// Specializations for incompatible data types. Example: if(cond, Int64, UInt64) cannot be executed, because Int64 and UInt64 are incompatible.
+    template <typename T0, typename T1, typename... Args>
+    typename std::enable_if<std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
+    executeRightType(Args &&... args)
+    {
+        return false;
+    }
+
+    template <typename T0, typename T1, typename... Args>
+    typename std::enable_if<std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
+    executeConstRightType(Args &&... args)
+    {
+        return false;
+    }
+
     template <typename T0, typename T1, typename... Args>
     typename std::enable_if<std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
     executeRightTypeArray(Args &&... args)
@@ -999,8 +927,7 @@ public:
             throw Exception{
                 "Incompatible second and third arguments for function " + getName() + ": " +
                     arguments[1]->getName() + " and " + arguments[2]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return arguments[1];
