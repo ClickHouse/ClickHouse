@@ -316,28 +316,28 @@ struct FixedStringSource
     using Slice = NumericArraySlice<UInt8>;
     using Column = ColumnFixedString;
 
-    const typename ColumnString::Chars_t & elements;
+    const UInt8 * pos;
+    const UInt8 * end;
     size_t string_size;
-
     size_t row_num = 0;
-    size_t total_rows;
-
-    ColumnString::Offset_t prev_offset = 0;
 
     FixedStringSource(const ColumnFixedString & col)
-        : elements(col.getChars()), string_size(col.getN()), total_rows(col.size())
+        : string_size(col.getN())
     {
+        const auto & chars = col.getChars();
+        pos = chars.data();
+        end = pos + col.size();
     }
 
     void next()
     {
-        prev_offset += string_size;
+        pos += string_size;
         ++row_num;
     }
 
     bool isEnd() const
     {
-        return row_num == total_rows;
+        return pos == end;
     }
 
     size_t rowNum() const
@@ -347,35 +347,35 @@ struct FixedStringSource
 
     Slice getWhole() const
     {
-        return {&elements[prev_offset], string_size};
+        return {pos, string_size};
     }
 
     Slice getSliceFromLeft(size_t offset) const
     {
         if (offset >= string_size)
-            return {&elements[prev_offset], 0};
-        return {&elements[prev_offset + offset], string_size - offset};
+            return {pos, 0};
+        return {pos + offset, string_size - offset};
     }
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         if (offset >= string_size)
-            return {&elements[prev_offset], 0};
-        return {&elements[prev_offset + offset], std::min(length, string_size - offset)};
+            return {pos, 0};
+        return {pos + offset, std::min(length, string_size - offset)};
     }
 
     Slice getSliceFromRight(size_t offset) const
     {
         if (offset >= string_size)
-            return {&elements[prev_offset], 0};
-        return {&elements[prev_offset + string_size - offset], offset};
+            return {pos, 0};
+        return {pos + string_size - offset, offset};
     }
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
         if (offset >= string_size)
-            return {&elements[prev_offset], 0};
-        return {&elements[prev_offset + string_size - offset], std::min(length, offset)};
+            return {pos, 0};
+        return {pos + string_size - offset, std::min(length, offset)};
     }
 };
 
