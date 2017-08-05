@@ -697,7 +697,7 @@ struct NumericSink
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
 
 template <typename T>
-void ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
+void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 {
     sink.elements.resize(sink.current_offset + slice.size);
     memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size * sizeof(T));
@@ -705,7 +705,7 @@ void ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySi
 }
 
 template <typename T, typename U>
-void ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
+void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
