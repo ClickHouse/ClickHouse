@@ -424,7 +424,7 @@ struct IStringSource
 };
 
 template <typename Impl>
-struct DynamicStringSource : IStringSource
+struct DynamicStringSource final : IStringSource
 {
     Impl impl;
 
@@ -564,7 +564,7 @@ struct GenericArraySink
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
 
 template <typename T>
-void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
+void ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 {
     sink.elements.resize(sink.current_offset + slice.size);
     memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size * sizeof(T));
@@ -572,7 +572,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 }
 
 template <typename T, typename U>
-void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
+void ALWAYS_INLINE writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
@@ -582,20 +582,20 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
     }
 }
 
-inline void writeSlice(const StringSource::Slice & slice, StringSink & sink)
+inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, StringSink & sink)
 {
     sink.elements.resize(sink.current_offset + slice.size);
     memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size);
     sink.current_offset += slice.size;
 }
 
-inline void writeSlice(const StringSource::Slice & slice, FixedStringSink & sink)
+inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, FixedStringSink & sink)
 {
     memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size);
 }
 
 /// Assuming same types of underlying columns for slice and sink.
-inline void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
+inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
 {
     sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
     sink.current_offset += slice.size;
