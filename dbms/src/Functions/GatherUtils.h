@@ -184,39 +184,6 @@ struct ConstSource
 };
 
 
-template <typename T>
-struct NumericArraySink
-{
-    typename ColumnVector<T>::Container_t & elements;
-    typename ColumnArray::Offsets_t & offsets;
-
-    size_t row_num = 0;
-    ColumnArray::Offset_t current_offset = 0;
-
-    NumericArraySink(ColumnArray & arr, size_t column_size)
-        : elements(typeid_cast<ColumnVector<T> &>(arr.getData()).getData()), offsets(arr.getOffsets())
-    {
-        offsets.resize(column_size);
-    }
-
-    void next()
-    {
-        offsets[row_num] = current_offset;
-        ++row_num;
-    }
-
-    bool isEnd() const
-    {
-        return row_num == offsets.size();
-    }
-
-    size_t rowNum() const
-    {
-        return row_num;
-    }
-};
-
-
 struct StringSource
 {
     using Slice = NumericArraySlice<UInt8>;
@@ -247,6 +214,11 @@ struct StringSource
     size_t rowNum() const
     {
         return row_num;
+    }
+
+    size_t getSizeForReserve() const
+    {
+        return elements.size();
     }
 
     Slice getWhole() const
@@ -288,40 +260,6 @@ struct StringSource
 };
 
 
-struct StringSink
-{
-    typename ColumnString::Chars_t & elements;
-    typename ColumnString::Offsets_t & offsets;
-
-    size_t row_num = 0;
-    ColumnString::Offset_t current_offset = 0;
-
-    StringSink(ColumnString & col, size_t column_size)
-        : elements(col.getChars()), offsets(col.getOffsets())
-    {
-        offsets.resize(column_size);
-    }
-
-    void ALWAYS_INLINE next()
-    {
-        elements.push_back(0);
-        ++current_offset;
-        offsets[row_num] = current_offset;
-        ++row_num;
-    }
-
-    bool isEnd() const
-    {
-        return row_num == offsets.size();
-    }
-
-    size_t rowNum() const
-    {
-        return row_num;
-    }
-};
-
-
 struct FixedStringSource
 {
     using Slice = NumericArraySlice<UInt8>;
@@ -354,6 +292,11 @@ struct FixedStringSource
     size_t rowNum() const
     {
         return row_num;
+    }
+
+    size_t getSizeForReserve() const
+    {
+        return end - pos;
     }
 
     Slice getWhole() const
@@ -391,6 +334,83 @@ struct FixedStringSource
 };
 
 
+template <typename T>
+struct NumericArraySink
+{
+    typename ColumnVector<T>::Container_t & elements;
+    typename ColumnArray::Offsets_t & offsets;
+
+    size_t row_num = 0;
+    ColumnArray::Offset_t current_offset = 0;
+
+    NumericArraySink(ColumnArray & arr, size_t column_size)
+        : elements(typeid_cast<ColumnVector<T> &>(arr.getData()).getData()), offsets(arr.getOffsets())
+    {
+        offsets.resize(column_size);
+    }
+
+    void next()
+    {
+        offsets[row_num] = current_offset;
+        ++row_num;
+    }
+
+    bool isEnd() const
+    {
+        return row_num == offsets.size();
+    }
+
+    size_t rowNum() const
+    {
+        return row_num;
+    }
+
+    void reserve(size_t num_elements)
+    {
+        elements.reserve(num_elements);
+    }
+};
+
+
+struct StringSink
+{
+    typename ColumnString::Chars_t & elements;
+    typename ColumnString::Offsets_t & offsets;
+
+    size_t row_num = 0;
+    ColumnString::Offset_t current_offset = 0;
+
+    StringSink(ColumnString & col, size_t column_size)
+        : elements(col.getChars()), offsets(col.getOffsets())
+    {
+        offsets.resize(column_size);
+    }
+
+    void ALWAYS_INLINE next()
+    {
+        elements.push_back(0);
+        ++current_offset;
+        offsets[row_num] = current_offset;
+        ++row_num;
+    }
+
+    bool isEnd() const
+    {
+        return row_num == offsets.size();
+    }
+
+    size_t rowNum() const
+    {
+        return row_num;
+    }
+
+    void reserve(size_t num_elements)
+    {
+        elements.reserve(num_elements);
+    }
+};
+
+
 struct FixedStringSink
 {
     typename ColumnString::Chars_t & elements;
@@ -421,6 +441,11 @@ struct FixedStringSink
     {
         return row_num;
     }
+
+    void reserve(size_t num_elements)
+    {
+        elements.reserve(num_elements);
+    }
 };
 
 
@@ -430,6 +455,7 @@ struct IStringSource
 
     virtual void next() = 0;
     virtual bool isEnd() const = 0;
+    virtual size_t getSizeForReserve() const = 0;
     virtual Slice getWhole() const = 0;
     virtual ~IStringSource() {}
 };
@@ -441,9 +467,10 @@ struct DynamicStringSource final : IStringSource
 
     DynamicStringSource(const IColumn & col) : impl(static_cast<const typename Impl::Column &>(col)) {}
 
-    void next() override { impl.next(); };
-    bool isEnd() const override { return impl.isEnd(); };
-    Slice getWhole() const override { return impl.getWhole(); };
+    void next() override { impl.next(); }
+    bool isEnd() const override { return impl.isEnd(); }
+    size_t getSizeForReserve() const override { return impl.getSizeForReserve(); }
+    Slice getWhole() const override { return impl.getWhole(); }
 };
 
 inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & col)
@@ -500,6 +527,11 @@ struct GenericArraySource
     size_t rowNum() const
     {
         return row_num;
+    }
+
+    size_t getSizeForReserve() const
+    {
+        return elements.size();
     }
 
     Slice getWhole() const
@@ -569,6 +601,11 @@ struct GenericArraySink
     {
         return row_num;
     }
+
+    void reserve(size_t num_elements)
+    {
+        elements.reserve(num_elements);
+    }
 };
 
 
@@ -618,6 +655,8 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
 template <typename SourceA, typename SourceB, typename Sink>
 void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 {
+    sink.reserve(src_a.getSizeForReserve() + src_b.getSizeForReserve());
+
     while (!src_a.isEnd())
     {
         writeSlice(src_a.getWhole(), sink);
@@ -743,6 +782,8 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & 
 template <typename SourceA, typename SourceB, typename Sink>
 void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
 {
+    sink.reserve(std::max(src_a.getSizeForReserve(), src_b.getSizeForReserve()));
+
     const UInt8 * cond_pos = &condition[0];
     const UInt8 * cond_end = cond_pos + condition.size();
 
