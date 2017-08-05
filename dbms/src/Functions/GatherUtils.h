@@ -76,6 +76,12 @@ struct NumericArraySource
         return row_num;
     }
 
+    /// Get size for corresponding call or Sink::reserve to reserve memory for elements.
+    size_t getSizeForReserve() const
+    {
+        return elements.size();
+    }
+
     Slice getWhole() const
     {
         return {&elements[prev_offset], offsets[row_num] - prev_offset};
@@ -144,6 +150,11 @@ struct ConstSource
     size_t rowNum() const
     {
         return row_num;
+    }
+
+    size_t getSizeForReserve() const
+    {
+        return total_rows * base.getSizeForReserve();
     }
 
     Slice getWhole() const
@@ -291,7 +302,7 @@ struct StringSink
         offsets.resize(column_size);
     }
 
-    void next()
+    void ALWAYS_INLINE next()
     {
         elements.push_back(0);
         ++current_offset;
@@ -605,7 +616,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
 /// Algorithms
 
 template <typename SourceA, typename SourceB, typename Sink>
-void concat(SourceA && src_a, SourceB && src_b, Sink && sink)
+void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 {
     while (!src_a.isEnd())
     {
@@ -619,7 +630,7 @@ void concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 }
 
 template <typename Sink>
-void concat(StringSources & sources, Sink && sink)
+void NO_INLINE concat(StringSources & sources, Sink && sink)
 {
     while (!sink.isEnd())
     {
@@ -634,7 +645,7 @@ void concat(StringSources & sources, Sink && sink)
 
 
 template <typename Source, typename Sink>
-void sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
+void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
 {
     while (!src.isEnd())
     {
@@ -645,7 +656,7 @@ void sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t of
 }
 
 template <typename Source, typename Sink>
-void sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, size_t length)
+void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, size_t length)
 {
     while (!src.isEnd())
     {
@@ -656,7 +667,7 @@ void sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offs
 }
 
 template <typename Source, typename Sink>
-void sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
+void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
 {
     while (!src.isEnd())
     {
@@ -667,7 +678,7 @@ void sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t o
 }
 
 template <typename Source, typename Sink>
-void sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, size_t length)
+void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, size_t length)
 {
     while (!src.isEnd())
     {
@@ -679,7 +690,7 @@ void sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t off
 
 
 template <typename Source, typename Sink>
-void sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_column)
+void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_column)
 {
     while (!src.isEnd())
     {
@@ -703,7 +714,7 @@ void sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_c
 }
 
 template <typename Source, typename Sink>
-void sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_column, IColumn & length_column)
+void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_column, IColumn & length_column)
 {
     while (!src.isEnd())
     {
@@ -730,7 +741,7 @@ void sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_col
 
 
 template <typename SourceA, typename SourceB, typename Sink>
-void conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
+void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)
 {
     const UInt8 * cond_pos = &condition[0];
     const UInt8 * cond_end = cond_pos + condition.size();
