@@ -4,6 +4,7 @@
 #include <Interpreters/Settings.h>
 #include <Core/FieldVisitors.h>
 #include <Common/Stopwatch.h>
+#include <IO/ReadBufferFromAsioSocket.h>
 
 #include <daemon/OwnPatternFormatter.h>
 #include <Poco/Logger.h>
@@ -37,19 +38,73 @@ try
         return 1;
     }
 
+    setupLogging("trace");
+    auto * log = &Logger::get("main");
+
     size_t num_shards = std::stoul(argv[1]);
     size_t num_replicas = std::stoul(argv[2]);
 
-    boost::fibers::fiber fiber([] { std::cerr << "ololo!" << std::endl; });
-    fiber.join();
+    boost::asio::io_service io_service;
+    boost::fibers::use_scheduling_algorithm<boost::fibers::asio::round_robin>(io_service);
 
-    boost::asio::io_service io;
-    boost::asio::deadline_timer t(io, boost::posix_time::seconds(5));
-    t.wait();
-    std::cout << "Hello, world!" << std::endl;
+    auto work = [&](size_t num, const std::string & port)
+    {
+        try
+        {
+            LOG_TRACE(log, "Fiber " << num << " starting.");
 
-    setupLogging("trace");
-    auto * log = &Logger::get("main");
+            boost::system::error_code ec;
+
+            boost::asio::ip::tcp::resolver resolver(io_service);
+            boost::asio::ip::tcp::resolver::query query("localhost", port);
+            auto iter = resolver.async_resolve(query, boost::fibers::asio::yield[ec]);
+            if (ec)
+                throw Exception("Could not resolve.");
+
+            ++iter; /// skip ipv6
+            LOG_TRACE(log, "Fiber " << num << " resolved address to " << iter->endpoint());
+
+            boost::asio::ip::tcp::socket socket(io_service);
+            socket.async_connect(iter->endpoint(), boost::fibers::asio::yield[ec]);
+            if (ec)
+                throw Exception("Could not connect.");
+
+            LOG_TRACE(log, "Fiber " << num << " connected.");
+
+            ReadBufferFromAsioSocket read_buf(socket);
+
+            while (!read_buf.eof())
+            {
+                String str;
+                readString(str, read_buf);
+                LOG_INFO(log, "Fiber " << num << " read string: " << str);
+
+                char delim;
+                readChar(delim, read_buf);
+            }
+
+            LOG_TRACE(log, "Fiber " << num << " ended.");
+        }
+        catch (Exception & e)
+        {
+            LOG_ERROR(log, "Fiber " << num << ": " << e.displayText());
+        }
+    };
+
+    boost::fibers::fiber([&]
+    {
+        boost::fibers::fiber f1(work, 1, "1234");
+        boost::fibers::fiber f2(work, 2, "1235");
+
+        f1.join();
+        f2.join();
+
+        io_service.stop();
+    }).detach();
+
+    io_service.run();
+
+    return 1;
 
     ConnectionPoolWithFailoverPtrs shard_pools;
     for (size_t i = 0; i < num_shards; ++i)
