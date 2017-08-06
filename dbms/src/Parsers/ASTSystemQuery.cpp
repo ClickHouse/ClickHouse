@@ -2,14 +2,15 @@
 #include <Parsers/ASTSystemQuery.h>
 
 
+namespace DB
+{
+
+
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
+    extern const int NOT_IMPLEMENTED;
 }
-
-
-namespace DB
-{
 
 
 const char * ASTSystemQuery::typeToString(Type type)
@@ -49,6 +50,19 @@ const char * ASTSystemQuery::typeToString(Type type)
         default:
             throw Exception("Unknown SYSTEM query command", ErrorCodes::BAD_TYPE_OF_FIELD);
     }
+}
+
+
+void ASTSystemQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state,
+                                IAST::FormatStateStacked frame) const
+{
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM " << (settings.hilite ? hilite_none : "");
+    settings.ostr << typeToString(type);
+
+    if (type == Type::RELOAD_DICTIONARY)
+        settings.ostr << " " << backQuoteIfNeed(target_dictionary);
+    else if (type == Type::SYNC_REPLICA)
+        throw Exception("SYNC_REPLICA isn't supported yet", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
