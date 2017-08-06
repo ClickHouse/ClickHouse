@@ -113,13 +113,26 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 {
     auto zookeeper = storage.getZooKeeper();
 
+    Strings blocks;
     zkutil::Stat stat;
-    if (!zookeeper->exists(storage.zookeeper_path + "/blocks", &stat))
+    if (ZOK != zookeeper->tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
         throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
-    LOG_TRACE(log, "Checking " << stat.numChildren << " blocks to clear old ones from ZooKeeper. This might take several minutes.");
+    /// Clear already deleted blocks from the cache, cached_block_ctime should be subset of blocks
+    {
+        NameSet blocks_set(blocks.begin(), blocks.end());
+        for (auto it = cached_block_ctime.begin(); it != cached_block_ctime.end();)
+        {
+            if (!blocks_set.count(it->first))
+                it = cached_block_ctime.erase(it);
+            else
+                ++it;
+        }
+    }
 
-    Strings blocks = zookeeper->getChildren(storage.zookeeper_path + "/blocks");
+    auto not_cached_blocks = stat.numChildren - cached_block_ctime.size();
+    LOG_TRACE(log, "Checking " << stat.numChildren << " blocks  (" << not_cached_blocks << " are not cached)"
+            << " to clear old ones from ZooKeeper. This might take several minutes.");
 
     /// Time -> block hash from ZooKeeper (from node name)
     using TimedBlock = std::pair<Int64, String>;
@@ -128,9 +141,21 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
     for (const String & block : blocks)
     {
-        zkutil::Stat stat;
-        zookeeper->exists(storage.zookeeper_path + "/blocks/" + block, &stat);
-        timed_blocks.emplace_back(stat.ctime, block);
+        auto it = cached_block_ctime.find(block);
+
+        if (it == cached_block_ctime.end())
+        {
+            /// New block. Fetch its stat and put it into the cache
+            zkutil::Stat block_stat;
+            zookeeper->exists(storage.zookeeper_path + "/blocks/" + block, &block_stat);
+            cached_block_ctime.emplace(block, block_stat.ctime);
+            timed_blocks.emplace_back(block_stat.ctime, block);
+        }
+        else
+        {
+            /// Cached block
+            timed_blocks.emplace_back(it->second, block);
+        }
     }
 
     if (timed_blocks.empty())
@@ -152,6 +177,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     {
         /// TODO After about half a year, we could replace this to multi op, because there will be no obsolete children nodes.
         zookeeper->removeRecursive(storage.zookeeper_path + "/blocks/" + it->second);
+        cached_block_ctime.erase(it->second);
     }
 
     LOG_TRACE(log, "Cleared " << timed_blocks.end() - first_outdated_block << " old blocks from ZooKeeper");
