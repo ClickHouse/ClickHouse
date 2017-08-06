@@ -1,6 +1,7 @@
 #pragma once
 #include <Interpreters/IInterpreter.h>
 
+
 namespace DB
 {
 
@@ -9,8 +10,6 @@ class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
 
-/** Return list of currently executing queries.
-  */
 class InterpreterSystemQuery : public IInterpreter
 {
 public:

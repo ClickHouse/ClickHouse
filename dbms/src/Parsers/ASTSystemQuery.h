@@ -36,12 +36,13 @@ public:
     Type type = Type::_UNKNOWN;
 
     String target_dictionary;
-    //String target_replica;
+    //String target_replica_database;
+    //String target_replica_table;
 
     ASTSystemQuery() = default;
     explicit ASTSystemQuery(const StringRange range) : IAST(range) {}
 
-    String getID() const override { return "SYSTEM"; };
+    String getID() const override { return "SYSTEM query"; };
 
     ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
 
@@ -49,10 +50,7 @@ public:
 
 protected:
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM " << (settings.hilite ? hilite_none : "");
-    }
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
