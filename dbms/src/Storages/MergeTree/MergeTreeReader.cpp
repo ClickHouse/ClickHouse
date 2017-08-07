@@ -145,7 +145,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
             try
             {
                 size_t column_size_before_reading = column.column->size();
-                readData(column.name, *column.type, *column.column, from_mark, continue_reading, max_rows_to_read, 0, read_offsets);
+                readData(column.name, *column.type, *column.column, from_mark, continue_reading, max_rows_to_read, read_offsets);
                 read_rows = std::max(read_rows, column.column->size() - column_size_before_reading);
             }
             catch (Exception & e)
@@ -378,152 +378,66 @@ void MergeTreeReader::Stream::seekToMark(size_t index)
 
 
 void MergeTreeReader::addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-    size_t level)
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
-    String escaped_column_name = escapeForFileName(name);
-
-    const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type);
-    bool data_file_exists = Poco::File(path + escaped_column_name + DATA_FILE_EXTENSION).exists();
-    bool is_column_of_nested_type = type_arr && level == 0 && DataTypeNested::extractNestedTableName(name) != name;
-
-    /** If data file is missing then we will not try to open it.
-      * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
-      * But we should try to load offset data for array columns of Nested subtable (their data will be filled by default value).
-      */
-    if (!data_file_exists && !is_column_of_nested_type)
-        return;
-
-    if (type.isNullable())
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        /// First create the stream that handles the null map of the given column.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
-
-        std::string filename = name + NULL_MAP_EXTENSION;
-
-        streams.emplace(filename, std::make_unique<Stream>(
-            path + escaped_column_name, NULL_MAP_EXTENSION, data_part->size,
-            all_mark_ranges, mark_cache, save_marks_in_cache,
-            uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
-
-        /// Then create the stream that handles the data of the given column.
-        addStream(name, nested_type, all_mark_ranges, profile_callback, clock_type, level);
-    }
-    /// For arrays separate streams for sizes are used.
-    else if (type_arr)
-    {
-        String size_name = DataTypeNested::extractNestedTableName(name)
-            + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-        String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
-            + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-        String size_path = path + escaped_size_name + DATA_FILE_EXTENSION;
-
-        /// We have neither offsets nor data -> skipping, default values will be filled after
-        if (!data_file_exists && !Poco::File(size_path).exists())
+        String stream_name = IDataType::getFileNameForStream(name, substream_path);
+        if (streams.count(stream_name))
             return;
 
-        if (!streams.count(size_name))
-            streams.emplace(size_name, std::make_unique<Stream>(
-                path + escaped_size_name, DATA_FILE_EXTENSION, data_part->size,
-                all_mark_ranges, mark_cache, save_marks_in_cache,
-                uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+        bool data_file_exists = Poco::File(path + stream_name + DATA_FILE_EXTENSION).exists();
+        bool is_sizes_of_nested_type = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes
+            && DataTypeNested::extractNestedTableName(name) != name;
 
-        if (data_file_exists)
-            addStream(name, *type_arr->getNestedType(), all_mark_ranges, profile_callback, clock_type, level + 1);
-        else
-            streams.emplace(name, Stream::createEmptyPtr());
-    }
-    else
+        /** If data file is missing then we will not try to open it.
+          * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
+          * But we should try to load offset data for array columns of Nested subtable (their data will be filled by default value).
+          */
+        if (!data_file_exists && !is_sizes_of_nested_type)
+            return;
+
         streams.emplace(name, std::make_unique<Stream>(
-            path + escaped_column_name, DATA_FILE_EXTENSION, data_part->size,
+            path + stream_name, DATA_FILE_EXTENSION, data_part->size,
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+    };
+
+    type.enumerateStreams(callback, {});
 }
 
 
 void MergeTreeReader::readData(
     const String & name, const IDataType & type, IColumn & column,
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-    size_t level, bool read_offsets)
+    bool with_offsets)
 {
-    if (type.isNullable())
+    IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-        /// First read from the null map.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
+        if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
+            return nullptr;
 
-        ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
-        IColumn & nested_col = *nullable_col.getNestedColumn();
+        String stream_name = IDataType::getFileNameForStream(name, path);
 
-        std::string filename = name + NULL_MAP_EXTENSION;
+        auto it = streams.find(stream_name);
+        if (it == streams.end())
+            return nullptr;
 
-        Stream & stream = *(streams.at(filename));
-        if (!continue_reading)
-            stream.seekToMark(from_mark);
-        IColumn & col8 = nullable_col.getNullMapConcreteColumn();
-        DataTypeUInt8{}.deserializeBinaryBulk(col8, *stream.data_buffer, max_rows_to_read, 0);
-
-        /// Then read data.
-        readData(name, nested_type, nested_col, from_mark, continue_reading, max_rows_to_read, level, read_offsets);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /// For arrays the sizes must be deserialized first, then the values.
-        if (read_offsets)
-        {
-            Stream & stream = *streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)];
-            if (!continue_reading)
-                stream.seekToMark(from_mark);
-            type_arr->deserializeOffsets(
-                column,
-                *stream.data_buffer,
-                max_rows_to_read);
-        }
-
-        ColumnArray & array = typeid_cast<ColumnArray &>(column);
-        const size_t required_internal_size = array.getOffsets().size() ? array.getOffsets()[array.getOffsets().size() - 1] : 0;
-
-        readData(
-            name,
-            *type_arr->getNestedType(),
-            array.getData(),
-                 from_mark, continue_reading, required_internal_size - array.getData().size(),
-            level + 1);
-
-        size_t read_internal_size = array.getData().size();
-
-        /// Fix for erroneously written empty files with array data.
-        /// This can happen after ALTER that adds new columns to nested data structures.
-        if (required_internal_size != read_internal_size)
-        {
-            if (read_internal_size != 0)
-                LOG_ERROR(&Logger::get("MergeTreeReader"),
-                    "Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
-
-            array.getDataPtr() = type_arr->getNestedType()->createConstColumn(
-                    required_internal_size,
-                    type_arr->getNestedType()->getDefault())->convertToFullColumnIfConst();
-
-            /// NOTE: we could zero this column so that it won't get added to the block
-            /// and later be recreated with more correct default values (from the table definition).
-        }
-    }
-    else
-    {
-        Stream & stream = *streams[name];
+        Stream & stream = *it->second;
 
         /// It means that data column of array column will be empty, and it will be replaced by const data column
         if (stream.isEmpty())
-            return;
+            return nullptr;
 
-        double & avg_value_size_hint = avg_value_size_hints[name];
         if (!continue_reading)
             stream.seekToMark(from_mark);
-        type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
 
-        IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
-    }
+        return stream.data_buffer;
+    };
+
+    double & avg_value_size_hint = avg_value_size_hints[name];
+    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read, avg_value_size_hint, true, {});
+    IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
 }
 
 
@@ -546,23 +460,9 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
         {
             const ColumnWithTypeAndName & column = res.safeGetByPosition(i);
 
-            IColumn * observed_column;
-            std::string column_name;
-            if (column.column->isNullable())
+            if (const ColumnArray * array = typeid_cast<const ColumnArray *>(column.column.get()))
             {
-                ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*(column.column));
-                observed_column = nullable_col.getNestedColumn().get();
-                column_name = observed_column->getName();
-            }
-            else
-            {
-                observed_column = column.column.get();
-                column_name = column.name;
-            }
-
-            if (const ColumnArray * array = typeid_cast<const ColumnArray *>(observed_column))
-            {
-                String offsets_name = DataTypeNested::extractNestedTableName(column_name);
+                String offsets_name = DataTypeNested::extractNestedTableName(column.name);
                 auto & offsets_column = offset_columns[offsets_name];
 
                 /// If for some reason multiple offsets columns are present for the same nested data structure,

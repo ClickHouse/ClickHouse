@@ -9,7 +9,7 @@ namespace DB
 
 
 /** Base class for ReadBuffer and WriteBuffer.
-  * Contains mutual types, variables, and functions.
+  * Contains common types, variables, and functions.
   *
   * ReadBuffer and WriteBuffer are similar to istream and ostream, respectively.
   * They have to be used, because using iostreams it is impossible to effectively implement some operations.

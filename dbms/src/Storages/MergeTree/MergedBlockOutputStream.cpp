@@ -20,8 +20,6 @@ namespace
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
 constexpr auto MARKS_FILE_EXTENSION = ".mrk";
-constexpr auto NULL_MAP_EXTENSION = ".null.bin";
-constexpr auto NULL_MARKS_FILE_EXTENSION = ".null.mrk";
 
 }
 
@@ -47,68 +45,29 @@ void IMergedBlockOutputStream::addStream(
     const String & name,
     const IDataType & type,
     size_t estimated_size,
-    size_t level,
-    const String & filename,
     bool skip_offsets)
 {
-    String escaped_column_name;
-    if (filename.size())
-        escaped_column_name = escapeForFileName(filename);
-    else
-        escaped_column_name = escapeForFileName(name);
-
-    if (type.isNullable())
+    IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        /// First create the stream that handles the null map of the given column.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
+        if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+            return;
 
-        std::string null_map_name = name + NULL_MAP_EXTENSION;
-        column_streams[null_map_name] = std::make_unique<ColumnStream>(
-            escaped_column_name,
-            path + escaped_column_name, NULL_MAP_EXTENSION,
-            path + escaped_column_name, NULL_MARKS_FILE_EXTENSION,
+        String stream_name = IDataType::getFileNameForStream(name, substream_path);
+
+        if (column_streams.count(stream_name))
+            return;
+
+        column_streams[stream_name] = std::make_unique<ColumnStream>(
+            stream_name,
+            path + stream_name, DATA_FILE_EXTENSION,
+            path + stream_name, MARKS_FILE_EXTENSION,
             max_compress_block_size,
             compression_method,
             estimated_size,
             aio_threshold);
+    };
 
-        /// Then create the stream that handles the data of the given column.
-        addStream(path, name, nested_type, estimated_size, level, filename, false);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        if (!skip_offsets)
-        {
-            /// For arrays, separate files are used for sizes.
-            String size_name = DataTypeNested::extractNestedTableName(name)
-                + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-            String escaped_size_name = escapeForFileName(DataTypeNested::extractNestedTableName(name))
-                + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-            column_streams[size_name] = std::make_unique<ColumnStream>(
-                escaped_size_name,
-                path + escaped_size_name, DATA_FILE_EXTENSION,
-                path + escaped_size_name, MARKS_FILE_EXTENSION,
-                max_compress_block_size,
-                compression_method,
-                estimated_size,
-                aio_threshold);
-        }
-
-        addStream(path, name, *type_arr->getNestedType(), estimated_size, level + 1, "", false);
-    }
-    else
-    {
-        column_streams[name] = std::make_unique<ColumnStream>(
-            escaped_column_name,
-            path + escaped_column_name, DATA_FILE_EXTENSION,
-            path + escaped_column_name, MARKS_FILE_EXTENSION,
-            max_compress_block_size,
-            compression_method,
-            estimated_size,
-            aio_threshold);
-    }
+    type.enumerateStreams(callback, {});
 }
 
 
@@ -117,136 +76,29 @@ void IMergedBlockOutputStream::writeData(
     const IDataType & type,
     const IColumn & column,
     OffsetColumns & offset_columns,
-    size_t level,
     bool skip_offsets)
 {
-    writeDataImpl(name, type, column, offset_columns, level, false, skip_offsets);
-}
-
-
-void IMergedBlockOutputStream::writeDataImpl(
-    const String & name,
-    const IDataType & type,
-    const IColumn & column,
-    OffsetColumns & offset_columns,
-    size_t level,
-    bool write_array_data,
-    bool skip_offsets)
-{
-    /// NOTE: the parameter write_array_data indicates whether we call this method
-    /// to write the contents of an array. This is to cope with the fact that
-    /// serialization of arrays for the MergeTree engine slightly differs from
-    /// what the other engines do.
-
     size_t size = column.size();
-    const DataTypeArray * type_arr = nullptr;
-
-    if (type.isNullable())
+    size_t prev_mark = 0;
+    while (prev_mark < size)
     {
-        /// First write to the null map.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *(nullable_type.getNestedType());
+        size_t limit = 0;
 
-        const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(column);
-        const IColumn & nested_col = *(nullable_col.getNestedColumn());
-
-        std::string filename = name + NULL_MAP_EXTENSION;
-        ColumnStream & stream = *column_streams[filename];
-
-        size_t prev_mark = 0;
-        while (prev_mark < size)
-        {
-            size_t limit = 0;
-
-            /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
-            if (prev_mark == 0 && index_offset != 0)
-                limit = index_offset;
-            else
-            {
-                limit = storage.index_granularity;
-
-                /// There could already be enough data to compress into the new block.
-                if (stream.compressed.offset() >= min_compress_block_size)
-                    stream.compressed.next();
-
-                writeIntBinary(stream.plain_hashing.count(), stream.marks);
-                writeIntBinary(stream.compressed.offset(), stream.marks);
-            }
-
-            DataTypeUInt8{}.serializeBinaryBulk(nullable_col.getNullMapConcreteColumn(), stream.compressed, prev_mark, limit);
-
-            /// This way that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
-            stream.compressed.nextIfAtEnd();
-
-            prev_mark += limit;
-        }
-
-        /// Then write data.
-        writeDataImpl(name, nested_type, nested_col, offset_columns, level, write_array_data, false);
-    }
-    else if (!write_array_data && ((type_arr = typeid_cast<const DataTypeArray *>(&type)) != nullptr))
-    {
-        /// For arrays, you first need to serialize dimensions, and then values.
-        String size_name = DataTypeNested::extractNestedTableName(name)
-            + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-        if (!skip_offsets && offset_columns.count(size_name) == 0)
-        {
-            offset_columns.insert(size_name);
-
-            ColumnStream & stream = *column_streams[size_name];
-
-            size_t prev_mark = 0;
-            while (prev_mark < size)
-            {
-                size_t limit = 0;
-
-                /// If there is `index_offset`, the first mark goes not immediately, but after this number of rows.
-                if (prev_mark == 0 && index_offset != 0)
-                    limit = index_offset;
-                else
-                {
-                    limit = storage.index_granularity;
-
-                    /// There could already be enough data to compress into the new block.
-                    if (stream.compressed.offset() >= min_compress_block_size)
-                        stream.compressed.next();
-
-                    writeIntBinary(stream.plain_hashing.count(), stream.marks);
-                    writeIntBinary(stream.compressed.offset(), stream.marks);
-                }
-
-                type_arr->serializeOffsets(column, stream.compressed, prev_mark, limit);
-
-                /// This way that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
-                stream.compressed.nextIfAtEnd();
-
-                prev_mark += limit;
-            }
-        }
-
-        if (type_arr->getNestedType()->isNullable())
-            writeDataImpl(name, *type_arr->getNestedType(),
-                typeid_cast<const ColumnArray &>(column).getData(), offset_columns,
-                level + 1, true, false);
+        /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
+        if (prev_mark == 0 && index_offset != 0)
+            limit = index_offset;
         else
-            writeDataImpl(name, type, column, offset_columns, level + 1, true, false);
-    }
-    else
-    {
-        ColumnStream & stream = *column_streams[name];
-
-        size_t prev_mark = 0;
-        while (prev_mark < size)
         {
-            size_t limit = 0;
+            limit = storage.index_granularity;
 
-            /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
-            if (prev_mark == 0 && index_offset != 0)
-                limit = index_offset;
-            else
+            /// Write marks.
+            type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
             {
-                limit = storage.index_granularity;
+                if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+                    return;
+
+                String stream_name = IDataType::getFileNameForStream(name, substream_path);
+                ColumnStream & stream = *column_streams[stream_name];
 
                 /// There could already be enough data to compress into the new block.
                 if (stream.compressed.offset() >= min_compress_block_size)
@@ -254,15 +106,31 @@ void IMergedBlockOutputStream::writeDataImpl(
 
                 writeIntBinary(stream.plain_hashing.count(), stream.marks);
                 writeIntBinary(stream.compressed.offset(), stream.marks);
-            }
-
-            type.serializeBinaryBulk(column, stream.compressed, prev_mark, limit);
-
-            /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
-            stream.compressed.nextIfAtEnd();
-
-            prev_mark += limit;
+            }, {});
         }
+
+        IDataType::OutputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
+        {
+            if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+                return nullptr;
+
+            String stream_name = IDataType::getFileNameForStream(name, substream_path);
+            return &column_streams[stream_name]->compressed;
+        };
+
+        type.serializeBinaryBulkWithMultipleStreams(column, stream_getter, prev_mark, limit, true, {});
+
+        /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
+        type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+        {
+            if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+                return;
+
+            String stream_name = IDataType::getFileNameForStream(name, substream_path);
+            column_streams[stream_name]->compressed.nextIfAtEnd();
+        }, {});
+
+        prev_mark += limit;
     }
 }
 
@@ -331,7 +199,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 {
     init();
     for (const auto & it : columns_list)
-        addStream(part_path, it.name, *it.type, 0, 0, "", false);
+        addStream(part_path, it.name, *it.type, 0, false);
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -357,7 +225,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
             if (it2 != merged_column_to_size_.end())
                 estimated_size = it2->second;
         }
-        addStream(part_path, it.name, *it.type, estimated_size, 0, "", false);
+        addStream(part_path, it.name, *it.type, estimated_size, false);
     }
 }
 
@@ -467,7 +335,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     block.checkNumberOfRows();
     size_t rows = block.rows();
 
-    /// The set of written offset columns so that you do not write mutual to nested structures columns several times
+    /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     OffsetColumns offset_columns;
 
     auto sort_description = storage.getSortDescription();
@@ -513,18 +381,18 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             auto primary_column_it = primary_columns_name_to_position.find(it.name);
             if (primary_columns_name_to_position.end() != primary_column_it)
             {
-                writeData(column.name, *column.type, *primary_columns[primary_column_it->second].column, offset_columns, 0, false);
+                writeData(column.name, *column.type, *primary_columns[primary_column_it->second].column, offset_columns, false);
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                 ColumnPtr permutted_column = column.column->permute(*permutation, 0);
-                writeData(column.name, *column.type, *permutted_column, offset_columns, 0, false);
+                writeData(column.name, *column.type, *permutted_column, offset_columns, false);
             }
         }
         else
         {
-            writeData(column.name, *column.type, *column.column, offset_columns, 0, false);
+            writeData(column.name, *column.type, *column.column, offset_columns, false);
         }
     }
 
@@ -579,7 +447,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         for (size_t i = 0; i < block.columns(); ++i)
         {
             addStream(part_path, block.safeGetByPosition(i).name,
-                *block.safeGetByPosition(i).type, 0, 0, block.safeGetByPosition(i).name, skip_offsets);
+                *block.safeGetByPosition(i).type, 0, skip_offsets);
         }
         initialized = true;
     }
@@ -590,7 +458,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
-        writeData(column.name, *column.type, *column.column, offset_columns, 0, skip_offsets);
+        writeData(column.name, *column.type, *column.column, offset_columns, skip_offsets);
     }
 
     size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;

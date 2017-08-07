@@ -116,13 +116,12 @@ private:
     size_t max_read_buffer_size;
 
     void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-        size_t level = 0);
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void readData(
         const String & name, const IDataType & type, IColumn & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-        size_t level = 0, bool read_offsets = true);
+        bool read_offsets = true);
 
     void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 

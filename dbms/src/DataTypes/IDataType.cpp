@@ -1,11 +1,25 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
 
+#include <Common/Exception.h>
+#include <Common/escapeForFileName.h>
+
+#include <Core/Defines.h>
+
+#include <IO/WriteHelpers.h>
+
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNested.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int MULTIPLE_STREAMS_REQUIRED;
+}
+
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
@@ -28,6 +42,34 @@ ColumnPtr IDataType::createConstColumn(size_t size, const Field & field) const
     ColumnPtr column = createColumn();
     column->insert(field);
     return std::make_shared<ColumnConst>(column, size);
+}
+
+
+void IDataType::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+{
+    throw Exception("Data type " + getName() + " must be serialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);
+}
+
+void IDataType::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+{
+    throw Exception("Data type " + getName() + " must be deserialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);
+}
+
+
+String IDataType::getFileNameForStream(const String & column_name, const IDataType::SubstreamPath & path)
+{
+    size_t array_level = 0;
+    String stream_name = escapeForFileName(column_name);
+    for (const IDataType::Substream & elem : path)
+    {
+        if (elem.type == IDataType::Substream::NullMap)
+            stream_name += NULL_MAP_COLUMN_NAME_SUFFIX;
+        else if (elem.type == IDataType::Substream::ArraySizes)
+            stream_name = DataTypeNested::extractNestedTableName(stream_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(array_level);
+        else if (elem.type == IDataType::Substream::ArrayElements)
+            ++array_level;
+    }
+    return stream_name;
 }
 
 }

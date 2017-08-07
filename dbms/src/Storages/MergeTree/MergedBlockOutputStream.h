@@ -62,12 +62,10 @@ protected:
 
     using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-    void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size,
-        size_t level, const String & filename, bool skip_offsets);
+    void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size, bool skip_offsets);
 
     /// Write data of one column.
-    void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns,
-        size_t level, bool skip_offsets);
+    void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, bool skip_offsets);
 
     MergeTreeData & storage;
 
@@ -86,7 +84,7 @@ protected:
 private:
     /// Internal version of writeData.
     void writeDataImpl(const String & name, const IDataType & type, const IColumn & column,
-        OffsetColumns & offset_columns, size_t level, bool write_array_data, bool skip_offsets);
+        OffsetColumns & offset_columns, bool write_array_data, bool skip_offsets);
 };
 
 

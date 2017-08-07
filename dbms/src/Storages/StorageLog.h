@@ -14,27 +14,19 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
-}
-
-
-/** Offsets to every single set of values.
-  * These sets are the same size in different columns.
+/** Offsets to some row number in a file for column in table.
   * They are needed so that you can read the data in several threads.
   */
 struct Mark
 {
-    size_t rows;    /// How many lines are contained in this set and all previous ones.
-    size_t offset;  /// The offset to the set in the compressed file.
+    size_t rows;    /// How many rows are before this offset.
+    size_t offset;  /// The offset in compressed file.
 };
 
 using Marks = std::vector<Mark>;
 
 
-/** Implements a table engine that is suitable for logs.
-  * Keys are not supported.
+/** Implements simple table engine without support of indices.
   * The data is stored in a compressed form.
   */
 class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
@@ -107,22 +99,16 @@ private:
     Files_t files; /// name -> data
 
     Names column_names; /// column_index -> name
-    Names null_map_filenames;
 
     Poco::File marks_file;
-    Poco::File null_marks_file;
-
-    void loadMarksImpl(bool load_null_marks);
 
     /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
-    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+    void addFiles(const String & column_name, const IDataType & type);
 
     bool loaded_marks;
-    bool has_nullable_columns = false;
 
     size_t max_compress_block_size;
     size_t file_count = 0;
-    size_t null_file_count = 0;
 
 protected:
     FileChecker file_checker;
@@ -137,7 +123,7 @@ private:
       */
     const Marks & getMarksWithRealRowCount() const;
 
-    std::string getFullPath() const { return path + escapeForFileName(name) + '/';}
+    std::string getFullPath() const { return path + escapeForFileName(name) + '/'; }
 };
 
 }
