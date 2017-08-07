@@ -1,3 +1,6 @@
+#define BOOST_COROUTINE_NO_DEPRECATION_WARNING 1
+#define BOOST_COROUTINES_NO_DEPRECATION_WARNING 1
+
 #include <Client/Connection.cpp>
 #include <Client/ConnectionPoolWithFailover.cpp>
 #include <Common/Exception.h>
@@ -12,7 +15,6 @@
 #include <Poco/FormattingChannel.h>
 #include <Poco/AutoPtr.h>
 
-#include <boost/fiber/all.hpp>
 #include <boost/asio.hpp>
 
 #include <iostream>
@@ -45,62 +47,53 @@ try
     size_t num_replicas = std::stoul(argv[2]);
 
     boost::asio::io_service io_service;
-    boost::fibers::use_scheduling_algorithm<boost::fibers::asio::round_robin>(io_service);
 
-    auto work = [&](size_t num, const std::string & port)
+    auto work = [&](size_t num, const std::string & port, boost::asio::yield_context yield)
     {
         try
         {
-            LOG_TRACE(log, "Fiber " << num << " starting.");
+            LOG_TRACE(log, "Coro " << num << " starting.");
 
             boost::system::error_code ec;
 
             boost::asio::ip::tcp::resolver resolver(io_service);
             boost::asio::ip::tcp::resolver::query query("localhost", port);
-            auto iter = resolver.async_resolve(query, boost::fibers::asio::yield[ec]);
+            auto iter = resolver.async_resolve(query, yield[ec]);
             if (ec)
                 throw Exception("Could not resolve.");
 
             ++iter; /// skip ipv6
-            LOG_TRACE(log, "Fiber " << num << " resolved address to " << iter->endpoint());
+            LOG_TRACE(log, "Coro " << num << " resolved address to " << iter->endpoint());
 
             boost::asio::ip::tcp::socket socket(io_service);
-            socket.async_connect(iter->endpoint(), boost::fibers::asio::yield[ec]);
+            socket.async_connect(iter->endpoint(), yield[ec]);
             if (ec)
                 throw Exception("Could not connect.");
 
-            LOG_TRACE(log, "Fiber " << num << " connected.");
+            LOG_TRACE(log, "Coro " << num << " connected.");
 
-            ReadBufferFromAsioSocket read_buf(socket);
+            ReadBufferFromAsioSocket read_buf(socket, yield);
 
             while (!read_buf.eof())
             {
                 String str;
                 readString(str, read_buf);
-                LOG_INFO(log, "Fiber " << num << " read string: " << str);
+                LOG_INFO(log, "Coro " << num << " read string: " << str);
 
                 char delim;
                 readChar(delim, read_buf);
             }
 
-            LOG_TRACE(log, "Fiber " << num << " ended.");
+            LOG_TRACE(log, "Coro " << num << " ended.");
         }
         catch (Exception & e)
         {
-            LOG_ERROR(log, "Fiber " << num << ": " << e.displayText());
+            LOG_ERROR(log, "Coro " << num << ": " << e.displayText());
         }
     };
 
-    boost::fibers::fiber([&]
-    {
-        boost::fibers::fiber f1(work, 1, "1234");
-        boost::fibers::fiber f2(work, 2, "1235");
-
-        f1.join();
-        f2.join();
-
-        io_service.stop();
-    }).detach();
+    boost::asio::spawn(io_service, [&](boost::asio::yield_context yield) { work(1, "1234", yield); });
+    boost::asio::spawn(io_service, [&](boost::asio::yield_context yield) { work(2, "1232", yield); });
 
     io_service.run();
 
