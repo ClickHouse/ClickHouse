@@ -1115,16 +1115,16 @@ private:
     bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
 };
 
-/// Function caseWithExpr which implements the CASE construction when it is
+/// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
-class FunctionCaseWithExpr : public IFunction
+class FunctionCaseWithExpression : public IFunction
 {
 public:
-    static constexpr auto name = "caseWithExpr";
+    static constexpr auto name = "caseWithExpression";
     static FunctionPtr create(const Context & context_);
 
 public:
-    FunctionCaseWithExpr(const Context & context_);
+    FunctionCaseWithExpression(const Context & context_);
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override;
@@ -1135,12 +1135,12 @@ private:
     const Context & context;
 };
 
-/// Function caseWithoutExpr which implements the CASE construction when it
+/// Implements the CASE construction when it
 /// isn't provided any expression. Users should not call this function.
-class FunctionCaseWithoutExpr : public IFunction
+class FunctionCaseWithoutExpression : public IFunction
 {
 public:
-    static constexpr auto name = "caseWithoutExpr";
+    static constexpr auto name = "caseWithoutExpression";
     static FunctionPtr create(const Context & context_);
 
 public:
