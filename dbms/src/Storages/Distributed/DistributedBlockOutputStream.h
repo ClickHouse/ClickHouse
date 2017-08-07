@@ -8,6 +8,7 @@
 #include <memory>
 #include <chrono>
 #include <experimental/optional>
+#include <Interpreters/Cluster.h>
 
 namespace Poco
 {
@@ -18,8 +19,6 @@ namespace DB
 {
 
 class StorageDistributed;
-class Cluster;
-using ClusterPtr = std::shared_ptr<Cluster>;
 
 /** If insert_sync_ is true, the write is synchronous. Uses insert_timeout_ if it is not zero.
  *  Otherwise, the write is asynchronous - the data is first written to the local filesystem, and then sent to the remote servers.
@@ -42,31 +41,36 @@ public:
 private:
     void writeAsync(const Block & block);
 
+    /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
     void writeSync(const Block & block);
+
+    void calculateRemoteJobsCount();
 
     ThreadPool::Job createWritingJob(std::vector<bool> & done_jobs, std::atomic<unsigned> & finished_jobs_count,
                                      std::condition_variable & cond_var, const Block & block, size_t job_id,
                                      const Cluster::ShardInfo & shard_info, size_t replica_id);
 
-    void writeToLocal(const Blocks & blocks);
+    void writeToLocal(const Blocks & blocks, size_t & finished_writings_count);
 
-    std::string getCurrentStateDescription(const std::vector<bool> & done_jobs);
+    /// Returns the number of blocks was read for each cluster node. Uses during exception handling.
+    std::string getCurrentStateDescription(const std::vector<bool> & done_jobs, size_t finished_local_nodes_count);
 
     IColumn::Selector createSelector(Block block);
 
+    /// Split block between shards.
     Blocks splitBlock(const Block & block);
 
     void writeSplit(const Block & block);
 
     void writeImpl(const Block & block, const size_t shard_id = 0);
 
-    void writeToLocal(const Block & block, const size_t repeats);
+    /// Increments finished_writings_count after each repeat.
+    void writeToLocal(const Block & block, const size_t repeats, size_t & finished_writings_count);
 
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
-    /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
-    void writeToShardSync(const Block & block, const std::vector<std::string> & dir_names,
-                          size_t shard_id, const std::atomic<bool> & timeout_exceeded);
+    /// Performs synchronous insertion to remote node.
+    void writeToShardSync(const Block & block, const Cluster::ShardInfo & shard_info, size_t replica_id);
 
 private:
     StorageDistributed & storage;
