@@ -53,7 +53,6 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     size_t & size_compressed = size_compressed_without_checksum;
 
-
     if (method == static_cast<UInt8>(CompressionMethodByte::LZ4) ||
             method == static_cast<UInt8>(CompressionMethodByte::ZSTD) ||
             method == static_cast<UInt8>(CompressionMethodByte::NONE))
