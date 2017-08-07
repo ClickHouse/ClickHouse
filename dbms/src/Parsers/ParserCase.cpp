@@ -86,7 +86,7 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_args->children = std::move(args);
 
         auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
-        function->name = "caseWithExpr";
+        function->name = "caseWithExpression";
         function->arguments = function_args;
         function->children.push_back(function->arguments);
 
@@ -101,7 +101,7 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_args->children = std::move(args);
 
         auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
-        function->name = "caseWithoutExpr";
+        function->name = "caseWithoutExpression";
         function->arguments = function_args;
         function->children.push_back(function->arguments);
 
