@@ -73,3 +73,15 @@ boost_1_62_0/libs/fiber/src/algo/round_robin.cpp
 boost_1_62_0/libs/fiber/src/future.cpp
 boost_1_62_0/libs/fiber/src/properties.cpp
 boost_1_62_0/libs/fiber/src/context.cpp)
+
+add_library(boost_coroutine_internal
+boost_1_62_0/libs/coroutine/src/exceptions.cpp
+boost_1_62_0/libs/coroutine/src/detail/coroutine_context.cpp
+boost_1_62_0/libs/coroutine/src/posix/stack_traits.cpp)
+
+add_library(boost_thread_internal
+boost_1_62_0/libs/thread/src/tss_null.cpp
+boost_1_62_0/libs/thread/src/pthread/thread.cpp
+boost_1_62_0/libs/thread/src/pthread/once.cpp
+boost_1_62_0/libs/thread/src/pthread/once_atomic.cpp
+boost_1_62_0/libs/thread/src/future.cpp)
