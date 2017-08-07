@@ -52,4 +52,10 @@ public:
 
         return res;
     }
+
+    void dropCache()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        cache.clear();
+    }
 };
