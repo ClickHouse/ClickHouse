@@ -248,8 +248,8 @@ public:
     Context & getGlobalContext();
     bool hasGlobalContext() const { return global_context != nullptr; }
 
-    void setSessionContext(Context & context_)                                { session_context = &context_; }
-    void setGlobalContext(Context & context_)                                { global_context = &context_; }
+    void setSessionContext(Context & context_)                                  { session_context = &context_; }
+    void setGlobalContext(Context & context_)                                   { global_context = &context_; }
 
     const Settings & getSettingsRef() const { return settings; };
     Settings & getSettingsRef() { return settings; };
@@ -273,19 +273,29 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(size_t max_size_in_bytes);
-    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
-
     void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
 
+    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
+    void setUncompressedCache(size_t max_size_in_bytes);
+    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
+    void dropUncompressedCache() const;
+
     /// Create a cache of marks of specified size. This can be done only once.
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
+    void dropMarkCache() const;
+
+    /** Clear the caches of the uncompressed blocks and marks.
+      * This is usually done when renaming tables, changing the type of columns, deleting a table.
+      *  - since caches are linked to file names, and become incorrect.
+      *  (when deleting a table - it is necessary, since in its place another can appear)
+      * const - because the change in the cache is not considered significant.
+      */
+    void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
 
@@ -294,14 +304,6 @@ public:
 
     void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker();
-
-    /** Clear the caches of the uncompressed blocks and marks.
-      * This is usually done when renaming tables, changing the type of columns, deleting a table.
-      *  - since caches are linked to file names, and become incorrect.
-      *  (when deleting a table - it is necessary, since in its place another can appear)
-      * const - because the change in the cache is not considered significant.
-      */
-    void resetCaches() const;
 
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;

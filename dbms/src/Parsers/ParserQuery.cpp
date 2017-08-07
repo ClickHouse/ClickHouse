@@ -8,7 +8,7 @@
 #include <Parsers/ParserUseQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserAlterQuery.h>
-#include "ParserSystemQuery.h"
+#include <Parsers/ParserSystemQuery.h>
 
 
 namespace DB

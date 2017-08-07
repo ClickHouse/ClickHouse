@@ -4,15 +4,17 @@
 #include <Common/config.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <Poco/Net/DNS.h>
+#include <Interpreters/DNSCache.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/URI.h>
 #include <Poco/Version.h>
 #include <common/logger_useful.h>
 
 #if Poco_NetSSL_FOUND
 #include <Poco/Net/HTTPSClientSession.h>
+#include <Interpreters/DNSCache.h>
+
+
 #endif
 
 
@@ -22,17 +24,6 @@ namespace ErrorCodes
 {
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
-}
-
-static Poco::Net::IPAddress resolveHostImpl(const String & host)
-{
-    return Poco::Net::DNS::resolveOne(host);
-}
-
-static Poco::Net::IPAddress resolveHost(const String & host)
-{
-    static SimpleCache<decltype(resolveHostImpl), &resolveHostImpl> cache;
-    return cache(host);
 }
 
 
@@ -55,7 +46,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
                new Poco::Net::HTTPClientSession)
 }
 {
-    session->setHost(resolveHost(uri.getHost()).toString()); /// Cache DNS forever (until server restart)
+    session->setHost(DNSCache::instance().resolveHost(uri.getHost()).toString());
     session->setPort(uri.getPort());
 
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000

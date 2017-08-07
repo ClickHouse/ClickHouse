@@ -36,6 +36,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DNSCache.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -1094,6 +1095,15 @@ UncompressedCachePtr Context::getUncompressedCache() const
     return shared->uncompressed_cache;
 }
 
+
+void Context::dropUncompressedCache() const
+{
+    auto lock = getLock();
+    if (shared->uncompressed_cache)
+        shared->uncompressed_cache->reset();
+}
+
+
 void Context::setMarkCache(size_t cache_size_in_bytes)
 {
     auto lock = getLock();
@@ -1104,10 +1114,31 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
 }
 
+
 MarkCachePtr Context::getMarkCache() const
 {
     auto lock = getLock();
     return shared->mark_cache;
+}
+
+
+void Context::dropMarkCache() const
+{
+    auto lock = getLock();
+    if (shared->mark_cache)
+        shared->mark_cache->reset();
+}
+
+
+void Context::dropCaches() const
+{
+    auto lock = getLock();
+
+    if (shared->uncompressed_cache)
+        shared->uncompressed_cache->reset();
+
+    if (shared->mark_cache)
+        shared->mark_cache->reset();
 }
 
 BackgroundProcessingPool & Context::getBackgroundPool()
@@ -1149,17 +1180,6 @@ DDLWorker & Context::getDDLWorker()
     if (!shared->ddl_worker)
         throw Exception("DDL background thread not initialized.", ErrorCodes::LOGICAL_ERROR);
     return *shared->ddl_worker;
-}
-
-void Context::resetCaches() const
-{
-    auto lock = getLock();
-
-    if (shared->uncompressed_cache)
-        shared->uncompressed_cache->reset();
-
-    if (shared->mark_cache)
-        shared->mark_cache->reset();
 }
 
 void Context::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
