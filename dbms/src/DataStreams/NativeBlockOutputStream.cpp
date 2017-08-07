@@ -61,7 +61,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
         full_column = column;
 
     IDataType::OutputStreamGetter output_stream_getter = [&] (const IDataType::SubstreamPath & path) { return &ostr; };
-    type.serializeBinaryBulkWithMultipleStreams(*column, output_stream_getter, offset, limit, false, {});
+    type.serializeBinaryBulkWithMultipleStreams(*full_column, output_stream_getter, offset, limit, false, {});
 }
 
 
