@@ -13,7 +13,7 @@ std::string escapeForFileName(const std::string & s)
 
     while (pos != end)
     {
-        char c = *pos;
+        unsigned char c = *pos;
 
         if (isWordCharASCII(c))
             res += c;
