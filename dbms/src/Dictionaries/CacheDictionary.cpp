@@ -141,7 +141,7 @@ void CacheDictionary::isInImpl(
             else if (children[new_children_idx] == parents[parents_idx])
             {
                 // Loop detected
-                out[out_idx] = 0;
+                out[out_idx] = 1;
             }
             else
             {
