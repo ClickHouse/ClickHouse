@@ -1,21 +1,15 @@
-#define BOOST_COROUTINE_NO_DEPRECATION_WARNING 1
-#define BOOST_COROUTINES_NO_DEPRECATION_WARNING 1
-
 #include <Client/Connection.cpp>
 #include <Client/ConnectionPoolWithFailover.cpp>
 #include <Common/Exception.h>
 #include <Interpreters/Settings.h>
 #include <Core/FieldVisitors.h>
 #include <Common/Stopwatch.h>
-#include <IO/ReadBufferFromAsioSocket.h>
 
 #include <daemon/OwnPatternFormatter.h>
 #include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
 #include <Poco/AutoPtr.h>
-
-#include <boost/asio.hpp>
 
 #include <iostream>
 #include <thread>
@@ -45,59 +39,6 @@ try
 
     size_t num_shards = std::stoul(argv[1]);
     size_t num_replicas = std::stoul(argv[2]);
-
-    boost::asio::io_service io_service;
-
-    auto work = [&](size_t num, const std::string & port, boost::asio::yield_context yield)
-    {
-        try
-        {
-            LOG_TRACE(log, "Coro " << num << " starting.");
-
-            boost::system::error_code ec;
-
-            boost::asio::ip::tcp::resolver resolver(io_service);
-            boost::asio::ip::tcp::resolver::query query("localhost", port);
-            auto iter = resolver.async_resolve(query, yield[ec]);
-            if (ec)
-                throw Exception("Could not resolve.");
-
-            ++iter; /// skip ipv6
-            LOG_TRACE(log, "Coro " << num << " resolved address to " << iter->endpoint());
-
-            boost::asio::ip::tcp::socket socket(io_service);
-            socket.async_connect(iter->endpoint(), yield[ec]);
-            if (ec)
-                throw Exception("Could not connect.");
-
-            LOG_TRACE(log, "Coro " << num << " connected.");
-
-            ReadBufferFromAsioSocket read_buf(socket, yield);
-
-            while (!read_buf.eof())
-            {
-                String str;
-                readString(str, read_buf);
-                LOG_INFO(log, "Coro " << num << " read string: " << str);
-
-                char delim;
-                readChar(delim, read_buf);
-            }
-
-            LOG_TRACE(log, "Coro " << num << " ended.");
-        }
-        catch (Exception & e)
-        {
-            LOG_ERROR(log, "Coro " << num << ": " << e.displayText());
-        }
-    };
-
-    boost::asio::spawn(io_service, [&](boost::asio::yield_context yield) { work(1, "1234", yield); });
-    boost::asio::spawn(io_service, [&](boost::asio::yield_context yield) { work(2, "1232", yield); });
-
-    io_service.run();
-
-    return 1;
 
     ConnectionPoolWithFailoverPtrs shard_pools;
     for (size_t i = 0; i < num_shards; ++i)

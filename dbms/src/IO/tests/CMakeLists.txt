@@ -76,3 +76,9 @@ target_link_libraries (zlib_buffers dbms)
 
 add_executable (remote_read_write_buffer remote_read_write_buffer.cpp ${SRCS})
 target_link_libraries (remote_read_write_buffer dbms)
+
+add_definitions(-Wno-non-virtual-dtor)
+
+add_executable(test_asio test_asio.cpp)
+target_include_directories (test_asio PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include ${ClickHouse_SOURCE_DIR}/contrib/libboost/boost_1_62_0/)
+target_link_libraries (test_asio dbms daemon  boost_coroutine_internal boost_context_internal boost_thread_internal)
