@@ -84,7 +84,7 @@ public:
         std::vector<std::string> dir_names;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num;
-        int weight;
+        UInt32 weight;
         Addresses local_addresses;
         ConnectionPoolWithFailoverPtr pool;
         bool has_internal_replication;
