@@ -24,7 +24,7 @@ namespace
 {
 
 /// Default shard weight.
-static constexpr int default_weight = 1;
+static constexpr UInt32 default_weight = 1;
 
 inline bool isLocal(const Cluster::Address & address)
 {
@@ -195,8 +195,6 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
             const auto & prefix = config_prefix + key;
             const auto weight = config.getInt(prefix + ".weight", default_weight);
-            if (weight == 0)
-                continue;
 
             addresses.emplace_back(config, prefix);
             addresses.back().replica_num = 1;
@@ -225,7 +223,9 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                         std::move(pools), settings.load_balancing, settings.connections_with_failover_max_tries);
             }
 
-            slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+            if (weight)
+                slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+
             shards_info.push_back(info);
         }
         else if (startsWith(key, "shard"))
@@ -240,9 +240,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
             UInt32 current_replica_num = 1;
 
             const auto & partial_prefix = config_prefix + key + ".";
-            const auto weight = config.getInt(partial_prefix + ".weight", default_weight);
-            if (weight == 0)
-                continue;
+            const auto weight = config.getUInt(partial_prefix + ".weight", default_weight);
 
             bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
@@ -310,7 +308,9 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                 shard_pool = std::make_shared<ConnectionPoolWithFailover>(
                         std::move(replicas), settings.load_balancing, settings.connections_with_failover_max_tries);
 
-            slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+            if (weight)
+                slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+
             shards_info.push_back({std::move(dir_names), current_shard_num, weight, shard_local_addresses, shard_pool, internal_replication});
         }
         else
