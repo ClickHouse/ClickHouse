@@ -250,7 +250,7 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-/// TODO Compute with the code in FunctionsVisitParam.h and JSON.h
+/// TODO Unify with the code in FunctionsVisitParam.h and JSON.h
 template <typename Vector>
 static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 {

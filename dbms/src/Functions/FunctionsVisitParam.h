@@ -143,12 +143,12 @@ struct ExtractRaw
 
 struct ExtractString
 {
-    static UInt64 unhexCodePoint(const UInt8 * pos)
+    static UInt16 unhexCodePoint(const UInt8 * pos)
     {
-        return unhex(pos[0]) * 0xFFF
-             + unhex(pos[1]) * 0xFF
-             + unhex(pos[2]) * 0xF
-             + unhex(pos[3]);
+        return UInt16(unhex(pos[0])) * 0xFFF
+             + UInt16(unhex(pos[1])) * 0xFF
+             + UInt16(unhex(pos[2])) * 0xF
+             + UInt16(unhex(pos[3]));
     }
 
     static bool tryExtract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)

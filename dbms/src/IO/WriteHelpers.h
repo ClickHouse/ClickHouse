@@ -212,14 +212,14 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                     else
                         writeChar('A' + lower_half - 10, buf);
                 }
-                else if (end - it >= 3 && it[0] == 0xE2 && it[1] == 0x80 && (it[2] == 0xA8 || it[2] == 0xA9))
+                else if (end - it >= 3 && it[0] == '\xE2' && it[1] == '\x80' && (it[2] == '\xA8' || it[2] == '\xA9'))
                 {
                     /// This is for compatibility with JavaScript, because unescaped line separators are prohibited in string literals,
                     ///  and these code points are alternative line separators.
 
-                    if (it[2] == 0xA8)
+                    if (it[2] == '\xA8')
                         writeCString("\\u2028", buf);
-                    if (it[2] == 0xA9)
+                    if (it[2] == '\xA9')
                         writeCString("\\u2029", buf);
 
                     /// Byte sequence is 3 bytes long. We have additional two bytes to skip.
