@@ -373,6 +373,7 @@ As an alternative, you can manually copy data from the ``/var/lib/clickhouse/dat
 ``ALTER TABLE ... FREEZE PARTITION`` only copies data, not table metadata. To make a backup of table metadata, copy the file  ``/var/lib/clickhouse/metadata/database/table.sql``
 
 To restore from a backup:
+
 * Use the CREATE query to create the table if it doesn't exist. The query can be taken from an .sql file (replace ATTACH in it with CREATE).
 * Copy data from the ``data/database/table/`` directory inside the backup to the ``/var/lib/clickhouse/data/database/table/detached/`` directory.
 * Run ``ALTER TABLE ... ATTACH PARTITION YYYYMM``queries where ``YYYYMM`` is the month, for every month.

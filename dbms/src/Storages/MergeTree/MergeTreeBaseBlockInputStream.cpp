@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
@@ -12,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -75,8 +77,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
     const auto max_block_size_rows = this->max_block_size_rows;
     const auto preferred_block_size_bytes = this->preferred_block_size_bytes;
-    const auto preferred_max_column_in_block_size_bytes =
-        this->preferred_max_column_in_block_size_bytes ? this->preferred_max_column_in_block_size_bytes : max_block_size_rows;
+    const auto preferred_max_column_in_block_size_bytes = this->preferred_max_column_in_block_size_bytes;
     const auto index_granularity = storage.index_granularity;
     const double min_filtration_ratio = 0.00001;
 
@@ -131,7 +132,21 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             {
                 auto & col = block.getByPosition(i);
                 if (task.column_name_set.count(col.name))
-                    col.column = col.column->cloneEmpty();
+                {
+                    if (ColumnArray * column_array = typeid_cast<ColumnArray *>(col.column.get()))
+                    {
+                        /// ColumnArray columns in block could have common offset column, which is used while reading.
+                        /// This is in case of nested data structures.
+
+                        /// Have to call resize(0) instead of cloneEmpty to save structure.
+                        /// (To keep offsets possibly shared between different arrays.)
+                        column_array->getOffsets().resize(0);
+                        /// It's ok until multidimensional arrays are not stored in MergeTree.
+                        column_array->getDataPtr() = column_array->getDataPtr()->cloneEmpty();
+                    }
+                    else
+                        col.column = col.column->cloneEmpty();
+                }
             }
         }
     };
@@ -194,7 +209,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             if (!res)
             {
                 if (!pre_range_reader)
+                {
                     task->current_range_reader = std::experimental::nullopt;
+                }
                 return res;
             }
 
@@ -283,7 +300,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     if (!task->current_range_reader)
                     {
                         if (next_range_idx == ranges_to_read.size())
-                            throw Exception("Nothing to read");
+                            throw Exception("Not enough ranges to read after prewhere.", ErrorCodes::LOGICAL_ERROR);
                         const auto & range = ranges_to_read[next_range_idx++];
                         task->current_range_reader = reader->readRange(range.begin, range.end);
                     }
@@ -293,7 +310,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                     /// Now we need to read the same number of rows as in prewhere.
                     size_t rows_to_read = next_range_idx == ranges_to_read.size()
-                        ? rows_was_read_in_last_range : task->current_range_reader->unreadRows();
+                        ? rows_was_read_in_last_range : (task->current_range_reader->unreadRows() - number_of_rows_to_skip);
 
                     auto readRows = [&]()
                     {
@@ -338,8 +355,18 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                             if (will_read_until_mark)
                             {
                                 /// Can skip the rest of granule with false prewhere conditon right now.
-                                current_range_rows_read += range_reader.skipToNextMark() - number_of_rows_to_skip;
-                                number_of_rows_to_skip = 0;
+                                do
+                                {
+                                    size_t rows_was_skipped = range_reader.skipToNextMark();
+                                    if (number_of_rows_to_skip < rows_was_skipped)
+                                    {
+                                        current_range_rows_read += rows_was_skipped - number_of_rows_to_skip;
+                                        number_of_rows_to_skip = 0;
+                                    }
+                                    else
+                                        number_of_rows_to_skip -= rows_was_skipped;
+                                }
+                                while (number_of_rows_to_skip);
                             }
                             else
                             {
@@ -350,7 +377,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                             pre_filter_begin_pos = limit;
                         }
-
                         pre_filter_pos = limit;
                     }
 
@@ -391,6 +417,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 /// Replace column with condition value from PREWHERE to a constant.
                 if (!task->remove_prewhere_column)
                     res.getByName(prewhere_column).column = DataTypeUInt8().createConstColumn(rows, UInt64(1));
+
             }
             else
                 throw Exception{
@@ -431,7 +458,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 task->current_range_reader = std::experimental::nullopt;
 
             if (res && task->size_predictor)
+            {
                 task->size_predictor->update(res);
+            }
 
             space_left -= rows_was_read;
         }

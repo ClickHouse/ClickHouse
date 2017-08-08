@@ -58,18 +58,15 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
 
 static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
-    std::string message;
-    {
-        WriteBufferFromString out(message);
-        out <<  "Cannot parse input: expected " << escape << s;
+    WriteBufferFromOwnString out;
+    out <<  "Cannot parse input: expected " << escape << s;
 
-        if (buf.eof())
-            out << " at end of stream.";
-        else
-            out << " before: " << escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
-    }
+    if (buf.eof())
+        out << " at end of stream.";
+    else
+        out << " before: " << escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
-    throw Exception(message, ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
+    throw Exception(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }
 
 
@@ -753,28 +750,25 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
     readBinary(stack_trace, buf);
     readBinary(has_nested, buf);
 
-    std::string new_message;
-    {
-        WriteBufferFromString out(new_message);
+    WriteBufferFromOwnString out;
 
-        if (!additional_message.empty())
-            out << additional_message << ". ";
+    if (!additional_message.empty())
+        out << additional_message << ". ";
 
-        if (name != "DB::Exception")
-            out << name << ". ";
+    if (name != "DB::Exception")
+        out << name << ". ";
 
-        out << message
-            << ". Stack trace:\n\n" << stack_trace;
-    }
+    out << message
+        << ". Stack trace:\n\n" << stack_trace;
 
     if (has_nested)
     {
         Exception nested;
         readException(nested, buf);
-        e = Exception(new_message, nested, code);
+        e = Exception(out.str(), nested, code);
     }
     else
-        e = Exception(new_message, code);
+        e = Exception(out.str(), code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)

@@ -1,5 +1,3 @@
-include_directories (include)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include)
 
 add_library (mysqlxx
     src/Connection.cpp
@@ -29,6 +27,8 @@ add_library (mysqlxx
     include/mysqlxx/UseQueryResult.h
     include/mysqlxx/Value.h
 )
+
+target_include_directories (mysqlxx PUBLIC include)
 
 set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
 

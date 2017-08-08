@@ -56,6 +56,7 @@ namespace ProfileEvents
     extern const Event ReplicatedPartFetchesOfMerged;
     extern const Event ObsoleteReplicatedParts;
     extern const Event ReplicatedPartFetches;
+    extern const Event DataAfterMergeDiffersFromReplica;
 }
 
 namespace DB
@@ -394,10 +395,9 @@ namespace
 
         String toString() const
         {
-            String res;
-            WriteBufferFromString out(res);
+            WriteBufferFromOwnString out;
             write(out);
-            return res;
+            return out.str();
         }
 
         void check(ReadBuffer & in) const
@@ -1093,6 +1093,8 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                     do_fetch = true;
                     part->remove();
 
+                    ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
+
                     LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "
                         "Data after merge is not byte-identical to data on another replicas. "
                         "There could be several reasons: "
@@ -1118,7 +1120,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                 if (auto part_log = context.getPartLog(database_name, table_name))
                 {
                     PartLogElement elem;
-                    elem.event_time = time(0);
+                    elem.event_time = time(nullptr);
 
                     elem.merged_from.reserve(parts.size());
                     for (const auto & part : parts)
@@ -1841,7 +1843,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
     entry.deduplicate = deduplicate;
-    entry.create_time = time(0);
+    entry.create_time = time(nullptr);
 
     for (const auto & part : parts)
         entry.parts_to_merge.push_back(part->name);
@@ -2145,7 +2147,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
         if (auto part_log = context.getPartLog(database_name, table_name))
         {
             PartLogElement elem;
-            elem.event_time = time(0);
+            elem.event_time = time(nullptr);
             elem.event_type = PartLogElement::DOWNLOAD_PART;
             elem.size_in_bytes = part->size_in_bytes;
             elem.duration_ms = stopwatch.elapsed() / 10000000;
@@ -2648,7 +2650,7 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
     entry.type = LogEntry::CLEAR_COLUMN;
     entry.new_part_name = fake_part_name;
     entry.column_name = column_name.safeGet<String>();
-    entry.create_time = time(0);
+    entry.create_time = time(nullptr);
 
     String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
@@ -2698,7 +2700,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field
     entry.source_replica = replica_name;
     entry.new_part_name = fake_part_name;
     entry.detach = detach;
-    entry.create_time = time(0);
+    entry.create_time = time(nullptr);
 
     String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);

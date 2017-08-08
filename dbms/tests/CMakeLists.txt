@@ -11,7 +11,7 @@ endif ()
 # Google Test from sources
 add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
 # avoid problems with <regexp.h>
-target_compile_definitions (gtest INTERFACE -DGTEST_HAS_POSIX_RE=0)
+target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 target_include_directories (gtest INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
 
 

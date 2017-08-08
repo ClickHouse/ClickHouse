@@ -105,7 +105,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     assertEOF(body);
 
     ActiveDataPartSet::parsePartName(part_name, *data_part);
-    data_part->modification_time = time(0);
+    data_part->modification_time = time(nullptr);
     data_part->loadColumns(true);
     data_part->loadChecksums(true);
     data_part->loadIndex();
@@ -151,7 +151,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
     MergeTreeData::DataPartPtr part = findShardedPart(part_name, shard_no);
 
-    Poco::ScopedReadRWLock part_lock{part->columns_lock};
+    std::shared_lock<std::shared_mutex> part_lock{part->columns_lock};
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 

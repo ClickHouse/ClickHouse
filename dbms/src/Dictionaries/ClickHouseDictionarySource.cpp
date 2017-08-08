@@ -97,7 +97,7 @@ std::string ClickHouseDictionarySource::toString() const
 }
 
 
-BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(const std::string query)
+BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(const std::string & query)
 {
     if (is_local)
         return executeQuery(query, context, true).in;

@@ -1,6 +1,3 @@
-add_definitions(-DHAVE_CONFIG_H=1 -D_XOPEN_SOURCE -D_GNU_SOURCE -Wno-visibility -Wno-header-guard)
-
-include_directories(include include/tdep src)
 
 enable_language(ASM)
 
@@ -55,3 +52,10 @@ src/elf64.c
 src/os-linux.c
 src/x86_64/Los-linux.c
 )
+
+target_compile_definitions (unwind PRIVATE HAVE_CONFIG_H=1 _XOPEN_SOURCE _GNU_SOURCE)
+target_compile_options (unwind PRIVATE -Wno-visibility -Wno-header-guard)
+
+target_include_directories (unwind PUBLIC include)
+target_include_directories (unwind PRIVATE include/tdep)
+target_include_directories (unwind PRIVATE src)

@@ -48,3 +48,8 @@ boost_1_62_0/libs/test/src/unit_test_monitor.cpp
 boost_1_62_0/libs/test/src/unit_test_parameters.cpp
 boost_1_62_0/libs/test/src/xml_log_formatter.cpp
 boost_1_62_0/libs/test/src/xml_report_formatter.cpp)
+
+target_include_directories (boost_program_options_internal BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+target_include_directories (boost_filesystem_internal BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+target_include_directories (boost_system_internal BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+target_include_directories (boost_test_internal BEFORE PUBLIC ${Boost_INCLUDE_DIRS})

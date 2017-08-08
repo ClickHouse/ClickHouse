@@ -11,7 +11,6 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <IO/ConcatReadBuffer.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
 #include <Common/typeid_cast.h>

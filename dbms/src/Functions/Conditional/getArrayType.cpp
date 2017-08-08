@@ -17,8 +17,7 @@ namespace
 
 std::string dumpArgTypes(const DataTypes & args)
 {
-    std::string out;
-    WriteBufferFromString buf{out};
+    WriteBufferFromOwnString buf;
 
     bool is_first = true;
     for (size_t i = 0; i < args.size(); ++i)
@@ -30,10 +29,7 @@ std::string dumpArgTypes(const DataTypes & args)
 
         writeString(args[i]->getName(), buf);
     }
-
-    buf.next();
-
-    return out;
+    return buf.str();
 }
 
 /// Forward declarations.

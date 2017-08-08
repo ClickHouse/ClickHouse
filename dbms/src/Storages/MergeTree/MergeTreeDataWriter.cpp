@@ -146,8 +146,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
+    /// This effectively chooses minimal compression method:
+    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
+    auto compression_method = data.context.chooseCompressionMethod(0, 0);
+
     NamesAndTypesList columns = data.getColumnsList().filter(block.getColumnsList().getNames());
-    MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, CompressionMethod::LZ4);
+    MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_method);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
@@ -159,7 +163,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithDa
     new_data_part->right = temp_index;
     new_data_part->level = 0;
     new_data_part->size = part_size;
-    new_data_part->modification_time = time(0);
+    new_data_part->modification_time = time(nullptr);
     new_data_part->month = min_month;
     new_data_part->columns = columns;
     new_data_part->checksums = checksums;

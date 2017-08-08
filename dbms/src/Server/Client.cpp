@@ -29,7 +29,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -250,7 +249,7 @@ private:
     /// Should we celebrate a bit?
     bool isNewYearMode()
     {
-        time_t current_time = time(0);
+        time_t current_time = time(nullptr);
 
         /// It's bad to be intrusive.
         if (current_time % 3 != 0)

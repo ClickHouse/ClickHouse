@@ -88,7 +88,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
         else
             part = findPart(part_name);
 
-        Poco::ScopedReadRWLock part_lock(part->columns_lock);
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
@@ -265,7 +265,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
     assertEOF(in);
 
     ActiveDataPartSet::parsePartName(part_name, *new_data_part);
-    new_data_part->modification_time = time(0);
+    new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumns(true);
     new_data_part->loadChecksums(true);
     new_data_part->loadIndex();

@@ -146,7 +146,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
             {
                 size_t column_size_before_reading = column.column->size();
                 readData(column.name, *column.type, *column.column, from_mark, continue_reading, max_rows_to_read, 0, read_offsets);
-                read_rows = column.column->size() - column_size_before_reading;
+                read_rows = std::max(read_rows, column.column->size() - column_size_before_reading);
             }
             catch (Exception & e)
             {

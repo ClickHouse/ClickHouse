@@ -49,6 +49,6 @@ if (ENABLE_LIBTCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
 	add_subdirectory (libtcmalloc)
 endif ()
 
-if (NOT AARCH64)
+if (NOT ARM)
 	add_subdirectory (libcpuid)
 endif ()

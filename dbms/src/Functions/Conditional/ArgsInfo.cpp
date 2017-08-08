@@ -22,8 +22,7 @@ namespace
 
 std::string dumpArgTypes(const DataTypes & args)
 {
-    std::string out;
-    WriteBufferFromString buf{out};
+    WriteBufferFromOwnString buf;
 
     size_t else_arg = elseArg(args);
 
@@ -40,10 +39,7 @@ std::string dumpArgTypes(const DataTypes & args)
 
     writeString("; ", buf);
     writeString(args[else_arg]->getName(), buf);
-
-    buf.next();
-
-    return out;
+    return buf.str();
 }
 
 /// Forward declarations.

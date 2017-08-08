@@ -244,12 +244,6 @@ a:hover, a:active {
     color: #ededed;
 }
 
-#ubuntu-install {
-    overflow: auto;
-    overflow-y: hidden;
-    -ms-overflow-y: hidden;
-}
-
 #footer {
     text-align: right;
     padding: 8px 0 0 0;
@@ -266,6 +260,7 @@ pre {
     border-left: 5px solid #ffdb4d;
     padding: 5px 10px;
     background-color: #fff8e8;
+    overflow: scroll;
 }
 
 ul {
@@ -287,6 +282,10 @@ ul.dashed > li:before {
     text-indent: 1em;
 }
 
+img {
+    width: 100%;
+}
+
 .warranty {
     margin-top: 6em;
     font-size: 50%;
@@ -304,6 +303,13 @@ ul.dashed > li:before {
     color: #08f;
     cursor: pointer;
     border-bottom: 1px solid #08f;
+}
+
+#tutorial_logo {
+    float: left;
+    margin-right: -100%;
+    margin-top: 34px;
+    margin-left: 3px;
 }
 
 #tutorial_title {
@@ -460,4 +466,18 @@ ul.dashed > li:before {
         width: 100%;
         float: none;
     }
+
+    #tutorial_logo, #tutorial_title, #tutorial_subtitle {
+        float: none;
+        text-align: left;
+        margin: 10px 0;
+        padding: 0;
+    }
+
+    #tutorial_title {
+        font-size: 75px;
+    }
+
+
+
 }
