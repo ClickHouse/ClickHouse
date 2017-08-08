@@ -149,12 +149,12 @@ inline void writeString(const StringRef & ref, WriteBuffer & buf)
     (buf).write((s), strlen(s))
 
 /** Writes a string for use in the JSON format:
- *  - the string is outputted in double quotes
- *  - forward slash character '/' is escaped
+ *  - the string is written in double quotes
+ *  - slash character '/' is escaped for compatibility with JavaScript
  *  - bytes from the range 0x00-0x1F except `\b', '\f', '\n', '\r', '\t' are escaped as \u00XX
  *  - code points U+2028 and U+2029 (byte sequences in UTF-8: e2 80 a8, e2 80 a9) are escaped as \u2028 and \u2029
- *  - it is assumed that string is the UTF-8 encoded, the invalid UTF-8 is not processed
- *  - non-ASCII characters remain as is
+ *  - it is assumed that string is in UTF-8, the invalid UTF-8 is not processed
+ *  - all other non-ASCII characters remain as is
  */
 inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf)
 {
@@ -196,10 +196,13 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 writeChar('"', buf);
                 break;
             default:
-                if (0x00 <= *it && *it <= 0x1F)
+                UInt8 c = *it;
+                if (0x00 <= c && c <= 0x1F)
                 {
-                    char higher_half = (*it) >> 4;
-                    char lower_half = (*it) & 0xF;
+                    /// Escaping of ASCII control characters.
+
+                    UInt8 higher_half = c >> 4;
+                    UInt8 lower_half = c & 0xF;
 
                     writeCString("\\u00", buf);
                     writeChar('0' + higher_half, buf);
@@ -209,12 +212,18 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                     else
                         writeChar('A' + lower_half - 10, buf);
                 }
-                else if (end - it >= 3 && it[0] == '\xE2' && it[1] == '\x80' && (it[2] == '\xA8' || it[2] == '\xA9'))
+                else if (end - it >= 3 && it[0] == 0xE2 && it[1] == 0x80 && (it[2] == 0xA8 || it[2] == 0xA9))
                 {
-                    if (it[2] == '\xA8')
+                    /// This is for compatibility with JavaScript, because unescaped line separators are prohibited in string literals,
+                    ///  and these code points are alternative line separators.
+
+                    if (it[2] == 0xA8)
                         writeCString("\\u2028", buf);
-                    if (it[2] == '\xA9')
+                    if (it[2] == 0xA9)
                         writeCString("\\u2029", buf);
+
+                    /// Byte sequence is 3 bytes long. We have additional two bytes to skip.
+                    it += 2;
                 }
                 else
                     writeChar(*it, buf);
