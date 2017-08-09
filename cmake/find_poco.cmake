@@ -1,5 +1,9 @@
 option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
 
+if (USE_STATIC_LIBRARIES)
+    include (cmake/find_libtool.cmake)
+endif ()
+
 if (NOT USE_INTERNAL_POCO_LIBRARY)
     find_package (Poco COMPONENTS Net NetSSL XML Data Crypto DataODBC MongoDB)
 endif ()
