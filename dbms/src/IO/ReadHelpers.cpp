@@ -248,7 +248,6 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-/// TODO Unify with the code in FunctionsVisitParam.h and JSON.h
 template <typename Vector, typename ReturnType>
 static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 {
