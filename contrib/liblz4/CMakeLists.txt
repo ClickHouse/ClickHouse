@@ -6,4 +6,4 @@ add_library (lz4
     include/lz4/lz4hc.h
     include/lz4/lz4opt.h)
 
-target_include_directories(lz4 PUBLIC include)
+target_include_directories(lz4 PUBLIC include/lz4)

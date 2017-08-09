@@ -16,3 +16,5 @@ include/cpuid/rdtsc.h
 include/cpuid/recog_amd.h
 include/cpuid/recog_intel.h
 )
+
+target_include_directories (cpuid PUBLIC include)
