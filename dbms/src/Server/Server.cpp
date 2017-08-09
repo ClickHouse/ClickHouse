@@ -372,7 +372,7 @@ int Server::main(const std::vector<std::string> & args)
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
 
-    /// Limit on total number of coucurrently executed queries.
+    /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 
     /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
