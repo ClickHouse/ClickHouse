@@ -150,7 +150,7 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-if (NOT ARM)
+if (NOT ARCH_ARM)
     set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
 
@@ -200,7 +200,6 @@ endif ()
 target_link_libraries (dbms
     ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
-    ${LTDL_LIB}
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
