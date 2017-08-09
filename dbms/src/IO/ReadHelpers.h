@@ -549,8 +549,15 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter = ',');
 
+/// ReturnType is either bool or void. If bool, the function will return false instead of throwing an exception.
+template <typename Vector, typename ReturnType = void>
+ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf);
+
 template <typename Vector>
-void readJSONStringInto(Vector & s, ReadBuffer & buf);
+bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
+{
+    return readJSONStringInto<Vector, bool>(s, buf);
+}
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullSink
