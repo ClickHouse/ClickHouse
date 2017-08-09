@@ -15,6 +15,6 @@ macro(find_contrib_lib LIB_NAME)
         set (${LIB_NAME_UC}_LIBRARIES ${LIB_NAME_LC})
     endif ()
 
-    message (STATUS "Using ${LIB_NAME}: ${${LIB_NAME_UC}_INCLUDE_DIR} : ${${LIB_NAME_UC}_LIBRARIES} f=[${LIB_NAME_UC}_FOUND]")
+    message (STATUS "Using ${LIB_NAME}: ${${LIB_NAME_UC}_INCLUDE_DIR} : ${${LIB_NAME_UC}_LIBRARIES}")
 
 endmacro()
