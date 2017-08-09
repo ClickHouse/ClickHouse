@@ -143,102 +143,11 @@ struct ExtractRaw
 
 struct ExtractString
 {
-    static UInt16 unhexCodePoint(const UInt8 * pos)
-    {
-        return UInt16(unhex(pos[0])) * 0xFFF
-             + UInt16(unhex(pos[1])) * 0xFF
-             + UInt16(unhex(pos[2])) * 0xF
-             + UInt16(unhex(pos[3]));
-    }
-
-    static bool tryExtract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
-    {
-        if (pos == end || *pos != '"')
-            return false;
-
-        ++pos;
-        while (pos != end)
-        {
-            switch (*pos)
-            {
-                case '\\':
-                    ++pos;
-                    if (pos >= end)
-                        return false;
-
-                    switch(*pos)
-                    {
-                        case '"':
-                            res_data.push_back('"');
-                            break;
-                        case '\\':
-                            res_data.push_back('\\');
-                            break;
-                        case '/':
-                            res_data.push_back('/');
-                            break;
-                        case 'b':
-                            res_data.push_back('\b');
-                            break;
-                        case 'f':
-                            res_data.push_back('\f');
-                            break;
-                        case 'n':
-                            res_data.push_back('\n');
-                            break;
-                        case 'r':
-                            res_data.push_back('\r');
-                            break;
-                        case 't':
-                            res_data.push_back('\t');
-                            break;
-                        case 'u':
-                        {
-                            ++pos;
-
-                            if (pos + 4 > end)
-                                return false;
-
-                            UInt16 code_point = unhexCodePoint(pos);
-                            pos += 3;
-
-                            static constexpr size_t max_code_point_byte_length = 4;
-
-                            size_t old_size = res_data.size();
-                            res_data.resize(old_size + max_code_point_byte_length);
-
-                            Poco::UTF8Encoding utf8;
-                            int length = utf8.convert(code_point,
-                                &res_data[old_size], max_code_point_byte_length);
-
-                            if (!length)
-                                return false;
-
-                            res_data.resize(old_size + length);
-                            break;
-                        }
-                        default:
-                            res_data.push_back(*pos);
-                            break;
-                    }
-                    ++pos;
-                    break;
-                case '"':
-                    return true;
-                default:
-                    res_data.push_back(*pos);
-                    ++pos;
-                    break;
-            }
-        }
-        return false;
-    }
-
     static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
     {
         size_t old_size = res_data.size();
-
-        if (!tryExtract(pos, end, res_data))
+        ReadBufferFromMemory in(pos, end - pos);
+        if (!tryReadJSONStringInto(res_data, in))
             res_data.resize(old_size);
     }
 };
