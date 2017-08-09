@@ -7,13 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NETWORK_ERROR;
-    extern const int SOCKET_TIMEOUT;
-    extern const int LOGICAL_ERROR;
-}
-
 /** Connection pool with fault tolerance.
   * Initialized by several other IConnectionPools.
   * When a connection is received, it tries to create or select a live connection from a pool,
