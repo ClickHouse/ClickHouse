@@ -1,7 +1,11 @@
 #pragma once
 
-#include "Server.h"
+#include <Poco/Logger.h>
+#include <Poco/Net/HTTPRequestHandler.h>
+
 #include <Common/CurrentMetrics.h>
+
+#include "IServer.h"
 
 
 namespace CurrentMetrics
@@ -17,7 +21,7 @@ class InterserverIOHTTPHandler : public Poco::Net::HTTPRequestHandler
 public:
     InterserverIOHTTPHandler(IServer & server_)
         : server(server_)
-        , log(&Logger::get("InterserverIOHTTPHandler"))
+        , log(&Poco::Logger::get("InterserverIOHTTPHandler"))
     {
     }
 
@@ -25,7 +29,7 @@ public:
 
 private:
     IServer & server;
-    Logger * log;
+    Poco::Logger * log;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
 

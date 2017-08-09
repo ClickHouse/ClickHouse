@@ -1,15 +1,17 @@
 #pragma once
 
+#include <Poco/Net/TCPServerConnection.h>
+
+#include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
+#include <Core/Progress.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataStreams/BlockIO.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <DataStreams/BlockIO.h>
-#include <Common/Stopwatch.h>
-#include <Common/CurrentMetrics.h>
-#include <Core/Progress.h>
-#include "Server.h"
 
+#include "IServer.h"
 
 namespace CurrentMetrics
 {
@@ -144,6 +146,5 @@ private:
     /// This function is called from different threads.
     void updateProgress(const Progress & value);
 };
-
 
 }

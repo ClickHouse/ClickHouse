@@ -1,7 +1,11 @@
 #pragma once
 
+#include "IServer.h"
+
+#include <Poco/Net/HTTPRequestHandler.h>
+
 #include <Common/CurrentMetrics.h>
-#include "Server.h"
+#include <Common/HTMLForm.h>
 
 
 namespace CurrentMetrics
@@ -59,8 +63,11 @@ private:
         Poco::Net::HTTPServerResponse & response,
         Output & used_output);
 
-    void trySendExceptionToClient(const std::string & s, int exception_code,
-        Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
+    void trySendExceptionToClient(
+        const std::string & s,
+        int exception_code,
+        Poco::Net::HTTPServerRequest & request,
+        Poco::Net::HTTPServerResponse & response,
         Output & used_output);
 
     void pushDelayedResults(Output & used_output);
