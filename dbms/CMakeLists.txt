@@ -208,7 +208,7 @@ target_link_libraries (dbms
 target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 
-#only for copy_headers.sh :
+# only for copy_headers.sh:
 target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
