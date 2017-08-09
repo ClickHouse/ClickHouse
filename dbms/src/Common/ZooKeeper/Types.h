@@ -11,7 +11,7 @@ namespace zkutil
 {
 
 using ACLPtr = const ACL_vector *;
-using Stat = Stat;
+using Stat = ::Stat;
 
 struct Op
 {

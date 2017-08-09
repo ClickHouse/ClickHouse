@@ -555,7 +555,7 @@ int32_t ZooKeeper::multiImpl(const Ops & ops_, OpResultsPtr * out_results_)
     for (const auto & op : ops_)
         ops.push_back(*(op->data));
 
-    int32_t code = zoo_multi(impl, ops.size(), ops.data(), out_results->data());
+    int32_t code = zoo_multi(impl, static_cast<int>(ops.size()), ops.data(), out_results->data());
     ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
@@ -612,15 +612,13 @@ int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_resul
     return code;
 }
 
-static const int BATCH_SIZE = 100;
-
 void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
     Strings children = getChildren(path);
     while (!children.empty())
     {
         zkutil::Ops ops;
-        for (size_t i = 0; i < BATCH_SIZE && !children.empty(); ++i)
+        for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             removeChildrenRecursive(path + "/" + children.back());
             ops.emplace_back(std::make_unique<Op::Remove>(path + "/" + children.back(), -1));
@@ -639,7 +637,7 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path)
     {
         zkutil::Ops ops;
         Strings batch;
-        for (size_t i = 0; i < BATCH_SIZE && !children.empty(); ++i)
+        for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
             batch.push_back(path + "/" + children.back());
             children.pop_back();
@@ -902,6 +900,63 @@ ZooKeeper::RemoveFuture ZooKeeper::asyncRemove(const std::string & path)
         throw KeeperException(code, path);
 
     return future;
+}
+
+ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool throw_exception)
+{
+    size_t count = ops_.size();
+    OpResultsPtr results(new OpResults(count));
+
+    MultiFuture future{ [throw_exception, results] (int rc) {
+        OpResultsAndCode res;
+        res.code = rc;
+        res.results = results;
+        if (throw_exception && rc != ZOK)
+            throw zkutil::KeeperException(rc);
+        return res;
+    }};
+
+    if (ops_.empty())
+    {
+        (**future.task)(ZOK);
+        return future;
+    }
+
+    /// Workaround of the libzookeeper bug.
+    /// TODO: check if the bug is fixed in the latest version of libzookeeper.
+    if (expired())
+        throw KeeperException(ZINVALIDSTATE);
+
+    /// There is no need to hold these ops until the end of the passed callback
+    std::vector<zoo_op_t> ops;
+    for (const auto & op : ops_)
+        ops.push_back(*(op->data));
+
+    int32_t code = zoo_amulti(impl, static_cast<int>(ops.size()), ops.data(), results->data(),
+                              [] (int rc, const void * data)
+                              {
+                                  MultiFuture::TaskPtr owned_task =
+                                          std::move(const_cast<MultiFuture::TaskPtr &>(*static_cast<const MultiFuture::TaskPtr *>(data)));
+                                  (*owned_task)(rc);
+                              }, future.task.get());
+
+    ProfileEvents::increment(ProfileEvents::ZooKeeperMulti);
+    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+    if (code != ZOK)
+        throw KeeperException(code);
+
+    return future;
+}
+
+ZooKeeper::MultiFuture ZooKeeper::tryAsyncMulti(const zkutil::Ops & ops)
+{
+    return asyncMultiImpl(ops, false);
+}
+
+ZooKeeper::MultiFuture ZooKeeper::asyncMulti(const zkutil::Ops & ops)
+{
+    return asyncMultiImpl(ops, true);
 }
 
 }
