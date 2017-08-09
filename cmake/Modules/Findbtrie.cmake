@@ -23,12 +23,12 @@ find_path(BTRIE_ROOT_DIR
 
 find_library(BTRIE_LIBRARIES
     NAMES btrie
-    PATHS ${BTRIE_ROOT_DIR}/lib
+    PATHS ${BTRIE_ROOT_DIR}/lib ${BTRIE_LIBRARIES_PATHS}
 )
 
 find_path(BTRIE_INCLUDE_DIR
     NAMES btrie.h
-    PATHS ${BTRIE_ROOT_DIR}/include
+    PATHS ${BTRIE_ROOT_DIR}/include ${BTRIE_INCLUDE_PATHS}
 )
 
 include(FindPackageHandleStandardArgs)

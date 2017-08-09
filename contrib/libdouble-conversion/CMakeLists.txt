@@ -19,4 +19,4 @@ double-conversion/strtod.h
 double-conversion/utils.h
 )
 
-target_include_directories (double-conversion PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories (double-conversion PUBLIC .)

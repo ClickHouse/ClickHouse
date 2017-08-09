@@ -41,6 +41,9 @@ add_library (re2_st ${re2_sources})
 target_compile_definitions (re2 PRIVATE NDEBUG)
 target_compile_definitions (re2_st PRIVATE NDEBUG NO_THREADS re2=re2_st)
 
+target_include_directories (re2 PUBLIC .)
+target_include_directories (re2_st PUBLIC .)
+
 file (MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/re2_st)
 foreach (FILENAME filtered_re2.h re2.h set.h stringpiece.h variadic_function.h)
 	add_custom_command (OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/re2_st/${FILENAME}"

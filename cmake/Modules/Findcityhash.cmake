@@ -23,12 +23,12 @@ find_path(CITYHASH_ROOT_DIR
 
 find_library(CITYHASH_LIBRARIES
     NAMES cityhash
-    PATHS ${CITYHASH_ROOT_DIR}/lib
+    PATHS ${CITYHASH_ROOT_DIR}/lib ${CITYHASH_LIBRARIES_PATHS}
 )
 
 find_path(CITYHASH_INCLUDE_DIR
     NAMES city.h
-    PATHS ${CITYHASH_ROOT_DIR}/include
+    PATHS ${CITYHASH_ROOT_DIR}/include ${CITYHASH_INCLUDE_PATHS}
 )
 
 include(FindPackageHandleStandardArgs)

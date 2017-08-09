@@ -175,6 +175,7 @@ if (NOT OPENSSL_FOUND)
     message (FATAL_ERROR "Need openssl for build. debian tip: sudo apt install libssl-dev")
 endif ()
 
+include (cmake/lib_name.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
 # openssl, zlib before poco
@@ -193,7 +194,7 @@ find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
-find_contrib_lib("double-conversion")
+find_contrib_lib(double-conversion)
 
 # Need to process before "contrib" dir:
 include (libs/libcommon/cmake/find_gperftools.cmake)
@@ -201,7 +202,6 @@ include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 include (libs/libdaemon/cmake/find_unwind.cmake)
-include (cmake/lib_name.cmake)
 
 
 set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")

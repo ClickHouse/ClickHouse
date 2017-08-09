@@ -23,12 +23,12 @@ find_path(FARMHASH_ROOT_DIR
 
 find_library(FARMHASH_LIBRARIES
     NAMES farmhash
-    PATHS ${FARMHASH_ROOT_DIR}/lib
+    PATHS ${FARMHASH_ROOT_DIR}/lib ${FARMHASH_LIBRARIES_PATHS}
 )
 
 find_path(FARMHASH_INCLUDE_DIR
     NAMES farmhash.h
-    PATHS ${FARMHASH_ROOT_DIR}/include
+    PATHS ${FARMHASH_ROOT_DIR}/include ${FARMHASH_INCLUDE_PATHS}
 )
 
 include(FindPackageHandleStandardArgs)

@@ -9,8 +9,6 @@ if (ZOOKEEPER_LIBRARY AND ZOOKEEPER_INCLUDE_DIR)
     include_directories (${ZOOKEEPER_INCLUDE_DIR})
 else ()
     set (USE_INTERNAL_ZOOKEEPER_LIBRARY 1)
-    set (ZOOKEEPER_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libzookeeper/include")
-    include_directories (BEFORE ${ZOOKEEPER_INCLUDE_DIR})
     set (ZOOKEEPER_LIBRARY zookeeper_mt)
 endif ()
 
