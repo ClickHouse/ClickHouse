@@ -710,8 +710,8 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
     return std::make_shared<ZooKeeper>(hosts, session_timeout_ms);
 }
 
-Op::Create::Create(const std::string & path_, const std::string & value_, ACLPtr acl, int32_t flags)
-    : path(path_), value(value_), created_path(path.size() + ZooKeeper::SEQUENTIAL_SUFFIX_SIZE)
+Op::Create::Create(const std::string & path_, const std::string & value_, ACLPtr acl_, int32_t flags_)
+    : path(path_), value(value_), acl(acl_), flags(flags_), created_path(path.size() + ZooKeeper::SEQUENTIAL_SUFFIX_SIZE)
 {
     zoo_create_op_init(data.get(), path.c_str(), value.c_str(), value.size(), acl, flags, created_path.data(), created_path.size());
 }
@@ -907,10 +907,24 @@ ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool 
     size_t count = ops_.size();
     OpResultsPtr results(new OpResults(count));
 
-    MultiFuture future{ [throw_exception, results] (int rc) {
+    /// We need to hold all references to ops data until the end of multi callback
+    struct OpsHolder
+    {
+        std::shared_ptr<zkutil::Ops> ops_ptr = std::make_shared<zkutil::Ops>();
+        std::shared_ptr<std::vector<zoo_op_t>> ops_raw_ptr = std::make_shared<std::vector<zoo_op_t>>();;
+    } holder;
+
+    for (const auto & op : ops_)
+    {
+        holder.ops_ptr->emplace_back(op->clone());
+        holder.ops_raw_ptr->push_back(*holder.ops_ptr->back()->data);
+    }
+
+    MultiFuture future{ [throw_exception, results, holder] (int rc) {
         OpResultsAndCode res;
         res.code = rc;
         res.results = results;
+        res.ops_ptr = holder.ops_ptr;
         if (throw_exception && rc != ZOK)
             throw zkutil::KeeperException(rc);
         return res;
@@ -927,10 +941,7 @@ ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool 
     if (expired())
         throw KeeperException(ZINVALIDSTATE);
 
-    /// There is no need to hold these ops until the end of the passed callback
-    std::vector<zoo_op_t> ops;
-    for (const auto & op : ops_)
-        ops.push_back(*(op->data));
+    auto & ops = *holder.ops_raw_ptr;
 
     int32_t code = zoo_amulti(impl, static_cast<int>(ops.size()), ops.data(), results->data(),
                               [] (int rc, const void * data)

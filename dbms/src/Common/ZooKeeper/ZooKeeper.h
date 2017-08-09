@@ -326,14 +326,14 @@ public:
     struct OpResultsAndCode
     {
         OpResultsPtr results;
-        Ops ops;
+        std::shared_ptr<Ops> ops_ptr;
         int code;
     };
 
     using MultiFuture = Future<OpResultsAndCode, int>;
-    MultiFuture asyncMulti(const zkutil::Ops & ops);
+    MultiFuture asyncMulti(const Ops & ops);
     /// Like the previous one but don't throw any exceptions on future.get()
-    MultiFuture tryAsyncMulti(const zkutil::Ops & ops);
+    MultiFuture tryAsyncMulti(const Ops & ops);
 
 
     static std::string error2string(int32_t code);
