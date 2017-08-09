@@ -164,7 +164,7 @@ public:
             if (uri == "/ping")
                 return new PingRequestHandler;
             else if (startsWith(uri, "/replicas_status"))
-                return new ReplicasStatusHandler(*server.global_context);
+                return new ReplicasStatusHandler(server.context());
         }
 
         if (uri.find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)

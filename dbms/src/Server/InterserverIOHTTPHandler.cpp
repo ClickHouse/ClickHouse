@@ -32,7 +32,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
     WriteBufferFromHTTPServerResponse out(response);
 
-    auto endpoint = server.global_context->getInterserverIOHandler().getEndpoint(endpoint_name);
+    auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
 
     if (compress)
     {
