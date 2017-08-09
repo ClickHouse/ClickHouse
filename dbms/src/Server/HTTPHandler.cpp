@@ -1,8 +1,11 @@
 #include <chrono>
 #include <iomanip>
 
-#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/File.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/NetException.h>
 
 #include <ext/scope_guard.h>
 
@@ -16,6 +19,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
