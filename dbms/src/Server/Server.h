@@ -1,5 +1,7 @@
 #pragma once
 
+#include "IServer.h"
+
 #include <Poco/URI.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
@@ -37,11 +39,23 @@
 namespace DB
 {
 
-class Server : public BaseDaemon
+class Server : public BaseDaemon, public IServer
 {
 public:
-    /// Global settings of server.
-    std::unique_ptr<Context> global_context;
+    Poco::Util::LayeredConfiguration & config() const override
+    {
+        return BaseDaemon::config();
+    }
+
+    Poco::Logger & logger() const override
+    {
+        return BaseDaemon::logger();
+    }
+
+    Context & context() const override
+    {
+        return *global_context;
+    }
 
 protected:
     void initialize(Application & self) override
@@ -58,8 +72,10 @@ protected:
 
     int main(const std::vector<std::string> & args) override;
 
-private:
     std::string getDefaultCorePath() const override;
+
+private:
+    std::unique_ptr<Context> global_context;
 };
 
 }

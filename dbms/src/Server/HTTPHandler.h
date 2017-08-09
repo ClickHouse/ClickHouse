@@ -19,7 +19,7 @@ class CascadeWriteBuffer;
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    explicit HTTPHandler(Server & server_);
+    explicit HTTPHandler(IServer & server_);
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
@@ -47,11 +47,10 @@ private:
         }
     };
 
-    Server & server;
+    IServer & server;
+    Logger * log;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
-
-    Logger * log;
 
     /// Also initializes 'used_output'.
     void processQuery(

@@ -15,7 +15,7 @@ namespace DB
 class InterserverIOHTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    InterserverIOHTTPHandler(Server & server_)
+    InterserverIOHTTPHandler(IServer & server_)
         : server(server_)
         , log(&Logger::get("InterserverIOHTTPHandler"))
     {
@@ -24,11 +24,12 @@ public:
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
 private:
-    Server & server;
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
+    IServer & server;
     Logger * log;
 
-     void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
+
+    void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
 };
 
 }

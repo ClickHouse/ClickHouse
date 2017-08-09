@@ -71,17 +71,19 @@ struct QueryState
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    TCPHandler(Server & server_, const Poco::Net::StreamSocket & socket_)
-        : Poco::Net::TCPServerConnection(socket_), server(server_),
-        log(&Logger::get("TCPHandler")), client_revision(0),
-        connection_context(*server.global_context), query_context(connection_context)
+    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+        : Poco::Net::TCPServerConnection(socket_)
+        , server(server_)
+        , log(&Logger::get("TCPHandler"))
+        , connection_context(server.context())
+        , query_context(server.context())
     {
     }
 
     void run();
 
 private:
-    Server & server;
+    IServer & server;
     Logger * log;
 
     String client_name;

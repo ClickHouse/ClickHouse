@@ -49,10 +49,10 @@ namespace ErrorCodes
 
 void TCPHandler::runImpl()
 {
-    connection_context = *server.global_context;
+    connection_context = server.context();
     connection_context.setSessionContext(connection_context);
 
-    Settings global_settings = server.global_context->getSettings();
+    Settings global_settings = connection_context.getSettings();
 
     socket().setReceiveTimeout(global_settings.receive_timeout);
     socket().setSendTimeout(global_settings.send_timeout);
