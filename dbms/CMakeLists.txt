@@ -206,6 +206,7 @@ target_link_libraries (dbms
 )
 
 target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 
 # only for copy_headers.sh:
