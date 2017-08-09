@@ -186,8 +186,15 @@ include (cmake/find_sparsehash.cmake)
 include (cmake/find_rt.cmake)
 include (cmake/find_readline_edit.cmake)
 include (cmake/find_zookeeper.cmake)
-include (cmake/find_double-conversion.cmake)
 include (cmake/find_re2.cmake)
+
+include (cmake/find_contrib_lib.cmake)
+find_contrib_lib(cityhash)
+find_contrib_lib(farmhash)
+find_contrib_lib(metrohash)
+find_contrib_lib(btrie)
+find_contrib_lib("double-conversion")
+
 # Need to process before "contrib" dir:
 include (libs/libcommon/cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
