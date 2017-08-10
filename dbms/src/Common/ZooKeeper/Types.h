@@ -11,13 +11,15 @@ namespace zkutil
 {
 
 using ACLPtr = const ACL_vector *;
-using Stat = Stat;
+using Stat = ::Stat;
 
 struct Op
 {
 public:
     Op() : data(new zoo_op_t) {}
     virtual ~Op() {}
+
+    virtual std::unique_ptr<Op> clone() const = 0;
 
     virtual std::string describe() = 0;
 
@@ -31,21 +33,32 @@ public:
 
 struct Op::Remove : public Op
 {
-    Remove(const std::string & path_, int32_t version) :
-        path(path_)
+    Remove(const std::string & path_, int32_t version_) :
+        path(path_), version(version_)
     {
         zoo_delete_op_init(data.get(), path.c_str(), version);
+    }
+
+    std::unique_ptr<Op> clone() const override
+    {
+        return std::unique_ptr<zkutil::Op>(new Remove(path, version));
     }
 
     std::string describe() override { return "command: remove, path: " + path; }
 
 private:
     std::string path;
+    int32_t version;
 };
 
 struct Op::Create : public Op
 {
-    Create(const std::string & path_, const std::string & value_, ACLPtr acl, int32_t flags);
+    Create(const std::string & path_, const std::string & value_, ACLPtr acl_, int32_t flags_);
+
+    std::unique_ptr<Op> clone() const override
+    {
+        return std::unique_ptr<zkutil::Op>(new Create(path, value, acl, flags));
+    }
 
     std::string getPathCreated()
     {
@@ -62,15 +75,22 @@ struct Op::Create : public Op
 private:
     std::string path;
     std::string value;
+    ACLPtr acl;
+    int32_t flags;
     std::vector<char> created_path;
 };
 
 struct Op::SetData : public Op
 {
-    SetData(const std::string & path_, const std::string & value_, int32_t version) :
-        path(path_), value(value_)
+    SetData(const std::string & path_, const std::string & value_, int32_t version_) :
+        path(path_), value(value_), version(version_)
     {
         zoo_set_op_init(data.get(), path.c_str(), value.c_str(), value.size(), version, &stat);
+    }
+
+    std::unique_ptr<Op> clone() const override
+    {
+        return std::unique_ptr<zkutil::Op>(new SetData(path, value, version));
     }
 
     std::string describe() override
@@ -85,21 +105,28 @@ struct Op::SetData : public Op
 private:
     std::string path;
     std::string value;
+    int32_t version;
     Stat stat;
 };
 
 struct Op::Check : public Op
 {
-    Check(const std::string & path_, int32_t version) :
-        path(path_)
+    Check(const std::string & path_, int32_t version_) :
+        path(path_), version(version_)
     {
         zoo_check_op_init(data.get(), path.c_str(), version);
+    }
+
+    std::unique_ptr<Op> clone() const override
+    {
+        return std::unique_ptr<zkutil::Op>(new Check(path, version));
     }
 
     std::string describe() override { return "command: check, path: " + path; }
 
 private:
     std::string path;
+    int32_t version;
 };
 
 struct OpResult : public zoo_op_result_t
