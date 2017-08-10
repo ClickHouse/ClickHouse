@@ -183,9 +183,14 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
     size_t job_id = 0;
     for (size_t shard_id : ext::range(0, blocks.size()))
+    {
         for (size_t replica_id: ext::range(0, shards_info[shard_id].dir_names.size()))
+        {
             pool->schedule(createWritingJob(done_jobs, finished_jobs_count, cond_var,
-                                            blocks[shard_id], job_id++, shards_info[shard_id], replica_id));
+                                            blocks[shard_id], job_id, shards_info[shard_id], replica_id));
+            ++job_id;
+        }
+    }
 
     const size_t jobs_count = job_id;
     size_t finished_local_nodes_count;
