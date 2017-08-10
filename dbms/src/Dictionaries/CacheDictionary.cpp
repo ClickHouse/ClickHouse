@@ -137,12 +137,12 @@ void CacheDictionary::isInImpl(
             {
                 out[out_idx] = 1;
             }
-            /// Found intermediate parent, add this value to search at next loop iteration
+            /// Loop detected
             else if (children[new_children_idx] == parents[parents_idx])
             {
-                // Loop detected
                 out[out_idx] = 1;
             }
+            /// Found intermediate parent, add this value to search at next loop iteration
             else
             {
                 children[new_children_idx] = parents[parents_idx];
