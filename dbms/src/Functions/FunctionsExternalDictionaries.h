@@ -1434,7 +1434,7 @@ private:
 
                     auto & hierarchy = hierarchies[i];
 
-                    //Checking for loop
+                    /// Checking for loop
                     if (std::find(std::begin(hierarchy), std::end(hierarchy), id) != std::end(hierarchy))
                         continue;
 
