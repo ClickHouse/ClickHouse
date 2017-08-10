@@ -49,10 +49,10 @@ namespace ErrorCodes
 
 void TCPHandler::runImpl()
 {
-    connection_context = *server.global_context;
+    connection_context = server.context();
     connection_context.setSessionContext(connection_context);
 
-    Settings global_settings = server.global_context->getSettings();
+    Settings global_settings = connection_context.getSettings();
 
     socket().setReceiveTimeout(global_settings.receive_timeout);
     socket().setSendTimeout(global_settings.send_timeout);
@@ -117,11 +117,11 @@ void TCPHandler::runImpl()
     while (1)
     {
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
-        while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !BaseDaemon::instance().isCancelled())
+        while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
             ;
 
         /// If we need to shut down, or client disconnects.
-        if (BaseDaemon::instance().isCancelled() || in->eof())
+        if (server.isCancelled() || in->eof())
             break;
 
         Stopwatch watch;
@@ -257,7 +257,7 @@ void TCPHandler::readData(const Settings & global_settings)
                 break;
 
             /// Do we need to shut down?
-            if (BaseDaemon::instance().isCancelled())
+            if (server.isCancelled())
                 return;
 
             /** Have we waited for data for too long?
@@ -777,6 +777,5 @@ void TCPHandler::run()
             throw;
     }
 }
-
 
 }
