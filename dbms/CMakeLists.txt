@@ -28,6 +28,7 @@ add_subdirectory (src)
 add_library(string_utils
     src/Common/StringUtils.h
     src/Common/StringUtils.cpp)
+target_include_directories (string_utils PRIVATE ${DBMS_INCLUDE_DIR})
 
 set(dbms_headers)
 set(dbms_sources)
@@ -150,7 +151,7 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-if (NOT ARM)
+if (NOT ARCH_ARM)
     set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
 
@@ -163,12 +164,13 @@ endif()
 target_link_libraries (dbms
     common
     ${MYSQLXX_LIBRARY}
-    cityhash farmhash metrohash
+    ${FARMHASH_LIBRARIES}
+    ${METROHASH_LIBRARIES}
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
     ${ZOOKEEPER_LIBRARY}
     string_utils
-    ${DOUBLE_CONVERSION_LIBRARY}
+    ${DOUBLE_CONVERSION_LIBRARIES}
     ${ZLIB_LIBRARIES}
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
     ${RE2_LIBRARY}
@@ -176,7 +178,7 @@ target_link_libraries (dbms
     ${OPENSSL_CRYPTO_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${Poco_Data_LIBRARY}
-    btrie
+    ${BTRIE_LIBRARIES}
 )
 
 if (Poco_DataODBC_FOUND)
@@ -200,18 +202,17 @@ endif ()
 target_link_libraries (dbms
     ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
-    ${LTDL_LIB}
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
-target_include_directories (dbms BEFORE PRIVATE ${CPUID_INCLUDE_DIR})
-target_include_directories (dbms BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
-target_include_directories (dbms BEFORE PRIVATE ${BTRIE_INCLUDE_DIR})
-target_include_directories (dbms BEFORE PRIVATE ${CITYHASH_INCLUDE_DIR})
-target_include_directories (dbms PUBLIC ${MYSQLXX_INCLUDE_DIR})
-target_include_directories (dbms PRIVATE ${POCOEXT_INCLUDE_DIR})
-target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
+
+# only for copy_headers.sh:
+target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${DOUBLE_CONVERSION_INCLUDE_DIR})
+
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)

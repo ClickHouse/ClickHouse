@@ -138,8 +138,8 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars_t & data, Column
 
                 while (sse_src_pos < sse_src_end)
                 {
-                    /// NOTE gcc 4.9.2 expands the loop, but for some reason uses only one xmm register.
-                    ///for (size_t j = 0; j < UNROLL_TIMES; ++j)
+                    /// NOTE gcc 4.9.2 unrolls the loop, but for some reason uses only one xmm register.
+                    /// for (size_t j = 0; j < UNROLL_TIMES; ++j)
                     ///    _mm_storeu_si128(sse_dst_pos + j, _mm_loadu_si128(sse_src_pos + j));
 
                     sse_src_pos += UNROLL_TIMES;

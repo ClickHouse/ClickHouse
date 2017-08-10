@@ -1,9 +1,15 @@
-#include "InterserverIOHTTPHandler.h"
-#include <Interpreters/InterserverIOHandler.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+
+#include <common/logger_useful.h>
+
+#include <Common/HTMLForm.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Interpreters/InterserverIOHandler.h>
 
+#include "InterserverIOHTTPHandler.h"
 
 namespace DB
 {
@@ -32,7 +38,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
     WriteBufferFromHTTPServerResponse out(response);
 
-    auto endpoint = server.global_context->getInterserverIOHandler().getEndpoint(endpoint_name);
+    auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
 
     if (compress)
     {

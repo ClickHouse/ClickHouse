@@ -44,6 +44,7 @@ struct MergeTreeDataPartChecksums
 {
     using Checksum = MergeTreeDataPartChecksum;
 
+    /// The order is important.
     using FileChecksums = std::map<String, Checksum>;
     FileChecksums files;
 

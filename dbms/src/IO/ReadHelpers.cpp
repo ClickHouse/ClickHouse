@@ -26,7 +26,7 @@ void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
     size_t dst_pos = 0;
     for (; dst_pos < num_bytes; ++dst_pos)
     {
-        dst[dst_pos] = unhex(src[src_pos]) * 16 + unhex(src[src_pos + 1]);
+        dst[dst_pos] = UInt8(unhex(src[src_pos])) * 16 + UInt8(unhex(src[src_pos + 1]));
         src_pos += 2;
     }
 }
@@ -170,13 +170,10 @@ void readStringInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        size_t bytes = 0;
-        for (; buf.position() + bytes != buf.buffer().end(); ++bytes)
-            if (buf.position()[bytes] == '\t' || buf.position()[bytes] == '\n')
-                break;
+        const char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), buf.position() + bytes);
-        buf.position() += bytes;
+        appendToStringOrVector(s, buf.position(), next_pos);
+        buf.position() += next_pos - buf.position();    /// Code looks complicated, because "buf.position() = next_pos" doens't work due to const-ness.
 
         if (buf.hasPendingData())
             return;
@@ -229,12 +226,10 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
     if (*buf.position() == 'x')
     {
         ++buf.position();
-        /// escape sequence of the form \ xAA
-        UInt8 c1;
-        UInt8 c2;
-        readPODBinary(c1, buf);
-        readPODBinary(c2, buf);
-        s.push_back(static_cast<char>(unhex(c1) * 16 + unhex(c2)));
+        /// escape sequence of the form \xAA
+        char hex_code[2];
+        readPODBinary(hex_code, buf);
+        s.push_back(unhex2(hex_code));
     }
     else if (*buf.position() == 'N')
     {
@@ -250,15 +245,23 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
 }
 
 
-/// TODO Compute with the code in FunctionsVisitParam.h and JSON.h
-template <typename Vector>
-static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
+template <typename Vector, typename ReturnType>
+static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 {
+    static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
+
+    auto error = [](const char * message, int code)
+    {
+        if (throw_exception)
+            throw Exception(message, code);
+        return ReturnType(false);
+    };
+
     ++buf.position();
     if (buf.eof())
-        throw Exception("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+        return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
 
-    switch(*buf.position())
+    switch (*buf.position())
     {
         case '"':
             s.push_back('"');
@@ -289,26 +292,23 @@ static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
             ++buf.position();
 
             char hex_code[4];
-            readPODBinary(hex_code, buf);
+            if (4 != buf.read(hex_code, 4))
+                return error("Cannot parse escape sequence: less than four bytes after \\u", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
 
             /// \u0000 - special case
-             if (0 == memcmp(hex_code, "0000", 4))
+            if (0 == memcmp(hex_code, "0000", 4))
             {
                 s.push_back(0);
-                return;
+                return ReturnType(true);
             }
 
-            UInt16 code_point =
-                unhex(hex_code[0]) * 4096
-                + unhex(hex_code[1]) * 256
-                + unhex(hex_code[2]) * 16
-                + unhex(hex_code[3]);
+            UInt16 code_point = unhex4(hex_code);
 
             if (code_point <= 0x7F)
             {
                 s.push_back(code_point);
             }
-            else if (code_point <= 0x7FF)
+            else if (code_point <= 0x07FF)
             {
                 s.push_back(((code_point >> 6) & 0x1F) | 0xC0);
                 s.push_back((code_point & 0x3F) | 0x80);
@@ -318,15 +318,15 @@ static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
                 /// Surrogate pair.
                 if (code_point >= 0xD800 && code_point <= 0xDBFF)
                 {
-                    assertString("\\u", buf);
-                    char second_hex_code[4];
-                    readPODBinary(second_hex_code, buf);
+                    if (!checkString("\\u", buf))
+                        return error("Cannot parse escape sequence: missing second part of surrogate pair", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
 
-                    UInt16 second_code_point =
-                        unhex(second_hex_code[0]) * 4096
-                        + unhex(second_hex_code[1]) * 256
-                        + unhex(second_hex_code[2]) * 16
-                        + unhex(second_hex_code[3]);
+                    char second_hex_code[4];
+                    if (4 != buf.read(second_hex_code, 4))
+                        return error("Cannot parse escape sequence: less than four bytes after \\u of second part of surrogate pair",
+                            ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+
+                    UInt16 second_code_point = unhex4(second_hex_code);
 
                     if (second_code_point >= 0xDC00 && second_code_point <= 0xDFFF)
                     {
@@ -338,7 +338,7 @@ static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
                         s.push_back((full_code_point & 0x3F) | 0x80);
                     }
                     else
-                        throw Exception("Incorrect surrogate pair of unicode escape sequences in JSON", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
+                        return error("Incorrect surrogate pair of unicode escape sequences in JSON", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
                 }
                 else
                 {
@@ -348,7 +348,7 @@ static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
                 }
             }
 
-            return;
+            return ReturnType(true);
         }
         default:
             s.push_back(*buf.position());
@@ -356,6 +356,7 @@ static void parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     }
 
     ++buf.position();
+    return ReturnType(true);
 }
 
 
@@ -581,12 +582,20 @@ void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const char delimiter);
 
 
-template <typename Vector>
-void readJSONStringInto(Vector & s, ReadBuffer & buf)
+template <typename Vector, typename ReturnType>
+ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 {
+    static constexpr bool throw_exception = std::is_same<ReturnType, void>::value;
+
+    auto error = [](const char * message, int code)
+    {
+        if (throw_exception)
+            throw Exception(message, code);
+        return ReturnType(false);
+    };
+
     if (buf.eof() || *buf.position() != '"')
-        throw Exception("Cannot parse JSON string: expected opening quote",
-            ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+        return error("Cannot parse JSON string: expected opening quote", ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
     ++buf.position();
 
     while (!buf.eof())
@@ -602,15 +611,14 @@ void readJSONStringInto(Vector & s, ReadBuffer & buf)
         if (*buf.position() == '"')
         {
             ++buf.position();
-            return;
+            return ReturnType(true);
         }
 
         if (*buf.position() == '\\')
-            parseJSONEscapeSequence(s, buf);
+            parseJSONEscapeSequence<Vector, ReturnType>(s, buf);
     }
 
-    throw Exception("Cannot parse JSON string: expected closing quote",
-        ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
+    return error("Cannot parse JSON string: expected closing quote", ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
 }
 
 void readJSONString(String & s, ReadBuffer & buf)
@@ -619,7 +627,8 @@ void readJSONString(String & s, ReadBuffer & buf)
     readJSONStringInto(s, buf);
 }
 
-template void readJSONStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
