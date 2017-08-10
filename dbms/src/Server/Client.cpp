@@ -249,7 +249,7 @@ private:
     /// Should we celebrate a bit?
     bool isNewYearMode()
     {
-        time_t current_time = time(0);
+        time_t current_time = time(nullptr);
 
         /// It's bad to be intrusive.
         if (current_time % 3 != 0)

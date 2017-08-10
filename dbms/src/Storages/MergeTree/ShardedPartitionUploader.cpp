@@ -105,7 +105,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     assertEOF(body);
 
     ActiveDataPartSet::parsePartName(part_name, *data_part);
-    data_part->modification_time = time(0);
+    data_part->modification_time = time(nullptr);
     data_part->loadColumns(true);
     data_part->loadChecksums(true);
     data_part->loadIndex();

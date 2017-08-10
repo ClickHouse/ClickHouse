@@ -114,7 +114,7 @@ void writeQueryAroundTheError(
     else
     {
         if (num_positions_to_hilite)
-            out << ": " << std::string(positions_to_hilite[0].begin, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - positions_to_hilite[0].begin));
+            out << ": " << std::string(positions_to_hilite[0].begin, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - positions_to_hilite[0].begin)) << ". ";
     }
 }
 
