@@ -9,6 +9,8 @@
 #include <Common/Exception.h>
 #include <Common/Allocator.h>
 
+#include <IO/WriteHelpers.h>
+
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
@@ -128,7 +130,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
 
         buf = mremap(buf, old_size, new_size, MREMAP_MAYMOVE);
         if (MAP_FAILED == buf)
-            DB::throwFromErrno("Allocator: Cannot mremap.", DB::ErrorCodes::CANNOT_MREMAP);
+            DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + DB::toString(old_size) + " to " + DB::toString(new_size) + " bytes.", DB::ErrorCodes::CANNOT_MREMAP);
 
         /// No need for zero-fill, because mmap guarantees it.
     }
