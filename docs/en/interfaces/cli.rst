@@ -43,7 +43,7 @@ By default, files are searched for in this order:
 .. code-block:: text
 
     ./clickhouse-client.xml
-    ~/./clickhouse-client/config.xml
+    ~/.clickhouse-client/config.xml
     /etc/clickhouse-client/config.xml
 
 Settings are only taken from the first file found.

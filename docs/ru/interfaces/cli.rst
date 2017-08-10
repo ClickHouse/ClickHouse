@@ -41,7 +41,7 @@
 ``--config-file`` - имя конфигурационного файла, в котором есть дополнительные настройки или изменены умолчания для настроек, указанных выше.
 По умолчанию, ищутся файлы в следующем порядке:
 ./clickhouse-client.xml
-~/./clickhouse-client/config.xml
+~/.clickhouse-client/config.xml
 /etc/clickhouse-client/config.xml
 Настройки берутся только из первого найденного файла.
 
