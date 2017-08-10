@@ -1,9 +1,5 @@
 option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
 
-if (USE_STATIC_LIBRARIES)
-    include (cmake/find_ltdl.cmake)
-endif ()
-
 if (NOT USE_INTERNAL_POCO_LIBRARY)
     find_package (Poco COMPONENTS Net NetSSL XML Data Crypto DataODBC MongoDB)
 endif ()
@@ -14,6 +10,7 @@ else ()
 
     set (USE_INTERNAL_POCO_LIBRARY 1)
 
+    include (${ClickHouse_SOURCE_DIR}/cmake/find_ltdl.cmake)
     include (${ClickHouse_SOURCE_DIR}/contrib/libpoco/cmake/FindODBC.cmake)
 
     list (APPEND Poco_INCLUDE_DIRS
@@ -33,9 +30,7 @@ else ()
     if (ODBC_FOUND)
         set (Poco_DataODBC_FOUND 1)
         set (Poco_DataODBC_LIBRARY PocoDataODBC)
-        if (USE_STATIC_LIBRARIES)
-            list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIB})
-        endif ()
+        list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIB})
         list (APPEND Poco_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/ODBC/include/")
     endif ()
 
