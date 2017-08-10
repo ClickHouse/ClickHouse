@@ -911,7 +911,7 @@ ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool 
     struct OpsHolder
     {
         std::shared_ptr<zkutil::Ops> ops_ptr = std::make_shared<zkutil::Ops>();
-        std::shared_ptr<std::vector<zoo_op_t>> ops_raw_ptr = std::make_shared<std::vector<zoo_op_t>>();;
+        std::shared_ptr<std::vector<zoo_op_t>> ops_raw_ptr = std::make_shared<std::vector<zoo_op_t>>();
     } holder;
 
     for (const auto & op : ops_)
