@@ -223,7 +223,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         if (exception)
             std::rethrow_exception(exception);
     }
-    catch(Exception & exception)
+    catch (Exception & exception)
     {
         exception.addMessage(getCurrentStateDescription(done_jobs, finished_local_nodes_count));
         throw;
