@@ -22,8 +22,8 @@ if [ ! -x "$LD" ]; then
     exit 1
 fi
 
-cp "$CLANG" $DST/clang
-cp "$LD" $DST/ld
+cp "$CLANG" "${DST}/clang"
+cp "$LD" "${DST}/ld"
 
 STDCPP=$(ldd $CLANG | grep -oE '/[^ ]+libstdc++[^ ]+')
 
