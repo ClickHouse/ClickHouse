@@ -947,7 +947,7 @@ ZooKeeper::MultiFuture ZooKeeper::asyncMultiImpl(const zkutil::Ops & ops_, bool 
                               [] (int rc, const void * data)
                               {
                                   MultiFuture::TaskPtr owned_task =
-                                          std::move(const_cast<MultiFuture::TaskPtr &>(*static_cast<const MultiFuture::TaskPtr *>(data)));
+                                      std::move(const_cast<MultiFuture::TaskPtr &>(*static_cast<const MultiFuture::TaskPtr *>(data)));
                                   (*owned_task)(rc);
                               }, future.task.get());
 
