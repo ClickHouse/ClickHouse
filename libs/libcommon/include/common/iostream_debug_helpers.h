@@ -124,14 +124,14 @@ std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> & 
 }
 
 #include <chrono>
-template <class clock, class duration>
+template <typename clock, typename duration>
 std::ostream & operator<<(std::ostream & stream, const std::chrono::duration<clock, duration> & what)
 {
     stream << "chrono::duration<clock=" << clock() << ", duration=" << duration() << ">{" << what.count() << "}";
     return stream;
 }
 
-template <class clock, class duration>
+template <typename clock, typename duration>
 std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<clock, duration> & what)
 {
     stream << "chrono::time_point{" << what.time_since_epoch() << "}";
@@ -141,7 +141,7 @@ std::ostream & operator<<(std::ostream & stream, const std::chrono::time_point<c
 
 #include <memory>
 
-template <class T>
+template <typename T>
 std::ostream & operator<<(std::ostream & stream, const std::shared_ptr<T> & what)
 {
     stream << "shared_ptr(use_count = " << what.use_count() << ") {";
@@ -153,7 +153,7 @@ std::ostream & operator<<(std::ostream & stream, const std::shared_ptr<T> & what
     return stream;
 }
 
-template <class T>
+template <typename T>
 std::ostream & operator<<(std::ostream & stream, const std::unique_ptr<T> & what)
 {
     stream << "unique_ptr {";
@@ -168,7 +168,7 @@ std::ostream & operator<<(std::ostream & stream, const std::unique_ptr<T> & what
 
 #include <experimental/optional>
 
-template <class T>
+template <typename T>
 std::ostream & operator<<(std::ostream & stream, const std::experimental::optional<T> & what)
 {
     stream << "optional{";
