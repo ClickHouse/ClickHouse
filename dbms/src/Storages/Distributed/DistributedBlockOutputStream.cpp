@@ -147,7 +147,10 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription(
         }
 
         for (const auto & dir_name : shard_info.dir_names)
-            writeDescription(dir_name, shard_id, blocks_inserted + (done_jobs[job_id++] ? 1 : 0));
+        {
+            writeDescription(dir_name, shard_id, blocks_inserted + (done_jobs[job_id] ? 1 : 0));
+            ++job_id;
+        }
     }
 
     return description;
