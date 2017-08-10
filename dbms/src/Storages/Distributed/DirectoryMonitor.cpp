@@ -86,7 +86,7 @@ namespace
 }
 
 
-StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, ConnectionPoolPtr pool)
+StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool)
     : storage(storage), pool{pool}, path{storage.path + name + '/'}
     , current_batch_file_path{path + "current_batch.txt"}
     , default_sleep_time{storage.context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
