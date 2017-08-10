@@ -88,7 +88,7 @@ ThreadPool::Job DistributedBlockOutputStream::createWritingJob(
         if (!current_memory_tracker)
         {
             current_memory_tracker = memory_tracker;
-            setThreadName("DistributedBlockOutputStreamProc");
+            setThreadName("DistrOutStrProc");
         }
         try
         {
