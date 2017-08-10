@@ -280,7 +280,7 @@ Examples: ``uniqArrayIf(arr, cond)``,  ``quantilesTimingArrayIf(level1, level2)(
 
 State combinator
 ----------------
-If this combinator is used, the aggregate function returns intermediate aggregation state (for example, in the case of the ``uniq`` function, a HyperLogLog structure for calculating the number of unique values), which has type of ``AggregateFunction(...)`` and can be used for further processing or can be saved to a table for subsequent pre-aggregation - see the sections "AggregatingMergeTree" and "functions for working with intermediate aggregation states".
+If this combinator is used, the aggregate function returns intermediate aggregation state (for example, in the case of the ``uniqCombined`` function, a HyperLogLog structure for calculating the number of unique values), which has type of ``AggregateFunction(...)`` and can be used for further processing or can be saved to a table for subsequent pre-aggregation - see the sections "AggregatingMergeTree" and "functions for working with intermediate aggregation states".
 
 Merge combinator
 ----------------
