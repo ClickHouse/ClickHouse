@@ -57,28 +57,24 @@ private:
 
     bool tryExecuteQuery(const String & query, const DDLTask & task, ExecutionStatus & status);
 
-
     /// Checks and cleanups queue's nodes
     void cleanupQueue();
 
-
+    /// Init task node
     void createStatusDirs(const std::string & node_name);
-    ASTPtr getRewrittenQuery(const DDLLogEntry & node);
 
 
     void run();
 
 private:
     Context & context;
-    Logger * log = &Logger::get("DDLWorker");
+    Logger * log;
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
-
     std::string queue_dir;      /// dir with queue of queries
-    std::string master_dir;     /// dir with queries was initiated by the server
 
-    /// Last task that was skipped or sucesfully executed
+    /// Name of last task that was skipped or successfully executed
     std::string last_processed_task_name;
 
     std::shared_ptr<zkutil::ZooKeeper> zookeeper;
@@ -91,12 +87,12 @@ private:
     std::atomic<bool> stop_flag{false};
     std::thread thread;
 
-    size_t last_cleanup_time_seconds = 0;
+    Int64 last_cleanup_time_seconds = 0;
 
     /// Cleaning starts after new node event is received if the last cleaning wasn't made sooner than N seconds ago
-    size_t cleanup_delay_period = 60; // minute (in seconds)
+    Int64 cleanup_delay_period = 60; // minute (in seconds)
     /// Delete node if its age is greater than that
-    size_t task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
+    Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
 
