@@ -9,8 +9,6 @@ if (ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
     include_directories (${ZSTD_INCLUDE_DIR})
 else ()
     set (USE_INTERNAL_ZSTD_LIBRARY 1)
-    set (ZSTD_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libzstd/include/zstd")
-    include_directories (BEFORE ${ZSTD_INCLUDE_DIR})
     set (ZSTD_LIBRARY zstd)
 endif ()
 

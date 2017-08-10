@@ -35,6 +35,15 @@ std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what);
 #include <Client/Connection.h>
 std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & what);
 
+#include <Common/PODArray.h>
+template <typename T, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_>
+std::ostream & operator<<(std::ostream & stream, const DB::PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & what)
+{
+    stream << "PODArray(size = " << what.size() << ", capacity = " << what.capacity() << ")";
+    dumpContainer(stream, what);
+    return stream;
+};
+
 
 /// some operator<< should be declared before operator<<(... std::shared_ptr<>)
 #include <common/iostream_debug_helpers.h>

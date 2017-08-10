@@ -234,7 +234,7 @@ void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums
     rhs_checksums.files.clear();
 }
 
-/// Control sum computed from the set of control sums of .bin files.
+/// Checksum computed from the set of control sums of .bin files.
 void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 {
     /// We use fact that iteration is in deterministic (lexicographical) order.

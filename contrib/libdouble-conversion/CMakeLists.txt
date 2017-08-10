@@ -18,3 +18,5 @@ double-conversion/strtod.cc
 double-conversion/strtod.h
 double-conversion/utils.h
 )
+
+target_include_directories (double-conversion PUBLIC .)
