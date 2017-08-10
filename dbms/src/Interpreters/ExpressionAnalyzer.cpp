@@ -1228,6 +1228,7 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
     auto func = std::make_shared<ASTFunction>(ast->range);
     ASTPtr res = func;
     func->alias = ast->alias;
+    func->prefer_alias_to_column_name = ast->prefer_alias_to_column_name;
     ast->alias.clear();
     func->kind = ASTFunction::FUNCTION;
     func->name = "CAST";
@@ -1300,6 +1301,7 @@ void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
         {
             auto lit = std::make_unique<ASTLiteral>(ast->range, (*block.safeGetByPosition(0).column)[0]);
             lit->alias = subquery->alias;
+            lit->prefer_alias_to_column_name = subquery->prefer_alias_to_column_name;
             ast = addTypeConversion(std::move(lit), block.safeGetByPosition(0).type->getName());
         }
         else

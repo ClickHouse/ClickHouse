@@ -42,9 +42,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_by("BY");
 
     ParserNotEmptyExpressionList exp_list(false);
+    ParserNotEmptyExpressionList exp_list_for_former_with_clause(false, true); /// Set prefer_alias_to_column_name for each alias.
     ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
     ParserExpression exp_elem;
     ParserOrderByExpressionList order_list;
+
+    /// WITH expr list
+    {
+        if (s_with.ignore(pos, expected))
+        {
+            if (!exp_list_for_former_with_clause.parse(pos, select_query->with_expression_list, expected))
+                return false;
+        }
+    }
 
     /// SELECT [DISTINCT] expr list
     {
@@ -175,6 +185,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     select_query->range = StringRange(begin, pos);
 
+    if (select_query->with_expression_list)
+        select_query->children.push_back(select_query->with_expression_list);
     select_query->children.push_back(select_query->select_expression_list);
     if (select_query->tables)
         select_query->children.push_back(select_query->tables);

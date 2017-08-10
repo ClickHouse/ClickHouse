@@ -34,8 +34,6 @@ public:
     ASTFunction() = default;
     ASTFunction(const StringRange range_) : ASTWithAlias(range_) {}
 
-    String getColumnName() const override;
-
     /** Get text identifying the AST node. */
     String getID() const override;
 
@@ -43,6 +41,7 @@ public:
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    String getColumnNameImpl() const override;
 };
 
 
