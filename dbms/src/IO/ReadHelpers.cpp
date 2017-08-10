@@ -170,13 +170,10 @@ void readStringInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        size_t bytes = 0;
-        for (; buf.position() + bytes != buf.buffer().end(); ++bytes)
-            if (buf.position()[bytes] == '\t' || buf.position()[bytes] == '\n')
-                break;
+        const char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), buf.position() + bytes);
-        buf.position() += bytes;
+        appendToStringOrVector(s, buf.position(), next_pos);
+        buf.position() += next_pos - buf.position();    /// Code looks complicated, because "buf.position() = next_pos" doens't work due to const-ness.
 
         if (buf.hasPendingData())
             return;

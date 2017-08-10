@@ -79,7 +79,7 @@ public:
     void kill();
 
     /// Получен ли сигнал на завершение?
-    bool isCancelled()
+    bool isCancelled() const
     {
         return is_cancelled;
     }

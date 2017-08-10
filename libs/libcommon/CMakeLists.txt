@@ -84,6 +84,7 @@ target_include_directories (common PUBLIC ${COMMON_INCLUDE_DIR})
 target_link_libraries (
     common
     pocoext
+    ${CITYHASH_LIBRARIES}
     ${CCTZ_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}

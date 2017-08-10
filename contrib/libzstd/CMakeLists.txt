@@ -92,3 +92,5 @@ IF (ZSTD_LEGACY_SUPPORT)
 ENDIF (ZSTD_LEGACY_SUPPORT)
 
 ADD_LIBRARY(zstd ${Sources} ${Headers})
+
+target_include_directories (zstd PUBLIC include/zstd) 

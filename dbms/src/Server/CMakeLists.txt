@@ -3,14 +3,19 @@
 # each of them is built and linked as a separate library, defined below.
 
 add_library(clickhouse-server
-    Server.cpp
+    ConfigReloader.cpp
     HTTPHandler.cpp
-    TCPHandler.cpp
     InterserverIOHTTPHandler.cpp
     MetricsTransmitter.cpp
-    ConfigReloader.cpp
+    NotFoundHandler.cpp
+    PingRequestHandler.cpp
+    ReplicasStatusHandler.cpp
+    RootRequestHandler.cpp
+    Server.cpp
     StatusFile.cpp
-    ReplicasStatusHandler.cpp)
+    TCPHandler.cpp
+    )
+
 target_link_libraries(clickhouse-server daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
 target_include_directories (clickhouse-server PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 

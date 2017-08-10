@@ -494,7 +494,7 @@ inline void readFloatText(T & x, ReadBuffer & buf)
     readFloatTextImpl<T, void>(x, buf);
 }
 
-/// rough; all until '\n' or '\t'
+/// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
 
 void readEscapedString(String & s, ReadBuffer & buf);
