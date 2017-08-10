@@ -37,7 +37,8 @@ std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & 
 
 #include <Common/PODArray.h>
 template <typename T, size_t INITIAL_SIZE, typename TAllocator, size_t pad_right_>
-std::ostream & operator<<(std::ostream & stream, const DB::PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & what) {
+std::ostream & operator<<(std::ostream & stream, const DB::PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & what)
+{
     stream << "PODArray(size = " << what.size() << ", capacity = " << what.capacity() << ")";
     dumpContainer(stream, what);
     return stream;
