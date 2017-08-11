@@ -331,7 +331,7 @@ int main(int argc, char ** argv)
 {
     try
     {
-        size_t block_size = 1 << 20;
+        size_t block_size = 1ULL << 20;
         if (argc > 1)
         {
             block_size = atoi(argv[1]);
