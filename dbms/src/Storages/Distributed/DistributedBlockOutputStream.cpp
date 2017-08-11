@@ -93,7 +93,7 @@ ThreadPool::Job DistributedBlockOutputStream::createWritingJob(
         if (!current_memory_tracker)
         {
             current_memory_tracker = memory_tracker;
-            setThreadName("DistributedBlockOutputStreamProc");
+            setThreadName("DistrOutStrProc");
         }
         try
         {
@@ -151,7 +151,8 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription(const Writi
             for (const auto & address : addresses_with_failovers[shard_id])
                 if (!address.is_local)
                 {
-                    writeDescription(address, shard_id, blocks_inserted + (context.done_remote_jobs[remote_job_id++] ? 1 : 0));
+                    writeDescription(address, shard_id, blocks_inserted + (context.done_remote_jobs[remote_job_id] ? 1 : 0));
+                    ++remote_job_id;
                     if (shard_info.hasInternalReplication())
                         break;
                 }
@@ -160,7 +161,8 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription(const Writi
         if (shard_info.isLocal())
         {
             const auto & address = shard_info.local_addresses.front();
-            writeDescription(address, shard_id, blocks_inserted + (context.done_local_jobs[local_job_id++] ? 1 : 0));
+            writeDescription(address, shard_id, blocks_inserted + (context.done_local_jobs[local_job_id] ? 1 : 0));
+            ++local_job_id;
         }
     }
 
@@ -184,7 +186,8 @@ void DistributedBlockOutputStream::createWritingJobs(WritingJobContext & context
             for (const auto & address : addresses_with_failovers[shard_id])
                 if (!address.is_local)
                 {
-                    pool->schedule(createWritingJob(context, blocks[shard_id], address, shard_id, remote_job_id++));
+                    pool->schedule(createWritingJob(context, blocks[shard_id], address, shard_id, remote_job_id));
+                    ++remote_job_id;
                     if (shard_info.hasInternalReplication())
                         break;
                 }
@@ -193,7 +196,8 @@ void DistributedBlockOutputStream::createWritingJobs(WritingJobContext & context
         if (shards_info[shard_id].isLocal())
         {
             const auto & address = shards_info[shard_id].local_addresses.front();
-            pool->schedule(createWritingJob(context, blocks[shard_id], address, shard_id, local_job_id++));
+            pool->schedule(createWritingJob(context, blocks[shard_id], address, shard_id, local_job_id));
+            ++local_job_id;
         }
     }
 }
@@ -270,7 +274,7 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
     {
         waitForUnfinishedJobs(context);
     }
-    catch(Exception & exception)
+    catch (Exception & exception)
     {
         exception.addMessage(getCurrentStateDescription(context));
         throw;

@@ -290,7 +290,7 @@ struct Settings
     \
     /** If setting is enabled, insert query into distributed waits until data will be sent to all nodes in cluster. \
      */ \
-    M(SettingBool, insert_distributed_sync, 0) \
+    M(SettingBool, insert_distributed_sync, false) \
     /** Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. \
      *  Zero value means no timeout. \
      */ \

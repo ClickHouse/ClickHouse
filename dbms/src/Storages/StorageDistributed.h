@@ -118,7 +118,7 @@ private:
 
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors();
-    /// ensure directory monitor thread by subdirectory name creation
+    /// ensure directory monitor thread creation by subdirectory name
     void requireDirectoryMonitor(const std::string & name);
     /// ensure connection pool creation and return it
     ConnectionPoolPtr requireConnectionPool(const std::string & name);
