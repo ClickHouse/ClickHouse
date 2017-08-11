@@ -8,6 +8,28 @@ namespace DB
 namespace
 {
 
+template <template <typename, typename> class AggregateFunctionTemplate, class Data, typename ... TArgs>
+static IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type, TArgs && ... args)
+{
+         if (typeid_cast<const DataTypeDate     *>(&argument_type)) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
+    else if (typeid_cast<const DataTypeDateTime *>(&argument_type)) return new AggregateFunctionTemplate<UInt32, Data>(std::forward<TArgs>(args)...);
+    else return createWithNumericType<AggregateFunctionTemplate, Data, TArgs...>(argument_type, std::forward<TArgs>(args)...);
+}
+
+
+template <typename TLimit_size, typename ... TArgs>
+inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataTypePtr & argument_type, TArgs ... args)
+{
+    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, TLimit_size>(*argument_type, argument_type, std::forward<TArgs>(args)...))
+        return AggregateFunctionPtr(res);
+
+    if (typeid_cast<const DataTypeString *>(argument_type.get()))
+        return std::make_shared<GroupArrayGeneralListImpl<NodeString, TLimit_size::value>>(std::forward<TArgs>(args)...);
+
+    return std::make_shared<GroupArrayGeneralListImpl<NodeGeneral, TLimit_size::value>>(std::forward<TArgs>(args)...);
+};
+
+
 static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     if (argument_types.size() != 1)
@@ -15,7 +37,7 @@ static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string 
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     bool limit_size = false;
-    UInt64 max_elems = 0;
+    UInt64 max_elems = std::numeric_limits<UInt64>::max();
 
     if (parameters.empty())
     {
@@ -39,23 +61,9 @@ static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string 
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!limit_size)
-    {
-        if (auto res = createWithNumericType<GroupArrayNumericImpl, std::false_type>(*argument_types[0]))
-            return AggregateFunctionPtr(res);
-        else if (typeid_cast<const DataTypeString *>(argument_types[0].get()))
-            return std::make_shared<GroupArrayGeneralListImpl<NodeString, false>>();
-        else
-            return std::make_shared<GroupArrayGeneralListImpl<NodeGeneral, false>>();
-    }
+        return createAggregateFunctionGroupArrayImpl<std::false_type>(argument_types[0]);
     else
-    {
-        if (auto res = createWithNumericType<GroupArrayNumericImpl, std::true_type>(*argument_types[0], max_elems))
-            return AggregateFunctionPtr(res);
-        else if (typeid_cast<const DataTypeString *>(argument_types[0].get()))
-            return std::make_shared<GroupArrayGeneralListImpl<NodeString, true>>(max_elems);
-        else
-            return std::make_shared<GroupArrayGeneralListImpl<NodeGeneral, true>>(max_elems);
-    }
+        return createAggregateFunctionGroupArrayImpl<std::true_type>(argument_types[0], max_elems);
 }
 
 }
