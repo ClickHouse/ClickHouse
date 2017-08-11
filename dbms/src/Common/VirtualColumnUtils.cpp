@@ -74,25 +74,17 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
     ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
-    ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
-    ASTs & asts = node.children;
-    auto cur = std::make_shared<ASTLiteral>(StringRange(), value);
-    cur->alias = column_name;
-    ASTPtr column_value = cur;
-    bool is_replaced = false;
-    for (size_t i = 0; i < asts.size(); ++i)
+    if (!select.with_expression_list)
     {
-        if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
-        {
-            if (identifier->kind == ASTIdentifier::Kind::Column && identifier->name == column_name)
-            {
-                asts[i] = column_value;
-                is_replaced = true;
-            }
-        }
+        select.with_expression_list = std::make_shared<ASTExpressionList>();
+        select.children.insert(select.children.begin(), select.with_expression_list);
     }
-    if (!is_replaced)
-        asts.insert(asts.begin(), column_value);
+
+    ASTExpressionList & with = typeid_cast<ASTExpressionList &>(*select.with_expression_list);
+    auto literal = std::make_shared<ASTLiteral>(StringRange(), value);
+    literal->alias = column_name;
+    literal->prefer_alias_to_column_name = true;
+    with.children.push_back(literal);
 }
 
 /// Verifying that the function depends only on the specified columns
