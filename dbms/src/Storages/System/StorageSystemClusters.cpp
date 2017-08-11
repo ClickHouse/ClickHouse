@@ -72,27 +72,10 @@ BlockInputStreams StorageSystemClusters::read(
     {
         const std::string cluster_name = entry.first;
         const ClusterPtr cluster = entry.second;
-        const auto & addresses = cluster->getShardsAddresses();
-        const auto & addresses_with_failover = cluster->getShardsWithFailoverAddresses();
+        const auto & addresses_with_failover = cluster->getShardsAddresses();
         const auto & shards_info = cluster->getShardsInfo();
 
-        if (!addresses.empty())
-        {
-            auto it1 = addresses.cbegin();
-            auto it2 = shards_info.cbegin();
-
-            while (it1 != addresses.cend())
-            {
-                const auto & address = *it1;
-                const auto & shard_info = *it2;
-
-                updateColumns(cluster_name, shard_info, address);
-
-                ++it1;
-                ++it2;
-            }
-        }
-        else if (!addresses_with_failover.empty())
+        if (!addresses_with_failover.empty())
         {
             auto it1 = addresses_with_failover.cbegin();
             auto it2 = shards_info.cbegin();

@@ -273,7 +273,7 @@ void DDLWorker::processTask(const DDLLogEntry & node, const std::string & node_n
             String cluster_name = query->cluster;
             auto cluster = context.getCluster(cluster_name);
 
-            auto shard_host_num = tryGetShardAndHostNum(cluster->getShardsWithFailoverAddresses(), host_name, port);
+            auto shard_host_num = tryGetShardAndHostNum(cluster->getShardsAddresses(), host_name, port);
             if (!shard_host_num)
             {
                 throw Exception("Cannot find own address (" + host_id + ") in cluster " + cluster_name + " configuration",
@@ -283,7 +283,7 @@ void DDLWorker::processTask(const DDLLogEntry & node, const std::string & node_n
             size_t shard_num = shard_host_num->first;
             size_t host_num = shard_host_num->second;
 
-            const auto & host_address = cluster->getShardsWithFailoverAddresses().at(shard_num).at(host_num);
+            const auto & host_address = cluster->getShardsAddresses().at(shard_num).at(host_num);
             ASTPtr rewritten_ast = query->getRewrittenASTWithoutOnCluster(host_address.default_database);
             String rewritten_query = queryToString(rewritten_ast);
 
@@ -369,7 +369,7 @@ void DDLWorker::processTaskAlter(
             throw Exception("Distributed DDL alters don't work properly yet", ErrorCodes::NOT_IMPLEMENTED);
 
         Strings replica_names;
-        for (const auto & address : cluster->getShardsWithFailoverAddresses().at(shard_num))
+        for (const auto & address : cluster->getShardsAddresses().at(shard_num))
             replica_names.emplace_back(address.toString());
         std::sort(replica_names.begin(), replica_names.end());
 
@@ -700,7 +700,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, Context & context)
     entry.query = queryToString(query_ptr);
     entry.initiator = ddl_worker.getHostName();
 
-    Cluster::AddressesWithFailover shards = cluster->getShardsWithFailoverAddresses();
+    Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
     for (const auto & shard : shards)
     {
         for (const auto & addr : shard)

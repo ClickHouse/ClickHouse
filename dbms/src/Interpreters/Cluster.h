@@ -55,6 +55,7 @@ public:
         String password;
         String default_database;    /// this database is selected when no database is specified for Distributed table
         UInt32 replica_num;
+        bool is_local;
 
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
         Address(const String & host_port_, const String & user_, const String & password_);
@@ -80,8 +81,8 @@ public:
         bool hasInternalReplication() const { return has_internal_replication; }
 
     public:
-        /// Contains names of directories for asynchronous write to StorageDistributed
-        std::vector<std::string> dir_names;
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
+        std::string dir_name_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num;
         UInt32 weight;
@@ -94,8 +95,7 @@ public:
 
     String getHashOfAddresses() const { return hash_of_addresses; }
     const ShardsInfo & getShardsInfo() const { return shards_info; }
-    const Addresses & getShardsAddresses() const { return addresses; }
-    const AddressesWithFailover & getShardsWithFailoverAddresses() const { return addresses_with_failover; }
+    const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
 
     const ShardInfo & getAnyShardInfo() const
     {
@@ -144,8 +144,6 @@ private:
     /// Non-empty is either addresses or addresses_with_failover.
     /// The size and order of the elements in the corresponding array corresponds to shards_info.
 
-    /// An array of shards. Each shard is the address of one server.
-    Addresses addresses;
     /// An array of shards. For each shard, an array of replica addresses (servers that are considered identical).
     AddressesWithFailover addresses_with_failover;
 

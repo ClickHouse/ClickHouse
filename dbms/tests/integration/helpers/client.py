@@ -27,6 +27,14 @@ class Client:
         return CommandRequest(command, stdin, timeout)
 
 
+class QueryTimeoutExceedException(Exception):
+    pass
+
+
+class QueryRuntimeException(Exception):
+    pass
+
+
 class CommandRequest:
     def __init__(self, command, stdin=None, timeout=None):
         # Write data to tmp file to avoid PIPEs and execution blocking
@@ -60,11 +68,10 @@ class CommandRequest:
         stdout = self.stdout_file.read()
         stderr = self.stderr_file.read()
 
-        if self.process.returncode != 0 or stderr:
-            raise Exception('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
-
         if self.timer is not None and not self.process_finished_before_timeout:
-            raise Exception('Client timed out!')
+            raise QueryTimeoutExceedException('Client timed out!')
+
+        if self.process.returncode != 0 or stderr:
+            raise QueryRuntimeException('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
 
         return stdout
-

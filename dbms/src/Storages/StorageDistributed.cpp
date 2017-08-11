@@ -245,7 +245,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Setti
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster);
+        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings.insert_distributed_sync, settings.insert_distributed_timeout);
 }
 
 
@@ -273,7 +273,7 @@ void StorageDistributed::startup()
 
 void StorageDistributed::shutdown()
 {
-    directory_monitors.clear();
+    cluster_nodes_data.clear();
 }
 
 
@@ -455,13 +455,6 @@ bool StorageDistributed::hasColumn(const String & column_name) const
     return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
-
-void StorageDistributed::createDirectoryMonitor(const std::string & name)
-{
-    directory_monitors.emplace(name, std::make_unique<StorageDistributedDirectoryMonitor>(*this, name));
-}
-
-
 void StorageDistributed::createDirectoryMonitors()
 {
     if (path.empty())
@@ -473,14 +466,20 @@ void StorageDistributed::createDirectoryMonitors()
     boost::filesystem::directory_iterator end;
     for (auto it = begin; it != end; ++it)
         if (it->status().type() == boost::filesystem::directory_file)
-            createDirectoryMonitor(it->path().filename().string());
+            requireDirectoryMonitor(it->path().filename().string());
 }
 
 
 void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
-    if (!directory_monitors.count(name))
-        createDirectoryMonitor(name);
+    cluster_nodes_data[name].requireDirectoryMonitor(name, *this);
+}
+
+ConnectionPoolPtr StorageDistributed::requireConnectionPool(const std::string & name)
+{
+    auto & node_data = cluster_nodes_data[name];
+    node_data.requireConnectionPool(name, *this);
+    return node_data.conneciton_pool;
 }
 
 size_t StorageDistributed::getShardCount() const
@@ -492,6 +491,19 @@ size_t StorageDistributed::getShardCount() const
 ClusterPtr StorageDistributed::getCluster() const
 {
     return (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
+}
+
+void StorageDistributed::ClusterNodeData::requireConnectionPool(const std::string & name, const StorageDistributed & storage)
+{
+    if (!conneciton_pool)
+        conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, storage);
+}
+
+void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::string & name, StorageDistributed & storage)
+{
+    requireConnectionPool(name, storage);
+    if (!directory_monitor)
+        directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
 }
 
 }

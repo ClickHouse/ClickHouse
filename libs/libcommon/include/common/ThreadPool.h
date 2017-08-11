@@ -16,10 +16,9 @@
 
 class ThreadPool
 {
-private:
+public:
     using Job = std::function<void()>;
 
-public:
     /// Size is constant, all threads are created immediately.
     ThreadPool(size_t m_size);
 
