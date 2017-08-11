@@ -44,33 +44,45 @@ private:
     /// Performs synchronous insertion to remote nodes. If timeout_exceeded flag was set, throws.
     void writeSync(const Block & block);
 
-    void calculateRemoteJobsCount();
+    void calculateJobsCount();
 
-    ThreadPool::Job createWritingJob(std::vector<bool> & done_jobs, std::atomic<unsigned> & finished_jobs_count,
-                                     std::condition_variable & cond_var, const Block & block, size_t job_id,
-                                     const Cluster::ShardInfo & shard_info, size_t replica_id);
+    struct WritingJobContext
+    {
+        /// Remote job per replica.
+        std::vector<bool> done_remote_jobs;
+        /// Local job per shard.
+        std::vector<bool> done_local_jobs;
+        std::atomic<unsigned> finished_jobs_count;
+        std::mutex mutex;
+        std::condition_variable cond_var;
+    };
 
-    void writeToLocal(const Blocks & blocks, size_t & finished_writings_count);
+    ThreadPool::Job createWritingJob(WritingJobContext & context, const Block & block,
+                                     const Cluster::Address & address, size_t shard_id, size_t job_id);
 
-    /// Returns the number of blocks was read for each cluster node. Uses during exception handling.
-    std::string getCurrentStateDescription(const std::vector<bool> & done_jobs, size_t finished_local_nodes_count);
+    void createWritingJobs(WritingJobContext & context, const Blocks & blocks);
+
+    void waitForUnfinishedJobs(WritingJobContext & context);
+
+    /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
+    std::string getCurrentStateDescription(const WritingJobContext & context);
 
     IColumn::Selector createSelector(Block block);
 
     /// Split block between shards.
     Blocks splitBlock(const Block & block);
 
-    void writeSplit(const Block & block);
+    void writeSplitAsync(const Block & block);
 
-    void writeImpl(const Block & block, const size_t shard_id = 0);
+    void writeAsyncImpl(const Block & block, const size_t shard_id = 0);
 
     /// Increments finished_writings_count after each repeat.
-    void writeToLocal(const Block & block, const size_t repeats, size_t & finished_writings_count);
+    void writeToLocal(const Block & block, const size_t repeats);
 
     void writeToShard(const Block & block, const std::vector<std::string> & dir_names);
 
     /// Performs synchronous insertion to remote node.
-    void writeToShardSync(const Block & block, const Cluster::ShardInfo & shard_info, size_t replica_id);
+    void writeToShardSync(const Block & block, const std::string & connection_pool_name);
 
 private:
     StorageDistributed & storage;
@@ -81,6 +93,7 @@ private:
     size_t blocks_inserted = 0;
     std::chrono::steady_clock::time_point deadline;
     size_t remote_jobs_count;
+    size_t local_jobs_count;
     std::experimental::optional<ThreadPool> pool;
 };
 

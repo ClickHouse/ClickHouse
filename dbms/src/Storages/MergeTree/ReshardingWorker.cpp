@@ -1700,17 +1700,7 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
     if (!cluster.getShardsAddresses().empty())
     {
         size_t shard_no = 0;
-        for (const auto & address : cluster.getShardsAddresses())
-        {
-            publish_address(address.host_name, shard_no);
-            publish_address(address.resolved_address.host().toString(), shard_no);
-            ++shard_no;
-        }
-    }
-    else if (!cluster.getShardsWithFailoverAddresses().empty())
-    {
-        size_t shard_no = 0;
-        for (const auto & addresses : cluster.getShardsWithFailoverAddresses())
+        for (const auto & addresses : cluster.getShardsAddresses())
         {
             for (const auto & address : addresses)
             {
