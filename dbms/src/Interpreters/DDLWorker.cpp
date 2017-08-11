@@ -453,6 +453,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
 
     bool found_via_resolving = false;
     for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
+    {
         for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
@@ -473,6 +474,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
                 }
             }
         }
+    }
 
     if (!found_via_resolving)
     {
@@ -490,7 +492,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
 bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, ExecutionStatus & status)
 {
     /// Add special comment at the start of query to easily identify DDL-produced queries in query_log
-    String query_prefix = "/*ddl_entry=" + task.entry_name + "*/ ";
+    String query_prefix = "/* ddl_entry=" + task.entry_name + " */ ";
     String query_to_execute = query_prefix + query;
 
     ReadBufferFromString istr(query_to_execute);
@@ -538,7 +540,6 @@ void DDLWorker::processTask(DDLTask & task)
     }
     else
         throw zkutil::KeeperException(code, active_node_path);
-
 
     if (!task.was_executed)
     {
@@ -615,7 +616,7 @@ void DDLWorker::processTaskAlter(
     else if (!execute_once_on_replica && config_is_replicated_shard)
     {
         throw Exception("Table " + ast_alter->table + " isn't replicated, but shard #" + toString(task.host_shard_num + 1) +
-            " replicated according to its cluster definition", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+            " is replicated according to its cluster definition", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
 
     if (execute_once_on_replica)
@@ -647,7 +648,7 @@ void DDLWorker::processTaskAlter(
         bool alter_executed_by_any_replica = false;
         {
             auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
-            std::mt19937 rng(std::hash<String>{}(task.host_id_str) + reinterpret_cast<intptr_t>(&rng));
+            std::mt19937 rng(StringRefHash{}(task.host_id_str) + reinterpret_cast<intptr_t>(&rng));
 
             for (int num_tries = 0; num_tries < 10; ++num_tries)
             {
@@ -692,7 +693,7 @@ void DDLWorker::cleanupQueue()
     Int64 current_time_seconds = Poco::Timestamp().epochTime();
     constexpr Int64 zookeeper_time_resolution = 1000;
 
-    // Too early to check
+    /// Too early to check
     if (last_cleanup_time_seconds && current_time_seconds < last_cleanup_time_seconds + cleanup_delay_period)
         return;
 
@@ -775,7 +776,7 @@ void DDLWorker::cleanupQueue()
 }
 
 
-/// Try to create unexisting "status" dirs for a node
+/// Try to create nonexisting "status" dirs for a node
 void DDLWorker::createStatusDirs(const std::string & node_path)
 {
     zkutil::Ops ops;
@@ -854,7 +855,6 @@ void DDLWorker::run()
             throw;
         }
     } while (!initialized);
-
 
     while (!stop_flag)
     {
