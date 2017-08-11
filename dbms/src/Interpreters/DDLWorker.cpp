@@ -424,6 +424,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
 
     bool found_exact_match = false;
     for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
+    {
         for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
@@ -442,6 +443,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
                 task.address_in_cluster = address;
             }
         }
+    }
 
     if (found_exact_match)
         return;
