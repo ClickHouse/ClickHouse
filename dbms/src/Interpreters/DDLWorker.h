@@ -42,7 +42,7 @@ private:
 
     /// Reads entry and check that the host belongs to host list of the task
     /// Returns true and sets current_task if entry parsed and the check is passed
-    bool initAndCheckTask(const String & entry_name);
+    bool initAndCheckTask(const String & entry_name, String & out_reason);
 
 
     void processTask(DDLTask & task);

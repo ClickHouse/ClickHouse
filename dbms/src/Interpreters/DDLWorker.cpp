@@ -240,7 +240,7 @@ DDLWorker::~DDLWorker()
 }
 
 
-bool DDLWorker::initAndCheckTask(const String & entry_name)
+bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
 {
     String node_data;
     String entry_path = queue_dir + "/" + entry_name;
@@ -248,6 +248,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name)
     if (!zookeeper->tryGet(entry_path, node_data))
     {
         /// It is Ok that node could be deleted just now. It means that there are no current host in node's host list.
+        out_reason = "The task was deleted";
         return false;
     }
 
@@ -278,6 +279,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name)
             tryLogCurrentException(log, "Can't report the task has invalid format");
         }
 
+        out_reason = "Incorrect task format";
         return false;
     }
 
@@ -285,10 +287,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name)
     for (const HostID & host : task->entry.hosts)
     {
         if (!host.isLocalAddress())
-        {
-            //LOG_DEBUG(log, "Host " << host.readableString() << " is not local");
             continue;
-        }
 
         if (host_in_hostlist)
         {
@@ -306,6 +305,8 @@ bool DDLWorker::initAndCheckTask(const String & entry_name)
 
     if (host_in_hostlist)
         current_task = std::move(task);
+    else
+        out_reason = "There is no a local address in host list";
 
     return host_in_hostlist;
 }
@@ -345,16 +346,17 @@ void DDLWorker::processTasks()
             }
             else
             {
-                LOG_INFO(log, "Task " << current_task->entry_name << " was deleted from ZooKeeper before current host commited it");
+                LOG_INFO(log, "Task " << current_task->entry_name << " was deleted from ZooKeeper before current host committed it");
                 current_task = nullptr;
             }
         }
 
         if (!current_task)
         {
-            if (!initAndCheckTask(entry_name))
+            String reason;
+            if (!initAndCheckTask(entry_name, reason))
             {
-                LOG_DEBUG(log, "Will not execute task " << entry_name);
+                LOG_DEBUG(log, "Will not execute task " << entry_name << " : " << reason);
                 last_processed_task_name = entry_name;
                 continue;
             }
@@ -423,7 +425,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     /// Try to find host from task host list in cluster
     /// At the first, try find exact match (host name and ports should be literally equal)
     /// If the attempt fails, try find it resolving host name of each instance
-    const auto & shards = task.cluster->getShardsWithFailoverAddresses();
+    const auto & shards = task.cluster->getShardsAddresses();
 
     bool found_exact_match = false;
     for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
@@ -738,7 +740,7 @@ void DDLWorker::cleanupQueue()
             /// Skip if there are active nodes (it is weak guard)
             if (zookeeper->exists(node_path + "/active", &stat) && stat.numChildren > 0)
             {
-                LOG_INFO(log, "Task " << node_name << " should be deleted but there are active workers. Skipping it.");
+                LOG_INFO(log, "Task " << node_name << " should be deleted, but there are active workers. Skipping it.");
                 continue;
             }
 
@@ -747,7 +749,7 @@ void DDLWorker::cleanupQueue()
             auto lock = createSimpleZooKeeperLock(zookeeper, node_path, "lock", host_fqdn_id);
             if (!lock->tryLock())
             {
-                LOG_INFO(log, "Task " << node_name << " should be deleted but it is locked. Skipping it.");
+                LOG_INFO(log, "Task " << node_name << " should be deleted, but it is locked. Skipping it.");
                 continue;
             }
 
@@ -874,6 +876,7 @@ void DDLWorker::run()
             if (stop_flag)
                 break;
 
+            /// TODO: it might delay the execution, move it to separate thread.
             cleanupQueue();
         }
         catch (zkutil::KeeperException & e)
@@ -958,7 +961,10 @@ public:
 
             auto elapsed_seconds = watch.elapsedSeconds();
             if (timeout_seconds >= 0 && elapsed_seconds > timeout_seconds)
-                throw Exception("Watching query is executing too long (" + toString(std::round(elapsed_seconds)) + " sec.)", ErrorCodes::TIMEOUT_EXCEEDED);
+            {
+                throw Exception("Watching task " + node_path + " is executing too long (" + toString(std::round(elapsed_seconds)) + " sec.)",
+                                ErrorCodes::TIMEOUT_EXCEEDED);
+            }
 
             if (num_hosts_finished != 0 || try_number != 0)
                 std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(20LU, try_number + 1)));

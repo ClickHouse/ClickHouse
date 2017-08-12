@@ -39,15 +39,16 @@ std::string unescapeForFileName(const std::string & s)
     while (pos != end)
     {
         if (!(*pos == '%' && pos + 2 < end))
+        {
             res += *pos;
+            ++pos;
+        }
         else
         {
             ++pos;
             res += unhex2(pos);
             pos += 2;
         }
-
-        ++pos;
     }
     return res;
 }
