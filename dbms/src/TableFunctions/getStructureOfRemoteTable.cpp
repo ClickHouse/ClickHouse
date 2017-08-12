@@ -28,7 +28,7 @@ NamesAndTypesList getStructureOfRemoteTable(
     Settings settings = context.getSettings();
     NamesAndTypesList res;
 
-    /// Send to the first random remote shard.
+    /// Send to the first any remote shard.
     const auto & shard_info = cluster.getAnyShardInfo();
 
     if (shard_info.isLocal())
