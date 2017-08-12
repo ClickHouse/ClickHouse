@@ -285,7 +285,10 @@ bool DDLWorker::initAndCheckTask(const String & entry_name)
     for (const HostID & host : task->entry.hosts)
     {
         if (!host.isLocalAddress())
+        {
+            //LOG_DEBUG(log, "Host " << host.readableString() << " is not local");
             continue;
+        }
 
         if (host_in_hostlist)
         {
@@ -691,7 +694,7 @@ void DDLWorker::cleanupQueue()
 {
     /// Both ZK and Poco use Unix epoch
     Int64 current_time_seconds = Poco::Timestamp().epochTime();
-    constexpr Int64 zookeeper_time_resolution = 1000;
+    constexpr UInt64 zookeeper_time_resolution = 1000;
 
     /// Too early to check
     if (last_cleanup_time_seconds && current_time_seconds < last_cleanup_time_seconds + cleanup_delay_period)
@@ -718,13 +721,42 @@ void DDLWorker::cleanupQueue()
 
         try
         {
+            /// Already deleted
+            if (!zookeeper->exists(node_path, &stat))
+                continue;
+
+            /// Delete node if its lifetmie is expired (according to task_max_lifetime parameter)
+            size_t zookeeper_time_seconds = stat.ctime / zookeeper_time_resolution;
+            bool node_lifetime_is_expired = zookeeper_time_seconds + task_max_lifetime < current_time_seconds;
+
+            /// If too many nodes in task queue (> max_tasks_in_queue), delete oldest one
+            bool node_is_outside_max_window = it < first_non_outdated_node;
+
+            if (!node_lifetime_is_expired && !node_is_outside_max_window)
+                continue;
+
+            /// Skip if there are active nodes (it is weak guard)
+            if (zookeeper->exists(node_path + "/active", &stat) && stat.numChildren > 0)
+            {
+                LOG_INFO(log, "Task " << node_name << " should be deleted but there are active workers. Skipping it.");
+                continue;
+            }
+
             /// Usage of the lock is not necessary now (tryRemoveRecursive correctly removes node in a presence of concurrent cleaners)
             /// But the lock will be required to implement system.distributed_ddl_queue table
             auto lock = createSimpleZooKeeperLock(zookeeper, node_path, "lock", host_fqdn_id);
             if (!lock->tryLock())
+            {
+                LOG_INFO(log, "Task " << node_name << " should be deleted but it is locked. Skipping it.");
                 continue;
+            }
 
-            auto delete_node = [&] ()
+            if (node_lifetime_is_expired)
+                LOG_INFO(log, "Lifetime of task " << node_name << " is expired, deleting it");
+            else if (node_is_outside_max_window)
+                LOG_INFO(log, "Task " << node_name << " is outdated, deleting it");
+
+            /// Deleting
             {
                 Strings childs = zookeeper->getChildren(node_path);
                 for (const String & child : childs)
@@ -740,32 +772,6 @@ void DDLWorker::cleanupQueue()
                 zookeeper->multi(ops);
 
                 lock->unlockAssumeLockNodeRemovedManually();
-            };
-
-            /// Skip if there are active nodes (it is weak guard)
-            if (zookeeper->tryGet(node_path + "/active", dummy, &stat) && stat.numChildren > 0)
-                continue;
-
-            /// Delete if too many (max_tasks_in_queue) task in queue
-            if (it < first_non_outdated_node)
-            {
-                LOG_INFO(log, "Task " << node_name << " is outdated, deleting it");
-
-                delete_node();
-                continue;
-            }
-
-            zookeeper->get(node_path, &stat);
-            size_t zookeeper_time_seconds = stat.mtime / zookeeper_time_resolution;
-
-            /// Delte if node lifetmie (task_max_lifetime) is expired
-            if (zookeeper_time_seconds + task_max_lifetime < current_time_seconds)
-            {
-                size_t lifetime_seconds = current_time_seconds - zookeeper_time_seconds;
-                LOG_INFO(log, "Lifetime of task " << node_name << " (" << lifetime_seconds << " sec.) is expired, deleting it");
-
-                delete_node();
-                continue;
             }
         }
         catch (...)
