@@ -17,7 +17,6 @@ namespace ClusterProxy
 class IStreamFactory;
 
 /// Execute a distributed query, creating a vector of BlockInputStreams, from which the result can be read.
-/// If `enable_shard_multiplexing` is false, each stream corresponds to a single shard.
 /// `stream_factory` object encapsulates the logic of creating streams for a different type of query
 /// (currently SELECT, DESCRIBE, or ALTER (for resharding)).
 BlockInputStreams executeQuery(
