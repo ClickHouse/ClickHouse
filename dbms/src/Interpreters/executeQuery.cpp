@@ -147,7 +147,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         ast = parseQuery(parser, begin, end, "");
 
         /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-        query_size = ast->range.second - ast->range.first;
+        if (!(begin <= ast->range.first && ast->range.second <= end))
+            throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
+        query_size = ast->range.second - begin;
 
         if (max_query_size && query_size > max_query_size)
             throw Exception("Query is too large (" + toString(query_size) + ")."

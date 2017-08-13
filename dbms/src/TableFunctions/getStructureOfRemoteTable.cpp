@@ -25,7 +25,6 @@ NamesAndTypesList getStructureOfRemoteTable(
 {
     /// Request for a table description
     String query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
-    Settings settings = context.getSettings();
     NamesAndTypesList res;
 
     /// Send to the first any remote shard.
@@ -34,9 +33,7 @@ NamesAndTypesList getStructureOfRemoteTable(
     if (shard_info.isLocal())
         return context.getTable(database, table)->getColumnsList();
 
-    BlockInputStreamPtr input = std::make_shared<RemoteBlockInputStream>(
-            shard_info.pool, query, &settings, context, nullptr,
-            Tables(), QueryProcessingStage::Complete);
+    BlockInputStreamPtr input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, context);
     input->readPrefix();
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();

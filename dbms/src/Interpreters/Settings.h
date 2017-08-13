@@ -191,9 +191,6 @@ struct Settings
     M(SettingUInt64, select_sequential_consistency, 0) \
     /** The maximum number of different shards and the maximum number of replicas of one shard in the `remote` function. */ \
     M(SettingUInt64, table_function_remote_max_addresses, 1000) \
-    /** Maximum number of threads for distributed processing of one query */ \
-    M(SettingUInt64, max_distributed_processing_threads, 8) \
-    \
     /** Settings to reduce the number of threads in case of slow reads. */ \
     /** Pay attention only to readings that took at least that much time. */ \
     M(SettingMilliseconds,     read_backoff_min_latency_ms, 1000) \
@@ -294,7 +291,9 @@ struct Settings
     /** Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. \
      *  Zero value means no timeout. \
      */ \
-    M(SettingUInt64, insert_distributed_timeout, 0)
+    M(SettingUInt64, insert_distributed_timeout, 0) \
+    /* Timeout for DDL query responses from all hosts in cluster. Negative value means infinite. */ \
+    M(SettingInt64, distributed_ddl_task_timeout, 120)
 
 
     /// Possible limits for query execution.

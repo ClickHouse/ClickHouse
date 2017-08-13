@@ -278,7 +278,7 @@ int Server::main(const std::vector<std::string> & args)
     {
         /// DDL worker should be started after all tables were loaded
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context));
+        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl."));
     }
 
     SCOPE_EXIT({
