@@ -97,7 +97,7 @@ private:
     size_t max_tasks_in_queue = 1000;
 
     friend class DDLQueryStatusInputSream;
-    friend class DDLTask;
+    friend struct DDLTask;
 };
 
 

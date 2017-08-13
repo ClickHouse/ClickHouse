@@ -728,7 +728,7 @@ void DDLWorker::cleanupQueue()
                 continue;
 
             /// Delete node if its lifetmie is expired (according to task_max_lifetime parameter)
-            size_t zookeeper_time_seconds = stat.ctime / zookeeper_time_resolution;
+            Int64 zookeeper_time_seconds = stat.ctime / zookeeper_time_resolution;
             bool node_lifetime_is_expired = zookeeper_time_seconds + task_max_lifetime < current_time_seconds;
 
             /// If too many nodes in task queue (> max_tasks_in_queue), delete oldest one
