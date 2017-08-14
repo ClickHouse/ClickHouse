@@ -35,7 +35,8 @@ struct DataHolder
     ClickhouseColumnsUint64 columns;
 };
 
-extern "C" void * loadIds(void * data_ptr, ClickhouseStrings * columns, const struct ClickhouseVectorUint64 * ids)
+extern "C" void * loadIds(
+    void * data_ptr, ClickhouseSettings * settings, ClickhouseStrings * columns, const struct ClickhouseVectorUint64 * ids)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadIds Runned!!! ptr=" << data_ptr << " => " << ptr << " size=" << ids->size << "\n";
@@ -47,7 +48,7 @@ extern "C" void * loadIds(void * data_ptr, ClickhouseStrings * columns, const st
             std::cerr << "col " << i << " :" << columns->data[i] << "\n";
         }
     }
-/*
+    /*
     if (ids)
     {
         std::cerr << "ids passed: " << ids->size << "\n";
@@ -73,29 +74,29 @@ extern "C" void * loadIds(void * data_ptr, ClickhouseStrings * columns, const st
             {3,                250,                1274,                1029309690,                1029309691,                -6,                1274,                1029309690,                1029309691,                4.5,                4.5,                9624464864560415994,                19730628,                19700102032114,                2}});
             */
 
-/*
+        /*
         ptr->vector.assign({
             {0, 50, 13874, 980694578, 980694579, 50, 13874, 980694578, 980694579, 0, 0, 4761183170873, 0, 0, 0},
             {1, 48,                57392,                4083802160,                4083802161,                48,                8144,                211165136,                211165135,                15,                15,                                105773498466635,                20370602,                19700102095024,                0},
             {2,                69,                35909,                1447922757,                1447922758,                69,                29627,                1447922757,                1447922758,                3,                3,                  18198135717204,                19780808,                1970010203521,                1},
             {3,                250,                1274,                1029309690,                1029309691,                6,                1274,                1029309690,                1029309691,                45,                45,                96244648645604,                19730628,                19700102032114,                2}});
 */
-//ptr->vector.assign({{1,2,3,4},{11,12,13,14},{21,22,23,24}});
-//ptr->vector.emplace_back({1,2,3,4},{11,12,13,14},{21,22,23,24});
-//ptr->vector.emplace_back({1,2,3,4});
-//ptr->vector.emplace_back(std::vector<uint64_t>{1,2,3,4});
+        //ptr->vector.assign({{1,2,3,4},{11,12,13,14},{21,22,23,24}});
+        //ptr->vector.emplace_back({1,2,3,4},{11,12,13,14},{21,22,23,24});
+        //ptr->vector.emplace_back({1,2,3,4});
+        //ptr->vector.emplace_back(std::vector<uint64_t>{1,2,3,4});
 
-    if (ids)
-    {
-        std::cerr << "ids passed: " << ids->size << "\n";
-        for (size_t i = 0; i < ids->size; ++i)
+        if (ids)
         {
-            std::cerr << "id " << i << " :" << ids->data[i] << " replying.\n";
-ptr->vector.emplace_back(std::vector<uint64_t>{ids->data[i], ids->data[i]+1,(1+ids->data[i])*10, 65});
+            std::cerr << "ids passed: " << ids->size << "\n";
+            for (size_t i = 0; i < ids->size; ++i)
+            {
+                std::cerr << "id " << i << " :" << ids->data[i] << " replying.\n";
+                ptr->vector.emplace_back(std::vector<uint64_t>{ids->data[i], ids->data[i] + 1, (1 + ids->data[i]) * 10, 65});
+            }
         }
-    }
 
-            
+
         /*
          {0,	50,	13874,	980694578,	980694579,	50,	13874,	980694578,	980694579,	0,	0,	4761183170873013810,	"2007-12-27",	"1970-01-02 06:51:14", 0},
          {1,	48,	57392,	4083802160,	4083802161,	48,	-8144,	-211165136,	-211165135,	1.5,	1.5,	10577349846663553072	"2037-06-02",	"1970-01-02 09:50:24",	0},
@@ -126,10 +127,20 @@ ptr->vector.emplace_back(std::vector<uint64_t>{ids->data[i], ids->data[i]+1,(1+i
     return nullptr;
 }
 
-extern "C" void * loadAll(void * data_ptr, ClickhouseStrings * columns)
+extern "C" void * loadAll(void * data_ptr, ClickhouseSettings * settings, ClickhouseStrings * columns)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadAll Runned!!! ptr=" << data_ptr << " => " << ptr << "\n";
+    if (settings)
+    {
+        std::cerr << "settings passed: " << settings->size << "\n";
+        for (size_t i = 0; i < settings->size; ++i)
+        {
+            std::cerr << "setting " << i << " :" << settings->data[i] << " \n";
+        }
+    }
+
+
     if (ptr)
     {
         return static_cast<void *>(&ptr->columns);

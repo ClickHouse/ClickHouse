@@ -10,6 +10,7 @@
 //dev:
 #include <Common/iostream_debug_helpers.h>
 //#include <DataStreams/NullBlockInputStream.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <DataStreams/OneBlockInputStream.h>
 
 
@@ -18,21 +19,79 @@ namespace DB
 //static const size_t max_block_size = 8192;
 
 
+struct StringHolder
+{
+    ClickhouseSettings strings;
+    std::unique_ptr<ClickhouseString[]> ptrHolder = nullptr;
+    std::vector<std::string> stringHolder;
+
+    //ClickhouseSettings *
+    void prepare()
+    {
+        strings.size = stringHolder.size();
+        //return &settings;
+        ptrHolder = std::make_unique<ClickhouseString[]>(strings.size);
+        strings.data = ptrHolder.get();
+        size_t i = 0;
+        for (auto & str : stringHolder)
+        {
+            //DUMP(i);        DUMP(a.name);        DUMP(a.type);
+            strings.data[i] = str.c_str();
+            ++i;
+        }
+    }
+};
+StringHolder getSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root
+    //, const std::string & config_name
+
+    )
+{
+    StringHolder holder;
+    /*
+        auto valuesk = getMultipleValuesFromConfig(config, config_root, config_name);
+        std::cerr << "config valuesK: ";
+        DUMP(valuesk);
+        
+        auto values = getMultipleKeysFromConfig(config, config_root, config_name);
+        std::cerr << "config values: ";
+        DUMP(values);
+        */
+    holder.stringHolder.clear();
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(config_root, config_keys);
+    std::cerr << "keys root " << config_root << " = " << config_keys << "\n";
+    for (const auto & key : config_keys)
+    {
+        //std::cerr << "cmp " << key << " " << name  << "\n";
+        std::cerr << "cmp " << key << " "
+                  << "\n";
+        holder.stringHolder.emplace_back(key);
+    }
+
+    //holder.stringHolder = values;
+
+    holder.prepare();
+    return holder;
+}
+
 //struct LoadIdsParams {const uint64_t size; const uint64_t * data;};
 
 LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
+    const Poco::Util::AbstractConfiguration & config_,
+    const std::string & config_prefix_,
     Block & sample_block,
     const Context & context)
     : log(&Logger::get("LibDictionarySource")),
       dict_struct{dict_struct_},
+      config{config_},
+      config_prefix{config_prefix_},
       filename{config.getString(config_prefix + ".filename", "")},
       //format {config.getString(config_prefix + ".format")},
       sample_block{sample_block},
       context(context)
 {
-    //std::cerr << "LibDictionarySource::LibDictionarySource()\n";
+    std::cerr << "LibDictionarySource::LibDictionarySource()\n";
+    std::cerr << "config_prefix=" << config_prefix << "\n";
     if (!Poco::File(filename).exists())
     {
         LOG_ERROR(log, "LibDictionarySource: Cant load lib " << toString() << " : " << Poco::File(filename).path());
@@ -45,6 +104,8 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
 LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
     : log(&Logger::get("LibDictionarySource")),
       dict_struct{other.dict_struct},
+      config{other.config},
+      config_prefix{other.config_prefix},
       filename{other.filename},
       //format {other.format},
       sample_block{other.sample_block},
@@ -72,8 +133,14 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
         ++i;
     }
 
+    DUMP(config_prefix);
+    //DUMP(config_prefix + ".lib");
+    auto settings = getSettings(config, config_prefix + ".settings"
 
-    auto data = lib->get<void * (*)(decltype(data_ptr), decltype(&columns))>("loadAll")(data_ptr, &columns);
+        );
+
+    auto data = lib->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(&columns))>("loadAll")(
+        data_ptr, &settings.strings, &columns);
     //DUMP(data);
 
     auto columns_recieved = static_cast<ClickhouseColumnsUint64 *>(data);
@@ -118,11 +185,16 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
         //++columns.size;
         ++i;
     }
+
+    auto settings = getSettings(config, config_prefix + ".settings"
+
+        );
+
     //auto lib = std::make_shared<SharedLibrary>(filename);
     //auto data_ptr = library->get<void * (*) ()>("dataAllocate")();
     auto data_ptr = library->get<void * (*)()>("dataAllocate")();
-    auto data = library->get<void * (*)(decltype(data_ptr), decltype(&columns_pass), decltype(&ids_data))>("loadIds")(
-        data_ptr, &columns_pass, &ids_data);
+    auto data = library->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(&columns_pass), decltype(&ids_data))>(
+        "loadIds")(data_ptr, &settings.strings, &columns_pass, &ids_data);
     //DUMP(data);
 
     auto block = description.sample_block.cloneEmpty();
@@ -133,7 +205,7 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
         columns[i] = block.getByPosition(i).column.get();
     DUMP(columns.size());
     //std::cerr << "bl clean=" << block << "\n";
-    
+
 
     if (data)
     {
@@ -232,7 +304,7 @@ bool LibDictionarySource::isModified() const
     auto fptr = library->get<void * (*)()>("isModified", true);
     if (fptr)
         return fptr();
-    std::cerr << "no lib's isModified\n";
+    //std::cerr << "no lib's isModified\n";
     return true;
 }
 
@@ -242,7 +314,7 @@ bool LibDictionarySource::supportsSelectiveLoad() const
     auto fptr = library->get<void * (*)()>("supportsSelectiveLoad", true);
     if (fptr)
         return fptr();
-    std::cerr << "no lib's supportsSelectiveLoad\n";
+    //std::cerr << "no lib's supportsSelectiveLoad\n";
     return true;
 }
 
