@@ -17,6 +17,7 @@ def started_cluster():
         for node in (node1, node2):
             node.query('''
 CREATE TABLE local_table(id UInt32, val String) ENGINE = TinyLog;
+CREATE TABLE local_table_2(id UInt32, val String) ENGINE = TinyLog;
 ''')
 
         node1.query("INSERT INTO local_table VALUES (1, 'node1')")
@@ -24,6 +25,7 @@ CREATE TABLE local_table(id UInt32, val String) ENGINE = TinyLog;
 
         node1.query('''
 CREATE TABLE distributed_table(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table);
+CREATE TABLE distributed_table_2(id UInt32, val String) ENGINE = Distributed(test_cluster, default, local_table_2);
 CREATE TABLE merge_table(id UInt32, val String) ENGINE = Merge(default, '^distributed_table')
 ''')
 
@@ -48,6 +50,16 @@ def test_filtering(started_cluster):
     assert node1.query("SELECT id + 1, val FROM merge_table WHERE id = 1").rstrip() == '2\tnode1'
 
     assert node1.query("SELECT id + 1 FROM merge_table WHERE val = 'node1'").rstrip() == '2'
+
+
+def test_select_table_name_from_merge_over_distributed(started_cluster):
+
+    node1.query("INSERT INTO local_table_2 VALUES (1, 'node1')")
+    node2.query("INSERT INTO local_table_2 VALUES (2, 'node2')")
+
+    node1.query("select _table == 'distributed_table' from merge_table")
+    node1.query("select * from (select _table == 'distributed_table' from merge_table limit 1)")
+
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:

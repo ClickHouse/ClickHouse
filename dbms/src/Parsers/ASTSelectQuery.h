@@ -46,6 +46,7 @@ private:
 
 public:
     bool distinct = false;
+    ASTPtr with_expression_list;
     ASTPtr select_expression_list;
     ASTPtr tables;
     ASTPtr prewhere_expression;

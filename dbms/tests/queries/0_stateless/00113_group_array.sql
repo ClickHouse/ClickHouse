@@ -1,5 +1,9 @@
 SELECT intDiv(number, 100) AS k, length(groupArray(number)) FROM (SELECT * FROM system.numbers LIMIT 1000000) GROUP BY k WITH TOTALS ORDER BY k LIMIT 10;
 
+SELECT '';
+SELECT length(toString(groupArrayState(toDate(number)))) FROM (SELECT * FROM system.numbers LIMIT 10);
+SELECT length(toString(groupArrayState(toDateTime(number)))) FROM (SELECT * FROM system.numbers LIMIT 10);
+
 DROP TABLE IF EXISTS test.numbers_mt;
 CREATE TABLE test.numbers_mt (number UInt64) ENGINE = Log;
 INSERT INTO test.numbers_mt SELECT * FROM system.numbers LIMIT 1, 1000000;

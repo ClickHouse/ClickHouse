@@ -8,7 +8,7 @@ class Client:
     def __init__(self, host, port=9000, command='/usr/bin/clickhouse-client'):
         self.host = host
         self.port = port
-        self.command = [command, '--host', self.host, '--port', str(self.port)]
+        self.command = [command, '--host', self.host, '--port', str(self.port), '--stacktrace']
 
 
     def query(self, sql, stdin=None, timeout=None):

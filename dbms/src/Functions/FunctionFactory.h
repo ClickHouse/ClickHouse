@@ -4,7 +4,9 @@
 #include <memory>
 #include <unordered_map>
 #include <ext/singleton.h>
+
 #include <Common/Exception.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -30,22 +32,29 @@ class FunctionFactory : public ext::singleton<FunctionFactory>
 
 private:
     using Creator = FunctionPtr(*)(const Context & context);    /// Not std::function, for lower object size and less indirection.
-    std::unordered_map<std::string, Creator> functions;
+    using Functions = std::unordered_map<String, Creator>;
+
+    Functions functions;
+    Functions case_insensitive_functions;
+
+    /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
+    enum CaseSensitiveness
+    {
+        CaseSensitive,
+        CaseInsensitive
+    };
 
 public:
-    FunctionFactory();
-
-    FunctionPtr get(const std::string & name, const Context & context) const;    /// Throws an exception if not found.
-    FunctionPtr tryGet(const std::string & name, const Context & context) const; /// Returns nullptr if not found.
+    FunctionPtr get(const String & name, const Context & context) const;    /// Throws an exception if not found.
+    FunctionPtr tryGet(const String & name, const Context & context) const; /// Returns nullptr if not found.
 
     /// No locking, you must register all functions before usage of get, tryGet.
-    template <typename Function> void registerFunction()
-    {
-        static_assert(std::is_same<decltype(&Function::create), Creator>::value, "Function::create has incorrect type");
+    void registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
-        if (!functions.emplace(std::string(Function::name), &Function::create).second)
-            throw Exception("FunctionFactory: the function name '" + std::string(Function::name) + "' is not unique",
-                ErrorCodes::LOGICAL_ERROR);
+    template <typename Function>
+    void registerFunction()
+    {
+        registerFunction(String(Function::name), &Function::create);
     }
 };
 
