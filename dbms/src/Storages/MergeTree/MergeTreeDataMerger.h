@@ -58,7 +58,7 @@ public:
         String & merged_name,
         size_t available_disk_space,
         const AllowedMergingPredicate & can_merge,
-        DayNum_t partition,
+        const String & partition_id,
         bool final);
 
     /** Merge the parts.
@@ -93,7 +93,7 @@ public:
 private:
     /** Select all parts belonging to the same partition.
       */
-    MergeTreeData::DataPartsVector selectAllPartsFromPartition(DayNum_t partition);
+    MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
     /** Temporarily cancel merges.
       */

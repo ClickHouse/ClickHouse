@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -90,7 +90,7 @@ public:
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
     /// After the DataPart is added to the working set, it cannot be changed.
     using DataPartPtr = std::shared_ptr<const DataPart>;
-    struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return *lhs < *rhs; } };
+    struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; } };
     using DataParts = std::set<DataPartPtr, DataPartPtrLess>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
@@ -294,7 +294,7 @@ public:
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
 
-    size_t getMaxPartsCountForMonth() const;
+    size_t getMaxPartsCountForPartition() const;
 
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
@@ -404,7 +404,7 @@ public:
     void freezePartition(const std::string & prefix, const String & with_name);
 
     /// Returns the size of partition in bytes.
-    size_t getPartitionSize(const std::string & partition_name) const;
+    size_t getPartitionSize(const std::string & partition_id) const;
 
     struct ColumnSize
     {
@@ -452,12 +452,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP/RESHARD PARTITION.
-    static String getMonthName(const Field & partition);
-    static String getMonthName(DayNum_t month);
-    static DayNum_t getMonthDayNum(const Field & partition);
-    static DayNum_t getMonthFromName(const String & month_name);
-    /// Get month from the part name or a sufficient prefix.
-    static DayNum_t getMonthFromPartPrefix(const String & part_prefix);
+    static String getPartitionID(const Field & partition);
 
     Context & context;
     const String date_column_name;
