@@ -183,7 +183,7 @@ class ClickHouseInstance:
         self.client = None
         self.default_timeout = 20.0 # 20 sec
 
-    # Conntects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
+    # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, *args, **kwargs):
         return self.client.query(*args, **kwargs)
 
