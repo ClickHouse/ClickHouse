@@ -859,8 +859,8 @@ void DDLWorker::run()
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Terminating. Cannot initialize DDL queue");
-            throw;
+            tryLogCurrentException(log, "Terminating. Cannot initialize DDL queue.");
+            return;
         }
     } while (!initialized);
 
@@ -895,8 +895,8 @@ void DDLWorker::run()
             }
             else
             {
-                LOG_ERROR(log, "Unexpected ZooKeeper error: " << getCurrentExceptionMessage(true) << ". Terminating...");
-                throw;
+                LOG_ERROR(log, "Unexpected ZooKeeper error: " << getCurrentExceptionMessage(true) << ". Terminating.");
+                return;
             }
 
             /// Unlock the processing just in case
@@ -904,8 +904,8 @@ void DDLWorker::run()
         }
         catch (...)
         {
-            LOG_ERROR(log, "Unexpected error: " << getCurrentExceptionMessage(true) << ". Terminating...");
-            throw;
+            LOG_ERROR(log, "Unexpected error: " << getCurrentExceptionMessage(true) << ". Terminating.");
+            return;
         }
     }
 }
