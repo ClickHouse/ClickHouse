@@ -16,15 +16,29 @@ public:
     using Generator = std::function<BlockInputStreamPtr()>;
 
     LazyBlockInputStream(Generator generator_)
-        : generator(generator_) {}
+        : generator(std::move(generator_))
+    {
+    }
 
-    String getName() const override { return "Lazy"; }
+    LazyBlockInputStream(const char * name_, Generator generator_)
+        : name(name_)
+        , generator(std::move(generator_))
+    {
+    }
+
+    String getName() const override { return name; }
 
     String getID() const override
     {
         std::stringstream res;
-        res << "Lazy(" << this << ")";
+        res << name << "(" << this << ")";
         return res.str();
+    }
+
+    void cancel() override
+    {
+        std::lock_guard<std::mutex> lock(cancel_mutex);
+        IProfilingBlockInputStream::cancel();
     }
 
 protected:
@@ -37,9 +51,9 @@ protected:
             if (!input)
                 return Block();
 
-            children.push_back(input);
+            auto * p_input = dynamic_cast<IProfilingBlockInputStream *>(input.get());
 
-            if (IProfilingBlockInputStream * p_input = dynamic_cast<IProfilingBlockInputStream *>(input.get()))
+            if (p_input)
             {
                 /// They could have been set before, but were not passed into the `input`.
                 if (progress_callback)
@@ -47,14 +61,29 @@ protected:
                 if (process_list_elem)
                     p_input->setProcessListElement(process_list_elem);
             }
+
+            input->readPrefix();
+
+            {
+                std::lock_guard<std::mutex> lock(cancel_mutex);
+
+                children.push_back(input);
+
+                if (isCancelled() && p_input)
+                    p_input->cancel();
+            }
         }
 
         return input->read();
     }
 
 private:
+    const char * name = "Lazy";
     Generator generator;
+
     BlockInputStreamPtr input;
+
+    std::mutex cancel_mutex;
 };
 
 }

@@ -95,7 +95,7 @@ public:
     /// Throw an exception if something went wrong.
     std::string create(const std::string & path, const std::string & data, int32_t mode);
 
-    /// Doesn not throw in the following cases:
+    /// Does not throw in the following cases:
     /// * The parent for the created node does not exist
     /// * The parent is ephemeral.
     /// * The node already exists.

@@ -15,7 +15,7 @@ public:
     ASTPtr format;
 
     ASTQueryWithOutput() = default;
-    ASTQueryWithOutput(const StringRange range_) : IAST(range_) {}
+    explicit ASTQueryWithOutput(const StringRange range_) : IAST(range_) {}
 
 protected:
     /// NOTE: call this helper at the end of the clone() method of descendant class.

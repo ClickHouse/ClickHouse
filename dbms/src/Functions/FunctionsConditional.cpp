@@ -20,7 +20,12 @@ void registerFunctionsConditional(FunctionFactory & factory)
     factory.registerFunction<FunctionMultiIf>();
     factory.registerFunction<FunctionCaseWithExpression>();
     factory.registerFunction<FunctionCaseWithoutExpression>();
+
+    /// These are obsolete function names.
+    factory.registerFunction("caseWithExpr", FunctionCaseWithExpression::create);
+    factory.registerFunction("caseWithoutExpr", FunctionCaseWithoutExpression::create);
 }
+
 
 namespace
 {

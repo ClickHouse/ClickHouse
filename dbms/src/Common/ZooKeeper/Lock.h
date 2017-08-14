@@ -60,6 +60,7 @@ namespace zkutil
 
         void unlock();
         void unlockOrMoveIfFailed(std::vector<zkutil::Lock> & failed_to_unlock_locks);
+        void unlockAssumeLockNodeRemovedManually();
 
         bool tryLock();
 

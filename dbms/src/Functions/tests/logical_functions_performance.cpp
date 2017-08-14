@@ -315,13 +315,13 @@ public:
 };
 
 
-struct NameAnd    { static const char * get() { return "and"; } };
-struct NameOr    { static const char * get() { return "or"; } };
-struct NameXor    { static const char * get() { return "xor"; } };
+struct NameAnd { static const char * get() { return "and"; } };
+struct NameOr { static const char * get() { return "or"; } };
+struct NameXor { static const char * get() { return "xor"; } };
 
-using FunctionAnd = FunctionAnyArityLogical    <AndImpl,    NameAnd>;
-using FunctionOr = FunctionAnyArityLogical    <OrImpl,    NameOr>    ;
-using FunctionXor = FunctionAnyArityLogical    <XorImpl,    NameXor>;
+using FunctionAnd = FunctionAnyArityLogical<AndImpl, NameAnd>;
+using FunctionOr = FunctionAnyArityLogical<OrImpl, NameOr>    ;
+using FunctionXor = FunctionAnyArityLogical<XorImpl, NameXor>;
 }
 
 using namespace DB;

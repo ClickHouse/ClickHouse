@@ -29,8 +29,6 @@ public:
     ASTIdentifier(const StringRange range_, const String & name_, const Kind kind_ = Column)
         : ASTWithAlias(range_), name(name_), kind(kind_) {}
 
-    String getColumnName() const override { return name; }
-
     /** Get the text that identifies this element. */
     String getID() const override { return "Identifier_" + name; }
 
@@ -43,6 +41,7 @@ public:
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    String getColumnNameImpl() const override { return name; }
 };
 
 }

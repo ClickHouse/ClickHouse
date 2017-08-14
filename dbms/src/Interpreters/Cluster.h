@@ -57,13 +57,19 @@ public:
         UInt32 replica_num;
         bool is_local;
 
+        Address() = default;
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
         Address(const String & host_port_, const String & user_, const String & password_);
 
-        /// Returns escaped 'host_name:port'
+        /// Returns 'escaped_host_name:port'
         String toString() const;
 
+        /// Returns 'host_name:port'
+        String readableString() const;
+
         static String toString(const String & host_name, UInt16 port);
+
+        static void fromString(const String & host_port_string, String & host_name, UInt16 & port);
 
         /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
         String toStringFull() const;
