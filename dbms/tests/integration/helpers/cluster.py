@@ -88,10 +88,10 @@ class ClickHouseCluster:
         if self.is_up:
             return
 
-        # Kill unstopped containers from previous launch
+        # Just in case kill unstopped containers from previous launch
         try:
-            subprocess.check_call(self.base_cmd + ['kill'])
-            subprocess.check_call(self.base_cmd + ['down', '--volumes'])
+            if not subprocess.call(['docker-compose', 'kill']):
+                subprocess.call(['docker-compose', 'down', '--volumes'])
         except:
             pass
 

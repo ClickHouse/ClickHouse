@@ -118,8 +118,7 @@ def started_cluster():
     finally:
         # Remove iptables rules for sacrifice instance
         cluster.pm_random_drops.heal_all()
-
-        #cluster.shutdown()
+        cluster.shutdown()
 
 
 def test_default_database(started_cluster):
