@@ -33,17 +33,9 @@ private:
 public:
     LimitReadBuffer(ReadBuffer & in_, size_t limit_) : ReadBuffer(in_.position(), 0), in(in_), limit(limit_)
     {
-        working_buffer = in.buffer();
-
-        size_t bytes_in_buffer = working_buffer.end() - position();
-
-        working_buffer = Buffer(position(), working_buffer.end());
-
-        if (limit < bytes_in_buffer)
-            working_buffer.resize(limit);
     }
     
-    virtual ~LimitReadBuffer() override
+    ~LimitReadBuffer() override
     {
         /// Update underlying buffer's position in case when limit wasn't reached.
         if (working_buffer.size() != 0)
