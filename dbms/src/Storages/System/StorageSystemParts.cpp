@@ -201,11 +201,8 @@ BlockInputStreams StorageSystemParts::read(
         /// Finally, we'll go through the list of parts.
         for (const MergeTreeData::DataPartPtr & part : all_parts)
         {
-            LocalDate partition_date {part->month};
-            String partition = toString(partition_date.year()) + (partition_date.month() < 10 ? "0" : "") + toString(partition_date.month());
-
             size_t i = 0;
-            block.getByPosition(i++).column->insert(partition);
+            block.getByPosition(i++).column->insert(part->info.partition_id);
             block.getByPosition(i++).column->insert(part->name);
             block.getByPosition(i++).column->insert(static_cast<UInt64>(active_parts.count(part)));
             block.getByPosition(i++).column->insert(part->size);
@@ -228,11 +225,11 @@ BlockInputStreams StorageSystemParts::read(
             /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
             block.getByPosition(i++).column->insert(part.use_count() - (active_parts.count(part) ? 2 : 1));
 
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->left_date));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->right_date));
-            block.getByPosition(i++).column->insert(part->left);
-            block.getByPosition(i++).column->insert(part->right);
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->level));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->min_date));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->max_date));
+            block.getByPosition(i++).column->insert(part->info.min_block);
+            block.getByPosition(i++).column->insert(part->info.max_block);
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->info.level));
             block.getByPosition(i++).column->insert(part->getIndexSizeInBytes());
             block.getByPosition(i++).column->insert(part->getIndexSizeInAllocatedBytes());
 

@@ -86,8 +86,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     }
 
     /// If the part is not in ZooKeeper, we'll check if it's at least somewhere.
-    ActiveDataPartSet::Part part_info;
-    ActiveDataPartSet::parsePartName(part_name, part_info);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name);
 
     /** The logic is this:
         * - if some live or inactive replica has such a part, or a part covering it
@@ -103,7 +102,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 
     bool found = false;
 
-    size_t part_length_in_blocks = part_info.right + 1 - part_info.left;
+    size_t part_length_in_blocks = part_info.max_block + 1 - part_info.min_block;
     std::vector<char> found_blocks(part_length_in_blocks);
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
@@ -112,20 +111,20 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         Strings parts = zookeeper->getChildren(storage.zookeeper_path + "/replicas/" + replica + "/parts");
         for (const String & part_on_replica : parts)
         {
-            if (part_on_replica == part_name || ActiveDataPartSet::contains(part_on_replica, part_name))
+            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica);
+
+            if (part_on_replica == part_name || part_on_replica_info.contains(part_info))
             {
                 found = true;
                 LOG_WARNING(log, "Found part " << part_on_replica << " on " << replica);
                 break;
             }
 
-            if (ActiveDataPartSet::contains(part_name, part_on_replica))
+            if (part_info.contains(part_on_replica_info))
             {
-                ActiveDataPartSet::Part part_on_replica_info;
-                ActiveDataPartSet::parsePartName(part_on_replica, part_on_replica_info);
 
-                for (auto block_num = part_on_replica_info.left; block_num <= part_on_replica_info.right; ++block_num)
-                    found_blocks.at(block_num - part_info.left) = 1;
+                for (auto block_num = part_on_replica_info.min_block; block_num <= part_on_replica_info.max_block; ++block_num)
+                    found_blocks.at(block_num - part_info.min_block) = 1;
             }
         }
         if (found)
@@ -192,12 +191,12 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         return;
     }
 
-    const auto partition_str = part_name.substr(0, 6);
-    for (auto i = part_info.left; i <= part_info.right; ++i)
+    const String & partition_id = part_info.partition_id;
+    for (auto i = part_info.min_block; i <= part_info.max_block; ++i)
     {
-        zookeeper->createIfNotExists(storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_str, "");
+        zookeeper->createIfNotExists(storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id, "");
         AbandonableLockInZooKeeper::createAbandonedIfNotExists(
-            storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_str + "/block-" + padIndex(i),
+            storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(i),
             *zookeeper);
     }
 }
