@@ -25,4 +25,4 @@ struct ClickhouseColumnsUint64
     ClickhouseVectorUint64 * data = nullptr;
 };
 
-using ClickhouseSettings = ClickhouseStrings;
+//using ClickhouseSettings = ClickhouseStrings;

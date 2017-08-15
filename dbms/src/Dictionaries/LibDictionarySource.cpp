@@ -21,7 +21,7 @@ namespace DB
 
 struct StringHolder
 {
-    ClickhouseSettings strings;
+    ClickhouseStrings strings; // will pass pointer to lib
     std::unique_ptr<ClickhouseString[]> ptrHolder = nullptr;
     std::vector<std::string> stringHolder;
 
@@ -59,13 +59,19 @@ StringHolder getSettings(const Poco::Util::AbstractConfiguration & config, const
     holder.stringHolder.clear();
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_root, config_keys);
-    std::cerr << "keys root " << config_root << " = " << config_keys << "\n";
+    //std::cerr << "keys root " << config_root << " = " << config_keys << "\n";
     for (const auto & key : config_keys)
     {
         //std::cerr << "cmp " << key << " " << name  << "\n";
-        std::cerr << "cmp " << key << " "
-                  << "\n";
-        holder.stringHolder.emplace_back(key);
+        //std::cerr << "cmp1 " << key  << "\n";
+        std::string key_name = key;
+        auto bracket_pos = key.find('[');
+        if (bracket_pos != std::string::npos && bracket_pos > 0)
+            key_name = key.substr(0, bracket_pos);
+        //std::cerr << "cmp2 " << key  << " : "<<key_name<< "\n";
+        holder.stringHolder.emplace_back(key_name);
+
+        holder.stringHolder.emplace_back(config.getString(config_root + '.' + key));
     }
 
     //holder.stringHolder = values;
@@ -135,9 +141,7 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
 
     DUMP(config_prefix);
     //DUMP(config_prefix + ".lib");
-    auto settings = getSettings(config, config_prefix + ".settings"
-
-        );
+    auto settings = getSettings(config, config_prefix + ".settings");
 
     auto data = lib->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(&columns))>("loadAll")(
         data_ptr, &settings.strings, &columns);
@@ -186,9 +190,7 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
         ++i;
     }
 
-    auto settings = getSettings(config, config_prefix + ".settings"
-
-        );
+    auto settings = getSettings(config, config_prefix + ".settings");
 
     //auto lib = std::make_shared<SharedLibrary>(filename);
     //auto data_ptr = library->get<void * (*) ()>("dataAllocate")();
