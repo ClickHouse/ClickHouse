@@ -6,6 +6,7 @@
 * Python:
     - `infi.clickhouse_orm <https://github.com/Infinidat/infi.clickhouse_orm>`_
     - `sqlalchemy-clickhouse <https://github.com/cloudflare/sqlalchemy-clickhouse>`_
+    - `clickhouse-driver <https://github.com/mymarilyn/clickhouse-driver>`_
 * PHP
     - `clickhouse-php-client <https://github.com/8bitov/clickhouse-php-client>`_
     - `PhpClickHouseClient <https://github.com/SevaCode/PhpClickHouseClient>`_
