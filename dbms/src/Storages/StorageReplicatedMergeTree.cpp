@@ -3827,7 +3827,6 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names)
 {
     zkutil::Ops ops;
-    std::vector<zkutil::ZooKeeper::MultiFuture> futures;
 
     for (auto it = part_names.cbegin(); it != part_names.cend(); ++it)
     {
@@ -3835,21 +3834,10 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
 
         if (ops.size() >= zkutil::MULTI_BATCH_SIZE || next(it) == part_names.cend())
         {
-            futures.emplace_back(zookeeper->tryAsyncMulti(ops));
+            zookeeper->tryMulti(ops);
             ops.clear();
         }
     }
-
-    int last_error_code = ZOK;
-    for (auto & future : futures)
-    {
-        auto res = future.get();
-        if (res.code != ZOK)
-            last_error_code = res.code;
-    }
-
-    if (last_error_code != ZOK)
-        throw zkutil::KeeperException(last_error_code);
 }
 
 
