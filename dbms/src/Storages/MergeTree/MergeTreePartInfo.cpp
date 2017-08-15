@@ -72,14 +72,14 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & dir_name, Da
 
     const auto & date_lut = DateLUT::instance();
 
+    min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
+    max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
+
     DayNum_t min_month = date_lut.toFirstDayNumOfMonth(min_date);
     DayNum_t max_month = date_lut.toFirstDayNumOfMonth(max_date);
 
     if (min_month != max_month)
         throw Exception("Part name " + dir_name + " contains different months", ErrorCodes::BAD_DATA_PART_NAME);
-
-    min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
-    max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
 }
 
 
@@ -114,6 +114,5 @@ String MergeTreePartInfo::getPartName(DayNum_t left_date, DayNum_t right_date, I
 
     return wb.str();
 }
-
 
 }
