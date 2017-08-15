@@ -25,7 +25,7 @@ void ActiveDataPartSet::addImpl(const String & name)
     if (!getContainingPartImpl(part_info).empty())
         return;
 
-    /// Parts contained in `part` are located contiguously inside `data_parts`, overlapping with the place where the part itself would be inserted.
+    /// Parts contained in `part` are located contiguously in `part_info_to_name`, overlapping with the place where the part itself would be inserted.
     auto it = part_info_to_name.lower_bound(part_info);
 
     /// Let's go left.
@@ -59,7 +59,7 @@ String ActiveDataPartSet::getContainingPart(const String & part_name) const
 
 String ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_info) const
 {
-    /// A part can only be covered/overlapped by the previous or next one in `parts`.
+    /// A part can only be covered/overlapped by the previous or next one in `part_info_to_name`.
     auto it = part_info_to_name.lower_bound(part_info);
 
     if (it != part_info_to_name.end())
