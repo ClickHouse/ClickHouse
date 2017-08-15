@@ -46,17 +46,19 @@ BlockIO InterpreterDropQuery::execute()
     }
 
     /// Drop temporary table.
-    StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context)
-            .tryRemoveExternalTable(drop.database, drop.table);
-    if (table)
+    if (drop.database.empty())
     {
-        table->shutdown();
-        /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter();
-        /// Delete table data
-        table->drop();
-        table->is_dropped = true;
-        return {};
+        StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context).tryRemoveExternalTable(drop.table);
+        if (table)
+        {
+            table->shutdown();
+            /// If table was already dropped by anyone, an exception will be thrown
+            auto table_lock = table->lockForAlter();
+            /// Delete table data
+            table->drop();
+            table->is_dropped = true;
+            return {};
+        }
     }
 
     String database_name = drop.database.empty() ? current_database : drop.database;

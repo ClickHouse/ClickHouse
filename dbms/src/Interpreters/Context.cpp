@@ -721,22 +721,6 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 {
     auto lock = getLock();
 
-    /** Ability to access the temporary tables of another query in the form _query_QUERY_ID.table
-      * NOTE In the future, you may need to think about isolation.
-      */
-    if (startsWith(database_name, "_query_"))
-    {
-        String requested_query_id = database_name.substr(strlen("_query_"));
-
-        auto res = shared->process_list.tryGetTemporaryTable(requested_query_id, table_name);
-
-        if (!res && exception)
-            *exception = Exception(
-                "Cannot find temporary table with name " + table_name + " for query with id " + requested_query_id, ErrorCodes::UNKNOWN_TABLE);
-
-        return res;
-    }
-
     if (database_name.empty())
     {
         StoragePtr res = tryGetExternalTable(table_name);
@@ -781,28 +765,17 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
     }
 }
 
-StoragePtr Context::tryRemoveExternalTable(const String & database_name, const String & table_name)
+StoragePtr Context::tryRemoveExternalTable(const String & table_name)
 {
     auto lock = getLock();
 
-    /// Ability to remove the temporary tables of another query in the form _query_QUERY_ID.table
+    Tables::const_iterator it = external_tables.find(table_name);
+    if (external_tables.end() == it)
+        return StoragePtr();
 
-    if (startsWith(database_name, "_query_"))
-    {
-        String requested_query_id = database_name.substr(strlen("_query_"));
-
-        return shared->process_list.tryRemoveTemporaryTable(requested_query_id, table_name);
-    }
-    else if(database_name.empty())
-    {
-        Tables::const_iterator it = external_tables.find(table_name);
-        if (external_tables.end() == it)
-            return StoragePtr();
-
-        auto storage = it->second;
-        external_tables.erase(it);
-        return storage;
-    }
+    auto storage = it->second;
+    external_tables.erase(it);
+    return storage;
 
     return {};
 }
