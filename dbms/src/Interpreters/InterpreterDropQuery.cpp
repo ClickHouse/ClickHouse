@@ -45,6 +45,20 @@ BlockIO InterpreterDropQuery::execute()
         return {};
     }
 
+    /// Drop temporary table.
+    StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context)
+            .tryRemoveExternalTable(drop.database, drop.table);
+    if (table)
+    {
+        table->shutdown();
+        /// If table was already dropped by anyone, an exception will be thrown
+        auto table_lock = table->lockForAlter();
+        /// Delete table data
+        table->drop();
+        table->is_dropped = true;
+        return {};
+    }
+
     String database_name = drop.database.empty() ? current_database : drop.database;
     String database_name_escaped = escapeForFileName(database_name);
 

@@ -781,6 +781,31 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
     }
 }
 
+StoragePtr Context::tryRemoveExternalTable(const String & database_name, const String & table_name)
+{
+    auto lock = getLock();
+
+    /// Ability to remove the temporary tables of another query in the form _query_QUERY_ID.table
+
+    if (startsWith(database_name, "_query_"))
+    {
+        String requested_query_id = database_name.substr(strlen("_query_"));
+
+        return shared->process_list.tryRemoveTemporaryTable(requested_query_id, table_name);
+    }
+    else if(database_name.empty())
+    {
+        Tables::const_iterator it = external_tables.find(table_name);
+        if (external_tables.end() == it)
+            return StoragePtr();
+
+        auto storage = it->second;
+        external_tables.erase(it);
+        return storage;
+    }
+
+    return {};
+}
 
 DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message)
     : map(map_), mutex(mutex_)
