@@ -209,8 +209,17 @@ StoragePtr ProcessList::tryGetTemporaryTable(const String & query_id, const Stri
 {
     std::lock_guard<std::mutex> lock(mutex);
 
+    Tables * tables;
+    Tables::iterator iterator;
+    std::tie(tables, iterator) = tryFindTemporaryTable(query_id, table_name);
+
+    return tables ? iterator->second : nullptr;
+}
+
+std::tuple<Tables *, Tables::iterator> ProcessList::tryFindTemporaryTable(const String & query_id, const String & table_name) const
+{
     /// NOTE We search for all user-s. That is, there is no isolation, and the complexity is O(users).
-    for (const auto & user_queries : user_to_queries)
+    for (auto & user_queries : user_to_queries)
     {
         auto it = user_queries.second.queries.find(query_id);
         if (user_queries.second.queries.end() == it)
@@ -220,10 +229,27 @@ StoragePtr ProcessList::tryGetTemporaryTable(const String & query_id, const Stri
         if ((*it->second).temporary_tables.end() == jt)
             continue;
 
-        return jt->second;
+        return {& ((*it->second).temporary_tables), jt};
     }
 
-    return {};
+    return {nullptr, Tables::iterator()};
+}
+
+
+StoragePtr ProcessList::tryRemoveTemporaryTable(const String & query_id, const String & table_name) const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+
+    Tables * tables;
+    Tables::iterator iterator;
+    std::tie(tables, iterator) = tryFindTemporaryTable(query_id, table_name);
+
+    if (!tables)
+        return {};
+
+    StoragePtr storage = iterator->second;
+    tables->erase(iterator);
+    return storage;
 }
 
 

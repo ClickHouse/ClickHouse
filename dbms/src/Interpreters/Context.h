@@ -170,6 +170,7 @@ public:
     StoragePtr getTable(const String & database_name, const String & table_name) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
     void addExternalTable(const String & table_name, StoragePtr storage);
+    StoragePtr tryRemoveExternalTable(const String & database_name, const String & table_name);
 
     void addDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(const String & database_name);
@@ -241,9 +242,11 @@ public:
 
     const Context & getSessionContext() const;
     Context & getSessionContext();
+    bool hasSessionContext() const { return session_context != nullptr; }
 
     const Context & getGlobalContext() const;
     Context & getGlobalContext();
+    bool hasGlobalContext() const { return global_context != nullptr; }
 
     void setSessionContext(Context & context_)                                { session_context = &context_; }
     void setGlobalContext(Context & context_)                                { global_context = &context_; }

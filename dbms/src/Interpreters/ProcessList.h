@@ -226,6 +226,8 @@ private:
     /// Call under lock. Finds process with specified current_user and current_query_id.
     ProcessListElement * tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
+    std::tuple<Tables *, Tables::iterator> tryFindTemporaryTable(const String & query_id, const String & table_name) const;
+
 public:
     ProcessList(size_t max_size_ = 0) : cur_size(0), max_size(max_size_) {}
 
@@ -265,6 +267,8 @@ public:
 
     /// Find temporary table by query_id and name. NOTE: doesn't work fine if there are many queries with same query_id.
     StoragePtr tryGetTemporaryTable(const String & query_id, const String & table_name) const;
+    /// Find temporary table by query_id and name and remove it if exists.
+    StoragePtr tryRemoveTemporaryTable(const String & query_id, const String & table_name) const;
 
 
     enum class CancellationCode
