@@ -90,7 +90,16 @@ public:
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
     /// After the DataPart is added to the working set, it cannot be changed.
     using DataPartPtr = std::shared_ptr<const DataPart>;
-    struct DataPartPtrLess { bool operator() (const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; } };
+
+    struct DataPartPtrLess
+    {
+        using is_transparent = void;
+
+        bool operator()(const DataPartPtr & lhs, const MergeTreePartInfo & rhs) const { return lhs->info < rhs; }
+        bool operator()(const MergeTreePartInfo & lhs, const DataPartPtr & rhs) const { return lhs < rhs->info; }
+        bool operator()(const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; }
+    };
+
     using DataParts = std::set<DataPartPtr, DataPartPtrLess>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
