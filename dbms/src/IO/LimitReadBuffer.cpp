@@ -22,7 +22,14 @@ bool LimitReadBuffer::nextImpl()
 
 
 LimitReadBuffer::LimitReadBuffer(ReadBuffer & in_, size_t limit_)
-    : ReadBuffer(nullptr, 0), in(in_), limit(limit_) {}
+    : ReadBuffer(in_.position(), 0), in(in_), limit(limit_)
+{
+    size_t remaining_bytes_in_buffer = in.buffer().end() - in.position();
+    if (remaining_bytes_in_buffer > limit)
+        remaining_bytes_in_buffer = limit;
+
+    working_buffer = Buffer(in.position(), in.position() + remaining_bytes_in_buffer);
+}
 
 
 LimitReadBuffer::~LimitReadBuffer()

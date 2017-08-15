@@ -14,11 +14,20 @@ int main(int argc, char ** argv)
     size_t limit = std::stol(argv[1]);
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
-    LimitReadBuffer limit_in(in, limit);
-
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
-    copyData(limit_in, out);
+    writeCString("--- first ---\n", out);
+    {
+        LimitReadBuffer limit_in(in, limit);
+        copyData(limit_in, out);
+    }
+
+    writeCString("\n--- second ---\n", out);
+    {
+        LimitReadBuffer limit_in(in, limit);
+        copyData(limit_in, out);
+    }
+
     writeCString("\n--- the rest ---\n", out);
     copyData(in, out);
 
