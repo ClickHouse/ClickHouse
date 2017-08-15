@@ -1483,26 +1483,25 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
 {
-    MutableDataPartPtr tmp_part(new DataPart(*this));
-    tmp_part->info = MergeTreePartInfo::fromPartName(part_name);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name);
 
     std::lock_guard<std::mutex> lock(data_parts_mutex);
 
     /// The part can be covered only by the previous or the next one in data_parts.
-    auto it = data_parts.lower_bound(tmp_part);
+    auto it = data_parts.lower_bound(part_info);
 
     if (it != data_parts.end())
     {
         if ((*it)->name == part_name)
             return *it;
-        if ((*it)->contains(*tmp_part))
+        if ((*it)->info.contains(part_info))
             return *it;
     }
 
     if (it != data_parts.begin())
     {
         --it;
-        if ((*it)->contains(*tmp_part))
+        if ((*it)->info.contains(part_info))
             return *it;
     }
 
@@ -1511,11 +1510,10 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
 
 MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name)
 {
-    MutableDataPartPtr tmp_part(new DataPart(*this));
-    tmp_part->info = MergeTreePartInfo::fromPartName(part_name);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name);
 
     std::lock_guard<std::mutex> lock(all_data_parts_mutex);
-    auto it = all_data_parts.lower_bound(tmp_part);
+    auto it = all_data_parts.lower_bound(part_info);
     if (it != all_data_parts.end() && (*it)->name == part_name)
         return *it;
 

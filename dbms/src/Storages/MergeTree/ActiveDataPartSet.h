@@ -4,7 +4,7 @@
 #include <mutex>
 #include <common/DateLUT.h>
 #include <Core/Types.h>
-#include <set>
+#include <map>
 
 
 namespace DB
@@ -21,16 +21,6 @@ public:
     ActiveDataPartSet() {}
     ActiveDataPartSet(const Strings & names);
 
-    struct Part
-    {
-        String name;
-        MergeTreePartInfo info;
-
-        bool operator<(const Part & rhs) const { return info < rhs.info; }
-
-        bool contains(const Part & rhs) const { return info.contains(rhs.info); }
-    };
-
     void add(const String & name);
 
     /// If not found, returns an empty string.
@@ -41,14 +31,12 @@ public:
     size_t size() const;
 
 private:
-    using Parts = std::set<Part>;
-
     mutable std::mutex mutex;
-    Parts parts;
+    std::map<MergeTreePartInfo, String> part_info_to_name;
 
     /// Do not block mutex.
     void addImpl(const String & name);
-    String getContainingPartImpl(const String & name) const;
+    String getContainingPartImpl(const MergeTreePartInfo & part_info) const;
 };
 
 }
