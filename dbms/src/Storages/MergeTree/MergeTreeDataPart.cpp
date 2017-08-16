@@ -529,6 +529,17 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
     renameTo(dst_name());
 }
 
+
+void MergeTreeDataPart::loadColumnsChecksumsIndex(bool require_columns_checksums, bool check_consistency)
+{
+    loadColumns(require_columns_checksums);
+    loadChecksums(require_columns_checksums);
+    loadIndex();
+    if (check_consistency)
+        checkConsistency(require_columns_checksums);
+}
+
+
 void MergeTreeDataPart::loadIndex()
 {
     /// Size - in number of marks.
@@ -627,7 +638,7 @@ void MergeTreeDataPart::loadColumns(bool require)
     columns.readText(file);
 }
 
-void MergeTreeDataPart::checkNotBroken(bool require_part_metadata)
+void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 {
     String path = getFullPath();
 
