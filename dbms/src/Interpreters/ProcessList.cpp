@@ -205,28 +205,6 @@ void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & ta
 }
 
 
-StoragePtr ProcessList::tryGetTemporaryTable(const String & query_id, const String & table_name) const
-{
-    std::lock_guard<std::mutex> lock(mutex);
-
-    /// NOTE We search for all user-s. That is, there is no isolation, and the complexity is O(users).
-    for (const auto & user_queries : user_to_queries)
-    {
-        auto it = user_queries.second.queries.find(query_id);
-        if (user_queries.second.queries.end() == it)
-            continue;
-
-        auto jt = (*it->second).temporary_tables.find(table_name);
-        if ((*it->second).temporary_tables.end() == jt)
-            continue;
-
-        return jt->second;
-    }
-
-    return {};
-}
-
-
 ProcessListElement * ProcessList::tryGetProcessListElement(const String & current_query_id, const String & current_user)
 {
     auto user_it = user_to_queries.find(current_user);

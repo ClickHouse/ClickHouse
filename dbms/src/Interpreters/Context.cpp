@@ -721,22 +721,6 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 {
     auto lock = getLock();
 
-    /** Ability to access the temporary tables of another query in the form _query_QUERY_ID.table
-      * NOTE In the future, you may need to think about isolation.
-      */
-    if (startsWith(database_name, "_query_"))
-    {
-        String requested_query_id = database_name.substr(strlen("_query_"));
-
-        auto res = shared->process_list.tryGetTemporaryTable(requested_query_id, table_name);
-
-        if (!res && exception)
-            *exception = Exception(
-                "Cannot find temporary table with name " + table_name + " for query with id " + requested_query_id, ErrorCodes::UNKNOWN_TABLE);
-
-        return res;
-    }
-
     if (database_name.empty())
     {
         StoragePtr res = tryGetExternalTable(table_name);
@@ -781,6 +765,20 @@ void Context::addExternalTable(const String & table_name, StoragePtr storage)
     }
 }
 
+StoragePtr Context::tryRemoveExternalTable(const String & table_name)
+{
+    auto lock = getLock();
+
+    Tables::const_iterator it = external_tables.find(table_name);
+    if (external_tables.end() == it)
+        return StoragePtr();
+
+    auto storage = it->second;
+    external_tables.erase(it);
+    return storage;
+
+    return {};
+}
 
 DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message)
     : map(map_), mutex(mutex_)
@@ -1406,7 +1404,7 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
     ostr << "Table " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
          << "Reason:\n"
          << "1. Table size (" << table_size_str << ") is greater than max_table_size_to_drop (" << max_table_size_to_drop_str << ")\n"
-         << "2. File '" << force_file.path() << "' intedned to force DROP "
+         << "2. File '" << force_file.path() << "' intended to force DROP "
             << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
 
     ostr << "How to fix this:\n"

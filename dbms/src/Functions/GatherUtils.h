@@ -276,7 +276,7 @@ struct FixedStringSource
     {
         const auto & chars = col.getChars();
         pos = chars.data();
-        end = pos + col.size();
+        end = pos + chars.size();
     }
 
     void next()

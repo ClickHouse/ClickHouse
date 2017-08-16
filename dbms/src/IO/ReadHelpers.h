@@ -629,7 +629,7 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUT
 /** In YYYY-MM-DD hh:mm:ss format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     /** Read 10 characters, that could represent unix timestamp.
       * Only unix timestamp of 5-10 characters is supported.
@@ -664,6 +664,11 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
     }
     else
         readDateTimeTextFallback(datetime, buf, date_lut);
+}
+
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
+{
+    readDateTimeText(datetime, buf, DateLUT::instance());
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
@@ -767,7 +772,7 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
 
 /// CSV, for numbers, dates, datetimes: quotes are optional, no special escaping rules.
 template <typename T>
-inline void readCSVSimple(T & x, ReadBuffer & buf)
+inline void readCSVSimple(T & x, ReadBuffer & buf, void (*readText_)(T & x, ReadBuffer & buf) = readText)
 {
     if (buf.eof())
         throwReadAfterEOF();
@@ -777,7 +782,7 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
     if (maybe_quote == '\'' || maybe_quote == '\"')
         ++buf.position();
 
-    readText(x, buf);
+    readText_(x, buf);
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, buf);

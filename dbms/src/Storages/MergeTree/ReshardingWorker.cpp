@@ -174,10 +174,10 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 
     for (Poco::DirectoryIterator it(data_path); it != end; ++it)
     {
-        const auto filename = it.name();
-        if (!ActiveDataPartSet::isPartDirectory(filename))
+        MergeTreePartInfo part_info;
+        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info))
             continue;
-        if (!startsWith(filename, partition_name))
+        if (part_info.partition_id != partition_name)
             continue;
 
         const auto part_path = it.path().absolute().toString();
