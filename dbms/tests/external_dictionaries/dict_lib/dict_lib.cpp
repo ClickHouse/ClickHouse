@@ -36,7 +36,7 @@ struct DataHolder
 };
 
 extern "C" void * loadIds(
-    void * data_ptr, ClickhouseSettings * settings, ClickhouseStrings * columns, const struct ClickhouseVectorUint64 * ids)
+    void * data_ptr, ClickhouseStrings * settings, ClickhouseStrings * columns, const struct ClickhouseVectorUint64 * ids)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadIds Runned!!! ptr=" << data_ptr << " => " << ptr << " size=" << ids->size << "\n";
@@ -127,7 +127,7 @@ extern "C" void * loadIds(
     return nullptr;
 }
 
-extern "C" void * loadAll(void * data_ptr, ClickhouseSettings * settings, ClickhouseStrings * columns)
+extern "C" void * loadAll(void * data_ptr, ClickhouseStrings * settings, ClickhouseStrings * columns)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadAll Runned!!! ptr=" << data_ptr << " => " << ptr << "\n";
