@@ -5,7 +5,7 @@
 
 using ClickhouseColumn = const char *;
 using ClickhouseString = const char *;
-//using ClickhouseColumns = ClickhouseColumn[];
+using ClickhouseColumns = ClickhouseColumn[];
 
 struct ClickhouseStrings
 {
