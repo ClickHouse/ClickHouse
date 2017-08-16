@@ -263,10 +263,6 @@ public:
     /// Register temporary table. Then it is accessible by query_id and name.
     void addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage);
 
-    /// Find temporary table by query_id and name. NOTE: doesn't work fine if there are many queries with same query_id.
-    StoragePtr tryGetTemporaryTable(const String & query_id, const String & table_name) const;
-
-
     enum class CancellationCode
     {
         NotFound = 0,                     /// already cancelled

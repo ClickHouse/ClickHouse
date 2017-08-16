@@ -79,3 +79,6 @@ target_link_libraries (remote_read_write_buffer dbms)
 
 add_executable (limit_read_buffer limit_read_buffer.cpp ${SRCS})
 target_link_libraries (limit_read_buffer dbms)
+
+add_executable (limit_read_buffer2 limit_read_buffer2.cpp ${SRCS})
+target_link_libraries (limit_read_buffer2 dbms)

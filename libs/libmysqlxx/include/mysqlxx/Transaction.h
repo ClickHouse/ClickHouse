@@ -22,8 +22,14 @@ public:
 
     virtual ~Transaction()
     {
-        if (!finished)
-            rollback();
+        try
+        {
+            if (!finished)
+                rollback();
+        }
+        catch (...)
+        {
+        }
     }
 
     void commit()

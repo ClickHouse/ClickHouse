@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Columns/IColumn.h>
 #include <shared_mutex>
 
@@ -83,7 +83,7 @@ class MergeTreeData;
 
 
 /// Description of the data part.
-struct MergeTreeDataPart : public ActiveDataPartSet::Part
+struct MergeTreeDataPart
 {
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
@@ -110,8 +110,16 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /// Returns part->name with prefixes like 'tmp_<name>'
     String getNameWithPrefix() const;
 
+    bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
+
 
     MergeTreeData & storage;
+
+    String name;
+    MergeTreePartInfo info;
+
+    DayNum_t min_date;
+    DayNum_t max_date;
 
     /// A directory path (realative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
