@@ -315,18 +315,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     for (const String & file_name : part_file_names)
     {
-        MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-        if (!MergeTreePartInfo::tryParsePartName(file_name, &part->info))
+        MergeTreePartInfo part_info;
+        if (!MergeTreePartInfo::tryParsePartName(file_name, &part_info))
             continue;
 
-        MergeTreePartInfo::parseMinMaxDatesFromPartName(file_name, part->min_date, part->max_date);
-        part->name = file_name;
+        MutableDataPartPtr part = std::make_shared<DataPart>(*this, file_name, part_info);
         part->relative_path = file_name;
         bool broken = false;
 
         try
         {
-            part->loadColumnsChecksumsIndex(require_part_metadata, true);
+            part->loadColumnsChecksumsIndexes(require_part_metadata, true);
         }
         catch (const Exception & e)
         {
@@ -1203,22 +1202,14 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         if (increment)
             part->info.min_block = part->info.max_block = increment->get();
 
-        String old_name = part->name;
-        String new_name = MergeTreePartInfo::getPartName(part->min_date, part->max_date, part->info.min_block, part->info.max_block, part->info.level);
+        // TODO V1-specific
+        String new_name = MergeTreePartInfo::getPartName(
+                part->partition_idx.min_date, part->partition_idx.max_date, part->info.min_block, part->info.max_block, part->info.level);
 
         LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << new_name << ".");
 
-        /// Check that new part doesn't exist yet.
-        {
-            part->is_temp = false;
-            part->name = new_name;
-            bool duplicate = data_parts.count(part);
-            part->name = old_name;
-            part->is_temp = true;
-
-            if (duplicate)
-                throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
-        }
+        if (data_parts.count(part))
+            throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
 
         bool in_all_data_parts;
         {
@@ -1538,19 +1529,15 @@ MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & 
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
 {
-    MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-
+    MutableDataPartPtr part = std::make_shared<DataPart>(*this, Poco::Path(relative_path).getFileName());
     part->relative_path = relative_path;
-    part->name = Poco::Path(relative_path).getFileName();
-    part->info = MergeTreePartInfo::fromPartName(part->name);
-    MergeTreePartInfo::parseMinMaxDatesFromPartName(part->name, part->min_date, part->max_date);
     String full_part_path = part->getFullPath();
 
     /// Earlier the list of columns was written incorrectly. Delete it and re-create.
     if (Poco::File(full_part_path + "columns.txt").exists())
         Poco::File(full_part_path + "columns.txt").remove();
 
-    part->loadColumnsChecksumsIndex(false, true);
+    part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = Poco::File(full_part_path).getLastModified().epochTime();
 
     /// If the checksums file is not present, calculate the checksums and write them to disk.

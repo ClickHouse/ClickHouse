@@ -282,7 +282,7 @@ struct CurrentlyMergingPartsTagger
 bool StorageMergeTree::merge(
     size_t aio_threshold,
     bool aggressive,
-    const String & partition,
+    const String & partition_id,
     bool final,
     bool deduplicate)
 {
@@ -297,14 +297,13 @@ bool StorageMergeTree::merge(
 
     size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
-    /// You must call destructor under unlocked `currently_merging_mutex`.
+    MergeTreeDataMerger::FuturePart future_part;
+
+    /// You must call destructor with unlocked `currently_merging_mutex`.
     std::experimental::optional<CurrentlyMergingPartsTagger> merging_tagger;
-    String merged_name;
 
     {
         std::lock_guard<std::mutex> lock(currently_merging_mutex);
-
-        MergeTreeData::DataPartsVector parts;
 
         auto can_merge = [this] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
         {
@@ -313,40 +312,40 @@ bool StorageMergeTree::merge(
 
         bool selected = false;
 
-        if (partition.empty())
+        if (partition_id.empty())
         {
             size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge();
             if (max_parts_size_for_merge > 0)
-                selected = merger.selectPartsToMerge(parts, merged_name, aggressive, max_parts_size_for_merge, can_merge);
+                selected = merger.selectPartsToMerge(future_part, aggressive, max_parts_size_for_merge, can_merge);
         }
         else
         {
-            selected = merger.selectAllPartsToMergeWithinPartition(parts, merged_name, disk_space, can_merge, partition, final);
+            selected = merger.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final);
         }
 
         if (!selected)
             return false;
 
-        merging_tagger.emplace(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
+        merging_tagger.emplace(future_part.parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(future_part.parts), *this);
     }
 
-    MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, merged_name, merging_tagger->parts);
+    MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
 
     /// Logging
     Stopwatch stopwatch;
 
     auto new_part = merger.mergePartsToTemporaryPart(
-        merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get(), deduplicate);
+        future_part, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get(), deduplicate);
 
-    merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
+    merger.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
     if (auto part_log = context.getPartLog(database_name, table_name))
     {
         PartLogElement elem;
         elem.event_time = time(nullptr);
 
-        elem.merged_from.reserve(merging_tagger->parts.size());
-        for (const auto & part : merging_tagger->parts)
+        elem.merged_from.reserve(future_part.parts.size());
+        for (const auto & part : future_part.parts)
             elem.merged_from.push_back(part->name);
         elem.event_type = PartLogElement::MERGE_PARTS;
         elem.size_in_bytes = new_part->size_in_bytes;
@@ -363,7 +362,7 @@ bool StorageMergeTree::merge(
         elem.event_type = PartLogElement::REMOVE_PART;
         elem.merged_from = Strings();
 
-        for (const auto & part : merging_tagger->parts)
+        for (const auto & part : future_part.parts)
         {
             elem.part_name = part->name;
             elem.size_in_bytes = part->size_in_bytes;

@@ -10,19 +10,18 @@
 namespace DB
 {
 
-struct ShardedBlockWithDateInterval final
+struct ShardedBlockWithPartitionIndex final
 {
-    ShardedBlockWithDateInterval(const Block & block_, size_t shard_no_, UInt16 min_date_, UInt16 max_date_);
-    ShardedBlockWithDateInterval(const ShardedBlockWithDateInterval &) = delete;
-    ShardedBlockWithDateInterval & operator=(const ShardedBlockWithDateInterval &) = delete;
+    ShardedBlockWithPartitionIndex(const Block & block_, size_t shard_no_, const MergeTreePartitionIndex & partition_idx_);
+    ShardedBlockWithPartitionIndex(const ShardedBlockWithPartitionIndex &) = delete;
+    ShardedBlockWithPartitionIndex & operator=(const ShardedBlockWithPartitionIndex &) = delete;
 
     Block block;
     size_t shard_no;
-    UInt16 min_date;
-    UInt16 max_date;
+    MergeTreePartitionIndex partition_idx;
 };
 
-using ShardedBlocksWithDateIntervals = std::list<ShardedBlockWithDateInterval>;
+using ShardedBlocksWithPartitionIndex = std::list<ShardedBlockWithPartitionIndex>;
 
 struct ReshardingJob;
 
@@ -31,7 +30,7 @@ struct ReshardingJob;
 class MergeTreeSharder final
 {
 public:
-    MergeTreeSharder(MergeTreeData & data_, const ReshardingJob & job_);
+    MergeTreeSharder(MergeTreeData & data_, const ReshardingJob & job_, const Field & partition);
     MergeTreeSharder(const MergeTreeSharder &) = delete;
     MergeTreeSharder & operator=(const MergeTreeSharder &) = delete;
 
@@ -40,13 +39,14 @@ public:
       * give the same block to the input, the output will be the same blocks in the
       * in the same order.
       */
-    ShardedBlocksWithDateIntervals shardBlock(const Block & block);
+    ShardedBlocksWithPartitionIndex shardBlock(const Block & block);
 
 private:
     IColumn::Selector createSelector(Block block);
 
     MergeTreeData & data;
     const ReshardingJob & job;
+    const Field & partition;
     Logger * log;
     std::vector<size_t> slots;
     ExpressionActionsPtr sharding_key_expr;

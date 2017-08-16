@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int RESHARDING_NULLABLE_SHARDING_KEY;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int TOO_MUCH_FETCHES;
+    extern const int BAD_DATA_PART_NAME;
 }
 
 
@@ -1073,8 +1074,14 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             /// Logging
             Stopwatch stopwatch;
 
+            MergeTreeDataMerger::FuturePart future_part(parts);
+            if (future_part.name != entry.new_part_name)
+                throw Exception(
+                    "Future merged part name `" + future_part.name + "` differs from part name in log entry: `" + entry.new_part_name + "`",
+                    ErrorCodes::BAD_DATA_PART_NAME);
+
             auto part = merger.mergePartsToTemporaryPart(
-                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
+                future_part, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
 
             zkutil::Ops ops;
 
@@ -1112,7 +1119,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
             if (!do_fetch)
             {
-                merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
+                merger.renameMergedTemporaryPart(part, parts, &transaction);
                 getZooKeeper()->multi(ops);        /// After long merge, get fresh ZK handle, because previous session may be expired.
 
                 if (auto part_log = context.getPartLog(database_name, table_name))
@@ -1776,8 +1783,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
             }
             else
             {
-                MergeTreeData::DataPartsVector parts;
-                String merged_name;
+                MergeTreeDataMerger::FuturePart future_part;
 
                 size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
 
@@ -1785,10 +1791,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
                 if (max_parts_size_for_merge > 0
                     && merger.selectPartsToMerge(
-                        parts, merged_name, false,
+                        future_part, false,
                         max_parts_size_for_merge,
                         can_merge)
-                    && createLogEntryToMergeParts(parts, merged_name, deduplicate))
+                    && createLogEntryToMergeParts(future_part.parts, future_part.name, deduplicate))
                 {
                     success = true;
                     need_pull = true;
@@ -2361,26 +2367,24 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const String & p
     {
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
-        MergeTreeData::DataPartsVector parts;
-        String merged_name;
-
         size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
+        MergeTreeDataMerger::FuturePart future_part;
         bool selected = false;
 
         if (partition_id.empty())
         {
-            selected = merger.selectPartsToMerge(parts, merged_name, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
+            selected = merger.selectPartsToMerge(future_part, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
         }
         else
         {
-            selected = merger.selectAllPartsToMergeWithinPartition(parts, merged_name, disk_space, can_merge, partition_id, final);
+            selected = merger.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final);
         }
 
         if (!selected)
             return false;
 
-        if (!createLogEntryToMergeParts(parts, merged_name, deduplicate, &merge_entry))
+        if (!createLogEntryToMergeParts(future_part.parts, future_part.name, deduplicate, &merge_entry))
             return false;
     }
 
@@ -2564,6 +2568,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 /// The name of an imaginary part covering all possible parts in the specified partition with numbers in the range from zero to specified right bound.
 static String getFakePartNameCoveringPartRange(const String & partition_id, UInt64 left, UInt64 right)
 {
+    // TODO V1-specific
+
     /// The date range is all month long.
     const auto & lut = DateLUT::instance();
     time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(partition_id + "01"));

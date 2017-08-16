@@ -14,27 +14,18 @@
 namespace DB
 {
 
-struct BlockWithDateInterval
+struct BlockWithPartitionIndex
 {
     Block block;
-    UInt16 min_date = std::numeric_limits<UInt16>::max(); /// For further updating, see updateDates method.
-    UInt16 max_date = std::numeric_limits<UInt16>::min();
+    MergeTreePartitionIndex partition_idx;
 
-    BlockWithDateInterval() = default;
-    BlockWithDateInterval(const Block & block_, UInt16 min_date_, UInt16 max_date_)
-        : block(block_), min_date(min_date_), max_date(max_date_) {}
-
-    void updateDates(UInt16 date)
+    BlockWithPartitionIndex(const Block & block_, MergeTreePartitionIndex && partition_idx_)
+        : block(block_), partition_idx(std::move(partition_idx_))
     {
-        if (date < min_date)
-            min_date = date;
-
-        if (date > max_date)
-            max_date = date;
     }
 };
 
-using BlocksWithDateIntervals = std::list<BlockWithDateInterval>;
+using BlocksWithPartitionIndex = std::list<BlockWithPartitionIndex>;
 
  /** Writes new parts of data to the merge tree.
   */
@@ -47,12 +38,12 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    BlocksWithDateIntervals splitBlockIntoParts(const Block & block);
+    BlocksWithPartitionIndex splitBlockIntoParts(const Block & block);
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithDateInterval & block);
+    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartitionIndex & block);
 
 private:
     MergeTreeData & data;
