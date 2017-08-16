@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 namespace DB
@@ -9,7 +10,7 @@ namespace DB
 
 /** DROP query
   */
-class ASTDropQuery : public IAST, public ASTQueryWithOnCluster
+class ASTDropQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
     bool detach{false};    /// DETACH query, not DROP.
@@ -18,17 +19,22 @@ public:
     String table;
 
     ASTDropQuery() = default;
-    ASTDropQuery(const StringRange range_) : IAST(range_) {}
+    explicit ASTDropQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
 
     /** Get the text that identifies this element. */
     String getID() const override { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; };
 
-    ASTPtr clone() const override { return std::make_shared<ASTDropQuery>(*this); }
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTDropQuery>(*this);
+        cloneOutputOptions(*res);
+        return res;
+    }
 
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
         auto query_ptr = clone();
-        ASTDropQuery & query = static_cast<ASTDropQuery &>(*query_ptr);
+        auto & query = static_cast<ASTDropQuery &>(*query_ptr);
 
         query.cluster.clear();
         if (query.database.empty())
@@ -38,7 +44,7 @@ public:
     }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         if (table.empty() && !database.empty())
         {

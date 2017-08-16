@@ -174,10 +174,10 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 
     for (Poco::DirectoryIterator it(data_path); it != end; ++it)
     {
-        const auto filename = it.name();
-        if (!ActiveDataPartSet::isPartDirectory(filename))
+        MergeTreePartInfo part_info;
+        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info))
             continue;
-        if (!startsWith(filename, partition_name))
+        if (part_info.partition_id != partition_name)
             continue;
 
         const auto part_path = it.path().absolute().toString();
@@ -1700,17 +1700,7 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
     if (!cluster.getShardsAddresses().empty())
     {
         size_t shard_no = 0;
-        for (const auto & address : cluster.getShardsAddresses())
-        {
-            publish_address(address.host_name, shard_no);
-            publish_address(address.resolved_address.host().toString(), shard_no);
-            ++shard_no;
-        }
-    }
-    else if (!cluster.getShardsWithFailoverAddresses().empty())
-    {
-        size_t shard_no = 0;
-        for (const auto & addresses : cluster.getShardsWithFailoverAddresses())
+        for (const auto & addresses : cluster.getShardsAddresses())
         {
             for (const auto & address : addresses)
             {

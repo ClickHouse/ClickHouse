@@ -421,7 +421,7 @@ void ReplicatedMergeTreeQueue::removeGetsAndMergesInRange(zkutil::ZooKeeperPtr z
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
         if (((*it)->type == LogEntry::GET_PART || (*it)->type == LogEntry::MERGE_PARTS) &&
-            ActiveDataPartSet::contains(part_name, (*it)->new_part_name))
+            MergeTreePartInfo::contains(part_name, (*it)->new_part_name))
         {
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
@@ -460,18 +460,16 @@ ReplicatedMergeTreeQueue::Queue ReplicatedMergeTreeQueue::getConflictsForClearCo
         {
             if (elem->type == LogEntry::MERGE_PARTS || elem->type == LogEntry::GET_PART || elem->type == LogEntry::ATTACH_PART)
             {
-                if (ActiveDataPartSet::contains(entry.new_part_name, elem->new_part_name))
+                if (MergeTreePartInfo::contains(entry.new_part_name, elem->new_part_name))
                     conflicts.emplace_back(elem);
             }
 
             if (elem->type == LogEntry::CLEAR_COLUMN)
             {
-                ActiveDataPartSet::Part cur_part;
-                ActiveDataPartSet::parsePartName(elem->new_part_name, cur_part);
-                ActiveDataPartSet::Part part;
-                ActiveDataPartSet::parsePartName(entry.new_part_name, part);
+                auto cur_part = MergeTreePartInfo::fromPartName(elem->new_part_name);
+                auto part = MergeTreePartInfo::fromPartName(entry.new_part_name);
 
-                if (part.month == cur_part.month)
+                if (part.partition_id == cur_part.partition_id)
                     conflicts.emplace_back(elem);
             }
         }
@@ -525,14 +523,12 @@ bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const String & new_
 
     /// A more complex check is whether another part is currently created by other action that will cover this part.
     /// NOTE The above is redundant, but left for a more convenient message in the log.
-    ActiveDataPartSet::Part result_part;
-    ActiveDataPartSet::parsePartName(new_part_name, result_part);
+    auto result_part = MergeTreePartInfo::fromPartName(new_part_name);
 
     /// It can slow down when the size of `future_parts` is large. But it can not be large, since `BackgroundProcessingPool` is limited.
     for (const auto & future_part_name : future_parts)
     {
-        ActiveDataPartSet::Part future_part;
-        ActiveDataPartSet::parsePartName(future_part_name, future_part);
+        auto future_part = MergeTreePartInfo::fromPartName(future_part_name);
 
         if (future_part.contains(result_part))
         {

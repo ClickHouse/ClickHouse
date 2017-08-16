@@ -155,9 +155,9 @@ struct HashTableGrower
     UInt8 size_degree = initial_size_degree;
 
     /// The size of the hash table in the cells.
-    size_t bufSize() const               { return 1 << size_degree; }
+    size_t bufSize() const               { return 1ULL << size_degree; }
 
-    size_t maxFill() const               { return 1 << (size_degree - 1); }
+    size_t maxFill() const               { return 1ULL << (size_degree - 1); }
     size_t mask() const                  { return bufSize() - 1; }
 
     /// From the hash value, get the cell number in the hash table.
@@ -200,7 +200,7 @@ struct HashTableGrower
 template <size_t key_bits>
 struct HashTableFixedGrower
 {
-    size_t bufSize() const               { return 1 << key_bits; }
+    size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
     /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
     size_t next(size_t pos) const        { return pos + 1; }

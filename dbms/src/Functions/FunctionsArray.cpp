@@ -1401,7 +1401,7 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     const typename ColumnVector<T>::Container_t & values = nested->getData();
 
     using Set = ClearableHashSet<T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1447,7 +1447,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
     using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1514,7 +1514,7 @@ bool FunctionArrayUniq::execute128bit(
         return false;
 
     using Set = ClearableHashSet<UInt128, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     /// Suppose that, for a given row, each of the N columns has an array whose length is M.
     /// Denote arr_i each of these arrays (1 <= i <= N). Then the following is performed:
@@ -1575,7 +1575,7 @@ void FunctionArrayUniq::executeHashed(
     size_t count = columns.size();
 
     using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     Set set;
     size_t prev_off = 0;
@@ -1727,7 +1727,7 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     const typename ColumnVector<T>::Container_t & values = nested->getData();
 
     using ValuesToIndices = ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1772,7 +1772,7 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
 
     size_t prev_off = 0;
     using ValuesToIndices = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1840,7 +1840,7 @@ bool FunctionArrayEnumerateUniq::execute128bit(
         return false;
 
     using ValuesToIndices = ClearableHashMap<UInt128, UInt32, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     ValuesToIndices indices;
     size_t prev_off = 0;
@@ -1886,7 +1886,7 @@ void FunctionArrayEnumerateUniq::executeHashed(
     size_t count = columns.size();
 
     using ValuesToIndices = ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     ValuesToIndices indices;
     size_t prev_off = 0;

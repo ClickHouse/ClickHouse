@@ -137,7 +137,6 @@ void loadMetadataSystem(Context & context)
 
         auto system_database = std::make_shared<DatabaseOrdinary>(SYSTEM_DATABASE, global_path + "metadata/" SYSTEM_DATABASE);
         context.addDatabase(SYSTEM_DATABASE, system_database);
-
     }
 
 }

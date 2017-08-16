@@ -123,6 +123,7 @@
     M(DictCacheLockWriteNs) \
     M(DictCacheLockReadNs) \
     \
+    M(DistributedSyncInsertionTimeoutExceeded) \
     M(DataAfterMergeDiffersFromReplica)
 
 

@@ -170,7 +170,6 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
     /// TODO After about half a year, we could remain only multi op, because there will be no obsolete children nodes.
-    std::vector<zkutil::ZooKeeper::MultiFuture> multi_futures;
     zkutil::Ops ops;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
@@ -181,7 +180,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
             ops.emplace_back(new zkutil::Op::Remove(path, -1));
             if (ops.size() >= zkutil::MULTI_BATCH_SIZE)
             {
-                multi_futures.emplace_back(zookeeper->tryAsyncMulti(ops));
+                zookeeper->multi(ops);
                 ops.clear();
             }
         }
@@ -191,31 +190,12 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
     if (!ops.empty())
     {
-        multi_futures.emplace_back(zookeeper->tryAsyncMulti(ops));
+        zookeeper->multi(ops);
         ops.clear();
     }
 
     auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
-    size_t num_nodes_not_deleted = 0;
-    int last_error_code = ZOK;
-
-    for (auto & future : multi_futures)
-    {
-        auto res = future.get();
-        if (res.code != ZOK)
-        {
-            num_nodes_not_deleted += res.results->size();
-            last_error_code = res.code;
-        }
-    }
-
-    if (num_nodes_not_deleted)
-    {
-        LOG_ERROR(log, "There was a problem with deleting " << num_nodes_not_deleted << " (of " << num_nodes_to_delete << ")"
-                       << " old blocks from ZooKeeper, error: " << zkutil::ZooKeeper::error2string(last_error_code));
-    }
-    else
-        LOG_TRACE(log, "Cleared " << num_nodes_to_delete << " old blocks from ZooKeeper");
+    LOG_TRACE(log, "Cleared " << num_nodes_to_delete << " old blocks from ZooKeeper");
 }
 
 

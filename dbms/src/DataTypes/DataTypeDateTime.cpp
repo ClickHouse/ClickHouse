@@ -72,9 +72,9 @@ void DataTypeDateTime::serializeTextCSV(const IColumn & column, size_t row_num, 
 
 void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-    LocalDateTime value;
-    readCSV(value, istr);
-    static_cast<ColumnUInt32 &>(column).getData().push_back(static_cast<time_t>(value));
+    time_t x;
+    readCSVSimple(x, istr, readDateTimeText);
+    static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
 void registerDataTypeDateTime(DataTypeFactory & factory)

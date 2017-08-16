@@ -315,13 +315,13 @@ public:
 };
 
 
-struct NameAnd    { static const char * get() { return "and"; } };
-struct NameOr    { static const char * get() { return "or"; } };
-struct NameXor    { static const char * get() { return "xor"; } };
+struct NameAnd { static const char * get() { return "and"; } };
+struct NameOr { static const char * get() { return "or"; } };
+struct NameXor { static const char * get() { return "xor"; } };
 
-using FunctionAnd = FunctionAnyArityLogical    <AndImpl,    NameAnd>;
-using FunctionOr = FunctionAnyArityLogical    <OrImpl,    NameOr>    ;
-using FunctionXor = FunctionAnyArityLogical    <XorImpl,    NameXor>;
+using FunctionAnd = FunctionAnyArityLogical<AndImpl, NameAnd>;
+using FunctionOr = FunctionAnyArityLogical<OrImpl, NameOr>    ;
+using FunctionXor = FunctionAnyArityLogical<XorImpl, NameXor>;
 }
 
 using namespace DB;
@@ -331,7 +331,7 @@ int main(int argc, char ** argv)
 {
     try
     {
-        size_t block_size = 1 << 20;
+        size_t block_size = 1ULL << 20;
         if (argc > 1)
         {
             block_size = atoi(argv[1]);

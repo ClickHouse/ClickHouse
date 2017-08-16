@@ -8,7 +8,7 @@ class Client:
     def __init__(self, host, port=9000, command='/usr/bin/clickhouse-client'):
         self.host = host
         self.port = port
-        self.command = [command, '--host', self.host, '--port', str(self.port)]
+        self.command = [command, '--host', self.host, '--port', str(self.port), '--stacktrace']
 
 
     def query(self, sql, stdin=None, timeout=None):
@@ -25,6 +25,14 @@ class Client:
             command += ['--query', sql]
 
         return CommandRequest(command, stdin, timeout)
+
+
+class QueryTimeoutExceedException(Exception):
+    pass
+
+
+class QueryRuntimeException(Exception):
+    pass
 
 
 class CommandRequest:
@@ -60,11 +68,10 @@ class CommandRequest:
         stdout = self.stdout_file.read()
         stderr = self.stderr_file.read()
 
-        if self.process.returncode != 0 or stderr:
-            raise Exception('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
-
         if self.timer is not None and not self.process_finished_before_timeout:
-            raise Exception('Client timed out!')
+            raise QueryTimeoutExceedException('Client timed out!')
+
+        if self.process.returncode != 0 or stderr:
+            raise QueryRuntimeException('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
 
         return stdout
-

@@ -51,16 +51,18 @@ class GroupArrayNumericImpl final
     : public IUnaryAggregateFunction<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>
 {
     static constexpr bool limit_num_elems = Tlimit_num_elems::value;
+    DataTypePtr data_type;
     UInt64 max_elems;
 
 public:
-    GroupArrayNumericImpl(UInt64 max_elems_ = std::numeric_limits<UInt64>::max()) : max_elems(max_elems_) {}
+    explicit GroupArrayNumericImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+            : data_type(data_type_), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
+        return std::make_shared<DataTypeArray>(data_type);
     }
 
     void setArgument(const DataTypePtr & argument) {}

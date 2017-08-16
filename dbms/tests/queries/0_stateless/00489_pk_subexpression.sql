@@ -9,21 +9,21 @@ SET max_block_size = 1;
 
 -- Test inferred limit
 SET max_rows_to_read = 5;
-SELECT * FROM test.pk WHERE x BETWEEN toDateTime(0) AND toDateTime(59);
+SELECT toUInt32(x), y, z FROM test.pk WHERE x BETWEEN toDateTime(0) AND toDateTime(59);
 
 SET max_rows_to_read = 9;
-SELECT * FROM test.pk WHERE x BETWEEN toDateTime(120) AND toDateTime(240);
+SELECT toUInt32(x), y, z FROM test.pk WHERE x BETWEEN toDateTime(120) AND toDateTime(240);
 
 -- Index is coarse, cannot read single row
 SET max_rows_to_read = 5;
-SELECT * FROM test.pk WHERE x = toDateTime(1);
+SELECT toUInt32(x), y, z FROM test.pk WHERE x = toDateTime(1);
 
 -- Index works on interval 00:01:00 - 00:01:59
 SET max_rows_to_read = 4;
-SELECT * FROM test.pk WHERE x BETWEEN toDateTime(60) AND toDateTime(119) AND y = 11;
+SELECT toUInt32(x), y, z FROM test.pk WHERE x BETWEEN toDateTime(60) AND toDateTime(119) AND y = 11;
 
 -- Cannot read less rows as PK is coarser on interval 00:01:00 - 00:02:00
 SET max_rows_to_read = 5;
-SELECT * FROM test.pk WHERE x BETWEEN toDateTime(60) AND toDateTime(120) AND y = 11;
+SELECT toUInt32(x), y, z FROM test.pk WHERE x BETWEEN toDateTime(60) AND toDateTime(120) AND y = 11;
 
 DROP TABLE test.pk;
