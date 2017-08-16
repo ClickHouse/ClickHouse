@@ -79,6 +79,21 @@ struct MergeTreeDataPartChecksums
 };
 
 
+struct MergeTreePartitionIndex
+{
+    MergeTreePartitionIndex() = default;
+    MergeTreePartitionIndex(Field partition_) : partition(std::move(partition_)) {}
+
+    void update(const IColumn & column);
+    void merge(const MergeTreePartitionIndex & other);
+
+    Field partition;
+
+    DayNum_t min_date = DayNum_t(std::numeric_limits<UInt16>::max());
+    DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
+};
+
+
 class MergeTreeData;
 
 
@@ -88,7 +103,15 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(MergeTreeData & storage_) : storage(storage_) {}
+    MergeTreeDataPart(MergeTreeData & storage_, const String & name_)
+        : storage(storage_), name(name_), info(MergeTreePartInfo::fromPartName(name_))
+    {
+    }
+
+    MergeTreeDataPart(MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
+        : storage(storage_), name(name_), info(info_)
+    {
+    }
 
     /// Returns checksum of column's binary file.
     const Checksum * tryGetBinChecksum(const String & name) const;
@@ -118,8 +141,7 @@ struct MergeTreeDataPart
     String name;
     MergeTreePartInfo info;
 
-    DayNum_t min_date;
-    DayNum_t max_date;
+    MergeTreePartitionIndex partition_idx;
 
     /// A directory path (realative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
@@ -185,7 +207,7 @@ struct MergeTreeDataPart
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
-    void loadColumnsChecksumsIndex(bool require_columns_checksums, bool check_consistency);
+    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     /// Checks that .bin and .mrk files exist
     bool hasColumnFiles(const String & column) const;
@@ -203,6 +225,8 @@ private:
 
     /// Loads index file. Also calculates this->size if size=0
     void loadIndex();
+
+    void loadPartitionIndex();
 
     void checkConsistency(bool require_part_metadata);
 };

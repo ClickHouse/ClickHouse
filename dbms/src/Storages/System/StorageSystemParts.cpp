@@ -225,8 +225,8 @@ BlockInputStreams StorageSystemParts::read(
             /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
             block.getByPosition(i++).column->insert(part.use_count() - (active_parts.count(part) ? 2 : 1));
 
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->min_date));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->max_date));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->partition_idx.min_date));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->partition_idx.max_date));
             block.getByPosition(i++).column->insert(part->info.min_block);
             block.getByPosition(i++).column->insert(part->info.max_block);
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->info.level));
