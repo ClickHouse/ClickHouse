@@ -102,7 +102,7 @@ HTTP(s)
       </http>
   </source>
 
-Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо прописать :ref:`настройки openSSL <server_settings-openSSL>` в конфигурации сервера.
+Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо :ref:`настроить openSSL <server_settings-openSSL>` в конфигурации сервера.
 
 Поля настройки:
 
