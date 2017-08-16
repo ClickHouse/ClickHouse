@@ -1406,6 +1406,25 @@ private:
 };
 
 
+class FunctionArrayConcat : public IFunction
+{
+public:
+    static constexpr auto name = "arrayConcat";
+    static FunctionPtr create(const Context & context);
+
+    String getName() const override;
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+};
+
+
 struct NameHas { static constexpr auto name = "has"; };
 struct NameIndexOf { static constexpr auto name = "indexOf"; };
 struct NameCountEqual { static constexpr auto name = "countEqual"; };

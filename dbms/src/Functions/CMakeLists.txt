@@ -52,6 +52,7 @@ generate_function_register(Array
   FunctionRange
   FunctionArrayReduce
   FunctionArrayReverse
+  FunctionArrayConcat
 )
 
 
