@@ -18,9 +18,14 @@ void registerFunctionsConditional(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionIf>();
     factory.registerFunction<FunctionMultiIf>();
-    factory.registerFunction<FunctionCaseWithExpr>();
-    factory.registerFunction<FunctionCaseWithoutExpr>();
+    factory.registerFunction<FunctionCaseWithExpression>();
+    factory.registerFunction<FunctionCaseWithoutExpression>();
+
+    /// These are obsolete function names.
+    factory.registerFunction("caseWithExpr", FunctionCaseWithExpression::create);
+    factory.registerFunction("caseWithoutExpr", FunctionCaseWithoutExpression::create);
 }
+
 
 namespace
 {
@@ -102,11 +107,6 @@ FunctionPtr FunctionMultiIf::create(const Context & context)
 String FunctionMultiIf::getName() const
 {
     return name;
-}
-
-bool FunctionMultiIf::hasSpecialSupportForNulls() const
-{
-    return true;
 }
 
 DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
@@ -374,24 +374,23 @@ bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & ar
     return true;
 }
 
-/// Implementation of FunctionCaseWithExpr.
 
-FunctionPtr FunctionCaseWithExpr::create(const Context & context_)
+FunctionPtr FunctionCaseWithExpression::create(const Context & context_)
 {
-    return std::make_shared<FunctionCaseWithExpr>(context_);
+    return std::make_shared<FunctionCaseWithExpression>(context_);
 }
 
-FunctionCaseWithExpr::FunctionCaseWithExpr(const Context & context_)
+FunctionCaseWithExpression::FunctionCaseWithExpression(const Context & context_)
     : context{context_}
 {
 }
 
-String FunctionCaseWithExpr::getName() const
+String FunctionCaseWithExpression::getName() const
 {
     return name;
 }
 
-DataTypePtr FunctionCaseWithExpr::getReturnTypeImpl(const DataTypes & args) const
+DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args) const
 {
     /// See the comments in executeImpl() to understand why we actually have to
     /// get the return type of a transform function.
@@ -418,7 +417,7 @@ DataTypePtr FunctionCaseWithExpr::getReturnTypeImpl(const DataTypes & args) cons
     return fun_transform.getReturnTypeImpl({args.front(), src_array_type, dst_array_type, args.back()});
 }
 
-void FunctionCaseWithExpr::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
 {
     /// In the following code, we turn the construction:
     /// CASE expr WHEN val[0] THEN branch[0] ... WHEN val[N-1] then branch[N-1] ELSE branchN
@@ -475,30 +474,24 @@ void FunctionCaseWithExpr::executeImpl(Block & block, const ColumnNumbers & args
     block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
 }
 
-/// Implementation of FunctionCaseWithoutExpr.
 
-FunctionPtr FunctionCaseWithoutExpr::create(const Context & context_)
+FunctionPtr FunctionCaseWithoutExpression::create(const Context & context_)
 {
-    return std::make_shared<FunctionCaseWithoutExpr>();
+    return std::make_shared<FunctionCaseWithoutExpression>();
 }
 
-String FunctionCaseWithoutExpr::getName() const
+String FunctionCaseWithoutExpression::getName() const
 {
     return name;
 }
 
-bool FunctionCaseWithoutExpr::hasSpecialSupportForNulls() const
-{
-    return true;
-}
-
-DataTypePtr FunctionCaseWithoutExpr::getReturnTypeImpl(const DataTypes & args) const
+DataTypePtr FunctionCaseWithoutExpression::getReturnTypeImpl(const DataTypes & args) const
 {
     FunctionMultiIf fun_multi_if;
     return fun_multi_if.getReturnTypeImpl(args);
 }
 
-void FunctionCaseWithoutExpr::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+void FunctionCaseWithoutExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
 {
     /// A CASE construction without any expression is a straightforward multiIf.
     FunctionMultiIf fun_multi_if;

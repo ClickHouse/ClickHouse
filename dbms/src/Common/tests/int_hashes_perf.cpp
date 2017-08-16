@@ -204,7 +204,7 @@ void report(const char * name, size_t n, double elapsed, UInt64 tsc_diff, size_t
     std::cerr << name << std::endl
         << "Done in " << elapsed
         << " (" << n / elapsed << " elem/sec."
-        << ", " << n * sizeof(UInt64) / elapsed / (1 << 30) << " GiB/sec."
+        << ", " << n * sizeof(UInt64) / elapsed / (1ULL << 30) << " GiB/sec."
         << ", " << (tsc_diff * 1.0 / n) << " tick/elem)"
         << "; res = " << res
         << std::endl << std::endl;

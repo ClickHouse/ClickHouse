@@ -1,9 +1,3 @@
-include_directories (include)
-
-if (CMAKE_SYSTEM MATCHES "FreeBSD")
-	# yes, need linux, because bsd check inside linux in time_zone_libc.cc:24
-	add_definitions (-D__USE_BSD -Dlinux -D_XOPEN_SOURCE=600)
-endif ()
 
 add_library(cctz
     src/time_zone_libc.cc
@@ -24,3 +18,10 @@ add_library(cctz
     include/time_zone.h
     include/civil_time_detail.h
     include/civil_time.h)
+
+if (CMAKE_SYSTEM MATCHES "FreeBSD")
+    # yes, need linux, because bsd check inside linux in time_zone_libc.cc:24
+    target_compile_definitions (cctz PRIVATE __USE_BSD linux _XOPEN_SOURCE=600)
+endif ()
+
+target_include_directories (cctz PUBLIC include)

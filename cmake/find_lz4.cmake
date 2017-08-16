@@ -9,8 +9,6 @@ if (LZ4_LIBRARY AND LZ4_INCLUDE_DIR)
     include_directories (${LZ4_INCLUDE_DIR})
 else ()
     set (USE_INTERNAL_LZ4_LIBRARY 1)
-    set (LZ4_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/liblz4/include/lz4")
-    include_directories (BEFORE ${LZ4_INCLUDE_DIR})
     set (LZ4_LIBRARY lz4)
 endif ()
 

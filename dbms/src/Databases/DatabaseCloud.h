@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <Databases/IDatabase.h>
 #include <Common/UInt128.h>
 #include <Storages/IStorage.h>

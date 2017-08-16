@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -133,12 +134,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
 String ReplicatedMergeTreeLogEntryData::toString() const
 {
-    String s;
-    {
-        WriteBufferFromString out(s);
-        writeText(out);
-    }
-    return s;
+    WriteBufferFromOwnString out;
+    writeText(out);
+    return out.str();
 }
 
 ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const zkutil::Stat & stat)

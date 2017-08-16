@@ -199,6 +199,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
@@ -216,12 +218,6 @@ public:
                 vec_to[i] = Impl::apply(
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
-        }
-        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
-        {
-            block.getByPosition(result).column = DataTypeUInt64().createConstColumn(
-                col_from->size(),
-                Impl::apply(col_from->getValue<String>().data(), col_from->getValue<String>().size()));
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -254,6 +250,8 @@ public:
         return std::make_shared<DataTypeFixedString>(Impl::length);
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
@@ -272,15 +270,6 @@ public:
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
                     &chars_to[i * Impl::length]);
-        }
-        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(block.getByPosition(arguments[0]).column.get()))
-        {
-            String data = col_from->getValue<String>();
-
-            String hash(Impl::length, 0);
-            Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));
-
-            block.getByPosition(result).column = DataTypeFixedString(Impl::length).createConstColumn(col_from->size(), hash);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -316,11 +305,6 @@ private:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            block.getByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(
-                col_from->size(), toField(Impl::apply(col_from->template getValue<FromType>())));
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
@@ -343,6 +327,8 @@ public:
 
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -751,6 +737,9 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         const auto arg_count = arguments.size();
@@ -782,13 +771,6 @@ private:
                 out[i] = URLHashImpl::apply(
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
-        }
-        else if (const auto col_from = checkAndGetColumnConst<ColumnString>(col_untyped))
-        {
-            String from = col_from->getValue<String>();
-            block.getByPosition(result).column = DataTypeUInt64().createConstColumn(
-                col_from->size(),
-                URLHashImpl::apply(from.data(), from.size()));
         }
         else
             throw Exception{
@@ -822,13 +804,6 @@ private:
                 out[i] = URLHierarchyHashImpl::apply(level,
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
-        }
-        else if (const auto col_from = checkAndGetColumnConst<ColumnString>(col_untyped))
-        {
-            String from = col_from->getValue<String>();
-            block.getByPosition(result).column = DataTypeUInt64().createConstColumn(
-                col_from->size(),
-                URLHierarchyHashImpl::apply(level, from.data(), from.size()));
         }
         else
             throw Exception{

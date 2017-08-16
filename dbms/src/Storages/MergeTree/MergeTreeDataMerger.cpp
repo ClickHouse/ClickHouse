@@ -69,12 +69,12 @@ std::string createMergedPartName(const MergeTreeData::DataPartsVector & parts)
 
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        level = std::max(level, part->level);
-        left_date = std::min(left_date, part->left_date);
-        right_date = std::max(right_date, part->right_date);
+        level = std::max(level, part->info.level);
+        left_date = std::min(left_date, part->min_date);
+        right_date = std::max(right_date, part->max_date);
     }
 
-    return ActiveDataPartSet::getPartName(left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
+    return MergeTreePartInfo::getPartName(left_date, right_date, parts.front()->info.min_block, parts.back()->info.max_block, level + 1);
 }
 
 }
@@ -146,28 +146,29 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
     IMergeSelector::Partitions partitions;
 
-    DayNum_t prev_month = DayNum_t(-1);
+    const String * prev_partition_id = nullptr;
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
-        DayNum_t month = part->month;
-        if (month != prev_month || (prev_part && !can_merge_callback(*prev_part, part)))
+        const String & partition_id = part->info.partition_id;
+        if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part)))
         {
             if (partitions.empty() || !partitions.back().empty())
                 partitions.emplace_back();
-            prev_month = month;
+            prev_partition_id = &partition_id;
         }
 
         IMergeSelector::Part part_info;
         part_info.size = part->size_in_bytes;
         part_info.age = current_time - part->modification_time;
-        part_info.level = part->level;
+        part_info.level = part->info.level;
         part_info.data = &part;
 
         partitions.back().emplace_back(part_info);
 
-        /// Check for consistenty of data parts. If assertion is failed, it requires immediate investigation.
-        if (prev_part && part->month == (*prev_part)->month && part->left < (*prev_part)->right)
+        /// Check for consistency of data parts. If assertion is failed, it requires immediate investigation.
+        if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
+            && part->info.min_block < (*prev_part)->info.max_block)
         {
             LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
         }
@@ -206,13 +207,13 @@ bool MergeTreeDataMerger::selectPartsToMerge(
 
         parts.push_back(part);
 
-        level = std::max(level, part->level);
-        left_date = std::min(left_date, part->left_date);
-        right_date = std::max(right_date, part->right_date);
+        level = std::max(level, part->info.level);
+        left_date = std::min(left_date, part->min_date);
+        right_date = std::max(right_date, part->max_date);
     }
 
-    merged_name = ActiveDataPartSet::getPartName(
-        left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
+    merged_name = MergeTreePartInfo::getPartName(
+        left_date, right_date, parts.front()->info.min_block, parts.back()->info.max_block, level + 1);
 
     LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
     return true;
@@ -224,10 +225,10 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     String & merged_name,
     size_t available_disk_space,
     const AllowedMergingPredicate & can_merge,
-    DayNum_t partition,
+    const String & partition_id,
     bool final)
 {
-    MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition);
+    MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     if (parts.empty())
         return false;
@@ -249,9 +250,9 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
             && !can_merge(*prev_it, *it))
             return false;
 
-        level = std::max(level, (*it)->level);
-        left_date = std::min(left_date, (*it)->left_date);
-        right_date = std::max(right_date, (*it)->right_date);
+        level = std::max(level, (*it)->info.level);
+        left_date = std::min(left_date, (*it)->min_date);
+        right_date = std::max(right_date, (*it)->max_date);
 
         sum_bytes += (*it)->size_in_bytes;
 
@@ -262,7 +263,7 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     /// Enough disk space to cover the new merge with a margin.
     if (available_disk_space <= sum_bytes * DISK_USAGE_COEFFICIENT_TO_SELECT)
     {
-        time_t now = time(0);
+        time_t now = time(nullptr);
         if (now - disk_space_warning_time > 3600)
         {
             disk_space_warning_time = now;
@@ -279,15 +280,15 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     }
 
     what = parts;
-    merged_name = ActiveDataPartSet::getPartName(
-        left_date, right_date, parts.front()->left, parts.back()->right, level + 1);
+    merged_name = MergeTreePartInfo::getPartName(
+        left_date, right_date, parts.front()->info.min_block, parts.back()->info.max_block, level + 1);
 
     LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
     return true;
 }
 
 
-MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(DayNum_t partition)
+MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(const String & partition_id)
 {
     MergeTreeData::DataPartsVector parts_from_partition;
 
@@ -296,11 +297,10 @@ MergeTreeData::DataPartsVector MergeTreeDataMerger::selectAllPartsFromPartition(
     for (MergeTreeData::DataParts::iterator it = data_parts.cbegin(); it != data_parts.cend(); ++it)
     {
         const MergeTreeData::DataPartPtr & current_part = *it;
-        DayNum_t month = current_part->month;
-        if (month != partition)
+        if (current_part->info.partition_id != partition_id)
             continue;
 
-        parts_from_partition.push_back(*it);
+        parts_from_partition.push_back(current_part);
     }
 
     return parts_from_partition;
@@ -496,7 +496,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        Poco::ScopedReadRWLock part_lock(part->columns_lock);
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         merge_entry->total_size_bytes_compressed += part->size_in_bytes;
         merge_entry->total_size_marks += part->size;
@@ -516,7 +516,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-    ActiveDataPartSet::parsePartName(merged_name, *new_data_part);
+    new_data_part->info = MergeTreePartInfo::fromPartName(merged_name);
+    MergeTreePartInfo::parseMinMaxDatesFromPartName(merged_name, new_data_part->min_date, new_data_part->max_date);
     new_data_part->name = merged_name;
     new_data_part->relative_path = TMP_PREFIX + merged_name;
     new_data_part->is_temp = true;
@@ -620,8 +621,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, Limits(), 0 /*limit_hint*/, Names());
 
     auto compression_method = data.context.chooseCompressionMethod(
-        merge_entry->total_size_bytes_compressed,
-        static_cast<double>(merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+            merge_entry->total_size_bytes_compressed,
+            static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
     MergedBlockOutputStream to{
         data, new_part_tmp_path, merging_columns, compression_method, merged_column_to_size, aio_threshold};
@@ -758,7 +759,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
 
     new_data_part->size = to.marksCount();
-    new_data_part->modification_time = time(0);
+    new_data_part->modification_time = time(nullptr);
     new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part_tmp_path);
     new_data_part->is_sharded = false;
 
@@ -855,8 +856,8 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
     size_t aio_threshold = data.context.getSettings().min_bytes_to_use_direct_io;
 
     /// Assemble all parts of the partition.
-    DayNum_t month = MergeTreeData::getMonthFromName(job.partition);
-    MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(month);
+    String partition_id = MergeTreeData::getPartitionID(job.partition);
+    MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     /// Create a temporary folder name.
     std::string merged_name = createMergedPartName(parts);
@@ -873,7 +874,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        Poco::ScopedReadRWLock part_lock(part->columns_lock);
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         merge_entry->total_size_bytes_compressed += part->size_in_bytes;
         merge_entry->total_size_marks += part->size;
@@ -951,12 +952,12 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         data_part->name = merged_name;
         data_part->relative_path = "reshard/" + toString(shard_no) + "/tmp_" + merged_name;
         data_part->is_temp = true;
-        data_part->left_date = std::numeric_limits<UInt16>::max();
-        data_part->right_date = std::numeric_limits<UInt16>::min();
-        data_part->month = month;
-        data_part->left = temp_index;
-        data_part->right = temp_index;
-        data_part->level = 0;
+        data_part->min_date = std::numeric_limits<UInt16>::max();
+        data_part->max_date = std::numeric_limits<UInt16>::min();
+        data_part->info.partition_id = partition_id;
+        data_part->info.min_block = temp_index;
+        data_part->info.max_block = temp_index;
+        data_part->info.level = 0;
 
         String new_part_tmp_path = data_part->getFullPath();
         Poco::File(new_part_tmp_path).createDirectories();
@@ -1045,10 +1046,10 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
             rows_written += block_with_dates.block.rows();
             output_stream->write(block_with_dates.block);
 
-            if (block_with_dates.min_date < data_part->left_date)
-                data_part->left_date = block_with_dates.min_date;
-            if (block_with_dates.max_date > data_part->right_date)
-                data_part->right_date = block_with_dates.max_date;
+            if (block_with_dates.min_date < data_part->min_date)
+                data_part->min_date = block_with_dates.min_date;
+            if (block_with_dates.max_date > data_part->max_date)
+                data_part->max_date = block_with_dates.max_date;
 
             merge_entry->rows_written = merged_stream->getProfileInfo().rows;
             merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
@@ -1080,7 +1081,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         data_part->checksums = output_stream->writeSuffixAndGetChecksums();
         data_part->index.swap(output_stream->getIndex());
         data_part->size = output_stream->marksCount();
-        data_part->modification_time = time(0);
+        data_part->modification_time = time(nullptr);
         data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(output_stream->getPartPath());
         data_part->is_sharded = true;
         data_part->shard_no = shard_no;
@@ -1092,8 +1093,8 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         size_t shard_no = entry.first;
         MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
 
-        std::string new_name = ActiveDataPartSet::getPartName(part_from_shard->left_date,
-            part_from_shard->right_date, part_from_shard->left, part_from_shard->right, part_from_shard->level);
+        std::string new_name = MergeTreePartInfo::getPartName(part_from_shard->min_date,
+            part_from_shard->max_date, part_from_shard->info.min_block, part_from_shard->info.max_block, part_from_shard->info.level);
         std::string new_relative_path = "reshard/" + toString(shard_no) + "/" + new_name;
 
         part_from_shard->renameTo(new_relative_path);

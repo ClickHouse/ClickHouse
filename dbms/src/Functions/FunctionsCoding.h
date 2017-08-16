@@ -10,12 +10,14 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <arpa/inet.h>
@@ -30,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -52,10 +55,10 @@ namespace ErrorCodes
   */
 
 
-constexpr auto ipv4_bytes_length = 4;
-constexpr auto ipv6_bytes_length = 16;
-constexpr auto uuid_bytes_length = 16;
-constexpr auto uuid_text_length = 36;
+constexpr size_t ipv4_bytes_length = 4;
+constexpr size_t ipv6_bytes_length = 16;
+constexpr size_t uuid_bytes_length = 16;
+constexpr size_t uuid_text_length = 36;
 
 
 class FunctionIPv6NumToString : public IFunction
@@ -80,6 +83,8 @@ public:
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
@@ -116,24 +121,6 @@ public:
             }
 
             vec_res.resize(pos - begin);
-        }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnFixedString>(column.get()))
-        {
-            const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(&col_in->getDataColumn());
-            if (!column_fixed_string || column_fixed_string->getN() != ipv6_bytes_length)
-                throw Exception("Illegal type " + col_type_name.type->getName() +
-                                " of column " + col_in->getName() +
-                                " argument of function " + getName() +
-                                ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            String data_in = col_in->getValue<String>();
-
-            char buf[IPV6_MAX_TEXT_LENGTH + 1];
-            char * dst = buf;
-            formatIPv6(reinterpret_cast<const unsigned char *>(data_in.data()), dst);
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col_in->size(), String(buf));
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -174,6 +161,9 @@ public:
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
@@ -241,51 +231,6 @@ public:
             }
 
             vec_res.resize(pos - begin);
-        }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnFixedString>(column.get()))
-        {
-            const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(&col_in->getDataColumn());
-            if (!column_fixed_string || column_fixed_string->getN() != ipv6_bytes_length)
-                throw Exception("Illegal type " + col_type_name.type->getName() +
-                                " of column " + col_in->getName() +
-                                " argument of function " + getName() +
-                                ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            const auto ipv6_zeroed_tail_bytes = checkAndGetColumnConst<ColumnVector<UInt8>>(col_ipv6_zeroed_tail_bytes.get());
-            if (!ipv6_zeroed_tail_bytes)
-                throw Exception("Illegal type " + col_ipv6_zeroed_tail_bytes_type.type->getName() +
-                                " of argument 2 of function " + getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            UInt8 ipv6_zeroed_tail_bytes_count = ipv6_zeroed_tail_bytes->getValue<UInt8>();
-            if (ipv6_zeroed_tail_bytes_count > ipv6_bytes_length)
-                throw Exception("Illegal value for argument 2 " + col_ipv6_zeroed_tail_bytes_type.type->getName() +
-                                " of function " + getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            const auto ipv4_zeroed_tail_bytes = checkAndGetColumnConst<ColumnVector<UInt8>>(col_ipv4_zeroed_tail_bytes.get());
-            if (!ipv4_zeroed_tail_bytes)
-                throw Exception("Illegal type " + col_ipv4_zeroed_tail_bytes_type.type->getName() +
-                                " of argument 3 of function " + getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            UInt8 ipv4_zeroed_tail_bytes_count = ipv4_zeroed_tail_bytes->getValue<UInt8>();
-            if (ipv4_zeroed_tail_bytes_count > ipv6_bytes_length)
-                throw Exception("Illegal value for argument 3 " + col_ipv6_zeroed_tail_bytes_type.type->getName() +
-                                " of function " + getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            String data_in = col_in->getValue<String>();
-
-            char buf[IPV6_MAX_TEXT_LENGTH + 1];
-            char * dst = buf;
-
-            const auto address = reinterpret_cast<const unsigned char *>(data_in.data());
-            UInt8 zeroed_tail_bytes_count = isIPv4Mapped(address) ? ipv4_zeroed_tail_bytes_count : ipv6_zeroed_tail_bytes_count;
-            cutAddress(address, dst, zeroed_tail_bytes_count);
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col_in->size(), String(buf));
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -375,21 +320,6 @@ public:
             if (*++src != ':')
                 return clear_dst();
 
-        /// get integer value for a hexademical char digit, or -1
-        const auto number_by_char = [] (const char ch)
-        {
-            if ('A' <= ch && ch <= 'F')
-                return 10 + ch - 'A';
-
-            if ('a' <= ch && ch <= 'f')
-                return 10 + ch - 'a';
-
-            if ('0' <= ch && ch <= '9')
-                return ch - '0';
-
-            return -1;
-        };
-
         unsigned char tmp[ipv6_bytes_length]{};
         auto tp = tmp;
         auto endp = tp + ipv6_bytes_length;
@@ -400,7 +330,7 @@ public:
 
         while (const auto ch = *src++)
         {
-            const auto num = number_by_char(ch);
+            const auto num = unhex(ch);
 
             if (num != -1)
             {
@@ -479,6 +409,8 @@ public:
         memcpy(dst, tmp, sizeof(tmp));
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
@@ -502,13 +434,6 @@ public:
                 ipv6_scan(reinterpret_cast<const char * >(&vec_src[src_offset]), &vec_res[out_offset]);
                 src_offset = offsets_src[i];
             }
-        }
-        else if (const auto col_in = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            String out(ipv6_bytes_length, 0);
-            ipv6_scan(col_in->getValue<String>().data(), reinterpret_cast<unsigned char *>(&out[0]));
-
-            block.getByPosition(result).column = DataTypeFixedString(ipv6_bytes_length).createConstColumn(col_in->size(), out);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -575,6 +500,8 @@ public:
         *(out++) = '\0';
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
@@ -601,15 +528,6 @@ public:
             }
 
             vec_res.resize(pos - begin);
-        }
-        else if (auto col = checkAndGetColumnConst<ColumnUInt32>(column.get()))
-        {
-            char buf[16];
-            char * pos = buf;
-            formatIP(col->getValue<UInt32>(), pos);
-
-            auto col_res = DataTypeString().createConstColumn(col->size(), String(buf));
-            block.getByPosition(result).column = col_res;
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -664,6 +582,8 @@ public:
         return res;
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
@@ -685,11 +605,6 @@ public:
                 vec_res[i] = parseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]));
                 prev_offset = offsets_src[i];
             }
-        }
-        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            auto col_res = DataTypeUInt32().createConstColumn(col->size(), toField(parseIPv4(col->getValue<String>().c_str())));
-            block.getByPosition(result).column = col_res;
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -758,6 +673,8 @@ public:
         *(out++) = '\0';
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const ColumnPtr & column = block.getByPosition(arguments[0]).column;
@@ -784,15 +701,6 @@ public:
             }
 
             vec_res.resize(pos - begin);
-        }
-        else if (auto col = checkAndGetColumnConst<ColumnUInt32>(column.get()))
-        {
-            char buf[16];
-            char * pos = buf;
-            formatIP(col->getValue<UInt32>(), pos);
-
-            auto col_res = DataTypeString().createConstColumn(col->size(), String(buf));
-            block.getByPosition(result).column = col_res;
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -822,6 +730,8 @@ public:
         return std::make_shared<DataTypeFixedString>(16);
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         const auto & col_type_name = block.getByPosition(arguments[0]);
@@ -839,13 +749,6 @@ public:
 
             for (size_t out_offset = 0, i = 0; out_offset < vec_res.size(); out_offset += ipv6_bytes_length, ++i)
                 mapIPv4ToIPv6(vec_in[i], &vec_res[out_offset]);
-        }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnVector<UInt32>>(column.get()))
-        {
-            std::string buf;
-            buf.resize(ipv6_bytes_length);
-            mapIPv4ToIPv6(col_in->getValue<UInt32>(), reinterpret_cast<unsigned char *>(&buf[0]));
-            block.getByPosition(result).column = DataTypeFixedString(ipv6_bytes_length).createConstColumn(ipv6_bytes_length, buf);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -885,43 +788,26 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    static void formatMAC(UInt64 mac, char *& out)
+    static void formatMAC(UInt64 mac, unsigned char * out)
     {
-        char * begin = out;
+        /// MAC address is represented in UInt64 in natural order (so, MAC addresses are compared in same order as UInt64).
+        /// Higher two bytes in UInt64 are just ignored.
 
-        /// Write everything backwards.
-        for (size_t offset = 0; offset <= 40; offset += 8)
-        {
-            if (offset > 0)
-                *(out++) = ':';
-
-            /// Get the next byte.
-            UInt64 value = (mac >> offset) & static_cast<UInt64>(255);
-
-            /// Faster than sprintf.
-            if (value < 16)
-            {
-                *(out++) = '0';
-            }
-            if (value == 0)
-            {
-                *(out++) = '0';
-            }
-            else
-            {
-                while (value > 0)
-                {
-                    *(out++) = hexUppercase(value % 16);
-                    value /= 16;
-                }
-            }
-        }
-
-        /// And reverse.
-        std::reverse(begin, out);
-
-        *(out++) = '\0';
+        writeHexByteUppercase(mac >> 40, &out[0]);
+        out[2] = ':';
+        writeHexByteUppercase(mac >> 32, &out[3]);
+        out[5] = ':';
+        writeHexByteUppercase(mac >> 24, &out[6]);
+        out[8] = ':';
+        writeHexByteUppercase(mac >> 16, &out[9]);
+        out[11] = ':';
+        writeHexByteUppercase(mac >> 8, &out[12]);
+        out[14] = ':';
+        writeHexByteUppercase(mac, &out[15]);
+        out[17] = '\0';
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -937,27 +823,16 @@ public:
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
 
-            vec_res.resize(vec_in.size() * 18); /// the longest value is: xx:xx:xx:xx:xx:xx\0
+            vec_res.resize(vec_in.size() * 18); /// the value is: xx:xx:xx:xx:xx:xx\0
             offsets_res.resize(vec_in.size());
-            char * begin = reinterpret_cast<char *>(&vec_res[0]);
-            char * pos = begin;
 
+            size_t current_offset = 0;
             for (size_t i = 0; i < vec_in.size(); ++i)
             {
-                formatMAC(vec_in[i], pos);
-                offsets_res[i] = pos - begin;
+                formatMAC(vec_in[i], &vec_res[current_offset]);
+                current_offset += 18;
+                offsets_res[i] = current_offset;
             }
-
-            vec_res.resize(pos - begin);
-        }
-        else if (auto col = checkAndGetColumnConst<ColumnUInt64>(column.get()))
-        {
-            char buf[18];
-            char * pos = buf;
-            formatMAC(col->getValue<UInt64>(), pos);
-
-            auto col_res = DataTypeString().createConstColumn(col->size(), String(buf));
-            block.getByPosition(result).column = col_res;
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -967,107 +842,63 @@ public:
 };
 
 
-class FunctionMACStringToNum : public IFunction
+struct ParseMACImpl
 {
-public:
+    static constexpr size_t min_string_size = 17;
+    static constexpr size_t max_string_size = 17;
+
+    /** Example: 01:02:03:04:05:06.
+      * There could be any separators instead of : and them are just ignored.
+      * The order of resulting integers are correspond to the order of MAC address.
+      * If there are any chars other than valid hex digits for bytes, the behaviour is implementation specific.
+      */
+    static UInt64 parse(const char * pos)
+    {
+        return (UInt64(unhex(pos[0])) << 44)
+             | (UInt64(unhex(pos[1])) << 40)
+             | (UInt64(unhex(pos[3])) << 36)
+             | (UInt64(unhex(pos[4])) << 32)
+             | (UInt64(unhex(pos[6])) << 28)
+             | (UInt64(unhex(pos[7])) << 24)
+             | (UInt64(unhex(pos[9])) << 20)
+             | (UInt64(unhex(pos[10])) << 16)
+             | (UInt64(unhex(pos[12])) << 12)
+             | (UInt64(unhex(pos[13])) << 8)
+             | (UInt64(unhex(pos[15])) << 4)
+             | (UInt64(unhex(pos[16])));
+    }
+
     static constexpr auto name = "MACStringToNum";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringToNum>(); }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt64>();
-    }
-
-    static UInt64 parseMAC(const char * pos)
-    {
-
-        /// get integer value for a hexademical char digit, or -1
-        const auto number_by_char = [] (const char ch)
-        {
-            if ('A' <= ch && ch <= 'F')
-                return 10 + ch - 'A';
-
-            if ('a' <= ch && ch <= 'f')
-                return 10 + ch - 'a';
-
-            if ('0' <= ch && ch <= '9')
-                return ch - '0';
-
-            return -1;
-        };
-
-        UInt64 res = 0;
-        for (int offset = 40; offset >= 0; offset -= 8)
-        {
-            UInt64 value = 0;
-            size_t len = 0;
-            int val = 0;
-            while ((val = number_by_char(*pos)) >= 0 && len <= 2)
-            {
-                value = value * 16 + val;
-                ++len;
-                ++pos;
-            }
-            if (len == 0 || value > 255 || (offset > 0 && *pos != ':'))
-                return 0;
-            res |= value << offset;
-            ++pos;
-        }
-        if (*(pos - 1) != '\0')
-            return 0;
-        return res;
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
-    {
-        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
-
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
-        {
-            auto col_res = std::make_shared<ColumnUInt64>();
-            block.getByPosition(result).column = col_res;
-
-            ColumnUInt64::Container_t & vec_res = col_res->getData();
-            vec_res.resize(col->size());
-
-            const ColumnString::Chars_t & vec_src = col->getChars();
-            const ColumnString::Offsets_t & offsets_src = col->getOffsets();
-            size_t prev_offset = 0;
-
-            for (size_t i = 0; i < vec_res.size(); ++i)
-            {
-                vec_res[i] = parseMAC(reinterpret_cast<const char *>(&vec_src[prev_offset]));
-                prev_offset = offsets_src[i];
-            }
-        }
-        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getValue<String>().c_str()));
-            block.getByPosition(result).column = col_res;
-        }
-        else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
-    }
 };
 
-class FunctionMACStringToOUI : public IFunction
+struct ParseOUIImpl
+{
+    static constexpr size_t min_string_size = 8;
+    static constexpr size_t max_string_size = 17;
+
+    /** OUI is the first three bytes of MAC address.
+      * Example: 01:02:03.
+      */
+    static UInt64 parse(const char * pos)
+    {
+        return (UInt64(unhex(pos[0])) << 20)
+             | (UInt64(unhex(pos[1])) << 16)
+             | (UInt64(unhex(pos[3])) << 12)
+             | (UInt64(unhex(pos[4])) << 8)
+             | (UInt64(unhex(pos[6])) << 4)
+             | (UInt64(unhex(pos[7])));
+    }
+
+    static constexpr auto name = "MACStringToOUI";
+};
+
+
+template <typename Impl>
+class FunctionMACStringTo : public IFunction
 {
 public:
-    static constexpr auto name = "MACStringToOUI";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringToOUI>(); }
+    static constexpr auto name = Impl::name;
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringTo<Impl>>(); }
 
     String getName() const override
     {
@@ -1085,46 +916,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    static UInt64 parseMAC(const char * pos)
-    {
-
-        /// get integer value for a hexademical char digit, or -1
-        const auto number_by_char = [] (const char ch)
-        {
-            if ('A' <= ch && ch <= 'F')
-                return 10 + ch - 'A';
-
-            if ('a' <= ch && ch <= 'f')
-                return 10 + ch - 'a';
-
-            if ('0' <= ch && ch <= '9')
-                return ch - '0';
-
-            return -1;
-        };
-
-        UInt64 res = 0;
-        for (int offset = 40; offset >= 0; offset -= 8)
-        {
-            UInt64 value = 0;
-            size_t len = 0;
-            int val = 0;
-            while ((val = number_by_char(*pos)) >= 0 && len <= 2)
-            {
-                value = value * 16 + val;
-                ++len;
-                ++pos;
-            }
-            if (len == 0 || value > 255 || (offset > 0 && *pos != ':'))
-                return 0;
-            res |= value << offset;
-            ++pos;
-        }
-        if (*(pos - 1) != '\0')
-            return 0;
-        res = res >> 24;
-        return res;
-    }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -1144,19 +936,21 @@ public:
 
             for (size_t i = 0; i < vec_res.size(); ++i)
             {
-                vec_res[i] = parseMAC(reinterpret_cast<const char *>(&vec_src[prev_offset]));
-                prev_offset = offsets_src[i];
+                size_t current_offset = offsets_src[i];
+                size_t string_size = current_offset - prev_offset - 1; /// mind the terminating zero byte
+
+                if (string_size >= Impl::min_string_size && string_size <= Impl::max_string_size)
+                    vec_res[i] = Impl::parse(reinterpret_cast<const char *>(&vec_src[prev_offset]));
+                else
+                    vec_res[i] = 0;
+
+                prev_offset = current_offset;
             }
-        }
-        else if (const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            auto col_res = DataTypeUInt64().createConstColumn(col->size(), parseMAC(col->getValue<String>().c_str()));
-            block.getByPosition(result).column = col_res;
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -1187,6 +981,8 @@ public:
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -1226,23 +1022,6 @@ public:
                 offsets_res[i] = dst_offset;
             }
         }
-        else if (const auto col_in = checkAndGetColumnConst<ColumnFixedString>(column.get()))
-        {
-            const auto column_fixed_string = checkAndGetColumn<ColumnFixedString>(&col_in->getDataColumn());
-            if (!column_fixed_string || column_fixed_string->getN() != ipv6_bytes_length)
-                throw Exception("Illegal type " + col_type_name.type->getName() +
-                                " of column " + col_in->getName() +
-                                " argument of function " + getName() +
-                                ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            String data_in = col_in->getValue<String>();
-
-            char buf[uuid_text_length];
-            formatUUID(reinterpret_cast<const UInt8 *>(data_in.data()), reinterpret_cast<UInt8 *>(buf));
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col_in->size(), String(buf, uuid_text_length));
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of argument of function " + getName(),
@@ -1260,7 +1039,7 @@ private:
         size_t dst_pos = 0;
         for (; dst_pos < num_bytes; ++dst_pos)
         {
-            dst[dst_pos] = unhex(src[src_pos]) * 16 + unhex(src[src_pos + 1]);
+            dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
             src_pos += 2;
         }
     }
@@ -1303,6 +1082,8 @@ public:
 
         return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -1367,27 +1148,49 @@ public:
                 dst_offset += uuid_bytes_length;
             }
         }
-        else if (const auto col_in = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            String data_in = col_in->getValue<String>();
-
-            String res;
-
-            if (data_in.size() == uuid_text_length)
-            {
-                char buf[uuid_bytes_length];
-                parseUUID(reinterpret_cast<const UInt8 *>(data_in.data()), reinterpret_cast<UInt8 *>(buf));
-                res.assign(buf, uuid_bytes_length);
-            }
-            else
-                res.resize(uuid_bytes_length, '\0');
-
-            block.getByPosition(result).column = DataTypeFixedString(uuid_bytes_length).createConstColumn(col_in->size(), res);
-        }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+class FunctionGenerateUUIDv4 : public IFunction
+{
+public:
+    static constexpr auto name = "generateUUIDv4";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionGenerateUUIDv4>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return std::make_shared<DataTypeUUID>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        auto col_to = std::make_shared<ColumnVector<UInt128>>();
+        block.safeGetByPosition(result).column = col_to;
+
+        typename ColumnVector<UInt128>::Container_t & vec_to = col_to->getData();
+
+        size_t size = block.rows();
+        vec_to.resize(size);
+        Rand64Impl::execute(reinterpret_cast<UInt64 *>(&vec_to[0]), vec_to.size() * 2);
+
+        for (UInt128 & uuid: vec_to)
+        {
+            /** https://tools.ietf.org/html/rfc4122#section-4.4
+             */
+            uuid.low = (uuid.low & 0xffffffffffff0fffull) | 0x0000000000004000ull;
+            uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
+        }
     }
 };
 
@@ -1428,7 +1231,7 @@ public:
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
         {
-            UInt8 byte = static_cast<UInt8>((x >> offset) & 255);
+            UInt8 byte = x >> offset;
 
             /// Leading zeros.
             if (byte == 0 && !was_nonzero && offset)
@@ -1436,17 +1239,17 @@ public:
 
             was_nonzero = true;
 
-            *(out++) = hexUppercase(byte / 16);
-            *(out++) = hexUppercase(byte % 16);
+            writeHexByteUppercase(byte, out);
+            out += 2;
         }
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
     }
 
     template <typename T>
     bool tryExecuteUInt(const IColumn * col, ColumnPtr & col_res)
     {
         const ColumnVector<T> * col_vec = checkAndGetColumn<ColumnVector<T>>(col);
-        const ColumnConst * col_const = checkAndGetColumnConst<ColumnVector<T>>(col);
 
         static constexpr size_t MAX_UINT_HEX_LENGTH = sizeof(T) * 2 + 1;    /// Including trailing zero byte.
 
@@ -1482,16 +1285,6 @@ public:
 
             return true;
         }
-        else if (col_const)
-        {
-            char buf[MAX_UINT_HEX_LENGTH];
-            char * pos = buf;
-            executeOneUInt<T>(col_const->template getValue<T>(), pos);
-
-            col_res = DataTypeString().createConstColumn(col_const->size(), String(buf));
-
-            return true;
-        }
         else
         {
             return false;
@@ -1502,17 +1295,17 @@ public:
     {
         while (pos < end)
         {
-            UInt8 byte = *(pos++);
-            *(out++) = hexUppercase(byte / 16);
-            *(out++) = hexUppercase(byte % 16);
+            writeHexByteUppercase(*pos, out);
+            ++pos;
+            out += 2;
         }
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
     }
 
     bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
     {
         const ColumnString * col_str_in = checkAndGetColumn<ColumnString>(col);
-        const ColumnConst * col_const_in = checkAndGetColumnConstStringOrFixedString(col);
 
         if (col_str_in)
         {
@@ -1545,19 +1338,6 @@ public:
 
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
-
-            return true;
-        }
-        else if (col_const_in)
-        {
-            String src = col_const_in->getValue<String>();
-            String res(src.size() * 2, '\0');
-            char * pos = &res[0];
-            const UInt8 * src_ptr = reinterpret_cast<const UInt8 *>(src.c_str());
-            /// Let's write zero into res[res.size()]. Starting with C++ 11, this is correct.
-            executeOneString(src_ptr, src_ptr + src.size(), pos);
-
-            col_res = DataTypeString().createConstColumn(col_const_in->size(), res);
 
             return true;
         }
@@ -1615,6 +1395,8 @@ public:
         }
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         const IColumn * column = block.getByPosition(arguments[0]).column.get();
@@ -1668,17 +1450,15 @@ public:
         }
         while (pos < end)
         {
-            UInt8 major = unhex(*pos);
-            ++pos;
-            UInt8 minor = unhex(*pos);
-            ++pos;
-
-            *out = (major << 4) | minor;
+            *out = unhex2(pos);
+            pos += 2;
             ++out;
         }
         *out = '\0';
         ++out;
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -1715,16 +1495,6 @@ public:
             }
 
             out_vec.resize(pos - begin);
-        }
-        else if(const ColumnConst * col = checkAndGetColumnConstStringOrFixedString(column.get()))
-        {
-            String src = col->getValue<String>();
-            String res(src.size(), '\0');
-            char * pos = &res[0];
-            unhexOne(src.c_str(), src.c_str() + src.size(), pos);
-            res = res.substr(0, pos - &res[0] - 1);
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col->size(), res);
         }
         else
         {
@@ -1766,6 +1536,8 @@ public:
         return std::make_shared<DataTypeArray>(arguments[0]);
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     template <typename T>
     bool tryExecute(const IColumn * column, ColumnPtr & out_column)
     {
@@ -1796,23 +1568,6 @@ public:
                 res_offsets[row] = res_values.size();
             }
 
-            return true;
-        }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(column))
-        {
-            Array res;
-
-            T x = col_from->template getValue<T>();
-            for (size_t i = 0; i < sizeof(T) * 8; ++i)
-            {
-                T bit = static_cast<T>(1) << i;
-                if (x & bit)
-                {
-                    res.push_back(static_cast<UInt64>(bit));
-                }
-            }
-
-            out_column = DataTypeArray(std::make_shared<DataTypeNumber<T>>()).createConstColumn(col_from->size(), res);
             return true;
         }
         else
@@ -1865,11 +1620,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
     {
         const ColumnString * col_str_in = checkAndGetColumn<ColumnString>(col);
-        const ColumnConst * col_const_in = checkAndGetColumnConstStringOrFixedString(col);
 
         if (col_str_in)
         {
@@ -1905,13 +1660,6 @@ public:
 
             if (!out_offsets.empty() && out_offsets.back() != out_vec.size())
                 throw Exception("Column size mismatch (internal logical error)", ErrorCodes::LOGICAL_ERROR);
-
-            return true;
-        }
-        else if (col_const_in)
-        {
-            std::string res(col_const_in->getValue<String>().c_str());
-            col_res = DataTypeString().createConstColumn(col_const_in->size(), res);
 
             return true;
         }

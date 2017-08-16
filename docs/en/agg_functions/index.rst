@@ -87,10 +87,13 @@ You should use the ``uniqExact`` function if you definitely need an exact result
 
 The ``uniqExact`` function uses more memory than the ``uniq`` function, because the size of the state has unbounded growth as the number of different values increases.
 
-groupArray(x)
--------------
+groupArray(x), groupArray(max_size)(x)
+--------------------------------------
 Creates an array of argument values.
 Values can be added to the array in any (indeterminate) order.
+
+The second version (with ``max_size`` parameter) limits the size of resulting array to ``max_size`` elements.
+For example, ``groupArray(1)(x)`` is equivalent to ``[any(x)]``.
 
 In some cases, you can rely on the order of execution. This applies to cases when ``SELECT`` comes from a subquery that uses ``ORDER BY``.
 
@@ -277,7 +280,7 @@ Examples: ``uniqArrayIf(arr, cond)``,  ``quantilesTimingArrayIf(level1, level2)(
 
 State combinator
 ----------------
-If this combinator is used, the aggregate function returns a non-completed/non-finished value (for example, in the case of the ``uniq`` function, the number of unique values), and the intermediate aggregation state (for example, in the case of the ``uniq`` function, a hash table for calculating the number of unique values), which has type of ``AggregateFunction(...)`` and can be used for further processing or can be saved to a table for subsequent pre-aggregation - see the sections "AggregatingMergeTree" and "functions for working with intermediate aggregation states".
+If this combinator is used, the aggregate function returns intermediate aggregation state (for example, in the case of the ``uniqCombined`` function, a HyperLogLog structure for calculating the number of unique values), which has type of ``AggregateFunction(...)`` and can be used for further processing or can be saved to a table for subsequent pre-aggregation - see the sections "AggregatingMergeTree" and "functions for working with intermediate aggregation states".
 
 Merge combinator
 ----------------

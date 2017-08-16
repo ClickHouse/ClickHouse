@@ -379,6 +379,7 @@ ALTER
 ``ALTER TABLE ... FREEZE PARTITION`` копирует только данные, но не метаданные таблицы. Чтобы сделать бэкап метаданных таблицы, скопируйте файл  ``/var/lib/clickhouse/metadata/database/table.sql``
 
 Для восстановления из бэкапа:
+
  * создайте таблицу, если её нет, с помощью запроса CREATE. Запрос можно взять из .sql файла (замените в нём ``ATTACH`` на ``CREATE``);
  * скопируйте данные из директории data/database/table/ внутри бэкапа в директорию ``/var/lib/clickhouse/data/database/table/detached/``
  * выполните запросы ``ALTER TABLE ... ATTACH PARTITION YYYYMM``, где ``YYYYMM`` - месяц, для каждого месяца.

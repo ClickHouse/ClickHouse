@@ -197,6 +197,7 @@ std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_al
         * And if the cloning order does not match the parsing order,
         *  then different servers will get different identifiers.
         */
+    CLONE(with_expression_list)
     CLONE(select_expression_list)
     CLONE(tables)
     CLONE(prewhere_expression)
@@ -231,6 +232,15 @@ void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & sta
     frame.current_select = this;
     frame.need_parens = false;
     std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+
+    if (with_expression_list)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
+        s.one_line
+            ? with_expression_list->formatImpl(s, state, frame)
+            : typeid_cast<const ASTExpressionList &>(*with_expression_list).formatImplMultiline(s, state, frame);
+        s.ostr << s.nl_or_ws;
+    }
 
     s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (distinct ? "DISTINCT " : "") << (s.hilite ? hilite_none : "");
 

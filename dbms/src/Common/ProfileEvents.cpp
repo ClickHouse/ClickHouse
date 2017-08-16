@@ -122,6 +122,9 @@
     M(DictCacheRequests) \
     M(DictCacheLockWriteNs) \
     M(DictCacheLockReadNs) \
+    \
+    M(DistributedSyncInsertionTimeoutExceeded) \
+    M(DataAfterMergeDiffersFromReplica)
 
 
 namespace ProfileEvents

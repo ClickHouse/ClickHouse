@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -10,7 +11,7 @@ namespace DB
 
 
 /// CREATE TABLE or ATTACH TABLE query
-class ASTCreateQuery : public IAST, public ASTQueryWithOnCluster
+class ASTCreateQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
@@ -29,7 +30,7 @@ public:
     ASTPtr select;
 
     ASTCreateQuery() = default;
-    ASTCreateQuery(const StringRange range_) : IAST(range_) {}
+    ASTCreateQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
 
     /** Get the text that identifies this element. */
     String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
@@ -43,6 +44,8 @@ public:
         if (storage)        { res->storage = storage->clone();              res->children.push_back(res->storage); }
         if (select)         { res->select = select->clone();                res->children.push_back(res->select); }
         if (inner_storage)  { res->inner_storage = inner_storage->clone();  res->children.push_back(res->inner_storage); }
+
+        cloneOutputOptions(*res);
 
         return res;
     }
@@ -60,7 +63,7 @@ public:
     }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         frame.need_parens = false;
 

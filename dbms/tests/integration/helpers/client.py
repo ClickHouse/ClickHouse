@@ -8,28 +8,35 @@ class Client:
     def __init__(self, host, port=9000, command='/usr/bin/clickhouse-client'):
         self.host = host
         self.port = port
-        self.command = [command, '--host', self.host, '--port', str(self.port)]
+        self.command = [command, '--host', self.host, '--port', str(self.port), '--stacktrace']
 
 
     def query(self, sql, stdin=None, timeout=None):
-        return QueryRequest(self, sql, stdin, timeout).get_answer()
+        return self.get_query_request(sql, stdin, timeout).get_answer()
 
 
     def get_query_request(self, sql, stdin=None, timeout=None):
-        return QueryRequest(self, sql, stdin, timeout)
+        command = self.command[:]
 
-
-class QueryRequest:
-    def __init__(self, client, sql, stdin=None, timeout=None):
-        self.client = client
-
-        command = self.client.command[:]
         if stdin is None:
             command += ['--multiquery']
             stdin = sql
         else:
             command += ['--query', sql]
 
+        return CommandRequest(command, stdin, timeout)
+
+
+class QueryTimeoutExceedException(Exception):
+    pass
+
+
+class QueryRuntimeException(Exception):
+    pass
+
+
+class CommandRequest:
+    def __init__(self, command, stdin=None, timeout=None):
         # Write data to tmp file to avoid PIPEs and execution blocking
         stdin_file = tempfile.TemporaryFile()
         stdin_file.write(stdin)
@@ -37,7 +44,7 @@ class QueryRequest:
         self.stdout_file = tempfile.TemporaryFile()
         self.stderr_file = tempfile.TemporaryFile()
 
-        #print " ".join(command), "\nQuery:", sql
+        #print " ".join(command)
 
         self.process = sp.Popen(command, stdin=stdin_file, stdout=self.stdout_file, stderr=self.stderr_file)
 
@@ -46,8 +53,8 @@ class QueryRequest:
         if timeout is not None:
             def kill_process():
                 if self.process.poll() is None:
-                    self.process.kill()
                     self.process_finished_before_timeout = False
+                    self.process.kill()
 
             self.timer = Timer(timeout, kill_process)
             self.timer.start()
@@ -61,11 +68,10 @@ class QueryRequest:
         stdout = self.stdout_file.read()
         stderr = self.stderr_file.read()
 
-        if self.process.returncode != 0 or stderr:
-            raise Exception('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
-
         if self.timer is not None and not self.process_finished_before_timeout:
-            raise Exception('Client timed out!')
+            raise QueryTimeoutExceedException('Client timed out!')
+
+        if self.process.returncode != 0 or stderr:
+            raise QueryRuntimeException('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
 
         return stdout
-

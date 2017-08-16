@@ -57,21 +57,21 @@
 
 #define ALIAS(tc_fn)   __attribute__ ((alias (#tc_fn), used))
 
-void* operator new(size_t size) throw (std::bad_alloc)
+void* operator new(size_t size)
     ALIAS(tc_new);
-void operator delete(void* p) throw()
+void operator delete(void* p) noexcept
     ALIAS(tc_delete);
-void* operator new[](size_t size) throw (std::bad_alloc)
+void* operator new[](size_t size)
     ALIAS(tc_newarray);
-void operator delete[](void* p) throw()
+void operator delete[](void* p) noexcept
     ALIAS(tc_deletearray);
-void* operator new(size_t size, const std::nothrow_t& nt) throw()
+void* operator new(size_t size, const std::nothrow_t& nt) noexcept
     ALIAS(tc_new_nothrow);
-void* operator new[](size_t size, const std::nothrow_t& nt) throw()
+void* operator new[](size_t size, const std::nothrow_t& nt) noexcept
     ALIAS(tc_newarray_nothrow);
-void operator delete(void* p, const std::nothrow_t& nt) throw()
+void operator delete(void* p, const std::nothrow_t& nt) noexcept
     ALIAS(tc_delete_nothrow);
-void operator delete[](void* p, const std::nothrow_t& nt) throw()
+void operator delete[](void* p, const std::nothrow_t& nt) noexcept
     ALIAS(tc_deletearray_nothrow);
 
 #if defined(ENABLE_SIZED_DELETE)

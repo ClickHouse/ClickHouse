@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
@@ -320,8 +321,7 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            DayNum_t month = MergeTreeData::getMonthFromName(partition);
-            selected = merger.selectAllPartsToMergeWithinPartition(parts, merged_name, disk_space, can_merge, month, final);
+            selected = merger.selectAllPartsToMergeWithinPartition(parts, merged_name, disk_space, can_merge, partition, final);
         }
 
         if (!selected)
@@ -343,7 +343,7 @@ bool StorageMergeTree::merge(
     if (auto part_log = context.getPartLog(database_name, table_name))
     {
         PartLogElement elem;
-        elem.event_time = time(0);
+        elem.event_time = time(nullptr);
 
         elem.merged_from.reserve(merging_tagger->parts.size());
         for (const auto & part : merging_tagger->parts)
@@ -406,7 +406,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & query, const Field 
     auto lock_read_structure = lockStructure(false);
     auto lock_write_data = lockDataForAlter();
 
-    DayNum_t month = MergeTreeData::getMonthDayNum(partition);
+    String partition_id = MergeTreeData::getPartitionID(partition);
     MergeTreeData::DataParts parts = data.getDataParts();
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
@@ -428,7 +428,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & query, const Field 
 
     for (const auto & part : parts)
     {
-        if (part->month != month)
+        if (part->info.partition_id != partition_id)
             continue;
 
         if (auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_expr_ast, false))
@@ -455,14 +455,14 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partiti
     /// Waits for completion of merge and does not start new ones.
     auto lock = lockForAlter();
 
-    DayNum_t month = MergeTreeData::getMonthDayNum(partition);
+    String partition_id = MergeTreeData::getPartitionID(partition);
 
     size_t removed_parts = 0;
     MergeTreeData::DataParts parts = data.getDataParts();
 
     for (const auto & part : parts)
     {
-        if (part->month != month)
+        if (part->info.partition_id != partition_id)
             continue;
 
         LOG_DEBUG(log, "Removing part " << part->name);
@@ -485,7 +485,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field
     if (part)
         partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
     else
-        partition = MergeTreeData::getMonthName(field);
+        partition = MergeTreeData::getPartitionID(field);
 
     String source_dir = "detached/";
 
@@ -502,10 +502,12 @@ void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field
         for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
         {
             String name = it.name();
-            if (!ActiveDataPartSet::isPartDirectory(name))
+            MergeTreePartInfo part_info;
+            if (!MergeTreePartInfo::tryParsePartName(name, &part_info)
+                || part_info.partition_id != partition)
+            {
                 continue;
-            if (name.substr(0, partition.size()) != partition)
-                continue;
+            }
             LOG_DEBUG(log, "Found part " << name);
             active_parts.add(name);
         }

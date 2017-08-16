@@ -34,7 +34,7 @@ struct ReplicatedMergeTreeLogEntryData
         EMPTY,          /// Not used.
         GET_PART,       /// Get the part from another replica.
         MERGE_PARTS,    /// Merge the parts.
-        DROP_RANGE,     /// Delete the parts in the specified month in the specified number range.
+        DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
         ATTACH_PART,    /// Move a part from the `detached` directory. Obsolete. TODO: Remove after half year.
         CLEAR_COLUMN,   /// Drop specific column from specified partition.
     };

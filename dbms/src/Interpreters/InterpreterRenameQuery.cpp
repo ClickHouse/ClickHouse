@@ -95,7 +95,7 @@ BlockIO InterpreterRenameQuery::execute()
                     "Some table right now is being renamed to " + to.database_name + "." + to.table_name));
     }
 
-    std::vector<TableFullWriteLockPtr> locks;
+    std::vector<TableFullWriteLock> locks;
     locks.reserve(unique_tables_from.size());
 
     for (const auto & names : unique_tables_from)

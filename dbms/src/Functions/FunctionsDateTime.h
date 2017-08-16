@@ -423,6 +423,48 @@ struct ToRelativeSecondNumImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToYYYYMMImpl
+{
+    static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMM(t);
+    }
+    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMM(static_cast<DayNum_t>(d));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToYYYYMMDDImpl
+{
+    static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDD(t);
+    }
+    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDD(static_cast<DayNum_t>(d));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToYYYYMMDDhhmmssImpl
+{
+    static inline UInt64 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDDhhmmss(t);
+    }
+    static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(static_cast<DayNum_t>(d)));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 
 template<typename FromType, typename ToType, typename Transform>
 struct Transformer
@@ -452,7 +494,6 @@ struct DateTimeTransformImpl
 
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
         const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get());
-        const auto * const_source = checkAndGetColumnConst<ColumnVector<FromType>>(source_col.get());
 
         const ColumnConst * time_zone_column = nullptr;
 
@@ -475,12 +516,6 @@ struct DateTimeTransformImpl
             auto col_to = std::make_shared<ColumnVector<ToType>>();
             block.getByPosition(result).column = col_to;
             Op::vector(sources->getData(), col_to->getData(), time_zone);
-        }
-        else if (const_source)
-        {
-            ToType res;
-            Op::constant(const_source->template getValue<FromType>(), res, time_zone);
-            block.getByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(const_source->size(), toField(res));
         }
         else
         {
@@ -535,6 +570,9 @@ public:
 
         return std::make_shared<ToDataType>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -694,6 +732,8 @@ public:
         return std::make_shared<DataTypeDateTime>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
@@ -710,11 +750,6 @@ public:
                 res_vec[i] = vec[i] / TIME_SLOT_SIZE * TIME_SLOT_SIZE;
 
             block.getByPosition(result).column = res_holder;
-        }
-        else if (auto const_times = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get()))
-        {
-            block.getByPosition(result).column = DataTypeUInt32().createConstColumn(
-                block.rows(), toField(const_times->getValue<UInt32>() / TIME_SLOT_SIZE * TIME_SLOT_SIZE));
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -894,6 +929,9 @@ struct NameToRelativeDayNum    { static constexpr auto name = "toRelativeDayNum"
 struct NameToRelativeHourNum   { static constexpr auto name = "toRelativeHourNum"; };
 struct NameToRelativeMinuteNum { static constexpr auto name = "toRelativeMinuteNum"; };
 struct NameToRelativeSecondNum { static constexpr auto name = "toRelativeSecondNum"; };
+struct NameToYYYYMM            { static constexpr auto name = "toYYYYMM"; };
+struct NameToYYYYMMDD          { static constexpr auto name = "toYYYYMMDD"; };
+struct NameToYYYYMMDDhhmmss    { static constexpr auto name = "toYYYYMMDDhhmmss"; };
 
 
 using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToYearImpl, NameToYear>;
@@ -922,5 +960,8 @@ using FunctionToRelativeHourNum = FunctionDateOrDateTimeToSomething<DataTypeUInt
 using FunctionToRelativeMinuteNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeMinuteNumImpl, NameToRelativeMinuteNum>;
 using FunctionToRelativeSecondNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeSecondNumImpl, NameToRelativeSecondNum>;
 
+using FunctionToYYYYMM = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToYYYYMMImpl, NameToYYYYMM>;
+using FunctionToYYYYMMDD = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToYYYYMMDDImpl, NameToYYYYMMDD>;
+using FunctionToYYYYMMDDhhmmss = FunctionDateOrDateTimeToSomething<DataTypeUInt64, ToYYYYMMDDhhmmssImpl, NameToYYYYMMDDhhmmss>;
 
 }

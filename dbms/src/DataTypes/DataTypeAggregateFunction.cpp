@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -145,10 +146,9 @@ void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuff
 
 static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num)
 {
-    String res;
-    WriteBufferFromString buffer(res);
+    WriteBufferFromOwnString buffer;
     function.get()->serialize(static_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer);
-    return res;
+    return buffer.str();
 }
 
 static void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, const String & s)
@@ -325,7 +325,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (function_name.empty())
         throw Exception("Logical error: empty name of aggregate function passed", ErrorCodes::LOGICAL_ERROR);
 
-    function = AggregateFunctionFactory::instance().get(function_name, argument_types);
+    function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
     if (!params_row.empty())
         function->setParameters(params_row);
     function->setArguments(argument_types);

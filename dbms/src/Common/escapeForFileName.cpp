@@ -13,15 +13,15 @@ std::string escapeForFileName(const std::string & s)
 
     while (pos != end)
     {
-        char c = *pos;
+        unsigned char c = *pos;
 
         if (isWordCharASCII(c))
             res += c;
         else
         {
             res += '%';
-            res += hexUppercase(c / 16);
-            res += hexUppercase(c % 16);
+            res += hexDigitUppercase(c / 16);
+            res += hexDigitUppercase(c % 16);
         }
 
         ++pos;
@@ -38,23 +38,17 @@ std::string unescapeForFileName(const std::string & s)
 
     while (pos != end)
     {
-        if (*pos != '%')
+        if (!(*pos == '%' && pos + 2 < end))
+        {
             res += *pos;
+            ++pos;
+        }
         else
         {
-            /// skip '%'
-            if (++pos == end) break;
-
-            char val = unhex(*pos) * 16;
-
-            if (++pos == end) break;
-
-            val += unhex(*pos);
-
-            res += val;
+            ++pos;
+            res += unhex2(pos);
+            pos += 2;
         }
-
-        ++pos;
     }
     return res;
 }

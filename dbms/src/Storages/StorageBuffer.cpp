@@ -296,7 +296,7 @@ private:
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, std::unique_lock<std::mutex> && lock)
     {
-        time_t current_time = time(0);
+        time_t current_time = time(nullptr);
 
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
@@ -434,7 +434,7 @@ void StorageBuffer::flushAllBuffers(const bool check_thresholds)
 void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 {
     Block block_to_write;
-    time_t current_time = time(0);
+    time_t current_time = time(nullptr);
 
     size_t rows = 0;
     size_t bytes = 0;

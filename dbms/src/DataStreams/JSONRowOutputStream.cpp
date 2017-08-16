@@ -18,12 +18,10 @@ JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & samp
         if (!sample_.getByPosition(i).type->isNumeric())
             have_non_numeric_columns = true;
 
-        String field_name_quoted;
-        {
-            WriteBufferFromString out(field_name_quoted);
-            writeJSONString(fields[i].name, out);
-        }
-        fields[i].name = field_name_quoted;
+        WriteBufferFromOwnString out;
+        writeJSONString(fields[i].name, out);
+
+        fields[i].name = out.str();
     }
 
     if (have_non_numeric_columns)

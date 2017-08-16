@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromVector.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
@@ -59,6 +58,8 @@ public:
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -117,16 +118,6 @@ private:
             }
             data_to.resize(buf_to.count());
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            std::string res;
-            {
-                WriteBufferFromString buf(res);
-                writeBitmask<T>(col_from->template getValue<T>(), buf);
-            }
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), res);
-        }
         else
         {
             return false;
@@ -159,6 +150,8 @@ public:
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -202,11 +195,6 @@ private:
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
-        }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            block.getByPosition(result).column = DataTypeString().createConstColumn(
-                col_from->size(), formatReadableSizeWithBinarySuffix(col_from->template getValue<T>()));
         }
         else
         {

@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -24,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -363,12 +365,9 @@ void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, Wri
 void DataTypeArray::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     /// There is no good way to serialize an array in CSV. Therefore, we serialize it into a string, and then write the resulting string in CSV.
-    String s;
-    {
-        WriteBufferFromString wb(s);
-        serializeText(column, row_num, wb);
-    }
-    writeCSV(s, ostr);
+    WriteBufferFromOwnString wb;
+    serializeText(column, row_num, wb);
+    writeCSV(wb.str(), ostr);
 }
 
 

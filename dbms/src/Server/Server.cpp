@@ -2,200 +2,68 @@
 
 #include <memory>
 #include <sys/resource.h>
+
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Net/DNS.h>
-#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
-#include <Poco/Util/XMLConfiguration.h>
+
+#include <ext/scope_guard.h>
+
 #include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
-#include <ext/scope_guard.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <common/getMemoryAmount.h>
+
+#include <Common/ClickHouseRevision.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Common/config.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <common/getMemoryAmount.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+
 #include <IO/HTTPCommon.h>
+
 #include <Interpreters/AsynchronousMetrics.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/DDLWorker.h>
 
 #include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
-#include "ConfigReloader.h"
-#include "HTTPHandler.h"
-#include "InterserverIOHTTPHandler.h"
-#include "MetricsTransmitter.h"
-#include "ReplicasStatusHandler.h"
-#include "StatusFile.h"
-#include "TCPHandler.h"
 
-#include <Common/config.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Functions/registerFunctions.h>
+#include <TableFunctions/registerTableFunctions.h>
+
+#include "ConfigReloader.h"
+#include "HTTPHandlerFactory.h"
+#include "MetricsTransmitter.h"
+#include "StatusFile.h"
+#include "TCPHandlerFactory.h"
+
 #if Poco_NetSSL_FOUND
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
 
-#include <Functions/registerFunctions.h>
-#include <AggregateFunctions/registerAggregateFunctions.h>
-#include <TableFunctions/registerTableFunctions.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric Revision;
+}
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
 }
-
-
-/// Response with "Ok.\n". Used for availability checks.
-class PingRequestHandler : public Poco::Net::HTTPRequestHandler
-{
-public:
-    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
-    {
-        try
-        {
-            setResponseDefaultHeaders(response);
-            const char * data = "Ok.\n";
-            response.sendBuffer(data, strlen(data));
-        }
-        catch (...)
-        {
-            tryLogCurrentException("PingRequestHandler");
-        }
-    }
-};
-
-/// Response with custom string. Can be used for browser.
-class RootRequestHandler : public Poco::Net::HTTPRequestHandler
-{
-public:
-    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
-    {
-        try
-        {
-            setResponseDefaultHeaders(response);
-            response.setContentType("text/html; charset=UTF-8");
-            const std::string data = Poco::Util::Application::instance().config().getString("http_server_default_response", "Ok.\n");
-            response.sendBuffer(data.data(), data.size());
-        }
-        catch (...)
-        {
-            tryLogCurrentException("RootRequestHandler");
-        }
-    }
-};
-
-
-/// Response with 404 and verbose description.
-class NotFoundHandler : public Poco::Net::HTTPRequestHandler
-{
-public:
-    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
-    {
-        try
-        {
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-            response.send() << "There is no handle " << request.getURI() << "\n\n"
-                            << "Use / or /ping for health checks.\n"
-                            << "Or /replicas_status for more sophisticated health checks.\n\n"
-                            << "Send queries from your program with POST method or GET /?query=...\n\n"
-                            << "Use clickhouse-client:\n\n"
-                            << "For interactive data analysis:\n"
-                            << "    clickhouse-client\n\n"
-                            << "For batch query processing:\n"
-                            << "    clickhouse-client --query='SELECT 1' > result\n"
-                            << "    clickhouse-client < query > result\n";
-        }
-        catch (...)
-        {
-            tryLogCurrentException("NotFoundHandler");
-        }
-    }
-};
-
-
-template <typename HandlerType>
-class HTTPRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
-{
-private:
-    Server & server;
-    Logger * log;
-    std::string name;
-
-public:
-    HTTPRequestHandlerFactory(Server & server_, const std::string & name_) : server(server_), log(&Logger::get(name_)), name(name_)
-    {
-    }
-
-    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
-    {
-        LOG_TRACE(log,
-            "HTTP Request for " << name << ". "
-                                << "Method: "
-                                << request.getMethod()
-                                << ", Address: "
-                                << request.clientAddress().toString()
-                                << ", User-Agent: "
-                                << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
-
-        const auto & uri = request.getURI();
-
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
-        {
-            if (uri == "/")
-                return new RootRequestHandler;
-            if (uri == "/ping")
-                return new PingRequestHandler;
-            else if (startsWith(uri, "/replicas_status"))
-                return new ReplicasStatusHandler(*server.global_context);
-        }
-
-        if (uri.find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-        {
-            return new HandlerType(server);
-        }
-
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
-            || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-        {
-            return new NotFoundHandler;
-        }
-
-        return nullptr;
-    }
-};
-
-
-class TCPConnectionFactory : public Poco::Net::TCPServerConnectionFactory
-{
-private:
-    Server & server;
-    Logger * log;
-
-public:
-    TCPConnectionFactory(Server & server_) : server(server_), log(&Logger::get("TCPConnectionFactory"))
-    {
-    }
-
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
-    {
-        LOG_TRACE(log,
-            "TCP Request. "
-                << "Address: "
-                << socket.peerAddress().toString());
-
-        return new TCPHandler(server, socket);
-    }
-};
 
 
 static std::string getCanonicalPath(std::string && path)
@@ -220,6 +88,8 @@ int Server::main(const std::vector<std::string> & args)
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+
+    CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -362,7 +232,7 @@ int Server::main(const std::vector<std::string> & args)
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
 
-    /// Limit on total number of coucurrently executed queries.
+    /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
 
     /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
@@ -408,7 +278,7 @@ int Server::main(const std::vector<std::string> & args)
     {
         /// DDL worker should be started after all tables were loaded
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context));
+        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
 
     SCOPE_EXIT({
@@ -489,7 +359,10 @@ int Server::main(const std::vector<std::string> & args)
                     http_socket.setSendTimeout(settings.send_timeout);
 
                     servers.emplace_back(new Poco::Net::HTTPServer(
-                        new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
+                        new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                        server_pool,
+                        http_socket,
+                        http_params));
 
                     LOG_INFO(log, "Listening http://" + http_socket_address.toString());
                 }
@@ -497,7 +370,7 @@ int Server::main(const std::vector<std::string> & args)
                 /// HTTPS
                 if (config().has("https_port"))
                 {
-                #if Poco_NetSSL_FOUND
+#if Poco_NetSSL_FOUND
                     std::call_once(ssl_init_once, SSLInit);
                     Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
                     Poco::Net::SecureServerSocket http_socket(http_socket_address);
@@ -505,13 +378,16 @@ int Server::main(const std::vector<std::string> & args)
                     http_socket.setSendTimeout(settings.send_timeout);
 
                     servers.emplace_back(new Poco::Net::HTTPServer(
-                        new HTTPRequestHandlerFactory<HTTPHandler>(*this, "HTTPHandler-factory"), server_pool, http_socket, http_params));
+                        new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                        server_pool,
+                        http_socket,
+                        http_params));
 
                     LOG_INFO(log, "Listening https://" + http_socket_address.toString());
-                #else
+#else
                     throw Exception{"https protocol disabled because poco library built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
-                #endif
+#endif
                 }
 
                 /// TCP
@@ -521,8 +397,11 @@ int Server::main(const std::vector<std::string> & args)
                     Poco::Net::ServerSocket tcp_socket(tcp_address);
                     tcp_socket.setReceiveTimeout(settings.receive_timeout);
                     tcp_socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(
-                        new Poco::Net::TCPServer(new TCPConnectionFactory(*this), server_pool, tcp_socket, new Poco::Net::TCPServerParams));
+                    servers.emplace_back(new Poco::Net::TCPServer(
+                        new TCPHandlerFactory(*this),
+                        server_pool,
+                        tcp_socket,
+                        new Poco::Net::TCPServerParams));
 
                     LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
                 }
@@ -539,7 +418,7 @@ int Server::main(const std::vector<std::string> & args)
                     interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
                     interserver_io_http_socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::HTTPServer(
-                        new HTTPRequestHandlerFactory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
+                        new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         interserver_io_http_socket,
                         http_params));
@@ -558,7 +437,6 @@ int Server::main(const std::vector<std::string> & args)
                 else
                     throw;
             }
-
         }
 
         if (servers.empty())

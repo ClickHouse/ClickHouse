@@ -24,7 +24,7 @@ const char * IAST::hilite_alias      = "\033[0;32m";
 const char * IAST::hilite_none       = "\033[0m";
 
 
-/// Quota the identifier with backquotes, if required.
+/// Quote the identifier with backquotes, if required.
 String backQuoteIfNeed(const String & x)
 {
     String res(x.size(), '\0');
@@ -63,12 +63,9 @@ size_t IAST::checkSize(size_t max_size) const
 
 String IAST::getTreeID() const
 {
-    String res;
-    {
-        WriteBufferFromString out(res);
-        getTreeIDImpl(out);
-    }
-    return res;
+    WriteBufferFromOwnString out;
+    getTreeIDImpl(out);
+    return out.str();
 }
 
 

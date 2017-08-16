@@ -952,7 +952,7 @@ void InterpreterSelectQuery::executeAggregation(ExpressionActionsPtr expression,
             max_streams,
             settings.aggregation_memory_efficient_merge_threads
                 ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
-                : max_streams);
+                : static_cast<size_t>(settings.max_threads));
 
         stream_with_non_joined_data = nullptr;
         streams.resize(1);
@@ -1013,8 +1013,8 @@ void InterpreterSelectQuery::executeMergeAggregated(bool overflow_row, bool fina
         streams[0] = std::make_shared<MergingAggregatedMemoryEfficientBlockInputStream>(streams, params, final,
             max_streams,
             settings.aggregation_memory_efficient_merge_threads
-                ? size_t(settings.aggregation_memory_efficient_merge_threads)
-                : size_t(settings.max_threads));
+                ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
+                : static_cast<size_t>(settings.max_threads));
 
         streams.resize(1);
     }

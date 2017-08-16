@@ -16,12 +16,13 @@ namespace DB
 class StorageDistributedDirectoryMonitor
 {
 public:
-    StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name);
+    StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool);
     ~StorageDistributedDirectoryMonitor();
+
+    static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
 private:
     void run();
-    ConnectionPoolPtr createPool(const std::string & name);
     bool findFiles();
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
@@ -37,6 +38,7 @@ private:
     size_t min_batched_block_size_bytes = 0;
     String current_batch_file_path;
 
+    struct BatchHeader;
     struct Batch;
 
     size_t error_count{};

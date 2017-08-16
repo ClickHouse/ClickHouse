@@ -91,7 +91,7 @@ private:
 
 
 /** To write one part.
-  * The data refers to one month, and are written in one part.
+  * The data refers to one partition, and is written in one part.
   */
 class MergedBlockOutputStream : public IMergedBlockOutputStream
 {

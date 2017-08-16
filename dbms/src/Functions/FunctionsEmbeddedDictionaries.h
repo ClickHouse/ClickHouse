@@ -215,6 +215,9 @@ public:
         return arguments[0];
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         /// The dictionary key that defines the "point of view".
@@ -247,11 +250,6 @@ public:
 
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Transform::apply(vec_from[i], dict);
-        }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            block.getByPosition(result).column = DataTypeNumber<T>().createConstColumn(
-                col_from->size(), toField(Transform::apply(col_from->template getValue<T>(), dict)));
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -441,6 +439,9 @@ public:
         return std::make_shared<DataTypeArray>(arguments[0]);
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         /// The dictionary key that defines the "point of view".
@@ -485,19 +486,6 @@ public:
                 }
                 res_offsets[i] = res_values.size();
             }
-        }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            Array res;
-
-            T cur = col_from->template getValue<T>();
-            while (cur)
-            {
-                res.push_back(static_cast<typename NearestFieldType<T>::Type>(cur));
-                cur = Transform::toParent(cur, dict);
-            }
-
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_from->size(), res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -724,6 +712,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         RegionsNames::Language language = RegionsNames::Language::RU;
@@ -753,13 +744,6 @@ public:
                 const StringRef & name_ref = dict.getRegionName(region_ids[i], language);
                 col_to->insertDataWithTerminatingZero(name_ref.data, name_ref.size + 1);
             }
-        }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<UInt32>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            UInt32 region_id = col_from->getValue<UInt32>();
-            const StringRef & name_ref = dict.getRegionName(region_id, language);
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(col_from->size(), name_ref.toString());
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()

@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
 #include <Functions/Conditional/getArrayType.h>
@@ -1400,7 +1401,7 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     const typename ColumnVector<T>::Container_t & values = nested->getData();
 
     using Set = ClearableHashSet<T, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1446,7 +1447,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
     using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1513,7 +1514,7 @@ bool FunctionArrayUniq::execute128bit(
         return false;
 
     using Set = ClearableHashSet<UInt128, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     /// Suppose that, for a given row, each of the N columns has an array whose length is M.
     /// Denote arr_i each of these arrays (1 <= i <= N). Then the following is performed:
@@ -1574,7 +1575,7 @@ void FunctionArrayUniq::executeHashed(
     size_t count = columns.size();
 
     using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     Set set;
     size_t prev_off = 0;
@@ -1726,7 +1727,7 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     const typename ColumnVector<T>::Container_t & values = nested->getData();
 
     using ValuesToIndices = ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1771,7 +1772,7 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
 
     size_t prev_off = 0;
     using ValuesToIndices = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     const PaddedPODArray<UInt8> * null_map_data = nullptr;
     if (null_map)
@@ -1839,7 +1840,7 @@ bool FunctionArrayEnumerateUniq::execute128bit(
         return false;
 
     using ValuesToIndices = ClearableHashMap<UInt128, UInt32, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     ValuesToIndices indices;
     size_t prev_off = 0;
@@ -1885,7 +1886,7 @@ void FunctionArrayEnumerateUniq::executeHashed(
     size_t count = columns.size();
 
     using ValuesToIndices = ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1 << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     ValuesToIndices indices;
     size_t prev_off = 0;
@@ -2772,52 +2773,13 @@ void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
             throw Exception("First argument for function " + getName() + " (name of aggregate function) cannot be empty.",
                 ErrorCodes::BAD_ARGUMENTS);
 
-        bool has_parameters = ')' == aggregate_function_name_with_params.back();
-
-        String aggregate_function_name = aggregate_function_name_with_params;
-        String parameters;
+        String aggregate_function_name;
         Array params_row;
+        getAggregateFunctionNameAndParametersArray(aggregate_function_name_with_params,
+                                                   aggregate_function_name, params_row, "function " + getName());
 
-        if (has_parameters)
-        {
-            size_t pos = aggregate_function_name_with_params.find('(');
-            if (pos == std::string::npos || pos + 2 >= aggregate_function_name_with_params.size())
-                throw Exception("First argument for function " + getName() + " doesn't look like aggregate function name.",
-                    ErrorCodes::BAD_ARGUMENTS);
-
-            aggregate_function_name = aggregate_function_name_with_params.substr(0, pos);
-            parameters = aggregate_function_name_with_params.substr(pos + 1, aggregate_function_name_with_params.size() - pos - 2);
-
-            if (aggregate_function_name.empty())
-                throw Exception("First argument for function " + getName() + " doesn't look like aggregate function name.",
-                    ErrorCodes::BAD_ARGUMENTS);
-
-            ParserExpressionList params_parser(false);
-            ASTPtr args_ast = parseQuery(params_parser,
-                parameters.data(), parameters.data() + parameters.size(),
-                "parameters of aggregate function");
-
-            ASTExpressionList & args_list = typeid_cast<ASTExpressionList &>(*args_ast);
-
-            if (args_list.children.empty())
-                throw Exception("Incorrect list of parameters to aggregate function "
-                    + aggregate_function_name, ErrorCodes::BAD_ARGUMENTS);
-
-            params_row.reserve(args_list.children.size());
-            for (const auto & child : args_list.children)
-            {
-                const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(child.get());
-                if (!lit)
-                    throw Exception("Parameters to aggregate functions must be literals",
-                        ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
-
-                params_row.push_back(lit->value);
-            }
-        }
-
-        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types);
-
-        if (has_parameters)
+        aggregate_function = AggregateFunctionFactory::instance().get(aggregate_function_name, argument_types, params_row);
+        if (!params_row.empty())
             aggregate_function->setParameters(params_row);
         aggregate_function->setArguments(argument_types);
     }
@@ -2912,36 +2874,6 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     {
         block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(rows, res_col[0]);
     }
-}
-
-
-void registerFunctionsArray(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionArray>();
-    factory.registerFunction<FunctionArrayElement>();
-    factory.registerFunction<FunctionHas>();
-    factory.registerFunction<FunctionIndexOf>();
-    factory.registerFunction<FunctionCountEqual>();
-    factory.registerFunction<FunctionArrayEnumerate>();
-    factory.registerFunction<FunctionArrayEnumerateUniq>();
-    factory.registerFunction<FunctionArrayUniq>();
-    factory.registerFunction<FunctionEmptyArrayUInt8>();
-    factory.registerFunction<FunctionEmptyArrayUInt16>();
-    factory.registerFunction<FunctionEmptyArrayUInt32>();
-    factory.registerFunction<FunctionEmptyArrayUInt64>();
-    factory.registerFunction<FunctionEmptyArrayInt8>();
-    factory.registerFunction<FunctionEmptyArrayInt16>();
-    factory.registerFunction<FunctionEmptyArrayInt32>();
-    factory.registerFunction<FunctionEmptyArrayInt64>();
-    factory.registerFunction<FunctionEmptyArrayFloat32>();
-    factory.registerFunction<FunctionEmptyArrayFloat64>();
-    factory.registerFunction<FunctionEmptyArrayDate>();
-    factory.registerFunction<FunctionEmptyArrayDateTime>();
-    factory.registerFunction<FunctionEmptyArrayString>();
-    factory.registerFunction<FunctionEmptyArrayToSingle>();
-    factory.registerFunction<FunctionRange>();
-    factory.registerFunction<FunctionArrayReduce>();
-    factory.registerFunction<FunctionArrayReverse>();
 }
 
 }

@@ -5,7 +5,6 @@
 
 #include <Common/escapeForFileName.h>
 
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 

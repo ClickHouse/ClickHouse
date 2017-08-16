@@ -194,7 +194,7 @@ Renames one or more tables.
 
     RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 
- All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
+All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
 
 ALTER
 ~~~~~
@@ -373,6 +373,7 @@ As an alternative, you can manually copy data from the ``/var/lib/clickhouse/dat
 ``ALTER TABLE ... FREEZE PARTITION`` only copies data, not table metadata. To make a backup of table metadata, copy the file  ``/var/lib/clickhouse/metadata/database/table.sql``
 
 To restore from a backup:
+
 * Use the CREATE query to create the table if it doesn't exist. The query can be taken from an .sql file (replace ATTACH in it with CREATE).
 * Copy data from the ``data/database/table/`` directory inside the backup to the ``/var/lib/clickhouse/data/database/table/detached/`` directory.
 * Run ``ALTER TABLE ... ATTACH PARTITION YYYYMM``queries where ``YYYYMM`` is the month, for every month.

@@ -482,7 +482,8 @@ template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto va
  *  least(Date, Date) -> Date
  *  greatest(Date, Date) -> Date
  *  All other operations are not defined and return InvalidType, operations on
- *  distinct date types are also undefined (e.g. DataTypeDate - DataTypeDateTime) */
+ *  distinct date types are also undefined (e.g. DataTypeDate - DataTypeDateTime)
+ */
 template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
 struct DateBinaryOperationTraits
 {
@@ -498,11 +499,7 @@ struct DateBinaryOperationTraits
                     Else<
                         If<IsIntegral<LeftDataType>::value && IsDateOrDateTime<RightDataType>::value,
                             Then<RightDataType>,
-                            Else<InvalidType>
-                        >
-                    >
-                >
-            >,
+                            Else<InvalidType>>>>>,
             Else<
                 If<std::is_same<Op, MinusImpl<T0, T1>>::value,
                     Then<
@@ -513,24 +510,13 @@ struct DateBinaryOperationTraits
                                     Else<
                                         If<IsIntegral<RightDataType>::value,
                                             Then<LeftDataType>,
-                                            Else<InvalidType>
-                                        >
-                                    >
-                                >
-                            >,
-                            Else<InvalidType>
-                        >
-                    >,
+                                            Else<InvalidType>>>>>,
+                            Else<InvalidType>>>,
                     Else<
                         If<std::is_same<T0, T1>::value
                             && (std::is_same<Op, LeastImpl<T0, T1>>::value || std::is_same<Op, GreatestImpl<T0, T1>>::value),
                             Then<LeftDataType>,
-                            Else<InvalidType>
-                        >
-                    >
-                >
-            >
-        >;
+                            Else<InvalidType>>>>>>;
 };
 
 
@@ -542,18 +528,12 @@ struct BinaryOperationTraits
         If<IsDateOrDateTime<LeftDataType>::value || IsDateOrDateTime<RightDataType>::value,
             Then<
                 typename DateBinaryOperationTraits<
-                    Operation, LeftDataType, RightDataType
-                >::ResultDataType
-            >,
+                    Operation, LeftDataType, RightDataType>::ResultDataType>,
             Else<
                 typename DataTypeFromFieldType<
                     typename Operation<
                         typename LeftDataType::FieldType,
-                        typename RightDataType::FieldType
-                    >::ResultType
-                >::Type
-            >
-        >;
+                        typename RightDataType::FieldType>::ResultType>::Type>>;
 };
 
 
@@ -587,7 +567,7 @@ private:
     {
         using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
 
-        if (typeid_cast<const RightDataType *>(&*arguments[1]))
+        if (typeid_cast<const RightDataType *>(arguments[1].get()))
             return checkRightTypeImpl<ResultDataType>(type_res);
 
         return false;
@@ -596,7 +576,7 @@ private:
     template <typename T0>
     bool checkLeftType(const DataTypes & arguments, DataTypePtr & type_res) const
     {
-        if (typeid_cast<const T0 *>(&*arguments[0]))
+        if (typeid_cast<const T0 *>(arguments[0].get()))
         {
             if (   checkRightType<T0, DataTypeDate>(arguments, type_res)
                 || checkRightType<T0, DataTypeDateTime>(arguments, type_res)
@@ -611,9 +591,6 @@ private:
                 || checkRightType<T0, DataTypeFloat32>(arguments, type_res)
                 || checkRightType<T0, DataTypeFloat64>(arguments, type_res))
                 return true;
-            else
-                throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         return false;
     }
@@ -834,7 +811,7 @@ private:
     template <typename T0>
     bool checkType(const DataTypes & arguments, DataTypePtr & result) const
     {
-        if (typeid_cast<const T0 *>(&*arguments[0]))
+        if (typeid_cast<const T0 *>(arguments[0].get()))
         {
             result = std::make_shared<DataTypeNumber<typename Op<typename T0::FieldType>::ResultType>>();
             return true;
@@ -858,16 +835,6 @@ private:
 
             return true;
         }
-        else if (auto col = checkAndGetColumnConst<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            using ResultType = typename Op<T0>::ResultType;
-
-            ResultType res = 0;
-            UnaryOperationImpl<T0, Op<T0>>::constant(col->template getValue<T0>(), res);
-            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col->size(), toField(res));
-
-            return true;
-        }
 
         return false;
     }
@@ -880,6 +847,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return is_injective; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1177,6 +1146,7 @@ public:
                 ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
 
         const auto first_arg = arguments.front().get();
+
         if (!checkDataType<DataTypeUInt8>(first_arg)
             && !checkDataType<DataTypeUInt16>(first_arg)
             && !checkDataType<DataTypeUInt32>(first_arg)

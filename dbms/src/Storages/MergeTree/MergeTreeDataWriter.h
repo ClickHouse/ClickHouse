@@ -44,7 +44,7 @@ public:
     MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Logger::get(data.getLogName() + " (Writer)")) {}
 
     /** Split the block to blocks, each of them must be written as separate part.
-      *  (split rows by months)
+      *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
     BlocksWithDateIntervals splitBlockIntoParts(const Block & block);

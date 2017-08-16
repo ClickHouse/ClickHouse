@@ -28,6 +28,7 @@ add_subdirectory (src)
 add_library(string_utils
     src/Common/StringUtils.h
     src/Common/StringUtils.cpp)
+target_include_directories (string_utils PRIVATE ${DBMS_INCLUDE_DIR})
 
 set(dbms_headers)
 set(dbms_sources)
@@ -59,8 +60,8 @@ add_headers_only(dbms src/Server)
 list (APPEND dbms_sources ${CONFIG_BUILD})
 list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
-list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp)
-list (APPEND dbms_headers src/Functions/IFunction.h   src/Functions/FunctionFactory.h)
+list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
+list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
@@ -70,7 +71,8 @@ list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionForEach.cpp
     src/AggregateFunctions/AggregateFunctionIf.cpp
     src/AggregateFunctions/AggregateFunctionMerge.cpp
-    src/AggregateFunctions/AggregateFunctionCount.cpp)
+    src/AggregateFunctions/AggregateFunctionCount.cpp
+    src/AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
     src/AggregateFunctions/IAggregateFunction.h
@@ -81,7 +83,8 @@ list (APPEND dbms_headers
     src/AggregateFunctions/AggregateFunctionForEach.h
     src/AggregateFunctions/AggregateFunctionIf.h
     src/AggregateFunctions/AggregateFunctionMerge.h
-    src/AggregateFunctions/AggregateFunctionCount.h)
+    src/AggregateFunctions/AggregateFunctionCount.h
+    src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
 list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
@@ -148,7 +151,7 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-if (NOT AARCH64)
+if (NOT ARCH_ARM)
     set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
 
@@ -161,12 +164,13 @@ endif()
 target_link_libraries (dbms
     common
     ${MYSQLXX_LIBRARY}
-    cityhash farmhash metrohash
+    ${FARMHASH_LIBRARIES}
+    ${METROHASH_LIBRARIES}
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
     ${ZOOKEEPER_LIBRARY}
     string_utils
-    ${DOUBLE_CONVERSION_LIBRARY}
+    ${DOUBLE_CONVERSION_LIBRARIES}
     ${ZLIB_LIBRARIES}
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
     ${RE2_LIBRARY}
@@ -174,7 +178,7 @@ target_link_libraries (dbms
     ${OPENSSL_CRYPTO_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${Poco_Data_LIBRARY}
-    btrie
+    ${BTRIE_LIBRARIES}
 )
 
 if (Poco_DataODBC_FOUND)
@@ -198,18 +202,17 @@ endif ()
 target_link_libraries (dbms
     ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
-    ${LTDL_LIB}
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
-target_include_directories (dbms BEFORE PRIVATE ${CPUID_INCLUDE_DIR})
-target_include_directories (dbms BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
-target_include_directories (dbms BEFORE PRIVATE ${BTRIE_INCLUDE_DIR})
-target_include_directories (dbms BEFORE PRIVATE ${CITYHASH_INCLUDE_DIR})
-target_include_directories (dbms PUBLIC ${MYSQLXX_INCLUDE_DIR})
-target_include_directories (dbms PRIVATE ${POCOEXT_INCLUDE_DIR})
-target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
+
+# only for copy_headers.sh:
+target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${DOUBLE_CONVERSION_INCLUDE_DIR})
+
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)

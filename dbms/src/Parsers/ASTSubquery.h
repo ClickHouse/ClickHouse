@@ -31,8 +31,6 @@ public:
         return ptr;
     }
 
-    String getColumnName() const override { return getTreeID(); }
-
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
@@ -46,6 +44,7 @@ protected:
         children[0]->formatImpl(settings, state, frame_nested);
         settings.ostr << nl_or_nothing << indent_str << ")";
     }
+    String getColumnNameImpl() const override;
 };
 
 }

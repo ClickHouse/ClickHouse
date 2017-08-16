@@ -128,7 +128,7 @@ html_theme_options = {
         ('Switch to Russian <img id="svg-flag" src="/docs/en/_static/ru.svg" width="20" height="12" />', '#ru'),
         ('Single page documentation', '/docs/en/single/'),
         ('Website home', '/'),
-        ('ClickHouse repository', 'https://github.com/yandex/ClickHouse'),
+        ('Source code', 'https://github.com/yandex/ClickHouse'),
         ('Edit this page', '#edit'),
     ])
 }
@@ -174,9 +174,9 @@ html_static_path = ['../_static']
 html_sidebars = {
     '**': [
         'about.html',
+        'searchbox.html',
         'navigation.html',
         'relations.html',
-        'searchbox.html',
     ]
 }
 
@@ -292,5 +292,10 @@ texinfo_documents = [
 # If true, do not generate a @detailmenu in the "Top" node's menu.
 #texinfo_no_detailmenu = False
 
+def add_filters(app):
+    import json
+    app.builder.templates.environment.filters[str('escapejs')] = lambda x: json.dumps(unicode(x))
+
 def setup(app):
     app.add_javascript('custom.js')
+    app.connect(str('builder-inited'), add_filters)

@@ -2,9 +2,9 @@
 
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Poco/RWLock.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Columns/IColumn.h>
+#include <shared_mutex>
 
 
 class SipHash;
@@ -44,6 +44,7 @@ struct MergeTreeDataPartChecksums
 {
     using Checksum = MergeTreeDataPartChecksum;
 
+    /// The order is important.
     using FileChecksums = std::map<String, Checksum>;
     FileChecksums files;
 
@@ -82,7 +83,7 @@ class MergeTreeData;
 
 
 /// Description of the data part.
-struct MergeTreeDataPart : public ActiveDataPartSet::Part
+struct MergeTreeDataPart
 {
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
@@ -109,8 +110,16 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /// Returns part->name with prefixes like 'tmp_<name>'
     String getNameWithPrefix() const;
 
+    bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
+
 
     MergeTreeData & storage;
+
+    String name;
+    MergeTreePartInfo info;
+
+    DayNum_t min_date;
+    DayNum_t max_date;
 
     /// A directory path (realative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
@@ -145,7 +154,7 @@ struct MergeTreeDataPart : public ActiveDataPartSet::Part
     /** It is blocked for writing when changing columns, checksums or any part files.
         * Locked to read when reading columns, checksums or any part files.
         */
-    mutable Poco::RWLock columns_lock;
+    mutable std::shared_mutex columns_lock;
 
     /** It is taken for the whole time ALTER a part: from the beginning of the recording of the temporary files to their renaming to permanent.
         * It is taken with unlocked `columns_lock`.

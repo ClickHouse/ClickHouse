@@ -2,6 +2,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -21,6 +23,7 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
     return {};
 }
 
+
 ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column)
 {
     Block res;
@@ -35,6 +38,93 @@ ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column)
             src_tuple_block.getByPosition(i).name});
 
     return std::make_shared<ColumnTuple>(res);
+}
+
+
+Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
+{
+    std::sort(args.begin(), args.end());
+
+    Block res;
+
+    size_t j = 0;
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        const auto & col = block.getByPosition(i);
+        bool is_inserted = false;
+
+        if ((j < args.size()) && (i == args[j]))
+        {
+            ++j;
+
+            if (col.column->isNullable())
+            {
+                auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
+                const ColumnPtr & nested_col = nullable_col->getNestedColumn();
+
+                auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
+                const DataTypePtr & nested_type = nullable_type->getNestedType();
+
+                res.insert(i, {nested_col, nested_type, col.name});
+
+                is_inserted = true;
+            }
+        }
+
+        if (!is_inserted)
+            res.insert(i, col);
+    }
+
+    return res;
+}
+
+
+Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result)
+{
+    std::sort(args.begin(), args.end());
+
+    Block res;
+
+    size_t j = 0;
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        const auto & col = block.getByPosition(i);
+        bool is_inserted = false;
+
+        if ((j < args.size()) && (i == args[j]))
+        {
+            ++j;
+
+            if (col.column->isNullable())
+            {
+                auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
+                const ColumnPtr & nested_col = nullable_col->getNestedColumn();
+
+                auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
+                const DataTypePtr & nested_type = nullable_type->getNestedType();
+
+                res.insert(i, {nested_col, nested_type, col.name});
+
+                is_inserted = true;
+            }
+        }
+        else if (i == result)
+        {
+            if (col.type->isNullable())
+            {
+                auto nullable_type = static_cast<const DataTypeNullable *>(col.type.get());
+                const DataTypePtr & nested_type = nullable_type->getNestedType();
+
+                res.insert(i, {nullptr, nested_type, col.name});
+                is_inserted = true;
+            }
+        }
+
+        if (!is_inserted)
+            res.insert(i, col);
+    }
+
+    return res;
 }
 
 }

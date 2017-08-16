@@ -34,6 +34,7 @@ namespace ErrorCodes
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -71,7 +72,7 @@ public:
 
     FunctionArray(const Context & context);
 
-    bool hasSpecialSupportForNulls() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -1002,10 +1003,7 @@ public:
         return name;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

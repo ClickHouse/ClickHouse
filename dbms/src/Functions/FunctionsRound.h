@@ -179,9 +179,9 @@ enum ScaleMode
 };
 
 #if !defined(_MM_FROUND_NINT)
-#define _MM_FROUND_NINT        0
-#define _MM_FROUND_FLOOR     1
-#define _MM_FROUND_CEIL        2
+#define _MM_FROUND_NINT  0
+#define _MM_FROUND_FLOOR 1
+#define _MM_FROUND_CEIL  2
 #endif
 
 /** Implementing low-level rounding functions for integer values.
@@ -988,12 +988,6 @@ struct Cruncher
 
         Op::apply(col->getData(), scale, vec_res);
     }
-
-    static inline void apply(Block & block, const ColumnConst * col, const ColumnNumbers & arguments, size_t result, size_t scale)
-    {
-        T res = Op::apply(col->getValue<T>(), scale);
-        block.getByPosition(result).column = DataTypeNumber<T>().createConstColumn(col->size(), toField(res));
-    }
 };
 
 /** Select the appropriate processing algorithm depending on the scale.
@@ -1053,13 +1047,7 @@ private:
             Dispatcher<T, ColumnVector<T>, rounding_mode>::apply(block, col, arguments, result);
             return true;
         }
-        else if (auto col = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            Dispatcher<T, ColumnConst, rounding_mode>::apply(block, col, arguments, result);
-            return true;
-        }
-        else
-            return false;
+        return false;
     }
 
 public:
@@ -1106,6 +1094,9 @@ public:
         return arguments[0];
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (!(    executeForType<UInt8>(block, arguments, result)
@@ -1136,12 +1127,12 @@ public:
     }
 };
 
-struct NameRoundToExp2        { static constexpr auto name = "roundToExp2"; };
-struct NameRoundDuration    { static constexpr auto name = "roundDuration"; };
-struct NameRoundAge         { static constexpr auto name = "roundAge"; };
-struct NameRound            { static constexpr auto name = "round"; };
-struct NameCeil                { static constexpr auto name = "ceil"; };
-struct NameFloor            { static constexpr auto name = "floor"; };
+struct NameRoundToExp2 { static constexpr auto name = "roundToExp2"; };
+struct NameRoundDuration { static constexpr auto name = "roundDuration"; };
+struct NameRoundAge { static constexpr auto name = "roundAge"; };
+struct NameRound { static constexpr auto name = "round"; };
+struct NameCeil { static constexpr auto name = "ceil"; };
+struct NameFloor { static constexpr auto name = "floor"; };
 
 using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
 using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl, NameRoundDuration, false>;

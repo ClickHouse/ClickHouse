@@ -31,6 +31,9 @@ const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
 const UInt32 MEDIUM_SESSION_TIMEOUT = 120000;
 const UInt32 BIG_SESSION_TIMEOUT = 600000;
 
+/// Preferred size of multi() command (in number of ops)
+constexpr size_t MULTI_BATCH_SIZE = 100;
+
 struct WatchContext;
 
 
@@ -46,7 +49,7 @@ struct WatchContext;
 /// Modifying methods do not retry, because it leads to problems of the double-delete type.
 ///
 /// Methods with names not starting at try- raise KeeperException on any error.
- class ZooKeeper
+class ZooKeeper
 {
 public:
     using Ptr = std::shared_ptr<ZooKeeper>;
@@ -92,7 +95,7 @@ public:
     /// Throw an exception if something went wrong.
     std::string create(const std::string & path, const std::string & data, int32_t mode);
 
-    /// Doesn not throw in the following cases:
+    /// Does not throw in the following cases:
     /// * The parent for the created node does not exist
     /// * The parent is ephemeral.
     /// * The node already exists.
@@ -241,7 +244,7 @@ public:
         /// The caller is responsible for ensuring that the context lives until the callback
         /// is finished and we can't simply pass ownership of the context into function object.
         /// Instead, we save the context in a Future object and return it to the caller.
-        /// The cantext will live until the Future lives.
+        /// The context will live until the Future lives.
         /// Context data is wrapped in an unique_ptr so that its address (which is passed to
         /// libzookeeper) remains unchanged after the Future is returned from the function.
         ///
@@ -258,7 +261,9 @@ public:
         std::future<Result> future;
 
         template <typename... Args>
-        Future(Args &&... args) : task(new TaskPtr(new Task(std::forward<Args>(args)...))), future((*task)->get_future()) {}
+        Future(Args &&... args) :
+            task(std::make_unique<TaskPtr>(std::make_unique<Task>(std::forward<Args>(args)...))),
+            future((*task)->get_future()) {}
 
     public:
         Result get()
@@ -318,6 +323,19 @@ public:
     RemoveFuture asyncRemove(const std::string & path);
 
 
+    struct OpResultsAndCode
+    {
+        OpResultsPtr results;
+        std::shared_ptr<Ops> ops_ptr;
+        int code;
+    };
+
+    using MultiFuture = Future<OpResultsAndCode, int>;
+    MultiFuture asyncMulti(const Ops & ops);
+    /// Like the previous one but don't throw any exceptions on future.get()
+    MultiFuture tryAsyncMulti(const Ops & ops);
+
+
     static std::string error2string(int32_t code);
 
     /// Max size of node contents in bytes.
@@ -344,7 +362,7 @@ private:
     static void destroyContext(WatchContext * context);
     static void processCallback(zhandle_t * zh, int type, int state, const char * path, void * watcher_ctx);
 
-    template <class T>
+    template <typename T>
     int32_t retry(T && operation, size_t * attempt = nullptr)
     {
         int32_t code = operation();
@@ -375,6 +393,8 @@ private:
     int32_t getChildrenImpl(const std::string & path, Strings & res, Stat * stat, WatchCallback watch_callback);
     int32_t multiImpl(const Ops & ops, OpResultsPtr * out_results = nullptr);
     int32_t existsImpl(const std::string & path, Stat * stat_, WatchCallback watch_callback);
+
+    MultiFuture asyncMultiImpl(const zkutil::Ops & ops_, bool throw_exception);
 
     std::string hosts;
     int32_t session_timeout_ms;

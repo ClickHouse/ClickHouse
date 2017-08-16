@@ -8,6 +8,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsArithmetic.h>
 #include <Functions/FunctionHelpers.h>
+#include <type_traits>
 
 
 namespace DB
@@ -392,16 +393,6 @@ private:
 
             return true;
         }
-        else if (auto col = checkAndGetColumnConst<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            UInt8 res = 0;
-            UnaryOperationImpl<T, Impl<T>>::constant(col->template getValue<T>(), res);
-
-            auto col_res = DataTypeUInt8().createConstColumn(col->size(), toField(res));
-            block.getByPosition(result).column = col_res;
-
-            return true;
-        }
 
         return false;
     }
@@ -425,6 +416,8 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (!( executeType<UInt8>(block, arguments, result)
@@ -444,14 +437,14 @@ public:
 };
 
 
-struct NameAnd    { static constexpr auto name = "and"; };
-struct NameOr    { static constexpr auto name = "or"; };
-struct NameXor    { static constexpr auto name = "xor"; };
-struct NameNot    { static constexpr auto name = "not"; };
+struct NameAnd { static constexpr auto name = "and"; };
+struct NameOr { static constexpr auto name = "or"; };
+struct NameXor { static constexpr auto name = "xor"; };
+struct NameNot { static constexpr auto name = "not"; };
 
-using FunctionAnd = FunctionAnyArityLogical    <AndImpl,    NameAnd>;
-using FunctionOr = FunctionAnyArityLogical    <OrImpl,    NameOr>    ;
-using FunctionXor = FunctionAnyArityLogical    <XorImpl,    NameXor>;
-using FunctionNot = FunctionUnaryLogical    <NotImpl,    NameNot>;
+using FunctionAnd = FunctionAnyArityLogical<AndImpl, NameAnd>;
+using FunctionOr = FunctionAnyArityLogical<OrImpl, NameOr>;
+using FunctionXor = FunctionAnyArityLogical<XorImpl, NameXor>;
+using FunctionNot = FunctionUnaryLogical<NotImpl, NameNot>;
 
 }

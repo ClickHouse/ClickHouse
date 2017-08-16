@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <Core/Types.h>
+#include <Common/UInt128.h>
 
 /** Preceptually-correct number comparisons.
   * Example: Int8(-1) != UInt8(255)

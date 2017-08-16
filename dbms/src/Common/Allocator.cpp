@@ -9,6 +9,8 @@
 #include <Common/Exception.h>
 #include <Common/Allocator.h>
 
+#include <IO/WriteHelpers.h>
+
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
@@ -37,7 +39,7 @@ namespace ErrorCodes
   *
   * PS. This is also required, because tcmalloc can not allocate a chunk of memory greater than 16 GB.
   */
-static constexpr size_t MMAP_THRESHOLD = 64 * (1 << 20);
+static constexpr size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
 
@@ -54,7 +56,7 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
         if (alignment > MMAP_MIN_ALIGNMENT)
             throw DB::Exception("Too large alignment: more than page size.", DB::ErrorCodes::BAD_ARGUMENTS);
 
-        buf = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        buf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == buf)
             DB::throwFromErrno("Allocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
@@ -128,7 +130,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
 
         buf = mremap(buf, old_size, new_size, MREMAP_MAYMOVE);
         if (MAP_FAILED == buf)
-            DB::throwFromErrno("Allocator: Cannot mremap.", DB::ErrorCodes::CANNOT_MREMAP);
+            DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + DB::toString(old_size) + " to " + DB::toString(new_size) + " bytes.", DB::ErrorCodes::CANNOT_MREMAP);
 
         /// No need for zero-fill, because mmap guarantees it.
     }

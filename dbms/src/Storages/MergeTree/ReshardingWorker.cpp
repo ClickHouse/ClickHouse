@@ -174,10 +174,10 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 
     for (Poco::DirectoryIterator it(data_path); it != end; ++it)
     {
-        const auto filename = it.name();
-        if (!ActiveDataPartSet::isPartDirectory(filename))
+        MergeTreePartInfo part_info;
+        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info))
             continue;
-        if (!startsWith(filename, partition_name))
+        if (part_info.partition_id != partition_name)
             continue;
 
         const auto part_path = it.path().absolute().toString();
@@ -801,8 +801,7 @@ void ReshardingWorker::storeTargetShardsInfo()
 
     zookeeper->tryRemove(getLocalJobPath() + "/shards");
 
-    std::string out;
-    WriteBufferFromString buf{out};
+    WriteBufferFromOwnString buf;
 
     size_t entries_count = 0;
     for (const auto & entry : per_shard_data_parts)
@@ -830,9 +829,7 @@ void ReshardingWorker::storeTargetShardsInfo()
         writeBinary(hash, buf);
     }
 
-    buf.next();
-
-    (void) zookeeper->create(getLocalJobPath() + "/shards", out,
+    zookeeper->create(getLocalJobPath() + "/shards", buf.str(),
         zkutil::CreateMode::Persistent);
 }
 
@@ -1703,17 +1700,7 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
     if (!cluster.getShardsAddresses().empty())
     {
         size_t shard_no = 0;
-        for (const auto & address : cluster.getShardsAddresses())
-        {
-            publish_address(address.host_name, shard_no);
-            publish_address(address.resolved_address.host().toString(), shard_no);
-            ++shard_no;
-        }
-    }
-    else if (!cluster.getShardsWithFailoverAddresses().empty())
-    {
-        size_t shard_no = 0;
-        for (const auto & addresses : cluster.getShardsWithFailoverAddresses())
+        for (const auto & addresses : cluster.getShardsAddresses())
         {
             for (const auto & address : addresses)
             {
@@ -2111,45 +2098,36 @@ std::string ReshardingWorker::dumpCoordinatorState(const std::string & coordinat
 
     auto current_host = getFQDNOrHostName();
 
-    try
+    WriteBufferFromOwnString buf;
+
+    writeString("Coordinator dump: ", buf);
+    writeString("ID: {", buf);
+    writeString(coordinator_id + "}; ", buf);
+
+    auto zookeeper = context.getZooKeeper();
+
+    Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status"));
+
+    if (status.getCode() != STATUS_OK)
     {
-        WriteBufferFromString buf{out};
+        writeString("Global status: {", buf);
+        writeString(status.getMessage() + "}; ", buf);
+    }
 
-        writeString("Coordinator dump: ", buf);
-        writeString("ID: {", buf);
-        writeString(coordinator_id + "}; ", buf);
-
-        auto zookeeper = context.getZooKeeper();
-
-        Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status"));
+    auto hosts = zookeeper->getChildren(getCoordinatorPath(coordinator_id) + "/status");
+    for (const auto & host : hosts)
+    {
+        Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status/" + host));
 
         if (status.getCode() != STATUS_OK)
         {
-            writeString("Global status: {", buf);
+            writeString("NODE ", buf);
+            writeString(((host == current_host) ? "localhost" : host) + ": {", buf);
             writeString(status.getMessage() + "}; ", buf);
         }
-
-        auto hosts = zookeeper->getChildren(getCoordinatorPath(coordinator_id) + "/status");
-        for (const auto & host : hosts)
-        {
-            Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status/" + host));
-
-            if (status.getCode() != STATUS_OK)
-            {
-                writeString("NODE ", buf);
-                writeString(((host == current_host) ? "localhost" : host) + ": {", buf);
-                writeString(status.getMessage() + "}; ", buf);
-            }
-        }
-
-        buf.next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    return out;
+    return buf.str();
 }
 
 /// Compute the hash function from the checksum files of a given part.
@@ -2716,8 +2694,7 @@ void ReshardingWorker::LogRecord::writeBack()
 
 std::string ReshardingWorker::LogRecord::toString()
 {
-    std::string out;
-    WriteBufferFromString buf{out};
+    WriteBufferFromOwnString buf;
 
     writeVarUInt(static_cast<unsigned int>(operation), buf);
     writeVarUInt(static_cast<unsigned int>(state), buf);
@@ -2732,9 +2709,7 @@ std::string ReshardingWorker::LogRecord::toString()
         writeBinary(entry.second, buf);
     }
 
-    buf.next();
-
-    return out;
+    return buf.str();
 }
 
 }

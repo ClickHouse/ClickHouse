@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -133,6 +134,11 @@ void CacheDictionary::isInImpl(
             }
             /// Found ancestor
             else if (parents[parents_idx] == getAt(ancestor_ids, parents_idx))
+            {
+                out[out_idx] = 1;
+            }
+            /// Loop detected
+            else if (children[new_children_idx] == parents[parents_idx])
             {
                 out[out_idx] = 1;
             }

@@ -28,10 +28,21 @@ if (USE_INTERNAL_ZOOKEEPER_LIBRARY)
 	add_subdirectory (libzookeeper)
 endif ()
 
-add_subdirectory (libcityhash)
-add_subdirectory (libfarmhash)
-add_subdirectory (libmetrohash)
-add_subdirectory (libbtrie)
+if (USE_INTERNAL_CITYHASH_LIBRARY)
+    add_subdirectory (libcityhash)
+endif ()
+
+if (USE_INTERNAL_FARMHASH_LIBRARY)
+    add_subdirectory (libfarmhash)
+endif ()
+
+if (USE_INTERNAL_METROHASH_LIBRARY)
+    add_subdirectory (libmetrohash)
+endif ()
+
+if (USE_INTERNAL_BTRIE_LIBRARY)
+    add_subdirectory (libbtrie)
+endif ()
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
 	add_subdirectory (libunwind)
@@ -49,6 +60,6 @@ if (ENABLE_LIBTCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
 	add_subdirectory (libtcmalloc)
 endif ()
 
-if (NOT AARCH64)
+if (NOT ARCH_ARM)
 	add_subdirectory (libcpuid)
 endif ()

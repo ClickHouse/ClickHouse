@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
 
         std::cerr << "Please run `./nozk.sh && sleep 40s && ./yeszk.sh`" << std::endl;
 
-        time_t time0 = time(0);
+        time_t time0 = time(nullptr);
 
         while (true)
         {

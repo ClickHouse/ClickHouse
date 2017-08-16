@@ -1,19 +1,16 @@
 #pragma once
 
-#include <Poco/RWLock.h>
+#include <shared_mutex>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
-/*
- TODO: replace locks with std::shared_mutex - std::unique_lock - std::shared_lock when c++17
-*/
 
 namespace DB
 {
 class ProfilingScopedWriteRWLock
 {
 public:
-    ProfilingScopedWriteRWLock(Poco::RWLock & rwl, ProfileEvents::Event event) :
+    ProfilingScopedWriteRWLock(std::shared_mutex & rwl, ProfileEvents::Event event) :
         watch(),
         scoped_write_lock(rwl)
     {
@@ -21,15 +18,14 @@ public:
     }
 
 private:
-
     Stopwatch watch;
-    Poco::ScopedWriteRWLock scoped_write_lock;
+    std::unique_lock<std::shared_mutex> scoped_write_lock;
 };
 
 class ProfilingScopedReadRWLock
 {
 public:
-    ProfilingScopedReadRWLock(Poco::RWLock & rwl, ProfileEvents::Event event) :
+    ProfilingScopedReadRWLock(std::shared_mutex & rwl, ProfileEvents::Event event) :
         watch(),
         scoped_read_lock(rwl)
     {
@@ -37,9 +33,8 @@ public:
     }
 
 private:
-
     Stopwatch watch;
-    Poco::ScopedReadRWLock scoped_read_lock;
+    std::shared_lock<std::shared_mutex> scoped_read_lock;
 };
 
 }

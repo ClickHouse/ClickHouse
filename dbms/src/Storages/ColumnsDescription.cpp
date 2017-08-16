@@ -23,8 +23,7 @@ namespace ErrorCodes
 template <bool store>
 String ColumnsDescription<store>::toString() const
 {
-    String s;
-    WriteBufferFromString buf{s};
+    WriteBufferFromOwnString buf;
 
     writeString("columns format version: 1\n", buf);
     writeText(columns.size() + materialized.size() + alias.size(), buf);
@@ -58,7 +57,7 @@ String ColumnsDescription<store>::toString() const
     write_columns(materialized);
     write_columns(alias);
 
-    return s;
+    return buf.str();
 }
 
 
