@@ -31,5 +31,5 @@
 * name - Идентификатор, под которым словарь будет доступен для использования. Используйте символы ``[a-zA-Z0-9_\-]``.
 * :ref:`source <dicts-external_dicts_dict_sources>` - Источник словаря.
 * :ref:`layout <dicts-external_dicts_dict_layout>` - Размещение словаря в памяти.
-* :ref:`structure <dicts-external_dicts_dict_structure>` - Ключ словаря.
+* :ref:`structure <dicts-external_dicts_dict_structure>` - Структура словаря. Ключ и атрибуты, которые можно получить по ключу.
 * :ref:`lifetime <dicts-external_dicts_dict_lifetime>` - Периодичность обновления словарей.
