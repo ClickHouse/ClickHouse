@@ -1030,7 +1030,16 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             part->size_in_bytes,
             static_cast<double>(part->size_in_bytes) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, expression);
-        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_method, false);
+
+        /** Don't write offsets for arrays, because ALTER never change them
+         *  (MODIFY COLUMN could only change types of elements but never modify array sizes).
+          * Also note that they does not participate in 'rename_map'.
+          * Also note, that for columns, that are parts of Nested,
+          *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
+          *  will have old name of shared offsets for arrays.
+          */
+        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_method, true /* skip_offsets */);
+
         in.readPrefix();
         out.writePrefix();
 
