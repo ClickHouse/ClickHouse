@@ -1404,7 +1404,7 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
     ostr << "Table " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
          << "Reason:\n"
          << "1. Table size (" << table_size_str << ") is greater than max_table_size_to_drop (" << max_table_size_to_drop_str << ")\n"
-         << "2. File '" << force_file.path() << "' intedned to force DROP "
+         << "2. File '" << force_file.path() << "' intended to force DROP "
             << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
 
     ostr << "How to fix this:\n"
