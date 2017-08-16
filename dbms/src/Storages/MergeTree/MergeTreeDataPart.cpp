@@ -10,9 +10,11 @@
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
@@ -285,6 +287,25 @@ const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksu
 }
 
 
+void MergeTreePartitionIndex::update(const IColumn & column)
+{
+    Field min_value;
+    Field max_value;
+    const auto & date_column = typeid_cast<const ColumnUInt16 &>(column);
+    date_column.getExtremes(min_value, max_value);
+    min_date = std::min(min_date, static_cast<DayNum_t>(get<UInt64>(min_value)));
+    max_date = std::max(max_date, static_cast<DayNum_t>(get<UInt64>(max_value)));
+}
+
+void MergeTreePartitionIndex::merge(const MergeTreePartitionIndex & other)
+{
+    if (other.min_date < min_date)
+        min_date = other.min_date;
+    if (other.max_date > max_date)
+        max_date = other.max_date;
+}
+
+
 /// Returns the size of .bin file for column `name` if found, zero otherwise.
 size_t MergeTreeDataPart::getColumnCompressedSize(const String & name) const
 {
@@ -530,11 +551,12 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
 }
 
 
-void MergeTreeDataPart::loadColumnsChecksumsIndex(bool require_columns_checksums, bool check_consistency)
+void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndex();
+    loadPartitionIndex();
     if (check_consistency)
         checkConsistency(require_columns_checksums);
 }
@@ -584,6 +606,13 @@ void MergeTreeDataPart::loadIndex()
     }
 
     size_in_bytes = calcTotalSize(getFullPath());
+}
+
+void MergeTreeDataPart::loadPartitionIndex()
+{
+    MergeTreePartInfo::parseMinMaxDatesFromPartName(name, partition_idx.min_date, partition_idx.max_date);
+    const auto & date_lut = DateLUT::instance();
+    partition_idx.partition = static_cast<UInt64>(date_lut.toNumYYYYMM(DayNum_t(partition_idx.min_date)));
 }
 
 void MergeTreeDataPart::loadChecksums(bool require)
