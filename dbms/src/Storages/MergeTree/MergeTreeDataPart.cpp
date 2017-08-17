@@ -324,9 +324,7 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
     }
 
     if (!minimum_size_column)
-        throw Exception{
-            "Could not find a column of minimum size in MergeTree",
-            ErrorCodes::LOGICAL_ERROR};
+        throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
 
     return *minimum_size_column;
 }
