@@ -1,5 +1,5 @@
-clickhouse (1.1.54278) unstable; urgency=low
+clickhouse (1.1.54279) unstable; urgency=low
 
   * Modified source code
 
- -- proller <proller@yandex-team.ru>  Fri, 18 Aug 2017 01:51:11 +0300
+ -- proller <proller@yandex-team.ru>  Fri, 18 Aug 2017 02:03:13 +0300
