@@ -246,8 +246,11 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     if (pre_range_reader)
                     {
                         /// Have to read rows from last partly read granula.
-                        auto & range = ranges_to_read.back();
-                        task->current_range_reader = reader->readRange(range.begin, range.end);
+                        if (!ranges_to_read.empty())
+                        {
+                            auto & range = ranges_to_read.back();
+                            task->current_range_reader = reader->readRange(range.begin, range.end);
+                        }
                         /// But can just skip them.
                         task->number_of_rows_to_skip = rows_was_read_in_last_range;
                     }
