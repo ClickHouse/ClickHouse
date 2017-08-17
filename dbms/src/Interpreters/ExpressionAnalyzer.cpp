@@ -943,12 +943,8 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
             ++subquery_index;
         }
 
-        std::cerr << ast->getColumnName() << "\n";
-
         ast->setAlias(alias);
         aliases[alias] = ast;
-
-        std::cerr << ast->getAliasOrColumnName() << "\n";
     }
 }
 
@@ -2741,10 +2737,6 @@ void ExpressionAnalyzer::collectUsedColumns()
             columns_added_by_join.erase(it++);
     }
 
-/*    for (const auto & name_type : columns_added_by_join)
-        std::cerr << "JOINed column (required, not key): " << name_type.name << std::endl;
-    std::cerr << std::endl;*/
-
     /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
     NameSet array_join_sources;
     for (const auto & result_source : array_join_result_to_source)
@@ -2840,15 +2832,6 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
             joined_columns_name_type.emplace_back(col.name, col.type);
         }
     }
-
-/*    for (const auto & name : join_key_names_left)
-        std::cerr << "JOIN key (left): " << name << std::endl;
-    for (const auto & name : join_key_names_right)
-        std::cerr << "JOIN key (right): " << name << std::endl;
-    std::cerr << std::endl;
-    for (const auto & name : joined_columns)
-        std::cerr << "JOINed column: " << name << std::endl;
-    std::cerr << std::endl;*/
 }
 
 
