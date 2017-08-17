@@ -10,8 +10,11 @@ source "./release_lib.sh"
 CONTROL=debian/control
 CHLOG=debian/changelog
 CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Replace comma to '\,'
-
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
+
+if [ -z "$REVISION" ] ; then
+    get_revision_author
+fi
 
 while [[ $1 == --* ]]
 do
@@ -35,9 +38,6 @@ do
     fi
 done
 
-if [ -z "$REVISION" ] ; then
-    get_revision_author
-fi
 
 # Build options
 if [ -n "$SANITIZER" ]
