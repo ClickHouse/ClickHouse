@@ -2892,98 +2892,88 @@ String FunctionArrayConcat::getName() const
 
 DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    bool has_nullable = false;
-    DataTypePtr common_type;
+    if (arguments.empty())
+        throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
+    DataTypes nested_types;
+    nested_types.reserve(arguments.size());
     for (size_t i : ext::range(0, arguments.size()))
     {
-        const auto & argument = arguments[i];
-        auto data_type_array = checkAndGetDataType<DataTypeArray>(argument.get());
-        if (!data_type_array)
+        auto argument = arguments[i].get();
+
+        if (auto data_type_array = checkAndGetDataType<DataTypeArray>(argument))
+            nested_types.push_back(data_type_array->getNestedType());
+        else
             throw Exception("Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
                             + argument->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        DataTypePtr nested_type = data_type_array->getNestedType();
-        if (nested_type->isNullable())
-        {
-            has_nullable = true;
-            auto nullable_type = static_cast<const DataTypeNullable *>(nested_type.get());
-            nested_type = nullable_type->getNestedType();
-        }
-
-        if (!common_type)
-            common_type = nested_type;
-        else if (!common_type->equals(*nested_type.get()))
-            throw Exception("Arguments for function " + getName() + " has different nested types: "
-                            + common_type->getName() + " and " + nested_type->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    if (has_nullable)
-        common_type = std::make_shared<DataTypeNullable>(common_type);
+    if (foundNumericType(nested_types))
+    {
+        /// Since we have found at least one numeric argument, we infer that all
+        /// the arguments are numeric up to nullity. Let's determine the least
+        /// common type.
+        auto enriched_result_type = Conditional::getArrayType(nested_types);
+        return std::make_shared<DataTypeArray>(enriched_result_type);
+    }
+    else
+    {
+        /// Otherwise all the arguments must have the same type up to nullability or nullity.
+        if (!hasArrayIdenticalTypes(nested_types))
+            throw Exception{"Arguments for function " + getName() + " must have same type or behave as number.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-    return std::make_shared<DataTypeArray>(common_type);
+        return std::make_shared<DataTypeArray>(getArrayElementType(nested_types));
+    }
 }
 
 void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     std::cerr << block.dumpStructure() << std::endl;
     auto & result_column = block.getByPosition(result).column;
+    const DataTypePtr & return_type = block.getByPosition(result).type;
+    result_column = return_type->createColumn();
 
-    ColumnPtr column_to_clone_for_result = block.getByPosition(arguments.front()).column;
-    bool is_nullable_result = false;
     size_t size = 0;
 
     for (auto argument : arguments)
     {
         const auto & argument_column = block.safeGetByPosition(argument).column;
-        auto argument_column_array = typeid_cast<ColumnArray *>(argument_column.get());
-        if (checkColumn<ColumnNullable>(&argument_column_array->getData()))
-        {
-            is_nullable_result = true;
-            column_to_clone_for_result = argument_column;
-            break;
-        }
         size = argument_column->size();
     }
 
-    std::vector<ColumnPtr> nullable_columns_holder;
-    std::vector<GenericArraySource> sources;
+    std::vector<std::unique_ptr<IArraySource>> sources;
 
     for (auto argument : arguments)
     {
-        auto & argument_column = block.getByPosition(argument).column;
-        auto argument_column_array = typeid_cast<ColumnArray *>(argument_column.get());
+        auto argument_column = block.getByPosition(argument).column.get();
+        size_t column_size = argument_column->size();
+        bool is_const = false;
 
-        if (is_nullable_result)
+        if (auto argument_column_const = typeid_cast<ColumnConst *>(argument_column))
         {
-            if (!checkColumn<ColumnNullable>(&argument_column_array->getData()))
-            {
-                ColumnPtr null_map = std::make_shared<ColumnUInt8>(argument_column_array->getData().size(), 0);
-                argument_column = std::make_shared<ColumnArray>(
-                        std::make_shared<ColumnNullable>(argument_column_array->getDataPtr(), null_map),
-                        argument_column_array->getOffsetsColumn()
-                );
-            }
-            nullable_columns_holder.push_back(argument_column);
+            is_const = true;
+            argument_column = &argument_column_const->getDataColumn();
         }
-        sources.emplace_back(static_cast<ColumnArray &>(*argument_column.get()));
+
+        if (auto argument_column_array = typeid_cast<ColumnArray *>(argument_column))
+            sources.emplace_back(createArraySource(*argument_column_array, is_const, column_size));
+        else
+            throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
     }
 
-    result_column = column_to_clone_for_result->cloneEmpty();
-    GenericArraySink sink(typeid_cast<ColumnArray &>(*result_column.get()), size);
+    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column.get()), size);
+    concat(sources, *sink);
 
-    while (!sink.isEnd())
+    auto array = checkAndGetColumn<ColumnArray>(result_column.get());
+    if (array)
     {
-        for (auto & source : sources)
-        {
-            auto slice = source.getWhole();
-            std::cerr << slice.size << std::endl;
-            writeSlice(slice, sink);
-            source.next();
-        }
-        sink.next();
-        std::cerr << sink.elements.size() << std::endl;
+        auto & offsets = array->getOffsets();
+        std::cerr << offsets.size()  << " " << array->size()<< std::endl;
+        for (auto & val : offsets)
+            std::cerr << val << ' ';
+        std::cerr << std::endl;
     }
+
     std::cerr << block.dumpStructure() << std::endl;
 }
 

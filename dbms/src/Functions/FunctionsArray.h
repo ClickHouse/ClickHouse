@@ -1414,8 +1414,8 @@ public:
 
     String getName() const override;
 
-    bool isVariadic() const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
