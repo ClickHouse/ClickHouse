@@ -8,11 +8,16 @@
 #include <Poco/File.h>
 
 //dev:
-#include <Common/iostream_debug_helpers.h>
-//#include <DataStreams/NullBlockInputStream.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/iostream_debug_helpers.h>
+#include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 
+
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
 
 namespace DB
 {
@@ -56,9 +61,12 @@ StringHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, co
         std::cerr << "config values: ";
         DUMP(values);
         */
-    holder.stringHolder.clear();
+    DUMP("");
+    //holder.stringHolder.clear();
     Poco::Util::AbstractConfiguration::Keys config_keys;
+    DUMP("");
     config.keys(config_root, config_keys);
+    DUMP("");
     //std::cerr << "keys root " << config_root << " = " << config_keys << "\n";
     for (const auto & key : config_keys)
     {
@@ -76,7 +84,9 @@ StringHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, co
 
     //holder.stringHolder = values;
 
+    DUMP("");
     holder.prepare();
+    DUMP("");
     return holder;
 }
 
@@ -155,9 +165,8 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
 
     //for (auto & a : dict_struct.attributes) { DUMP(a.name); DUMP(a.type); }
 
-    auto lib = std::make_shared<SharedLibrary>(filename);
+    //auto lib = std::make_shared<SharedLibrary>(filename);
     //auto fptr = lib->get<void * (*) ()>("loadAll");
-    auto data_ptr = library->get<void * (*)()>("dataAllocate")();
 
     auto columns_holder = std::make_unique<ClickhouseString[]>(dict_struct.attributes.size());
     ClickhouseStrings columns{dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::data)>(columns_holder.get())};
@@ -172,9 +181,17 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     DUMP(config_prefix);
     //DUMP(config_prefix + ".lib");
     auto settings = getLibSettings(config, config_prefix + ".settings");
+    void * data_ptr = nullptr;
 
-    auto data = lib->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(&columns))>("loadAll")(
-        data_ptr, &settings.strings, &columns);
+    auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(&columns))>("loadAll");
+
+    if (!fptr)
+        //return std::make_shared<NullBlockInputStream>();
+        throw Exception("method loadAll not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
+
+    data_ptr = library->get<void * (*)()>("dataAllocate")();
+
+    auto data = fptr(data_ptr, &settings.strings, &columns);
     //DUMP(data);
 
     auto block = description.sample_block.cloneEmpty();
@@ -216,6 +233,7 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     ClickhouseStrings columns_pass{
         dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::data)>(columns_holder.get())};
     size_t i = 0;
+    DUMP("");
     for (auto & a : dict_struct.attributes)
     {
         //DUMP(i); DUMP(a.name); DUMP(a.type);
@@ -224,13 +242,26 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
         ++i;
     }
 
+    DUMP("");
     auto settings = getLibSettings(config, config_prefix + ".settings");
-
+    DUMP("");
+    
     //auto lib = std::make_shared<SharedLibrary>(filename);
     //auto data_ptr = library->get<void * (*) ()>("dataAllocate")();
-    auto data_ptr = library->get<void * (*)()>("dataAllocate")();
-    auto data = library->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(&columns_pass), decltype(&ids_data))>(
-        "loadIds")(data_ptr, &settings.strings, &columns_pass, &ids_data);
+    void * data_ptr = nullptr;
+    DUMP("");
+    
+    auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(&columns_pass), decltype(&ids_data))>(
+        "loadIds");
+    DUMP("");
+    
+    if (!fptr)
+        throw Exception("method loadIds not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
+    //return std::make_shared<NullBlockInputStream>();
+
+    data_ptr = library->get<void * (*)()>("dataAllocate")();
+
+    auto data = fptr(data_ptr, &settings.strings, &columns_pass, &ids_data);
     //DUMP(data);
 
 
@@ -268,6 +299,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
     //auto columns_c_container = std::make_unique<ClickhouseColumns>(key_columns.size()+1);
     //ClickhouseColumn* columns_c = columns_c_container.get();
     //auto columns_c = std::make_unique<ClickhouseColumns>(key_columns.size()+1);
+
     auto columns_c = std::make_unique<ClickhouseColumns>(key_columns.size() + 1);
 
     size_t i = 0;
@@ -291,12 +323,26 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
     }*/
 
     auto settings = getLibSettings(config, config_prefix + ".settings");
-    auto data_ptr = library->get<void * (*)()>("dataAllocate")();
+    const ClickhouseVectorUint64 requested_rows_c{requested_rows.size(), requested_rows.data()};
 
-    const ClickhouseVectorUint64 params{requested_rows.size(), requested_rows.data()};
+    void * data_ptr = nullptr;
+
+    auto fptr
+        = library
+              ->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(columns_c)::pointer, decltype(requested_rows_c))>(
+                  "loadKeys");
+    if (!fptr)
+        throw Exception("method loadKeys not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
+    //return std::make_shared<NullBlockInputStream>();
+
+
+    data_ptr = library->get<void * (*)()>("dataAllocate")();
+
     //library->get<void * (*)(void *, ClickhouseColumnsUint64, decltype(params))>("loadKeys")(data_ptr, columns_c.get(), params);
-    auto data = library->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(columns_c)::pointer, decltype(params))>(
-        "loadKeys")(data_ptr, &settings.strings, columns_c.get(), params);
+
+    auto data = fptr(data_ptr, &settings.strings, columns_c.get(), requested_rows_c);
+
+
     // TODO
     auto block = description.sample_block.cloneEmpty();
     dataToBlock(data, block);
