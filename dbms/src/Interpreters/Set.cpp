@@ -419,7 +419,25 @@ void NO_INLINE Set::executeImplCase(
     /// NOTE Optimization is not used for consecutive identical values.
 
     /// For all rows
-    for (size_t i = 0; i < rows; ++i)
+
+    size_t i = 0;
+
+    if (!has_null_map && !negative)
+    {
+        static constexpr size_t UNROLL = 4;
+
+        for (; i < rows / UNROLL * UNROLL; i += UNROLL)
+        {
+            /// Build the key
+            typename Method::Key key[UNROLL];
+            for (size_t j = 0; j < UNROLL; ++j)
+                key[j] = state.getKey(key_columns, keys_size, i + j, key_sizes);
+
+            method.data.template hasN<UNROLL>(key, &vec_res[i]);
+        }
+    }
+
+    for (; i < rows; ++i)
     {
         if (has_null_map && (*null_map)[i])
             vec_res[i] = negative;

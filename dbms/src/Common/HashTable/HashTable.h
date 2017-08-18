@@ -809,6 +809,27 @@ public:
     }
 
 
+    template <size_t N>
+    void ALWAYS_INLINE hasN(const Key * x, UInt8 * res) const
+    {
+        size_t hash_value[N];
+        for (size_t i = 0; i < N; ++i)
+            hash_value[i] = hash(x[i]);
+
+        size_t place[N];
+        for (size_t i = 0; i < N; ++i)
+            place[i] = grower.place(hash_value[i]);
+
+        for (size_t i = 0; i < N; ++i)
+            _mm_prefetch(&buf[place[i]], _MM_HINT_T0);
+
+        for (size_t i = 0; i < N; ++i)
+            res[i] = Cell::isZero(x[i], *this)
+                ? this->hasZero()
+                : !buf[findCell(x[i], hash_value[i], place[i])].isZero(*this);
+    }
+
+
     void write(DB::WriteBuffer & wb) const
     {
         Cell::State::write(wb);
