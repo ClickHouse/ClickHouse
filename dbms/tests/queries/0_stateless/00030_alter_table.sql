@@ -13,3 +13,18 @@ ALTER TABLE alter_test ADD COLUMN AddedNested1.C Array(String) AFTER AddedNested
 ALTER TABLE alter_test ADD COLUMN AddedNested2 Nested(A UInt32, B UInt64) AFTER AddedNested1;
 
 DESC TABLE alter_test;
+
+ALTER TABLE alter_test DROP COLUMN ToDrop;
+
+ALTER TABLE alter_test MODIFY COLUMN Added0 String;
+
+ALTER TABLE alter_test DROP COLUMN NestedColumn.A;
+ALTER TABLE alter_test DROP COLUMN NestedColumn.S;
+
+ALTER TABLE alter_test DROP COLUMN AddedNested1.B;
+
+DESC TABLE alter_test;
+
+SELECT * FROM alter_test;
+
+DROP TABLE alter_test;
