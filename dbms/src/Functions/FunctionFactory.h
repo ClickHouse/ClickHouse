@@ -16,11 +16,6 @@ class Context;
 class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 
 /** Creates function by name.
   * Function could use for initialization (take ownership of shared_ptr, for example)
