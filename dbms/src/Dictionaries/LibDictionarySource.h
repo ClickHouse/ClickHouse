@@ -28,6 +28,9 @@ namespace DB
         //String getID() const override;
     };*/
 
+
+struct CStringHolder;
+
 /// Allows loading dictionaries from .so
 class LibDictionarySource final : public IDictionarySource
 {
@@ -60,7 +63,7 @@ private:
     LocalDateTime getLastModification() const;
 
     const DictionaryStructure dict_struct;
-    const Poco::Util::AbstractConfiguration & config;
+    //const Poco::Util::AbstractConfiguration & config;
     const std::string config_prefix;
     const std::string filename;
     //const std::string format;
@@ -68,5 +71,7 @@ private:
     const Context & context;
     SharedLibraryPtr library;
     ExternalResultDescription description;
+    //std::unique_ptr<CStringHolder> settings;
+    std::shared_ptr<CStringHolder> settings;
 };
 }

@@ -40,6 +40,15 @@ extern "C" void * loadIds(
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadIds Runned!!! ptr=" << data_ptr << " => " << ptr << " size=" << ids->size << "\n";
+    if (settings)
+    {
+        std::cerr << "settings passed: " << settings->size << "\n";
+        for (size_t i = 0; i < settings->size; ++i)
+        {
+            std::cerr << "setting " << i << " :" << settings->data[i] << " \n";
+        }
+    }
+    
     if (columns)
     {
         std::cerr << "columns passed:" << columns->size << "\n";

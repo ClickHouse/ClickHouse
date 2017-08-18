@@ -3,8 +3,8 @@
 
 //using ClickhouseColumns = const char**;
 
-using ClickhouseColumn = const char *;
 using ClickhouseString = const char *;
+using ClickhouseColumn = ClickhouseString;
 using ClickhouseColumns = ClickhouseColumn[];
 
 struct ClickhouseStrings
