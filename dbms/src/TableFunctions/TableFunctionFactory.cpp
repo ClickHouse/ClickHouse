@@ -1,7 +1,8 @@
-#include <Common/Exception.h>
+#include <TableFunctions/TableFunctionFactory.h>
+
 #include <Interpreters/Context.h>
 
-#include <TableFunctions/TableFunctionFactory.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -11,8 +12,16 @@ namespace ErrorCodes
 {
     extern const int READONLY;
     extern const int UNKNOWN_FUNCTION;
+    extern const int LOGICAL_ERROR;
 }
 
+
+void TableFunctionFactory::registerFunction(const std::string & name, Creator creator)
+{
+    if (!functions.emplace(name, std::move(creator)).second)
+        throw Exception("TableFunctionFactory: the table function name '" + name + "' is not unique",
+            ErrorCodes::LOGICAL_ERROR);
+}
 
 TableFunctionPtr TableFunctionFactory::get(
     const std::string & name,
@@ -24,6 +33,7 @@ TableFunctionPtr TableFunctionFactory::get(
     auto it = functions.find(name);
     if (it == functions.end())
         throw Exception("Unknown table function " + name, ErrorCodes::UNKNOWN_FUNCTION);
+
     return it->second();
 }
 
