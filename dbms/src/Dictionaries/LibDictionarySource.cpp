@@ -24,6 +24,8 @@ namespace DB
 //static const size_t max_block_size = 8192;
 
 
+    const std::string lib_config_settings = ".settings";
+    
 struct StringHolder
 {
     ClickhouseStrings strings; // will pass pointer to lib
@@ -61,12 +63,13 @@ StringHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, co
         std::cerr << "config values: ";
         DUMP(values);
         */
-    DUMP("");
+    //DUMP("");
     //holder.stringHolder.clear();
     Poco::Util::AbstractConfiguration::Keys config_keys;
-    DUMP("");
+    //DUMP("");
+    //throw;
     config.keys(config_root, config_keys);
-    DUMP("");
+    //DUMP("");
     //std::cerr << "keys root " << config_root << " = " << config_keys << "\n";
     for (const auto & key : config_keys)
     {
@@ -84,9 +87,9 @@ StringHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, co
 
     //holder.stringHolder = values;
 
-    DUMP("");
+    //DUMP("");
     holder.prepare();
-    DUMP("");
+    //DUMP("");
     return holder;
 }
 
@@ -180,7 +183,7 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
 
     DUMP(config_prefix);
     //DUMP(config_prefix + ".lib");
-    auto settings = getLibSettings(config, config_prefix + ".settings");
+    auto settings = getLibSettings(config, config_prefix + lib_config_settings);
     void * data_ptr = nullptr;
 
     auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(&columns))>("loadAll");
@@ -232,28 +235,28 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     auto columns_holder = std::make_unique<ClickhouseString[]>(dict_struct.attributes.size());
     ClickhouseStrings columns_pass{
         dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::data)>(columns_holder.get())};
-    size_t i = 0;
-    DUMP("");
+        DUMP2("alloc size=", dict_struct.attributes.size());
+        size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
-        //DUMP(i); DUMP(a.name); DUMP(a.type);
+        DUMP(i); DUMP(a.name); DUMP(a.type);
         columns_pass.data[i] = a.name.c_str();
         //++columns.size;
         ++i;
     }
 
-    DUMP("");
-    auto settings = getLibSettings(config, config_prefix + ".settings");
-    DUMP("");
+    //DUMP("");
+    auto settings = getLibSettings(config, config_prefix + lib_config_settings);
+    //DUMP("");
     
     //auto lib = std::make_shared<SharedLibrary>(filename);
     //auto data_ptr = library->get<void * (*) ()>("dataAllocate")();
     void * data_ptr = nullptr;
-    DUMP("");
+    //DUMP("");
     
     auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings.strings), decltype(&columns_pass), decltype(&ids_data))>(
         "loadIds");
-    DUMP("");
+    //DUMP("");
     
     if (!fptr)
         throw Exception("method loadIds not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
@@ -322,7 +325,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
         std::cerr << "T column i=" << i << " = [" << column << "] p=" << (size_t)column << "\n";
     }*/
 
-    auto settings = getLibSettings(config, config_prefix + ".settings");
+    auto settings = getLibSettings(config, config_prefix + lib_config_settings);
     const ClickhouseVectorUint64 requested_rows_c{requested_rows.size(), requested_rows.data()};
 
     void * data_ptr = nullptr;
@@ -364,7 +367,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
 bool LibDictionarySource::isModified() const
 {
     //auto lib = std::make_shared<SharedLibrary>(filename);
-    auto settings = getLibSettings(config, config_prefix + ".settings");
+    auto settings = getLibSettings(config, config_prefix + lib_config_settings);
     auto fptr = library->get<void * (*)(decltype(&settings.strings))>("isModified", true);
     if (fptr)
         return fptr(&settings.strings);
@@ -376,7 +379,7 @@ bool LibDictionarySource::supportsSelectiveLoad() const
 {
     //auto lib = std::make_shared<SharedLibrary>(filename);
 
-    auto settings = getLibSettings(config, config_prefix + ".settings");
+    auto settings = getLibSettings(config, config_prefix + lib_config_settings);
 
     auto fptr = library->get<void * (*)(decltype(&settings.strings))>("supportsSelectiveLoad", true);
     if (fptr)
