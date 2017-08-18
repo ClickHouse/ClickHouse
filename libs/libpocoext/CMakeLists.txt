@@ -7,5 +7,4 @@ add_library (pocoext
 
 target_include_directories (pocoext PUBLIC include PRIVATE ${COMMON_INCLUDE_DIR})
 
-
 target_link_libraries(pocoext ${Poco_Util_LIBRARY} ${Poco_Net_LIBRARY} ${Poco_XML_LIBRARY} ${Poco_Foundation_LIBRARY})

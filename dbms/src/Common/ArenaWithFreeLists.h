@@ -70,7 +70,7 @@ public:
         }
 
         /// no block of corresponding size, allocate a new one
-        return pool.alloc(1 << (list_idx + 1));
+        return pool.alloc(1ULL << (list_idx + 1));
     }
 
     void free(char * ptr, const size_t size)

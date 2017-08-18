@@ -6,6 +6,7 @@ There exist third-party client libraries for ClickHouse:
 * Python:
     - `infi.clickhouse_orm <https://github.com/Infinidat/infi.clickhouse_orm>`_
     - `sqlalchemy-clickhouse <https://github.com/cloudflare/sqlalchemy-clickhouse>`_
+    - `clickhouse-driver <https://github.com/mymarilyn/clickhouse-driver>`_
 * PHP
     - `clickhouse-php-client <https://github.com/8bitov/clickhouse-php-client>`_
     - `PhpClickHouseClient <https://github.com/SevaCode/PhpClickHouseClient>`_
@@ -13,6 +14,7 @@ There exist third-party client libraries for ClickHouse:
 * Go
     - `clickhouse (Go) <https://github.com/kshvakov/clickhouse/>`_
     - `go-clickhouse <https://github.com/roistat/go-clickhouse>`_
+    - `mailru\go-clickhouse <https://github.com/mailru/go-clickhouse>`_
 * NodeJs
     - `clickhouse (NodeJs) <https://github.com/TimonKK/clickhouse>`_
     - `node-clickhouse <https://github.com/apla/node-clickhouse>`_

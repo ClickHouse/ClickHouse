@@ -18,8 +18,6 @@ public:
     ASTLiteral() = default;
     ASTLiteral(const StringRange range_, const Field & value_) : ASTWithAlias(range_), value(value_) {}
 
-    String getColumnName() const override;
-
     /** Get the text that identifies this element. */
     String getID() const override { return "Literal_" + applyVisitor(FieldVisitorDump(), value); }
 
@@ -30,6 +28,7 @@ protected:
     {
         settings.ostr << applyVisitor(FieldVisitorToString(), value);
     }
+    String getColumnNameImpl() const override;
 };
 
 }

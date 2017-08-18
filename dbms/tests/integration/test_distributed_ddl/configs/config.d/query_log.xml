@@ -9,6 +9,6 @@
         <table>query_log</table>
 
         <!-- Interval of flushing data. -->
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </query_log>
 </yandex>

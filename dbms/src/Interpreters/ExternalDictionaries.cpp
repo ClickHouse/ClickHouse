@@ -4,6 +4,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Common/StringUtils.h>
 #include <Common/MemoryTracker.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <ext/scope_guard.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>
@@ -64,17 +65,17 @@ ExternalDictionaries::~ExternalDictionaries()
     reloading_thread.join();
 }
 
-
-
 namespace
 {
-    std::set<std::string> getDictionariesConfigPaths(const Poco::Util::AbstractConfiguration & config)
+std::set<std::string> getDictionariesConfigPaths(const Poco::Util::AbstractConfiguration & config)
+{
+    std::set<std::string> files;
+    auto patterns = getMultipleValuesFromConfig(config, "", "dictionaries_config");
+    for (auto & pattern : patterns)
     {
-        auto pattern = config.getString("dictionaries_config", "");
         if (pattern.empty())
-            return {};
+            continue;
 
-        std::set<std::string> files;
         if (pattern[0] != '/')
         {
             const auto app_config_path = config.getString("config-file", "config.xml");
@@ -82,13 +83,14 @@ namespace
             const auto absolute_path = config_dir + pattern;
             Poco::Glob::glob(absolute_path, files, 0);
             if (!files.empty())
-                return files;
+                continue;
         }
 
         Poco::Glob::glob(pattern, files, 0);
-
-        return files;
     }
+
+    return files;
+}
 }
 
 void ExternalDictionaries::reloadImpl(const bool throw_on_error)

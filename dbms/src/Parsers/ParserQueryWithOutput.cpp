@@ -4,10 +4,11 @@
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserShowProcesslistQuery.h>
 #include <Parsers/ParserCheckQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserRenameQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -19,6 +20,10 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserSelectQuery select_p;
     ParserTablePropertiesQuery table_p;
     ParserShowProcesslistQuery show_processlist_p;
+    ParserCreateQuery create_p;
+    ParserAlterQuery alter_p;
+    ParserRenameQuery rename_p;
+    ParserDropQuery drop_p;
     ParserCheckQuery check_p;
     ParserKillQueryQuery kill_query_p;
 
@@ -28,6 +33,10 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || show_tables_p.parse(pos, query, expected)
         || table_p.parse(pos, query, expected)
         || show_processlist_p.parse(pos, query, expected)
+        || create_p.parse(pos, query, expected)
+        || alter_p.parse(pos, query, expected)
+        || rename_p.parse(pos, query, expected)
+        || drop_p.parse(pos, query, expected)
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected);
 

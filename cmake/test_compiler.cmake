@@ -1,21 +1,26 @@
 include (CheckCXXSourceCompiles)
 include (CMakePushCheckState)
 
-cmake_push_check_state ()
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+# clang4 : -no-pie cause error
+# clang6 : -no-pie cause warning
+else ()
 
-set (TEST_FLAG "-no-pie")
-set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
+    cmake_push_check_state ()
 
-check_cxx_source_compiles("
-    int main() {
-        return 0;
-    }
-" HAVE_NO_PIE)
+    set (TEST_FLAG "-no-pie")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 
-set (CMAKE_REQUIRED_FLAGS "")
+    check_cxx_source_compiles("
+        int main() {
+            return 0;
+        }
+        " HAVE_NO_PIE)
 
-if (HAVE_NO_PIE)
-    set (FLAG_NO_PIE ${TEST_FLAG})
+    if (HAVE_NO_PIE)
+        set (FLAG_NO_PIE ${TEST_FLAG})
+    endif ()
+
+    cmake_pop_check_state ()
+
 endif ()
-
-cmake_pop_check_state ()

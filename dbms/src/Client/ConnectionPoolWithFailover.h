@@ -7,13 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NETWORK_ERROR;
-    extern const int SOCKET_TIMEOUT;
-    extern const int LOGICAL_ERROR;
-}
-
 /** Connection pool with fault tolerance.
   * Initialized by several other IConnectionPools.
   * When a connection is received, it tries to create or select a live connection from a pool,
@@ -54,16 +47,17 @@ public:
       */
     std::vector<Entry> getMany(const Settings * settings, PoolMode pool_mode);
 
+    using Base = PoolWithFailoverBase<IConnectionPool>;
+    using TryResult = Base::TryResult;
+
     /// The same as getMany(), but check that replication delay for table_to_check is acceptable.
     /// Delay threshold is taken from settings.
-    std::vector<Entry> getManyChecked(
+    std::vector<TryResult> getManyChecked(
             const Settings * settings, PoolMode pool_mode, const QualifiedTableName & table_to_check);
 
 private:
-    using Base = PoolWithFailoverBase<IConnectionPool>;
-
     /// Get the values of relevant settings and call Base::getMany()
-    std::vector<Entry> getManyImpl(
+    std::vector<TryResult> getManyImpl(
             const Settings * settings,
             PoolMode pool_mode,
             const TryGetEntryFunc & try_get_entry);

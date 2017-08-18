@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTWithAlias.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -8,7 +9,7 @@
 namespace DB
 {
 
-String ASTFunction::getColumnName() const
+String ASTFunction::getColumnNameImpl() const
 {
     WriteBufferFromOwnString wb;
     writeString(name, wb);
