@@ -19,7 +19,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-BlocksWithPartitionIndex MergeTreeDataWriter::splitBlockIntoParts(const Block & block)
+BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block)
 {
     data.check(block, true);
 
@@ -32,9 +32,8 @@ BlocksWithPartitionIndex MergeTreeDataWriter::splitBlockIntoParts(const Block & 
     // TODO V1-specific
 
     /// We retrieve column with date.
-    size_t date_column_pos = block.getPositionByName(data.date_column_name);
     const ColumnUInt16::Container_t & dates =
-        typeid_cast<const ColumnUInt16 &>(*block.getByPosition(date_column_pos).column).getData();
+        typeid_cast<const ColumnUInt16 &>(*block.getByName(data.date_column_name).column).getData();
 
     /// Minimum and maximum date.
     UInt16 min_date = std::numeric_limits<UInt16>::max();
@@ -47,7 +46,7 @@ BlocksWithPartitionIndex MergeTreeDataWriter::splitBlockIntoParts(const Block & 
             max_date = *it;
     }
 
-    BlocksWithPartitionIndex res;
+    BlocksWithPartition res;
 
     UInt32 min_month = date_lut.toNumYYYYMM(DayNum_t(min_date));
     UInt32 max_month = date_lut.toNumYYYYMM(DayNum_t(max_date));
@@ -55,15 +54,12 @@ BlocksWithPartitionIndex MergeTreeDataWriter::splitBlockIntoParts(const Block & 
     /// A typical case is when there is one partition (you do not need to split anything).
     if (min_month == max_month)
     {
-        MergeTreePartitionIndex partition_idx(Field(static_cast<UInt64>(min_month)));
-        partition_idx.min_date = min_date;
-        partition_idx.max_date = max_date;
-        res.emplace_back(block, std::move(partition_idx));
+        res.emplace_back(Block(block), Field(static_cast<UInt64>(min_month)));
         return res;
     }
 
     /// Split to blocks for different partitions. And also will calculate min and max date for each of them.
-    std::map<Field, BlockWithPartitionIndex *> blocks_by_partition;
+    std::map<Field, BlockWithPartition *> blocks_by_partition;
 
     ColumnPlainPtrs src_columns(columns);
     for (size_t i = 0; i < columns; ++i)
@@ -75,24 +71,18 @@ BlocksWithPartitionIndex MergeTreeDataWriter::splitBlockIntoParts(const Block & 
 
         auto insertion = blocks_by_partition.emplace(partition, nullptr);
         if (insertion.second)
-        {
-            MergeTreePartitionIndex partition_idx(partition);
-            insertion.first->second = &*res.insert(res.end(), BlockWithPartitionIndex(block.cloneEmpty(), std::move(partition_idx)));
-        }
+            insertion.first->second = &*res.insert(res.end(), BlockWithPartition(block.cloneEmpty(), std::move(partition)));
 
         for (size_t j = 0; j < columns; ++j)
             insertion.first->second->block.getByPosition(j).column->insertFrom(*src_columns[j], i);
     }
 
-    for (BlockWithPartitionIndex & block_with_partition_idx : res)
-        block_with_partition_idx.partition_idx.update(*block_with_partition_idx.block.getByPosition(date_column_pos).column);
-
     return res;
 }
 
-MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartitionIndex & block_with_partition_idx)
+MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition)
 {
-    Block & block = block_with_partition_idx.block;
+    Block & block = block_with_partition.block;
 
     size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
 
@@ -102,9 +92,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     Int64 temp_index = data.insert_increment.get();
 
     // TODO V1-specific
-    const MergeTreePartitionIndex & partition_idx = block_with_partition_idx.partition_idx;
-    DayNum_t min_date = partition_idx.min_date;
-    DayNum_t max_date = partition_idx.max_date;
+    MinMaxIndex minmax_idx;
+    minmax_idx.update(*block.getByName(data.date_column_name).column);
+    DayNum_t min_date = minmax_idx.min_date;
+    DayNum_t max_date = minmax_idx.max_date;
 
     const auto & date_lut = DateLUT::instance();
 
@@ -116,10 +107,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     String part_name = MergeTreePartInfo::getPartName(min_date, max_date, temp_index, temp_index, 0);
 
-    String new_partition_id = MergeTreeData::getPartitionID(block_with_partition_idx.partition_idx.partition);
+    String new_partition_id = MergeTreeData::getPartitionID(block_with_partition.partition);
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, part_name, MergeTreePartInfo(new_partition_id, temp_index, temp_index, 0));
-    new_data_part->partition_idx = block_with_partition_idx.partition_idx;
+    new_data_part->partition = block_with_partition.partition;
+    new_data_part->minmax_idx = minmax_idx;
     new_data_part->relative_path = TMP_PREFIX + part_name;
     new_data_part->is_temp = true;
 

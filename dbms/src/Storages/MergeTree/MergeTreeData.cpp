@@ -1204,7 +1204,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
         // TODO V1-specific
         String new_name = MergeTreePartInfo::getPartName(
-                part->partition_idx.min_date, part->partition_idx.max_date, part->info.min_block, part->info.max_block, part->info.level);
+                part->minmax_idx.min_date, part->minmax_idx.max_date, part->info.min_block, part->info.max_block, part->info.level);
 
         LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << new_name << ".");
 

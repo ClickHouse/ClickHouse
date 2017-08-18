@@ -287,7 +287,7 @@ const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksu
 }
 
 
-void MergeTreePartitionIndex::update(const IColumn & column)
+void MinMaxIndex::update(const IColumn & column)
 {
     Field min_value;
     Field max_value;
@@ -297,7 +297,7 @@ void MergeTreePartitionIndex::update(const IColumn & column)
     max_date = std::max(max_date, static_cast<DayNum_t>(get<UInt64>(max_value)));
 }
 
-void MergeTreePartitionIndex::merge(const MergeTreePartitionIndex & other)
+void MinMaxIndex::merge(const MinMaxIndex & other)
 {
     if (other.min_date < min_date)
         min_date = other.min_date;
@@ -554,7 +554,7 @@ void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksu
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndex();
-    loadPartitionIndex();
+    loadPartitionAndMinMaxIndex();
     if (check_consistency)
         checkConsistency(require_columns_checksums);
 }
@@ -606,11 +606,11 @@ void MergeTreeDataPart::loadIndex()
     size_in_bytes = calcTotalSize(getFullPath());
 }
 
-void MergeTreeDataPart::loadPartitionIndex()
+void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
 {
-    MergeTreePartInfo::parseMinMaxDatesFromPartName(name, partition_idx.min_date, partition_idx.max_date);
+    MergeTreePartInfo::parseMinMaxDatesFromPartName(name, minmax_idx.min_date, minmax_idx.max_date);
     const auto & date_lut = DateLUT::instance();
-    partition_idx.partition = static_cast<UInt64>(date_lut.toNumYYYYMM(DayNum_t(partition_idx.min_date)));
+    partition = static_cast<UInt64>(date_lut.toNumYYYYMM(DayNum_t(minmax_idx.min_date)));
 }
 
 void MergeTreeDataPart::loadChecksums(bool require)
