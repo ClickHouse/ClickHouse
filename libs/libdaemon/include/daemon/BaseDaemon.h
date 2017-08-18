@@ -67,7 +67,7 @@ public:
     void buildLoggers();
 
     /// Определяет параметр командной строки
-    void defineOptions(Poco::Util::OptionSet& _options) override;
+    void defineOptions(Poco::Util::OptionSet & _options) override;
 
     /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
     void exitOnTaskError();
