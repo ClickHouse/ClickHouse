@@ -79,15 +79,10 @@ struct MergeTreeDataPartChecksums
 };
 
 
-struct MergeTreePartitionIndex
+struct MinMaxIndex
 {
-    MergeTreePartitionIndex() = default;
-    MergeTreePartitionIndex(Field partition_) : partition(std::move(partition_)) {}
-
     void update(const IColumn & column);
-    void merge(const MergeTreePartitionIndex & other);
-
-    Field partition;
+    void merge(const MinMaxIndex & other);
 
     DayNum_t min_date = DayNum_t(std::numeric_limits<UInt16>::max());
     DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
@@ -141,7 +136,7 @@ struct MergeTreeDataPart
     String name;
     MergeTreePartInfo info;
 
-    MergeTreePartitionIndex partition_idx;
+    Field partition;
 
     /// A directory path (realative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
@@ -165,6 +160,8 @@ struct MergeTreeDataPart
     /// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
     using Index = Columns;
     Index index;
+
+    MinMaxIndex minmax_idx;
 
     Checksums checksums;
 
@@ -226,7 +223,7 @@ private:
     /// Loads index file. Also calculates this->size if size=0
     void loadIndex();
 
-    void loadPartitionIndex();
+    void loadPartitionAndMinMaxIndex();
 
     void checkConsistency(bool require_part_metadata);
 };

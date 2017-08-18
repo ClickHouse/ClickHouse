@@ -235,8 +235,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
                 continue;
 
             // TODO V1-specific
-            Field left = static_cast<UInt64>(part->partition_idx.min_date);
-            Field right = static_cast<UInt64>(part->partition_idx.max_date);
+            Field left = static_cast<UInt64>(part->minmax_idx.min_date);
+            Field right = static_cast<UInt64>(part->minmax_idx.max_date);
 
             if (!date_condition.mayBeTrueInRange(1, &left, &right, data_types_date))
                 continue;
