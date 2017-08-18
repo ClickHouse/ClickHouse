@@ -10,18 +10,21 @@
 namespace DB
 {
 
-struct ShardedBlockWithPartitionIndex final
+struct BlockWithShardNum final
 {
-    ShardedBlockWithPartitionIndex(const Block & block_, size_t shard_no_, const MergeTreePartitionIndex & partition_idx_);
-    ShardedBlockWithPartitionIndex(const ShardedBlockWithPartitionIndex &) = delete;
-    ShardedBlockWithPartitionIndex & operator=(const ShardedBlockWithPartitionIndex &) = delete;
+    BlockWithShardNum(Block && block_, size_t shard_no_)
+        : block(std::move(block_)), shard_no(shard_no_)
+    {
+    }
+
+    BlockWithShardNum(const BlockWithShardNum &) = delete;
+    BlockWithShardNum & operator=(const BlockWithShardNum &) = delete;
 
     Block block;
     size_t shard_no;
-    MergeTreePartitionIndex partition_idx;
 };
 
-using ShardedBlocksWithPartitionIndex = std::list<ShardedBlockWithPartitionIndex>;
+using BlocksWithShardNum = std::list<BlockWithShardNum>;
 
 struct ReshardingJob;
 
@@ -30,7 +33,7 @@ struct ReshardingJob;
 class MergeTreeSharder final
 {
 public:
-    MergeTreeSharder(MergeTreeData & data_, const ReshardingJob & job_, const Field & partition);
+    MergeTreeSharder(MergeTreeData & data_, const ReshardingJob & job_);
     MergeTreeSharder(const MergeTreeSharder &) = delete;
     MergeTreeSharder & operator=(const MergeTreeSharder &) = delete;
 
@@ -39,14 +42,13 @@ public:
       * give the same block to the input, the output will be the same blocks in the
       * in the same order.
       */
-    ShardedBlocksWithPartitionIndex shardBlock(const Block & block);
+    BlocksWithShardNum shardBlock(const Block & block);
 
 private:
     IColumn::Selector createSelector(Block block);
 
     MergeTreeData & data;
     const ReshardingJob & job;
-    const Field & partition;
     Logger * log;
     std::vector<size_t> slots;
     ExpressionActionsPtr sharding_key_expr;

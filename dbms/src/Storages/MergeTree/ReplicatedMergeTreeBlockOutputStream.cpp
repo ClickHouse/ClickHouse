@@ -177,7 +177,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     // TODO V1-specific
     String part_name = MergeTreePartInfo::getPartName(
-            part->partition_idx.min_date, part->partition_idx.max_date, block_number, block_number, 0);
+            part->minmax_idx.min_date, part->minmax_idx.max_date, block_number, block_number, 0);
 
     part->name = part_name;
 

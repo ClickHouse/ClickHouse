@@ -14,18 +14,18 @@
 namespace DB
 {
 
-struct BlockWithPartitionIndex
+struct BlockWithPartition
 {
     Block block;
-    MergeTreePartitionIndex partition_idx;
+    Field partition;
 
-    BlockWithPartitionIndex(const Block & block_, MergeTreePartitionIndex && partition_idx_)
-        : block(block_), partition_idx(std::move(partition_idx_))
+    BlockWithPartition(Block && block_, Field && partition_)
+        : block(block_), partition(std::move(partition_))
     {
     }
 };
 
-using BlocksWithPartitionIndex = std::list<BlockWithPartitionIndex>;
+using BlocksWithPartition = std::list<BlockWithPartition>;
 
  /** Writes new parts of data to the merge tree.
   */
@@ -38,12 +38,12 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    BlocksWithPartitionIndex splitBlockIntoParts(const Block & block);
+    BlocksWithPartition splitBlockIntoParts(const Block & block);
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
-    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartitionIndex & block);
+    MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block);
 
 private:
     MergeTreeData & data;
