@@ -47,7 +47,7 @@ function gen_revision_author {
             git_describe=`git describe`
             sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
 
-            gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG"
+            gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" ""
             git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake debian/changelog
             #git push
 
@@ -92,6 +92,9 @@ function gen_changelog {
     CHDATE="$2"
     AUTHOR="$3"
     CHLOG="$4"
+    if [ -z "$CHLOG" ] ; then
+        CHLOG=debian/changelog
+    fi
 
     sed \
         -e "s/[@]REVISION[@]/$REVISION/g" \
