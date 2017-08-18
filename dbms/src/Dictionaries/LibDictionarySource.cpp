@@ -176,12 +176,12 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
-        //DUMP(i);        DUMP(a.name);        DUMP(a.type);
+        DUMP(i);        DUMP(a.name);        DUMP(a.type);
         columns.data[i] = a.name.c_str();
         ++i;
     }
 
-    DUMP(config_prefix);
+    //DUMP(config_prefix);
     //DUMP(config_prefix + ".lib");
     auto settings = getLibSettings(config, config_prefix + lib_config_settings);
     void * data_ptr = nullptr;
