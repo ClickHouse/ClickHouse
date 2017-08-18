@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FUNCTION;
+    extern const int LOGICAL_ERROR;
 }
 
 
