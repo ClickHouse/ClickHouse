@@ -3,9 +3,9 @@ function get_revision {
     grep "set(VERSION_REVISION" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\))$/\1/'
 }
 
-# remove me after fixing all testing-building scripts
-function make_control {
-    true
+function get_author {
+    AUTHOR=$(git config --get user.name || echo ${USER})
+    echo $AUTHOR
 }
 
 # Generate revision number.
@@ -47,7 +47,7 @@ function gen_revision_author {
             git_describe=`git describe`
             sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
 
-            gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" ""
+            gen_changelog "$REVISION" "" "$AUTHOR" ""
             git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake debian/changelog
             #git push
 
@@ -78,7 +78,7 @@ function gen_revision_author {
 
 function get_revision_author {
     REVISION=$(get_revision)
-    AUTHOR=$(git config --get user.name || echo ${USER})
+    AUTHOR=$(get_author)
     export REVISION
     export AUTHOR
 }
@@ -92,8 +92,16 @@ function gen_changelog {
     CHDATE="$2"
     AUTHOR="$3"
     CHLOG="$4"
+    if [ -z "REVISION" ] ; then
+        get_revision_author
+    fi
+
     if [ -z "$CHLOG" ] ; then
         CHLOG=debian/changelog
+    fi
+
+    if [ -z "$CHDATE" ] ; then
+        CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Replace comma to '\,'
     fi
 
     sed \
@@ -102,30 +110,4 @@ function gen_changelog {
         -e "s/[@]AUTHOR[@]/$AUTHOR/g" \
         -e "s/[@]EMAIL[@]/$(whoami)@yandex-team.ru/g" \
         < $CHLOG.in > $CHLOG
-}
-
-# Upload to Metrica repository
-# working directory - where script is itself
-function upload_debs {
-    REVISION="$1"
-    # Determine the repository, in which you need to upload the packages. It corresponds to the version of Ubuntu.
-    source /etc/lsb-release
-
-    if [ "$DISTRIB_CODENAME" == "precise" ]; then
-        REPO="metrika"
-    elif [ "$DISTRIB_CODENAME" == "trusty" ]; then
-        REPO="metrika-trusty"
-    elif [ "$DISTRIB_CODENAME" == "xenial" ]; then
-        REPO="metrika-xenial"
-    else
-        echo -e "\n\e[0;31mUnknown Ubuntu version $DISTRIB_CODENAME \e[0;0m\n"
-    fi
-
-    # Upload to Metrica repository.
-
-    cd ../
-    DUPLOAD_CONF=dupload.conf
-    cat src/debian/dupload.conf.in | sed -e "s/[@]AUTHOR[@]/$(whoami)/g" > $DUPLOAD_CONF
-
-    dupload metrika-yandex_1.1."$REVISION"_amd64.changes -t $REPO -c --nomail
 }
