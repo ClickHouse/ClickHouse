@@ -29,6 +29,6 @@ std::shared_ptr<IAST> evaluateConstantExpressionAsLiteral(std::shared_ptr<IAST> 
   * Also, if AST is identifier, then return string literal with its name.
   * Useful in places where some name may be specified as identifier, or as result of a constant expression.
   */
-std::shared_ptr<IAST> evaluateConstantExpressionOrIdentidierAsLiteral(std::shared_ptr<IAST> & node, const Context & context);
+std::shared_ptr<IAST> evaluateConstantExpressionOrIdentifierAsLiteral(std::shared_ptr<IAST> & node, const Context & context);
 
 }
