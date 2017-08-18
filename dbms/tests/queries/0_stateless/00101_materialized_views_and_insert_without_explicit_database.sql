@@ -18,8 +18,8 @@ USE test;
 DROP TABLE IF EXISTS tmp;
 DROP TABLE IF EXISTS tmp_mv;
 DROP TABLE IF EXISTS tmp_mv2;
-DROP TABLE IF EXISTS  `.inner.tmp_mv`;
-DROP TABLE IF EXISTS  `.inner.tmp_mv2`;
+DROP TABLE IF EXISTS `.inner.tmp_mv`;
+DROP TABLE IF EXISTS `.inner.tmp_mv2`;
 
 CREATE TABLE tmp (date Date, name String) ENGINE = Memory;
 CREATE MATERIALIZED VIEW tmp_mv ENGINE = AggregatingMergeTree(date, (date, name), 8192) AS SELECT date, name, countState() AS cc FROM tmp GROUP BY date, name;
