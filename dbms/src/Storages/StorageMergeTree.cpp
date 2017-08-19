@@ -405,7 +405,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & query, const Field 
     auto lock_read_structure = lockStructure(false);
     auto lock_write_data = lockDataForAlter();
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
     MergeTreeData::DataParts parts = data.getDataParts();
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
@@ -454,7 +454,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partiti
     /// Waits for completion of merge and does not start new ones.
     auto lock = lockForAlter();
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
 
     size_t removed_parts = 0;
     MergeTreeData::DataParts parts = data.getDataParts();
@@ -484,7 +484,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field
     if (part)
         partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
     else
-        partition = MergeTreeData::getPartitionID(field);
+        partition = data.getPartitionIDFromQuery(field);
 
     String source_dir = "detached/";
 

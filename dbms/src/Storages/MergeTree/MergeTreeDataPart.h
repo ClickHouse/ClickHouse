@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Field.h>
+#include <Core/Row.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Columns/IColumn.h>
@@ -136,7 +136,7 @@ struct MergeTreeDataPart
     String name;
     MergeTreePartInfo info;
 
-    Field partition;
+    Row partition;
 
     /// A directory path (realative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
