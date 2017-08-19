@@ -75,10 +75,7 @@ void MergeTreeDataMerger::FuturePart::assign(MergeTreeData::DataPartsVector part
 
     parts = std::move(parts_);
 
-    partition = parts.front()->partition;
-
     UInt32 max_level = 0;
-
     MinMaxIndex minmax_idx;
     for (const auto & part : parts)
     {
@@ -504,7 +501,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, future_part.name, future_part.part_info);
-    new_data_part->partition = future_part.partition;
+    new_data_part->partition.assign(future_part.getPartition());
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
 
@@ -841,7 +838,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
     size_t aio_threshold = data.context.getSettings().min_bytes_to_use_direct_io;
 
     /// Assemble all parts of the partition.
-    String partition_id = MergeTreeData::getPartitionID(job.partition);
+    String partition_id = data.getPartitionIDFromQuery(job.partition);
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     /// Create a dummy object to get temporary folder name.
@@ -935,7 +932,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
         MergeTreeData::MutableDataPartPtr data_part = std::make_shared<MergeTreeData::DataPart>(
                 data, dummy_future_part.name, MergeTreePartInfo(partition_id, temp_index, temp_index, 0));
-        data_part->partition = dummy_future_part.partition;
+        data_part->partition.assign(dummy_future_part.getPartition());
         data_part->relative_path = "reshard/" + toString(shard_no) + "/tmp_" + dummy_future_part.name;
         data_part->is_temp = true;
 
