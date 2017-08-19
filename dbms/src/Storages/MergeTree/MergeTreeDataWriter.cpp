@@ -1,10 +1,10 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Common/escapeForFileName.h>
-#include <DataTypes/DataTypeArray.h>
+#include <Common/HashTable/HashMap.h>
+#include <Interpreters/AggregationCommon.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Poco/File.h>
-#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
@@ -19,65 +19,105 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace
+{
+
+void buildScatterSelector(
+        const ConstColumnPlainPtrs & columns,
+        PODArray<size_t> & partitions_rows,
+        IColumn::Selector & selector)
+{
+    /// Use generic hashed variant since partitioning is unlikely to be a bottleneck
+    using Data = HashMap<UInt128, size_t, UInt128TrivialHash>;
+    Data partitions_map;
+
+    size_t num_rows = columns[0]->size();
+    size_t partitions_count = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        Data::key_type key = hash128(i, columns.size(), columns);
+        typename Data::iterator it;
+        bool inserted;
+        partitions_map.emplace(key, it, inserted);
+
+        if (inserted)
+        {
+            partitions_rows.push_back(i);
+            it->second = partitions_count;
+
+            ++partitions_count;
+
+            /// Optimization for common case when there is only one partition - defer selector initialization.
+            if (partitions_count == 2)
+            {
+                selector = IColumn::Selector(num_rows);
+                std::fill(selector.begin(), selector.begin() + i, 0);
+            }
+        }
+
+        if (partitions_count > 1)
+            selector[i] = it->second;
+    }
+}
+
+}
+
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block)
 {
+    BlocksWithPartition result;
+    if (!block || !block.rows())
+        return result;
+
     data.check(block, true);
-
-    const auto & date_lut = DateLUT::instance();
-
     block.checkNumberOfRows();
-    size_t rows = block.rows();
-    size_t columns = block.columns();
 
-    // TODO V1-specific
-
-    /// We retrieve column with date.
-    const ColumnUInt16::Container_t & dates =
-        typeid_cast<const ColumnUInt16 &>(*block.getByName(data.date_column_name).column).getData();
-
-    /// Minimum and maximum date.
-    UInt16 min_date = std::numeric_limits<UInt16>::max();
-    UInt16 max_date = std::numeric_limits<UInt16>::min();
-    for (auto it = dates.begin(); it != dates.end(); ++it)
+    if (data.partition_expr_columns.empty()) /// Table is not partitioned.
     {
-        if (*it < min_date)
-            min_date = *it;
-        if (*it > max_date)
-            max_date = *it;
+        result.emplace_back(Block(block), Row());
+        return result;
     }
 
-    BlocksWithPartition res;
+    Block block_copy = block;
+    data.partition_expr->execute(block_copy);
 
-    UInt32 min_month = date_lut.toNumYYYYMM(DayNum_t(min_date));
-    UInt32 max_month = date_lut.toNumYYYYMM(DayNum_t(max_date));
+    ConstColumnPlainPtrs partition_columns;
+    partition_columns.reserve(data.partition_expr_columns.size());
+    for (const String & name : data.partition_expr_columns)
+        partition_columns.emplace_back(block_copy.getByName(name).column.get());
 
-    /// A typical case is when there is one partition (you do not need to split anything).
-    if (min_month == max_month)
+    PODArray<size_t> partitions_rows;
+    IColumn::Selector selector;
+    buildScatterSelector(partition_columns, partitions_rows, selector);
+
+    size_t partitions_count = partitions_rows.size();
+    result.reserve(partitions_count);
+
+    auto get_partition = [&](size_t num)
     {
-        res.emplace_back(Block(block), Field(static_cast<UInt64>(min_month)));
-        return res;
+        Row partition(partition_columns.size(), DontInitElemsTag{});
+        for (size_t i = 0; i < partition_columns.size(); ++i)
+            new (partition.place(i)) Field((*partition_columns[i])[partitions_rows[num]]);
+        return partition;
+    };
+
+    if (partitions_count == 1)
+    {
+        /// A typical case is when there is one partition (you do not need to split anything).
+        result.emplace_back(std::move(block_copy), get_partition(0));
+        return result;
     }
 
-    /// Split to blocks for different partitions. And also will calculate min and max date for each of them.
-    std::map<Field, BlockWithPartition *> blocks_by_partition;
+    for (size_t i = 0; i < partitions_count; ++i)
+        result.emplace_back(block.cloneEmpty(), get_partition(i));
 
-    ColumnPlainPtrs src_columns(columns);
-    for (size_t i = 0; i < columns; ++i)
-        src_columns[i] = block.safeGetByPosition(i).column.get();
-
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t col = 0; col < block.columns(); ++col)
     {
-        Field partition(static_cast<UInt64>(date_lut.toNumYYYYMM(DayNum_t(dates[i]))));
-
-        auto insertion = blocks_by_partition.emplace(partition, nullptr);
-        if (insertion.second)
-            insertion.first->second = &*res.insert(res.end(), BlockWithPartition(block.cloneEmpty(), std::move(partition)));
-
-        for (size_t j = 0; j < columns; ++j)
-            insertion.first->second->block.getByPosition(j).column->insertFrom(*src_columns[j], i);
+        Columns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        for (size_t i = 0; i < partitions_count; ++i)
+            result[i].block.getByPosition(col).column = std::move(scattered[i]);
     }
 
-    return res;
+    return result;
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block_with_partition)
@@ -91,9 +131,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// This will generate unique name in scope of current server process.
     Int64 temp_index = data.insert_increment.get();
 
-    // TODO V1-specific
     MinMaxIndex minmax_idx;
-    minmax_idx.update(*block.getByName(data.date_column_name).column);
+    // TODO V1-specific
+    ColumnPlainPtrs minmax_columns{block.getByName(data.date_column_name).column.get()};
+    minmax_idx.update(minmax_columns);
     DayNum_t min_date = minmax_idx.min_date;
     DayNum_t max_date = minmax_idx.max_date;
 
@@ -107,10 +148,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     String part_name = MergeTreePartInfo::getPartName(min_date, max_date, temp_index, temp_index, 0);
 
-    String new_partition_id = MergeTreeData::getPartitionID(block_with_partition.partition);
+    String new_partition_id = data.getPartitionIDFromData(block_with_partition.partition);
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, part_name, MergeTreePartInfo(new_partition_id, temp_index, temp_index, 0));
-    new_data_part->partition = block_with_partition.partition;
+    new_data_part->partition = std::move(block_with_partition.partition);
     new_data_part->minmax_idx = minmax_idx;
     new_data_part->relative_path = TMP_PREFIX + part_name;
     new_data_part->is_temp = true;

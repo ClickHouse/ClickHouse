@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <Core/Row.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
 
@@ -17,15 +20,15 @@ namespace DB
 struct BlockWithPartition
 {
     Block block;
-    Field partition;
+    Row partition;
 
-    BlockWithPartition(Block && block_, Field && partition_)
+    BlockWithPartition(Block && block_, Row && partition_)
         : block(block_), partition(std::move(partition_))
     {
     }
 };
 
-using BlocksWithPartition = std::list<BlockWithPartition>;
+using BlocksWithPartition = std::vector<BlockWithPartition>;
 
  /** Writes new parts of data to the merge tree.
   */

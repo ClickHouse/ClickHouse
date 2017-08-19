@@ -2618,7 +2618,7 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
 
     /// We don't block merges, so anyone can manage this task (not only leader)
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
 
     if (fake_part_name.empty())
@@ -2658,7 +2658,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field
         return;
     }
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
 
     if (fake_part_name.empty())
@@ -2708,7 +2708,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & query, const Fie
     if (attach_part)
         partition_id = field.safeGet<String>();
     else
-        partition_id = MergeTreeData::getPartitionID(field);
+        partition_id = data.getPartitionIDFromQuery(field);
 
     String source_dir = "detached/";
 
@@ -3214,7 +3214,7 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 
 void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const String & from_, const Settings & settings)
 {
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
 
     String from = from_;
     if (from.back() == '/')
@@ -3459,7 +3459,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
         }
 
         bool include_all = partition.isNull();
-        String partition_id = !partition.isNull() ? MergeTreeData::getPartitionID(partition) : String();
+        String partition_id = !partition.isNull() ? data.getPartitionIDFromQuery(partition) : String();
 
         /// Make a list of local partitions that need to be resharded.
         std::set<std::string> unique_partition_list;
