@@ -424,7 +424,7 @@ void NO_INLINE Set::executeImplCase(
 
     if (!has_null_map && !negative)
     {
-        static constexpr size_t UNROLL = 4;
+        static constexpr size_t UNROLL = 8;
 
         for (; i < rows / UNROLL * UNROLL; i += UNROLL)
         {
