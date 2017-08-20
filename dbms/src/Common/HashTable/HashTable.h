@@ -455,7 +455,7 @@ protected:
         }
 
         auto & operator* () const { return ptr->getValue(); }
-        auto operator->() const { return &ptr->getValue(); }
+        auto * operator->() const { return &ptr->getValue(); }
 
         auto getPtr() const { return ptr; }
         size_t getHash() const { return ptr->getHash(*container); }
