@@ -294,29 +294,6 @@ protected:
     }
 
 
-    template <size_t N>
-    size_t ALWAYS_INLINE findCellUnrolled(const Key & x, size_t hash_value, size_t place_value) const
-    {
-        while (true)
-        {
-            size_t places[N];
-            for (size_t i = 0; i < N; ++i)
-            {
-                places[i] = place_value;
-                place_value = grower.next(place_value);
-            }
-
-            for (size_t i = 0; i < N; ++i)
-            {
-                const Cell & cell = buf[places[i]];
-
-                if (cell.isZero(*this) || cell.keyEquals(x, hash_value))
-                    return places[i];
-            }
-        }
-    }
-
-
     /// Find an empty cell, starting with the specified position and further along the collision resolution chain.
     size_t ALWAYS_INLINE findEmptyCell(const Key & x, size_t hash_value, size_t place_value) const
     {
