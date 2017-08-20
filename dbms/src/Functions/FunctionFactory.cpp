@@ -1,6 +1,10 @@
-#include <Poco/String.h>
 #include <Functions/FunctionFactory.h>
+
+#include <Interpreters/Context.h>
+
 #include <Common/Exception.h>
+
+#include <Poco/String.h>
 
 
 namespace DB
@@ -9,10 +13,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FUNCTION;
+    extern const int LOGICAL_ERROR;
 }
 
 
-void FunctionFactory::registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness)
+void FunctionFactory::registerFunction(const
+    std::string & name,
+    Creator creator,
+    CaseSensitiveness case_sensitiveness)
 {
     if (!functions.emplace(name, creator).second)
         throw Exception("FunctionFactory: the function name '" + name + "' is not unique",
