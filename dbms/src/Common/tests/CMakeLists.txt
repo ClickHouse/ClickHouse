@@ -57,3 +57,7 @@ target_link_libraries (array_cache dbms)
 
 add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving dbms)
+
+add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
+target_include_directories (integer_hash_tables_and_hashes BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_link_libraries (integer_hash_tables_and_hashes dbms)
