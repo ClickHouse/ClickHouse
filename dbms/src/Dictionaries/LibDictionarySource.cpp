@@ -181,9 +181,9 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
-        DUMP(i);
-        DUMP(a.name);
-        DUMP(a.type);
+        //DUMP(i);
+        //DUMP(a.name);
+        //DUMP(a.type);
         columns.data[i] = a.name.c_str();
         ++i;
     }
@@ -278,6 +278,9 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
 
 
     auto block = description.sample_block.cloneEmpty();
+
+//DUMP(block);
+
     dataToBlock(data, block);
 
 
