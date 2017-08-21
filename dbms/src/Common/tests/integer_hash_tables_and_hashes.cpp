@@ -297,7 +297,8 @@ void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, V
     watch.stop();
     std::cerr << __PRETTY_FUNCTION__
         << ":\nElapsed: " << watch.elapsedSeconds()
-        << " (" << size / watch.elapsedSeconds() << " elem/sec.)\n";
+        << " (" << size / watch.elapsedSeconds() << " elem/sec.)"
+        << ", map size: " << map.size() << "\n";
 }
 
 template <template <typename...> class Map, typename Init>
