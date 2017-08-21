@@ -17,6 +17,8 @@
 #include <IO/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
 
+#include "hopscotch-map/src/hopscotch_map.h"
+
 
 using Key = UInt64;
 using Value = UInt64;
@@ -304,6 +306,9 @@ void NO_INLINE testForEachHash(const Key * data, size_t size, Init && init)
     test<Map, Hashes::TabulationHash>(data, size, init);
 }
 
+template <typename Key, typename Mapped, typename Hash>
+using HopscotchMap = tsl::hopscotch_map<Key, Mapped, Hash>;
+
 void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
 {
     auto nothing = [](auto & map){};
@@ -312,6 +317,7 @@ void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
     testForEachHash<std::unordered_map>(data, size, nothing);
     testForEachHash<google::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
     testForEachHash<google::sparse_hash_map>(data, size, nothing);
+    testForEachHash<HopscotchMap>(data, size, nothing);
 }
 
 
