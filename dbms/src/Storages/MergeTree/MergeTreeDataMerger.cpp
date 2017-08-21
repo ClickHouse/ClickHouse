@@ -76,22 +76,24 @@ void MergeTreeDataMerger::FuturePart::assign(MergeTreeData::DataPartsVector part
     parts = std::move(parts_);
 
     UInt32 max_level = 0;
-    MinMaxIndex minmax_idx;
     for (const auto & part : parts)
-    {
         max_level = std::max(max_level, part->info.level);
-        minmax_idx.merge(part->minmax_idx);
-    }
 
     part_info.partition_id = parts.front()->info.partition_id;
     part_info.min_block = parts.front()->info.min_block;
     part_info.max_block = parts.back()->info.max_block;
     part_info.level = max_level + 1;
 
-    // TODO V1-specific
+    DayNum_t min_date = DayNum_t(std::numeric_limits<UInt16>::max());
+    DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
+    for (const auto & part : parts)
+    {
+        min_date = std::min(min_date, part->getMinDate());
+        max_date = std::max(max_date, part->getMaxDate());
+    }
+
     name = MergeTreePartInfo::getPartName(
-            minmax_idx.min_date, minmax_idx.max_date,
-            part_info.min_block, part_info.max_block, part_info.level);
+            min_date, max_date, part_info.min_block, part_info.max_block, part_info.level);
 }
 
 MergeTreeDataMerger::MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_)
@@ -1024,7 +1026,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
             rows_written += block.rows();
             output_stream->write(block);
 
-            data_part->minmax_idx.update(*block.getByName(data.date_column_name).column);
+            data_part->minmax_idx.update(block, data.minmax_idx_columns);
 
             merge_entry->rows_written = merged_stream->getProfileInfo().rows;
             merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
@@ -1068,11 +1070,8 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         size_t shard_no = entry.first;
         MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
 
-        // TODO V1-specific
-
         std::string new_name = MergeTreePartInfo::getPartName(
-                part_from_shard->minmax_idx.min_date,
-                part_from_shard->minmax_idx.max_date,
+                part_from_shard->getMinDate(), part_from_shard->getMaxDate(),
                 part_from_shard->info.min_block, part_from_shard->info.max_block, part_from_shard->info.level);
         std::string new_relative_path = "reshard/" + toString(shard_no) + "/" + new_name;
 

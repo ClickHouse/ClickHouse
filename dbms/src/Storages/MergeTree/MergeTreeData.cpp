@@ -209,6 +209,36 @@ void MergeTreeData::initPartitionKey()
     partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumnsList()).getActions(false);
     for (const ASTPtr & ast : partition_expr_ast->children)
         partition_expr_columns.emplace_back(ast->getColumnName());
+
+    const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
+    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context.getSettingsRef());
+    minmax_idx_columns.clear();
+    minmax_idx_column_types.clear();
+    minmax_idx_sort_descr.clear();
+    for (const NameAndTypePair & column : minmax_idx_columns_with_types)
+    {
+        minmax_idx_columns.emplace_back(column.name);
+        minmax_idx_column_types.emplace_back(column.type);
+        minmax_idx_sort_descr.emplace_back(column.name, 1, 1);
+    }
+
+    bool encountered_date_column = false;
+    for (size_t i = 0; i < minmax_idx_column_types.size(); ++i)
+    {
+        if (typeid_cast<const DataTypeDate *>(minmax_idx_column_types[i].get()))
+        {
+            if (!encountered_date_column)
+            {
+                minmax_idx_date_column_pos = i;
+                encountered_date_column = true;
+            }
+            else
+            {
+                /// There is more than one Date column in partition key and we don't know which one to choose.
+                minmax_idx_date_column_pos = -1;
+            }
+        }
+    }
 }
 
 
@@ -1222,9 +1252,8 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         if (increment)
             part->info.min_block = part->info.max_block = increment->get();
 
-        // TODO V1-specific
         String new_name = MergeTreePartInfo::getPartName(
-                part->minmax_idx.min_date, part->minmax_idx.max_date, part->info.min_block, part->info.max_block, part->info.level);
+                part->getMinDate(), part->getMaxDate(), part->info.min_block, part->info.max_block, part->info.level);
 
         LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << new_name << ".");
 

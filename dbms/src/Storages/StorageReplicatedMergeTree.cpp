@@ -2568,8 +2568,6 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 /// The name of an imaginary part covering all possible parts in the specified partition with numbers in the range from zero to specified right bound.
 static String getFakePartNameCoveringPartRange(const String & partition_id, UInt64 left, UInt64 right)
 {
-    // TODO V1-specific
-
     /// The date range is all month long.
     const auto & lut = DateLUT::instance();
     time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(partition_id + "01"));
