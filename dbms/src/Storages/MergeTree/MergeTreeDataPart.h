@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Row.h>
+#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Columns/IColumn.h>
@@ -81,11 +82,12 @@ struct MergeTreeDataPartChecksums
 
 struct MinMaxIndex
 {
-    void update(const IColumn & column);
+    void update(const Block & block, const Names & column_names);
     void merge(const MinMaxIndex & other);
 
-    DayNum_t min_date = DayNum_t(std::numeric_limits<UInt16>::max());
-    DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
+    bool initialized = false;
+    Row min_column_values;
+    Row max_column_values;
 };
 
 
@@ -130,6 +132,9 @@ struct MergeTreeDataPart
 
     bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
 
+    /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
+    DayNum_t getMinDate() const;
+    DayNum_t getMaxDate() const;
 
     MergeTreeData & storage;
 

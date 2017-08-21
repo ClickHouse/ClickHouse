@@ -14,7 +14,6 @@
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
@@ -287,22 +286,55 @@ const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksu
 }
 
 
-void MinMaxIndex::update(const IColumn & column)
+void MinMaxIndex::update(const Block & block, const Names & column_names)
 {
-    Field min_value;
-    Field max_value;
-    const auto & date_column = typeid_cast<const ColumnUInt16 &>(column);
-    date_column.getExtremes(min_value, max_value);
-    min_date = std::min(min_date, static_cast<DayNum_t>(get<UInt64>(min_value)));
-    max_date = std::max(max_date, static_cast<DayNum_t>(get<UInt64>(max_value)));
+    if (!initialized)
+    {
+        min_column_values.resize(column_names.size(), /* dont_init_elems = */ true);
+        max_column_values.resize(column_names.size(), /* dont_init_elems = */ true);
+    }
+
+    for (size_t i = 0; i < column_names.size(); ++i)
+    {
+        Field min_value;
+        Field max_value;
+        const ColumnWithTypeAndName & column = block.getByName(column_names[i]);
+        column.column->getExtremes(min_value, max_value);
+
+        if (!initialized)
+        {
+            new (min_column_values.place(i)) Field(min_value);
+            new (max_column_values.place(i)) Field(max_value);
+        }
+        else
+        {
+            min_column_values[i] = std::min(min_column_values[i], min_value);
+            max_column_values[i] = std::max(max_column_values[i], max_value);
+        }
+    }
+
+    initialized = true;
 }
 
 void MinMaxIndex::merge(const MinMaxIndex & other)
 {
-    if (other.min_date < min_date)
-        min_date = other.min_date;
-    if (other.max_date > max_date)
-        max_date = other.max_date;
+    if (!other.initialized)
+        return;
+
+    if (!initialized)
+    {
+        min_column_values.assign(other.min_column_values);
+        max_column_values.assign(other.max_column_values);
+        initialized = true;
+    }
+    else
+    {
+        for (size_t i = 0; i < min_column_values.size(); ++i)
+        {
+            min_column_values[i] = std::min(min_column_values[i], other.min_column_values[i]);
+            max_column_values[i] = std::max(max_column_values[i], other.max_column_values[i]);
+        }
+    }
 }
 
 
@@ -404,6 +436,24 @@ String MergeTreeDataPart::getNameWithPrefix() const
         throw Exception("relative_path " + relative_path + " of part " + name + " is invalid or not set", ErrorCodes::LOGICAL_ERROR);
 
     return res;
+}
+
+
+DayNum_t MergeTreeDataPart::getMinDate() const
+{
+    if (storage.minmax_idx_date_column_pos != -1)
+        return DayNum_t(minmax_idx.min_column_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+    else
+        return DayNum_t();
+}
+
+
+DayNum_t MergeTreeDataPart::getMaxDate() const
+{
+    if (storage.minmax_idx_date_column_pos != -1)
+        return DayNum_t(minmax_idx.max_column_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+    else
+        return DayNum_t();
 }
 
 
@@ -608,9 +658,16 @@ void MergeTreeDataPart::loadIndex()
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
 {
-    MergeTreePartInfo::parseMinMaxDatesFromPartName(name, minmax_idx.min_date, minmax_idx.max_date);
+    DayNum_t min_date;
+    DayNum_t max_date;
+    MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
+
     const auto & date_lut = DateLUT::instance();
-    partition = static_cast<UInt64>(date_lut.toNumYYYYMM(DayNum_t(minmax_idx.min_date)));
+    partition = Row(1, static_cast<UInt64>(date_lut.toNumYYYYMM(min_date)));
+
+    minmax_idx.min_column_values = Row(1, static_cast<UInt64>(min_date));
+    minmax_idx.max_column_values = Row(1, static_cast<UInt64>(max_date));
+    minmax_idx.initialized = true;
 }
 
 void MergeTreeDataPart::loadChecksums(bool require)

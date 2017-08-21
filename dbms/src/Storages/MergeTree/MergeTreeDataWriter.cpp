@@ -132,11 +132,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     Int64 temp_index = data.insert_increment.get();
 
     MinMaxIndex minmax_idx;
-    // TODO V1-specific
-    ColumnPlainPtrs minmax_columns{block.getByName(data.date_column_name).column.get()};
-    minmax_idx.update(minmax_columns);
-    DayNum_t min_date = minmax_idx.min_date;
-    DayNum_t max_date = minmax_idx.max_date;
+    minmax_idx.update(block, data.minmax_idx_columns);
+
+    DayNum_t min_date(minmax_idx.min_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
+    DayNum_t max_date(minmax_idx.max_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
 
     const auto & date_lut = DateLUT::instance();
 
@@ -152,7 +151,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, part_name, MergeTreePartInfo(new_partition_id, temp_index, temp_index, 0));
     new_data_part->partition = std::move(block_with_partition.partition);
-    new_data_part->minmax_idx = minmax_idx;
+    new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->relative_path = TMP_PREFIX + part_name;
     new_data_part->is_temp = true;
 
