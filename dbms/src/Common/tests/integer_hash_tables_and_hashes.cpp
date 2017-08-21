@@ -80,6 +80,7 @@ namespace Hashes
         }
     };
 
+    /// Pretty bad, only for illustration purposes.
     struct MixAllBitsHash
     {
         size_t operator()(Key x) const
@@ -277,7 +278,8 @@ template <template <typename...> class Map, typename Hash>
 void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, Value, Hash>&)> init = {})
 {
     if (std::is_same<Map<Key, Value, Hash>, HopscotchMap<Key, Value, Hashes::IdentityHash>>::value
-        || std::is_same<Map<Key, Value, Hash>, HopscotchMap<Key, Value, Hashes::SimpleMultiplyHash>>::value)
+        || std::is_same<Map<Key, Value, Hash>, HopscotchMap<Key, Value, Hashes::SimpleMultiplyHash>>::value
+        || std::is_same<Map<Key, Value, Hash>, HopscotchMap<Key, Value, Hashes::MixAllBitsHash>>::value)
     {
         std::cerr << __PRETTY_FUNCTION__ << ":\nDisqualified\n";
         return;
