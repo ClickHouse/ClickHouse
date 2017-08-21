@@ -11,3 +11,13 @@ Hello "world", 789 ,2016-01-03
 
 clickhouse-client --query="SELECT * FROM test.csv ORDER BY d";
 clickhouse-client --query="DROP TABLE test.csv";
+
+clickhouse-client --query="CREATE TABLE test.csv (t DateTime, s String) ENGINE = Memory";
+
+echo '"2016-01-01 01:02:03","1"
+2016-01-02 01:02:03, "2"
+1502792101,"3"
+99999,"4"' | clickhouse-client --query="INSERT INTO test.csv FORMAT CSV";
+
+clickhouse-client --query="SELECT * FROM test.csv ORDER BY s";
+clickhouse-client --query="DROP TABLE test.csv";

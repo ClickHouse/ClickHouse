@@ -1039,7 +1039,7 @@ private:
         size_t dst_pos = 0;
         for (; dst_pos < num_bytes; ++dst_pos)
         {
-            dst[dst_pos] = unhex2(reinterpret_cast<const char *>(src));
+            dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
             src_pos += 2;
         }
     }

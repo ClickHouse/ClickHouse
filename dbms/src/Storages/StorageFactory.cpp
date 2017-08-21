@@ -290,7 +290,6 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "Dictionary")
     {
-
         return StorageDictionary::create(
             table_name, context, query, columns,
             materialized_columns, alias_columns, column_defaults);
@@ -322,7 +321,7 @@ StoragePtr StorageFactory::get(
         if (args.empty() || args.size() > 2)
             throw Exception(error_msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+        args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
         String format_name = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
 
         int source_fd = -1;
@@ -353,7 +352,7 @@ StoragePtr StorageFactory::get(
                     source_fd = static_cast<int>(literal->value.get<UInt64>());
             }
 
-            args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+            args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
             source_path = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
         }
 
@@ -458,7 +457,7 @@ StoragePtr StorageFactory::get(
                 " - name of source database and regexp for table names.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
+        args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
         args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
 
         String source_database         = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
@@ -498,8 +497,8 @@ StoragePtr StorageFactory::get(
 
         String cluster_name = getClusterName(*args[0]);
 
-        args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
-        args[2] = evaluateConstantExpressionOrIdentidierAsLiteral(args[2], local_context);
+        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
+        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], local_context);
 
         String remote_database     = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
         String remote_table     = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
@@ -551,8 +550,8 @@ StoragePtr StorageFactory::get(
                 " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
-        args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+        args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
+        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
 
         String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
         String destination_table     = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
@@ -599,8 +598,8 @@ StoragePtr StorageFactory::get(
             throw Exception(error_message_argument_number_mismatch,
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], local_context);
-        args[1] = evaluateConstantExpressionOrIdentidierAsLiteral(args[1], local_context);
+        args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
+        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
 
         String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
         String destination_table    = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();

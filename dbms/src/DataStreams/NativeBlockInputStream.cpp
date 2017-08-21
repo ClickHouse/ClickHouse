@@ -106,7 +106,7 @@ Block NativeBlockInputStream::readImpl()
     }
 
     /// Additional information about the block.
-    if (server_revision >= DBMS_MIN_REVISION_WITH_BLOCK_INFO)
+    if (server_revision > 0)
         res.info.read(istr);
 
     /// Dimensions

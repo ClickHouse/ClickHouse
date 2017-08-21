@@ -104,11 +104,10 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
     assertEOF(body);
 
-    ActiveDataPartSet::parsePartName(part_name, *data_part);
+    data_part->info = MergeTreePartInfo::fromPartName(part_name);
+    MergeTreePartInfo::parseMinMaxDatesFromPartName(part_name, data_part->min_date, data_part->max_date);
     data_part->modification_time = time(nullptr);
-    data_part->loadColumns(true);
-    data_part->loadChecksums(true);
-    data_part->loadIndex();
+    data_part->loadColumnsChecksumsIndex(true, false);
     data_part->is_sharded = false;
     data_part->checksums.checkEqual(checksums, false);
 

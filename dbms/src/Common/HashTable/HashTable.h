@@ -155,9 +155,9 @@ struct HashTableGrower
     UInt8 size_degree = initial_size_degree;
 
     /// The size of the hash table in the cells.
-    size_t bufSize() const               { return 1 << size_degree; }
+    size_t bufSize() const               { return 1ULL << size_degree; }
 
-    size_t maxFill() const               { return 1 << (size_degree - 1); }
+    size_t maxFill() const               { return 1ULL << (size_degree - 1); }
     size_t mask() const                  { return bufSize() - 1; }
 
     /// From the hash value, get the cell number in the hash table.
@@ -200,7 +200,7 @@ struct HashTableGrower
 template <size_t key_bits>
 struct HashTableFixedGrower
 {
-    size_t bufSize() const               { return 1 << key_bits; }
+    size_t bufSize() const               { return 1ULL << key_bits; }
     size_t place(size_t x) const         { return x; }
     /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
     size_t next(size_t pos) const        { return pos + 1; }
@@ -292,6 +292,7 @@ protected:
 
         return place_value;
     }
+
 
     /// Find an empty cell, starting with the specified position and further along the collision resolution chain.
     size_t ALWAYS_INLINE findEmptyCell(const Key & x, size_t hash_value, size_t place_value) const
@@ -422,6 +423,50 @@ protected:
     }
 
 
+    template <typename Derived, bool is_const>
+    class iterator_base
+    {
+        using Container = typename std::conditional<is_const, const Self, Self>::type;
+        using cell_type = typename std::conditional<is_const, const Cell, Cell>::type;
+
+        Container * container;
+        cell_type * ptr;
+
+        friend class HashTable;
+
+    public:
+        iterator_base() {}
+        iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_) {}
+
+        bool operator== (const iterator_base & rhs) const { return ptr == rhs.ptr; }
+        bool operator!= (const iterator_base & rhs) const { return ptr != rhs.ptr; }
+
+        Derived & operator++()
+        {
+            if (unlikely(ptr->isZero(*container)))
+                ptr = container->buf;
+            else
+                ++ptr;
+
+            while (ptr < container->buf + container->grower.bufSize() && ptr->isZero(*container))
+                ++ptr;
+
+            return static_cast<Derived &>(*this);
+        }
+
+        auto & operator* () const { return ptr->getValue(); }
+        auto * operator->() const { return &ptr->getValue(); }
+
+        auto getPtr() const { return ptr; }
+        size_t getHash() const { return ptr->getHash(*container); }
+
+        size_t getCollisionChainLength() const
+        {
+            return container->grower.place((ptr - container->buf) - container->grower.place(getHash()));
+        }
+    };
+
+
 public:
     using key_type = Key;
     using value_type = typename Cell::value_type;
@@ -499,74 +544,17 @@ public:
         bool is_initialized = false;
     };
 
-    class iterator
+
+    class iterator : public iterator_base<iterator, false>
     {
-        Self * container;
-        Cell * ptr;
-
-        friend class HashTable;
-
     public:
-        iterator() {}
-        iterator(Self * container_, Cell * ptr_) : container(container_), ptr(ptr_) {}
-
-        bool operator== (const iterator & rhs) const { return ptr == rhs.ptr; }
-        bool operator!= (const iterator & rhs) const { return ptr != rhs.ptr; }
-
-        iterator & operator++()
-        {
-            if (unlikely(ptr->isZero(*container)))
-                ptr = container->buf;
-            else
-                ++ptr;
-
-            while (ptr < container->buf + container->grower.bufSize() && ptr->isZero(*container))
-                ++ptr;
-
-            return *this;
-        }
-
-        value_type & operator* () const { return ptr->getValue(); }
-        value_type * operator->() const { return &ptr->getValue(); }
-
-        Cell * getPtr() const { return ptr; }
-        size_t getHash() const { return ptr->getHash(*container); }
+        using iterator_base<iterator, false>::iterator_base;
     };
 
-
-    class const_iterator
+    class const_iterator : public iterator_base<const_iterator, true>
     {
-        const Self * container;
-        const Cell * ptr;
-
-        friend class HashTable;
-
     public:
-        const_iterator() {}
-        const_iterator(const Self * container_, const Cell * ptr_) : container(container_), ptr(ptr_) {}
-        const_iterator(const iterator & rhs) : container(rhs.container), ptr(rhs.ptr) {}
-
-        bool operator== (const const_iterator & rhs) const { return ptr == rhs.ptr; }
-        bool operator!= (const const_iterator & rhs) const { return ptr != rhs.ptr; }
-
-        const_iterator & operator++()
-        {
-            if (unlikely(ptr->isZero(*container)))
-                ptr = container->buf;
-            else
-                ++ptr;
-
-            while (ptr < container->buf + container->grower.bufSize() && ptr->isZero(*container))
-                ++ptr;
-
-            return *this;
-        }
-
-        const value_type & operator* () const { return ptr->getValue(); }
-        const value_type * operator->() const { return &ptr->getValue(); }
-
-        const Cell * getPtr() const { return ptr; }
-        size_t getHash() const { return ptr->getHash(*container); }
+        using iterator_base<const_iterator, true>::iterator_base;
     };
 
 
