@@ -10,7 +10,7 @@
 #include <Common/Stopwatch.h>
 
 //#define DBMS_HASH_MAP_COUNT_COLLISIONS
-#define DBMS_HASH_MAP_DEBUG_RESIZES
+//#define DBMS_HASH_MAP_DEBUG_RESIZES
 
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
@@ -37,6 +37,7 @@ namespace Hashes
         }
     };
 
+    /// Actually this is even worse than IdentityHash.
     struct SimpleMultiplyHash
     {
         size_t operator()(Key x) const
@@ -267,10 +268,21 @@ namespace Hashes
 }
 
 
+template <typename Key, typename Mapped, typename Hash>
+using HopscotchMap = tsl::hopscotch_map<Key, Mapped, Hash>;
+
+
 
 template <template <typename...> class Map, typename Hash>
 void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, Value, Hash>&)> init = {})
 {
+    if (std::is_same<Map<Key, Value, Hash>, HopscotchMap<Key, Value, Hashes::IdentityHash>>::value
+        || std::is_same<Map<Key, Value, Hash>, HopscotchMap<Key, Value, Hashes::SimpleMultiplyHash>>::value)
+    {
+        std::cerr << __PRETTY_FUNCTION__ << ":\nDisqualified\n";
+        return;
+    }
+
     Stopwatch watch;
 
     Map<Key, Value, Hash> map;
@@ -283,8 +295,7 @@ void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, V
     watch.stop();
     std::cerr << __PRETTY_FUNCTION__
         << ":\nElapsed: " << watch.elapsedSeconds()
-        << " (" << size / watch.elapsedSeconds() << " elem/sec.)"
-        << std::endl;
+        << " (" << size / watch.elapsedSeconds() << " elem/sec.)\n";
 }
 
 template <template <typename...> class Map, typename Init>
@@ -305,9 +316,6 @@ void NO_INLINE testForEachHash(const Key * data, size_t size, Init && init)
     test<Map, Hashes::MulShiftHash>(data, size, init);
     test<Map, Hashes::TabulationHash>(data, size, init);
 }
-
-template <typename Key, typename Mapped, typename Hash>
-using HopscotchMap = tsl::hopscotch_map<Key, Mapped, Hash>;
 
 void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
 {
@@ -347,6 +355,11 @@ int main(int argc, char ** argv)
             << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
+
+    /** Actually we should not run multiple test within same invocation of binary,
+      *  because order of test could alter test results (due to state of allocator and various minor reasons),
+      *  but in this case it's Ok.
+      */
 
     testForEachMapAndHash(data.data(), data.size());
     return 0;
