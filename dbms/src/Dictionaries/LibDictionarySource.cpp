@@ -113,14 +113,14 @@ bool dataToBlock(void * data, Block & block)
     DUMP(columns_recd->size);
     for (size_t i = 0; i < columns_recd->size; ++i)
     {
-        DUMP(i);
-        DUMP(columns_recd->data[i].size);
-        DUMP(columns_recd->data[i].data);
+        //DUMP(i);
+        //DUMP(columns_recd->data[i].size);
+        //DUMP(columns_recd->data[i].data);
         //DUMP("ONE:");
         for (size_t ii = 0; ii < columns_recd->data[i].size; ++ii)
         {
-            DUMP(ii);
-            DUMP(columns_recd->data[i].data[ii]);
+            //DUMP(ii);
+            //DUMP(columns_recd->data[i].data[ii]);
             columns[ii]->insert(columns_recd->data[i].data[ii]);
         }
     }
@@ -249,7 +249,7 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
 
     for (auto & a : dict_struct.attributes)
     {
-        DUMP(i);DUMP(a.name);DUMP(a.type);
+        //DUMP(i);DUMP(a.name);DUMP(a.type);
         columns_pass.data[i] = a.name.c_str();
         //++columns.size;
         ++i;
