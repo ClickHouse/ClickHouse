@@ -16,6 +16,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/SipHash.h>
 
 #include "hopscotch-map/src/hopscotch_map.h"
 
@@ -190,6 +191,24 @@ namespace Hashes
         }
     };
 
+    struct CityHash
+    {
+        size_t operator()(Key x) const
+        {
+            return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&x), sizeof(x));
+        }
+    };
+
+    struct SipHash
+    {
+        size_t operator()(Key x) const
+        {
+            ::SipHash hash;
+            hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+            return hash.get64();
+        }
+    };
+
     struct MulShiftHash
     {
         size_t operator()(Key x) const
@@ -318,6 +337,8 @@ void NO_INLINE testForEachHash(const Key * data, size_t size, Init && init)
     test<Map, Hashes::CRC32Hash>(data, size, init);
     test<Map, Hashes::MulShiftHash>(data, size, init);
     test<Map, Hashes::TabulationHash>(data, size, init);
+    test<Map, Hashes::CityHash>(data, size, init);
+    test<Map, Hashes::SipHash>(data, size, init);
 }
 
 void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
