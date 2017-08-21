@@ -335,7 +335,7 @@ int main(int argc, char ** argv)
     size_t n = atoi(argv[1]);
 //    size_t m = atoi(argv[2]);
 
-    std::cerr << std::fixed << std::setprecision(2);
+    std::cerr << std::fixed << std::setprecision(3);
 
     std::vector<Key> data(n);
 
