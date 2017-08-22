@@ -53,6 +53,7 @@ generate_function_register(Array
   FunctionArrayReduce
   FunctionArrayReverse
   FunctionArrayConcat
+  FunctionArraySlice
 )
 
 

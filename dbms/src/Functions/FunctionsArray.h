@@ -1425,6 +1425,27 @@ public:
 };
 
 
+class FunctionArraySlice : public IFunction
+{
+public:
+    static constexpr auto name = "arraySlice";
+    static FunctionPtr create(const Context & context);
+
+    String getName() const override;
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 3; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const { return false; }
+};
+
+
+
 struct NameHas { static constexpr auto name = "has"; };
 struct NameIndexOf { static constexpr auto name = "indexOf"; };
 struct NameCountEqual { static constexpr auto name = "countEqual"; };
