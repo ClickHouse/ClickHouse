@@ -351,8 +351,8 @@ void Connection::sendQuery(
     block_in.reset();
     block_out.reset();
 
-    /// If server version is new enough, send empty block which meand end of data.
-    if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)
+    /// Send empty block which means end of data.
+    if (!with_pending_data)
     {
         sendData(Block());
         out->next();
@@ -384,9 +384,7 @@ void Connection::sendData(const Block & block, const String & name)
     }
 
     writeVarUInt(Protocol::Client::Data, *out);
-
-    if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-        writeStringBinary(name, *out);
+    writeStringBinary(name, *out);
 
     size_t prev_bytes = out->count();
 
@@ -405,9 +403,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
 
     writeVarUInt(Protocol::Client::Data, *out);
-
-    if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-        writeStringBinary(name, *out);
+    writeStringBinary(name, *out);
 
     if (0 == size)
         copyData(input, *out);
@@ -419,13 +415,6 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
 void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
-    /// If working with older server, don't send any info.
-    if (server_revision < DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-    {
-        out->next();
-        return;
-    }
-
     if (data.empty())
     {
         /// Send empty block, which means end of data transfer.
@@ -552,9 +541,7 @@ Block Connection::receiveData()
     initBlockInput();
 
     String external_table_name;
-
-    if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-        readStringBinary(external_table_name, *in);
+    readStringBinary(external_table_name, *in);
 
     size_t prev_bytes = in->count();
 

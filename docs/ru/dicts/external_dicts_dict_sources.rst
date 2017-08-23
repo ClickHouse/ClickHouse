@@ -125,13 +125,15 @@ ODBC
       <db>DatabaseName</db>
       <table>TableName</table>
       <connection_string>DSN=some_parameters</connection_string>
+      <invalidate_query>SQL_REQUEST</invalidate_query>
   </odbc>
 
 Поля настройки:
 
-* ``db`` - Имя базы данных. Не указывать, если имя базы задано в параметрах ``<connection_string>``.
-* ``table`` - Имя таблицы.
-* ``connection_string`` - Строка соединения.
+* ``db`` - имя базы данных. Не указывать, если имя базы задано в параметрах ``<connection_string>``.
+* ``table`` - имя таблицы.
+* ``connection_string`` - строка соединения.
+* ``invalidate_query`` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе :ref:`dicts-external_dicts_dict_lifetime`.
   
 
 Пример подключения PostgreSQL
@@ -308,6 +310,7 @@ MySQL
         <db>conv_main</db>
         <table>counters</table>
         <where>id=10</where>
+        <invalidate_query>SQL_REQUEST</invalidate_query>
     </mysql>
   </source>
 
@@ -323,7 +326,8 @@ MySQL
   * ``replica/priority`` - приоритет реплики. При попытке соединения ClickHouse обходит реплики в соответствии с приоритетом. Чем меньше цифра, тем выше приоритет.
 * ``db`` - имя базы данных.
 * ``table`` - имя таблицы.
-* ``where`` - условие выбора. Может отсутствовать.
+* ``where`` - условие выбора. Необязательный параметр.
+* ``invalidate_query`` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе :ref:`dicts-external_dicts_dict_lifetime`.
 
 .. _dicts-external_dicts_dict_sources-clickhouse:
 

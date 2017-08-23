@@ -57,8 +57,8 @@ StoragePtr TableFunctionShardByHash::execute(const ASTPtr & ast_function, const 
     cluster_name = getClusterName(*args[0]);
     key = getStringLiteral(*args[1], "Key to hash");
 
-    args[2] = evaluateConstantExpressionOrIdentidierAsLiteral(args[2], context);
-    args[3] = evaluateConstantExpressionOrIdentidierAsLiteral(args[3], context);
+    args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], context);
+    args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(args[3], context);
 
     remote_database = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
     remote_table = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>();

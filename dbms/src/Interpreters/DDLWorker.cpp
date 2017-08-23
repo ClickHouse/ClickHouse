@@ -862,7 +862,7 @@ void DDLWorker::run()
             tryLogCurrentException(log, "Terminating. Cannot initialize DDL queue.");
             return;
         }
-    } while (!initialized);
+    } while (!initialized && !stop_flag);
 
     while (!stop_flag)
     {

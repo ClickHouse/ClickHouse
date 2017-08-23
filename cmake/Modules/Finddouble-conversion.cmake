@@ -18,7 +18,7 @@
 #  DOUBLE_CONVERSION_INCLUDE_DIR       The location of double-conversion headers
 
 find_path(DOUBLE_CONVERSION_ROOT_DIR
-    NAMES include/double-conversion.h
+    NAMES include/double-conversion/double-conversion.h
 )
 
 find_library(DOUBLE_CONVERSION_LIBRARIES
@@ -27,7 +27,7 @@ find_library(DOUBLE_CONVERSION_LIBRARIES
 )
 
 find_path(DOUBLE_CONVERSION_INCLUDE_DIR
-    NAMES double-conversion.h
+    NAMES double-conversion/double-conversion.h
     PATHS ${DOUBLE_CONVERSION_ROOT_DIR}/include ${DOUBLE_CONVERSION_INCLUDE_PATHS}
 )
 

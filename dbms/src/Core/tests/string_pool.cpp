@@ -214,7 +214,7 @@ int main(int argc, char ** argv)
             << std::endl;
 
         size_t i = 0;
-        for (RefsHashMap::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+        for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
             devnull.write(it->first.data, it->first.size);
             devnull << std::endl;
@@ -241,7 +241,7 @@ int main(int argc, char ** argv)
             << std::endl;
 
         size_t i = 0;
-        for (RefsHashMap::const_iterator it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
+        for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
             devnull.write(it->first.data, it->first.size);
             devnull << std::endl;
