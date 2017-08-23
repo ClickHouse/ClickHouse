@@ -41,6 +41,9 @@ namespace ErrorCodes
   * The data resulting from the aggregation (intermediate computing states) is stored in other objects
   *  (which can be created in some pool),
   *  and IAggregateFunction is the external interface for manipulating them.
+  *
+  * NOTE: If you add a new aggregate function, don't forget to add it to Interpreters/SpecializedAggregator.h
+  *  so that the new function works with runtime compilation.
   */
 class IAggregateFunction
 {
