@@ -367,7 +367,8 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local)
                 dir_names.push_back(address.toStringFull());
-        writeToShard(block, dir_names);
+        if (!dir_names.empty())
+            writeToShard(block, dir_names);
     }
 }
 
