@@ -15,20 +15,6 @@ class Logger;
 
 namespace DB
 {
-/*class OneBlockInputStream : public IBlockInputStream
-    {
-        Block block;
-    public:
-        OneBlockInputStream(Block && block_) : block(block_) {};
-        Block read() override {
-            std::cerr << "OneBlockInputStream: reading block from" << getID() << "\n";
-            return block; }
-        String getName() const override { return "OneBlock"; }
-        
-        //String getID() const override;
-    };*/
-
-
 struct CStringHolder;
 
 /// Allows loading dictionaries from .so
@@ -63,15 +49,12 @@ private:
     LocalDateTime getLastModification() const;
 
     const DictionaryStructure dict_struct;
-    //const Poco::Util::AbstractConfiguration & config;
     const std::string config_prefix;
     const std::string filename;
-    //const std::string format;
     Block sample_block;
     const Context & context;
     SharedLibraryPtr library;
     ExternalResultDescription description;
-    //std::unique_ptr<CStringHolder> settings;
     std::shared_ptr<CStringHolder> settings;
 };
 }
