@@ -1,21 +1,30 @@
 #include <Interpreters/Aggregator.h>
 
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include <AggregateFunctions/AggregateFunctionSum.h>
-#include <AggregateFunctions/AggregateFunctionAvg.h>
-#include <AggregateFunctions/AggregateFunctionMinMaxAny.h>
 #include <AggregateFunctions/AggregateFunctionArgMinMax.h>
+#include <AggregateFunctions/AggregateFunctionArray.h>
+#include <AggregateFunctions/AggregateFunctionAvg.h>
+#include <AggregateFunctions/AggregateFunctionCount.h>
+#include <AggregateFunctions/AggregateFunctionForEach.h>
+#include <AggregateFunctions/AggregateFunctionGroupArray.h>
+#include <AggregateFunctions/AggregateFunctionGroupArrayInsertAt.h>
+#include <AggregateFunctions/AggregateFunctionGroupUniqArray.h>
+#include <AggregateFunctions/AggregateFunctionIf.h>
+#include <AggregateFunctions/AggregateFunctionMerge.h>
+#include <AggregateFunctions/AggregateFunctionMinMaxAny.h>
+#include <AggregateFunctions/AggregateFunctionNull.h>
+#include <AggregateFunctions/AggregateFunctionQuantileDeterministic.h>
+#include <AggregateFunctions/AggregateFunctionQuantileExact.h>
+#include <AggregateFunctions/AggregateFunctionQuantileExactWeighted.h>
+#include <AggregateFunctions/AggregateFunctionQuantile.h>
+#include <AggregateFunctions/AggregateFunctionQuantileTDigest.h>
+#include <AggregateFunctions/AggregateFunctionQuantileTiming.h>
+#include <AggregateFunctions/AggregateFunctionSequenceMatch.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
+#include <AggregateFunctions/AggregateFunctionStatistics.h>
+#include <AggregateFunctions/AggregateFunctionSum.h>
+#include <AggregateFunctions/AggregateFunctionTopK.h>
 #include <AggregateFunctions/AggregateFunctionUniq.h>
 #include <AggregateFunctions/AggregateFunctionUniqUpTo.h>
-#include <AggregateFunctions/AggregateFunctionGroupArray.h>
-#include <AggregateFunctions/AggregateFunctionGroupUniqArray.h>
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <AggregateFunctions/AggregateFunctionQuantileTiming.h>
-#include <AggregateFunctions/AggregateFunctionIf.h>
-#include <AggregateFunctions/AggregateFunctionArray.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
-#include <AggregateFunctions/AggregateFunctionMerge.h>
-#include <AggregateFunctions/AggregateFunctionNull.h>
 
 
 namespace DB
