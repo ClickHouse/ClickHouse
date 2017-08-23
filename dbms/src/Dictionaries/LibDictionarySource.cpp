@@ -30,8 +30,8 @@ const std::string lib_config_settings = ".settings";
 
 struct CStringHolder
 {
-    ClickhouseStrings strings; // will pass pointer to lib
-    std::unique_ptr<ClickhouseString[]> ptrHolder = nullptr;
+    ClickHouseLib::CStrings strings; // will pass pointer to lib
+    std::unique_ptr<ClickHouseLib::CString[]> ptrHolder = nullptr;
     std::vector<std::string> stringHolder;
     
     //ClickhouseSettings *
@@ -39,7 +39,7 @@ struct CStringHolder
     {
         strings.size = stringHolder.size();
         //return &settings;
-        ptrHolder = std::make_unique<ClickhouseString[]>(strings.size);
+        ptrHolder = std::make_unique<ClickHouseLib::CString[]>(strings.size);
         strings.data = ptrHolder.get();
         size_t i = 0;
         for (auto & str : stringHolder)
@@ -103,24 +103,28 @@ bool dataToBlock(void * data, Block & block)
     if (!data)
         return true;
 
+    auto columns_recd = static_cast<ClickHouseLib::ColumnsUint64 *>(data);
+
     std::vector<IColumn *> columns(block.columns());
     for (const auto i : ext::range(0, columns.size()))
         columns[i] = block.getByPosition(i).column.get();
     DUMP(columns.size());
     //std::cerr << "bl clean=" << block << "\n";
 
-    auto columns_recd = static_cast<ClickhouseColumnsUint64 *>(data);
     DUMP(columns_recd->size);
     for (size_t i = 0; i < columns_recd->size; ++i)
     {
-        //DUMP(i);
-        //DUMP(columns_recd->data[i].size);
-        //DUMP(columns_recd->data[i].data);
-        //DUMP("ONE:");
+        DUMP(i);
+        DUMP(columns_recd->data[i].size);
+        DUMP(columns_recd->data[i].data);
+        if (columns.size() != columns_recd->data[i].size ) 
+            throw Exception("Received unexpected number of columns " + std::to_string(columns_recd->data[i].size) + "/" + std::to_string(columns.size()) /* + " in " + toString()*/, ErrorCodes::NOT_IMPLEMENTED);
+        
+        DUMP("ONE COL:");
         for (size_t ii = 0; ii < columns_recd->data[i].size; ++ii)
         {
-            //DUMP(ii);
-            //DUMP(columns_recd->data[i].data[ii]);
+            DUMP(ii);
+            DUMP(columns_recd->data[i].data[ii]);
             columns[ii]->insert(columns_recd->data[i].data[ii]);
         }
     }
@@ -178,8 +182,8 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     //auto lib = std::make_shared<SharedLibrary>(filename);
     //auto fptr = lib->get<void * (*) ()>("loadAll");
 
-    auto columns_holder = std::make_unique<ClickhouseString[]>(dict_struct.attributes.size());
-    ClickhouseStrings columns{dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::data)>(columns_holder.get())};
+    auto columns_holder = std::make_unique<ClickHouseLib::CString[]>(dict_struct.attributes.size());
+    ClickHouseLib::CStrings columns{dict_struct.attributes.size(), reinterpret_cast<decltype(ClickHouseLib::CStrings::data)>(columns_holder.get())};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
@@ -236,14 +240,14 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     //DUMP(key_columns);
     //ClickhouseStrings
     //struct {const uint64_t size; const uint64_t * data;}
-    const ClickhouseVectorUint64 ids_data{ids.size(), ids.data()};
+    const ClickHouseLib::VectorUint64 ids_data{ids.size(), ids.data()};
     //c_data.size = ids.size();
     //for (size_t i = 0; i <= ids.size(); ++i) {
     //  data[i] = ids[i];
     //}
-    auto columns_holder = std::make_unique<ClickhouseString[]>(dict_struct.attributes.size());
-    ClickhouseStrings columns_pass{
-        dict_struct.attributes.size(), reinterpret_cast<decltype(ClickhouseStrings::data)>(columns_holder.get())};
+    auto columns_holder = std::make_unique<ClickHouseLib::CString[]>(dict_struct.attributes.size());
+    ClickHouseLib::CStrings columns_pass{
+        dict_struct.attributes.size(), reinterpret_cast<decltype(ClickHouseLib::CStrings::data)>(columns_holder.get())};
     DUMP2("alloc size=", dict_struct.attributes.size());
     size_t i = 0;
 
@@ -317,7 +321,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
     //ClickhouseColumn* columns_c = columns_c_container.get();
     //auto columns_c = std::make_unique<ClickhouseColumns>(key_columns.size()+1);
 
-    auto columns_c = std::make_unique<ClickhouseColumns>(key_columns.size() + 1);
+    auto columns_c = std::make_unique<ClickHouseLib::Columns>(key_columns.size() + 1);
 
     size_t i = 0;
     for (auto & column : key_columns)
@@ -340,13 +344,13 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
     }*/
 
     //auto settings = getLibSettings(config, config_prefix + lib_config_settings);
-    const ClickhouseVectorUint64 requested_rows_c{requested_rows.size(), requested_rows.data()};
+    const ClickHouseLib::VectorUint64 requested_rows_c{requested_rows.size(), requested_rows.data()};
 
     void * data_ptr = nullptr;
 
     auto fptr
         = library
-              ->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(columns_c)::pointer, decltype(requested_rows_c))>(
+              ->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(columns_c)::pointer, decltype(&requested_rows_c))>(
                   "loadKeys");
     if (!fptr)
         throw Exception("method loadKeys not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
@@ -357,7 +361,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
 
     //library->get<void * (*)(void *, ClickhouseColumnsUint64, decltype(params))>("loadKeys")(data_ptr, columns_c.get(), params);
 
-    auto data = fptr(data_ptr, &settings->strings, columns_c.get(), requested_rows_c);
+    auto data = fptr(data_ptr, &settings->strings, columns_c.get(), &requested_rows_c);
 
 
     // TODO

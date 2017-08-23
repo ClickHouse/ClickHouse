@@ -1,28 +1,31 @@
+#pragma once
 
 //struct LoadIdsParams {const uint64_t size; const uint64_t * data;};
 
 //using ClickhouseColumns = const char**;
+namespace ClickHouseLib
+{
+using CString = const char *;
+using Column = CString;
+using Columns = Column[];
 
-using ClickhouseString = const char *;
-using ClickhouseColumn = ClickhouseString;
-using ClickhouseColumns = ClickhouseColumn[];
-
-struct ClickhouseStrings
+struct CStrings
 {
     uint64_t size = 0;
-    ClickhouseString * data = nullptr;
+    CString * data = nullptr;
 };
 
-struct ClickhouseVectorUint64
+struct VectorUint64
 {
     uint64_t size = 0;
     const uint64_t * data = nullptr;
 };
 
-struct ClickhouseColumnsUint64
+struct ColumnsUint64
 {
     uint64_t size = 0;
-    ClickhouseVectorUint64 * data = nullptr;
+    VectorUint64 * data = nullptr;
 };
+}
 
-//using ClickhouseSettings = ClickhouseStrings;
+//using Settings = CStrings;
