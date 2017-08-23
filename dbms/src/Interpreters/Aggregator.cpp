@@ -356,7 +356,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
       *  at the end of which `on_ready` callback is called.
       */
     SharedLibraryPtr lib = params.compiler->getOrCount(key, params.min_count_to_compile,
-        "-include " INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h",
+        "-include " INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h "
+        "-Wno-unused-function",
         get_code, on_ready);
 
     /// If the result is already ready.
