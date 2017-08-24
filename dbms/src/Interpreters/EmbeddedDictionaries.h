@@ -32,6 +32,8 @@ private:
     int cur_reload_period = 1;
     bool is_fast_start_stage = true;
 
+    mutable std::mutex mutex;
+
     std::thread reloading_thread;
     Poco::Event destroy;
 
@@ -40,23 +42,26 @@ private:
 
     void handleException(const bool throw_on_error) const;
 
-    /// Updates dictionaries.
-    bool reloadImpl(const bool throw_on_error);
-
     /** Updates directories (dictionaries) every reload_period seconds.
      * If all dictionaries are not loaded at least once, try reload them with exponential delay (1, 2, ... reload_period).
      * If all dictionaries are loaded, update them using constant reload_period delay.
      */
     void reloadPeriodically();
 
+    /// Updates dictionaries.
+    bool reloadImpl(const bool throw_on_error, const bool force_reload = false);
+
     template <typename Dictionary>
-    bool reloadDictionary(MultiVersion<Dictionary> & dictionary, const bool throw_on_error);
+    bool reloadDictionary(MultiVersion<Dictionary> & dictionary, const bool throw_on_error, const bool force_reload);
 
 public:
     /// Every reload_period seconds directories are updated inside a separate thread.
     EmbeddedDictionaries(const bool throw_on_error, const int reload_period_);
 
     EmbeddedDictionaries(const bool throw_on_error);
+
+    /// Forcibly reloads all dictionaries.
+    void reload();
 
     ~EmbeddedDictionaries();
 

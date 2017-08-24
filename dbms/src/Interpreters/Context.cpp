@@ -1009,14 +1009,24 @@ const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
     return getEmbeddedDictionariesImpl(false);
 }
 
+EmbeddedDictionaries & Context::getEmbeddedDictionaries()
+{
+    return getEmbeddedDictionariesImpl(false);
+}
+
 
 const ExternalDictionaries & Context::getExternalDictionaries() const
 {
     return getExternalDictionariesImpl(false);
 }
 
+ExternalDictionaries & Context::getExternalDictionaries()
+{
+    return getExternalDictionariesImpl(false);
+}
 
-const EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
+
+EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(shared->embedded_dictionaries_mutex);
 
@@ -1027,7 +1037,7 @@ const EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool thr
 }
 
 
-const ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
+ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(shared->external_dictionaries_mutex);
 

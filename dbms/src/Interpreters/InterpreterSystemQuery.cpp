@@ -1,6 +1,8 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/DNSCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/EmbeddedDictionaries.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/typeid_cast.h>
 #include <csignal>
@@ -22,6 +24,33 @@ namespace ErrorCodes
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_)
         : query_ptr(query_ptr_), context(context_) {}
 
+ExecutionStatus getOverallExecutionStatusOfCommands()
+{
+    return ExecutionStatus(0);
+}
+
+/// Consequently execute all commands and genreates final exception message for failed commands
+template <typename Callable, typename ... Callables>
+ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callables && ... commands)
+{
+    ExecutionStatus status_head(0);
+    try
+    {
+        command();
+    }
+    catch (...)
+    {
+        status_head = ExecutionStatus::fromCurrentException();
+    }
+
+    ExecutionStatus status_tail = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
+
+    auto res_status = status_head.code != 0 ? status_head.code : status_tail.code;
+    auto res_message = status_head.message + (status_tail.message.empty() ? "" : ("\n" + status_tail.message));
+
+    return ExecutionStatus(res_status, res_message);
+}
+
 
 BlockIO InterpreterSystemQuery::execute()
 {
@@ -33,11 +62,11 @@ BlockIO InterpreterSystemQuery::execute()
     {
         case Type::SHUTDOWN:
             if (kill(0, SIGTERM))
-                throw Exception("System call kill() failed", ErrorCodes::CANNOT_KILL);
+                throw Exception("System call kill(0, SIGTERM) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::KILL:
             if (kill(0, SIGKILL))
-                throw Exception("System call kill() failed", ErrorCodes::CANNOT_KILL);
+                throw Exception("System call kill(0, SIGKILL) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::DROP_DNS_CACHE:
             DNSCache::instance().dropCache();
@@ -48,12 +77,23 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_UNCOMPRESSED_CACHE:
             context.dropUncompressedCache();
             break;
+        case Type::RELOAD_DICTIONARY:
+            context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
+            break;
+        case Type::RELOAD_DICTIONARIES:
+        {
+            auto status = getOverallExecutionStatusOfCommands(
+                    [&] { context.getExternalDictionaries().reload(); },
+                    [&] { context.getEmbeddedDictionaries().reload(); }
+            );
+            if (status.code != 0)
+                throw Exception(status.message, status.code);
+            break;
+        }
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
         case Type::RESTART_REPLICAS:
         case Type::SYNC_REPLICA:
-        case Type::RELOAD_DICTIONARY:
-        case Type::RELOAD_DICTIONARIES:
         case Type::STOP_MERGES:
         case Type::START_MERGES:
         case Type::STOP_REPLICATION_QUEUES:

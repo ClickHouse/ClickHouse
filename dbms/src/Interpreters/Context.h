@@ -205,6 +205,8 @@ public:
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
+    EmbeddedDictionaries & getEmbeddedDictionaries();
+    ExternalDictionaries & getExternalDictionaries();
     void tryCreateEmbeddedDictionaries() const;
     void tryCreateExternalDictionaries() const;
 
@@ -354,8 +356,8 @@ private:
       */
     void checkDatabaseAccessRights(const std::string & database_name) const;
 
-    const EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-    const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+    EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
+    ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 
