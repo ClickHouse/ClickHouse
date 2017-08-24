@@ -382,7 +382,6 @@ struct ArrayConcat : public GetArraySinkSelector<ArrayConcat>
 
 void concat(std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & sink)
 {
-    using Sources = std::vector<std::unique_ptr<IArraySource>>;
     return ArrayConcat::select(sink, sources);
 }
 
