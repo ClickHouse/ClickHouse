@@ -3146,19 +3146,6 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
         else
             sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
     }
-
-
-    auto array = checkAndGetColumn<ColumnArray>(result_column.get());
-    if (array)
-    {
-        auto &offsets = array->getOffsets();
-        std::cerr << offsets.size() << " " << array->size() << std::endl;
-        for (auto &val : offsets)
-            std::cerr << val << ' ';
-        std::cerr << std::endl;
-    }
-
-    std::cerr << block.dumpStructure() << std::endl;
 }
 
 
