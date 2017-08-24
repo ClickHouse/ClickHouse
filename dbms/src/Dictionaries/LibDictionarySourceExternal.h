@@ -23,4 +23,7 @@ struct ColumnsUint64
     uint64_t size = 0;
     VectorUint64 * data = nullptr;
 };
+
+#ifdef __cplusplus
 }
+#endif

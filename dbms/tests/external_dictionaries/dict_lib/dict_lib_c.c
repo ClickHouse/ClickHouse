@@ -1,47 +1,58 @@
+/// Pure c sample dictionary library
+
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-struct ClickhouseVectorUint64
+#define CString const char *
+
+typedef struct
 {
     const uint64_t size;
     const uint64_t * data;
-};
-#define ClickhouseColumns const char **
+} ClickHouseLibVectorUint64;
+//#define ClickhouseLibColumns const char **
 
-void * loadIds(void * data_ptr, struct ClickhouseVectorUint64 ids)
+typedef struct
 {
-    printf("loadIds c Runned!!! ptr=%p size=%" PRIu64 "\n", data_ptr, ids.size);
+    uint64_t size;
+    CString * data;
+} ClickHouseLibCStrings;
+
+void * loadIds(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, ClickHouseLibVectorUint64 * ids)
+{
+    printf("loadIds c lib call ptr=%p size=%" PRIu64 "\n", data_ptr, ids->size);
     return 0;
 }
 
-void * loadAll(void * data_ptr)
+void * loadAll(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns)
 {
-    printf("loadAll c Runned!!! ptr=%p \n", data_ptr);
+    printf("loadAll c lib call ptr=%p \n", data_ptr);
     return 0;
 }
 
-/*
-void loadKeys(ClickhouseColumns columns, struct ClickhouseVectorUint64 requested_rows)
+void * loadKeys(void * data_ptr,
+    ClickHouseLibCStrings * settings,
+    ClickHouseLibCStrings * columns,
+    const ClickHouseLibVectorUint64 * requested_rows)
 {
-    printf("loadIds c Runned!!!=%" PRIu64 "\n", requested_rows.size);
+    printf("loadKeys c lib call ptr=%p size=%" PRIu64 "\n", ptr, requested_rows.size);
     return;
 }
-*/
 
 
 void * dataAllocate()
 {
     int size = 100;
     void * data_ptr = malloc(size);
-    printf("dataAllocate c Runned!!! ptr=%p \n", data_ptr);
+    printf("dataAllocate c lib call ptr=%p \n", data_ptr);
     return data_ptr;
 }
 
 void dataDelete(void * data_ptr)
 {
-    printf("dataDelete c Runned!!! ptr=%p \n", data_ptr);
+    printf("dataDelete c lib call ptr=%p \n", data_ptr);
     free(data_ptr);
     return;
 }

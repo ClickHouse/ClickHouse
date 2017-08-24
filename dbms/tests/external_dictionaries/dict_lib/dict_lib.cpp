@@ -1,3 +1,5 @@
+/// c++ sample dictionary library
+
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -10,7 +12,6 @@
 
 struct DataHolder
 {
-    //std::shared_ptr<std::vector<std::vector<uint64_t>>> vector;
     std::vector<std::vector<uint64_t>> vector;
     std::unique_ptr<ClickHouseLib::VectorUint64[]> columnsHolder;
     ClickHouseLib::ColumnsUint64 columns;
@@ -109,7 +110,7 @@ extern "C" void * loadAll(void * data_ptr, ClickHouseLib::CStrings * settings, C
 extern "C" void * loadKeys(void * data_ptr,
     ClickHouseLib::CStrings * settings,
     ClickHouseLib::CStrings * columns,
-    const struct ClickHouseLib::VectorUint64 * requested_rows)
+    const ClickHouseLib::VectorUint64 * requested_rows)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadKeys lib call ptr=" << data_ptr << " => " << ptr << "\n";
@@ -143,20 +144,13 @@ extern "C" void * loadKeys(void * data_ptr,
 
 extern "C" void * dataAllocate()
 {
-    //int size = 100;
-    //auto data_ptr = ::operator new(size);
     auto data_ptr = new DataHolder;
-
-    //auto ptr = static_cast<DataHolder*>(data_ptr);
-
-    //std::cerr << "dataAllocate Runned!!! ptr=" << data_ptr << "\n";
     return data_ptr;
 }
 
 extern "C" void dataDelete(void * data_ptr)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
-    //std::cerr << "dataDelete Runned!!! ptr=" << data_ptr << " => " << ptr << "\n";
     delete ptr;
     return;
 }

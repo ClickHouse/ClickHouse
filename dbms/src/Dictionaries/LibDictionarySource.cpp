@@ -1,9 +1,7 @@
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/LibDictionarySource.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
-#include <common/logger_useful.h>
 #include "LibDictionarySourceExternal.h"
 
 #include <Common/iostream_debug_helpers.h>
@@ -12,8 +10,8 @@
 namespace ErrorCodes
 {
 extern const int NOT_IMPLEMENTED;
-
 extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+extern const int FILE_DOESNT_EXIST;
 }
 
 namespace DB
@@ -40,7 +38,6 @@ struct CStringsHolder
     }
 };
 
-
 CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
 {
     CStringsHolder holder;
@@ -55,7 +52,6 @@ CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, 
         holder.stringHolder.emplace_back(key_name);
         holder.stringHolder.emplace_back(config.getString(config_root + '.' + key));
     }
-
     holder.prepare();
     return holder;
 }
@@ -64,13 +60,10 @@ bool dataToBlock(void * data, Block & block)
 {
     if (!data)
         return true;
-
     auto columns_recd = static_cast<ClickHouseLib::ColumnsUint64 *>(data);
-
     std::vector<IColumn *> columns(block.columns());
     for (const auto i : ext::range(0, columns.size()))
         columns[i] = block.getByPosition(i).column.get();
-
     for (size_t i = 0; i < columns_recd->size; ++i)
     {
         if (columns.size() != columns_recd->data[i].size)
@@ -100,12 +93,11 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
 {
     if (!Poco::File(filename).exists())
     {
-        LOG_ERROR(log, "LibDictionarySource: Cant load lib " << toString() << " : " << Poco::File(filename).path());
-        //throw;
+        throw Exception(
+            "LibDictionarySource: Cant load lib " + toString() + " : " + Poco::File(filename).path(), ::ErrorCodes::FILE_DOESNT_EXIST);
     }
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(filename);
-    //settings = std::make_unique<CStringHolder>(getLibSettings(config, config_prefix + lib_config_settings));
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
 }
 
@@ -134,27 +126,17 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
         columns.data[i] = a.name.c_str();
         ++i;
     }
-
     void * data_ptr = nullptr;
-
     auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("loadAll");
-
     if (!fptr)
-        //return std::make_shared<NullBlockInputStream>();
-        throw Exception("method loadAll not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
-
+        throw Exception("Method loadAll not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
     data_ptr = library->get<void * (*)()>("dataAllocate")();
-
     auto data = fptr(data_ptr, &settings->strings, &columns);
-
     auto block = description.sample_block.cloneEmpty();
     dataToBlock(data, block);
-
     library->get<void (*)(void *)>("dataDelete")(data_ptr);
-
     return std::make_shared<OneBlockInputStream>(block);
 }
-
 
 BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
@@ -165,19 +147,16 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     ClickHouseLib::CStrings columns_pass{
         dict_struct.attributes.size(), reinterpret_cast<decltype(ClickHouseLib::CStrings::data)>(columns_holder.get())};
     size_t i = 0;
-
     for (auto & a : dict_struct.attributes)
     {
         columns_pass.data[i] = a.name.c_str();
         ++i;
     }
-
     void * data_ptr = nullptr;
     auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
         "loadIds");
     if (!fptr)
-        throw Exception("method loadIds not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
-
+        throw Exception("Method loadIds not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
     data_ptr = library->get<void * (*)()>("dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = description.sample_block.cloneEmpty();
@@ -200,38 +179,28 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
     }
     columns_c[i] = nullptr;
 */
-
     auto columns_holder = std::make_unique<ClickHouseLib::CString[]>(key_columns.size());
     ClickHouseLib::CStrings columns_pass{
         key_columns.size(), reinterpret_cast<decltype(ClickHouseLib::CStrings::data)>(columns_holder.get())};
     size_t key_columns_n = 0;
-
     for (auto & column : key_columns)
     {
         columns_pass.data[key_columns_n] = column->getName().c_str();
         ++key_columns_n;
     }
-
-
     const ClickHouseLib::VectorUint64 requested_rows_c{requested_rows.size(), requested_rows.data()};
-
     void * data_ptr = nullptr;
-
     auto fptr
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&requested_rows_c))>(
             "loadKeys");
     if (!fptr)
-        throw Exception("method loadKeys not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
-
+        throw Exception("Method loadKeys not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
     data_ptr = library->get<void * (*)()>("dataAllocate")();
-
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &requested_rows_c);
     auto block = description.sample_block.cloneEmpty();
     dataToBlock(data, block);
-
     library->get<void (*)(void * data_ptr)>("dataDelete")(data_ptr);
-
-    return std::make_shared<OneBlockInputStream>(Block());
+    return std::make_shared<OneBlockInputStream>(block);
 }
 
 bool LibDictionarySource::isModified() const
