@@ -15,7 +15,7 @@ class Logger;
 
 namespace DB
 {
-struct CStringHolder;
+struct CStringsHolder;
 
 /// Allows loading dictionaries from .so
 class LibDictionarySource final : public IDictionarySource
@@ -55,6 +55,6 @@ private:
     const Context & context;
     SharedLibraryPtr library;
     ExternalResultDescription description;
-    std::shared_ptr<CStringHolder> settings;
+    std::shared_ptr<CStringsHolder> settings;
 };
 }

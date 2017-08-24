@@ -1,13 +1,10 @@
-#include <Dictionaries/LibDictionarySource.h>
-#include "LibDictionarySourceExternal.h"
-
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context.h>
-#include <common/logger_useful.h>
-
-#include <Poco/File.h>
-
 #include <DataStreams/OneBlockInputStream.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Dictionaries/LibDictionarySource.h>
+#include <Interpreters/Context.h>
+#include <Poco/File.h>
+#include <common/logger_useful.h>
+#include "LibDictionarySourceExternal.h"
 
 #include <Common/iostream_debug_helpers.h>
 
@@ -23,7 +20,7 @@ namespace DB
 {
 const std::string lib_config_settings = ".settings";
 
-struct CStringHolder
+struct CStringsHolder
 {
     ClickHouseLib::CStrings strings; // will pass pointer to lib
     std::unique_ptr<ClickHouseLib::CString[]> ptrHolder = nullptr;
@@ -44,9 +41,9 @@ struct CStringHolder
 };
 
 
-CStringHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
+CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
 {
-    CStringHolder holder;
+    CStringsHolder holder;
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_root, config_keys);
     for (const auto & key : config_keys)
@@ -109,7 +106,7 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(filename);
     //settings = std::make_unique<CStringHolder>(getLibSettings(config, config_prefix + lib_config_settings));
-    settings = std::make_shared<CStringHolder>(getLibSettings(config, config_prefix + lib_config_settings));
+    settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
 }
 
 LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)

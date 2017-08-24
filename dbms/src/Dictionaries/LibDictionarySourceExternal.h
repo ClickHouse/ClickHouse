@@ -1,8 +1,5 @@
 #pragma once
 
-//struct LoadIdsParams {const uint64_t size; const uint64_t * data;};
-
-//using ClickhouseColumns = const char**;
 namespace ClickHouseLib
 {
 using CString = const char *;
@@ -27,5 +24,3 @@ struct ColumnsUint64
     VectorUint64 * data = nullptr;
 };
 }
-
-//using Settings = CStrings;
