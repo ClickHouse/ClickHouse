@@ -114,7 +114,7 @@ def generate_structure(args):
             [ 'mongodb_user_flat', 0, True ],
         ])
 
-    if not args.no_lib:
+    if args.use_lib:
         dictionaries.extend([
             [ 'lib_flat', 0, True ],
             [ 'lib_hashed', 0, True ],
@@ -392,14 +392,14 @@ def generate_dictionaries(args):
     <lib>
         <filename>{filename}</filename>
     </lib>
-    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_libd.so'))
+    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_lib.so'))
 
-    source_lib_c = '''
-    <lib>
-        <filename>{filename}</filename>
-    </lib>
-    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_lib_cd.so'))
-
+    # Todo?
+    #source_lib_c = '''
+    #<lib>
+    #    <filename>{filename}</filename>
+    #</lib>
+    #'''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_lib_c.so'))
 
 
     layout_flat = '<flat />'
@@ -522,22 +522,22 @@ def generate_dictionaries(args):
         [ source_mongodb_user, layout_flat ],
     ])
 
-    if not args.no_lib:
+    if args.use_lib:
         sources_and_layouts.extend([
-        [ source_lib, layout_flat ],
+        #[ source_lib, layout_flat ],
         [ source_lib, layout_hashed ],
         [ source_lib, layout_cache ],
-        [ source_lib, layout_complex_key_cache ],
-        [ source_lib, layout_complex_key_hashed ],
-        [ source_lib, layout_complex_key_hashed ],
-        [ source_lib, layout_complex_key_cache ],
-        [ source_lib_c, layout_flat ],
-        [ source_lib_c, layout_hashed ],
-        [ source_lib_c, layout_cache ],
-        [ source_lib_c, layout_complex_key_cache ],
-        [ source_lib_c, layout_complex_key_hashed ],
-        [ source_lib_c, layout_complex_key_hashed ],
-        [ source_lib_c, layout_complex_key_cache ],
+        #[ source_lib, layout_complex_key_cache ],
+        #[ source_lib, layout_complex_key_hashed ],
+        #[ source_lib, layout_complex_key_hashed ],
+        #[ source_lib, layout_complex_key_cache ],
+        #[ source_lib_c, layout_flat ],
+        #[ source_lib_c, layout_hashed ],
+        #[ source_lib_c, layout_cache ],
+        #[ source_lib_c, layout_complex_key_cache ],
+        #[ source_lib_c, layout_complex_key_hashed ],
+        #[ source_lib_c, layout_complex_key_hashed ],
+        #[ source_lib_c, layout_complex_key_cache ],
     ])
 
     for (name, key_idx, has_parent), (source, layout) in zip(dictionaries, sources_and_layouts):
@@ -725,7 +725,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--timeout', type = int, default = 10, help = 'Timeout for each test case in seconds')
 
     # Not complete disable. Now only skip data prepare. Todo: skip requests too. Now can be used with --no_break
-    parser.add_argument('--no_lib',   action='store_true', help = 'Dont use lib dictionaries')
+    parser.add_argument('--use_lib',   action='store_true', help = 'Use lib dictionaries')
     parser.add_argument('--no_mysql', action='store_true', help = 'Dont use mysql dictionaries')
     parser.add_argument('--no_mongo', action='store_true', help = 'Dont use mongodb dictionaries')
     parser.add_argument('--mongo_host', default = 'localhost', help = 'mongo server host')

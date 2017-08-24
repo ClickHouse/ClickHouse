@@ -6,16 +6,15 @@
 
 #include <Common/iostream_debug_helpers.h>
 
-
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
-extern const int FILE_DOESNT_EXIST;
-}
-
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int FILE_DOESNT_EXIST;
+}
+
 const std::string lib_config_settings = ".settings";
 
 struct CStringsHolder
@@ -93,10 +92,8 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
 {
     if (!Poco::File(filename).exists())
     {
-        throw Exception("LibDictionarySource: Cant load lib " + toString() + " : " + Poco::File(filename).path(),
-            // TODO: fixme!:
-            //ErrorCodes::FILE_DOESNT_EXIST
-            ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(
+            "LibDictionarySource: Cant load lib " + toString() + " : " + Poco::File(filename).path(), ErrorCodes::FILE_DOESNT_EXIST);
     }
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(filename);
@@ -106,10 +103,8 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
 LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
     : log(&Logger::get("LibDictionarySource")),
       dict_struct{other.dict_struct},
-      //config{other.config},
       config_prefix{other.config_prefix},
       filename{other.filename},
-      //format {other.format},
       sample_block{other.sample_block},
       context(other.context)
 {
