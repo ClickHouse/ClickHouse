@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 
+
 namespace DB { class IBlockInputStream; }
 std::ostream & operator<<(std::ostream & stream, const DB::IBlockInputStream & what);
 

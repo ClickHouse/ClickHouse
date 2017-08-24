@@ -517,7 +517,6 @@ def generate_dictionaries(args):
         [ source_mongodb, layout_complex_key_cache ],
     ])
 
-
     if args.use_mongo_user:
         sources_and_layouts.extend( [
         [ source_mongodb_user, layout_flat ],
