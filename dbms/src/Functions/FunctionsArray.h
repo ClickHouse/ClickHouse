@@ -1441,9 +1441,93 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForNulls() const { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
 };
 
+
+class FunctionArrayPush : public IFunction
+{
+public:
+    FunctionArrayPush(bool push_front, const char * name) : push_front(push_front), name(name) {}
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+private:
+    bool push_front;
+    const char * name;
+};
+
+class FunctionArrayPushFront : public FunctionArrayPush
+{
+public:
+    static constexpr auto name = "arrayPushFront";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayPushFront() : FunctionArrayPush(true, name) {}
+};
+
+class FunctionArrayPushBack : public FunctionArrayPush
+{
+public:
+    static constexpr auto name = "arrayPushBack";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayPushBack() : FunctionArrayPush(false, name) {}
+};
+
+class FunctionArrayPop : public IFunction
+{
+public:
+    FunctionArrayPop(bool pop_front, const char * name) : pop_front(pop_front), name(name) {}
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+private:
+    bool pop_front;
+    const char * name;
+};
+
+class FunctionArrayPopFront : public FunctionArrayPop
+{
+public:
+    static constexpr auto name = "arrayPopFront";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayPopFront() : FunctionArrayPop(true, name) {}
+};
+
+class FunctionArrayPopBack : public FunctionArrayPop
+{
+public:
+    static constexpr auto name = "arrayPopBack";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayPopBack() : FunctionArrayPop(false, name) {}
+};
 
 
 struct NameHas { static constexpr auto name = "has"; };

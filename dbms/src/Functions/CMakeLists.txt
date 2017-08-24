@@ -54,6 +54,10 @@ generate_function_register(Array
   FunctionArrayReverse
   FunctionArrayConcat
   FunctionArraySlice
+  FunctionArrayPushBack
+  FunctionArrayPushFront
+  FunctionArrayPopBack
+  FunctionArrayPopFront
 )
 
 
