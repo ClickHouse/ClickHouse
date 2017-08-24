@@ -19,6 +19,8 @@ namespace DB
 
 bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
+    auto begin = pos;
+
     if (!ParserKeyword{"SYSTEM"}.ignore(pos))
         return false;
 
@@ -50,6 +52,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         throw Exception("SYNC REPLICA is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    res->range = {begin, pos};
     node = std::move(res);
     return true;
 }
