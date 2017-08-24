@@ -1,3 +1,10 @@
+# ClickHouse release 1.1.54282
+
+This is a bugfix release. The following bugs were fixed:
+* `DB::Exception: Assertion violation: !_path.empty()` error when inserting into a Distributed table.
+* Error when parsing inserted data in RowBinary format if the data begins with ';' character.
+* Errors during runtime compilation of certain aggregate functions (e.g. `groupArray()`).
+
 # ClickHouse release 1.1.54276
 
 ## New features:
