@@ -61,9 +61,9 @@ public:
 
     /** Perform the next step in combining the parts.
       */
-    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override
+    bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings) override
     {
-        return merge(settings.min_bytes_to_use_direct_io, true, partition, final, deduplicate);
+        return merge(settings.min_bytes_to_use_direct_io, true, partition_id, final, deduplicate);
     }
 
     void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;

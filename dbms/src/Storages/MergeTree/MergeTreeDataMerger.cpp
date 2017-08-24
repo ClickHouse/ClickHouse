@@ -840,8 +840,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
     size_t aio_threshold = data.context.getSettings().min_bytes_to_use_direct_io;
 
     /// Assemble all parts of the partition.
-    String partition_id = data.getPartitionIDFromQuery(job.partition);
-    MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
+    MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(job.partition_id);
 
     /// Create a dummy object to get temporary folder name.
     MergeTreeDataMerger::FuturePart dummy_future_part(parts);
@@ -852,7 +851,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
     merge_entry->num_parts = parts.size();
 
     LOG_DEBUG(log, "Resharding " << parts.size() << " parts from " << parts.front()->name
-        << " to " << parts.back()->name << " which span the partition " << job.partition);
+        << " to " << parts.back()->name << " which span the partition " << job.partition_id);
 
     /// Merge all parts of the partition.
 
@@ -933,7 +932,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         Int64 temp_index = increment.get();
 
         MergeTreeData::MutableDataPartPtr data_part = std::make_shared<MergeTreeData::DataPart>(
-                data, dummy_future_part.name, MergeTreePartInfo(partition_id, temp_index, temp_index, 0));
+                data, dummy_future_part.name, MergeTreePartInfo(job.partition_id, temp_index, temp_index, 0));
         data_part->partition.assign(dummy_future_part.getPartition());
         data_part->relative_path = "reshard/" + toString(shard_no) + "/tmp_" + dummy_future_part.name;
         data_part->is_temp = true;
@@ -1080,7 +1079,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         part_from_shard->is_temp = false;
     }
 
-    LOG_TRACE(log, "Resharded the partition " << job.partition);
+    LOG_TRACE(log, "Resharded the partition " << job.partition_id);
 
     return per_shard_data_parts;
 }
