@@ -10,7 +10,6 @@
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
-#include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnNullable.h>
