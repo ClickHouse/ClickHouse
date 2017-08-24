@@ -1,20 +1,19 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
-#include <Poco/DirectoryIterator.h>
-#include <Poco/Util/Application.h>
-#include <Poco/Util/AbstractConfiguration.h>
+
 #include <common/logger_useful.h>
+
+#include <Poco/DirectoryIterator.h>
 
 
 static constexpr auto config_key = "path_to_regions_hierarchy_file";
 
 
-RegionsHierarchies::RegionsHierarchies()
-: RegionsHierarchies(Poco::Util::Application::instance().config().getString(config_key))
+void RegionsHierarchies::reload(const Poco::Util::AbstractConfiguration & config)
 {
+    reload(config.getString(config_key));
 }
 
-
-RegionsHierarchies::RegionsHierarchies(const std::string & path)
+void RegionsHierarchies::reload(const std::string & path)
 {
     Logger * log = &Logger::get("RegionsHierarchies");
 
@@ -47,10 +46,12 @@ RegionsHierarchies::RegionsHierarchies(const std::string & path)
                 std::forward_as_tuple(dir_it->path()));
         }
     }
+
+    reload();
 }
 
 
-bool RegionsHierarchies::isConfigured()
+bool RegionsHierarchies::isConfigured(const Poco::Util::AbstractConfiguration & config)
 {
-    return Poco::Util::Application::instance().config().has(config_key);
+    return config.has(config_key);
 }
