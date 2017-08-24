@@ -381,7 +381,7 @@ bool StorageMergeTree::mergeTask()
     try
     {
         size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-        return merge(aio_threshold, false /*aggressive*/, {} /*partition*/, false /*final*/, false /*deduplicate*/); ///TODO: read deduplicate option from table config
+        return merge(aio_threshold, false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/); ///TODO: read deduplicate option from table config
     }
     catch (Exception & e)
     {
@@ -479,12 +479,12 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partiti
 
 void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field, bool part, const Settings & settings)
 {
-    String partition;
+    String partition_id;
 
     if (part)
-        partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+        partition_id = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
     else
-        partition = data.getPartitionIDFromQuery(field);
+        partition_id = data.getPartitionIDFromQuery(field);
 
     String source_dir = "detached/";
 
@@ -492,18 +492,18 @@ void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field
     Strings parts;
     if (part)
     {
-        parts.push_back(partition);
+        parts.push_back(partition_id);
     }
     else
     {
-        LOG_DEBUG(log, "Looking for parts for partition " << partition << " in " << source_dir);
+        LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ActiveDataPartSet active_parts;
         for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
         {
             String name = it.name();
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(name, &part_info)
-                || part_info.partition_id != partition)
+                || part_info.partition_id != partition_id)
             {
                 continue;
             }

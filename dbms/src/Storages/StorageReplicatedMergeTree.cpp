@@ -3483,12 +3483,12 @@ void StorageReplicatedMergeTree::reshardPartitions(
 
             /// Verify that there is enough free space for all tasks locally and on all replicas.
             auto replica_to_space_info = gatherReplicaSpaceInfo(weighted_zookeeper_paths);
-            for (const auto & partition : partition_list)
+            for (const auto & partition_id : partition_list)
             {
-                size_t partition_size = data.getPartitionSize(partition);
+                size_t partition_size = data.getPartitionSize(partition_id);
                 if (!checkSpaceForResharding(replica_to_space_info, partition_size))
                     throw Exception{"Insufficient space available for resharding operation "
-                        "on partition " + partition, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING};
+                        "on partition id: " + partition_id, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING};
             }
         }
 
@@ -3552,7 +3552,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
             ReshardingJob job;
             job.database_name = database_name;
             job.table_name = getTableName();
-            job.partition = *it;
+            job.partition_id = *it;
             job.paths = weighted_zookeeper_paths;
             job.sharding_key_expr = sharding_key_expr;
             job.coordinator_id = coordinator_id;
@@ -3568,7 +3568,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
             ReshardingJob job;
             job.database_name = database_name;
             job.table_name = getTableName();
-            job.partition = *it;
+            job.partition_id = *it;
             job.paths = weighted_zookeeper_paths;
             job.sharding_key_expr = sharding_key_expr;
             job.do_copy = do_copy;
