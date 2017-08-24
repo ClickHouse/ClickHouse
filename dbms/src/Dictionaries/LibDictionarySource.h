@@ -17,7 +17,9 @@ namespace DB
 {
 struct CStringsHolder;
 
-/// Allows loading dictionaries from .so
+/// Allows loading dictionaries from dynamic libraries (.so)
+/// Experimental version
+/// Now supports only uint64 types
 class LibDictionarySource final : public IDictionarySource
 {
 public:
