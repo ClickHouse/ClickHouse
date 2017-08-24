@@ -37,8 +37,8 @@ void * loadKeys(void * data_ptr,
     ClickHouseLibCStrings * columns,
     const ClickHouseLibVectorUint64 * requested_rows)
 {
-    printf("loadKeys c lib call ptr=%p size=%" PRIu64 "\n", ptr, requested_rows.size);
-    return;
+    printf("loadKeys c lib call ptr=%p size=%" PRIu64 "\n", data_ptr, requested_rows->size);
+    return 0;
 }
 
 
