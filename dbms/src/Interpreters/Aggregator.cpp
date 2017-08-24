@@ -605,7 +605,7 @@ void NO_INLINE Aggregator::executeImplCase(
 
         if (!no_more_keys)  /// Insert.
         {
-            /// Optimization for frequently duplicating keys.
+            /// Optimization for consecutive identical keys.
             if (!Method::no_consecutive_keys_optimization)
             {
                 if (i != 0 && key == prev_key)
