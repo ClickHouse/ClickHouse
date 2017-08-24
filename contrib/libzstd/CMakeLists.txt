@@ -51,30 +51,42 @@ MESSAGE(STATUS "ZSTD VERSION ${LIBVER_MAJOR}.${LIBVER_MINOR}.${LIBVER_RELEASE}")
 
 SET(Sources
         ${LIBRARY_DIR}/common/entropy_common.c
-        ${LIBRARY_DIR}/common/zstd_common.c
-        ${LIBRARY_DIR}/common/xxhash.c
+        ${LIBRARY_DIR}/common/error_private.c
         ${LIBRARY_DIR}/common/fse_decompress.c
+        ${LIBRARY_DIR}/common/pool.c
+        ${LIBRARY_DIR}/common/threading.c
+        ${LIBRARY_DIR}/common/xxhash.c
+        ${LIBRARY_DIR}/common/zstd_common.c
         ${LIBRARY_DIR}/compress/fse_compress.c
         ${LIBRARY_DIR}/compress/huf_compress.c
-        ${LIBRARY_DIR}/compress/zbuff_compress.c
         ${LIBRARY_DIR}/compress/zstd_compress.c
+        ${LIBRARY_DIR}/compress/zstdmt_compress.c
         ${LIBRARY_DIR}/decompress/huf_decompress.c
-        ${LIBRARY_DIR}/decompress/zbuff_decompress.c
         ${LIBRARY_DIR}/decompress/zstd_decompress.c
+        ${LIBRARY_DIR}/deprecated/zbuff_common.c
+        ${LIBRARY_DIR}/deprecated/zbuff_compress.c
+        ${LIBRARY_DIR}/deprecated/zbuff_decompress.c
+        ${LIBRARY_DIR}/dictBuilder/cover.c
         ${LIBRARY_DIR}/dictBuilder/divsufsort.c
         ${LIBRARY_DIR}/dictBuilder/zdict.c)
 
 SET(Headers
         ${LIBRARY_DIR}/common/bitstream.h
         ${LIBRARY_DIR}/common/error_private.h
-        ${LIBRARY_DIR}/common/error_public.h
         ${LIBRARY_DIR}/common/fse.h
         ${LIBRARY_DIR}/common/huf.h
         ${LIBRARY_DIR}/common/mem.h
-        ${LIBRARY_DIR}/common/zbuff.h
+        ${LIBRARY_DIR}/common/pool.h
+        ${LIBRARY_DIR}/common/threading.h
+        ${LIBRARY_DIR}/common/xxhash.h
+        ${LIBRARY_DIR}/common/zstd_errors.h
         ${LIBRARY_DIR}/common/zstd_internal.h
-        ${LIBRARY_DIR}/zstd.h
-        ${LIBRARY_DIR}/dictBuilder/zdict.h)
+        ${LIBRARY_DIR}/compress/zstdmt_compress.h
+        ${LIBRARY_DIR}/compress/zstd_opt.h
+        ${LIBRARY_DIR}/deprecated/zbuff.h
+        ${LIBRARY_DIR}/dictBuilder/divsufsort.h
+        ${LIBRARY_DIR}/dictBuilder/zdict.h
+        ${LIBRARY_DIR}/zstd.h)
 
 SET(ZSTD_LEGACY_SUPPORT true)
 
@@ -84,11 +96,23 @@ IF (ZSTD_LEGACY_SUPPORT)
     ADD_DEFINITIONS(-D ZSTD_LEGACY_SUPPORT=1)
 
     SET(Sources ${Sources}
-            ${LIBRARY_LEGACY_DIR}/zstd_v06.c)
+            ${LIBRARY_LEGACY_DIR}/zstd_v01.c
+            ${LIBRARY_LEGACY_DIR}/zstd_v02.c
+            ${LIBRARY_LEGACY_DIR}/zstd_v03.c
+            ${LIBRARY_LEGACY_DIR}/zstd_v04.c
+            ${LIBRARY_LEGACY_DIR}/zstd_v05.c
+            ${LIBRARY_LEGACY_DIR}/zstd_v06.c
+            ${LIBRARY_LEGACY_DIR}/zstd_v07.c)
 
     SET(Headers ${Headers}
             ${LIBRARY_LEGACY_DIR}/zstd_legacy.h
-            ${LIBRARY_LEGACY_DIR}/zstd_v06.h)
+            ${LIBRARY_LEGACY_DIR}/zstd_v01.h
+            ${LIBRARY_LEGACY_DIR}/zstd_v02.h
+            ${LIBRARY_LEGACY_DIR}/zstd_v03.h
+            ${LIBRARY_LEGACY_DIR}/zstd_v04.h
+            ${LIBRARY_LEGACY_DIR}/zstd_v05.h
+            ${LIBRARY_LEGACY_DIR}/zstd_v06.h
+            ${LIBRARY_LEGACY_DIR}/zstd_v07.h)
 ENDIF (ZSTD_LEGACY_SUPPORT)
 
 ADD_LIBRARY(zstd ${Sources} ${Headers})
