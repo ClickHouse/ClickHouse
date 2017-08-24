@@ -1,11 +1,9 @@
 #pragma once
 
-#include <boost/core/noncopyable.hpp>
-
-#include <dlfcn.h>
-
 #include <string>
+#include <dlfcn.h>
 #include <Common/Exception.h>
+#include <boost/core/noncopyable.hpp>
 
 
 namespace DB
