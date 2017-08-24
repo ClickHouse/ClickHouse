@@ -293,6 +293,28 @@ protected:
         return place_value;
     }
 
+    template <size_t N>
+    size_t ALWAYS_INLINE findCellUnrolled(const Key & x, size_t hash_value, size_t place_value) const
+    {
+        while (true)
+        {
+            size_t places[N];
+            for (size_t i = 0; i < N; ++i)
+            {
+                places[i] = place_value;
+                place_value = grower.next(place_value);
+            }
+
+            for (size_t i = 0; i < N; ++i)
+            {
+                const Cell & cell = buf[places[i]];
+
+                if (cell.isZero(*this) || cell.keyEquals(x, hash_value))
+                    return places[i];
+            }
+        }
+    }
+
     /// Find an empty cell, starting with the specified position and further along the collision resolution chain.
     size_t ALWAYS_INLINE findEmptyCell(const Key & x, size_t hash_value, size_t place_value) const
     {
@@ -799,6 +821,18 @@ public:
     }
 
 
+    template <size_t N>
+    bool ALWAYS_INLINE hasUnrolled(Key x) const
+    {
+        if (Cell::isZero(x, *this))
+            return this->hasZero();
+
+        size_t hash_value = hash(x);
+        size_t place_value = findCellUnrolled<N>(x, hash_value, grower.place(hash_value));
+        return !buf[place_value].isZero(*this);
+    }
+
+
     bool ALWAYS_INLINE has(Key x, size_t hash_value) const
     {
         if (Cell::isZero(x, *this))
@@ -819,7 +853,7 @@ public:
         {
             hash_value[i] = hash(x[i]);
             place[i] = grower.place(hash_value[i]);
-            _mm_prefetch(&buf[place[i]], _MM_HINT_NTA);
+            _mm_prefetch(&buf[place[i]], _MM_HINT_T0);
         }
 
         for (size_t i = 0; i < N; ++i)

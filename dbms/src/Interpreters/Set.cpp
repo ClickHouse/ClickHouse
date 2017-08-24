@@ -422,7 +422,7 @@ void NO_INLINE Set::executeImplCase(
 
     size_t i = 0;
 
-    if (!has_null_map && !negative)
+/*    if (!has_null_map && !negative)
     {
         static constexpr size_t UNROLL = 8;
 
@@ -435,7 +435,7 @@ void NO_INLINE Set::executeImplCase(
 
             method.data.template hasN<UNROLL>(key, &vec_res[i]);
         }
-    }
+    }*/
 
     for (; i < rows; ++i)
     {
@@ -445,7 +445,7 @@ void NO_INLINE Set::executeImplCase(
         {
             /// Build the key
             typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
-            vec_res[i] = negative ^ method.data.has(key);
+            vec_res[i] = negative ^ method.data.template hasUnrolled<4>(key);
         }
     }
 }
