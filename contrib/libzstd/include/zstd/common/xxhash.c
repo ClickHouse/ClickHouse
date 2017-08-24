@@ -104,7 +104,9 @@ static void  XXH_free  (void* p)  { free(p); }
 #include <string.h>
 static void* XXH_memcpy(void* dest, const void* src, size_t size) { return memcpy(dest,src,size); }
 
-#define XXH_STATIC_LINKING_ONLY
+#ifndef XXH_STATIC_LINKING_ONLY
+#  define XXH_STATIC_LINKING_ONLY
+#endif
 #include "xxhash.h"
 
 
