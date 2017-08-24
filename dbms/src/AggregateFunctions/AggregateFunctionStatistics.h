@@ -155,12 +155,9 @@ public:
     }
 };
 
-namespace
-{
-
 /** Implementing the varSamp function.
   */
-struct VarSampImpl
+struct AggregateFunctionVarSampImpl
 {
     static constexpr auto name = "varSamp";
 
@@ -175,19 +172,19 @@ struct VarSampImpl
 
 /** Implementing the stddevSamp function.
   */
-struct StdDevSampImpl
+struct AggregateFunctionStdDevSampImpl
 {
     static constexpr auto name = "stddevSamp";
 
     static inline Float64 apply(Float64 m2, UInt64 count)
     {
-        return sqrt(VarSampImpl::apply(m2, count));
+        return sqrt(AggregateFunctionVarSampImpl::apply(m2, count));
     }
 };
 
 /** Implementing the varPop function.
   */
-struct VarPopImpl
+struct AggregateFunctionVarPopImpl
 {
     static constexpr auto name = "varPop";
 
@@ -204,17 +201,15 @@ struct VarPopImpl
 
 /** Implementing the stddevPop function.
   */
-struct StdDevPopImpl
+struct AggregateFunctionStdDevPopImpl
 {
     static constexpr auto name = "stddevPop";
 
     static inline Float64 apply(Float64 m2, UInt64 count)
     {
-        return sqrt(VarPopImpl::apply(m2, count));
+        return sqrt(AggregateFunctionVarPopImpl::apply(m2, count));
     }
 };
-
-}
 
 /** If `compute_marginal_moments` flag is set this class provides the successor
   * CovarianceData support of marginal moments for calculating the correlation.
@@ -423,12 +418,9 @@ public:
     }
 };
 
-namespace
-{
-
 /** Implementing the covarSamp function.
   */
-struct CovarSampImpl
+struct AggregateFunctionCovarSampImpl
 {
     static constexpr auto name = "covarSamp";
 
@@ -443,7 +435,7 @@ struct CovarSampImpl
 
 /** Implementing the covarPop function.
   */
-struct CovarPopImpl
+struct AggregateFunctionCovarPopImpl
 {
     static constexpr auto name = "covarPop";
 
@@ -460,7 +452,7 @@ struct CovarPopImpl
 
 /** `corr` function implementation.
   */
-struct CorrImpl
+struct AggregateFunctionCorrImpl
 {
     static constexpr auto name = "corr";
 
@@ -473,27 +465,25 @@ struct CorrImpl
     }
 };
 
-}
+template<typename T>
+using AggregateFunctionVarSamp = AggregateFunctionVariance<T, AggregateFunctionVarSampImpl>;
 
 template<typename T>
-using AggregateFunctionVarSamp = AggregateFunctionVariance<T, VarSampImpl>;
+using AggregateFunctionStdDevSamp = AggregateFunctionVariance<T, AggregateFunctionStdDevSampImpl>;
 
 template<typename T>
-using AggregateFunctionStdDevSamp = AggregateFunctionVariance<T, StdDevSampImpl>;
+using AggregateFunctionVarPop = AggregateFunctionVariance<T, AggregateFunctionVarPopImpl>;
 
 template<typename T>
-using AggregateFunctionVarPop = AggregateFunctionVariance<T, VarPopImpl>;
-
-template<typename T>
-using AggregateFunctionStdDevPop = AggregateFunctionVariance<T, StdDevPopImpl>;
+using AggregateFunctionStdDevPop = AggregateFunctionVariance<T, AggregateFunctionStdDevPopImpl>;
 
 template<typename T, typename U>
-using AggregateFunctionCovarSamp = AggregateFunctionCovariance<T, U, CovarSampImpl>;
+using AggregateFunctionCovarSamp = AggregateFunctionCovariance<T, U, AggregateFunctionCovarSampImpl>;
 
 template<typename T, typename U>
-using AggregateFunctionCovarPop = AggregateFunctionCovariance<T, U, CovarPopImpl>;
+using AggregateFunctionCovarPop = AggregateFunctionCovariance<T, U, AggregateFunctionCovarPopImpl>;
 
 template<typename T, typename U>
-using AggregateFunctionCorr = AggregateFunctionCovariance<T, U, CorrImpl, true>;
+using AggregateFunctionCorr = AggregateFunctionCovariance<T, U, AggregateFunctionCorrImpl, true>;
 
 }

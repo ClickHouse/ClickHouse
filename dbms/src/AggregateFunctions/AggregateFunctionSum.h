@@ -15,9 +15,7 @@ namespace DB
 template <typename T>
 struct AggregateFunctionSumData
 {
-    T sum;
-
-    AggregateFunctionSumData() : sum(0) {}
+    T sum{};
 };
 
 
