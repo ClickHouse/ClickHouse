@@ -93,8 +93,10 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
 {
     if (!Poco::File(filename).exists())
     {
-        throw Exception(
-            "LibDictionarySource: Cant load lib " + toString() + " : " + Poco::File(filename).path(), ::ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("LibDictionarySource: Cant load lib " + toString() + " : " + Poco::File(filename).path(),
+            // TODO: fixme!:
+            //ErrorCodes::FILE_DOESNT_EXIST
+            ErrorCodes::NOT_IMPLEMENTED);
     }
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(filename);
