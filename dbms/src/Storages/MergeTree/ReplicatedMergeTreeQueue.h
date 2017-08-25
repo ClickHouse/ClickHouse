@@ -37,6 +37,8 @@ private:
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
 
+    MergeTreeDataFormatVersion format_version;
+
     String zookeeper_path;
     String replica_path;
     String logger_name;
@@ -121,7 +123,11 @@ private:
     };
 
 public:
-    ReplicatedMergeTreeQueue() {}
+    ReplicatedMergeTreeQueue(MergeTreeDataFormatVersion format_version_)
+        : format_version(format_version_)
+        , virtual_parts(format_version)
+    {
+    }
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);

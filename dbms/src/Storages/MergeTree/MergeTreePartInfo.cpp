@@ -12,29 +12,51 @@ namespace ErrorCodes
 }
 
 
-MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & dir_name)
+MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & dir_name, MergeTreeDataFormatVersion format_version)
 {
     MergeTreePartInfo part_info;
-    if (!tryParsePartName(dir_name, &part_info))
+    if (!tryParsePartName(dir_name, &part_info, format_version))
         throw Exception("Unexpected part name: " + dir_name, ErrorCodes::BAD_DATA_PART_NAME);
     return part_info;
 }
 
-bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartInfo * part_info)
+
+bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version)
 {
-    UInt32 min_yyyymmdd = 0;
-    UInt32 max_yyyymmdd = 0;
+    ReadBufferFromString in(dir_name);
+
+    String partition_id;
+    if (format_version == 0)
+    {
+        UInt32 min_yyyymmdd = 0;
+        UInt32 max_yyyymmdd = 0;
+        if (!tryReadIntText(min_yyyymmdd, in)
+            || !checkChar('_', in)
+            || !tryReadIntText(max_yyyymmdd, in)
+            || !checkChar('_', in))
+        {
+            return false;
+        }
+        partition_id = toString(min_yyyymmdd / 100);
+    }
+    else
+    {
+        while (!in.eof())
+        {
+            char c;
+            readChar(c, in);
+            if (c == '_')
+                break;
+
+            partition_id.push_back(c);
+        }
+    }
+
     Int64 min_block_num = 0;
     Int64 max_block_num = 0;
     UInt32 level = 0;
 
-    ReadBufferFromString in(dir_name);
-
-    if (!tryReadIntText(min_yyyymmdd, in)
-        || !checkChar('_', in)
-        || !tryReadIntText(max_yyyymmdd, in)
-        || !checkChar('_', in)
-        || !tryReadIntText(min_block_num, in)
+    if (!tryReadIntText(min_block_num, in)
         || !checkChar('_', in)
         || !tryReadIntText(max_block_num, in)
         || !checkChar('_', in)
@@ -46,7 +68,7 @@ bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartI
 
     if (part_info)
     {
-        part_info->partition_id = dir_name.substr(0, strlen("YYYYMM"));
+        part_info->partition_id = std::move(partition_id);
         part_info->min_block = min_block_num;
         part_info->max_block = max_block_num;
         part_info->level = level;
@@ -83,15 +105,31 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & dir_name, Da
 }
 
 
-bool MergeTreePartInfo::contains(const String & outer_part_name, const String & inner_part_name)
+bool MergeTreePartInfo::contains(const String & outer_part_name, const String & inner_part_name, MergeTreeDataFormatVersion format_version)
 {
-    MergeTreePartInfo outer = fromPartName(outer_part_name);
-    MergeTreePartInfo inner = fromPartName(inner_part_name);
+    MergeTreePartInfo outer = fromPartName(outer_part_name, format_version);
+    MergeTreePartInfo inner = fromPartName(inner_part_name, format_version);
     return outer.contains(inner);
 }
 
 
-String MergeTreePartInfo::getPartName(DayNum_t left_date, DayNum_t right_date, Int64 left_id, Int64 right_id, UInt64 level)
+String MergeTreePartInfo::getPartName() const
+{
+    WriteBufferFromOwnString wb;
+
+    writeString(partition_id, wb);
+    writeChar('_', wb);
+    writeIntText(min_block, wb);
+    writeChar('_', wb);
+    writeIntText(max_block, wb);
+    writeChar('_', wb);
+    writeIntText(level, wb);
+
+    return wb.str();
+}
+
+
+String MergeTreePartInfo::getPartNameV0(DayNum_t left_date, DayNum_t right_date) const
 {
     const auto & date_lut = DateLUT::instance();
 
@@ -106,9 +144,9 @@ String MergeTreePartInfo::getPartName(DayNum_t left_date, DayNum_t right_date, I
     writeChar('_', wb);
     writeIntText(right_date_id, wb);
     writeChar('_', wb);
-    writeIntText(left_id, wb);
+    writeIntText(min_block, wb);
     writeChar('_', wb);
-    writeIntText(right_id, wb);
+    writeIntText(max_block, wb);
     writeChar('_', wb);
     writeIntText(level, wb);
 

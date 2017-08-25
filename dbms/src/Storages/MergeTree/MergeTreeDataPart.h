@@ -104,15 +104,12 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(MergeTreeData & storage_, const String & name_)
-        : storage(storage_), name(name_), info(MergeTreePartInfo::fromPartName(name_))
-    {
-    }
-
     MergeTreeDataPart(MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
         : storage(storage_), name(name_), info(info_)
     {
     }
+
+    MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
 
     /// Returns checksum of column's binary file.
     const Checksum * tryGetBinChecksum(const String & name) const;

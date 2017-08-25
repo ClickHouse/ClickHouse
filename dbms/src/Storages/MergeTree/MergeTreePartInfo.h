@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <common/DateLUT.h>
 
 
@@ -37,15 +38,16 @@ struct MergeTreePartInfo
             && level >= rhs.level;
     }
 
-    static MergeTreePartInfo fromPartName(const String & part_name);
+    String getPartName() const;
+    String getPartNameV0(DayNum_t left_date, DayNum_t right_date) const;
 
-    static bool tryParsePartName(const String & dir_name, MergeTreePartInfo * part_info);
+    static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);
 
-    static void parseMinMaxDatesFromPartName(const String & dir_name, DayNum_t & min_date, DayNum_t & max_date);
+    static bool tryParsePartName(const String & dir_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
 
-    static bool contains(const String & outer_part_name, const String & inner_part_name);
+    static void parseMinMaxDatesFromPartName(const String & part_name, DayNum_t & min_date, DayNum_t & max_date);
 
-    static String getPartName(DayNum_t left_date, DayNum_t right_date, Int64 left_id, Int64 right_id, UInt64 level);
+    static bool contains(const String & outer_part_name, const String & inner_part_name, MergeTreeDataFormatVersion format_version);
 };
 
 }

@@ -84,16 +84,20 @@ void MergeTreeDataMerger::FuturePart::assign(MergeTreeData::DataPartsVector part
     part_info.max_block = parts.back()->info.max_block;
     part_info.level = max_level + 1;
 
-    DayNum_t min_date = DayNum_t(std::numeric_limits<UInt16>::max());
-    DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
-    for (const auto & part : parts)
+    if (parts.front()->storage.format_version == 0)
     {
-        min_date = std::min(min_date, part->getMinDate());
-        max_date = std::max(max_date, part->getMaxDate());
-    }
+        DayNum_t min_date = DayNum_t(std::numeric_limits<UInt16>::max());
+        DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
+        for (const auto & part : parts)
+        {
+            min_date = std::min(min_date, part->getMinDate());
+            max_date = std::max(max_date, part->getMaxDate());
+        }
 
-    name = MergeTreePartInfo::getPartName(
-            min_date, max_date, part_info.min_block, part_info.max_block, part_info.level);
+        name = part_info.getPartNameV0(min_date, max_date);
+    }
+    else
+        name = part_info.getPartName();
 }
 
 MergeTreeDataMerger::MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_)
@@ -1069,9 +1073,11 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         size_t shard_no = entry.first;
         MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
 
-        std::string new_name = MergeTreePartInfo::getPartName(
-                part_from_shard->getMinDate(), part_from_shard->getMaxDate(),
-                part_from_shard->info.min_block, part_from_shard->info.max_block, part_from_shard->info.level);
+        std::string new_name;
+        if (data.format_version == 0)
+            new_name = part_from_shard->info.getPartNameV0(part_from_shard->getMinDate(), part_from_shard->getMaxDate());
+        else
+            new_name = part_from_shard->info.getPartName();
         std::string new_relative_path = "reshard/" + toString(shard_no) + "/" + new_name;
 
         part_from_shard->renameTo(new_relative_path);

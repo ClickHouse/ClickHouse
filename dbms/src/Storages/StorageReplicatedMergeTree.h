@@ -241,13 +241,6 @@ private:
     String replica_name;
     String replica_path;
 
-    /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
-      * In ZK entries in chronological order. Here it is not necessary.
-      */
-    ReplicatedMergeTreeQueue queue;
-    std::atomic<time_t> last_queue_update_start_time{0};
-    std::atomic<time_t> last_queue_update_finish_time{0};
-
     /** /replicas/me/is_active.
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
@@ -272,6 +265,14 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMerger merger;
+
+    /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
+     * In ZK entries in chronological order. Here it is not necessary.
+     */
+    ReplicatedMergeTreeQueue queue;
+    std::atomic<time_t> last_queue_update_start_time{0};
+    std::atomic<time_t> last_queue_update_finish_time{0};
+
 
     DataPartsExchange::Fetcher fetcher;
     RemoteDiskSpaceMonitor::Client disk_space_monitor_client;

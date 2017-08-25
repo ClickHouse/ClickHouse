@@ -86,7 +86,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     }
 
     /// If the part is not in ZooKeeper, we'll check if it's at least somewhere.
-    auto part_info = MergeTreePartInfo::fromPartName(part_name);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.data.format_version);
 
     /** The logic is this:
         * - if some live or inactive replica has such a part, or a part covering it
@@ -111,7 +111,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         Strings parts = zookeeper->getChildren(storage.zookeeper_path + "/replicas/" + replica + "/parts");
         for (const String & part_on_replica : parts)
         {
-            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica);
+            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.data.format_version);
 
             if (part_on_replica == part_name || part_on_replica_info.contains(part_info))
             {

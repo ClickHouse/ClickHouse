@@ -4,7 +4,8 @@
 namespace DB
 {
 
-ActiveDataPartSet::ActiveDataPartSet(const Strings & names)
+ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names)
+    : format_version(format_version_)
 {
     for (const auto & name : names)
         addImpl(name);
@@ -20,7 +21,7 @@ void ActiveDataPartSet::add(const String & name)
 
 void ActiveDataPartSet::addImpl(const String & name)
 {
-    auto part_info = MergeTreePartInfo::fromPartName(name);
+    auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
 
     if (!getContainingPartImpl(part_info).empty())
         return;
@@ -53,7 +54,7 @@ void ActiveDataPartSet::addImpl(const String & name)
 String ActiveDataPartSet::getContainingPart(const String & part_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
-    return getContainingPartImpl(MergeTreePartInfo::fromPartName(part_name));
+    return getContainingPartImpl(MergeTreePartInfo::fromPartName(part_name, format_version));
 }
 
 

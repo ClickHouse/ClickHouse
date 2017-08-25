@@ -497,12 +497,12 @@ void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field
     else
     {
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
-        ActiveDataPartSet active_parts;
+        ActiveDataPartSet active_parts(data.format_version);
         for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
         {
             String name = it.name();
             MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info)
+            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, data.format_version)
                 || part_info.partition_id != partition_id)
             {
                 continue;
