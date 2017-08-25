@@ -149,7 +149,7 @@ struct NumericArraySource : public IArraySource
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
-            return {&elements[prev_offset], 0};
+            return {&elements[prev_offset], elem_size};
         return {&elements[offsets[row_num] - offset], offset};
     }
 
@@ -157,7 +157,7 @@ struct NumericArraySource : public IArraySource
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
-            return {&elements[prev_offset], 0};
+            return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[offsets[row_num] - offset], std::min(length, offset)};
     }
 };
@@ -621,7 +621,7 @@ struct GenericArraySource : public IArraySource
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
-            return {&elements, prev_offset, 0};
+            return {&elements, prev_offset, elem_size};
         return {&elements, offsets[row_num] - offset, offset};
     }
 
@@ -629,7 +629,7 @@ struct GenericArraySource : public IArraySource
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
-            return {&elements, prev_offset, 0};
+            return {&elements, prev_offset, length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements, offsets[row_num] - offset, std::min(length, offset)};
     }
 };
@@ -706,40 +706,40 @@ struct NullableArraySource : public ArraySource
     Slice getSliceFromLeft(size_t offset) const
     {
         Slice slice = ArraySource::getSliceFromLeft(offset);
-        if (!slice.size)
-            slice.null_map = &null_map[prev_offset];
-        else
+        if (offsets[row_num] > prev_offset + offset)
             slice.null_map = &null_map[prev_offset + offset];
+        else
+            slice.null_map = &null_map[prev_offset];
         return slice;
     }
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         Slice slice = ArraySource::getSliceFromLeft(offset, length);
-        if (!slice.size)
-            slice.null_map = &null_map[prev_offset];
-        else
+        if (offsets[row_num] > prev_offset + offset)
             slice.null_map = &null_map[prev_offset + offset];
+        else
+            slice.null_map = &null_map[prev_offset];
         return slice;
     }
 
     Slice getSliceFromRight(size_t offset) const
     {
         Slice slice = ArraySource::getSliceFromRight(offset);
-        if (!slice.size)
-            slice.null_map = &null_map[prev_offset];
-        else
+        if (offsets[row_num] > prev_offset + offset)
             slice.null_map = &null_map[offsets[row_num] - offset];
+        else
+            slice.null_map = &null_map[prev_offset];
         return slice;
     }
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
         Slice slice = ArraySource::getSliceFromRight(offset, length);
-        if (!slice.size)
-            slice.null_map = &null_map[prev_offset];
-        else
+        if (offsets[row_num] > prev_offset + offset)
             slice.null_map = &null_map[offsets[row_num] - offset];
+        else
+            slice.null_map = &null_map[prev_offset];
         return slice;
     }
 
