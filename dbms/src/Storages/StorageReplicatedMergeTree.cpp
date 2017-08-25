@@ -201,7 +201,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         settings_, database_name_ + "." + table_name, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); },
         [this] () { clearOldPartsAndRemoveFromZK(); }),
-    reader(data), writer(data), merger(data, context.getBackgroundPool()), fetcher(data), sharded_partition_uploader_client(*this),
+    reader(data), writer(data), merger(data, context.getBackgroundPool()), queue(data.format_version),
+    fetcher(data), sharded_partition_uploader_client(*this),
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
@@ -700,7 +701,7 @@ void StorageReplicatedMergeTree::createReplica()
 
         /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
         Strings parts = zookeeper->getChildren(source_path + "/parts");
-        ActiveDataPartSet active_parts_set(parts);
+        ActiveDataPartSet active_parts_set(data.format_version, parts);
 
         Strings active_parts = active_parts_set.getParts();
         for (const String & name : active_parts)
@@ -1260,7 +1261,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                         {
                             ops.emplace_back(std::make_unique<zkutil::Op::Remove>(quorum_path, quorum_stat.version));
 
-                            auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name);
+                            auto part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
 
                             if (part_info.min_block != part_info.max_block)
                                 throw Exception("Logical error: log entry with quorum for part covering more than one block number",
@@ -1379,7 +1380,7 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
     LOG_DEBUG(log, (entry.detach ? "Detaching" : "Removing") << " parts.");
     size_t removed_parts = 0;
 
-    auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name);
+    auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
 
     /// Delete the parts contained in the range to be deleted.
     /// It's important that no old parts remain (after the merge), because otherwise,
@@ -1425,7 +1426,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     /// So, if conflicts are found, throw an exception and will retry execution later
     queue.disableMergesAndFetchesInRange(entry);
 
-    auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name);
+    auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
 
     /// We don't change table structure, only data in some parts
     /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
@@ -1599,7 +1600,7 @@ namespace
             ReplicatedMergeTreeQuorumEntry quorum_entry;
             quorum_entry.fromString(quorum_node_value);
 
-            auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name);
+            auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
 
             if (part_info.min_block != part_info.max_block)
                 throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
@@ -1613,7 +1614,7 @@ namespace
         String quorum_last_part;
         if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", quorum_last_part) && quorum_last_part.empty() == false)
         {
-            auto part_info = MergeTreePartInfo::fromPartName(quorum_last_part);
+            auto part_info = MergeTreePartInfo::fromPartName(quorum_last_part, data.format_version);
 
             if (part_info.min_block != part_info.max_block)
                 throw Exception("Logical error: part written with quorum covers more than one block numbers", ErrorCodes::LOGICAL_ERROR);
@@ -1970,9 +1971,11 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const LogEntry 
         Strings parts = zookeeper->getChildren(zookeeper_path + "/replicas/" + replica + "/parts");
         for (const String & part_on_replica : parts)
         {
-            if (part_on_replica == entry.new_part_name || MergeTreePartInfo::contains(part_on_replica, entry.new_part_name))
+            if (part_on_replica == entry.new_part_name
+                || MergeTreePartInfo::contains(part_on_replica, entry.new_part_name, data.format_version))
             {
-                if (largest_part_found.empty() || MergeTreePartInfo::contains(part_on_replica, largest_part_found))
+                if (largest_part_found.empty()
+                    || MergeTreePartInfo::contains(part_on_replica, largest_part_found, data.format_version))
                 {
                     largest_part_found = part_on_replica;
                 }
@@ -2115,7 +2118,6 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     MergeTreeData::MutableDataPartPtr part = fetcher.fetchPart(
         part_name, replica_path, address.host, address.replication_port, to_detached);
-
 
     if (!to_detached)
     {
@@ -2314,13 +2316,13 @@ BlockInputStreams StorageReplicatedMergeTree::read(
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry;
                 quorum_entry.fromString(quorum_str);
-                auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name);
+                auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
                 max_block_number_to_read = part_info.min_block - 1;
             }
         }
         else
         {
-            auto part_info = MergeTreePartInfo::fromPartName(last_part);
+            auto part_info = MergeTreePartInfo::fromPartName(last_part, data.format_version);
             max_block_number_to_read = part_info.max_block;
         }
     }
@@ -2567,16 +2569,22 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
 
 /// The name of an imaginary part covering all possible parts in the specified partition with numbers in the range from zero to specified right bound.
-static String getFakePartNameCoveringPartRange(const String & partition_id, UInt64 left, UInt64 right)
+static String getFakePartNameCoveringPartRange(
+        MergeTreeDataFormatVersion format_version, const String & partition_id, UInt64 left, UInt64 right)
 {
-    /// The date range is all month long.
-    const auto & lut = DateLUT::instance();
-    time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(partition_id + "01"));
-    DayNum_t left_date = lut.toDayNum(start_time);
-    DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
-
     /// Artificial high level is choosen, to make this part "covering" all parts inside.
-    return MergeTreePartInfo::getPartName(left_date, right_date, left, right, 999999999);
+    MergeTreePartInfo part_info(partition_id, left, right, 999999999);
+    if (format_version == 0)
+    {
+        /// The date range is all month long.
+        const auto & lut = DateLUT::instance();
+        time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(partition_id + "01"));
+        DayNum_t left_date = lut.toDayNum(start_time);
+        DayNum_t right_date = DayNum_t(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
+        return part_info.getPartNameV0(left_date, right_date);
+    }
+    else
+        return part_info.getPartName();
 }
 
 
@@ -2606,7 +2614,7 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(co
         return {};
 
     --right;
-    return getFakePartNameCoveringPartRange(partition_id, left, right);
+    return getFakePartNameCoveringPartRange(data.format_version, partition_id, left, right);
 }
 
 
@@ -2720,14 +2728,14 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & query, const Fie
     else
     {
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
-        ActiveDataPartSet active_parts;
+        ActiveDataPartSet active_parts(data.format_version);
 
         std::set<String> part_names;
         for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
         {
             String name = it.name();
             MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info))
+            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, data.format_version))
                 continue;
             if (part_info.partition_id != partition_id)
                 continue;
@@ -3228,7 +3236,8 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
     for (Poco::DirectoryIterator dir_it{data.getFullPath() + "detached/"}; dir_it != dir_end; ++dir_it)
     {
         MergeTreePartInfo part_info;
-        if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info) && part_info.partition_id == partition_id)
+        if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, data.format_version)
+              && part_info.partition_id == partition_id)
             throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
     }
 
@@ -3308,7 +3317,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
             throw Exception("Too much retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MUCH_RETRIES_TO_FETCH_PARTS);
 
         Strings parts = getZooKeeper()->getChildren(best_replica_path + "/parts");
-        ActiveDataPartSet active_parts_set(parts);
+        ActiveDataPartSet active_parts_set(data.format_version, parts);
         Strings parts_to_fetch;
 
         if (missing_parts.empty())
@@ -3319,7 +3328,7 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
             Strings parts_to_fetch_partition;
             for (const String & part : parts_to_fetch)
             {
-                if (MergeTreePartInfo::fromPartName(part).partition_id == partition_id)
+                if (MergeTreePartInfo::fromPartName(part, data.format_version).partition_id == partition_id)
                     parts_to_fetch_partition.push_back(part);
             }
 

@@ -337,6 +337,11 @@ void MinMaxIndex::merge(const MinMaxIndex & other)
 }
 
 
+MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & name_)
+    : storage(storage_), name(name_), info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
+{
+}
+
 /// Returns the size of .bin file for column `name` if found, zero otherwise.
 size_t MergeTreeDataPart::getColumnCompressedSize(const String & name) const
 {
@@ -657,16 +662,21 @@ void MergeTreeDataPart::loadIndex()
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
 {
-    DayNum_t min_date;
-    DayNum_t max_date;
-    MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
+    if (storage.format_version == 0)
+    {
+        DayNum_t min_date;
+        DayNum_t max_date;
+        MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
 
-    const auto & date_lut = DateLUT::instance();
-    partition = Row(1, static_cast<UInt64>(date_lut.toNumYYYYMM(min_date)));
+        const auto & date_lut = DateLUT::instance();
+        partition = Row(1, static_cast<UInt64>(date_lut.toNumYYYYMM(min_date)));
 
-    minmax_idx.min_column_values = Row(1, static_cast<UInt64>(min_date));
-    minmax_idx.max_column_values = Row(1, static_cast<UInt64>(max_date));
-    minmax_idx.initialized = true;
+        minmax_idx.min_column_values = Row(1, static_cast<UInt64>(min_date));
+        minmax_idx.max_column_values = Row(1, static_cast<UInt64>(max_date));
+        minmax_idx.initialized = true;
+    }
+    else
+        throw Exception("TODO", ErrorCodes::LOGICAL_ERROR);
 }
 
 void MergeTreeDataPart::loadChecksums(bool require)

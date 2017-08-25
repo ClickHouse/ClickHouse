@@ -466,6 +466,8 @@ public:
     /// For determining the partition id of inserted blocks.
     String getPartitionIDFromData(const Row & partition);
 
+    MergeTreeDataFormatVersion format_version;
+
     Context & context;
     const String date_column_name;
     const ASTPtr sampling_expression;
