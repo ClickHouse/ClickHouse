@@ -28,6 +28,8 @@ select arraySlice([1, 2, 3, 4, 5, 6], -4, 2);
 select arraySlice([1, 2, 3, 4, 5, 6], -4, -2);
 select arraySlice([1, 2, 3, 4, 5, 6], 2, 0);
 select arraySlice([1, 2, 3, 4, 5, 6], -10, 15);
+select arraySlice([1, 2, 3, 4, 5, 6], -15, 10);
+select arraySlice([1, 2, 3, 4, 5, 6], -15, 9);
 select arraySlice([1, 2, 3, 4, 5, 6], 10, 0);
 select arraySlice([1, 2, 3, 4, 5, 6], 10, -1);
 select arraySlice([1, 2, 3, 4, 5, 6], 10, 1);
