@@ -134,22 +134,29 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     MinMaxIndex minmax_idx;
     minmax_idx.update(block, data.minmax_idx_columns);
 
-    DayNum_t min_date(minmax_idx.min_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
-    DayNum_t max_date(minmax_idx.max_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
-
-    const auto & date_lut = DateLUT::instance();
-
-    DayNum_t min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
-    DayNum_t max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
-
-    if (min_month != max_month)
-        throw Exception("Logical error: part spans more than one month.");
-
-    String part_name = MergeTreePartInfo::getPartName(min_date, max_date, temp_index, temp_index, 0);
-
     String new_partition_id = data.getPartitionIDFromData(block_with_partition.partition);
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-            data, part_name, MergeTreePartInfo(new_partition_id, temp_index, temp_index, 0));
+
+    MergeTreePartInfo new_part_info(new_partition_id, temp_index, temp_index, 0);
+    String part_name;
+    if (data.format_version == 0)
+    {
+        DayNum_t min_date(minmax_idx.min_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
+        DayNum_t max_date(minmax_idx.max_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
+
+        const auto & date_lut = DateLUT::instance();
+
+        DayNum_t min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
+        DayNum_t max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
+
+        if (min_month != max_month)
+            throw Exception("Logical error: part spans more than one month.");
+
+        part_name = new_part_info.getPartNameV0(min_date, max_date);
+    }
+    else
+        part_name = new_part_info.getPartName();
+
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name, new_part_info);
     new_data_part->partition = std::move(block_with_partition.partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->relative_path = TMP_PREFIX + part_name;
