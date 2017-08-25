@@ -43,27 +43,21 @@
 #include "huf.h"
 
 
-/*-****************************************
-*  FSE Error Management
-******************************************/
-unsigned FSE_isError(size_t code) { return ERR_isError(code); }
+/*===   Version   ===*/
+unsigned FSE_versionNumber(void) { return FSE_VERSION_NUMBER; }
 
+
+/*===   Error Management   ===*/
+unsigned FSE_isError(size_t code) { return ERR_isError(code); }
 const char* FSE_getErrorName(size_t code) { return ERR_getErrorName(code); }
 
-
-/* **************************************************************
-*  HUF Error Management
-****************************************************************/
 unsigned HUF_isError(size_t code) { return ERR_isError(code); }
-
 const char* HUF_getErrorName(size_t code) { return ERR_getErrorName(code); }
 
 
 /*-**************************************************************
 *  FSE NCount encoding-decoding
 ****************************************************************/
-static short FSE_abs(short a) { return (short)(a<0 ? -a : a); }
-
 size_t FSE_readNCount (short* normalizedCounter, unsigned* maxSVPtr, unsigned* tableLogPtr,
                  const void* headerBuffer, size_t hbSize)
 {
@@ -117,21 +111,21 @@ size_t FSE_readNCount (short* normalizedCounter, unsigned* maxSVPtr, unsigned* t
             } else {
                 bitStream >>= 2;
         }   }
-        {   short const max = (short)((2*threshold-1)-remaining);
-            short count;
+        {   int const max = (2*threshold-1) - remaining;
+            int count;
 
             if ((bitStream & (threshold-1)) < (U32)max) {
-                count = (short)(bitStream & (threshold-1));
-                bitCount   += nbBits-1;
+                count = bitStream & (threshold-1);
+                bitCount += nbBits-1;
             } else {
-                count = (short)(bitStream & (2*threshold-1));
+                count = bitStream & (2*threshold-1);
                 if (count >= threshold) count -= max;
-                bitCount   += nbBits;
+                bitCount += nbBits;
             }
 
             count--;   /* extra accuracy */
-            remaining -= FSE_abs(count);
-            normalizedCounter[charnum++] = count;
+            remaining -= count < 0 ? -count : count;   /* -1 means +1 */
+            normalizedCounter[charnum++] = (short)count;
             previous0 = !count;
             while (remaining < threshold) {
                 nbBits--;
@@ -159,6 +153,7 @@ size_t FSE_readNCount (short* normalizedCounter, unsigned* maxSVPtr, unsigned* t
 /*! HUF_readStats() :
     Read compact Huffman tree, saved by HUF_writeCTable().
     `huffWeight` is destination buffer.
+    `rankStats` is assumed to be a table of at least HUF_TABLELOG_MAX U32.
     @return : size read from `src` , or an error Code .
     Note : Needed by HUF_readCTable() and HUF_readDTableX?() .
 */
@@ -168,9 +163,11 @@ size_t HUF_readStats(BYTE* huffWeight, size_t hwSize, U32* rankStats,
 {
     U32 weightTotal;
     const BYTE* ip = (const BYTE*) src;
-    size_t iSize = ip[0];
+    size_t iSize;
     size_t oSize;
 
+    if (!srcSize) return ERROR(srcSize_wrong);
+    iSize = ip[0];
     /* memset(huffWeight, 0, hwSize);   *//* is not necessary, even though some analyzer complain ... */
 
     if (iSize >= 128) {  /* special header */
@@ -185,23 +182,25 @@ size_t HUF_readStats(BYTE* huffWeight, size_t hwSize, U32* rankStats,
                 huffWeight[n+1] = ip[n/2] & 15;
     }   }   }
     else  {   /* header compressed with FSE (normal case) */
+        FSE_DTable fseWorkspace[FSE_DTABLE_SIZE_U32(6)];  /* 6 is max possible tableLog for HUF header (maybe even 5, to be tested) */
         if (iSize+1 > srcSize) return ERROR(srcSize_wrong);
-        oSize = FSE_decompress(huffWeight, hwSize-1, ip+1, iSize);   /* max (hwSize-1) values decoded, as last one is implied */
+        oSize = FSE_decompress_wksp(huffWeight, hwSize-1, ip+1, iSize, fseWorkspace, 6);   /* max (hwSize-1) values decoded, as last one is implied */
         if (FSE_isError(oSize)) return oSize;
     }
 
     /* collect weight stats */
-    memset(rankStats, 0, (HUF_TABLELOG_ABSOLUTEMAX + 1) * sizeof(U32));
+    memset(rankStats, 0, (HUF_TABLELOG_MAX + 1) * sizeof(U32));
     weightTotal = 0;
     {   U32 n; for (n=0; n<oSize; n++) {
-            if (huffWeight[n] >= HUF_TABLELOG_ABSOLUTEMAX) return ERROR(corruption_detected);
+            if (huffWeight[n] >= HUF_TABLELOG_MAX) return ERROR(corruption_detected);
             rankStats[huffWeight[n]]++;
             weightTotal += (1 << huffWeight[n]) >> 1;
     }   }
+    if (weightTotal == 0) return ERROR(corruption_detected);
 
     /* get last non-null symbol weight (implied, total must be 2^n) */
     {   U32 const tableLog = BIT_highbit32(weightTotal) + 1;
-        if (tableLog > HUF_TABLELOG_ABSOLUTEMAX) return ERROR(corruption_detected);
+        if (tableLog > HUF_TABLELOG_MAX) return ERROR(corruption_detected);
         *tableLogPtr = tableLog;
         /* determine last weight */
         {   U32 const total = 1 << tableLog;

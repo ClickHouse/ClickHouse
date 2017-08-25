@@ -60,8 +60,7 @@ struct IndexForNativeFormat
 class NativeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    /** If a non-zero server_revision is specified, additional block information may be expected and read,
-      * depending on what is supported for the specified revision.
+    /** If a non-zero server_revision is specified, additional block information may be expected and read.
       *
       * `index` is not required parameter. If set, only parts of columns specified in the index will be read.
       */

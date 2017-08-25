@@ -14,10 +14,6 @@ add_executable (hash_map hash_map.cpp)
 target_include_directories (hash_map BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_link_libraries (hash_map dbms)
 
-add_executable (hash_map2 hash_map2.cpp)
-target_include_directories (hash_map2 BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
-target_link_libraries (hash_map2 dbms)
-
 add_executable (hash_map3 hash_map3.cpp)
 target_link_libraries (hash_map3 dbms)
 

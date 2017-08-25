@@ -32,7 +32,7 @@ StoragePtr TableFunctionNumbers::execute(const ASTPtr & ast_function, const Cont
         throw Exception("Table function 'numbers' requires exactly one argument: amount of numbers.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], context);
+    args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);
 
     UInt64 limit = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<UInt64>();
 

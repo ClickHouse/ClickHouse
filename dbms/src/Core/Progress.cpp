@@ -17,9 +17,7 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
 
     readVarUInt(new_rows, in);
     readVarUInt(new_bytes, in);
-
-    if (server_revision >= DBMS_MIN_REVISION_WITH_TOTAL_ROWS_IN_PROGRESS)
-        readVarUInt(new_total_rows, in);
+    readVarUInt(new_total_rows, in);
 
     rows = new_rows;
     bytes = new_bytes;
@@ -31,9 +29,7 @@ void Progress::write(WriteBuffer & out, UInt64 client_revision) const
 {
     writeVarUInt(rows.load(), out);
     writeVarUInt(bytes.load(), out);
-
-    if (client_revision >= DBMS_MIN_REVISION_WITH_TOTAL_ROWS_IN_PROGRESS)
-        writeVarUInt(total_rows.load(), out);
+    writeVarUInt(total_rows.load(), out);
 }
 
 

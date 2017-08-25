@@ -71,7 +71,7 @@ public:
         TryResult() = default;
 
         explicit TryResult(Entry entry_)
-            : entry(std::move(entry))
+            : entry(std::move(entry_))
             , is_usable(true)
             , is_up_to_date(true)
         {

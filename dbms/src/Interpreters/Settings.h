@@ -274,7 +274,7 @@ struct Settings
      * Zero means do not take delay into account. \
      */ \
     \
-    M(SettingUInt64, max_replica_delay_for_distributed_queries, 0) \
+    M(SettingUInt64, max_replica_delay_for_distributed_queries, 300) \
    /** Suppose max_replica_delay_for_distributed_queries is set and all replicas for the queried table are stale. \
      * If this setting is enabled, the query will be performed anyway, otherwise the error will be reported. \
      */ \

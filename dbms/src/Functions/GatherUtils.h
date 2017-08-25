@@ -148,7 +148,7 @@ struct NumericArraySource : public IArraySource
     Slice getSliceFromRight(size_t offset) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
-        if (offset >= elem_size)
+        if (offset > elem_size)
             return {&elements[prev_offset], elem_size};
         return {&elements[offsets[row_num] - offset], offset};
     }
@@ -156,7 +156,7 @@ struct NumericArraySource : public IArraySource
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
-        if (offset >= elem_size)
+        if (offset > elem_size)
             return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[offsets[row_num] - offset], std::min(length, offset)};
     }
@@ -287,16 +287,16 @@ struct StringSource
     Slice getSliceFromRight(size_t offset) const
     {
         size_t elem_size = offsets[row_num] - prev_offset - 1;
-        if (offset >= elem_size)
-            return {&elements[prev_offset], 0};
+        if (offset > elem_size)
+            return {&elements[prev_offset], elem_size};
         return {&elements[prev_offset + elem_size - offset], offset};
     }
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
         size_t elem_size = offsets[row_num] - prev_offset - 1;
-        if (offset >= elem_size)
-            return {&elements[prev_offset], 0};
+        if (offset > elem_size)
+            return {&elements[prev_offset], elem_size};
         return {&elements[prev_offset + elem_size - offset], std::min(length, offset)};
     }
 };
@@ -367,15 +367,15 @@ struct FixedStringSource
 
     Slice getSliceFromRight(size_t offset) const
     {
-        if (offset >= string_size)
-            return {pos, 0};
+        if (offset > string_size)
+            return {pos, string_size};
         return {pos + string_size - offset, offset};
     }
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
-        if (offset >= string_size)
-            return {pos, 0};
+        if (offset > string_size)
+            return {pos, string_size};
         return {pos + string_size - offset, std::min(length, offset)};
     }
 };
@@ -620,7 +620,7 @@ struct GenericArraySource : public IArraySource
     Slice getSliceFromRight(size_t offset) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
-        if (offset >= elem_size)
+        if (offset > elem_size)
             return {&elements, prev_offset, elem_size};
         return {&elements, offsets[row_num] - offset, offset};
     }
@@ -628,7 +628,7 @@ struct GenericArraySource : public IArraySource
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
         size_t elem_size = offsets[row_num] - prev_offset;
-        if (offset >= elem_size)
+        if (offset > elem_size)
             return {&elements, prev_offset, length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements, offsets[row_num] - offset, std::min(length, offset)};
     }

@@ -323,12 +323,10 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// AS SELECT ...
         if (!s_as.ignore(pos, expected))
             return false;
-        Pos before_select = pos;
-        if (!s_select.ignore(pos, expected))
-            return false;
-        pos = before_select;
+
         ParserSelectQuery select_p;
-        select_p.parse(pos, select, expected);
+        if (!select_p.parse(pos, select, expected))
+            return false;
     }
 
     auto query = std::make_shared<ASTCreateQuery>(StringRange(begin, pos));

@@ -247,7 +247,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeperPt
         if (!status.exists)
             throw zkutil::KeeperException("A block node was suddenly deleted", ZNONODE);
 
-        cached_block_stats->emplace(elem.first, status.stat);
+        cached_block_stats->emplace(elem.first, RequiredStat(status.stat));
         timed_blocks.emplace_back(elem.first, RequiredStat(status.stat));
     }
 

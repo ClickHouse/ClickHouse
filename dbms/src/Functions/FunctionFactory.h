@@ -1,25 +1,19 @@
 #pragma once
 
-#include <string>
-#include <memory>
-#include <unordered_map>
+#include <Functions/IFunction.h>
+
 #include <ext/singleton.h>
 
-#include <Common/Exception.h>
-#include <Core/Types.h>
+#include <functional>
+#include <memory>
+#include <string>
+#include <unordered_map>
 
 
 namespace DB
 {
 
 class Context;
-class IFunction;
-using FunctionPtr = std::shared_ptr<IFunction>;
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 
 /** Creates function by name.
@@ -30,12 +24,8 @@ class FunctionFactory : public ext::singleton<FunctionFactory>
 {
     friend class StorageSystemFunctions;
 
-private:
-    using Creator = FunctionPtr(*)(const Context & context);    /// Not std::function, for lower object size and less indirection.
-    using Functions = std::unordered_map<String, Creator>;
-
-    Functions functions;
-    Functions case_insensitive_functions;
+public:
+    using Creator = std::function<FunctionPtr(const Context &)>;
 
     /// For compatibility with SQL, it's possible to specify that certain function name is case insensitive.
     enum CaseSensitiveness
@@ -44,18 +34,30 @@ private:
         CaseInsensitive
     };
 
-public:
-    FunctionPtr get(const String & name, const Context & context) const;    /// Throws an exception if not found.
-    FunctionPtr tryGet(const String & name, const Context & context) const; /// Returns nullptr if not found.
-
-    /// No locking, you must register all functions before usage of get, tryGet.
-    void registerFunction(const String & name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    /// Register a function by its name.
+    /// No locking, you must register all functions before usage of get.
+    void registerFunction(
+        const std::string & name,
+        Creator creator,
+        CaseSensitiveness case_sensitiveness = CaseSensitive);
 
     template <typename Function>
     void registerFunction()
     {
-        registerFunction(String(Function::name), &Function::create);
+        registerFunction(Function::name, &Function::create);
     }
+
+    /// Throws an exception if not found.
+    FunctionPtr get(const std::string & name, const Context & context) const;
+
+    /// Returns nullptr if not found.
+    FunctionPtr tryGet(const std::string & name, const Context & context) const;
+
+private:
+    using Functions = std::unordered_map<std::string, Creator>;
+
+    Functions functions;
+    Functions case_insensitive_functions;
 };
 
 }

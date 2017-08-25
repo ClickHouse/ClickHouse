@@ -7,6 +7,11 @@ list(APPEND dirs ${dirs1})
 get_property (dirs1 TARGET common PROPERTY INCLUDE_DIRECTORIES)
 list(APPEND dirs ${dirs1})
 
+if (USE_INTERNAL_BOOST_LIBRARY)
+    get_property (dirs1 TARGET ${Boost_PROGRAM_OPTIONS_LIBRARY} PROPERTY INCLUDE_DIRECTORIES)
+    list(APPEND dirs ${dirs1})
+endif ()
+
 list(REMOVE_DUPLICATES dirs)
 file (WRITE ${CMAKE_CURRENT_BINARY_DIR}/include_directories.txt "")
 foreach (dir ${dirs})

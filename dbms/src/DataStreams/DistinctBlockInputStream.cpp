@@ -115,7 +115,7 @@ void DistinctBlockInputStream::buildFilter(
         /// Make a key.
         typename Method::Key key = state.getKey(columns, columns.size(), i, key_sizes);
 
-        typename Method::Data::iterator it = method.data.find(key);
+        typename Method::Data::iterator it;
         bool inserted;
         method.data.emplace(key, it, inserted);
 

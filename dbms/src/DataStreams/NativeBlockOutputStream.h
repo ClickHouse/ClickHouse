@@ -20,8 +20,7 @@ class CompressedWriteBuffer;
 class NativeBlockOutputStream : public IBlockOutputStream
 {
 public:
-    /** If non-zero client_revision is specified, additional block information can be written,
-      *  depending on what is supported for the specified revision.
+    /** If non-zero client_revision is specified, additional block information can be written.
       */
     NativeBlockOutputStream(
         WriteBuffer & ostr_, UInt64 client_revision_ = 0,
