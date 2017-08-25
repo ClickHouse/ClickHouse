@@ -61,6 +61,22 @@ namespace ErrorCodes
   *
   * arrayReduce('agg', arr1, ...) - apply the aggregate function `agg` to arrays `arr1...`
   *  If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function.
+  *
+  *  arrayConcat(arr1, ...) - concatenate arrays.
+  *
+  *  arraySlice(arr, offset, length) - make slice of array. Offsets and length may be < 0 or Null
+  *   - if offset <= 0, indexation from right element
+  *   - if length < 0, length = len(array) - (positive_index(offset) - 1) + length
+  *   indexation:
+  *     [ 1,  2,  3,  4,  5,  6]
+  *     [-5, -4, -3, -2, -1,  0]
+  *   examples:
+  *     arraySlice([1, 2, 3, 4, 5, 6], -4, 2) -> [2, 3]
+  *     arraySlice([1, 2, 3, 4, 5, 6], 2, -1) -> [2, 3, 4, 5] (6 - (2 - 1) + (-1) = 4)
+  *     arraySlice([1, 2, 3, 4, 5, 6], -4, -1) = arraySlice([1, 2, 3, 4, 5, 6], -4, -1) -> [2, 3, 4, 5]
+  *
+  *  arrayPushBack(arr, x), arrayPushFront(arr, x)
+  *  arrayPopBack(arr), arrayPopFront(arr)
   */
 
 
@@ -1433,8 +1449,8 @@ public:
 
     String getName() const override;
 
-    bool isVariadic() const override { return false; }
-    size_t getNumberOfArguments() const override { return 3; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 

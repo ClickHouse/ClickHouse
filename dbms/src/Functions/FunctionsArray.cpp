@@ -3051,6 +3051,13 @@ String FunctionArraySlice::getName() const
 
 DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) const
 {
+    size_t number_of_arguments = arguments.size();
+
+    if (number_of_arguments < 2 || number_of_arguments > 3)
+        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                        + toString(number_of_arguments) + ", should be 2 or 3",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
     if (arguments[0]->isNull())
         return arguments[0];
 
@@ -3059,7 +3066,7 @@ DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) c
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
                         + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    for (size_t i = 1; i < arguments.size(); ++i)
+    for (size_t i = 1; i < number_of_arguments; ++i)
     {
         if (!arguments[i]->isNumeric() && !arguments[i]->isNull())
             throw Exception(
@@ -3079,7 +3086,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
 
     auto array_column = block.getByPosition(arguments[0]).column;
     auto offset_column = block.getByPosition(arguments[1]).column;
-    auto length_column = block.getByPosition(arguments[2]).column;
+    auto length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
 
     if (return_type->isNull())
     {
@@ -3107,7 +3114,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
 
     if (offset_column->isNull())
     {
-        if (length_column->isNull())
+        if (!length_column || length_column->isNull())
             result_column = array_column->clone();
         else if (length_column->isConst())
             sliceFromLeftConstantOffsetBounded(*source, *sink, 0, length_column->getInt(0));
@@ -3121,7 +3128,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
     {
         ssize_t offset = offset_column->getUInt(0);
 
-        if (length_column->isNull())
+        if (!length_column || length_column->isNull())
         {
             if (offset > 0)
                 sliceFromLeftConstantOffsetUnbounded(*source, *sink, static_cast<size_t>(offset - 1));
@@ -3141,7 +3148,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
     }
     else
     {
-        if (length_column->isNull())
+        if (!length_column || length_column->isNull())
             sliceDynamicOffsetUnbounded(*source, *sink, *offset_column);
         else
             sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
