@@ -886,7 +886,22 @@ void DDLWorker::run()
                 if (!e.isTemporaryError())
                 {
                     LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
-                    zookeeper = context.getZooKeeper();
+
+                    while (!stop_flag)
+                    {
+                        try
+                        {
+                            zookeeper = context.getZooKeeper();
+                            break;
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                            using namespace std::chrono_literals;
+                            std::this_thread::sleep_for(5s);
+                        }
+                    }
                 }
                 else
                 {
