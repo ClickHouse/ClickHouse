@@ -234,13 +234,13 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             if (part_values.find(part->name) == part_values.end())
                 continue;
 
-            Field left = static_cast<UInt64>(part->left_date);
-            Field right = static_cast<UInt64>(part->right_date);
+            Field left = static_cast<UInt64>(part->min_date);
+            Field right = static_cast<UInt64>(part->max_date);
 
             if (!date_condition.mayBeTrueInRange(1, &left, &right, data_types_date))
                 continue;
 
-            if (max_block_number_to_read && part->right > max_block_number_to_read)
+            if (max_block_number_to_read && part->info.max_block > max_block_number_to_read)
                 continue;
 
             parts.push_back(part);

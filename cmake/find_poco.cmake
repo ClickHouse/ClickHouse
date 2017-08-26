@@ -10,6 +10,7 @@ else ()
 
     set (USE_INTERNAL_POCO_LIBRARY 1)
 
+    include (${ClickHouse_SOURCE_DIR}/cmake/find_ltdl.cmake)
     include (${ClickHouse_SOURCE_DIR}/contrib/libpoco/cmake/FindODBC.cmake)
 
     list (APPEND Poco_INCLUDE_DIRS
@@ -29,6 +30,7 @@ else ()
     if (ODBC_FOUND)
         set (Poco_DataODBC_FOUND 1)
         set (Poco_DataODBC_LIBRARY PocoDataODBC)
+        list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIB})
         list (APPEND Poco_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/libpoco/Data/ODBC/include/")
     endif ()
 

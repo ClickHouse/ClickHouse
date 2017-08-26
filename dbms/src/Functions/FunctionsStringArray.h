@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -210,6 +211,9 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
 
         sep = col->getValue<String>();
+
+        if (sep.empty())
+            throw Exception("Illegal separator for function " + getName() + ". Must be not empty.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     /// Returns the position of the argument that is the column of strings

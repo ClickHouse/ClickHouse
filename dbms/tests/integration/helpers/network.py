@@ -29,6 +29,7 @@ class PartitionManager:
         self._add_rule({'source': instance.ip_address, 'destination_port': 2181, 'action': action})
         self._add_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
 
+
     def restore_instance_zk_connections(self, instance, action='DROP'):
         self._check_instance(instance)
 
@@ -36,18 +37,33 @@ class PartitionManager:
         self._delete_rule({'destination': instance.ip_address, 'source_port': 2181, 'action': action})
 
 
-    def partition_instances(self, left, right, action='DROP'):
+    def partition_instances(self, left, right, port=None, action='DROP'):
         self._check_instance(left)
         self._check_instance(right)
 
-        self._add_rule({'source': left.ip_address, 'destination': right.ip_address, 'action': action})
-        self._add_rule({'source': right.ip_address, 'destination': left.ip_address, 'action': action})
+        def create_rule(src, dst):
+            rule = {'source': src.ip_address, 'destination': dst.ip_address, 'action': action}
+            if port is not None:
+                rule['destination_port'] = port
+            return rule
+
+        self._add_rule(create_rule(left, right))
+        self._add_rule(create_rule(right, left))
 
 
     def heal_all(self):
         while self._iptables_rules:
             rule = self._iptables_rules.pop()
             _NetworkManager.get().delete_iptables_rule(**rule)
+
+    def pop_rules(self):
+        res = self._iptables_rules[:]
+        self.heal_all()
+        return res
+
+    def push_rules(self, rules):
+        for rule in rules:
+            self._add_rule(rule)
 
 
     @staticmethod
@@ -68,6 +84,18 @@ class PartitionManager:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.heal_all()
+
+
+class PartitionManagerDisbaler:
+    def __init__(self, manager):
+        self.manager = manager
+        self.rules = self.manager.pop_rules()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.manager.push_rules(self.rules)
 
 
 class _NetworkManager:
@@ -103,8 +131,11 @@ class _NetworkManager:
     def _iptables_cmd_suffix(
             source=None, destination=None,
             source_port=None, destination_port=None,
-            action=None):
-        ret = ['-p', 'tcp']
+            action=None, probability=None):
+        ret = []
+        if probability is not None:
+            ret.extend(['-m', 'statistic', '--mode', 'random', '--probability', str(probability)])
+        ret.extend(['-p', 'tcp'])
         if source is not None:
             ret.extend(['-s', source])
         if destination is not None:

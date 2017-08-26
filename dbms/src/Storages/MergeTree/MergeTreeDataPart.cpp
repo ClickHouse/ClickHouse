@@ -234,7 +234,7 @@ void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums
     rhs_checksums.files.clear();
 }
 
-/// Control sum computed from the set of control sums of .bin files.
+/// Checksum computed from the set of control sums of .bin files.
 void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 {
     /// We use fact that iteration is in deterministic (lexicographical) order.
@@ -256,12 +256,9 @@ void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
 
 String MergeTreeDataPartChecksums::toString() const
 {
-    String s;
-    {
-        WriteBufferFromString out(s);
-        write(out);
-    }
-    return s;
+    WriteBufferFromOwnString out;
+    write(out);
+    return out.str();
 }
 
 MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
@@ -327,9 +324,7 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
     }
 
     if (!minimum_size_column)
-        throw Exception{
-            "Could not find a column of minimum size in MergeTree",
-            ErrorCodes::LOGICAL_ERROR};
+        throw Exception("Could not find a column of minimum size in MergeTree, part " + getFullPath(), ErrorCodes::LOGICAL_ERROR);
 
     return *minimum_size_column;
 }
@@ -532,6 +527,17 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
     renameTo(dst_name());
 }
 
+
+void MergeTreeDataPart::loadColumnsChecksumsIndex(bool require_columns_checksums, bool check_consistency)
+{
+    loadColumns(require_columns_checksums);
+    loadChecksums(require_columns_checksums);
+    loadIndex();
+    if (check_consistency)
+        checkConsistency(require_columns_checksums);
+}
+
+
 void MergeTreeDataPart::loadIndex()
 {
     /// Size - in number of marks.
@@ -630,7 +636,7 @@ void MergeTreeDataPart::loadColumns(bool require)
     columns.readText(file);
 }
 
-void MergeTreeDataPart::checkNotBroken(bool require_part_metadata)
+void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 {
     String path = getFullPath();
 

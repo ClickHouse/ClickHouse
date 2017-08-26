@@ -9,6 +9,7 @@
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/CompressedReadBuffer.h>
 #include <IO/HexWriteBuffer.h>
 #include <DataTypes/DataTypeDate.h>
@@ -279,11 +280,11 @@ Int64 MergeTreeData::getMaxDataPartIndex()
 {
     std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
-    Int64 max_part_id = 0;
+    Int64 max_block_id = 0;
     for (const auto & part : all_data_parts)
-        max_part_id = std::max(max_part_id, part->right);
+        max_block_id = std::max(max_block_id, part->info.max_block);
 
-    return max_part_id;
+    return max_block_id;
 }
 
 
@@ -301,7 +302,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it(full_path); it != end; ++it)
     {
-        /// Skip temporary directories older than one day.
+        /// Skip temporary directories.
         if (startsWith(it.name(), "tmp"))
             continue;
 
@@ -315,19 +316,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     for (const String & file_name : part_file_names)
     {
         MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-        if (!ActiveDataPartSet::parsePartNameImpl(file_name, part.get()))
+        if (!MergeTreePartInfo::tryParsePartName(file_name, &part->info))
             continue;
 
+        MergeTreePartInfo::parseMinMaxDatesFromPartName(file_name, part->min_date, part->max_date);
         part->name = file_name;
         part->relative_path = file_name;
         bool broken = false;
 
         try
         {
-            part->loadColumns(require_part_metadata);
-            part->loadChecksums(require_part_metadata);
-            part->loadIndex();
-            part->checkNotBroken(require_part_metadata);
+            part->loadColumnsChecksumsIndex(require_part_metadata, true);
         }
         catch (const Exception & e)
         {
@@ -349,7 +348,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         /// Ignore and possibly delete broken parts that can appear as a result of hard server restart.
         if (broken)
         {
-            if (part->level == 0)
+            if (part->info.level == 0)
             {
                 /// It is impossible to restore level 0 parts.
                 LOG_ERROR(log, "Considering to remove broken part " << full_path + file_name << " because it's impossible to repair.");
@@ -369,11 +368,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                     if (contained_name == file_name)
                         continue;
 
-                    DataPart contained_part(*this);
-                    if (!ActiveDataPartSet::parsePartNameImpl(contained_name, &contained_part))
+                    MergeTreePartInfo contained_part_info;
+                    if (!MergeTreePartInfo::tryParsePartName(contained_name, &contained_part_info))
                         continue;
 
-                    if (part->contains(contained_part))
+                    if (part->info.contains(contained_part_info))
                     {
                         LOG_ERROR(log, "Found part " << full_path + contained_name);
                         ++contained_parts;
@@ -424,8 +423,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         ++curr_jt;
         while (curr_jt != data_parts.end())
         {
-            /// Don't consider data parts belonging to different months.
-            if ((*curr_jt)->month != (*prev_jt)->month)
+            /// Don't consider data parts belonging to different partitions.
+            if ((*curr_jt)->info.partition_id != (*prev_jt)->info.partition_id)
             {
                 ++prev_jt;
                 ++curr_jt;
@@ -482,7 +481,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
     if (!lock.try_lock())
         return;
 
-    time_t current_time = time(0);
+    time_t current_time = time(nullptr);
     ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
         ? current_time - custom_directories_lifetime_seconds
         : current_time - settings.temporary_directories_lifetime;
@@ -521,12 +520,12 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
     if (!lock.try_lock())
         return res;
 
-    time_t now = time(0);
+    time_t now = time(nullptr);
 
     {
-        std::lock_guard<std::mutex> lock(all_data_parts_mutex);
+        std::lock_guard<std::mutex> lock_all_parts(all_data_parts_mutex);
 
-        for (DataParts::iterator it = all_data_parts.begin(); it != all_data_parts.end();)
+        for (auto it = all_data_parts.begin(); it != all_data_parts.end();)
         {
             if (it->unique() && /// After this ref_count cannot increase.
                 (*it)->remove_time < now &&
@@ -879,21 +878,18 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
     if (part && !out_rename_map.empty())
     {
-        std::string message;
+        WriteBufferFromOwnString out;
+        out << "Will rename ";
+        bool first = true;
+        for (const auto & from_to : out_rename_map)
         {
-            WriteBufferFromString out(message);
-            out << "Will rename ";
-            bool first = true;
-            for (const auto & from_to : out_rename_map)
-            {
-                if (!first)
-                    out << ", ";
-                first = false;
-                out << from_to.first << " to " << from_to.second;
-            }
-            out << " in part " << part->name;
+            if (!first)
+                out << ", ";
+            first = false;
+            out << from_to.first << " to " << from_to.second;
         }
-        LOG_DEBUG(log, message);
+        out << " in part " << part->name;
+        LOG_DEBUG(log, out.str());
     }
 }
 
@@ -1030,8 +1026,20 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
+        auto compression_method = this->context.chooseCompressionMethod(
+            part->size_in_bytes,
+            static_cast<double>(part->size_in_bytes) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, expression);
-        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, CompressionMethod::LZ4, false);
+
+        /** Don't write offsets for arrays, because ALTER never change them
+         *  (MODIFY COLUMN could only change types of elements but never modify array sizes).
+          * Also note that they does not participate in 'rename_map'.
+          * Also note, that for columns, that are parts of Nested,
+          *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
+          *  will have old name of shared offsets for arrays.
+          */
+        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_method, true /* skip_offsets */);
+
         in.readPrefix();
         out.writePrefix();
 
@@ -1046,7 +1054,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     DataPart::Checksums new_checksums = part->checksums;
     for (auto it : transaction->rename_map)
     {
-        if (it.second == "")
+        if (it.second.empty())
             new_checksums.files.erase(it.first);
         else
             new_checksums.files[it.second] = add_checksums.files[it.first];
@@ -1109,7 +1117,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
                 Poco::File{path + it.first}.renameTo(path + it.second);
         }
 
-        DataPart & mutable_part = const_cast<DataPart &>(*data_part);
+        auto & mutable_part = const_cast<DataPart &>(*data_part);
         mutable_part.checksums = new_checksums;
         mutable_part.columns = new_columns;
 
@@ -1193,10 +1201,10 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
           * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
           */
         if (increment)
-            part->left = part->right = increment->get();
+            part->info.min_block = part->info.max_block = increment->get();
 
         String old_name = part->name;
-        String new_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
+        String new_name = MergeTreePartInfo::getPartName(part->min_date, part->max_date, part->info.min_block, part->info.max_block, part->info.level);
 
         LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << new_name << ".");
 
@@ -1230,7 +1238,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
         /// Parts contained in the part are consecutive in data_parts, intersecting the insertion place
         /// for the part itself.
-        DataParts::iterator it = data_parts.lower_bound(part);
+        auto it = data_parts.lower_bound(part);
         /// Go to the left.
         while (it != data_parts.begin())
         {
@@ -1243,7 +1251,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
                 break;
             }
             replaced.push_back(*it);
-            (*it)->remove_time = time(0);
+            (*it)->remove_time = time(nullptr);
             removePartContributionToColumnSizes(*it);
             data_parts.erase(it++); /// Yes, ++, not --.
         }
@@ -1258,7 +1266,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
                 break;
             }
             replaced.push_back(*it);
-            (*it)->remove_time = time(0);
+            (*it)->remove_time = time(nullptr);
             removePartContributionToColumnSizes(*it);
             data_parts.erase(it++);
         }
@@ -1266,7 +1274,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         if (obsolete)
         {
             LOG_WARNING(log, "Obsolete part " << part->name << " added");
-            part->remove_time = time(0);
+            part->remove_time = time(nullptr);
         }
         else
         {
@@ -1342,18 +1350,18 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String &
         Strings restored;
         bool error = false;
 
-        Int64 pos = part->left;
+        Int64 pos = part->info.min_block;
 
         if (it != all_data_parts.begin())
         {
             --it;
             if (part->contains(**it))
             {
-                if ((*it)->left != part->left)
+                if ((*it)->info.min_block != part->info.min_block)
                     error = true;
                 data_parts.insert(*it);
                 addPartContributionToColumnSizes(*it);
-                pos = (*it)->right + 1;
+                pos = (*it)->info.max_block + 1;
                 restored.push_back((*it)->name);
             }
             else
@@ -1365,17 +1373,17 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String &
 
         for (; it != all_data_parts.end() && part->contains(**it); ++it)
         {
-            if ((*it)->left < pos)
+            if ((*it)->info.min_block < pos)
                 continue;
-            if ((*it)->left > pos)
+            if ((*it)->info.min_block > pos)
                 error = true;
             data_parts.insert(*it);
             addPartContributionToColumnSizes(*it);
-            pos = (*it)->right + 1;
+            pos = (*it)->info.max_block + 1;
             restored.push_back((*it)->name);
         }
 
-        if (pos != part->right + 1)
+        if (pos != part->info.max_block + 1)
             error = true;
 
         for (const String & name : restored)
@@ -1422,23 +1430,23 @@ MergeTreeData::DataParts MergeTreeData::getAllDataParts() const
     return all_data_parts;
 }
 
-size_t MergeTreeData::getMaxPartsCountForMonth() const
+size_t MergeTreeData::getMaxPartsCountForPartition() const
 {
     std::lock_guard<std::mutex> lock(data_parts_mutex);
 
     size_t res = 0;
     size_t cur_count = 0;
-    DayNum_t cur_month = DayNum_t(0);
+    const String * cur_partition_id = nullptr;
 
     for (const auto & part : data_parts)
     {
-        if (part->month == cur_month)
+        if (cur_partition_id && part->info.partition_id == *cur_partition_id)
         {
             ++cur_count;
         }
         else
         {
-            cur_month = part->month;
+            cur_partition_id = &part->info.partition_id;
             cur_count = 1;
         }
 
@@ -1451,7 +1459,7 @@ size_t MergeTreeData::getMaxPartsCountForMonth() const
 
 void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 {
-    const size_t parts_count = getMaxPartsCountForMonth();
+    const size_t parts_count = getMaxPartsCountForPartition();
     if (parts_count < settings.parts_to_delay_insert)
         return;
 
@@ -1481,26 +1489,25 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
 {
-    MutableDataPartPtr tmp_part(new DataPart(*this));
-    ActiveDataPartSet::parsePartName(part_name, *tmp_part);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name);
 
     std::lock_guard<std::mutex> lock(data_parts_mutex);
 
     /// The part can be covered only by the previous or the next one in data_parts.
-    DataParts::iterator it = data_parts.lower_bound(tmp_part);
+    auto it = data_parts.lower_bound(part_info);
 
     if (it != data_parts.end())
     {
         if ((*it)->name == part_name)
             return *it;
-        if ((*it)->contains(*tmp_part))
+        if ((*it)->info.contains(part_info))
             return *it;
     }
 
     if (it != data_parts.begin())
     {
         --it;
-        if ((*it)->contains(*tmp_part))
+        if ((*it)->info.contains(part_info))
             return *it;
     }
 
@@ -1509,11 +1516,10 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
 
 MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name)
 {
-    MutableDataPartPtr tmp_part(new DataPart(*this));
-    ActiveDataPartSet::parsePartName(part_name, *tmp_part);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name);
 
     std::lock_guard<std::mutex> lock(all_data_parts_mutex);
-    DataParts::iterator it = all_data_parts.lower_bound(tmp_part);
+    auto it = all_data_parts.lower_bound(part_info);
     if (it != all_data_parts.end() && (*it)->name == part_name)
         return *it;
 
@@ -1526,8 +1532,8 @@ MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & 
 
     if (part_from_shard->name == part_name)
         return part_from_shard;
-    else
-        return nullptr;
+
+    return nullptr;
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
@@ -1536,18 +1542,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
 
     part->relative_path = relative_path;
     part->name = Poco::Path(relative_path).getFileName();
-    ActiveDataPartSet::parsePartName(part->name, *part);
+    part->info = MergeTreePartInfo::fromPartName(part->name);
+    MergeTreePartInfo::parseMinMaxDatesFromPartName(part->name, part->min_date, part->max_date);
     String full_part_path = part->getFullPath();
 
     /// Earlier the list of columns was written incorrectly. Delete it and re-create.
     if (Poco::File(full_part_path + "columns.txt").exists())
         Poco::File(full_part_path + "columns.txt").remove();
 
-    part->loadColumns(false);
-    part->loadChecksums(false);
-    part->loadIndex();
-    part->checkNotBroken(false);
-
+    part->loadColumnsChecksumsIndex(false, true);
     part->modification_time = Poco::File(full_part_path).getLastModified().epochTime();
 
     /// If the checksums file is not present, calculate the checksums and write them to disk.
@@ -1675,7 +1678,7 @@ void MergeTreeData::freezePartition(const std::string & prefix, const String & w
     LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
 }
 
-size_t MergeTreeData::getPartitionSize(const std::string & partition_name) const
+size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
 {
     size_t size = 0;
 
@@ -1684,10 +1687,10 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_name) const
 
     for (Poco::DirectoryIterator it(full_path); it != end; ++it)
     {
-        const auto filename = it.name();
-        if (!ActiveDataPartSet::isPartDirectory(filename))
+        MergeTreePartInfo part_info;
+        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info))
             continue;
-        if (!startsWith(filename, partition_name))
+        if (part_info.partition_id != partition_id)
             continue;
 
         const auto part_path = it.path().absolute().toString();
@@ -1701,57 +1704,17 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_name) const
     return size;
 }
 
-static std::pair<String, DayNum_t> getMonthNameAndDayNum(const Field & partition)
+String MergeTreeData::getPartitionID(const Field & partition)
 {
-    String month_name = partition.getType() == Field::Types::UInt64
+    String partition_id = partition.getType() == Field::Types::UInt64
         ? toString(partition.get<UInt64>())
         : partition.safeGet<String>();
 
-    if (month_name.size() != 6 || !std::all_of(month_name.begin(), month_name.end(), isNumericASCII))
-        throw Exception("Invalid partition format: " + month_name + ". Partition should consist of 6 digits: YYYYMM",
+    if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
+        throw Exception("Invalid partition format: " + partition_id + ". Partition should consist of 6 digits: YYYYMM",
             ErrorCodes::INVALID_PARTITION_NAME);
 
-    DayNum_t date = DateLUT::instance().YYYYMMDDToDayNum(parse<UInt32>(month_name + "01"));
-
-    /// Can't just compare date with 0, because 0 is a valid DayNum too.
-    if (month_name != toString(DateLUT::instance().toNumYYYYMMDD(date) / 100))
-        throw Exception("Invalid partition format: " + month_name + " doesn't look like month.",
-            ErrorCodes::INVALID_PARTITION_NAME);
-
-    return std::make_pair(month_name, date);
-}
-
-
-String MergeTreeData::getMonthName(const Field & partition)
-{
-    return getMonthNameAndDayNum(partition).first;
-}
-
-String MergeTreeData::getMonthName(DayNum_t month)
-{
-    return toString(DateLUT::instance().toNumYYYYMMDD(month) / 100);
-}
-
-DayNum_t MergeTreeData::getMonthDayNum(const Field & partition)
-{
-    return getMonthNameAndDayNum(partition).second;
-}
-
-DayNum_t MergeTreeData::getMonthFromName(const String & month_name)
-{
-    DayNum_t date = DateLUT::instance().YYYYMMDDToDayNum(parse<UInt32>(month_name + "01"));
-
-    /// Can't just compare date with 0, because 0 is a valid DayNum too.
-    if (month_name != toString(DateLUT::instance().toNumYYYYMMDD(date) / 100))
-        throw Exception("Invalid partition format: " + month_name + " doesn't look like month.",
-            ErrorCodes::INVALID_PARTITION_NAME);
-
-    return date;
-}
-
-DayNum_t MergeTreeData::getMonthFromPartPrefix(const String & part_prefix)
-{
-    return getMonthFromName(part_prefix.substr(0, strlen("YYYYMM")));
+    return partition_id;
 }
 
 

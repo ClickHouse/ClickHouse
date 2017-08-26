@@ -191,9 +191,6 @@ struct Settings
     M(SettingUInt64, select_sequential_consistency, 0) \
     /** The maximum number of different shards and the maximum number of replicas of one shard in the `remote` function. */ \
     M(SettingUInt64, table_function_remote_max_addresses, 1000) \
-    /** Maximum number of threads for distributed processing of one query */ \
-    M(SettingUInt64, max_distributed_processing_threads, 8) \
-    \
     /** Settings to reduce the number of threads in case of slow reads. */ \
     /** Pay attention only to readings that took at least that much time. */ \
     M(SettingMilliseconds,     read_backoff_min_latency_ms, 1000) \
@@ -277,7 +274,7 @@ struct Settings
      * Zero means do not take delay into account. \
      */ \
     \
-    M(SettingUInt64, max_replica_delay_for_distributed_queries, 0) \
+    M(SettingUInt64, max_replica_delay_for_distributed_queries, 300) \
    /** Suppose max_replica_delay_for_distributed_queries is set and all replicas for the queried table are stale. \
      * If this setting is enabled, the query will be performed anyway, otherwise the error will be reported. \
      */ \
@@ -286,7 +283,17 @@ struct Settings
     M(SettingBool, distributed_ddl_allow_replicated_alter, 0) \
     /** Limit on max column size in block while reading. Helps to decrease cache misses count. \
       * Should be close to L2 cache size. */ \
-    M(SettingUInt64, preferred_max_column_in_block_size_bytes, 0)
+    M(SettingUInt64, preferred_max_column_in_block_size_bytes, 0) \
+    \
+    /** If setting is enabled, insert query into distributed waits until data will be sent to all nodes in cluster. \
+     */ \
+    M(SettingBool, insert_distributed_sync, false) \
+    /** Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. \
+     *  Zero value means no timeout. \
+     */ \
+    M(SettingUInt64, insert_distributed_timeout, 0) \
+    /* Timeout for DDL query responses from all hosts in cluster. Negative value means infinite. */ \
+    M(SettingInt64, distributed_ddl_task_timeout, 120)
 
 
     /// Possible limits for query execution.

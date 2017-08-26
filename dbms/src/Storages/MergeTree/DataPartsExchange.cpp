@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
 }
 
 namespace DataPartsExchange
@@ -143,7 +144,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::ABORTED)
+        if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
             typeid_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
         throw;
     }
@@ -264,11 +265,10 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
     assertEOF(in);
 
-    ActiveDataPartSet::parsePartName(part_name, *new_data_part);
-    new_data_part->modification_time = time(0);
-    new_data_part->loadColumns(true);
-    new_data_part->loadChecksums(true);
-    new_data_part->loadIndex();
+    new_data_part->info = MergeTreePartInfo::fromPartName(part_name);
+    MergeTreePartInfo::parseMinMaxDatesFromPartName(part_name, new_data_part->min_date, new_data_part->max_date);
+    new_data_part->modification_time = time(nullptr);
+    new_data_part->loadColumnsChecksumsIndex(true, false);
     new_data_part->is_sharded = false;
     new_data_part->checksums.checkEqual(checksums, false);
 

@@ -49,10 +49,10 @@ namespace ErrorCodes
 
 void TCPHandler::runImpl()
 {
-    connection_context = *server.global_context;
+    connection_context = server.context();
     connection_context.setSessionContext(connection_context);
 
-    Settings global_settings = server.global_context->getSettings();
+    Settings global_settings = connection_context.getSettings();
 
     socket().setReceiveTimeout(global_settings.receive_timeout);
     socket().setSendTimeout(global_settings.send_timeout);
@@ -117,11 +117,11 @@ void TCPHandler::runImpl()
     while (1)
     {
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
-        while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !BaseDaemon::instance().isCancelled())
+        while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
             ;
 
         /// If we need to shut down, or client disconnects.
-        if (BaseDaemon::instance().isCancelled() || in->eof())
+        if (server.isCancelled() || in->eof())
             break;
 
         Stopwatch watch;
@@ -144,8 +144,7 @@ void TCPHandler::runImpl()
                 continue;
 
             /// Get blocks of temporary tables
-            if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-                readData(global_settings);
+            readData(global_settings);
 
             /// Reset the input stream, as we received an empty block while receiving external table data.
             /// So, the stream has been marked as cancelled and we can't read from it anymore.
@@ -257,7 +256,7 @@ void TCPHandler::readData(const Settings & global_settings)
                 break;
 
             /// Do we need to shut down?
-            if (BaseDaemon::instance().isCancelled())
+            if (server.isCancelled())
                 return;
 
             /** Have we waited for data for too long?
@@ -416,8 +415,7 @@ void TCPHandler::sendTotals()
             initBlockOutput();
 
             writeVarUInt(Protocol::Server::Totals, *out);
-            if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-                writeStringBinary("", *out);
+            writeStringBinary("", *out);
 
             state.block_out->write(totals);
             state.maybe_compressed_out->next();
@@ -438,8 +436,7 @@ void TCPHandler::sendExtremes()
             initBlockOutput();
 
             writeVarUInt(Protocol::Server::Extremes, *out);
-            if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-                writeStringBinary("", *out);
+            writeStringBinary("", *out);
 
             state.block_out->write(extremes);
             state.maybe_compressed_out->next();
@@ -612,8 +609,7 @@ bool TCPHandler::receiveData()
 
     /// The name of the temporary table for writing data, default to empty string
     String external_table_name;
-    if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-        readStringBinary(external_table_name, *in);
+    readStringBinary(external_table_name, *in);
 
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
@@ -717,8 +713,7 @@ void TCPHandler::sendData(Block & block)
     initBlockOutput();
 
     writeVarUInt(Protocol::Server::Data, *out);
-    if (client_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-        writeStringBinary("", *out);
+    writeStringBinary("", *out);
 
     state.block_out->write(block);
     state.maybe_compressed_out->next();
@@ -777,6 +772,5 @@ void TCPHandler::run()
             throw;
     }
 }
-
 
 }

@@ -5,7 +5,6 @@
 
 #include <Common/escapeForFileName.h>
 
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
@@ -446,8 +445,20 @@ String InterpreterCreateQuery::setEngine(
         String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
         String as_table_name = create.as_table;
 
-        storage_name = as_storage->getName();
-        create.storage = typeid_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
+        auto as_create_ptr = context.getCreateQuery(as_database_name, as_table_name);
+        auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
+
+        if (!create.storage)
+        {
+            if (as_create.is_view || as_create.is_materialized_view)
+                create.storage = as_create.inner_storage;
+            else
+                create.storage = as_create.storage;
+
+            storage_name = typeid_cast<const ASTFunction &>(*create.storage).name;
+        }
+        else
+            storage_name = as_storage->getName();
     }
     else if (create.is_temporary)
         set_engine("Memory");

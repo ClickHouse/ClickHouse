@@ -298,6 +298,12 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+        }
+
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
@@ -317,12 +323,10 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// AS SELECT ...
         if (!s_as.ignore(pos, expected))
             return false;
-        Pos before_select = pos;
-        if (!s_select.ignore(pos, expected))
-            return false;
-        pos = before_select;
+
         ParserSelectQuery select_p;
-        select_p.parse(pos, select, expected);
+        if (!select_p.parse(pos, select, expected))
+            return false;
     }
 
     auto query = std::make_shared<ASTCreateQuery>(StringRange(begin, pos));

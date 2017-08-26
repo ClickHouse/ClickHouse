@@ -767,7 +767,10 @@ bool ParserWithOptionalAliasImpl<ParserAlias>::parseImpl(Pos & pos, ASTPtr & nod
         String alias_name = typeid_cast<ASTIdentifier &>(*alias_node).name;
 
         if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
+        {
             ast_with_alias->alias = alias_name;
+            ast_with_alias->prefer_alias_to_column_name = prefer_alias_to_column_name;
+        }
         else
         {
             expected.add(pos, "alias cannot be here");

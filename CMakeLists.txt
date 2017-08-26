@@ -27,11 +27,11 @@ endif ()
 cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
 cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 
-find_program(CCACHE_FOUND ccache)
-if(CCACHE_FOUND AND NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache")
-  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "ccache")
-  set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK "ccache")
-endif()
+find_program (CCACHE_FOUND ccache)
+if (CCACHE_FOUND AND NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" AND NOT CMAKE_CXX_COMPILER MATCHES "ccache")
+  set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE "ccache")
+  set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK "ccache")
+endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
     message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
@@ -45,10 +45,10 @@ message (STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*)")
-    set (AARCH64 1)
+    set (ARCH_AARCH64 1)
 endif ()
-if (AARCH64 OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
-    set (ARM 1)
+if (ARCH_AARCH64 OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
+    set (ARCH_ARM 1)
 endif ()
 
 set (COMMON_WARNING_FLAGS "-Wall")    # -Werror is also added inside directories with our own code.
@@ -175,6 +175,7 @@ if (NOT OPENSSL_FOUND)
     message (FATAL_ERROR "Need openssl for build. debian tip: sudo apt install libssl-dev")
 endif ()
 
+include (cmake/lib_name.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
 # openssl, zlib before poco
@@ -183,19 +184,24 @@ include (cmake/find_zstd.cmake)
 include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
 include (cmake/find_sparsehash.cmake)
-include (cmake/find_libtool.cmake)
 include (cmake/find_rt.cmake)
 include (cmake/find_readline_edit.cmake)
 include (cmake/find_zookeeper.cmake)
-include (cmake/find_double-conversion.cmake)
 include (cmake/find_re2.cmake)
+
+include (cmake/find_contrib_lib.cmake)
+find_contrib_lib(cityhash)
+find_contrib_lib(farmhash)
+find_contrib_lib(metrohash)
+find_contrib_lib(btrie)
+find_contrib_lib(double-conversion)
+
 # Need to process before "contrib" dir:
 include (libs/libcommon/cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 include (libs/libdaemon/cmake/find_unwind.cmake)
-include (cmake/lib_name.cmake)
 
 
 set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")

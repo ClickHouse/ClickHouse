@@ -56,8 +56,7 @@ std::string DataTypeNested::extractNestedColumnName(const std::string & nested_n
 
 std::string DataTypeNested::getName() const
 {
-    std::string res;
-    WriteBufferFromString out(res);
+    WriteBufferFromOwnString out;
 
     writeCString("Nested(", out);
 
@@ -71,8 +70,7 @@ std::string DataTypeNested::getName() const
     }
 
     writeChar(')', out);
-
-    return res;
+    return out.str();
 }
 
 

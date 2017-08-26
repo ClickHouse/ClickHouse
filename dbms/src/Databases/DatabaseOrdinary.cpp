@@ -351,6 +351,10 @@ void DatabaseOrdinary::renameTable(
             to_database_concrete->name,
             to_table_name);
     }
+    catch (const Exception & e)
+    {
+        throw;
+    }
     catch (const Poco::Exception & e)
     {
         /// More good diagnostics.

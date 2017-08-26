@@ -4,7 +4,7 @@
 
 
 /** Two-level hash table.
-  * Represents 256 (or 1 << BITS_FOR_BUCKET) small hash tables (buckets of the first level).
+  * Represents 256 (or 1ULL << BITS_FOR_BUCKET) small hash tables (buckets of the first level).
   * To determine which one to use, one of the bytes of the hash function is taken.
   *
   * Usually works a little slower than a simple hash table.
@@ -47,7 +47,7 @@ protected:
 public:
     using Impl = ImplTable;
 
-    static constexpr size_t NUM_BUCKETS = 1 << BITS_FOR_BUCKET;
+    static constexpr size_t NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
     static constexpr size_t MAX_BUCKET = NUM_BUCKETS - 1;
 
     size_t hash(const Key & x) const { return Hash::operator()(x); }

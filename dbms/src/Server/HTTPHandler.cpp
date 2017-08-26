@@ -1,8 +1,11 @@
 #include <chrono>
 #include <iomanip>
 
-#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/File.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/NetException.h>
 
 #include <ext/scope_guard.h>
 
@@ -185,7 +188,7 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(Server & server_)
+HTTPHandler::HTTPHandler(IServer & server_)
     : server(server_)
     , log(&Logger::get("HTTPHandler"))
 {
@@ -225,8 +228,8 @@ void HTTPHandler::processQuery(
     std::string quota_key = request.get("X-ClickHouse-Quota", params.get("quota_key", ""));
     std::string query_id = params.get("query_id", "");
 
-    Context context = *server.global_context;
-    context.setGlobalContext(*server.global_context);
+    Context context = server.context();
+    context.setGlobalContext(server.context());
 
     context.setUser(user, password, request.clientAddress(), quota_key);
     context.setCurrentQueryId(query_id);

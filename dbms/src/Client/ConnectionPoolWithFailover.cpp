@@ -17,6 +17,14 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NETWORK_ERROR;
+    extern const int SOCKET_TIMEOUT;
+    extern const int LOGICAL_ERROR;
+}
+
+
 ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         ConnectionPoolPtrs nested_pools_,
         LoadBalancing load_balancing,
@@ -71,10 +79,17 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Se
     {
         return tryGetEntry(pool, fail_message, settings);
     };
-    return getManyImpl(settings, pool_mode, try_get_entry);
+
+    std::vector<TryResult> results = getManyImpl(settings, pool_mode, try_get_entry);
+
+    std::vector<Entry> entries;
+    entries.reserve(results.size());
+    for (auto & result : results)
+        entries.emplace_back(std::move(result.entry));
+    return entries;
 }
 
-std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getManyChecked(
+std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyChecked(
         const Settings * settings, PoolMode pool_mode, const QualifiedTableName & table_to_check)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
@@ -84,7 +99,7 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getManyChecked(
     return getManyImpl(settings, pool_mode, try_get_entry);
 }
 
-std::vector<ConnectionPool::Entry> ConnectionPoolWithFailover::getManyImpl(
+std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyImpl(
         const Settings * settings,
         PoolMode pool_mode,
         const TryGetEntryFunc & try_get_entry)

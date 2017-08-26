@@ -1,6 +1,6 @@
-## How to increase maxfiles on Mac OS X
+## How to increase maxfiles on macOS
 
-To increase maxfiles on MacOS, create the following file:
+To increase maxfiles on macOS, create the following file:
 
 (Note: you'll need to use sudo)
 

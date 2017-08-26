@@ -32,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -1038,7 +1039,7 @@ private:
         size_t dst_pos = 0;
         for (; dst_pos < num_bytes; ++dst_pos)
         {
-            dst[dst_pos] = unhex(src[src_pos]) * 16 + unhex(src[src_pos + 1]);
+            dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
             src_pos += 2;
         }
     }
@@ -1449,12 +1450,8 @@ public:
         }
         while (pos < end)
         {
-            UInt8 major = unhex(*pos);
-            ++pos;
-            UInt8 minor = unhex(*pos);
-            ++pos;
-
-            *out = (major << 4) | minor;
+            *out = unhex2(pos);
+            pos += 2;
             ++out;
         }
         *out = '\0';

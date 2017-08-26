@@ -52,13 +52,13 @@ try
             " GROUP BY SearchPhrase"
             " ORDER BY count() DESC"
             " LIMIT 10",
-        context, QueryProcessingStage::Complete);
+        context, false, QueryProcessingStage::Complete);
 
     BlockIO io2 = executeQuery(
         "SELECT count()"
             " FROM hits"
             " WHERE SearchPhrase != ''",
-        context, QueryProcessingStage::Complete);
+        context, false, QueryProcessingStage::Complete);
 
     WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
 

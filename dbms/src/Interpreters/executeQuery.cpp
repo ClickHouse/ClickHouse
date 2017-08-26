@@ -128,7 +128,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     QueryProcessingStage::Enum stage)
 {
     ProfileEvents::increment(ProfileEvents::Query);
-    time_t current_time = time(0);
+    time_t current_time = time(nullptr);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -147,7 +147,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         ast = parseQuery(parser, begin, end, "");
 
         /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-        query_size = ast->range.second - ast->range.first;
+        if (!(begin <= ast->range.first && ast->range.second <= end))
+            throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
+        query_size = ast->range.second - begin;
 
         if (max_query_size && query_size > max_query_size)
             throw Exception("Query is too large (" + toString(query_size) + ")."
@@ -253,7 +255,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElement::QUERY_FINISH;
 
-                elem.event_time = time(0);
+                elem.event_time = time(nullptr);
                 elem.query_duration_ms = elapsed_seconds * 1000;
 
                 elem.read_rows = process_list_elem->progress_in.rows;
@@ -305,7 +307,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
 
-                elem.event_time = time(0);
+                elem.event_time = time(nullptr);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception = getCurrentExceptionMessage(false);
 

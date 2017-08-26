@@ -34,14 +34,15 @@ set (re2_sources
 # re2 changes its state during matching of regular expression, e.g. creates temporary DFA.
 # It uses RWLock to process the same regular expression object from different threads.
 # In order to avoid redundant locks in some cases, we use not thread-safe version of the library (re2_st).
-add_definitions (-DNDEBUG)
-
-include_directories (BEFORE .)
 
 add_library (re2 ${re2_sources})
 add_library (re2_st ${re2_sources})
 
-set_target_properties (re2_st PROPERTIES COMPILE_DEFINITIONS "NO_THREADS;re2=re2_st")
+target_compile_definitions (re2 PRIVATE NDEBUG)
+target_compile_definitions (re2_st PRIVATE NDEBUG NO_THREADS re2=re2_st)
+
+target_include_directories (re2 PUBLIC .)
+target_include_directories (re2_st PRIVATE . PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
 
 file (MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/re2_st)
 foreach (FILENAME filtered_re2.h re2.h set.h stringpiece.h variadic_function.h)

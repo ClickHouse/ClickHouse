@@ -10,10 +10,10 @@ namespace DB
 
 /// Parse and execute a query.
 void executeQuery(
-    ReadBuffer & istr,                    /// Where to read query from (and data for INSERT, if present).
-    WriteBuffer & ostr,                    /// Where to write query output to.
+    ReadBuffer & istr,                  /// Where to read query from (and data for INSERT, if present).
+    WriteBuffer & ostr,                 /// Where to write query output to.
     bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
-    Context & context,                    /// DB, tables, data types, storage engines, functions, aggregate functions...
+    Context & context,                  /// DB, tables, data types, storage engines, functions, aggregate functions...
     std::function<void(const String &)> set_content_type /// If non-empty callback is passed, it will be called with the Content-Type of the result.
     );
 

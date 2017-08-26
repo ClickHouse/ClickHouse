@@ -5,6 +5,8 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <functional>
+
 
 namespace
 {

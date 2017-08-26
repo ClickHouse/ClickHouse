@@ -231,12 +231,9 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
 
 std::string ExecutionStatus::serializeText() const
 {
-    std::string res;
-    {
-        WriteBufferFromString wb(res);
-        wb << code << "\n" << escape << message;
-    }
-    return res;
+    WriteBufferFromOwnString wb;
+    wb << code << "\n" << escape << message;
+    return wb.str();
 }
 
 void ExecutionStatus::deserializeText(const std::string & data)
@@ -245,9 +242,24 @@ void ExecutionStatus::deserializeText(const std::string & data)
     rb >> code >> "\n" >> escape >> message;
 }
 
+bool ExecutionStatus::tryDeserializeText(const std::string & data)
+{
+    try
+    {
+        deserializeText(data);
+    }
+    catch (...)
+    {
+        return false;
+    }
+
+    return true;
+}
+
 ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_of_message)
 {
-    return ExecutionStatus(getCurrentExceptionCode(), start_of_message + ": " + getCurrentExceptionMessage(false, true));
+    String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(false, true);
+    return ExecutionStatus(getCurrentExceptionCode(), msg);
 }
 
 

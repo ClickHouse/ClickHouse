@@ -166,23 +166,22 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
     /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
 
-    String month_name = toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(part->left_date)) / 100);
-    AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(month_name, zookeeper);    /// 2 RTT
-    Int64 part_number = block_number_lock.getNumber();
+    AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper);    /// 2 RTT
+    Int64 block_number = block_number_lock.getNumber();
 
     /// Set part attributes according to part_number. Prepare an entry for log.
 
-    part->left = part_number;
-    part->right = part_number;
-    part->level = 0;
+    part->info.min_block = block_number;
+    part->info.max_block = block_number;
+    part->info.level = 0;
 
-    String part_name = ActiveDataPartSet::getPartName(part->left_date, part->right_date, part->left, part->right, part->level);
+    String part_name = MergeTreePartInfo::getPartName(part->min_date, part->max_date, block_number, block_number, 0);
 
     part->name = part_name;
 
     StorageReplicatedMergeTree::LogEntry log_entry;
     log_entry.type = StorageReplicatedMergeTree::LogEntry::GET_PART;
-    log_entry.create_time = time(0);
+    log_entry.create_time = time(nullptr);
     log_entry.source_replica = storage.replica_name;
     log_entry.new_part_name = part_name;
     log_entry.quorum = quorum;
@@ -198,7 +197,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         ops.emplace_back(
             std::make_unique<zkutil::Op::Create>(
                 storage.zookeeper_path + "/blocks/" + block_id,
-                toString(part_number),  /// We will able to know original part number for duplicate blocks, if we want.
+                toString(block_number),  /// We will able to know original part number for duplicate blocks, if we want.
                 acl,
                 zkutil::CreateMode::Persistent));
 
@@ -303,13 +302,13 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             {
                 /// if the node with the quorum existed, but was quickly removed.
 
-                throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(part_number) + " with ID '" + block_id + "': "
+                throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(block_number) + " with ID '" + block_id + "': "
                     + zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
             }
         }
         else
         {
-            throw Exception("Unexpected error while adding block " + toString(part_number) + " with ID '" + block_id + "': "
+            throw Exception("Unexpected error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
                 + zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
         }
     }

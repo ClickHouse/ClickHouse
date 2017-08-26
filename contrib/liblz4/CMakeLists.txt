@@ -1,5 +1,3 @@
-include_directories (BEFORE include)
-
 add_library (lz4
     src/lz4.c
     src/lz4hc.c
@@ -8,3 +6,4 @@ add_library (lz4
     include/lz4/lz4hc.h
     include/lz4/lz4opt.h)
 
+target_include_directories(lz4 PUBLIC include/lz4)

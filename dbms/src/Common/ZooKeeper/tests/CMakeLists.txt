@@ -15,3 +15,6 @@ target_link_libraries(zkutil_zookeeper_holder dbms)
 
 add_executable (zk_many_watches_reconnect zk_many_watches_reconnect.cpp)
 target_link_libraries (zk_many_watches_reconnect dbms)
+
+add_executable (zkutil_test_multi_exception zkutil_test_multi_exception.cpp)
+target_link_libraries (zkutil_test_multi_exception dbms gtest_main)

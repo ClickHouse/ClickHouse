@@ -49,7 +49,8 @@ class ClickHouseCluster:
         self.is_up = False
 
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False, clickhouse_path_dir=None):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False,
+        clickhouse_path_dir=None, hostname=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -65,7 +66,10 @@ class ClickHouseCluster:
         if name in self.instances:
             raise Exception("Can\'t add instance `%s': there is already an instance with the same name!" % name)
 
-        instance = ClickHouseInstance(self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir)
+        instance = ClickHouseInstance(
+            self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper,
+            self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
+
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
         if with_zookeeper and not self.with_zookeeper:
@@ -83,6 +87,13 @@ class ClickHouseCluster:
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
+
+        # Just in case kill unstopped containers from previous launch
+        try:
+            if not subprocess.call(['docker-compose', 'kill']):
+                subprocess.call(['docker-compose', 'down', '--volumes'])
+        except:
+            pass
 
         if destroy_dirs and p.exists(self.instances_dir):
             print "Removing instances dir", self.instances_dir
@@ -128,7 +139,7 @@ version: '2'
 services:
     {name}:
         image: ubuntu:14.04
-        hostname: {name}
+        hostname: {hostname}
         user: '{uid}'
         volumes:
             - {binary_path}:/usr/bin/clickhouse:ro
@@ -146,12 +157,13 @@ services:
 class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macroses,
-            with_zookeeper, base_configs_dir, server_bin_path, clickhouse_path_dir):
+            with_zookeeper, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
         self.docker_id = cluster.get_instance_docker_id(self.name)
         self.cluster = cluster
+        self.hostname = hostname if hostname is not None else self.name
 
         self.custom_config_dir = p.abspath(p.join(base_path, custom_config_dir)) if custom_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
@@ -171,13 +183,23 @@ class ClickHouseInstance:
         self.client = None
         self.default_timeout = 20.0 # 20 sec
 
-    # Conntects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
+    # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, *args, **kwargs):
         return self.client.query(*args, **kwargs)
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, *args, **kwargs):
         return self.client.get_query_request(*args, **kwargs)
+
+
+    def exec_in_container(self, cmd, **kwargs):
+        container = self.get_docker_handle()
+        handle = self.docker_client.api.exec_create(container.id, cmd, **kwargs)
+        output = self.docker_client.api.exec_start(handle).decode('utf8')
+        exit_code = self.docker_client.api.exec_inspect(handle)['ExitCode']
+        if exit_code:
+            raise Exception('Cmd {} failed! Return code {}. Output {}'.format(' '.join(cmd), exit_code, output))
+        return output
 
 
     def get_docker_handle(self):
@@ -244,14 +266,14 @@ class ClickHouseInstance:
 
         os.makedirs(self.path)
 
-        configs_dir = p.join(self.path, 'configs')
+        configs_dir = p.abspath(p.join(self.path, 'configs'))
         os.mkdir(configs_dir)
 
         shutil.copy(p.join(self.base_configs_dir, 'config.xml'), configs_dir)
         shutil.copy(p.join(self.base_configs_dir, 'users.xml'), configs_dir)
 
-        config_d_dir = p.join(configs_dir, 'config.d')
-        users_d_dir = p.join(configs_dir, 'users.d')
+        config_d_dir = p.abspath(p.join(configs_dir, 'config.d'))
+        users_d_dir = p.abspath(p.join(configs_dir, 'users.d'))
         os.mkdir(config_d_dir)
         os.mkdir(users_d_dir)
 
@@ -279,12 +301,12 @@ class ClickHouseInstance:
         for path in self.custom_user_config_paths:
             shutil.copy(path, users_d_dir)
 
-        db_dir = p.join(self.path, 'database')
+        db_dir = p.abspath(p.join(self.path, 'database'))
         os.mkdir(db_dir)
         if self.clickhouse_path_dir is not None:
             distutils.dir_util.copy_tree(self.clickhouse_path_dir, db_dir)
 
-        logs_dir = p.join(self.path, 'logs')
+        logs_dir = p.abspath(p.join(self.path, 'logs'))
         os.mkdir(logs_dir)
 
         depends_on = '[]'
@@ -294,6 +316,7 @@ class ClickHouseInstance:
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 name=self.name,
+                hostname=self.hostname,
                 uid=os.getuid(),
                 binary_path=self.server_bin_path,
                 configs_dir=configs_dir,
