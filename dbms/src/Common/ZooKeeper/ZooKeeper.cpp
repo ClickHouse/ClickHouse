@@ -71,7 +71,7 @@ void ZooKeeper::processCallback(zhandle_t * zh, int type, int state, const char 
         destroyContext(context);
 }
 
-void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_)
+void ZooKeeper::init(const std::string & hosts_, const std::string & identity, int32_t session_timeout_ms_)
 {
     log = &Logger::get("ZooKeeper");
     zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
@@ -84,12 +84,21 @@ void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_)
     if (!impl)
         throw KeeperException("Fail to initialize zookeeper. Hosts are " + hosts);
 
-    default_acl = &ZOO_OPEN_ACL_UNSAFE;
+    if (!identity.empty())
+    {
+        auto code = zoo_add_auth(impl, "digest", identity.c_str(), static_cast<int>(identity.size()), 0, 0);
+        if (code != ZOK)
+            throw KeeperException("Zookeeper authentication failed. Hosts are  " + hosts, code);
+
+        default_acl = &ZOO_CREATOR_ALL_ACL;
+    }
+    else
+        default_acl = &ZOO_OPEN_ACL_UNSAFE;
 }
 
-ZooKeeper::ZooKeeper(const std::string & hosts, int32_t session_timeout_ms)
+ZooKeeper::ZooKeeper(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms)
 {
-    init(hosts, session_timeout_ms);
+    init(hosts, identity, session_timeout_ms);
 }
 
 struct ZooKeeperArgs
@@ -107,11 +116,18 @@ struct ZooKeeperArgs
             if (startsWith(key, "node"))
             {
                 hosts_strings.push_back(
-                    config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port", "2181"));
+                    config.getString(config_name + "." + key + ".host") + ":"
+                    + config.getString(config_name + "." + key + ".port", "2181")
+                    + config.getString(config_name + "." + key + ".root", "")
+                );
             }
             else if (key == "session_timeout_ms")
             {
                 session_timeout_ms = config.getInt(config_name + "." + key);
+            }
+            else if (key == "identity")
+            {
+                identity = config.getString(config_name + "." + key);
             }
             else throw KeeperException(std::string("Unknown key ") + key + " in config file");
         }
@@ -130,13 +146,14 @@ struct ZooKeeperArgs
     }
 
     std::string hosts;
-    size_t session_timeout_ms;
+    std::string identity;
+    int session_timeout_ms;
 };
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
     ZooKeeperArgs args(config, config_name);
-    init(args.hosts, args.session_timeout_ms);
+    init(args.hosts, args.identity, args.session_timeout_ms);
 }
 
 WatchCallback ZooKeeper::callbackForEvent(const EventPtr & event)
