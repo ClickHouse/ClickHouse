@@ -3792,7 +3792,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
 
     try
     {
-        LOG_DEBUG(log, "Removing " << parts.size() << " old parts from file system");
+        LOG_DEBUG(log, "Removing " << parts.size() << " old parts from filesystem");
 
         Strings part_names;
         while (!parts.empty())
@@ -3803,7 +3803,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
             parts.pop_back();
         }
 
-        LOG_DEBUG(log, "Removed " << part_names.size() << " old parts from file system. Removing them from ZooKeeper.");
+        LOG_DEBUG(log, "Removed " << part_names.size() << " old parts from filesystem. Removing them from ZooKeeper.");
 
         try
         {
@@ -3835,7 +3835,8 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
 
         if (ops.size() >= zkutil::MULTI_BATCH_SIZE || next(it) == part_names.cend())
         {
-            zookeeper->tryMulti(ops);
+            /// It is Ok to use multi with retries to delete nodes, because new nodes with the same names cannot appear here
+            zookeeper->tryMultiWithRetries(ops);
             ops.clear();
         }
     }
