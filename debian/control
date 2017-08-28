@@ -3,7 +3,6 @@ Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake,
-               clang,
                gcc-6, g++-6,
                default-libmysqlclient-dev | libmysqlclient-dev,
                libicu-dev,
