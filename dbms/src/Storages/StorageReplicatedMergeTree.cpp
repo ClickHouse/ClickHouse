@@ -3835,7 +3835,8 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
 
         if (ops.size() >= zkutil::MULTI_BATCH_SIZE || next(it) == part_names.cend())
         {
-            zookeeper->tryMulti(ops);
+            /// It is Ok to use multi with retries to delete nodes, because new nodes with the same names cannot appear here
+            zookeeper->tryMultiWithRetries(ops);
             ops.clear();
         }
     }
