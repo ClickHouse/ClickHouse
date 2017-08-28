@@ -3792,7 +3792,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
 
     try
     {
-        LOG_DEBUG(log, "Removing " << parts.size() << " old parts from file system");
+        LOG_DEBUG(log, "Removing " << parts.size() << " old parts from filesystem");
 
         Strings part_names;
         while (!parts.empty())
@@ -3803,7 +3803,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
             parts.pop_back();
         }
 
-        LOG_DEBUG(log, "Removed " << part_names.size() << " old parts from file system. Removing them from ZooKeeper.");
+        LOG_DEBUG(log, "Removed " << part_names.size() << " old parts from filesystem. Removing them from ZooKeeper.");
 
         try
         {
