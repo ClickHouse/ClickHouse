@@ -1,4 +1,5 @@
 #include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/Context.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
@@ -95,7 +96,7 @@ std::set<std::string> getDictionariesConfigPaths(const Poco::Util::AbstractConfi
 
 void ExternalDictionaries::reloadImpl(const bool throw_on_error)
 {
-    const auto config_paths = getDictionariesConfigPaths(Poco::Util::Application::instance().config());
+    const auto config_paths = getDictionariesConfigPaths(context.getConfigRef());
 
     for (const auto & config_path : config_paths)
     {
