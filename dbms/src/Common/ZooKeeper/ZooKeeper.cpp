@@ -1,3 +1,4 @@
+#include <random>
 #include <functional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
@@ -116,7 +117,9 @@ struct ZooKeeperArgs
         }
 
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        std::random_shuffle(hosts_strings.begin(), hosts_strings.end());
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(hosts_strings.begin(), hosts_strings.end(), g);
 
         for (auto & host : hosts_strings)
         {
