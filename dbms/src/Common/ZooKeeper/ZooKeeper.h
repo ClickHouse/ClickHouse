@@ -397,6 +397,7 @@ private:
     MultiFuture asyncMultiImpl(const zkutil::Ops & ops_, bool throw_exception);
 
     std::string hosts;
+    std::string identity;
     int32_t session_timeout_ms;
 
     std::mutex mutex;

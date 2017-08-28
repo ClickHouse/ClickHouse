@@ -71,11 +71,12 @@ void ZooKeeper::processCallback(zhandle_t * zh, int type, int state, const char 
         destroyContext(context);
 }
 
-void ZooKeeper::init(const std::string & hosts_, const std::string & identity, int32_t session_timeout_ms_)
+void ZooKeeper::init(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_)
 {
     log = &Logger::get("ZooKeeper");
     zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
     hosts = hosts_;
+    identity = identity_;
     session_timeout_ms = session_timeout_ms_;
 
     impl = zookeeper_init(hosts.c_str(), nullptr, session_timeout_ms, nullptr, nullptr, 0);
@@ -727,7 +728,7 @@ ZooKeeper::~ZooKeeper()
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(hosts, session_timeout_ms);
+    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms);
 }
 
 Op::Create::Create(const std::string & path_, const std::string & value_, ACLPtr acl_, int32_t flags_)
