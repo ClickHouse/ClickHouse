@@ -24,6 +24,4 @@ struct ColumnsUint64
     VectorUint64 * data = nullptr;
 };
 
-#ifdef __cplusplus
 }
-#endif
