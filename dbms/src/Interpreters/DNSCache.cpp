@@ -2,6 +2,8 @@
 #include <Poco/Net/DNS.h>
 #include <Common/SimpleCache.h>
 #include <Core/Types.h>
+#include <Poco/Net/NetException.h>
+
 
 
 namespace DB
@@ -9,7 +11,9 @@ namespace DB
 
 static Poco::Net::IPAddress resolveIPAddressImpl(const std::string & host)
 {
-    return Poco::Net::DNS::resolveOne(host);
+    /// NOTE: Poco::Net::DNS::resolveOne(host) doesn't work for IP addresses like 127.0.0.2
+    /// Therefore we use SocketAddress constructor with dummy port to resolve IP
+    return Poco::Net::SocketAddress(host, 0U).host();
 }
 
 static Poco::Net::SocketAddress resolveSocketAddressImpl(const std::string & host_and_port)
