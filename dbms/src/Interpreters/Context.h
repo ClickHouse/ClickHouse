@@ -269,6 +269,7 @@ public:
     void setProcessListElement(ProcessListElement * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
     ProcessListElement * getProcessListElement();
+    const ProcessListElement * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();

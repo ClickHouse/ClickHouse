@@ -101,6 +101,14 @@ ProcessList::EntryPtr ProcessList::insert(
                 total_memory_tracker.setDescription("(total)");
                 user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
             }
+
+            if (settings.limits.max_network_bandwidth_for_user && !user_process_list.user_throttler)
+            {
+                user_process_list.user_throttler = std::make_shared<Throttler>(settings.limits.max_network_bandwidth_for_user, 0,
+                    "Network bandwidth limit for a user exceeded.");
+            }
+
+            res->get().user_process_list = &user_process_list;
         }
     }
 
@@ -124,13 +132,13 @@ ProcessListEntry::~ProcessListEntry()
     /// This removes the memory_tracker of one request.
     parent.cont.erase(it);
 
-    ProcessList::UserToQueries::iterator user_process_list = parent.user_to_queries.find(user);
+    auto user_process_list = parent.user_to_queries.find(user);
     if (user_process_list != parent.user_to_queries.end())
     {
         /// In case the request is canceled, the data about it is deleted from the map at the time of cancellation, and not here.
         if (!is_cancelled && !query_id.empty())
         {
-            ProcessListForUser::QueryToElement::iterator element = user_process_list->second.queries.find(query_id);
+            auto element = user_process_list->second.queries.find(query_id);
             if (element != user_process_list->second.queries.end())
                 user_process_list->second.queries.erase(element);
         }

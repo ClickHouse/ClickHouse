@@ -1094,6 +1094,11 @@ ProcessList::Element * Context::getProcessListElement()
     return process_list_elem;
 }
 
+const ProcessList::Element * Context::getProcessListElement() const
+{
+    return process_list_elem;
+}
+
 
 void Context::setUncompressedCache(size_t max_size_in_bytes)
 {
