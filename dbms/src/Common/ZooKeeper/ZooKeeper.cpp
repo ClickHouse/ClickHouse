@@ -94,6 +94,8 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_, 
     }
     else
         default_acl = &ZOO_OPEN_ACL_UNSAFE;
+
+    LOG_TRACE(log, "initialized, hosts: " << hosts);
 }
 
 ZooKeeper::ZooKeeper(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms)
@@ -109,6 +111,7 @@ struct ZooKeeperArgs
         config.keys(config_name, keys);
 
         std::vector<std::string> hosts_strings;
+        std::string root_string;
 
         session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
         for (const auto & key : keys)
@@ -118,7 +121,6 @@ struct ZooKeeperArgs
                 hosts_strings.push_back(
                     config.getString(config_name + "." + key + ".host") + ":"
                     + config.getString(config_name + "." + key + ".port", "2181")
-                    + config.getString(config_name + "." + key + ".root", "")
                 );
             }
             else if (key == "session_timeout_ms")
@@ -128,6 +130,10 @@ struct ZooKeeperArgs
             else if (key == "identity")
             {
                 identity = config.getString(config_name + "." + key);
+            }
+            else if (key == "root")
+            {
+                root_string = config.getString(config_name + "." + key);
             }
             else throw KeeperException(std::string("Unknown key ") + key + " in config file");
         }
@@ -139,7 +145,7 @@ struct ZooKeeperArgs
         {
             if (hosts.size())
                 hosts += ",";
-            hosts += host;
+            hosts += host + root_string;
         }
     }
 
