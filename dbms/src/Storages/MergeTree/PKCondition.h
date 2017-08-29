@@ -20,7 +20,7 @@ class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
 
-/** Range with open or closed ends; Perhaps unlimited.
+/** Range with open or closed ends; possibly unbounded.
   */
 struct Range
 {
@@ -31,12 +31,12 @@ private:
 public:
     Field left;                       /// the left border, if any
     Field right;                      /// the right border, if any
-    bool left_bounded = false;        /// limited to the left
-    bool right_bounded = false;       /// limited to the right
+    bool left_bounded = false;        /// bounded at the left
+    bool right_bounded = false;       /// bounded at the right
     bool left_included = false;       /// includes the left border, if any
     bool right_included = false;      /// includes the right border, if any
 
-    /// The whole set.
+    /// The whole unversum.
     Range() {}
 
     /// One point.
@@ -148,7 +148,7 @@ public:
         /// r to the right of me.
         if (r.left_bounded
             && right_bounded
-            && (less(right, r.left)                            /// ...} {...
+            && (less(right, r.left)                          /// ...} {...
                 || ((!right_included || !r.left_included)    /// ...) [... or ...] (...
                     && equals(r.left, right))))
             return false;
