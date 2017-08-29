@@ -145,8 +145,9 @@ ProcessListEntry::~ProcessListEntry()
 
         /// This removes the memory_tracker from the user. At this time, the memory_tracker that references it does not live.
 
-        /// If there are no more queries for the user, then we delete the record.
+        /// If there are no more queries for the user, then we delete the entry.
         /// This also clears the MemoryTracker for the user, and a message about the memory consumption is output to the log.
+        /// This also clears network bandwidth Throttler, so it will not count periods of inactivity.
         /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
         ///  due to the fact that there are cases when memory can be allocated while processing the request, but released later.
         if (user_process_list->second.queries.empty())
