@@ -193,15 +193,15 @@ public:
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
-  *  as well as logical links AND/OR/NOT above these conditions.
+  *  as well as logical operators AND/OR/NOT above these conditions.
   *
   * Constructs a reverse polish notation from these conditions
-  *  and can calculate (interpret) its feasibility over key ranges.
+  *  and can calculate (interpret) its satisfiability over key ranges.
   */
 class PKCondition
 {
 public:
-    /// Does not include the SAMPLE section. all_columns - the set of all columns of the table.
+    /// Does not take into account the SAMPLE section. all_columns - the set of all columns of the table.
     PKCondition(
         const SelectQueryInfo & query_info,
         const Context & context,
