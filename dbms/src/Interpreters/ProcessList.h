@@ -175,7 +175,7 @@ struct ProcessListForUser
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker;
 
-    /// Count net usage for all simultaneously running queries of single user.
+    /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
 };
 
