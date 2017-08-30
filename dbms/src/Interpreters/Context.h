@@ -128,12 +128,16 @@ public:
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
+    /// Global application configuration settings.
+    void setConfig(const ConfigurationPtr & config);
+    ConfigurationPtr getConfig() const;
+    Poco::Util::AbstractConfiguration & getConfigRef() const;
+
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
       * The accumulated quota values are not reset if the quota is not deleted.
       */
     void setUsersConfig(const ConfigurationPtr & config);
-
     ConfigurationPtr getUsersConfig();
 
     /// Must be called before getClientInfo.
@@ -267,6 +271,7 @@ public:
     void setProcessListElement(ProcessListElement * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
     ProcessListElement * getProcessListElement();
+    const ProcessListElement * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();

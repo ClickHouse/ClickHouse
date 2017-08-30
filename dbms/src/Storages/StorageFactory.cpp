@@ -195,7 +195,7 @@ static void appendGraphitePattern(const Context & context,
 static void setGraphitePatternsFromConfig(const Context & context,
     const String & config_element, Graphite::Params & params)
 {
-    const Poco::Util::AbstractConfiguration & config = Poco::Util::Application::instance().config();
+    const auto & config = context.getConfigRef();
 
     if (!config.has(config_element))
         throw Exception("No '" + config_element + "' element in configuration file",

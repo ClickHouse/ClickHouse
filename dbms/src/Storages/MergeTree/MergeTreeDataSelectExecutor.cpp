@@ -145,7 +145,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
-    /// The virtual column `_sample_factor - 1 / <used sampling factor>` can be requested in the query.
+    /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
     Names virt_column_names;
     Names real_column_names;
 

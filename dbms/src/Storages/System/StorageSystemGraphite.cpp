@@ -1,11 +1,12 @@
 #include <Storages/System/StorageSystemGraphite.h>
 
-#include <Core/Field.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Field.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Util/Application.h>
 
@@ -63,9 +64,10 @@ static Pattern readOnePattern(
     return pattern;
 }
 
-static std::vector<Pattern> readPatterns(const std::string & section)
+static std::vector<Pattern> readPatterns(
+    const AbstractConfiguration & config,
+    const std::string & section)
 {
-    const AbstractConfiguration & config = Application::instance().config();
     AbstractConfiguration::Keys keys;
     std::vector<Pattern> result;
     size_t count = 0;
@@ -92,9 +94,8 @@ static std::vector<Pattern> readPatterns(const std::string & section)
     return result;
 }
 
-static Strings getAllGraphiteSections()
+static Strings getAllGraphiteSections(const AbstractConfiguration & config)
 {
-    const AbstractConfiguration & config = Application::instance().config();
     Strings result;
 
     AbstractConfiguration::Keys keys;
@@ -180,10 +181,12 @@ BlockInputStreams StorageSystemGraphite::read(
     col_is_default.column = std::make_shared<ColumnUInt8>();
     block.insert(col_is_default);
 
-    Strings sections = getAllGraphiteSections();
+    const auto & config = context.getConfigRef();
+
+    Strings sections = getAllGraphiteSections(config);
     for (const auto & section : sections)
     {
-        const auto patterns = readPatterns(section);
+        const auto patterns = readPatterns(config, section);
         for (const auto & pattern : patterns)
         {
             for (const auto & ret : pattern.retentions)

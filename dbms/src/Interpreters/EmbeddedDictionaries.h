@@ -23,6 +23,9 @@ class Context;
 class EmbeddedDictionaries
 {
 private:
+    Poco::Logger * log;
+    Context & context;
+
     MultiVersion<RegionsHierarchies> regions_hierarchies;
     MultiVersion<TechDataHierarchy> tech_data_hierarchy;
     MultiVersion<RegionsNames> regions_names;
@@ -36,8 +39,6 @@ private:
 
     std::thread reloading_thread;
     Poco::Event destroy;
-
-    Poco::Logger * log;
 
 
     void handleException(const bool throw_on_error) const;
@@ -56,9 +57,7 @@ private:
 
 public:
     /// Every reload_period seconds directories are updated inside a separate thread.
-    EmbeddedDictionaries(const bool throw_on_error, const int reload_period_);
-
-    EmbeddedDictionaries(const bool throw_on_error);
+    EmbeddedDictionaries(Context & context, const bool throw_on_error);
 
     /// Forcibly reloads all dictionaries.
     void reload();

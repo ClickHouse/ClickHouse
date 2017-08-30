@@ -54,7 +54,7 @@ class ZooKeeper
 public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    ZooKeeper(const std::string & hosts, int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT);
+    ZooKeeper(const std::string & hosts, const std::string & identity = "", int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT);
 
     /** Config of the form:
         <zookeeper>
@@ -67,6 +67,10 @@ public:
                 <port>2181</port>
             </node>
             <session_timeout_ms>30000</session_timeout_ms>
+            <!-- Optional. Chroot suffix. Should exist. -->
+            <root>/path/to/zookeeper/node</root>
+            <!-- Optional. Zookeeper digest ACL string. -->
+            <identity>user:password</identity>
         </zookeeper>
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
@@ -353,7 +357,7 @@ private:
     friend struct WatchContext;
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & hosts, int32_t session_timeout_ms);
+    void init(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms);
     void removeChildrenRecursive(const std::string & path);
     void tryRemoveChildrenRecursive(const std::string & path);
 
@@ -397,6 +401,7 @@ private:
     MultiFuture asyncMultiImpl(const zkutil::Ops & ops_, bool throw_exception);
 
     std::string hosts;
+    std::string identity;
     int32_t session_timeout_ms;
 
     std::mutex mutex;

@@ -1419,9 +1419,10 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
     auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name);
 
-    /// We don't change table structure, only data in some parts, disable reading from them
+    /// We don't change table structure, only data in some parts
+    /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
+    /// If we will lock the whole table here, a deadlock can occur. For example, if use use Buffer table (CLICKHOUSE-3238)
     auto lock_read_structure = lockStructure(false);
-    auto lock_write_data = lockDataForAlter();
 
     auto zookeeper = getZooKeeper();
 
@@ -3708,7 +3709,7 @@ StorageReplicatedMergeTree::gatherReplicaSpaceInfo(const WeightedZooKeeperPaths 
 
     ThreadPool pool(task_info_list.size());
 
-    using Tasks = std::vector<std::packaged_task<size_t()> >;
+    using Tasks = std::vector<std::packaged_task<size_t()>>;
     Tasks tasks(task_info_list.size());
 
     try
@@ -3790,11 +3791,26 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
     if (!count)
         return;
 
+    /// Part names that were successfully deleted from filesystem and should be deleted from ZooKeeper
+    Strings part_names;
+    auto remove_from_zookeeper = [&] ()
+    {
+        LOG_DEBUG(log, "Removed " << part_names.size() << " old parts from filesystem. Removing them from ZooKeeper.");
+
+        try
+        {
+            removePartsFromZooKeeper(zookeeper, part_names);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "There is a problem with deleting parts from ZooKeeper: " << getCurrentExceptionMessage(false));
+        }
+    };
+
     try
     {
         LOG_DEBUG(log, "Removing " << parts.size() << " old parts from filesystem");
 
-        Strings part_names;
         while (!parts.empty())
         {
             MergeTreeData::DataPartPtr & part = parts.back();
@@ -3802,42 +3818,81 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
             part_names.emplace_back(part->name);
             parts.pop_back();
         }
-
-        LOG_DEBUG(log, "Removed " << part_names.size() << " old parts from filesystem. Removing them from ZooKeeper.");
-
-        try
-        {
-            removePartsFromZooKeeper(zookeeper, part_names);
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            LOG_ERROR(log, "There is a problem with deleting parts from ZooKeeper: " << getCurrentExceptionMessage(false));
-        }
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /// Finalize deletion of parts already deleted from filesystem, rollback remaining parts
         data.addOldParts(parts);
+        remove_from_zookeeper();
+
         throw;
     }
 
+    /// Finalize deletion
+    remove_from_zookeeper();
+
     LOG_DEBUG(log, "Removed " << count << " old parts");
+}
+
+
+static int32_t tryMultiWithRetries(zkutil::ZooKeeperPtr & zookeeper, zkutil::Ops & ops) noexcept
+{
+    int32_t code;
+    try
+    {
+        code = zookeeper->tryMultiWithRetries(ops);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        code = e.code;
+    }
+
+    return code;
 }
 
 
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names)
 {
     zkutil::Ops ops;
+    auto it_first_node_in_batch = part_names.cbegin();
 
     for (auto it = part_names.cbegin(); it != part_names.cend(); ++it)
     {
         removePartFromZooKeeper(*it, ops);
 
-        if (ops.size() >= zkutil::MULTI_BATCH_SIZE || next(it) == part_names.cend())
+        auto it_next = std::next(it);
+        if (ops.size() >= zkutil::MULTI_BATCH_SIZE || it_next == part_names.cend())
         {
             /// It is Ok to use multi with retries to delete nodes, because new nodes with the same names cannot appear here
-            zookeeper->tryMultiWithRetries(ops);
+            auto code = tryMultiWithRetries(zookeeper, ops);
             ops.clear();
+
+            if (code == ZNONODE)
+            {
+                /// Fallback
+                LOG_DEBUG(log, "There are no some part nodes in ZooKeeper, will remove part nodes sequentially");
+
+                for (auto it_in_batch = it_first_node_in_batch; it_in_batch != it_next; ++it_in_batch)
+                {
+                    zkutil::Ops cur_ops;
+                    removePartFromZooKeeper(*it_in_batch, cur_ops);
+                    auto cur_code = tryMultiWithRetries(zookeeper, cur_ops);
+
+                    if (cur_code == ZNONODE)
+                        LOG_DEBUG(log, "There is no part " << *it_in_batch << " in ZooKeeper, it was only in filesystem");
+                    else if (cur_code != ZOK)
+                        LOG_WARNING(log, "Cannot remove part " << *it_in_batch << " from ZooKeeper: " << ::zerror(cur_code));
+                }
+            }
+            else if (code != ZOK)
+            {
+                LOG_WARNING(log, "There was a problem with deleting " << (it_next - it_first_node_in_batch)
+                    << " nodes from ZooKeeper: " << ::zerror(code));
+            }
+
+            it_first_node_in_batch = it_next;
         }
     }
 }

@@ -67,7 +67,7 @@ void run()
     std::string buf5;
     prepare4(filename5, buf5);
 
-    const std::vector<std::function<bool()> > tests =
+    const std::vector<std::function<bool()>> tests =
     {
         std::bind(test1, std::ref(filename)),
         std::bind(test2, std::ref(filename), std::ref(buf)),

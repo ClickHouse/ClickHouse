@@ -434,7 +434,7 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        std::unordered_map<Key, Value, DefaultHash<Key> > map;
+        std::unordered_map<Key, Value, DefaultHash<Key>> map;
         for (size_t i = 0; i < n; ++i)
             ++map[data[i]];
 
@@ -450,7 +450,7 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        google::dense_hash_map<Key, Value, DefaultHash<Key> > map;
+        google::dense_hash_map<Key, Value, DefaultHash<Key>> map;
         map.set_empty_key(Key("\0", 1));
         for (size_t i = 0; i < n; ++i)
               ++map[data[i]];
@@ -467,7 +467,7 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        google::sparse_hash_map<Key, Value, DefaultHash<Key> > map;
+        google::sparse_hash_map<Key, Value, DefaultHash<Key>> map;
         for (size_t i = 0; i < n; ++i)
             ++map[data[i]];
 

@@ -790,7 +790,7 @@ public:
 
 
 template <typename ArgumentFieldType>
-class AggregateFunctionQuantileTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTiming<ArgumentFieldType> >
+class AggregateFunctionQuantileTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTiming<ArgumentFieldType>>
 {
 private:
     double level;
@@ -910,7 +910,7 @@ public:
   * Returns an array of results.
   */
 template <typename ArgumentFieldType>
-class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType> >
+class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType>>
 {
 private:
     QuantileLevels<double> levels;

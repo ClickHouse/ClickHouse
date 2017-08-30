@@ -105,6 +105,8 @@ struct ContextShared
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
+    ConfigurationPtr config;                                /// Global configuration settings.
+
     Databases databases;                                    /// List of databases and tables in them.
     FormatFactory format_factory;                           /// Formats.
     mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaeis. Have lazy initialization.
@@ -484,6 +486,23 @@ void Context::setFlagsPath(const String & path)
     shared->flags_path = path;
 }
 
+void Context::setConfig(const ConfigurationPtr & config)
+{
+    auto lock = getLock();
+    shared->config = config;
+}
+
+ConfigurationPtr Context::getConfig() const
+{
+    auto lock = getLock();
+    return shared->config;
+}
+
+Poco::Util::AbstractConfiguration & Context::getConfigRef() const
+{
+    auto lock = getLock();
+    return shared->config ? *shared->config : Poco::Util::Application::instance().config();
+}
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
@@ -498,7 +517,6 @@ ConfigurationPtr Context::getUsersConfig()
     auto lock = getLock();
     return shared->users_config;
 }
-
 
 void Context::calculateUserSettings()
 {
@@ -1031,7 +1049,7 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
     std::lock_guard<std::mutex> lock(shared->embedded_dictionaries_mutex);
 
     if (!shared->embedded_dictionaries)
-        shared->embedded_dictionaries = std::make_shared<EmbeddedDictionaries>(throw_on_error);
+        shared->embedded_dictionaries = std::make_shared<EmbeddedDictionaries>(*this->global_context, throw_on_error);
 
     return *shared->embedded_dictionaries;
 }
@@ -1083,6 +1101,11 @@ void Context::setProcessListElement(ProcessList::Element * elem)
 }
 
 ProcessList::Element * Context::getProcessListElement()
+{
+    return process_list_elem;
+}
+
+const ProcessList::Element * Context::getProcessListElement() const
 {
     return process_list_elem;
 }
@@ -1237,7 +1260,10 @@ std::pair<String, UInt16> Context::getInterserverIOAddress() const
 
 UInt16 Context::getTCPPort() const
 {
-    return Poco::Util::Application::instance().config().getInt("tcp_port");
+    auto lock = getLock();
+
+    auto & config = getConfigRef();
+    return config.getInt("tcp_port");
 }
 
 
@@ -1264,7 +1290,7 @@ Clusters & Context::getClusters() const
         std::lock_guard<std::mutex> lock(shared->clusters_mutex);
         if (!shared->clusters)
         {
-            auto & config = shared->clusters_config ? *shared->clusters_config : Poco::Util::Application::instance().config();
+            auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
             shared->clusters = std::make_unique<Clusters>(config, settings);
         }
     }
@@ -1310,7 +1336,7 @@ QueryLog & Context::getQueryLog()
         if (!global_context)
             throw Exception("Logical error: no global context for query log", ErrorCodes::LOGICAL_ERROR);
 
-        auto & config = Poco::Util::Application::instance().config();
+        auto & config = getConfigRef();
 
         String database = config.getString("query_log.database", "system");
         String table = config.getString("query_log.table", "query_log");
@@ -1329,7 +1355,7 @@ PartLog * Context::getPartLog(const String & database, const String & table)
 {
     auto lock = getLock();
 
-    auto & config = Poco::Util::Application::instance().config();
+    auto & config = getConfigRef();
     if (!config.has("part_log"))
         return nullptr;
 
@@ -1370,7 +1396,7 @@ CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part
     if (!shared->compression_method_selector)
     {
         constexpr auto config_name = "compression";
-        auto & config = Poco::Util::Application::instance().config();
+        auto & config = getConfigRef();
 
         if (config.has(config_name))
             shared->compression_method_selector = std::make_unique<CompressionMethodSelector>(config, "compression");
@@ -1388,7 +1414,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 
     if (!shared->merge_tree_settings)
     {
-        auto & config = Poco::Util::Application::instance().config();
+        auto & config = getConfigRef();
         shared->merge_tree_settings = std::make_unique<MergeTreeSettings>();
         shared->merge_tree_settings->loadFromConfig("merge_tree", config);
     }

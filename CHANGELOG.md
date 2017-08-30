@@ -1,3 +1,7 @@
+# ClickHouse release 1.1.54284
+
+* This is bugfix release for previous 1.1.54282 release. It fixes ZooKeeper nodes leak in `parts/` directory.
+
 # ClickHouse release 1.1.54282
 
 This is a bugfix release. The following bugs were fixed:
