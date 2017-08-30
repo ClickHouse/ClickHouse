@@ -1419,9 +1419,10 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
     auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name);
 
-    /// We don't change table structure, only data in some parts, disable reading from them
+    /// We don't change table structure, only data in some parts
+    /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
+    /// If we will lock the whole table here, a deadlock can occur. For example, if use use Buffer table (CLICKHOUSE-3238)
     auto lock_read_structure = lockStructure(false);
-    auto lock_write_data = lockDataForAlter();
 
     auto zookeeper = getZooKeeper();
 
