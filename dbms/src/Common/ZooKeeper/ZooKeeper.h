@@ -67,6 +67,10 @@ public:
                 <port>2181</port>
             </node>
             <session_timeout_ms>30000</session_timeout_ms>
+            <!-- Optional. Chroot suffix. Should exist. -->
+            <root>/path/to/zookeeper/node</root>
+            <!-- Optional. Zookeeper digest ACL string. -->
+            <identity>user:password</identity>
         </zookeeper>
     */
     ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name);
