@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <type_traits>
 #include <functional>
+#include <cstdint>
 
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
@@ -452,8 +453,10 @@ template <> struct Field::TypeToEnum<Array>   { static const Types::Which value 
 template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value = Types::Tuple; };
 
 // Used on 32bit system only:
+#if INTPTR_MAX == INT32_MAX
 template <> struct Field::TypeToEnum<UInt32>  { static const Types::Which value = Types::UInt64; };
 template <> struct Field::TypeToEnum<Int32>   { static const Types::Which value = Types::Int64; };
+#endif
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
