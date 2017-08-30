@@ -64,7 +64,7 @@ static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s,
     if (buf.eof())
         out << " at end of stream.";
     else
-        out << " before: " << escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
+        out << " before: " << escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, static_cast<long>(buf.buffer().end() - buf.position())));
 
     throw Exception(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }

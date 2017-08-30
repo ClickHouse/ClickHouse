@@ -106,7 +106,7 @@ bool ValuesRowInputStream::read(Block & block)
                 ASTPtr ast;
                 if (!parser.parse(token_iterator, ast, expected))
                     throw Exception("Cannot parse expression of type " + type.getName() + " here: "
-                        + String(prev_istr_position, std::min(static_cast<size_t>(SHOW_CHARS_ON_SYNTAX_ERROR), istr.buffer().end() - prev_istr_position)),
+                        + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, static_cast<long>(istr.buffer().end() - prev_istr_position))),
                         ErrorCodes::SYNTAX_ERROR);
 
                 istr.position() = const_cast<char *>(token_iterator->begin);
@@ -120,7 +120,7 @@ bool ValuesRowInputStream::read(Block & block)
                     if (!type.isNullable())
                         throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
                             + ", that is out of range of type " + type.getName()
-                            + ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
+                            + ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, static_cast<long>(istr.buffer().end() - prev_istr_position))),
                             ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
                 }
 
