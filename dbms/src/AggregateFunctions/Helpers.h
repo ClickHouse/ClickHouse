@@ -92,6 +92,18 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
 }
 
 
+template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data>
+static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argument_type)
+{
+         if (typeid_cast<const DataTypeUInt8 *>(&argument_type)) return new AggregateFunctionTemplate<UInt8, Data<UInt8>>;
+    else if (typeid_cast<const DataTypeUInt16 *>(&argument_type)) return new AggregateFunctionTemplate<UInt16, Data<UInt16>>;
+    else if (typeid_cast<const DataTypeUInt32 *>(&argument_type)) return new AggregateFunctionTemplate<UInt32, Data<UInt32>>;
+    else if (typeid_cast<const DataTypeUInt64 *>(&argument_type)) return new AggregateFunctionTemplate<UInt64, Data<UInt64>>;
+    else
+        return nullptr;
+}
+
+
 /** For template with two arguments.
   */
 template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate>
