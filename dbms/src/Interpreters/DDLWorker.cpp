@@ -506,7 +506,8 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
     try
     {
-        executeQuery(istr, ostr, false, context, nullptr);
+        Context local_context(context);
+        executeQuery(istr, ostr, false, local_context, nullptr);
     }
     catch (...)
     {
