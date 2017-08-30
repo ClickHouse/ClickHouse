@@ -57,9 +57,6 @@ if ( ( ARCH_ARM AND NOT ARCH_AARCH64 ) OR ARCH_I386)
     set (ARCH_32 1)
 endif ()
 
-#CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}
-#USE_INTERNAL_GPERFTOOLS_LIBRARY
-
 set (COMMON_WARNING_FLAGS "-Wall")    # -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
 

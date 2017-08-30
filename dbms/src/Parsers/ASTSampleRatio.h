@@ -2,11 +2,6 @@
 
 #include <Parsers/IAST.h>
 
-using __uint128_t = uint64_t;
-//#include <Common/UInt128.h>
-//using __uint128_t = DB::UInt128;
-
-
 namespace DB
 {
 
@@ -16,7 +11,11 @@ namespace DB
 class ASTSampleRatio : public IAST
 {
 public:
+#ifdef __SIZEOF_INT128__
     using BigNum = __uint128_t;    /// Must contain the result of multiplying two UInt64.
+#else
+    using BigNum = uint64_t;
+#endif
 
     struct Rational
     {

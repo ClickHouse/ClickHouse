@@ -983,7 +983,7 @@ public:
             }
 
             if (num_hosts_finished != 0 || try_number != 0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(size_t(20), try_number + 1)));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(static_cast<size_t>(20), try_number + 1)));
 
             /// TODO: add shared lock
             if (!zookeeper->exists(node_path))
