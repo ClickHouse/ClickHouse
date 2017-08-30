@@ -126,6 +126,15 @@ int Server::main(const std::vector<std::string> & args)
 
     StatusFile status{path + "status"};
 
+    SCOPE_EXIT({
+        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
+          * At this moment, no one could own shared part of Context.
+          */
+        global_context.reset();
+
+        LOG_DEBUG(log, "Destroyed global context.");
+    });
+
     /// Try to increase limit on number of open files.
     {
         rlimit rlim;
@@ -265,6 +274,17 @@ int Server::main(const std::vector<std::string> & args)
 
     global_context->setCurrentDatabase(default_database);
 
+    SCOPE_EXIT({
+        /** Ask to cancel background jobs all table engines,
+          *  and also query_log.
+          * It is important to do early, not in destructor of Context, because
+          *  table engines could use Context on destroy.
+          */
+        LOG_INFO(log, "Shutting down storages.");
+        global_context->shutdown();
+        LOG_DEBUG(log, "Shutted down storages.");
+    });
+
     bool has_resharding_worker = false;
     if (has_zookeeper && config().has("resharding"))
     {
@@ -280,24 +300,6 @@ int Server::main(const std::vector<std::string> & args)
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
         global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
-
-    SCOPE_EXIT({
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
-        LOG_INFO(log, "Shutting down storages.");
-        global_context->shutdown();
-        LOG_DEBUG(log, "Shutted down storages.");
-
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
-          * At this moment, no one could own shared part of Context.
-          */
-        global_context.reset();
-
-        LOG_DEBUG(log, "Destroyed global context.");
-    });
 
     {
         Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
