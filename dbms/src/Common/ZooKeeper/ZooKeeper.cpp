@@ -154,7 +154,7 @@ struct ZooKeeperArgs
         if (!root.empty())
         {
             if (root.front() != '/')
-                throw KeeperException(std::string("Root path in config file should starts with '/', but got ") + root);
+                throw KeeperException(std::string("Root path in config file should start with '/', but got ") + root);
             hosts += root;
         }
     }
