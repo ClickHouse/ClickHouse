@@ -111,7 +111,7 @@ struct ZooKeeperArgs
         config.keys(config_name, keys);
 
         std::vector<std::string> hosts_strings;
-        std::string root_string;
+        std::string root;
 
         session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
         for (const auto & key : keys)
@@ -133,7 +133,7 @@ struct ZooKeeperArgs
             }
             else if (key == "root")
             {
-                root_string = config.getString(config_name + "." + key);
+                root = config.getString(config_name + "." + key);
             }
             else throw KeeperException(std::string("Unknown key ") + key + " in config file");
         }
@@ -145,8 +145,10 @@ struct ZooKeeperArgs
         {
             if (hosts.size())
                 hosts += ",";
-            hosts += host + root_string;
+            hosts += host;
         }
+
+        hosts += root;
     }
 
     std::string hosts;
