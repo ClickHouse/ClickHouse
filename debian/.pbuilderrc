@@ -1,16 +1,20 @@
 # ubuntu:
+# prepare:
+# ln -s gutsy /usr/share/debootstrap/scripts/artful
+# echo "3.0 (native)" > debian/source/format
+# build ubuntu:
 # sudo DIST=trusty pbuilder create --configfile debian/.pbuilderrc && DIST=trusty pdebuild --configfile debian/.pbuilderrc
-##sudo DIST=xenial pbuilder create --configfile debian/.pbuilderrc && DIST=xenial pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=zesty  pbuilder create --configfile debian/.pbuilderrc && DIST=zesty  pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=artful pbuilder create --configfile debian/.pbuilderrc && DIST=artful pdebuild --configfile debian/.pbuilderrc
-# debian:
+# build debian:
 # sudo DIST=experimental pbuilder create --configfile debian/.pbuilderrc && DIST=experimental pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=testing      pbuilder create --configfile debian/.pbuilderrc && DIST=testing      pdebuild --configfile debian/.pbuilderrc
-##sudo DIST=unstable     pbuilder create --configfile debian/.pbuilderrc && DIST=unstable     pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=stable       pbuilder create --configfile debian/.pbuilderrc && DIST=stable       pdebuild --configfile debian/.pbuilderrc
+# BROKEN:
+# sudo DIST=xenial       pbuilder create --configfile debian/.pbuilderrc && DIST=xenial       pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=unstable     pbuilder create --configfile debian/.pbuilderrc && DIST=unstable     pdebuild --configfile debian/.pbuilderrc
 # TODO:
 # sudo DIST=zesty        ARCH=i386  pbuilder create --configfile debian/.pbuilderrc && DIST=zesty        ARCH=i386  pdebuild --configfile debian/.pbuilderrc
-# sudo DIST=experimental ARCH=arm64 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=arm64 pdebuild --configfile debian/.pbuilderrc
 
 # from https://wiki.debian.org/PbuilderTricks :
 
