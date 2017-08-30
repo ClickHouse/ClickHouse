@@ -452,10 +452,10 @@ template <> struct Field::TypeToEnum<String>  { static const Types::Which value 
 template <> struct Field::TypeToEnum<Array>   { static const Types::Which value = Types::Array; };
 template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value = Types::Tuple; };
 
-// Used on 32bit system only:
+// Used on 32bit systems only:
 #if INTPTR_MAX == INT32_MAX
-template <> struct Field::TypeToEnum<UInt32>  { static const Types::Which value = Types::UInt64; };
-template <> struct Field::TypeToEnum<Int32>   { static const Types::Which value = Types::Int64; };
+    template <> struct Field::TypeToEnum<UInt32>  { static const Types::Which value = Types::UInt64; };
+    template <> struct Field::TypeToEnum<Int32>   { static const Types::Which value = Types::Int64; };
 #endif
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
