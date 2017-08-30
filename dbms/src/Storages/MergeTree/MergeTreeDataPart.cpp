@@ -614,6 +614,12 @@ void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksu
 }
 
 
+static ReadBufferFromFile openForReading(const String & path)
+{
+    return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+}
+
+
 void MergeTreeDataPart::loadIndex()
 {
     /// Size - in number of marks.
@@ -640,8 +646,7 @@ void MergeTreeDataPart::loadIndex()
         }
 
         String index_path = getFullPath() + "primary.idx";
-        ReadBufferFromFile index_file(index_path,
-            std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
+        ReadBufferFromFile index_file = openForReading(index_path);
 
         for (size_t i = 0; i < size; ++i)
             for (size_t j = 0; j < key_size; ++j)
@@ -676,7 +681,28 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
         minmax_idx.initialized = true;
     }
     else
-        throw Exception("TODO", ErrorCodes::LOGICAL_ERROR);
+    {
+        if (!storage.partition_expr_column_types.empty())
+        {
+            ReadBufferFromFile file = openForReading(getFullPath() + "partition.dat");
+            partition.resize(storage.partition_expr_column_types.size());
+            for (size_t i = 0; i < storage.partition_expr_column_types.size(); ++i)
+                storage.partition_expr_column_types[i]->deserializeBinary(partition[i], file);
+        }
+
+        size_t minmax_idx_size = storage.minmax_idx_column_types.size();
+        minmax_idx.min_column_values.resize(minmax_idx_size);
+        minmax_idx.max_column_values.resize(minmax_idx_size);
+        for (size_t i = 0; i < minmax_idx_size; ++i)
+        {
+            String file_name = getFullPath() + "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
+            ReadBufferFromFile file = openForReading(file_name);
+            const DataTypePtr & type = storage.minmax_idx_column_types[i];
+            type->deserializeBinary(minmax_idx.min_column_values[i], file);
+            type->deserializeBinary(minmax_idx.max_column_values[i], file);
+        }
+        minmax_idx.initialized = true;
+    }
 }
 
 void MergeTreeDataPart::loadChecksums(bool require)
@@ -689,7 +715,7 @@ void MergeTreeDataPart::loadChecksums(bool require)
 
         return;
     }
-    ReadBufferFromFile file(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+    ReadBufferFromFile file = openForReading(path);
     if (checksums.read(file))
         assertEOF(file);
 }
@@ -727,7 +753,7 @@ void MergeTreeDataPart::loadColumns(bool require)
         return;
     }
 
-    ReadBufferFromFile file(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+    ReadBufferFromFile file = openForReading(path);
     columns.readText(file);
 }
 
@@ -751,22 +777,45 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
             }
         }
 
+        if (storage.format_version > 0)
+        {
+            if (!storage.partition_expr_columns.empty() && !checksums.files.count("partition.dat"))
+                throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
+
+            for (const String & col_name : storage.minmax_idx_columns)
+            {
+                if (!checksums.files.count("minmax_" + escapeForFileName(col_name) + ".idx"))
+                    throw Exception("No minmax idx file checksum for column " + col_name, ErrorCodes::NO_FILE_IN_DATA_PART);
+            }
+        }
+
         checksums.checkSizes(path);
     }
     else
     {
-        if (!storage.sort_descr.empty())
+        auto check_file_not_empty = [&path](const String & file_path)
         {
-            /// Check that the primary key is not empty.
-            Poco::File index_file(path + "primary.idx");
+            Poco::File file(file_path);
+            if (!file.exists() || file.getSize() == 0)
+                throw Exception("Part " + path + " is broken: " + file_path + " is empty", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+            return file.getSize();
+        };
 
-            if (!index_file.exists() || index_file.getSize() == 0)
-                throw Exception("Part " + path + " is broken: primary key is empty.", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+        /// Check that the primary key index is not empty.
+        if (!storage.sort_descr.empty())
+            check_file_not_empty(path + "primary.idx");
+
+        if (storage.format_version > 0)
+        {
+            if (!storage.partition_expr_columns.empty())
+                check_file_not_empty(path + "partition.dat");
+
+            for (const String & col_name : storage.minmax_idx_columns)
+                check_file_not_empty(path + "minmax_" + escapeForFileName(col_name) + ".idx");
         }
 
         /// Check that all marks are nonempty and have the same size.
-
-        auto check_marks = [](const std::string & path, const NamesAndTypesList & columns, const std::string & extension)
+        auto check_marks = [&path](const NamesAndTypesList & columns, const std::string & extension)
         {
             ssize_t marks_size = -1;
             for (const NameAndTypePair & it : columns)
@@ -794,8 +843,8 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
             }
         };
 
-        check_marks(path, columns, ".mrk");
-        check_marks(path, columns, ".null.mrk");
+        check_marks(columns, ".mrk");
+        check_marks(columns, ".null.mrk");
     }
 }
 
