@@ -112,7 +112,7 @@ private:
 template<typename T, typename Op>
 class AggregateFunctionVariance final
     : public IUnaryAggregateFunction<AggregateFunctionVarianceData<T, Op>,
-        AggregateFunctionVariance<T, Op> >
+        AggregateFunctionVariance<T, Op>>
 {
 public:
     String getName() const override { return Op::name; }
@@ -371,7 +371,7 @@ template<typename T, typename U, typename Op, bool compute_marginal_moments = fa
 class AggregateFunctionCovariance final
     : public IBinaryAggregateFunction<
         CovarianceData<T, U, Op, compute_marginal_moments>,
-        AggregateFunctionCovariance<T, U, Op, compute_marginal_moments> >
+        AggregateFunctionCovariance<T, U, Op, compute_marginal_moments>>
 {
 public:
     String getName() const override { return Op::name; }

@@ -11,7 +11,7 @@
 int main(int argc, char ** argv)
 {
     {
-        using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1> >;
+        using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;
         Cont cont;
 
         cont.insert(1);
@@ -36,7 +36,7 @@ int main(int argc, char ** argv)
     }
 
     {
-        using Cont = HashMap<int, std::string, DefaultHash<int>, HashTableGrower<1> >;
+        using Cont = HashMap<int, std::string, DefaultHash<int>, HashTableGrower<1>>;
         Cont cont;
 
         cont.insert(Cont::value_type(1, "Hello, world!"));
