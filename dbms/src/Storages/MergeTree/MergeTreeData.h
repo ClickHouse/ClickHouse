@@ -485,6 +485,7 @@ public:
     ASTPtr partition_expr_ast;
     ExpressionActionsPtr partition_expr;
     Names partition_expr_columns;
+    DataTypes partition_expr_column_types;
 
     ExpressionActionsPtr minmax_idx_expr;
     Names minmax_idx_columns;

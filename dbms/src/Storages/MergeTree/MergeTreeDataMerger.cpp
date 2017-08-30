@@ -739,21 +739,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             << merge_entry->bytes_read_uncompressed / 1000000.0 / elapsed_seconds << " MB/sec.");
     }
 
-    new_data_part->columns = all_columns;
     if (merge_alg != MergeAlgorithm::Vertical)
-        new_data_part->checksums = to.writeSuffixAndGetChecksums();
+        to.writeSuffixAndFinalizePart(new_data_part);
     else
-        new_data_part->checksums = to.writeSuffixAndGetChecksums(all_columns, &checksums_gathered_columns);
-    new_data_part->index.swap(to.getIndex());
+        to.writeSuffixAndFinalizePart(new_data_part, &all_columns, &checksums_gathered_columns);
 
     /// For convenience, even CollapsingSortedBlockInputStream can not return zero rows.
     if (0 == to.marksCount())
         throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
-
-    new_data_part->size = to.marksCount();
-    new_data_part->modification_time = time(nullptr);
-    new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part_tmp_path);
-    new_data_part->is_sharded = false;
 
     return new_data_part;
 }
@@ -1056,14 +1049,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         }
 
         MergeTreeData::MutableDataPartPtr & data_part = per_shard_data_parts.at(shard_no);
-
-        data_part->columns = column_names_and_types;
-        data_part->checksums = output_stream->writeSuffixAndGetChecksums();
-        data_part->index.swap(output_stream->getIndex());
-        data_part->size = output_stream->marksCount();
-        data_part->modification_time = time(nullptr);
-        data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(output_stream->getPartPath());
-        data_part->is_sharded = true;
+        output_stream->writeSuffixAndFinalizePart(data_part);
         data_part->shard_no = shard_no;
     }
 

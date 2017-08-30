@@ -221,8 +221,14 @@ void MergeTreeData::initPartitionKey()
     partition_expr_ast = parseQuery(
         parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
     partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumnsList()).getActions(false);
+    partition_expr_columns.clear();
+    partition_expr_column_types.clear();
     for (const ASTPtr & ast : partition_expr_ast->children)
-        partition_expr_columns.emplace_back(ast->getColumnName());
+    {
+        String col_name = ast->getColumnName();
+        partition_expr_columns.emplace_back(col_name);
+        partition_expr_column_types.emplace_back(partition_expr->getSampleBlock().getByName(col_name).type);
+    }
 
     const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
     minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context.getSettingsRef());

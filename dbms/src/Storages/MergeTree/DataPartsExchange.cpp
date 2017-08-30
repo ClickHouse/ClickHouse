@@ -266,7 +266,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
-    new_data_part->is_sharded = false;
     new_data_part->checksums.checkEqual(checksums, false);
 
     return new_data_part;
