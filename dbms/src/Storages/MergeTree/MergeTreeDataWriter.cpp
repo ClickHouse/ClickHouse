@@ -124,8 +124,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 {
     Block & block = block_with_partition.block;
 
-    size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
-
     static const String TMP_PREFIX = "tmp_insert_";
 
     /// This will generate unique name in scope of current server process.
@@ -205,14 +203,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
-    MergeTreeData::DataPart::Checksums checksums = out.writeSuffixAndGetChecksums();
-
-    new_data_part->size = part_size;
-    new_data_part->modification_time = time(nullptr);
-    new_data_part->columns = columns;
-    new_data_part->checksums = checksums;
-    new_data_part->index.swap(out.getIndex());
-    new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_data_part->getFullPath());
+    out.writeSuffixAndFinalizePart(new_data_part);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());

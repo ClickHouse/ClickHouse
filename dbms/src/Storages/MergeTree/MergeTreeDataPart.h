@@ -158,7 +158,6 @@ struct MergeTreeDataPart
     bool is_temp = false;
 
     /// For resharding.
-    bool is_sharded = false;
     size_t shard_no = 0;
 
     /// Primary key (correspond to primary.idx file).

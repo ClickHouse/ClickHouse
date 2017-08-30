@@ -385,10 +385,14 @@ void MergedBlockOutputStream::writeSuffix()
     throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChecksums(
-    const NamesAndTypesList & total_column_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+void MergedBlockOutputStream::writeSuffixAndFinalizePart(
+        MergeTreeData::MutableDataPartPtr & new_part,
+        const NamesAndTypesList * total_column_list,
+        MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
+    if (!total_column_list)
+        total_column_list = &columns_list;
+
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
 
@@ -415,14 +419,36 @@ MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChe
     {
         /// A part is empty - all records are deleted.
         Poco::File(part_path).remove(true);
-        checksums.files.clear();
-        return checksums;
+        return;
+    }
+
+    if (!storage.partition_expr_columns.empty())
+    {
+        WriteBufferFromFile out(part_path + "partition.dat");
+        HashingWriteBuffer out_hashing(out);
+        for (size_t i = 0; i < new_part->partition.size(); ++i)
+            storage.partition_expr_column_types[i]->serializeBinary(new_part->partition[i], out_hashing);
+        checksums.files["partition.dat"].file_size = out_hashing.count();
+        checksums.files["partition.dat"].file_hash = out_hashing.getHash();
+    }
+
+    for (size_t i = 0; i < storage.minmax_idx_columns.size(); ++i)
+    {
+        String file_name = "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
+        const DataTypePtr & type = storage.minmax_idx_column_types[i];
+
+        WriteBufferFromFile out(part_path + file_name);
+        HashingWriteBuffer out_hashing(out);
+        type->serializeBinary(new_part->minmax_idx.min_column_values[i], out_hashing);
+        type->serializeBinary(new_part->minmax_idx.max_column_values[i], out_hashing);
+        checksums.files[file_name].file_size = out_hashing.count();
+        checksums.files[file_name].file_hash = out_hashing.getHash();
     }
 
     {
         /// Write a file with a description of columns.
         WriteBufferFromFile out(part_path + "columns.txt", 4096);
-        total_column_list.writeText(out);
+        total_column_list->writeText(out);
     }
 
     {
@@ -431,17 +457,12 @@ MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChe
         checksums.write(out);
     }
 
-    return checksums;
-}
-
-MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChecksums()
-{
-    return writeSuffixAndGetChecksums(columns_list, nullptr);
-}
-
-MergeTreeData::DataPart::Index & MergedBlockOutputStream::getIndex()
-{
-    return index_columns;
+    new_part->size = marks_count;
+    new_part->modification_time = time(nullptr);
+    new_part->columns = *total_column_list;
+    new_part->index.swap(index_columns);
+    new_part->checksums = checksums;
+    new_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part->getFullPath());
 }
 
 size_t MergedBlockOutputStream::marksCount()
