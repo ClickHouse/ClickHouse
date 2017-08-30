@@ -1142,7 +1142,7 @@ void Context::setMarkCache(size_t cache_size_in_bytes)
     auto lock = getLock();
 
     if (shared->mark_cache)
-        throw Exception("Uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
 
     shared->mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes, std::chrono::seconds(settings.mark_cache_min_lifetime));
 }

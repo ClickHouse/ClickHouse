@@ -12,9 +12,6 @@
 
 #if Poco_NetSSL_FOUND
 #include <Poco/Net/HTTPSClientSession.h>
-#include <Interpreters/DNSCache.h>
-
-
 #endif
 
 
