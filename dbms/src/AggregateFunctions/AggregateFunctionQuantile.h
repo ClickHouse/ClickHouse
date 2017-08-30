@@ -34,7 +34,7 @@ struct AggregateFunctionQuantileData
   */
 template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantile final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantile<ArgumentFieldType, returns_float> >
+    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantile<ArgumentFieldType, returns_float>>
 {
 private:
     using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
@@ -108,7 +108,7 @@ public:
   */
 template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantiles final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantiles<ArgumentFieldType, returns_float> >
+    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantiles<ArgumentFieldType, returns_float>>
 {
 private:
     using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
