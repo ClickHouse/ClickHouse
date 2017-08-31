@@ -93,7 +93,7 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
     if (!Poco::File(path).exists())
     {
         throw Exception(
-            "LibDictionarySource: Cant load lib " + toString() + " : " + Poco::File(path).path(), ErrorCodes::FILE_DOESNT_EXIST);
+            "LibDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
     }
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path);
@@ -124,14 +124,14 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
         ++i;
     }
     void * data_ptr = nullptr;
-    auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("loadAll");
+    auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v1_loadAll");
     if (!fptr)
-        throw Exception("Method loadAll not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
-    data_ptr = library->get<void * (*)()>("dataAllocate")();
+        throw Exception("Method loadAll is not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
+    data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns);
     auto block = description.sample_block.cloneEmpty();
     dataToBlock(data, block);
-    library->get<void (*)(void *)>("dataDelete")(data_ptr);
+    library->get<void (*)(void *)>("ClickHouseDictionary_v1_dataDelete")(data_ptr);
     return std::make_shared<OneBlockInputStream>(block);
 }
 
@@ -151,14 +151,14 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     }
     void * data_ptr = nullptr;
     auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
-        "loadIds");
+        "ClickHouseDictionary_v1_loadIds");
     if (!fptr)
-        throw Exception("Method loadIds not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
-    data_ptr = library->get<void * (*)()>("dataAllocate")();
+        throw Exception("Method loadIds is not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
+    data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = description.sample_block.cloneEmpty();
     dataToBlock(data, block);
-    library->get<void (*)(void * data_ptr)>("dataDelete")(data_ptr);
+    library->get<void (*)(void * data_ptr)>("ClickHouseDictionary_v1_dataDelete")(data_ptr);
     return std::make_shared<OneBlockInputStream>(block);
 }
 
@@ -189,20 +189,20 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
     void * data_ptr = nullptr;
     auto fptr
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&requested_rows_c))>(
-            "loadKeys");
+            "ClickHouseDictionary_v1_loadKeys");
     if (!fptr)
-        throw Exception("Method loadKeys not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
-    data_ptr = library->get<void * (*)()>("dataAllocate")();
+        throw Exception("Method loadKeys is not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
+    data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &requested_rows_c);
     auto block = description.sample_block.cloneEmpty();
     dataToBlock(data, block);
-    library->get<void (*)(void * data_ptr)>("dataDelete")(data_ptr);
+    library->get<void (*)(void * data_ptr)>("ClickHouseDictionary_v1_dataDelete")(data_ptr);
     return std::make_shared<OneBlockInputStream>(block);
 }
 
 bool LibDictionarySource::isModified() const
 {
-    auto fptr = library->get<void * (*)(decltype(&settings->strings))>("isModified", true);
+    auto fptr = library->get<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_isModified", true);
     if (fptr)
         return fptr(&settings->strings);
     return true;
@@ -210,7 +210,7 @@ bool LibDictionarySource::isModified() const
 
 bool LibDictionarySource::supportsSelectiveLoad() const
 {
-    auto fptr = library->get<void * (*)(decltype(&settings->strings))>("supportsSelectiveLoad", true);
+    auto fptr = library->get<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_supportsSelectiveLoad", true);
     if (fptr)
         return fptr(&settings->strings);
     return true;

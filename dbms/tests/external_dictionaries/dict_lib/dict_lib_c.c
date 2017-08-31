@@ -20,19 +20,19 @@ typedef struct
     CString * data;
 } ClickHouseLibCStrings;
 
-void * loadIds(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, ClickHouseLibVectorUInt64 * ids)
+void * ClickHouseDictionary_v1_loadIds(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, ClickHouseLibVectorUInt64 * ids)
 {
     printf("loadIds c lib call ptr=%p size=%" PRIu64 "\n", data_ptr, ids->size);
     return 0;
 }
 
-void * loadAll(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns)
+void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns)
 {
     printf("loadAll c lib call ptr=%p \n", data_ptr);
     return 0;
 }
 
-void * loadKeys(void * data_ptr,
+void * ClickHouseDictionary_v1_loadKeys(void * data_ptr,
     ClickHouseLibCStrings * settings,
     ClickHouseLibCStrings * columns,
     const ClickHouseLibVectorUInt64 * requested_rows)
@@ -42,7 +42,7 @@ void * loadKeys(void * data_ptr,
 }
 
 
-void * dataAllocate()
+void * ClickHouseDictionary_v1_dataAllocate()
 {
     int size = 100;
     void * data_ptr = malloc(size);
@@ -50,7 +50,7 @@ void * dataAllocate()
     return data_ptr;
 }
 
-void dataDelete(void * data_ptr)
+void ClickHouseDictionary_v1_dataDelete(void * data_ptr)
 {
     printf("dataDelete c lib call ptr=%p \n", data_ptr);
     free(data_ptr);
