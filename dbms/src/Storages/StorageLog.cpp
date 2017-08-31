@@ -185,7 +185,7 @@ private:
         }
     };
 
-    using MarksForColumns = std::vector<std::pair<size_t, Mark> >;
+    using MarksForColumns = std::vector<std::pair<size_t, Mark>>;
 
     using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
     FileStreams streams;

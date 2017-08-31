@@ -42,7 +42,7 @@ template <typename T> struct IsNullable { static constexpr bool value = false; }
 template <typename T> struct IsNullable<Nullable<T>> { static constexpr bool value = true; };
 
 template <typename T> struct IsNumber { static constexpr bool value = false; };
-template <typename T> struct IsNumber<Nullable<T> > { static constexpr bool value = IsNumber<T>::value; };
+template <typename T> struct IsNumber<Nullable<T>> { static constexpr bool value = IsNumber<T>::value; };
 
 template <> struct IsNumber<UInt8>   { static constexpr bool value = true; };
 template <> struct IsNumber<UInt16>  { static constexpr bool value = true; };

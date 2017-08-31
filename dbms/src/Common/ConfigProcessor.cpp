@@ -75,7 +75,7 @@ using NodeListPtr = Poco::AutoPtr<Poco::XML::NodeList>;
 static ElementIdentifier getElementIdentifier(Node * element)
 {
     NamedNodeMapPtr attrs = element->attributes();
-    std::vector<std::pair<std::string, std::string> > attrs_kv;
+    std::vector<std::pair<std::string, std::string>> attrs_kv;
     for (size_t i = 0; i < attrs->length(); ++i)
     {
         Node * node = attrs->item(i);

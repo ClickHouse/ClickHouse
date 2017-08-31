@@ -11,7 +11,7 @@ int main()
 {
     try
     {
-        ZooKeeper zk("mtfilter01t:2181,metrika-test:2181,mtweb01t:2181", 5000);
+        ZooKeeper zk("mtfilter01t:2181,metrika-test:2181,mtweb01t:2181", "", 5000);
         Strings children;
 
         std::cout << "create path" << std::endl;
