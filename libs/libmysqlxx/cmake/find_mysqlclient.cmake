@@ -33,14 +33,8 @@ if (ENABLE_MYSQL)
    endif ()
 
     if (MYSQL_INCLUDE_DIR AND (STATIC_MYSQLCLIENT_LIB OR MYSQLCLIENT_LIBRARIES))
+        target_include_directories (${MYSQLCLIENT_LIBRARIES} BEFORE PUBLIC ${MYSQL_INCLUDE_DIR})
     else ()                                   
-
-
-
-# TODO: SET TARGET MYSQL_INCLUDE_DIR !!!
-
-
-
         set (USE_INTERNAL_MYSQL_LIBRARY 1)
         set (MYSQLCLIENT_LIBRARIES mariadbclient)
     endif ()

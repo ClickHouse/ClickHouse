@@ -65,5 +65,6 @@ if (NOT ARCH_ARM)
 endif ()
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
-	add_subdirectory (mariadb-connector-c)
+    add_subdirectory (mariadb-connector-c)
+    target_include_directories (${MYSQLCLIENT_LIBRARIES} BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include")
 endif ()
