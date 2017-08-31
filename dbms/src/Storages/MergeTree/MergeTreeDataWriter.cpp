@@ -24,10 +24,10 @@ namespace
 
 void buildScatterSelector(
         const ConstColumnPlainPtrs & columns,
-        PODArray<size_t> & partitions_rows,
+        PODArray<size_t> & partition_num_to_first_row,
         IColumn::Selector & selector)
 {
-    /// Use generic hashed variant since partitioning is unlikely to be a bottleneck
+    /// Use generic hashed variant since partitioning is unlikely to be a bottleneck.
     using Data = HashMap<UInt128, size_t, UInt128TrivialHash>;
     Data partitions_map;
 
@@ -42,7 +42,7 @@ void buildScatterSelector(
 
         if (inserted)
         {
-            partitions_rows.push_back(i);
+            partition_num_to_first_row.push_back(i);
             it->second = partitions_count;
 
             ++partitions_count;
@@ -85,18 +85,18 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     for (const String & name : data.partition_expr_columns)
         partition_columns.emplace_back(block_copy.getByName(name).column.get());
 
-    PODArray<size_t> partitions_rows;
+    PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-    buildScatterSelector(partition_columns, partitions_rows, selector);
+    buildScatterSelector(partition_columns, partition_num_to_first_row, selector);
 
-    size_t partitions_count = partitions_rows.size();
+    size_t partitions_count = partition_num_to_first_row.size();
     result.reserve(partitions_count);
 
     auto get_partition = [&](size_t num)
     {
-        Row partition(partition_columns.size(), DontInitElemsTag{});
+        Row partition(partition_columns.size());
         for (size_t i = 0; i < partition_columns.size(); ++i)
-            new (partition.place(i)) Field((*partition_columns[i])[partitions_rows[num]]);
+            partition[i] = Field((*partition_columns[i])[partition_num_to_first_row[num]]);
         return partition;
     };
 

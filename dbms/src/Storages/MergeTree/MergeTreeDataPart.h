@@ -80,6 +80,10 @@ struct MergeTreeDataPartChecksums
 };
 
 
+/// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
+/// parts based on conditions on these columns imposed by a query.
+/// Currently this index is built using only columns required by partition expression, but in principle it
+/// can be built using any set of columns.
 struct MinMaxIndex
 {
     void update(const Block & block, const Names & column_names);
