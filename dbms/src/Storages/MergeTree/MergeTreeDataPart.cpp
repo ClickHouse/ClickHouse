@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/HashingWriteBuffer.h>
 #include <Core/Defines.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
@@ -285,12 +286,75 @@ const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksu
 }
 
 
-void MinMaxIndex::update(const Block & block, const Names & column_names)
+static ReadBufferFromFile openForReading(const String & path)
+{
+    return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+}
+
+
+void MergeTreeDataPart::Partition::load(const MergeTreeData & storage, const String & part_path)
+{
+    if (storage.partition_expr_column_types.empty())
+        return;
+
+    ReadBufferFromFile file = openForReading(part_path + "partition.dat");
+    value.resize(storage.partition_expr_column_types.size());
+    for (size_t i = 0; i < storage.partition_expr_column_types.size(); ++i)
+        storage.partition_expr_column_types[i]->deserializeBinary(value[i], file);
+}
+
+void MergeTreeDataPart::Partition::store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const
+{
+    if (storage.partition_expr_columns.empty())
+        return;
+
+    WriteBufferFromFile out(part_path + "partition.dat");
+    HashingWriteBuffer out_hashing(out);
+    for (size_t i = 0; i < value.size(); ++i)
+        storage.partition_expr_column_types[i]->serializeBinary(value[i], out_hashing);
+    checksums.files["partition.dat"].file_size = out_hashing.count();
+    checksums.files["partition.dat"].file_hash = out_hashing.getHash();
+}
+
+
+void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & storage, const String & part_path)
+{
+    size_t minmax_idx_size = storage.minmax_idx_column_types.size();
+    min_values.resize(minmax_idx_size);
+    max_values.resize(minmax_idx_size);
+    for (size_t i = 0; i < minmax_idx_size; ++i)
+    {
+        String file_name = part_path + "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
+        ReadBufferFromFile file = openForReading(file_name);
+        const DataTypePtr & type = storage.minmax_idx_column_types[i];
+        type->deserializeBinary(min_values[i], file);
+        type->deserializeBinary(max_values[i], file);
+    }
+    initialized = true;
+}
+
+void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const
+{
+    for (size_t i = 0; i < storage.minmax_idx_columns.size(); ++i)
+    {
+        String file_name = "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
+        const DataTypePtr & type = storage.minmax_idx_column_types[i];
+
+        WriteBufferFromFile out(part_path + file_name);
+        HashingWriteBuffer out_hashing(out);
+        type->serializeBinary(min_values[i], out_hashing);
+        type->serializeBinary(max_values[i], out_hashing);
+        checksums.files[file_name].file_size = out_hashing.count();
+        checksums.files[file_name].file_hash = out_hashing.getHash();
+    }
+}
+
+void MergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & column_names)
 {
     if (!initialized)
     {
-        min_column_values.resize(column_names.size());
-        max_column_values.resize(column_names.size());
+        min_values.resize(column_names.size());
+        max_values.resize(column_names.size());
     }
 
     for (size_t i = 0; i < column_names.size(); ++i)
@@ -302,36 +366,36 @@ void MinMaxIndex::update(const Block & block, const Names & column_names)
 
         if (!initialized)
         {
-            min_column_values[i] = Field(min_value);
-            max_column_values[i] = Field(max_value);
+            min_values[i] = Field(min_value);
+            max_values[i] = Field(max_value);
         }
         else
         {
-            min_column_values[i] = std::min(min_column_values[i], min_value);
-            max_column_values[i] = std::max(max_column_values[i], max_value);
+            min_values[i] = std::min(min_values[i], min_value);
+            max_values[i] = std::max(max_values[i], max_value);
         }
     }
 
     initialized = true;
 }
 
-void MinMaxIndex::merge(const MinMaxIndex & other)
+void MergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 {
     if (!other.initialized)
         return;
 
     if (!initialized)
     {
-        min_column_values.assign(other.min_column_values);
-        max_column_values.assign(other.max_column_values);
+        min_values.assign(other.min_values);
+        max_values.assign(other.max_values);
         initialized = true;
     }
     else
     {
-        for (size_t i = 0; i < min_column_values.size(); ++i)
+        for (size_t i = 0; i < min_values.size(); ++i)
         {
-            min_column_values[i] = std::min(min_column_values[i], other.min_column_values[i]);
-            max_column_values[i] = std::max(max_column_values[i], other.max_column_values[i]);
+            min_values[i] = std::min(min_values[i], other.min_values[i]);
+            max_values[i] = std::max(max_values[i], other.max_values[i]);
         }
     }
 }
@@ -446,7 +510,7 @@ String MergeTreeDataPart::getNameWithPrefix() const
 DayNum_t MergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1)
-        return DayNum_t(minmax_idx.min_column_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+        return DayNum_t(minmax_idx.min_values[storage.minmax_idx_date_column_pos].get<UInt64>());
     else
         return DayNum_t();
 }
@@ -455,7 +519,7 @@ DayNum_t MergeTreeDataPart::getMinDate() const
 DayNum_t MergeTreeDataPart::getMaxDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1)
-        return DayNum_t(minmax_idx.max_column_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+        return DayNum_t(minmax_idx.max_values[storage.minmax_idx_date_column_pos].get<UInt64>());
     else
         return DayNum_t();
 }
@@ -614,12 +678,6 @@ void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksu
 }
 
 
-static ReadBufferFromFile openForReading(const String & path)
-{
-    return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
-}
-
-
 void MergeTreeDataPart::loadIndex()
 {
     /// Size - in number of marks.
@@ -674,34 +732,14 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
 
         const auto & date_lut = DateLUT::instance();
-        partition = Row(1, static_cast<UInt64>(date_lut.toNumYYYYMM(min_date)));
-
-        minmax_idx.min_column_values = Row(1, static_cast<UInt64>(min_date));
-        minmax_idx.max_column_values = Row(1, static_cast<UInt64>(max_date));
-        minmax_idx.initialized = true;
+        partition = Partition(date_lut.toNumYYYYMM(min_date));
+        minmax_idx = MinMaxIndex(min_date, max_date);
     }
     else
     {
-        if (!storage.partition_expr_column_types.empty())
-        {
-            ReadBufferFromFile file = openForReading(getFullPath() + "partition.dat");
-            partition.resize(storage.partition_expr_column_types.size());
-            for (size_t i = 0; i < storage.partition_expr_column_types.size(); ++i)
-                storage.partition_expr_column_types[i]->deserializeBinary(partition[i], file);
-        }
-
-        size_t minmax_idx_size = storage.minmax_idx_column_types.size();
-        minmax_idx.min_column_values.resize(minmax_idx_size);
-        minmax_idx.max_column_values.resize(minmax_idx_size);
-        for (size_t i = 0; i < minmax_idx_size; ++i)
-        {
-            String file_name = getFullPath() + "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
-            ReadBufferFromFile file = openForReading(file_name);
-            const DataTypePtr & type = storage.minmax_idx_column_types[i];
-            type->deserializeBinary(minmax_idx.min_column_values[i], file);
-            type->deserializeBinary(minmax_idx.max_column_values[i], file);
-        }
-        minmax_idx.initialized = true;
+        String full_path = getFullPath();
+        partition.load(storage, full_path);
+        minmax_idx.load(storage, full_path);
     }
 }
 

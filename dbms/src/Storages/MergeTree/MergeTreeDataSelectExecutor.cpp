@@ -234,7 +234,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
             if (!minmax_idx_condition.mayBeTrueInRange(
                         data.minmax_idx_columns.size(),
-                        &part->minmax_idx.min_column_values[0], &part->minmax_idx.max_column_values[0],
+                        &part->minmax_idx.min_values[0], &part->minmax_idx.max_values[0],
                         data.minmax_idx_column_types))
                 continue;
 
