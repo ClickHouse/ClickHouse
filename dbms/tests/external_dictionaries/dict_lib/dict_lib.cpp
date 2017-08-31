@@ -13,12 +13,14 @@
 struct DataHolder
 {
     std::vector<std::vector<uint64_t>> vector;
-    std::unique_ptr<ClickHouseLib::VectorUint64[]> columnsHolder;
-    ClickHouseLib::ColumnsUint64 columns;
+    std::unique_ptr<ClickHouseLib::VectorUInt64[]> columnsHolder;
+    ClickHouseLib::ColumnsUInt64 columns;
 };
 
-extern "C" void * loadIds(
-    void * data_ptr, ClickHouseLib::CStrings * settings, ClickHouseLib::CStrings * columns, const struct ClickHouseLib::VectorUint64 * ids)
+extern "C" {
+
+void * loadIds(
+    void * data_ptr, ClickHouseLib::CStrings * settings, ClickHouseLib::CStrings * columns, const struct ClickHouseLib::VectorUInt64 * ids)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadIds lib call ptr=" << data_ptr << " => " << ptr << " size=" << ids->size << "\n";
@@ -47,7 +49,7 @@ extern "C" void * loadIds(
             }
         }
 
-        ptr->columnsHolder = std::make_unique<ClickHouseLib::VectorUint64[]>(ptr->vector.size());
+        ptr->columnsHolder = std::make_unique<ClickHouseLib::VectorUInt64[]>(ptr->vector.size());
         size_t i = 0;
         for (auto & col : ptr->vector)
         {
@@ -67,7 +69,7 @@ extern "C" void * loadIds(
     return nullptr;
 }
 
-extern "C" void * loadAll(void * data_ptr, ClickHouseLib::CStrings * settings, ClickHouseLib::CStrings * columns)
+void * loadAll(void * data_ptr, ClickHouseLib::CStrings * settings, ClickHouseLib::CStrings * columns)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadAll lib call ptr=" << data_ptr << " => " << ptr << "\n";
@@ -89,7 +91,7 @@ extern "C" void * loadAll(void * data_ptr, ClickHouseLib::CStrings * settings, C
             ptr->vector.emplace_back(std::vector<uint64_t>{i, i + 1, (1 + i) * 10, 65});
         }
 
-        ptr->columnsHolder = std::make_unique<ClickHouseLib::VectorUint64[]>(ptr->vector.size());
+        ptr->columnsHolder = std::make_unique<ClickHouseLib::VectorUInt64[]>(ptr->vector.size());
         size_t i = 0;
         for (auto & col : ptr->vector)
         {
@@ -107,10 +109,10 @@ extern "C" void * loadAll(void * data_ptr, ClickHouseLib::CStrings * settings, C
     return nullptr;
 }
 
-extern "C" void * loadKeys(void * data_ptr,
+void * loadKeys(void * data_ptr,
     ClickHouseLib::CStrings * settings,
     ClickHouseLib::CStrings * columns,
-    const ClickHouseLib::VectorUint64 * requested_rows)
+    const ClickHouseLib::VectorUInt64 * requested_rows)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadKeys lib call ptr=" << data_ptr << " => " << ptr << "\n";
@@ -142,15 +144,16 @@ extern "C" void * loadKeys(void * data_ptr,
     return nullptr;
 }
 
-extern "C" void * dataAllocate()
+void * dataAllocate()
 {
     auto data_ptr = new DataHolder;
     return data_ptr;
 }
 
-extern "C" void dataDelete(void * data_ptr)
+void dataDelete(void * data_ptr)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     delete ptr;
     return;
+}
 }

@@ -20,14 +20,14 @@ const std::string lib_config_settings = ".settings";
 struct CStringsHolder
 {
     ClickHouseLib::CStrings strings; // will pass pointer to lib
-    std::unique_ptr<ClickHouseLib::CString[]> ptrHolder = nullptr;
+    std::unique_ptr<ClickHouseLib::CString[]> ptr_holder = nullptr;
     std::vector<std::string> stringHolder;
 
     void prepare()
     {
         strings.size = stringHolder.size();
-        ptrHolder = std::make_unique<ClickHouseLib::CString[]>(strings.size);
-        strings.data = ptrHolder.get();
+        ptr_holder = std::make_unique<ClickHouseLib::CString[]>(strings.size);
+        strings.data = ptr_holder.get();
         size_t i = 0;
         for (auto & str : stringHolder)
         {
@@ -55,11 +55,11 @@ CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, 
     return holder;
 }
 
-bool dataToBlock(void * data, Block & block)
+bool dataToBlock(const void * data, Block & block)
 {
     if (!data)
         return true;
-    auto columns_recd = static_cast<ClickHouseLib::ColumnsUint64 *>(data);
+    auto columns_recd = static_cast<ClickHouseLib::ColumnsUInt64 *>(data);
     std::vector<IColumn *> columns(block.columns());
     for (const auto i : ext::range(0, columns.size()))
         columns[i] = block.getByPosition(i).column.get();
@@ -139,7 +139,7 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
-    const ClickHouseLib::VectorUint64 ids_data{ids.size(), ids.data()};
+    const ClickHouseLib::VectorUInt64 ids_data{ids.size(), ids.data()};
     auto columns_holder = std::make_unique<ClickHouseLib::CString[]>(dict_struct.attributes.size());
     ClickHouseLib::CStrings columns_pass{
         dict_struct.attributes.size(), reinterpret_cast<decltype(ClickHouseLib::CStrings::data)>(columns_holder.get())};
@@ -185,7 +185,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
         columns_pass.data[key_columns_n] = column->getName().c_str();
         ++key_columns_n;
     }
-    const ClickHouseLib::VectorUint64 requested_rows_c{requested_rows.size(), requested_rows.data()};
+    const ClickHouseLib::VectorUInt64 requested_rows_c{requested_rows.size(), requested_rows.data()};
     void * data_ptr = nullptr;
     auto fptr
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&requested_rows_c))>(

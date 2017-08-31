@@ -3,8 +3,8 @@
 namespace ClickHouseLib
 {
 using CString = const char *;
-using Column = CString;
-using Columns = Column[];
+using ColumnName = CString;
+using ColumnNames = ColumnName[];
 
 struct CStrings
 {
@@ -12,16 +12,16 @@ struct CStrings
     CString * data = nullptr;
 };
 
-struct VectorUint64
+struct VectorUInt64
 {
     uint64_t size = 0;
     const uint64_t * data = nullptr;
 };
 
-struct ColumnsUint64
+struct ColumnsUInt64
 {
     uint64_t size = 0;
-    VectorUint64 * data = nullptr;
+    VectorUInt64 * data = nullptr;
 };
 
 }

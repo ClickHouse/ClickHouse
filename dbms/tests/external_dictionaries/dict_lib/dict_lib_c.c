@@ -5,13 +5,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CString const char *
+typedef const char * CString;
 
 typedef struct
 {
     const uint64_t size;
     const uint64_t * data;
-} ClickHouseLibVectorUint64;
+} ClickHouseLibVectorUInt64;
 //#define ClickhouseLibColumns const char **
 
 typedef struct
@@ -20,7 +20,7 @@ typedef struct
     CString * data;
 } ClickHouseLibCStrings;
 
-void * loadIds(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, ClickHouseLibVectorUint64 * ids)
+void * loadIds(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, ClickHouseLibVectorUInt64 * ids)
 {
     printf("loadIds c lib call ptr=%p size=%" PRIu64 "\n", data_ptr, ids->size);
     return 0;
@@ -35,7 +35,7 @@ void * loadAll(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibC
 void * loadKeys(void * data_ptr,
     ClickHouseLibCStrings * settings,
     ClickHouseLibCStrings * columns,
-    const ClickHouseLibVectorUint64 * requested_rows)
+    const ClickHouseLibVectorUInt64 * requested_rows)
 {
     printf("loadKeys c lib call ptr=%p size=%" PRIu64 "\n", data_ptr, requested_rows->size);
     return 0;
