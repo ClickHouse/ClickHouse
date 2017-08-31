@@ -19,7 +19,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <tuple>
 #include <array>
-#include <iostream>
 
 
 namespace DB
