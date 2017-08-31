@@ -1074,14 +1074,15 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             /// Logging
             Stopwatch stopwatch;
 
-            MergeTreeDataMerger::FuturePart future_part(parts);
-            if (future_part.name != entry.new_part_name)
+            MergeTreeDataMerger::FuturePart future_merged_part(parts);
+            if (future_merged_part.name != entry.new_part_name)
                 throw Exception(
-                    "Future merged part name `" + future_part.name + "` differs from part name in log entry: `" + entry.new_part_name + "`",
+                    "Future merged part name `" + future_merged_part.name +
+                    "` differs from part name in log entry: `" + entry.new_part_name + "`",
                     ErrorCodes::BAD_DATA_PART_NAME);
 
             auto part = merger.mergePartsToTemporaryPart(
-                future_part, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
+                future_merged_part, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
 
             zkutil::Ops ops;
 
@@ -1783,7 +1784,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
             }
             else
             {
-                MergeTreeDataMerger::FuturePart future_part;
+                MergeTreeDataMerger::FuturePart future_merged_part;
 
                 size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
 
@@ -1791,10 +1792,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
                 if (max_parts_size_for_merge > 0
                     && merger.selectPartsToMerge(
-                        future_part, false,
+                        future_merged_part, false,
                         max_parts_size_for_merge,
                         can_merge)
-                    && createLogEntryToMergeParts(future_part.parts, future_part.name, deduplicate))
+                    && createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate))
                 {
                     success = true;
                     need_pull = true;
@@ -2369,22 +2370,23 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const String & p
 
         size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
-        MergeTreeDataMerger::FuturePart future_part;
+        MergeTreeDataMerger::FuturePart future_merged_part;
         bool selected = false;
 
         if (partition_id.empty())
         {
-            selected = merger.selectPartsToMerge(future_part, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
+            selected = merger.selectPartsToMerge(
+                future_merged_part, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
         }
         else
         {
-            selected = merger.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final);
+            selected = merger.selectAllPartsToMergeWithinPartition(future_merged_part, disk_space, can_merge, partition_id, final);
         }
 
         if (!selected)
             return false;
 
-        if (!createLogEntryToMergeParts(future_part.parts, future_part.name, deduplicate, &merge_entry))
+        if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
             return false;
     }
 
