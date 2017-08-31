@@ -7,6 +7,6 @@ add_subdirectory (libcommon)
 add_subdirectory (libpocoext)
 add_subdirectory (libdaemon)
 
-if (MYSQL_FOUND)
+if (USE_MYSQL)
     add_subdirectory (libmysqlxx)
 endif ()
