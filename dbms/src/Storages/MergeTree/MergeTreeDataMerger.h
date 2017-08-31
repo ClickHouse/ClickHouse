@@ -27,7 +27,7 @@ public:
         MergeTreePartInfo part_info;
         MergeTreeData::DataPartsVector parts;
 
-        const Row & getPartition() const { return parts.front()->partition; }
+        const MergeTreeDataPart::Partition & getPartition() const { return parts.front()->partition; }
 
         FuturePart() = default;
         explicit FuturePart(MergeTreeData::DataPartsVector parts_)

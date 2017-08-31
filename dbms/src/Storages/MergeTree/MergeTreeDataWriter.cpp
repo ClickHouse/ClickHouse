@@ -129,7 +129,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// This will generate unique name in scope of current server process.
     Int64 temp_index = data.insert_increment.get();
 
-    MinMaxIndex minmax_idx;
+    MergeTreeDataPart::MinMaxIndex minmax_idx;
     minmax_idx.update(block, data.minmax_idx_columns);
 
     String new_partition_id = data.getPartitionIDFromData(block_with_partition.partition);
@@ -138,8 +138,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     String part_name;
     if (data.format_version == 0)
     {
-        DayNum_t min_date(minmax_idx.min_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
-        DayNum_t max_date(minmax_idx.max_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
+        DayNum_t min_date(minmax_idx.min_values[data.minmax_idx_date_column_pos].get<UInt64>());
+        DayNum_t max_date(minmax_idx.max_values[data.minmax_idx_date_column_pos].get<UInt64>());
 
         const auto & date_lut = DateLUT::instance();
 
@@ -155,7 +155,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         part_name = new_part_info.getPartName();
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name, new_part_info);
-    new_data_part->partition = std::move(block_with_partition.partition);
+    new_data_part->partition = MergeTreeDataPart::Partition(std::move(block_with_partition.partition));
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->relative_path = TMP_PREFIX + part_name;
     new_data_part->is_temp = true;
