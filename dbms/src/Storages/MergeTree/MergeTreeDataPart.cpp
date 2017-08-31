@@ -289,8 +289,8 @@ void MinMaxIndex::update(const Block & block, const Names & column_names)
 {
     if (!initialized)
     {
-        min_column_values.resize(column_names.size(), /* dont_init_elems = */ true);
-        max_column_values.resize(column_names.size(), /* dont_init_elems = */ true);
+        min_column_values.resize(column_names.size());
+        max_column_values.resize(column_names.size());
     }
 
     for (size_t i = 0; i < column_names.size(); ++i)
@@ -302,8 +302,8 @@ void MinMaxIndex::update(const Block & block, const Names & column_names)
 
         if (!initialized)
         {
-            new (min_column_values.place(i)) Field(min_value);
-            new (max_column_values.place(i)) Field(max_value);
+            min_column_values[i] = Field(min_value);
+            max_column_values[i] = Field(max_value);
         }
         else
         {

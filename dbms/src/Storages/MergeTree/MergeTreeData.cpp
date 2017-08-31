@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
@@ -198,14 +199,9 @@ void MergeTreeData::initPrimaryKey()
 void MergeTreeData::initPartitionKey()
 {
     String partition_expr_str = "toYYYYMM(" + date_column_name + ")";
-    Tokens tokens(partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.size());
     ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
-    TokenIterator token_it(tokens);
-    Expected expected;
-    bool parsed = parser.parse(token_it, partition_expr_ast, expected);
-    if (!parsed || !token_it->isEnd())
-        throw Exception("Can't parse partition expression: `" + partition_expr_str + "`", ErrorCodes::SYNTAX_ERROR);
-
+    partition_expr_ast = parseQuery(
+        parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
     partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumnsList()).getActions(false);
     for (const ASTPtr & ast : partition_expr_ast->children)
         partition_expr_columns.emplace_back(ast->getColumnName());
