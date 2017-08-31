@@ -23,5 +23,4 @@ struct ColumnsUInt64
     uint64_t size = 0;
     VectorUInt64 * data = nullptr;
 };
-
 }

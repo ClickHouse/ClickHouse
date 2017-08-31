@@ -92,8 +92,8 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
 {
     if (!Poco::File(path).exists())
     {
-        throw Exception(
-            "LibDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("LibDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
+            ErrorCodes::FILE_DOESNT_EXIST);
     }
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path);
@@ -124,9 +124,10 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
         ++i;
     }
     void * data_ptr = nullptr;
-    auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v1_loadAll");
-    if (!fptr)
-        throw Exception("Method loadAll is not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
+
+    /// Get function pointer before dataAllocate call because library->get may throw.
+    auto fptr
+        = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v1_loadAll");
     data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns);
     auto block = description.sample_block.cloneEmpty();
@@ -150,10 +151,10 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
         ++i;
     }
     void * data_ptr = nullptr;
+
+    /// Get function pointer before dataAllocate call because library->get may throw.
     auto fptr = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
         "ClickHouseDictionary_v1_loadIds");
-    if (!fptr)
-        throw Exception("Method loadIds is not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
     data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = description.sample_block.cloneEmpty();
@@ -187,11 +188,11 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
     }
     const ClickHouseLib::VectorUInt64 requested_rows_c{requested_rows.size(), requested_rows.data()};
     void * data_ptr = nullptr;
+
+    /// Get function pointer before dataAllocate call because library->get may throw.
     auto fptr
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&requested_rows_c))>(
             "ClickHouseDictionary_v1_loadKeys");
-    if (!fptr)
-        throw Exception("Method loadKeys is not implemented in library " + toString(), ErrorCodes::NOT_IMPLEMENTED);
     data_ptr = library->get<void * (*)()>("ClickHouseDictionary_v1_dataAllocate")();
     auto data = fptr(data_ptr, &settings->strings, &columns_pass, &requested_rows_c);
     auto block = description.sample_block.cloneEmpty();
