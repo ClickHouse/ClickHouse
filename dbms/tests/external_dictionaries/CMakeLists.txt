@@ -1,2 +1,2 @@
 
-add_subdirectory (dict_lib)
+add_subdirectory (dictionary_library)
