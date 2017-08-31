@@ -1,8 +1,8 @@
 #include <DataStreams/OneBlockInputStream.h>
-#include <Dictionaries/LibDictionarySource.h>
+#include <Dictionaries/LibraryDictionarySource.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
-#include "LibDictionarySourceExternal.h"
+#include "LibraryDictionarySourceExternal.h"
 
 #include <Common/iostream_debug_helpers.h>
 
@@ -78,12 +78,12 @@ bool dataToBlock(const void * data, Block & block)
     return false;
 }
 
-LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct_,
+LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block,
     const Context & context)
-    : log(&Logger::get("LibDictionarySource")),
+    : log(&Logger::get("LibraryDictionarySource")),
       dict_struct{dict_struct_},
       config_prefix{config_prefix},
       path{config.getString(config_prefix + ".path", "")},
@@ -92,7 +92,7 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
 {
     if (!Poco::File(path).exists())
     {
-        throw Exception("LibDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
+        throw Exception("LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
             ErrorCodes::FILE_DOESNT_EXIST);
     }
     description.init(sample_block);
@@ -100,8 +100,8 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
 }
 
-LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
-    : log(&Logger::get("LibDictionarySource")),
+LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource & other)
+    : log(&Logger::get("LibraryDictionarySource")),
       dict_struct{other.dict_struct},
       config_prefix{other.config_prefix},
       path{other.path},
@@ -110,7 +110,7 @@ LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
 {
 }
 
-BlockInputStreamPtr LibDictionarySource::loadAll()
+BlockInputStreamPtr LibraryDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
 
@@ -136,7 +136,7 @@ BlockInputStreamPtr LibDictionarySource::loadAll()
     return std::make_shared<OneBlockInputStream>(block);
 }
 
-BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
@@ -163,7 +163,7 @@ BlockInputStreamPtr LibDictionarySource::loadIds(const std::vector<UInt64> & ids
     return std::make_shared<OneBlockInputStream>(block);
 }
 
-BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
+BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::vector<std::size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
 
@@ -201,7 +201,7 @@ BlockInputStreamPtr LibDictionarySource::loadKeys(const Columns & key_columns, c
     return std::make_shared<OneBlockInputStream>(block);
 }
 
-bool LibDictionarySource::isModified() const
+bool LibraryDictionarySource::isModified() const
 {
     auto fptr = library->get<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_isModified", true);
     if (fptr)
@@ -209,7 +209,7 @@ bool LibDictionarySource::isModified() const
     return true;
 }
 
-bool LibDictionarySource::supportsSelectiveLoad() const
+bool LibraryDictionarySource::supportsSelectiveLoad() const
 {
     auto fptr = library->get<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_supportsSelectiveLoad", true);
     if (fptr)
@@ -217,12 +217,12 @@ bool LibDictionarySource::supportsSelectiveLoad() const
     return true;
 }
 
-DictionarySourcePtr LibDictionarySource::clone() const
+DictionarySourcePtr LibraryDictionarySource::clone() const
 {
-    return std::make_unique<LibDictionarySource>(*this);
+    return std::make_unique<LibraryDictionarySource>(*this);
 }
 
-std::string LibDictionarySource::toString() const
+std::string LibraryDictionarySource::toString() const
 {
     return path;
 }

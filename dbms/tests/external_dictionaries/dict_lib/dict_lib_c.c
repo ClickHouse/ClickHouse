@@ -12,7 +12,6 @@ typedef struct
     const uint64_t size;
     const uint64_t * data;
 } ClickHouseLibVectorUInt64;
-//#define ClickhouseLibColumns const char **
 
 typedef struct
 {

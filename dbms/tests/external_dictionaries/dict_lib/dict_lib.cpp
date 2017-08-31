@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#include <Dictionaries/LibDictionarySourceExternal.h>
+#include <Dictionaries/LibraryDictionarySourceExternal.h>
 
 #define DUMPS(VAR) #VAR " = " << VAR
 #define DUMP(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR) << "\n";

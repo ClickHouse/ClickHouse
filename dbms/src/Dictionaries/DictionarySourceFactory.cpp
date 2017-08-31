@@ -6,7 +6,7 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/ExecutableDictionarySource.h>
 #include <Dictionaries/HTTPDictionarySource.h>
-#include <Dictionaries/LibDictionarySource.h>
+#include <Dictionaries/LibraryDictionarySource.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Core/FieldVisitors.h>
@@ -172,9 +172,9 @@ DictionarySourcePtr DictionarySourceFactory::create(
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
     }
-    else if ("lib" == source_type)
+    else if ("library" == source_type)
     {
-        return std::make_unique<LibDictionarySource>(dict_struct, config, config_prefix + ".lib", sample_block, context);
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context);
     }
 
     throw Exception{

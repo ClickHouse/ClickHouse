@@ -20,16 +20,16 @@ struct CStringsHolder;
 /// Allows loading dictionaries from dynamic libraries (.so)
 /// Experimental version
 /// Now supports only uint64 types
-class LibDictionarySource final : public IDictionarySource
+class LibraryDictionarySource final : public IDictionarySource
 {
 public:
-    LibDictionarySource(const DictionaryStructure & dict_struct_,
+    LibraryDictionarySource(const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block,
         const Context & context);
 
-    LibDictionarySource(const LibDictionarySource & other);
+    LibraryDictionarySource(const LibraryDictionarySource & other);
 
     BlockInputStreamPtr loadAll() override;
 
