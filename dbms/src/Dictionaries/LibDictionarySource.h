@@ -52,7 +52,7 @@ private:
 
     const DictionaryStructure dict_struct;
     const std::string config_prefix;
-    const std::string filename;
+    const std::string path;
     Block sample_block;
     const Context & context;
     SharedLibraryPtr library;

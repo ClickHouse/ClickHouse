@@ -59,20 +59,20 @@ bool dataToBlock(const void * data, Block & block)
 {
     if (!data)
         return true;
-    auto columns_recd = static_cast<ClickHouseLib::ColumnsUInt64 *>(data);
+    auto columns_received = static_cast<const ClickHouseLib::ColumnsUInt64 *>(data);
     std::vector<IColumn *> columns(block.columns());
     for (const auto i : ext::range(0, columns.size()))
         columns[i] = block.getByPosition(i).column.get();
-    for (size_t i = 0; i < columns_recd->size; ++i)
+    for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
     {
-        if (columns.size() != columns_recd->data[i].size)
-            throw Exception("Received unexpected number of columns " + std::to_string(columns_recd->data[i].size) + "/"
-                    + std::to_string(columns.size()) /* + " in " + toString()*/,
+        if (columns.size() != columns_received->data[col_n].size)
+            throw Exception("Received unexpected number of columns: " + std::to_string(columns_received->data[col_n].size) + ", must be"
+                    + std::to_string(columns.size()),
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-        for (size_t ii = 0; ii < columns_recd->data[i].size; ++ii)
+        for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
         {
-            columns[ii]->insert(columns_recd->data[i].data[ii]);
+            columns[row_n]->insert(columns_received->data[col_n].data[row_n]);
         }
     }
     return false;
@@ -86,17 +86,17 @@ LibDictionarySource::LibDictionarySource(const DictionaryStructure & dict_struct
     : log(&Logger::get("LibDictionarySource")),
       dict_struct{dict_struct_},
       config_prefix{config_prefix},
-      filename{config.getString(config_prefix + ".filename", "")},
+      path{config.getString(config_prefix + ".path", "")},
       sample_block{sample_block},
       context(context)
 {
-    if (!Poco::File(filename).exists())
+    if (!Poco::File(path).exists())
     {
         throw Exception(
-            "LibDictionarySource: Cant load lib " + toString() + " : " + Poco::File(filename).path(), ErrorCodes::FILE_DOESNT_EXIST);
+            "LibDictionarySource: Cant load lib " + toString() + " : " + Poco::File(path).path(), ErrorCodes::FILE_DOESNT_EXIST);
     }
     description.init(sample_block);
-    library = std::make_shared<SharedLibrary>(filename);
+    library = std::make_shared<SharedLibrary>(path);
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
 }
 
@@ -104,7 +104,7 @@ LibDictionarySource::LibDictionarySource(const LibDictionarySource & other)
     : log(&Logger::get("LibDictionarySource")),
       dict_struct{other.dict_struct},
       config_prefix{other.config_prefix},
-      filename{other.filename},
+      path{other.path},
       sample_block{other.sample_block},
       context(other.context)
 {
@@ -223,6 +223,6 @@ DictionarySourcePtr LibDictionarySource::clone() const
 
 std::string LibDictionarySource::toString() const
 {
-    return filename;
+    return path;
 }
 }
