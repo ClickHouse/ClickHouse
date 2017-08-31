@@ -894,7 +894,7 @@ inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, FixedStr
 /// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericArraySlice, GenericArraySink).
 inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
 {
-    if (std::type_index(typeid(slice.elements)) == std::type_index(typeid(&sink.elements)))
+    if (typeid(slice.elements) == typeid(&sink.elements))
         sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
     else
     {
