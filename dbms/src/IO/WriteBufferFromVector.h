@@ -14,7 +14,7 @@ namespace DB
 /** Initialized by vector. Writes data to it. When the vector is finished, it doubles its size.
   * CharType - char or unsigned char.
   */
-template <typename VectorType = std::vector<char> >
+template <typename VectorType = std::vector<char>>
 class WriteBufferFromVector : public WriteBuffer
 {
 private:

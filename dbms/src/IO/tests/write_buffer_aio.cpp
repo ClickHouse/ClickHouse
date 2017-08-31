@@ -32,7 +32,7 @@ bool test10();
 
 void run()
 {
-    const std::vector<std::function<bool()> > tests =
+    const std::vector<std::function<bool()>> tests =
     {
         test1,
         test2,

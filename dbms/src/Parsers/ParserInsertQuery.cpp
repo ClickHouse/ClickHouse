@@ -80,21 +80,22 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!name_p.parse(pos, format, expected))
             return false;
 
-        if (pos->type == TokenType::Semicolon)
-            throw Exception("You have excessive ';' symbol before data for INSERT.\n"
-                "Example:\n\n"
-                "INSERT INTO t (x, y) FORMAT TabSeparated\n"
-                "1\tHello\n"
-                "2\tWorld\n"
-                "\n"
-                "Note that there is no ';' in first line.", ErrorCodes::SYNTAX_ERROR);
-
-        /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
-
         data = name_pos->end;
+
+        if (data < end && *data == ';')
+            throw Exception("You have excessive ';' symbol before data for INSERT.\n"
+                                    "Example:\n\n"
+                                    "INSERT INTO t (x, y) FORMAT TabSeparated\n"
+                                    ";\tHello\n"
+                                    "2\tWorld\n"
+                                    "\n"
+                                    "Note that there is no ';' just after format name, "
+                                    "you need to put at least one whitespace symbol before the data.", ErrorCodes::SYNTAX_ERROR);
 
         while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
             ++data;
+
+        /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
 
         if (data < end && *data == '\r')
             ++data;

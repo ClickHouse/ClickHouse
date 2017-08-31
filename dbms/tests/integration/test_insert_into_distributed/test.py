@@ -14,6 +14,11 @@ instance_test_inserts_batching = cluster.add_instance(
     main_configs=['configs/remote_servers.xml'], user_configs=['configs/enable_distributed_inserts_batching.xml'])
 remote = cluster.add_instance('remote', user_configs=['configs/forbid_background_merges.xml'])
 
+instance_test_inserts_local_cluster = cluster.add_instance(
+    'instance_test_inserts_local_cluster',
+    main_configs=['configs/remote_servers.xml'])
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -27,6 +32,11 @@ CREATE TABLE distributed (x UInt32) ENGINE = Distributed('test_cluster', 'defaul
         remote.query("CREATE TABLE local2 (d Date, x UInt32, s String) ENGINE = MergeTree(d, x, 8192)")
         instance_test_inserts_batching.query('''
 CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local2')
+''')
+
+        instance_test_inserts_local_cluster.query("CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)")
+        instance_test_inserts_local_cluster.query('''
+CREATE TABLE distributed_on_local (d Date, x UInt32) ENGINE = Distributed('test_local_cluster', 'default', 'local')
 ''')
 
         yield cluster
@@ -105,3 +115,10 @@ def test_inserts_batching(started_cluster):
 20000101_20000101_5_5_0	[6,9]
 '''
     assert TSV(result) == TSV(expected)
+
+
+def test_inserts_local(started_cluster):
+    instance = instance_test_inserts_local_cluster
+    instance.query("INSERT INTO distributed_on_local VALUES ('2000-01-01', 1)")
+    time.sleep(0.5)
+    assert instance.query("SELECT count(*) FROM local").strip() == '1'

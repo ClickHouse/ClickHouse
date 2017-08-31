@@ -109,7 +109,7 @@ private:
     Tables external_tables;
     QueryProcessingStage::Enum stage;
 
-    /// Threads for reading from temporary tables and following sending of data
+    /// Streams for reading from temporary tables and following sending of data
     /// to remote servers for GLOBAL-subqueries
     std::vector<ExternalTablesData> external_tables_data;
     std::mutex external_tables_mutex;

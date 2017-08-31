@@ -116,7 +116,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
 void NativeBlockOutputStream::write(const Block & block)
 {
     /// Additional information about the block.
-    if (client_revision >= DBMS_MIN_REVISION_WITH_BLOCK_INFO)
+    if (client_revision > 0)
         block.info.write(ostr);
 
     /// Dimensions

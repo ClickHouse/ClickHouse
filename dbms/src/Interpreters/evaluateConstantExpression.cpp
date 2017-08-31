@@ -60,7 +60,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(ASTPtr & node, const Context & contex
 }
 
 
-ASTPtr evaluateConstantExpressionOrIdentidierAsLiteral(ASTPtr & node, const Context & context)
+ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(ASTPtr & node, const Context & context)
 {
     if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(node.get()))
         return std::make_shared<ASTLiteral>(node->range, Field(id->name));

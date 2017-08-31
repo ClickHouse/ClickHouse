@@ -122,7 +122,7 @@ struct BaseUniqCombinedData
     using Key = UInt32;
     using Set = CombinedCardinalityEstimator<
         Key,
-        HashSet<Key, TrivialHash, HashTableGrower<> >,
+        HashSet<Key, TrivialHash, HashTableGrower<>>,
         16,
         14,
         17,
@@ -141,7 +141,7 @@ struct BaseUniqCombinedData<String, mode>
     using Key = UInt64;
     using Set = CombinedCardinalityEstimator<
         Key,
-        HashSet<Key, TrivialHash, HashTableGrower<> >,
+        HashSet<Key, TrivialHash, HashTableGrower<>>,
         16,
         14,
         17,
@@ -252,7 +252,7 @@ struct OneAdder;
 template <typename T, typename Data>
 struct OneAdder<T, Data, typename std::enable_if<
     std::is_same<Data, AggregateFunctionUniqUniquesHashSetData>::value ||
-    std::is_same<Data, AggregateFunctionUniqHLL12Data<T> >::value>::type>
+    std::is_same<Data, AggregateFunctionUniqHLL12Data<T>>::value>::type>
 {
     template <typename T2 = T>
     static void addImpl(Data & data, const IColumn & column, size_t row_num,
@@ -273,10 +273,10 @@ struct OneAdder<T, Data, typename std::enable_if<
 
 template <typename T, typename Data>
 struct OneAdder<T, Data, typename std::enable_if<
-    std::is_same<Data, AggregateFunctionUniqCombinedRawData<T> >::value ||
-    std::is_same<Data, AggregateFunctionUniqCombinedLinearCountingData<T> >::value ||
-    std::is_same<Data, AggregateFunctionUniqCombinedBiasCorrectedData<T> >::value ||
-    std::is_same<Data, AggregateFunctionUniqCombinedData<T> >::value>::type>
+    std::is_same<Data, AggregateFunctionUniqCombinedRawData<T>>::value ||
+    std::is_same<Data, AggregateFunctionUniqCombinedLinearCountingData<T>>::value ||
+    std::is_same<Data, AggregateFunctionUniqCombinedBiasCorrectedData<T>>::value ||
+    std::is_same<Data, AggregateFunctionUniqCombinedData<T>>::value>::type>
 {
     template <typename T2 = T>
     static void addImpl(Data & data, const IColumn & column, size_t row_num,
@@ -297,7 +297,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 
 template <typename T, typename Data>
 struct OneAdder<T, Data, typename std::enable_if<
-    std::is_same<Data, AggregateFunctionUniqExactData<T> >::value>::type>
+    std::is_same<Data, AggregateFunctionUniqExactData<T>>::value>::type>
 {
     template <typename T2 = T>
     static void addImpl(Data & data, const IColumn & column, size_t row_num,
@@ -326,7 +326,7 @@ struct OneAdder<T, Data, typename std::enable_if<
 
 /// Calculates the number of different values approximately or exactly.
 template <typename T, typename Data>
-class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data> >
+class AggregateFunctionUniq final : public IUnaryAggregateFunction<Data, AggregateFunctionUniq<T, Data>>
 {
 public:
     String getName() const override { return Data::getName(); }
