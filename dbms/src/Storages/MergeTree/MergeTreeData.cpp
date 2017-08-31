@@ -725,29 +725,30 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
 
-    columns_alter_forbidden.insert(date_column_name);
-
-    if (!merging_params.sign_column.empty())
-        columns_alter_forbidden.insert(merging_params.sign_column);
-
-    /// Primary key columns can be ALTERed only if they are used in the primary key as-is
+    /// Primary or partition key columns can be ALTERed only if they are used in the key as-is
     /// (and not as a part of some expression) and if the ALTER only affects column metadata.
-    /// We don't add sampling_expression columns here because they must be among the primary key columns.
     NameSet columns_alter_metadata_only;
 
-    if (primary_expr)
+    auto add_key_columns = [&](const ExpressionActionsPtr & expr)
     {
-        for (const auto & action : primary_expr->getActions())
+        if (!expr)
+            return;
+
+        for (const ExpressionAction & action : expr->getActions())
         {
             auto action_columns = action.getNeededColumns();
             columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
         }
-        for (const auto & col : primary_expr->getRequiredColumns())
-        {
-            if (!columns_alter_forbidden.count(col))
-                columns_alter_metadata_only.insert(col);
-        }
-    }
+        for (const String & col : expr->getRequiredColumns())
+            columns_alter_metadata_only.insert(col);
+    };
+
+    add_key_columns(partition_expr);
+    add_key_columns(primary_expr);
+    /// We don't process sampling_expression separately because it must be among the primary key columns.
+
+    if (!merging_params.sign_column.empty())
+        columns_alter_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
     for (const auto & column : *columns)
