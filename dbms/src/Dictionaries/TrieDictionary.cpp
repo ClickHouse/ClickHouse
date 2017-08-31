@@ -611,7 +611,7 @@ Columns TrieDictionary::getKeyColumns() const
 
     trieTraverse<decltype(getter), __uint128_t>(trie, std::move(getter));
 #else
-    throw Exception("TrieDictionary::getKeyColumns not implemented for 32bit arch", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("TrieDictionary::getKeyColumns is not implemented for 32bit arch", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     return {ip_column, mask_column};
 }
