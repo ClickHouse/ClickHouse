@@ -1,0 +1,3 @@
+[submodule "contrib/mariadb-connector-c"]
+	path = contrib/mariadb-connector-c
+	url = https://github.com/MariaDB/mariadb-connector-c.git

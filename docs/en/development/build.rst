@@ -95,8 +95,8 @@ To get latest stable version:
 
 .. code-block:: bash
 
-    git clone -b stable git@github.com:yandex/ClickHouse.git
-    # or: git clone -b stable https://github.com/yandex/ClickHouse.git
+    git clone -b stable --recursive git@github.com:yandex/ClickHouse.git
+    # or: git clone -b stable --recursive https://github.com/yandex/ClickHouse.git
 
     cd ClickHouse
 
