@@ -208,18 +208,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             /// In case of isCancelled.
             if (!res)
             {
-                if (!pre_range_reader)
-                {
-                    task->current_range_reader = std::experimental::nullopt;
-                }
-                return res;
-            }
-
-            if (!res.rows())
-            {
                 task->current_range_reader = std::experimental::nullopt;
-                res.clear();
-                continue;
+                return res;
             }
 
             progressImpl({ res.rows(), res.bytes() });
