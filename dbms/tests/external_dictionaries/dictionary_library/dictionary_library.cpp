@@ -13,14 +13,14 @@
 struct DataHolder
 {
     std::vector<std::vector<uint64_t>> vector;
-    std::unique_ptr<ClickHouseLib::VectorUInt64[]> columnsHolder;
-    ClickHouseLib::ColumnsUInt64 columns;
+    std::unique_ptr<ClickHouseLibrary::VectorUInt64[]> columnsHolder;
+    ClickHouseLibrary::ColumnsUInt64 columns;
 };
 
 extern "C" {
 
 void * ClickHouseDictionary_v1_loadIds(
-    void * data_ptr, ClickHouseLib::CStrings * settings, ClickHouseLib::CStrings * columns, const struct ClickHouseLib::VectorUInt64 * ids)
+    void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * columns, const struct ClickHouseLibrary::VectorUInt64 * ids)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadIds lib call ptr=" << data_ptr << " => " << ptr << " size=" << ids->size << "\n";
@@ -49,7 +49,7 @@ void * ClickHouseDictionary_v1_loadIds(
             }
         }
 
-        ptr->columnsHolder = std::make_unique<ClickHouseLib::VectorUInt64[]>(ptr->vector.size());
+        ptr->columnsHolder = std::make_unique<ClickHouseLibrary::VectorUInt64[]>(ptr->vector.size());
         size_t i = 0;
         for (auto & col : ptr->vector)
         {
@@ -69,7 +69,7 @@ void * ClickHouseDictionary_v1_loadIds(
     return nullptr;
 }
 
-void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLib::CStrings * settings, ClickHouseLib::CStrings * columns)
+void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * columns)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadAll lib call ptr=" << data_ptr << " => " << ptr << "\n";
@@ -91,7 +91,7 @@ void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLib::CStrings 
             ptr->vector.emplace_back(std::vector<uint64_t>{i, i + 1, (1 + i) * 10, 65});
         }
 
-        ptr->columnsHolder = std::make_unique<ClickHouseLib::VectorUInt64[]>(ptr->vector.size());
+        ptr->columnsHolder = std::make_unique<ClickHouseLibrary::VectorUInt64[]>(ptr->vector.size());
         size_t i = 0;
         for (auto & col : ptr->vector)
         {
@@ -110,9 +110,9 @@ void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLib::CStrings 
 }
 
 void * ClickHouseDictionary_v1_loadKeys(void * data_ptr,
-    ClickHouseLib::CStrings * settings,
-    ClickHouseLib::CStrings * columns,
-    const ClickHouseLib::VectorUInt64 * requested_rows)
+    ClickHouseLibrary::CStrings * settings,
+    ClickHouseLibrary::CStrings * columns,
+    const ClickHouseLibrary::VectorUInt64 * requested_rows)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadKeys lib call ptr=" << data_ptr << " => " << ptr << "\n";

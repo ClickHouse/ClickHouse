@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ClickHouseLib
+namespace ClickHouseLibrary
 {
 using CString = const char *;
 using ColumnName = CString;
