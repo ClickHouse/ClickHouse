@@ -66,5 +66,5 @@ endif ()
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
     add_subdirectory (mariadb-connector-c)
-    target_include_directories (${MYSQLCLIENT_LIBRARIES} BEFORE PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include")
+    target_include_directories (${MYSQLCLIENT_LIBRARIES} BEFORE PUBLIC ${MYSQL_INCLUDE_DIR})
 endif ()

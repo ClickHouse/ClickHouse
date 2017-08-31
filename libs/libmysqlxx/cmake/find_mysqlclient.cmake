@@ -4,9 +4,8 @@ option (USE_INTERNAL_MYSQL_LIBRARY "Set to FALSE to use system mysql library ins
 
 if (ENABLE_MYSQL)
 
-   if (NOT EXISTS "contrib/mariadb-connector-c/CMakeLists.txt")
-      # Submodule missed
-      message (WARNING "contrib/mariadb-connector-c is missing. to fix try run: git submodule update --init --recursive")
+   if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/CMakeLists.txt")
+      message (WARNING "submodule contrib/mariadb-connector-c is missing. to fix try run: git submodule update --init --recursive")
       set (USE_INTERNAL_MYSQL_LIBRARY 0)
    endif ()
 
@@ -43,6 +42,7 @@ if (ENABLE_MYSQL)
     else ()                                   
         set (USE_INTERNAL_MYSQL_LIBRARY 1)
         set (MYSQLCLIENT_LIBRARIES mariadbclient)
+        set (MYSQL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include")
     endif ()
 
     set(USE_MYSQL 1)
@@ -50,7 +50,7 @@ if (ENABLE_MYSQL)
 endif ()
 
 if (USE_MYSQL)
-    message (STATUS "Using mysqlclient=${USE_MYSQL}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIBRARIES}; static=${STATIC_MYSQLCLIENT_LIB} internal=${USE_INTERNAL_MYSQL_LIBRARY}")
+    message (STATUS "Using mysqlclient=${USE_MYSQL}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIBRARIES}; staticlib=${STATIC_MYSQLCLIENT_LIB} internal=${USE_INTERNAL_MYSQL_LIBRARY}")
 else ()
     message (STATUS "Build without mysqlclient (support for MYSQL dictionary source will be disabled)")
 endif ()
