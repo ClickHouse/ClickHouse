@@ -4,6 +4,12 @@ option (USE_INTERNAL_MYSQL_LIBRARY "Set to FALSE to use system mysql library ins
 
 if (ENABLE_MYSQL)
 
+   if (NOT EXISTS "contrib/mariadb-connector-c/CMakeLists.txt")
+      # Submodule missed
+      message (WARNING "contrib/mariadb-connector-c is missing. to fix try run: git submodule update --init --recursive")
+      set (USE_INTERNAL_MYSQL_LIBRARY 0)
+   endif ()
+
    if (NOT USE_INTERNAL_MYSQL_LIBRARY)
     set (MYSQL_LIB_PATHS
         "/usr/local/opt/mysql/lib"
@@ -33,7 +39,7 @@ if (ENABLE_MYSQL)
    endif ()
 
     if (MYSQL_INCLUDE_DIR AND (STATIC_MYSQLCLIENT_LIB OR MYSQLCLIENT_LIBRARIES))
-        target_include_directories (${MYSQLCLIENT_LIBRARIES} BEFORE PUBLIC ${MYSQL_INCLUDE_DIR})
+        include_directories (MYSQL_INCLUDE_DIR)
     else ()                                   
         set (USE_INTERNAL_MYSQL_LIBRARY 1)
         set (MYSQLCLIENT_LIBRARIES mariadbclient)
@@ -44,7 +50,7 @@ if (ENABLE_MYSQL)
 endif ()
 
 if (USE_MYSQL)
-    message (STATUS "Using mysqlclient=${USE_MYSQL}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIB}; static=${STATIC_MYSQLCLIENT_LIB} internal=${USE_INTERNAL_MYSQL_LIBRARY}")
+    message (STATUS "Using mysqlclient=${USE_MYSQL}: ${MYSQL_INCLUDE_DIR} : ${MYSQLCLIENT_LIBRARIES}; static=${STATIC_MYSQLCLIENT_LIB} internal=${USE_INTERNAL_MYSQL_LIBRARY}")
 else ()
     message (STATUS "Build without mysqlclient (support for MYSQL dictionary source will be disabled)")
 endif ()
