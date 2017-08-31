@@ -422,28 +422,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         return;
     }
 
-    if (!storage.partition_expr_columns.empty())
-    {
-        WriteBufferFromFile out(part_path + "partition.dat");
-        HashingWriteBuffer out_hashing(out);
-        for (size_t i = 0; i < new_part->partition.size(); ++i)
-            storage.partition_expr_column_types[i]->serializeBinary(new_part->partition[i], out_hashing);
-        checksums.files["partition.dat"].file_size = out_hashing.count();
-        checksums.files["partition.dat"].file_hash = out_hashing.getHash();
-    }
-
-    for (size_t i = 0; i < storage.minmax_idx_columns.size(); ++i)
-    {
-        String file_name = "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
-        const DataTypePtr & type = storage.minmax_idx_column_types[i];
-
-        WriteBufferFromFile out(part_path + file_name);
-        HashingWriteBuffer out_hashing(out);
-        type->serializeBinary(new_part->minmax_idx.min_column_values[i], out_hashing);
-        type->serializeBinary(new_part->minmax_idx.max_column_values[i], out_hashing);
-        checksums.files[file_name].file_size = out_hashing.count();
-        checksums.files[file_name].file_hash = out_hashing.getHash();
-    }
+    new_part->partition.store(storage, part_path, checksums);
+    new_part->minmax_idx.store(storage, part_path, checksums);
 
     {
         /// Write a file with a description of columns.

@@ -80,21 +80,6 @@ struct MergeTreeDataPartChecksums
 };
 
 
-/// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
-/// parts based on conditions on these columns imposed by a query.
-/// Currently this index is built using only columns required by partition expression, but in principle it
-/// can be built using any set of columns.
-struct MinMaxIndex
-{
-    void update(const Block & block, const Names & column_names);
-    void merge(const MinMaxIndex & other);
-
-    bool initialized = false;
-    Row min_column_values;
-    Row max_column_values;
-};
-
-
 class MergeTreeData;
 
 
@@ -142,8 +127,6 @@ struct MergeTreeDataPart
     String name;
     MergeTreePartInfo info;
 
-    Row partition;
-
     /// A directory path (realative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     mutable String relative_path;
@@ -165,6 +148,54 @@ struct MergeTreeDataPart
     /// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
     using Index = Columns;
     Index index;
+
+    struct Partition
+    {
+        Row value;
+
+    public:
+        Partition() = default;
+        explicit Partition(Row value_) : value(std::move(value_)) {}
+
+        /// For month-based partitioning.
+        explicit Partition(UInt32 yyyymm) : value(1, static_cast<UInt64>(yyyymm)) {}
+
+        void load(const MergeTreeData & storage, const String & part_path);
+        void store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const;
+
+        void assign(const Partition & other) { value.assign(other.value); }
+
+    };
+
+    Partition partition;
+
+    /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
+    /// parts based on conditions on these columns imposed by a query.
+    /// Currently this index is built using only columns required by partition expression, but in principle it
+    /// can be built using any set of columns.
+    struct MinMaxIndex
+    {
+        Row min_values;
+        Row max_values;
+        bool initialized = false;
+
+    public:
+        MinMaxIndex() = default;
+
+        /// For month-based partitioning.
+        MinMaxIndex(DayNum_t min_date, DayNum_t max_date)
+            : min_values(1, static_cast<UInt64>(min_date))
+            , max_values(1, static_cast<UInt64>(max_date))
+            , initialized(true)
+        {
+        }
+
+        void load(const MergeTreeData & storage, const String & part_path);
+        void store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const;
+
+        void update(const Block & block, const Names & column_names);
+        void merge(const MinMaxIndex & other);
+    };
 
     MinMaxIndex minmax_idx;
 
