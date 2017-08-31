@@ -1018,8 +1018,8 @@ public:
                 res.getByName("port").column->insert(static_cast<UInt64>(port));
                 res.getByName("status").column->insert(static_cast<Int64>(status.code));
                 res.getByName("error").column->insert(status.message);
-                res.getByName("num_hosts_remaining").column->insert(waiting_hosts.size() - (++num_hosts_finished));
-                res.getByName("num_hosts_active").column->insert(cur_active_hosts.size());
+                res.getByName("num_hosts_remaining").column->insert(static_cast<UInt64>(waiting_hosts.size() - (++num_hosts_finished)));
+                res.getByName("num_hosts_active").column->insert(static_cast<UInt64>(cur_active_hosts.size()));
             }
         }
 

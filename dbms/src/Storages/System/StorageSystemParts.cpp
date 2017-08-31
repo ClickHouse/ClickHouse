@@ -205,7 +205,7 @@ BlockInputStreams StorageSystemParts::read(
             block.getByPosition(i++).column->insert(part->info.partition_id);
             block.getByPosition(i++).column->insert(part->name);
             block.getByPosition(i++).column->insert(static_cast<UInt64>(active_parts.count(part)));
-            block.getByPosition(i++).column->insert(part->size);
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->size));
 
             size_t marks_size = 0;
             for (const NameAndTypePair & it : part->columns)
@@ -215,10 +215,10 @@ BlockInputStreams StorageSystemParts::read(
                 if (checksum != part->checksums.files.end())
                     marks_size += checksum->second.file_size;
             }
-            block.getByPosition(i++).column->insert(marks_size);
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(marks_size));
 
-            block.getByPosition(i++).column->insert(part->getExactSizeRows());
-            block.getByPosition(i++).column->insert(static_cast<size_t>(part->size_in_bytes));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getExactSizeRows()));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->size_in_bytes));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->modification_time));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->remove_time));
 
@@ -230,8 +230,8 @@ BlockInputStreams StorageSystemParts::read(
             block.getByPosition(i++).column->insert(part->info.min_block);
             block.getByPosition(i++).column->insert(part->info.max_block);
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->info.level));
-            block.getByPosition(i++).column->insert(part->getIndexSizeInBytes());
-            block.getByPosition(i++).column->insert(part->getIndexSizeInAllocatedBytes());
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
 
             block.getByPosition(i++).column->insert(database);
             block.getByPosition(i++).column->insert(table);
