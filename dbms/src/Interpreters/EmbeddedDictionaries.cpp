@@ -1,12 +1,15 @@
-#include <common/logger_useful.h>
-#include <Poco/Util/Application.h>
-#include <Interpreters/EmbeddedDictionaries.h>
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
-#include <Dictionaries/Embedded/TechDataHierarchy.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
+#include <Dictionaries/Embedded/TechDataHierarchy.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/EmbeddedDictionaries.h>
+
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 #include <Common/config.h>
+#include <common/logger_useful.h>
+
+#include <Poco/Util/Application.h>
 
 
 namespace DB
@@ -26,12 +29,14 @@ void EmbeddedDictionaries::handleException(const bool throw_on_error) const
 template <typename Dictionary>
 bool EmbeddedDictionaries::reloadDictionary(MultiVersion<Dictionary> & dictionary, const bool throw_on_error)
 {
-    if (Dictionary::isConfigured() && (!is_fast_start_stage || !dictionary.get()))
+    const auto & config = context.getConfigRef();
+
+    if (Dictionary::isConfigured(config) && (!is_fast_start_stage || !dictionary.get()))
     {
         try
         {
             auto new_dictionary = std::make_unique<Dictionary>();
-            new_dictionary->reload();
+            new_dictionary->reload(config);
             dictionary.set(new_dictionary.release());
         }
         catch (...)
@@ -100,18 +105,14 @@ void EmbeddedDictionaries::reloadPeriodically()
 }
 
 
-EmbeddedDictionaries::EmbeddedDictionaries(const bool throw_on_error, const int reload_period_)
-    : reload_period(reload_period_), log(&Logger::get("EmbeddedDictionaries"))
+EmbeddedDictionaries::EmbeddedDictionaries(Context & context_, const bool throw_on_error)
+    : log(&Logger::get("EmbeddedDictionaries"))
+    , context(context_)
+    , reload_period(context_.getConfigRef().getInt("builtin_dictionaries_reload_interval", 3600))
 {
     reloadImpl(throw_on_error);
     reloading_thread = std::thread([this] { reloadPeriodically(); });
 }
-
-
-EmbeddedDictionaries::EmbeddedDictionaries(const bool throw_on_error)
-    : EmbeddedDictionaries(throw_on_error,
-        Poco::Util::Application::instance().config().getInt("builtin_dictionaries_reload_interval", 3600))
-{}
 
 
 EmbeddedDictionaries::~EmbeddedDictionaries()

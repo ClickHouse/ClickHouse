@@ -636,20 +636,20 @@ int main(int argc, char ** argv)
     }
 
     if (!m || m == 1) bench<StringRef_Compare1_Ptrs>                (data, "StringRef_Compare1_Ptrs");
-    if (!m || m == 2) bench<StringRef_Compare1_Index>                (data, "StringRef_Compare1_Index");
+    if (!m || m == 2) bench<StringRef_Compare1_Index>               (data, "StringRef_Compare1_Index");
     if (!m || m == 3) bench<StringRef_CompareMemcmp>                (data, "StringRef_CompareMemcmp");
-    if (!m || m == 4) bench<StringRef_Compare8_1_byUInt64>            (data, "StringRef_Compare8_1_byUInt64");
-    if (!m || m == 5) bench<StringRef_Compare16_1_byMemcmp>            (data, "StringRef_Compare16_1_byMemcmp");
+    if (!m || m == 4) bench<StringRef_Compare8_1_byUInt64>          (data, "StringRef_Compare8_1_byUInt64");
+    if (!m || m == 5) bench<StringRef_Compare16_1_byMemcmp>         (data, "StringRef_Compare16_1_byMemcmp");
     if (!m || m == 6) bench<StringRef_Compare16_1_byUInt64_logicAnd>(data, "StringRef_Compare16_1_byUInt64_logicAnd");
-    if (!m || m == 7) bench<StringRef_Compare16_1_byUInt64_bitAnd>    (data, "StringRef_Compare16_1_byUInt64_bitAnd");
+    if (!m || m == 7) bench<StringRef_Compare16_1_byUInt64_bitAnd>  (data, "StringRef_Compare16_1_byUInt64_bitAnd");
 #if __SSE4_1__
-    if (!m || m == 8) bench<StringRef_Compare16_1_byIntSSE>            (data, "StringRef_Compare16_1_byIntSSE");
-    if (!m || m == 9) bench<StringRef_Compare16_1_byFloatSSE>        (data, "StringRef_Compare16_1_byFloatSSE");
-    if (!m || m == 10) bench<StringRef_Compare16_1_bySSE4>            (data, "StringRef_Compare16_1_bySSE4");
-    if (!m || m == 11) bench<StringRef_Compare16_1_bySSE4_wide>        (data, "StringRef_Compare16_1_bySSE4_wide");
-    if (!m || m == 12) bench<StringRef_Compare16_1_bySSE_wide>        (data, "StringRef_Compare16_1_bySSE_wide");
+    if (!m || m == 8) bench<StringRef_Compare16_1_byIntSSE>         (data, "StringRef_Compare16_1_byIntSSE");
+    if (!m || m == 9) bench<StringRef_Compare16_1_byFloatSSE>       (data, "StringRef_Compare16_1_byFloatSSE");
+    if (!m || m == 10) bench<StringRef_Compare16_1_bySSE4>          (data, "StringRef_Compare16_1_bySSE4");
+    if (!m || m == 11) bench<StringRef_Compare16_1_bySSE4_wide>     (data, "StringRef_Compare16_1_bySSE4_wide");
+    if (!m || m == 12) bench<StringRef_Compare16_1_bySSE_wide>      (data, "StringRef_Compare16_1_bySSE_wide");
 #endif
-    if (!m || m == 100) bench<StringRef_CompareAlwaysTrue>            (data, "StringRef_CompareAlwaysTrue");
+    if (!m || m == 100) bench<StringRef_CompareAlwaysTrue>          (data, "StringRef_CompareAlwaysTrue");
     if (!m || m == 101) bench<StringRef_CompareAlmostAlwaysTrue>    (data, "StringRef_CompareAlmostAlwaysTrue");
 
     /// 10 > 8, 9

@@ -530,7 +530,8 @@ int Server::main(const std::vector<std::string> & args)
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
-            metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
+            metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
+                *global_context, async_metrics, graphite_key));
         }
 
         SessionCleaner session_cleaner(*global_context);

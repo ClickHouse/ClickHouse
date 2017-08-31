@@ -506,7 +506,8 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
     try
     {
-        executeQuery(istr, ostr, false, context, nullptr);
+        Context local_context(context);
+        executeQuery(istr, ostr, false, local_context, nullptr);
     }
     catch (...)
     {
@@ -862,7 +863,7 @@ void DDLWorker::run()
             tryLogCurrentException(log, "Terminating. Cannot initialize DDL queue.");
             return;
         }
-    } while (!initialized);
+    } while (!initialized && !stop_flag);
 
     while (!stop_flag)
     {
@@ -886,7 +887,22 @@ void DDLWorker::run()
                 if (!e.isTemporaryError())
                 {
                     LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
-                    zookeeper = context.getZooKeeper();
+
+                    while (!stop_flag)
+                    {
+                        try
+                        {
+                            zookeeper = context.getZooKeeper();
+                            break;
+                        }
+                        catch (...)
+                        {
+                            tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                            using namespace std::chrono_literals;
+                            std::this_thread::sleep_for(5s);
+                        }
+                    }
                 }
                 else
                 {

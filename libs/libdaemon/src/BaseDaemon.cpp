@@ -29,6 +29,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
+#include <sstream>
 #include <memory>
 #include <Poco/Observer.h>
 #include <Poco/Logger.h>
@@ -71,6 +72,8 @@ using Poco::Path;
 using Poco::Message;
 using Poco::Util::AbstractConfiguration;
 
+
+constexpr char BaseDaemon::DEFAULT_GRAPHITE_CONFIG_NAME[];
 
 /** Для передачи информации из обработчика сигнала для обработки в другом потоке.
   * Если при получении сигнала надо делать что-нибудь серьёзное (например, вывести сообщение в лог),
@@ -691,7 +694,7 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
-void BaseDaemon::initialize(Application& self)
+void BaseDaemon::initialize(Application & self)
 {
     task_manager.reset(new Poco::TaskManager);
     ServerApplication::initialize(self);
@@ -738,6 +741,18 @@ void BaseDaemon::initialize(Application& self)
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
+    }
+
+    /// This must be done before creation of any files (including logs).
+    if (config().has("umask"))
+    {
+        std::string umask_str = config().getString("umask");
+        mode_t umask_num = 0;
+        std::stringstream stream;
+        stream << umask_str;
+        stream >> std::oct >> umask_num;
+
+        umask(umask_num);
     }
 
     std::string log_path = config().getString("logger.log", "");

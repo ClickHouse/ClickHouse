@@ -871,10 +871,18 @@ public:
                 throw Exception("Third argument provided for function substring could not be negative.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column_string))
-            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value, length_value, block, result, StringSource(*col));
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(&*column_string))
-            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value, length_value, block, result, FixedStringSource(*col));
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
+            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value, length_value,
+                             block, result, StringSource(*col));
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value, length_value,
+                             block, result, FixedStringSource(*col));
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column_string.get()))
+            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value, length_value,
+                             block, result, ConstSource<StringSource>(*col));
+        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
+            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value, length_value,
+                             block, result, ConstSource<FixedStringSource>(*col));
         else
             throw Exception(
                 "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
@@ -945,7 +953,7 @@ public:
         if (start >= 0x8000000000000000ULL || length >= 0x8000000000000000ULL)
             throw Exception("Too large values of 2nd or 3rd argument provided for function substring.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(&*column_string))
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
             block.getByPosition(result).column = col_res;

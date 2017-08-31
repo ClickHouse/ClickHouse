@@ -3,7 +3,6 @@
 #include <Core/Block.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/FileDictionarySource.h>
-#include <Dictionaries/MySQLDictionarySource.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/ExecutableDictionarySource.h>
 #include <Dictionaries/HTTPDictionarySource.h>

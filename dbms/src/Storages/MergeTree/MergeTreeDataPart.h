@@ -180,19 +180,12 @@ struct MergeTreeDataPart
     /// Renames a part by appending a prefix to the name. To_detached - also moved to the detached directory.
     void renameAddPrefix(bool to_detached, const String & prefix) const;
 
-    /// Loads index file. Also calculates this->size if size=0
-    void loadIndex();
-
-    /// If checksums.txt exists, reads files' checksums (and sizes) from it
-    void loadChecksums(bool require);
-
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;
 
-    /// Reads columns names and types from columns.txt
-    void loadColumns(bool require);
-
-    void checkNotBroken(bool require_part_metadata);
+    /// Initialize columns (from columns.txt if exists, or create from column files if not).
+    /// Load checksums from checksums.txt if exists. Load index if required.
+    void loadColumnsChecksumsIndex(bool require_columns_checksums, bool check_consistency);
 
     /// Checks that .bin and .mrk files exist
     bool hasColumnFiles(const String & column) const;
@@ -200,6 +193,18 @@ struct MergeTreeDataPart
     /// For data in RAM ('index')
     size_t getIndexSizeInBytes() const;
     size_t getIndexSizeInAllocatedBytes() const;
+
+private:
+    /// Reads columns names and types from columns.txt
+    void loadColumns(bool require);
+
+    /// If checksums.txt exists, reads files' checksums (and sizes) from it
+    void loadChecksums(bool require);
+
+    /// Loads index file. Also calculates this->size if size=0
+    void loadIndex();
+
+    void checkConsistency(bool require_part_metadata);
 };
 
 }
