@@ -215,6 +215,13 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 return res;
             }
 
+            if (!res.rows())
+            {
+                task->current_range_reader = std::experimental::nullopt;
+                res.clear();
+                continue;
+            }
+
             progressImpl({ res.rows(), res.bytes() });
             pre_reader->fillMissingColumns(res, task->ordered_names, task->should_reorder);
 
