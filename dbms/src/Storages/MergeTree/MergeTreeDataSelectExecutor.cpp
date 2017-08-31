@@ -198,7 +198,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
     const Settings & settings = context.getSettingsRef();
     SortDescription sort_descr = data.getSortDescription();
-    ColumnsWithTypeAndName date_columns = {{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}};
 
     PKCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
         data.getPrimaryExpression());
