@@ -53,7 +53,7 @@ public:
         return res;
     }
 
-    void dropCache()
+    void drop()
     {
         std::lock_guard<std::mutex> lock(mutex);
         cache.clear();

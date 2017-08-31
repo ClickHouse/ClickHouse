@@ -1,10 +1,8 @@
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include "ASTSystemQuery.h"
 
 
 namespace ErrorCodes
@@ -29,7 +27,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     auto res = std::make_shared<ASTSystemQuery>();
 
     bool found = false;
-    for (int i = static_cast<int>(Type::SHUTDOWN); i < static_cast<int>(Type::_END); ++i)
+    for (int i = static_cast<int>(Type::UNKNOWN) + 1; i < static_cast<int>(Type::END); ++i)
     {
         Type t = static_cast<Type>(i);
         if (ParserKeyword{ASTSystemQuery::typeToString(t)}.ignore(pos))

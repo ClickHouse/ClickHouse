@@ -12,7 +12,7 @@ public:
 
     enum class Type
     {
-        _UNKNOWN,
+        UNKNOWN,
         SHUTDOWN,
         KILL,
         DROP_DNS_CACHE,
@@ -28,12 +28,12 @@ public:
         START_MERGES,
         STOP_REPLICATION_QUEUES,
         START_REPLICATION_QUEUES,
-        _END
+        END
     };
 
     static const char * typeToString(Type type);
 
-    Type type = Type::_UNKNOWN;
+    Type type = Type::UNKNOWN;
 
     String target_dictionary;
     //String target_replica_database;
@@ -45,8 +45,6 @@ public:
     String getID() const override { return "SYSTEM query"; };
 
     ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
-
-    ~ASTSystemQuery() override = default;
 
 protected:
 

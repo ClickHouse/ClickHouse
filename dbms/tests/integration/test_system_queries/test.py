@@ -55,13 +55,12 @@ def test_DROP_DNS_CACHE(started_cluster):
     instance = cluster.instances['ch1']
 
     with pytest.raises(Exception):
-        instance.query("SELECT * FROM remote('apperol', 'system', 'one')")
+        instance.query("SELECT * FROM remote('aperol', 'system', 'one')")
 
-    print instance.exec_in_container(['bash', '-c', 'echo $USER `cat /etc/hosts`'], privileged=True)
-    instance.exec_in_container(['bash', '-c', 'echo 127.0.0.1 apperol >> /etc/hosts'], privileged=True)
+    instance.exec_in_container(['bash', '-c', 'echo 127.0.0.1 aperol >> /etc/hosts'], privileged=True, user='root')
     instance.query("SYSTEM DROP DNS CACHE")
 
-    instance.query("SELECT * FROM remote('apperol', 'system', 'one')")
+    instance.query("SELECT * FROM remote('aperol', 'system', 'one')")
 
 
 if __name__ == '__main__':

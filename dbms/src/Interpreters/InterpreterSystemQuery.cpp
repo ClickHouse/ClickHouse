@@ -6,7 +6,6 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Common/typeid_cast.h>
 #include <csignal>
-#include <bits/signum.h>
 
 
 namespace DB
@@ -21,8 +20,8 @@ namespace ErrorCodes
 }
 
 
-InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_)
-        : query_ptr(query_ptr_), context(context_) {}
+namespace
+{
 
 ExecutionStatus getOverallExecutionStatusOfCommands()
 {
@@ -51,6 +50,12 @@ ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callabl
     return ExecutionStatus(res_status, res_message);
 }
 
+}
+
+
+InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Context & context_)
+        : query_ptr(query_ptr_), context(context_) {}
+
 
 BlockIO InterpreterSystemQuery::execute()
 {
@@ -62,14 +67,14 @@ BlockIO InterpreterSystemQuery::execute()
     {
         case Type::SHUTDOWN:
             if (kill(0, SIGTERM))
-                throw Exception("System call kill(0, SIGTERM) failed", ErrorCodes::CANNOT_KILL);
+                throwFromErrno("System call kill(0, SIGTERM) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::KILL:
             if (kill(0, SIGKILL))
-                throw Exception("System call kill(0, SIGKILL) failed", ErrorCodes::CANNOT_KILL);
+                throwFromErrno("System call kill(0, SIGKILL) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::DROP_DNS_CACHE:
-            DNSCache::instance().dropCache();
+            DNSCache::instance().drop();
             break;
         case Type::DROP_MARK_CACHE:
             context.dropMarkCache();

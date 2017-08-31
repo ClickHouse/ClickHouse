@@ -1,13 +1,64 @@
 #include "DNSCache.h"
-#include <Poco/Net/DNS.h>
 #include <Common/SimpleCache.h>
+#include <Common/Exception.h>
 #include <Core/Types.h>
+#include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
-
+#include <Poco/NumberParser.h>
+#include <arpa/inet.h>
 
 
 namespace DB
 {
+
+/// Slightly altered implementation from https://github.com/pocoproject/poco/blob/poco-1.6.1/Net/src/SocketAddress.cpp#L86
+static void splitHostAndPort(const std::string & host_and_port, std::string & out_host, UInt16 & out_port)
+{
+    String port_str;
+    out_host.clear();
+
+    auto it = host_and_port.begin();
+    auto end = host_and_port.end();
+
+    if (*it == '[') /// Try parse case '[<IPv6 or something else>]:<port>'
+    {
+        ++it;
+        while (it != end && *it != ']')
+            out_host += *it++;
+        if (it == end)
+            throw Exception("Malformed IPv6 address", ErrorCodes::BAD_ARGUMENTS);
+        ++it;
+    }
+    else /// Case '<IPv4 or domain name or something else>:<port>'
+    {
+        while (it != end && *it != ':')
+            out_host += *it++;
+    }
+
+    if (it != end && *it == ':')
+    {
+        ++it;
+        while (it != end)
+            port_str += *it++;
+    }
+    else
+        throw Exception("Missing port number", ErrorCodes::BAD_ARGUMENTS);
+
+    unsigned port;
+    if (Poco::NumberParser::tryParseUnsigned(port_str, port) && port <= 0xFFFF)
+    {
+        out_port = static_cast<UInt16>(port);
+    }
+    else
+    {
+        struct servent * se = getservbyname(port_str.c_str(), nullptr);
+        if (se)
+            out_port = ntohs(static_cast<uint16_t>(se->s_port));
+        else
+            throw Exception("Service not found", ErrorCodes::BAD_ARGUMENTS);
+    }
+}
+
 
 static Poco::Net::IPAddress resolveIPAddressImpl(const std::string & host)
 {
@@ -16,17 +67,10 @@ static Poco::Net::IPAddress resolveIPAddressImpl(const std::string & host)
     return Poco::Net::SocketAddress(host, 0U).host();
 }
 
-static Poco::Net::SocketAddress resolveSocketAddressImpl(const std::string & host_and_port)
-{
-    return Poco::Net::SocketAddress(host_and_port);
-}
 
 struct DNSCache::Impl
 {
-    /// TODO: Use only one cache for different formats
-
     SimpleCache<decltype(resolveIPAddressImpl), &resolveIPAddressImpl> cache_host;
-    SimpleCache<decltype(resolveSocketAddressImpl), &resolveSocketAddressImpl> cache_host_and_port;
 };
 
 
@@ -39,13 +83,16 @@ Poco::Net::IPAddress DNSCache::resolveHost(const std::string & host)
 
 Poco::Net::SocketAddress DNSCache::resolveHostAndPort(const std::string & host_and_port)
 {
-    return impl->cache_host_and_port(host_and_port);
+    String host;
+    UInt16 port;
+    splitHostAndPort(host_and_port, host, port);
+
+    return Poco::Net::SocketAddress(impl->cache_host(host), port);
 }
 
-void DNSCache::dropCache()
+void DNSCache::drop()
 {
-    impl->cache_host.dropCache();
-    impl->cache_host_and_port.dropCache();
+    impl->cache_host.drop();
 }
 
 DNSCache::~DNSCache() = default;

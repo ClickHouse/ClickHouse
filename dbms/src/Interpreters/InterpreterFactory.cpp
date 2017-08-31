@@ -29,11 +29,11 @@
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterKillQueryQuery.h>
+#include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSystemQuery.h>
-#include "InterpreterSystemQuery.h"
 
 
 namespace DB
