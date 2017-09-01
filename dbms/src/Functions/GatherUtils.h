@@ -897,8 +897,11 @@ inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, FixedStr
 /// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericArraySlice, GenericArraySink).
 inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
 {
-    if (typeid(slice.elements) == typeid(&sink.elements))
+    if (typeid(slice.elements) == typeid(static_cast<const IColumn *>(&sink.elements)))
+    {
         sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
+        sink.current_offset += slice.size;
+    }
     else
         throw Exception("Function writeSlice expect same column types for GenericArraySlice and GenericArraySink.",
                         ErrorCodes::LOGICAL_ERROR);
