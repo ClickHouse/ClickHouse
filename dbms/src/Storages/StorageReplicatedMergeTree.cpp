@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int RESHARDING_NULLABLE_SHARDING_KEY;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int TOO_MUCH_FETCHES;
+    extern const int BAD_DATA_PART_NAME;
 }
 
 
@@ -1073,8 +1074,15 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             /// Logging
             Stopwatch stopwatch;
 
+            MergeTreeDataMerger::FuturePart future_merged_part(parts);
+            if (future_merged_part.name != entry.new_part_name)
+                throw Exception(
+                    "Future merged part name `" + future_merged_part.name +
+                    "` differs from part name in log entry: `" + entry.new_part_name + "`",
+                    ErrorCodes::BAD_DATA_PART_NAME);
+
             auto part = merger.mergePartsToTemporaryPart(
-                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
+                future_merged_part, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
 
             zkutil::Ops ops;
 
@@ -1112,7 +1120,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
             if (!do_fetch)
             {
-                merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
+                merger.renameMergedTemporaryPart(part, parts, &transaction);
                 getZooKeeper()->multi(ops);        /// After long merge, get fresh ZK handle, because previous session may be expired.
 
                 if (auto part_log = context.getPartLog(database_name, table_name))
@@ -1776,8 +1784,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
             }
             else
             {
-                MergeTreeData::DataPartsVector parts;
-                String merged_name;
+                MergeTreeDataMerger::FuturePart future_merged_part;
 
                 size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
 
@@ -1785,10 +1792,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
                 if (max_parts_size_for_merge > 0
                     && merger.selectPartsToMerge(
-                        parts, merged_name, false,
+                        future_merged_part, false,
                         max_parts_size_for_merge,
                         can_merge)
-                    && createLogEntryToMergeParts(parts, merged_name, deduplicate))
+                    && createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate))
                 {
                     success = true;
                     need_pull = true;
@@ -2361,26 +2368,25 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const String & p
     {
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
-        MergeTreeData::DataPartsVector parts;
-        String merged_name;
-
         size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
+        MergeTreeDataMerger::FuturePart future_merged_part;
         bool selected = false;
 
         if (partition_id.empty())
         {
-            selected = merger.selectPartsToMerge(parts, merged_name, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
+            selected = merger.selectPartsToMerge(
+                future_merged_part, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
         }
         else
         {
-            selected = merger.selectAllPartsToMergeWithinPartition(parts, merged_name, disk_space, can_merge, partition_id, final);
+            selected = merger.selectAllPartsToMergeWithinPartition(future_merged_part, disk_space, can_merge, partition_id, final);
         }
 
         if (!selected)
             return false;
 
-        if (!createLogEntryToMergeParts(parts, merged_name, deduplicate, &merge_entry))
+        if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
             return false;
     }
 
@@ -2612,7 +2618,7 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
 
     /// We don't block merges, so anyone can manage this task (not only leader)
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
 
     if (fake_part_name.empty())
@@ -2652,7 +2658,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field
         return;
     }
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
 
     if (fake_part_name.empty())
@@ -2702,7 +2708,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & query, const Fie
     if (attach_part)
         partition_id = field.safeGet<String>();
     else
-        partition_id = MergeTreeData::getPartitionID(field);
+        partition_id = data.getPartitionIDFromQuery(field);
 
     String source_dir = "detached/";
 
@@ -3208,7 +3214,7 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 
 void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const String & from_, const Settings & settings)
 {
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
 
     String from = from_;
     if (from.back() == '/')
@@ -3453,7 +3459,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
         }
 
         bool include_all = partition.isNull();
-        String partition_id = !partition.isNull() ? MergeTreeData::getPartitionID(partition) : String();
+        String partition_id = !partition.isNull() ? data.getPartitionIDFromQuery(partition) : String();
 
         /// Make a list of local partitions that need to be resharded.
         std::set<std::string> unique_partition_list;
@@ -3479,12 +3485,12 @@ void StorageReplicatedMergeTree::reshardPartitions(
 
             /// Verify that there is enough free space for all tasks locally and on all replicas.
             auto replica_to_space_info = gatherReplicaSpaceInfo(weighted_zookeeper_paths);
-            for (const auto & partition : partition_list)
+            for (const auto & partition_id : partition_list)
             {
-                size_t partition_size = data.getPartitionSize(partition);
+                size_t partition_size = data.getPartitionSize(partition_id);
                 if (!checkSpaceForResharding(replica_to_space_info, partition_size))
                     throw Exception{"Insufficient space available for resharding operation "
-                        "on partition " + partition, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING};
+                        "on partition id: " + partition_id, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING};
             }
         }
 
@@ -3548,7 +3554,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
             ReshardingJob job;
             job.database_name = database_name;
             job.table_name = getTableName();
-            job.partition = *it;
+            job.partition_id = *it;
             job.paths = weighted_zookeeper_paths;
             job.sharding_key_expr = sharding_key_expr;
             job.coordinator_id = coordinator_id;
@@ -3564,7 +3570,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
             ReshardingJob job;
             job.database_name = database_name;
             job.table_name = getTableName();
-            job.partition = *it;
+            job.partition_id = *it;
             job.paths = weighted_zookeeper_paths;
             job.sharding_key_expr = sharding_key_expr;
             job.do_copy = do_copy;
