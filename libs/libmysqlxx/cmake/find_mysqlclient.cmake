@@ -41,6 +41,7 @@ if (ENABLE_MYSQL)
     else ()                                   
         set (USE_INTERNAL_MYSQL_LIBRARY 1)
         set (MYSQLCLIENT_LIBRARIES mariadbclient)
+        # Binary directory is required because header is generated.
         set (MYSQL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include" "${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c/include")
     endif ()
 
