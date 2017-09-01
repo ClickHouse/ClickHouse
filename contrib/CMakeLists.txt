@@ -65,6 +65,17 @@ if (NOT ARCH_ARM)
 endif ()
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
+
+    # Replace install() to do-nothing macro.
+    macro(install)
+    endmacro()
+
     add_subdirectory (mariadb-connector-c)
+
+    # Restore original install() behavior.
+    macro(install)
+      _install(${ARGN})
+    endmacro()
+
     target_include_directories (${MYSQLCLIENT_LIBRARIES} BEFORE PUBLIC ${MYSQL_INCLUDE_DIR})
 endif ()
