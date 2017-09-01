@@ -70,15 +70,17 @@ if (USE_INTERNAL_MYSQL_LIBRARY)
     macro(install)
     endmacro()
 
-    set(_save ${SKIP_TESTS})
     set(SKIP_TESTS 1)
+    set(WITH_UNITTEST 0)
+    set(WITH_EXTERNAL_ZLIB 1)
+
     add_subdirectory (mariadb-connector-c)
-    set(SKIP_TESTS ${_save})
 
     # Restore original install() behavior.
     macro(install)
       _install(${ARGN})
     endmacro()
+    SET_TARGET_PROPERTIES (libmariadb PROPERTIES EXCLUDE_FROM_ALL 1)
 
     target_include_directories (${MYSQLCLIENT_LIBRARIES} BEFORE PUBLIC ${MYSQL_INCLUDE_DIR})
 endif ()
