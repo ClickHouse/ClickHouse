@@ -163,8 +163,8 @@ private:
     public:
         zkutil::ZooKeeperPtr zookeeper;
         Operation operation;
-        /// Source partition being resharded.
-        std::string partition;
+        /// Source partition id being resharded.
+        std::string partition_id;
         /// Hash of the source partition (for drop operations).
         std::string partition_hash;
         /// Path of this log record on stable storage.

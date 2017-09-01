@@ -21,6 +21,23 @@ public:
     using CancellationHook = std::function<void()>;
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)>;
 
+    struct FuturePart
+    {
+        String name;
+        MergeTreePartInfo part_info;
+        MergeTreeData::DataPartsVector parts;
+
+        const Row & getPartition() const { return parts.front()->partition; }
+
+        FuturePart() = default;
+        explicit FuturePart(MergeTreeData::DataPartsVector parts_)
+        {
+            assign(std::move(parts_));
+        }
+
+        void assign(MergeTreeData::DataPartsVector parts_);
+    };
+
 public:
     MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
 
@@ -44,8 +61,7 @@ public:
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
     bool selectPartsToMerge(
-        MergeTreeData::DataPartsVector & what,
-        String & merged_name,
+        FuturePart & future_part,
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge);
@@ -54,8 +70,7 @@ public:
       * final - choose to merge even a single part - that is, allow to merge one part "with itself".
       */
     bool selectAllPartsToMergeWithinPartition(
-        MergeTreeData::DataPartsVector & what,
-        String & merged_name,
+        FuturePart & future_part,
         size_t available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
@@ -72,13 +87,13 @@ public:
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
-        MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
+        const FuturePart & future_part,
+        MergeListEntry & merge_entry,
         size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
-        MergeTreeData::DataPartsVector & parts,
         MergeTreeData::MutableDataPartPtr & new_data_part,
-        const String & merged_name,
+        const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
     /** Reshards the specified partition.

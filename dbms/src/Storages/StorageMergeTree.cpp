@@ -282,7 +282,7 @@ struct CurrentlyMergingPartsTagger
 bool StorageMergeTree::merge(
     size_t aio_threshold,
     bool aggressive,
-    const String & partition,
+    const String & partition_id,
     bool final,
     bool deduplicate)
 {
@@ -297,14 +297,13 @@ bool StorageMergeTree::merge(
 
     size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
-    /// You must call destructor under unlocked `currently_merging_mutex`.
+    MergeTreeDataMerger::FuturePart future_part;
+
+    /// You must call destructor with unlocked `currently_merging_mutex`.
     std::experimental::optional<CurrentlyMergingPartsTagger> merging_tagger;
-    String merged_name;
 
     {
         std::lock_guard<std::mutex> lock(currently_merging_mutex);
-
-        MergeTreeData::DataPartsVector parts;
 
         auto can_merge = [this] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right)
         {
@@ -313,40 +312,40 @@ bool StorageMergeTree::merge(
 
         bool selected = false;
 
-        if (partition.empty())
+        if (partition_id.empty())
         {
             size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge();
             if (max_parts_size_for_merge > 0)
-                selected = merger.selectPartsToMerge(parts, merged_name, aggressive, max_parts_size_for_merge, can_merge);
+                selected = merger.selectPartsToMerge(future_part, aggressive, max_parts_size_for_merge, can_merge);
         }
         else
         {
-            selected = merger.selectAllPartsToMergeWithinPartition(parts, merged_name, disk_space, can_merge, partition, final);
+            selected = merger.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final);
         }
 
         if (!selected)
             return false;
 
-        merging_tagger.emplace(parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(parts), *this);
+        merging_tagger.emplace(future_part.parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(future_part.parts), *this);
     }
 
-    MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, merged_name, merging_tagger->parts);
+    MergeList::EntryPtr merge_entry_ptr = context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
 
     /// Logging
     Stopwatch stopwatch;
 
     auto new_part = merger.mergePartsToTemporaryPart(
-        merging_tagger->parts, merged_name, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get(), deduplicate);
+        future_part, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get(), deduplicate);
 
-    merger.renameMergedTemporaryPart(merging_tagger->parts, new_part, merged_name, nullptr);
+    merger.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
     if (auto part_log = context.getPartLog(database_name, table_name))
     {
         PartLogElement elem;
         elem.event_time = time(nullptr);
 
-        elem.merged_from.reserve(merging_tagger->parts.size());
-        for (const auto & part : merging_tagger->parts)
+        elem.merged_from.reserve(future_part.parts.size());
+        for (const auto & part : future_part.parts)
             elem.merged_from.push_back(part->name);
         elem.event_type = PartLogElement::MERGE_PARTS;
         elem.size_in_bytes = new_part->size_in_bytes;
@@ -363,7 +362,7 @@ bool StorageMergeTree::merge(
         elem.event_type = PartLogElement::REMOVE_PART;
         elem.merged_from = Strings();
 
-        for (const auto & part : merging_tagger->parts)
+        for (const auto & part : future_part.parts)
         {
             elem.part_name = part->name;
             elem.size_in_bytes = part->size_in_bytes;
@@ -382,7 +381,7 @@ bool StorageMergeTree::mergeTask()
     try
     {
         size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
-        return merge(aio_threshold, false /*aggressive*/, {} /*partition*/, false /*final*/, false /*deduplicate*/); ///TODO: read deduplicate option from table config
+        return merge(aio_threshold, false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/); ///TODO: read deduplicate option from table config
     }
     catch (Exception & e)
     {
@@ -406,7 +405,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & query, const Field 
     auto lock_read_structure = lockStructure(false);
     auto lock_write_data = lockDataForAlter();
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
     MergeTreeData::DataParts parts = data.getDataParts();
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
@@ -455,7 +454,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partiti
     /// Waits for completion of merge and does not start new ones.
     auto lock = lockForAlter();
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
 
     size_t removed_parts = 0;
     MergeTreeData::DataParts parts = data.getDataParts();
@@ -480,12 +479,12 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partiti
 
 void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field, bool part, const Settings & settings)
 {
-    String partition;
+    String partition_id;
 
     if (part)
-        partition = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
+        partition_id = field.getType() == Field::Types::UInt64 ? toString(field.get<UInt64>()) : field.safeGet<String>();
     else
-        partition = MergeTreeData::getPartitionID(field);
+        partition_id = data.getPartitionIDFromQuery(field);
 
     String source_dir = "detached/";
 
@@ -493,18 +492,18 @@ void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field
     Strings parts;
     if (part)
     {
-        parts.push_back(partition);
+        parts.push_back(partition_id);
     }
     else
     {
-        LOG_DEBUG(log, "Looking for parts for partition " << partition << " in " << source_dir);
+        LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ActiveDataPartSet active_parts;
         for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
         {
             String name = it.name();
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(name, &part_info)
-                || part_info.partition_id != partition)
+                || part_info.partition_id != partition_id)
             {
                 continue;
             }

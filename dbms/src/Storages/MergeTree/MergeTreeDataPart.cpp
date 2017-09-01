@@ -285,6 +285,58 @@ const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksu
 }
 
 
+void MinMaxIndex::update(const Block & block, const Names & column_names)
+{
+    if (!initialized)
+    {
+        min_column_values.resize(column_names.size());
+        max_column_values.resize(column_names.size());
+    }
+
+    for (size_t i = 0; i < column_names.size(); ++i)
+    {
+        Field min_value;
+        Field max_value;
+        const ColumnWithTypeAndName & column = block.getByName(column_names[i]);
+        column.column->getExtremes(min_value, max_value);
+
+        if (!initialized)
+        {
+            min_column_values[i] = Field(min_value);
+            max_column_values[i] = Field(max_value);
+        }
+        else
+        {
+            min_column_values[i] = std::min(min_column_values[i], min_value);
+            max_column_values[i] = std::max(max_column_values[i], max_value);
+        }
+    }
+
+    initialized = true;
+}
+
+void MinMaxIndex::merge(const MinMaxIndex & other)
+{
+    if (!other.initialized)
+        return;
+
+    if (!initialized)
+    {
+        min_column_values.assign(other.min_column_values);
+        max_column_values.assign(other.max_column_values);
+        initialized = true;
+    }
+    else
+    {
+        for (size_t i = 0; i < min_column_values.size(); ++i)
+        {
+            min_column_values[i] = std::min(min_column_values[i], other.min_column_values[i]);
+            max_column_values[i] = std::max(max_column_values[i], other.max_column_values[i]);
+        }
+    }
+}
+
+
 /// Returns the size of .bin file for column `name` if found, zero otherwise.
 size_t MergeTreeDataPart::getColumnCompressedSize(const String & name) const
 {
@@ -383,6 +435,24 @@ String MergeTreeDataPart::getNameWithPrefix() const
         throw Exception("relative_path " + relative_path + " of part " + name + " is invalid or not set", ErrorCodes::LOGICAL_ERROR);
 
     return res;
+}
+
+
+DayNum_t MergeTreeDataPart::getMinDate() const
+{
+    if (storage.minmax_idx_date_column_pos != -1)
+        return DayNum_t(minmax_idx.min_column_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+    else
+        return DayNum_t();
+}
+
+
+DayNum_t MergeTreeDataPart::getMaxDate() const
+{
+    if (storage.minmax_idx_date_column_pos != -1)
+        return DayNum_t(minmax_idx.max_column_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+    else
+        return DayNum_t();
 }
 
 
@@ -528,11 +598,12 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
 }
 
 
-void MergeTreeDataPart::loadColumnsChecksumsIndex(bool require_columns_checksums, bool check_consistency)
+void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndex();
+    loadPartitionAndMinMaxIndex();
     if (check_consistency)
         checkConsistency(require_columns_checksums);
 }
@@ -582,6 +653,20 @@ void MergeTreeDataPart::loadIndex()
     }
 
     size_in_bytes = calcTotalSize(getFullPath());
+}
+
+void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
+{
+    DayNum_t min_date;
+    DayNum_t max_date;
+    MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
+
+    const auto & date_lut = DateLUT::instance();
+    partition = Row(1, static_cast<UInt64>(date_lut.toNumYYYYMM(min_date)));
+
+    minmax_idx.min_column_values = Row(1, static_cast<UInt64>(min_date));
+    minmax_idx.max_column_values = Row(1, static_cast<UInt64>(max_date));
+    minmax_idx.initialized = true;
 }
 
 void MergeTreeDataPart::loadChecksums(bool require)

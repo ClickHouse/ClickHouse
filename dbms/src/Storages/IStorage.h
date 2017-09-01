@@ -263,7 +263,7 @@ public:
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
-    virtual bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
+    virtual bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

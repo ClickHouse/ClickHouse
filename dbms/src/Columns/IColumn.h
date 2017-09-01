@@ -275,7 +275,9 @@ protected:
         size_t num_rows = size();
 
         if (num_rows != selector.size())
-            throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(
+                    "Size of selector: " + std::to_string(selector.size()) + " doesn't match size of column: " + std::to_string(num_rows),
+                    ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
         Columns columns(num_columns);
         for (auto & column : columns)
