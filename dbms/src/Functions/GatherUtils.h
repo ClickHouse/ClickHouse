@@ -860,8 +860,11 @@ struct NumericSink
 template <typename T>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 {
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
     if (sink.elements.size() < sink.current_offset + slice.size)
         sink.elements.resize(sink.current_offset + slice.size);
+    /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
+    /// TODO: Implement more efficient memcpy without overflow.
     memcpy(&sink.elements[sink.current_offset], slice.data, slice.size * sizeof(T));
     sink.current_offset += slice.size;
 }
@@ -869,6 +872,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 template <typename T, typename U>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
     if (sink.elements.size() < sink.current_offset + slice.size)
         sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
@@ -880,8 +884,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 
 inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, StringSink & sink)
 {
-    if (sink.elements.size() < sink.current_offset + slice.size)
-        sink.elements.resize(sink.current_offset + slice.size);
+    sink.elements.resize(sink.current_offset + slice.size);
     memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size);
     sink.current_offset += slice.size;
 }
@@ -911,6 +914,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
 template <typename T>
 inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, NumericArraySink<T> & sink)
 {
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
     if (sink.elements.size() < sink.current_offset + slice.size)
         sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
@@ -936,8 +940,11 @@ inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, Generic
 template <typename ArraySlice, typename ArraySink>
 inline ALWAYS_INLINE void writeSlice(const NullableArraySlice<ArraySlice> & slice, NullableArraySink<ArraySink> & sink)
 {
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
     if (sink.null_map.size() < sink.current_offset + slice.size)
         sink.null_map.resize(sink.current_offset + slice.size);
+    /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
+    /// TODO: Implement more efficient memcpy without overflow.
     memcpy(&sink.null_map[sink.current_offset], slice.null_map, slice.size * sizeof(UInt8));
     writeSlice(static_cast<const ArraySlice &>(slice), static_cast<ArraySink &>(sink));
 }
@@ -945,8 +952,11 @@ inline ALWAYS_INLINE void writeSlice(const NullableArraySlice<ArraySlice> & slic
 template <typename ArraySlice, typename ArraySink>
 inline ALWAYS_INLINE void writeSlice(const ArraySlice & slice, NullableArraySink<ArraySink> & sink)
 {
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
     if (sink.null_map.size() < sink.current_offset + slice.size)
         sink.null_map.resize(sink.current_offset + slice.size);
+    /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
+    /// TODO: Implement more efficient memcpy without overflow.
     memset(&sink.null_map[sink.current_offset], 0, slice.size * sizeof(UInt8));
     writeSlice(slice, static_cast<ArraySink &>(sink));
 }
