@@ -149,7 +149,7 @@ struct ArraySourceSelector<Base>
 };
 
 template <typename Base>
-using GetArraySourceSelector = typename ApplyTypeListForClass<ArraySourceSelector, typename AppendToTypeList<Base, TypeListNumber>::Type>::Type;
+using GetArraySourceSelector = typename ApplyTypeListForClass<ArraySourceSelector, typename PrependToTypeList<Base, TypeListNumber>::Type>::Type;
 
 template <typename Base, typename ... Types>
 struct ArraySinkSelector;
@@ -185,7 +185,7 @@ struct ArraySinkSelector<Base>
 };
 
 template <typename Base>
-using GetArraySinkSelector = typename ApplyTypeListForClass<ArraySinkSelector, typename AppendToTypeList<Base, TypeListNumber>::Type>::Type;
+using GetArraySinkSelector = typename ApplyTypeListForClass<ArraySinkSelector, typename PrependToTypeList<Base, TypeListNumber>::Type>::Type;
 
 template <typename Base>
 struct ArraySinkSourceSelector

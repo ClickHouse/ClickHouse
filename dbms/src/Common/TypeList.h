@@ -3,34 +3,53 @@
 namespace DB
 {
 
-template <typename ... Types>
-struct TypeList;
-
-template <typename Type, typename ... Types>
-struct TypeList<Type, Types...>
+template <typename... TTail>
+struct TypeList
 {
-    using Head = Type;
-    using Tail = TypeList<Types ...>;
+    static constexpr size_t size = 0;
+
+    template <size_t I>
+    using At = std::nullptr_t;
+
+    template <typename Func, size_t index = 0>
+    static void forEach(Func && func)
+    {
+    }
 };
 
-template<>
-struct TypeList<>
+
+template <typename THead, typename... TTail>
+struct TypeList<THead, TTail...>
 {
+    using Head = THead;
+    using Tail = TypeList<TTail...>;
+
+    static constexpr size_t size = 1 + sizeof...(TTail);
+
+    template <size_t I>
+    using At = typename std::template conditional<I == 0, Head, typename Tail::template At<I - 1>>::type;
+
+    template <typename Func, size_t index = 0>
+    static void ALWAYS_INLINE forEach(Func && func)
+    {
+        func.template operator()<Head, index>();
+        Tail::template forEach<Func, index + 1>(std::forward<Func>(func));
+    }
 };
 
 /// Append Type to TypeList
 /// Usage:
 ///     using TypeListWithType = typename AppendToTypeList<Type, ConcreteTypeList>::Type;
-template <typename TypeToAppend, typename List, typename ... Types>
-struct AppendToTypeList
+template <typename TypeToPrepend, typename List, typename ... Types>
+struct PrependToTypeList
 {
-    using Type = typename AppendToTypeList<TypeToAppend, typename List::Tail, Types ..., typename List::Head>::Type;
+    using Type = typename PrependToTypeList<TypeToPrepend, typename List::Tail, Types ..., typename List::Head>::Type;
 };
 
-template <typename TypeToAppend, typename ... Types>
-struct AppendToTypeList<TypeToAppend, TypeList<>, Types ...>
+template <typename TypeToPrepend, typename ... Types>
+struct PrependToTypeList<TypeToPrepend, TypeList<>, Types ...>
 {
-    using Type = TypeList<TypeToAppend, Types ...>;
+    using Type = TypeList<TypeToPrepend, Types ...>;
 };
 
 /// Apply TypeList as variadic template argument of Class.
