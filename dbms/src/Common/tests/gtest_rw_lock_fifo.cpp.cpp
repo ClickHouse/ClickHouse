@@ -24,7 +24,7 @@ static void execute_1(size_t threads, int round, int cycles)
     for (int  i = 0; i < cycles; ++i)
     {
         auto type = (std::uniform_int_distribution<>(0, 9)(gen) >= round) ? RWLockFIFO::Read : RWLockFIFO::Write;
-        auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 5)(gen));
+        auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 1000)(gen));
 
         auto lock = fifo_lock->getLock(type, "RW");
 
@@ -57,8 +57,9 @@ static void execute_1(size_t threads, int round, int cycles)
 TEST(Common, RWLockFIFO_1)
 {
     constexpr int cycles = 10000;
+    const std::vector<size_t> pool_sizes{1, 2, 4, 8};
 
-    for (size_t pool_size = 1; pool_size < 8; ++pool_size)
+    for (auto pool_size : pool_sizes)
     {
         for (int round = 0; round < 10; ++round)
         {
