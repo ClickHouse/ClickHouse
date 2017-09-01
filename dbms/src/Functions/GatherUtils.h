@@ -900,15 +900,8 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArr
     if (typeid(slice.elements) == typeid(&sink.elements))
         sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
     else
-    {
-        for (size_t i = 0; i < slice.size; ++i)
-        {
-            Field field;
-            slice.elements->get(slice.begin + i, field);
-            sink.elements.insert(field);
-        }
-    }
-    sink.current_offset += slice.size;
+        throw Exception("Function writeSlice expect same column types for GenericArraySlice and GenericArraySink.",
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename T>
