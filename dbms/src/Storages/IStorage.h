@@ -108,11 +108,12 @@ public:
     /** Does not allow you to change the structure or name of the table.
       * If you change the data in the table, you will need to specify will_modify_data = true.
       * This will take an extra lock that does not allow starting ALTER MODIFY.
+      * Parameter 'who' identifies a client of the lock (ALTER query, merge process, etc), used for diagnostic purposes.
       *
       * WARNING: You need to call methods from ITableDeclaration under such a lock. Without it, they are not thread safe.
       * WARNING: To avoid deadlocks, this method must not be called under lock of Context.
       */
-    TableStructureReadLockPtr lockStructure(bool will_modify_data, const std::string & who = "Anonymous")
+    TableStructureReadLockPtr lockStructure(bool will_modify_data, const std::string & who)
     {
         TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(shared_from_this(), true, will_modify_data, who);
         if (is_dropped)
