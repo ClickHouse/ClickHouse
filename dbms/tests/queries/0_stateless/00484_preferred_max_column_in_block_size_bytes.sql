@@ -18,3 +18,9 @@ create table test.tab (date Date, x UInt64, s FixedString(128)) engine = MergeTr
 insert into test.tab select today(), number, toFixedString('', 128) from system.numbers limit 47;
 set preferred_max_column_in_block_size_bytes = 1152;
 select blockSize(), * from test.tab where x = 1 or x > 36 format Null;
+
+drop table if exists test.tab;
+create table test.tab (date Date, x UInt64, s FixedString(128)) engine = MergeTree(date, (date, x), 8192);
+insert into test.tab select today(), number, toFixedString('', 128) from system.numbers limit 10;
+set preferred_max_column_in_block_size_bytes = 128;
+select s from test.tab where s == '' format Null;

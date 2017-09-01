@@ -8,6 +8,7 @@ import lxml.etree as et
 from argparse import ArgumentParser
 from argparse import FileType
 from pprint import pprint
+import shlex
 import subprocess
 from subprocess import check_call
 from subprocess import Popen
@@ -34,7 +35,7 @@ def main(args):
 
 
     def is_data_present():
-        proc = Popen(args.client, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
         (stdout, stderr) = proc.communicate("EXISTS TABLE test.hits")
         if proc.returncode != 0:
             raise CalledProcessError(proc.returncode, args.client, stderr)
