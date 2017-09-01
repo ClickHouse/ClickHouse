@@ -394,7 +394,7 @@ struct SliceFromLeftConstantOffsetUnboundedSelectArraySource
     template <typename Source, typename Sink>
     static void selectSourceSink(Source & source, Sink & sink, size_t & offset)
     {
-        sliceFromLeftConstantOffsetUnbounded<Source, Sink>(source, sink, offset);
+        sliceFromLeftConstantOffsetUnbounded(source, sink, offset);
     }
 };
 
@@ -404,7 +404,7 @@ struct SliceFromLeftConstantOffsetBoundedSelectArraySource
     template <typename Source, typename Sink>
     static void selectSourceSink(Source & source, Sink & sink, size_t & offset, ssize_t & length)
     {
-        sliceFromLeftConstantOffsetBounded<Source, Sink>(source, sink, offset, length);
+        sliceFromLeftConstantOffsetBounded(source, sink, offset, length);
     }
 };
 
@@ -414,7 +414,7 @@ struct SliceFromRightConstantOffsetUnboundedSelectArraySource
     template <typename Source, typename Sink>
     static void selectSourceSink(Source & source, Sink & sink, size_t & offset)
     {
-        sliceFromRightConstantOffsetUnbounded<Source, Sink>(source, sink, offset);
+        sliceFromRightConstantOffsetUnbounded(source, sink, offset);
     }
 };
 
@@ -424,7 +424,7 @@ struct SliceFromRightConstantOffsetBoundedSelectArraySource
     template <typename Source, typename Sink>
     static void selectSourceSink(Source & source, Sink & sink, size_t & offset, ssize_t & length)
     {
-        sliceFromRightConstantOffsetBounded<Source, Sink>(source, sink, offset, length);
+        sliceFromRightConstantOffsetBounded(source, sink, offset, length);
     }
 };
 
@@ -434,7 +434,7 @@ struct SliceDynamicOffsetUnboundedSelectArraySource
     template <typename Source, typename Sink>
     static void selectSourceSink(Source & source, Sink & sink, IColumn & offset_column)
     {
-        sliceDynamicOffsetUnbounded<Source, Sink>(source, sink, offset_column);
+        sliceDynamicOffsetUnbounded(source, sink, offset_column);
     }
 };
 
@@ -444,7 +444,7 @@ struct SliceDynamicOffsetBoundedSelectArraySource
     template <typename Source, typename Sink>
     static void selectSourceSink(Source & source, Sink & sink, IColumn & offset_column, IColumn & length_column)
     {
-        sliceDynamicOffsetBounded<Source, Sink>(source, sink, offset_column, length_column);
+        sliceDynamicOffsetBounded(source, sink, offset_column, length_column);
     }
 };
 
