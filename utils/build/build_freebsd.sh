@@ -16,7 +16,7 @@
 #  Variant 3: Manual build:
 
 # pkg install -y curl sudo
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/docs/en/development/build_freebsd.sh | sh
+# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/build/build_freebsd.sh | sh
 
 #  install compiler and libs
 sudo pkg install devel/git devel/cmake shells/bash devel/icu devel/libltdl databases/unixODBC devel/google-perftools devel/libzookeeper devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
@@ -28,12 +28,12 @@ sudo pkg install lang/python devel/py-lxml devel/py-termcolor ftp/curl perl5
 # make -C /usr/ports/devel/poco config reinstall
 
 #  Checkout ClickHouse sources
-git clone https://github.com/yandex/ClickHouse.git
+git clone --recursive https://github.com/yandex/ClickHouse.git
 
 #  Build!
 mkdir -p ClickHouse/build
 cd ClickHouse/build
-cmake .. -DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0 -DNO_WERROR=1 -DUSE_INTERNAL_BOOST_LIBRARY=1
+cmake .. -DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0
 # build with boost 1.64 from ports temporary broken
 
 make -C dbms/src/Server -j $(nproc || sysctl -n hw.ncpu || echo 2)

@@ -14,7 +14,7 @@ REMOTE_NAME="registry.yandex.net/${FULL_NAME}"
 DOCKER_HASH="$2"
 if [[ -z "$1" ]]
 then
-    git clone https://github.com/yandex/clickhouse-presentations.git presentations || true
+    git clone --recursive https://github.com/yandex/clickhouse-presentations.git presentations || true
     git --work-tree=$(readlink -f presentations) --git-dir=$(readlink -f presentations)/.git pull
     gulp clean
     gulp build

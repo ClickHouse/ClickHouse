@@ -22,7 +22,7 @@ ReshardingJob::ReshardingJob(const std::string & serialized_job)
 
     readBinary(database_name, buf);
     readBinary(table_name, buf);
-    readBinary(partition, buf);
+    readBinary(partition_id, buf);
 
     std::string expr;
     readBinary(expr, buf);
@@ -50,11 +50,11 @@ ReshardingJob::ReshardingJob(const std::string & serialized_job)
 }
 
 ReshardingJob::ReshardingJob(const std::string & database_name_, const std::string & table_name_,
-    const std::string & partition_, const WeightedZooKeeperPaths & paths_,
+    const std::string & partition_id_, const WeightedZooKeeperPaths & paths_,
     const ASTPtr & sharding_key_expr_, const std::string & coordinator_id_)
     : database_name{database_name_},
     table_name{table_name_},
-    partition{partition_},
+    partition_id{partition_id_},
     paths{paths_},
     sharding_key_expr{sharding_key_expr_},
     coordinator_id{coordinator_id_}
@@ -65,7 +65,7 @@ ReshardingJob::operator bool() const
 {
     return !database_name.empty()
         && !table_name.empty()
-        && !partition.empty()
+        && !partition_id.empty()
         && !paths.empty()
         && (storage != nullptr);
 }
@@ -76,7 +76,7 @@ std::string ReshardingJob::toString() const
 
     writeBinary(database_name, buf);
     writeBinary(table_name, buf);
-    writeBinary(partition, buf);
+    writeBinary(partition_id, buf);
     writeBinary(queryToString(sharding_key_expr), buf);
     writeBinary(coordinator_id, buf);
     writeVarUInt(block_number, buf);
@@ -101,7 +101,7 @@ void ReshardingJob::clear()
 {
     database_name.clear();
     table_name.clear();
-    partition.clear();
+    partition_id.clear();
     paths.clear();
     coordinator_id.clear();
     storage = nullptr;

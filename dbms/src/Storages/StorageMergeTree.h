@@ -61,9 +61,9 @@ public:
 
     /** Perform the next step in combining the parts.
       */
-    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override
+    bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings) override
     {
-        return merge(settings.min_bytes_to_use_direct_io, true, partition, final, deduplicate);
+        return merge(settings.min_bytes_to_use_direct_io, true, partition_id, final, deduplicate);
     }
 
     void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
@@ -145,7 +145,7 @@ private:
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition, bool final, bool deduplicate);
+    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
 
     bool mergeTask();
 };
