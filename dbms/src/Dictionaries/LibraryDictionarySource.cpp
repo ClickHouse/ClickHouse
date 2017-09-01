@@ -3,8 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include "LibraryDictionarySourceExternal.h"
-
-#include <Common/iostream_debug_helpers.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -116,7 +115,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
     ClickHouseLibrary::CStrings columns{
-        dict_struct.attributes.size(), reinterpret_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get())};
+        reinterpret_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
@@ -140,10 +139,10 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
-    const ClickHouseLibrary::VectorUInt64 ids_data{ids.size(), ids.data()};
+    const ClickHouseLibrary::VectorUInt64 ids_data{ids.data(), ids.size()};
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
     ClickHouseLibrary::CStrings columns_pass{
-        dict_struct.attributes.size(), reinterpret_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get())};
+        reinterpret_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
@@ -179,14 +178,14 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 */
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(key_columns.size());
     ClickHouseLibrary::CStrings columns_pass{
-        key_columns.size(), reinterpret_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get())};
+        reinterpret_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), key_columns.size()};
     size_t key_columns_n = 0;
     for (auto & column : key_columns)
     {
         columns_pass.data[key_columns_n] = column->getName().c_str();
         ++key_columns_n;
     }
-    const ClickHouseLibrary::VectorUInt64 requested_rows_c{requested_rows.size(), requested_rows.data()};
+    const ClickHouseLibrary::VectorUInt64 requested_rows_c{requested_rows.data(), requested_rows.size()};
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataAllocate call because library->get may throw.

@@ -8,19 +8,19 @@ using ColumnNames = ColumnName[];
 
 struct CStrings
 {
-    uint64_t size = 0;
     CString * data = nullptr;
+    uint64_t size = 0;
 };
 
 struct VectorUInt64
 {
-    uint64_t size = 0;
     const uint64_t * data = nullptr;
+    uint64_t size = 0;
 };
 
 struct ColumnsUInt64
 {
-    uint64_t size = 0;
     VectorUInt64 * data = nullptr;
+    uint64_t size = 0;
 };
 }
