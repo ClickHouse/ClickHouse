@@ -71,7 +71,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     data.check(block, true);
     block.checkNumberOfRows();
 
-    if (data.partition_expr_columns.empty()) /// Table is not partitioned.
+    if (!data.partition_expr) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row());
         return result;

@@ -17,6 +17,7 @@
 #endif
 
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
+#include <experimental/optional>
 
 #include <Core/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -213,13 +214,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         throw Exception(exception_message.str(), ErrorCodes::INDEX_NOT_USED);
     }
 
-    PKCondition minmax_idx_condition(
+    std::experimental::optional<PKCondition> minmax_idx_condition;
+    if (data.minmax_idx_expr)
+    {
+        minmax_idx_condition.emplace(
             query_info, context, available_real_and_virtual_columns,
             data.minmax_idx_sort_descr, data.minmax_idx_expr);
 
-    if (settings.force_index_by_date && minmax_idx_condition.alwaysUnknownOrTrue())
-        throw Exception("Index by date (" + data.date_column_name + ") is not used and setting 'force_index_by_date' is set.",
-            ErrorCodes::INDEX_NOT_USED);
+        if (settings.force_index_by_date && minmax_idx_condition->alwaysUnknownOrTrue())
+            throw Exception(
+                "Index by date (" + data.date_column_name + ") is not used and setting 'force_index_by_date' is set.",
+                ErrorCodes::INDEX_NOT_USED);
+    }
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
@@ -232,10 +238,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             if (part_values.find(part->name) == part_values.end())
                 continue;
 
-            if (!minmax_idx_condition.mayBeTrueInRange(
-                        data.minmax_idx_columns.size(),
-                        &part->minmax_idx.min_values[0], &part->minmax_idx.max_values[0],
-                        data.minmax_idx_column_types))
+            if (minmax_idx_condition && !minmax_idx_condition->mayBeTrueInRange(
+                    data.minmax_idx_columns.size(),
+                    &part->minmax_idx.min_values[0], &part->minmax_idx.max_values[0],
+                    data.minmax_idx_column_types))
                 continue;
 
             if (max_block_number_to_read && part->info.max_block > max_block_number_to_read)
@@ -474,7 +480,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     }
 
     LOG_DEBUG(log, "Key condition: " << key_condition.toString());
-    LOG_DEBUG(log, "MinMax index condition: " << minmax_idx_condition.toString());
+    if (minmax_idx_condition)
+        LOG_DEBUG(log, "MinMax index condition: " << minmax_idx_condition->toString());
 
     /// PREWHERE
     ExpressionActionsPtr prewhere_actions;
