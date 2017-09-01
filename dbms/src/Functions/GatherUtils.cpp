@@ -246,9 +246,9 @@ static void append(IArraySource & source, Sink && sink)
 /// Concat specialization for GenericArraySource. Because can't use append with arbitrary column type.
 
 template <typename SourceType, typename SinkType>
-struct ConcatGenericImpl
+struct ConcatGenericArrayWriteWholeImpl
 {
-    static void concat(GenericArraySource * generic_source, SinkType && sink)
+    static void writeWhole(GenericArraySource * generic_source, SinkType && sink)
     {
         auto source = static_cast<SourceType *>(generic_source);
         writeSlice(source->getWhole(), sink);
@@ -257,7 +257,7 @@ struct ConcatGenericImpl
 };
 
 template <typename Sink>
-static void NO_INLINE concatGeneric(const std::vector<std::unique_ptr<IArraySource>> & sources, Sink && sink)
+static void NO_INLINE concatGenericArray(const std::vector<std::unique_ptr<IArraySource>> & sources, Sink && sink)
 {
     std::vector<GenericArraySource *> generic_sources;
     std::vector<bool> is_nullable;
@@ -300,16 +300,16 @@ static void NO_INLINE concatGeneric(const std::vector<std::unique_ptr<IArraySour
             if (is_const[i])
             {
                 if (is_nullable[i])
-                    ConcatGenericImpl<ConstSource<NullableArraySource<GenericArraySource>>, Sink>::concat(source, sink);
+                    ConcatGenericArrayWriteWholeImpl<ConstSource<NullableArraySource<GenericArraySource>>, Sink>::writeWhole(source, sink);
                 else
-                    ConcatGenericImpl<ConstSource<GenericArraySource>, Sink>::concat(source, sink);
+                    ConcatGenericArrayWriteWholeImpl<ConstSource<GenericArraySource>, Sink>::writeWhole(source, sink);
             }
             else
             {
                 if (is_nullable[i])
-                    ConcatGenericImpl<NullableArraySource<GenericArraySource>, Sink>::concat(source, sink);
+                    ConcatGenericArrayWriteWholeImpl<NullableArraySource<GenericArraySource>, Sink>::writeWhole(source, sink);
                 else
-                    ConcatGenericImpl<GenericArraySource, Sink>::concat(source, sink);
+                    ConcatGenericArrayWriteWholeImpl<GenericArraySource, Sink>::writeWhole(source, sink);
             }
         }
         sink.next();
@@ -371,22 +371,22 @@ struct ArrayConcat : public GetArraySinkSelector<ArrayConcat>
 
     static void selectImpl(GenericArraySink & sink, Sources & sources)
     {
-        concatGeneric(sources, sink);
+        concatGenericArray(sources, sink);
     }
 
     static void selectImpl(NullableArraySink<GenericArraySink> & sink, Sources & sources)
     {
-        concatGeneric(sources, sink);
+        concatGenericArray(sources, sink);
     }
 
     static void selectImpl(GenericArraySink && sink, Sources && sources)
     {
-        concatGeneric(sources, sink);
+        concatGenericArray(sources, sink);
     }
 
     static void selectImpl(NullableArraySink<GenericArraySink> && sink, Sources & sources)
     {
-        concatGeneric(sources, sink);
+        concatGenericArray(sources, sink);
     }
 };
 
