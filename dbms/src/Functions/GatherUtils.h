@@ -954,7 +954,7 @@ inline ALWAYS_INLINE void writeSlice(const ArraySlice & slice, NullableArraySink
 /// Algorithms
 
 template <typename SourceA, typename SourceB, typename Sink>
-void NO_INLINE concat(SourceA & src_a, SourceB & src_b, Sink & sink)
+void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
 {
     sink.reserve(src_a.getSizeForReserve() + src_b.getSizeForReserve());
 
@@ -967,12 +967,6 @@ void NO_INLINE concat(SourceA & src_a, SourceB & src_b, Sink & sink)
         src_a.next();
         src_b.next();
     }
-}
-
-template <typename SourceA, typename SourceB, typename Sink>
-void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
-{
-    concat(src_a, src_b, sink);
 }
 
 template <typename Sink>
@@ -993,7 +987,7 @@ void concat(std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & s
 
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source & src, Sink & sink, size_t offset)
+void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
 {
     while (!src.isEnd())
     {
@@ -1004,7 +998,7 @@ void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source & src, Sink & sink, s
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromLeftConstantOffsetBounded(Source & src, Sink & sink, size_t offset, ssize_t length)
+void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
     {
@@ -1021,7 +1015,7 @@ void NO_INLINE sliceFromLeftConstantOffsetBounded(Source & src, Sink & sink, siz
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source & src, Sink & sink, size_t offset)
+void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
 {
     while (!src.isEnd())
     {
@@ -1032,7 +1026,7 @@ void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source & src, Sink & sink, 
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromRightConstantOffsetBounded(Source & src, Sink & sink, size_t offset, ssize_t length)
+void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
     {
@@ -1049,7 +1043,7 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source & src, Sink & sink, si
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetUnbounded(Source & src, Sink & sink, IColumn & offset_column)
+void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_column)
 {
     const bool is_null = offset_column.isNull();
     auto * nullable = typeid_cast<ColumnNullable *>(&offset_column);
@@ -1080,7 +1074,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source & src, Sink & sink, IColumn & 
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetBounded(Source & src, Sink & sink, IColumn & offset_column, IColumn & length_column)
+void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_column, IColumn & length_column)
 {
     const bool is_offset_null = offset_column.isNull();
     auto * offset_nullable = typeid_cast<ColumnNullable *>(&offset_column);
@@ -1120,42 +1114,6 @@ void NO_INLINE sliceDynamicOffsetBounded(Source & src, Sink & sink, IColumn & of
     }
 }
 
-
-template <typename Source, typename Sink>
-void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
-{
-    sliceFromLeftConstantOffsetUnbounded(src, sink, offset);
-}
-
-template <typename Source, typename Sink>
-void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
-{
-    sliceFromLeftConstantOffsetBounded(src, sink, offset, length);
-}
-
-template <typename Source, typename Sink>
-void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
-{
-    sliceFromRightConstantOffsetUnbounded(src, sink, offset);
-}
-
-template <typename Source, typename Sink>
-void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
-{
-    sliceFromRightConstantOffsetBounded(src, sink, offset, length);
-}
-
-template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_column)
-{
-    sliceDynamicOffsetUnbounded(src, sink, offset_column);
-}
-
-template <typename Source, typename Sink>
-void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_column, IColumn & length_column)
-{
-    sliceDynamicOffsetBounded(src, sink, offset_column, length_column);
-}
 
 void sliceFromLeftConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset);
 
