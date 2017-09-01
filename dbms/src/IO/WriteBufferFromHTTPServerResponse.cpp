@@ -54,7 +54,9 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
             if (!response_body_ostr)
                 response_body_ostr = &(response.send());
 #endif
-        } else {
+        }
+        else
+        {
             if (!response_body_ostr)
                 response_body_ostr = &(response.send());
         }
