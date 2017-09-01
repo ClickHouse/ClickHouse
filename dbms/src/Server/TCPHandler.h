@@ -18,6 +18,7 @@ namespace CurrentMetrics
     extern const Metric TCPConnection;
 }
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -86,7 +87,7 @@ public:
 
 private:
     IServer & server;
-    Logger * log;
+    Poco::Logger * log;
 
     String client_name;
     UInt64 client_version_major = 0;

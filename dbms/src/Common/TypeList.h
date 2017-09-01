@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstddef>
+#include <utility>
+#include <Core/Defines.h>
+
 namespace DB
 {
 
