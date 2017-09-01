@@ -1256,7 +1256,7 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
         Array res_values(values.size());
         for (size_t i = 0; i < values.size(); ++i)
         {
-            res_values[i] = i + 1;
+            res_values[i] = static_cast<UInt64>(i + 1);
         }
 
         block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(array->size(), res_values);
@@ -1485,7 +1485,7 @@ bool FunctionArrayUniq::executeConst(Block & block, const ColumnNumbers & argume
     for (size_t i = 0; i < values.size(); ++i)
         set.insert(values[i]);
 
-    block.getByPosition(result).column = DataTypeUInt32().createConstColumn(array->size(), set.size());
+    block.getByPosition(result).column = DataTypeUInt32().createConstColumn(array->size(), static_cast<UInt64>(set.size()));
     return true;
 }
 
