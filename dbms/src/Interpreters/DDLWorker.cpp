@@ -16,6 +16,7 @@
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DNSCache.h>
 
 #include <Common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
@@ -85,7 +86,7 @@ struct HostID
     {
         try
         {
-            return DB::isLocalAddress(Poco::Net::SocketAddress(host_name, port));
+            return DB::isLocalAddress(Poco::Net::SocketAddress(DNSCache::instance().resolveHost(host_name), port));
         }
         catch (const Poco::Exception & e)
         {
