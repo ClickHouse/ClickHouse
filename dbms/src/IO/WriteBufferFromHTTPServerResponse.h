@@ -2,6 +2,8 @@
 
 #include <experimental/optional>
 #include <mutex>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Version.h>
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -41,6 +43,7 @@ namespace DB
 class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
+    Poco::Net::HTTPServerRequest & request;
     Poco::Net::HTTPServerResponse & response;
 
     bool add_cors_header = false;
@@ -81,6 +84,7 @@ private:
 
 public:
     WriteBufferFromHTTPServerResponse(
+        Poco::Net::HTTPServerRequest & request_,
         Poco::Net::HTTPServerResponse & response_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
