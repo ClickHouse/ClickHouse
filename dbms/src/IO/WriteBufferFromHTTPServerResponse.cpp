@@ -43,7 +43,8 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
     {
         headers_finished_sending = true;
 
-        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD) {
+        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+        {
 #if POCO_CLICKHOUSE_PATCH
             /// Send end of headers delimiter.
             if (response_header_ostr)
