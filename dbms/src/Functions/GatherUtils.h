@@ -16,9 +16,9 @@
 #include <Common/memcpySmall.h>
 #include <ext/range.h>
 #include <Core/TypeListNumber.h>
+#include <Core/FieldVisitors.h
 
 #include <DataTypes/DataTypeTraits.h>
-#include <typeindex>
 
 /** These methods are intended for implementation of functions, that
   *  copy ranges from one or more columns to another column.
@@ -921,7 +921,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, NumericArr
     {
         Field field;
         slice.elements->get(slice.begin + i, field);
-        sink.elements.push_back(field.get<T>());
+        sink.elements.push_back(applyVisitor(FieldVisitorConvertToNumber<T>(), field));
     }
     sink.current_offset += slice.size;
 }
