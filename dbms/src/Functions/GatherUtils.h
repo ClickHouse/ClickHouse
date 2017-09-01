@@ -7,13 +7,18 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/NumberTraits.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
+#include <ext/range.h>
+#include <Core/TypeListNumber.h>
+#include <Core/FieldVisitors.h>
 
+#include <DataTypes/DataTypeTraits.h>
 
 /** These methods are intended for implementation of functions, that
   *  copy ranges from one or more columns to another column.
@@ -36,6 +41,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 template <typename T>
 struct NumericArraySlice
 {
@@ -44,8 +54,24 @@ struct NumericArraySlice
 };
 
 
+struct IArraySource
+{
+    virtual ~IArraySource() {}
+
+    virtual size_t getSizeForReserve() const = 0;
+    virtual const typename ColumnArray::Offsets_t & getOffsets() const = 0;
+    virtual size_t getColumnSize() const = 0;
+    virtual bool isConst() const { return false; }
+    virtual bool isNullable() const { return false; }
+};
+struct IArraySink
+{
+    virtual ~IArraySink() {}
+};
+
+
 template <typename T>
-struct NumericArraySource
+struct NumericArraySource : public IArraySource
 {
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
@@ -56,7 +82,7 @@ struct NumericArraySource
     size_t row_num = 0;
     ColumnArray::Offset_t prev_offset = 0;
 
-    NumericArraySource(const ColumnArray & arr)
+    explicit NumericArraySource(const ColumnArray & arr)
         : elements(typeid_cast<const ColumnVector<T> &>(arr.getData()).getData()), offsets(arr.getOffsets())
     {
     }
@@ -77,10 +103,25 @@ struct NumericArraySource
         return row_num;
     }
 
+    const typename ColumnArray::Offsets_t & getOffsets() const override
+    {
+        return offsets;
+    }
+
     /// Get size for corresponding call or Sink::reserve to reserve memory for elements.
-    size_t getSizeForReserve() const
+    size_t getSizeForReserve() const override
     {
         return elements.size();
+    }
+
+    size_t getColumnSize() const override
+    {
+        return offsets.size();
+    }
+
+    size_t getElementSize() const
+    {
+        return offsets[row_num] - prev_offset;
     }
 
     Slice getWhole() const
@@ -116,14 +157,14 @@ struct NumericArraySource
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
-            return {&elements[prev_offset], elem_size};
+            return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[offsets[row_num] - offset], std::min(length, offset)};
     }
 };
 
 
 template <typename Base>
-struct ConstSource
+struct ConstSource : public Base
 {
     using Slice = typename Base::Slice;
     using Column = ColumnConst;
@@ -131,10 +172,20 @@ struct ConstSource
     size_t total_rows;
     size_t row_num = 0;
 
-    Base base;
+    explicit ConstSource(const ColumnConst & col)
+        : Base(static_cast<const typename Base::Column &>(col.getDataColumn())), total_rows(col.size())
+    {
+    }
 
-    ConstSource(const ColumnConst & col)
-        : total_rows(col.size()), base(static_cast<const typename Base::Column &>(col.getDataColumn()))
+    /// Constructors for NullableArraySource.
+
+    template <typename ColumnType>
+    ConstSource(const ColumnType & col, size_t total_rows) : Base(col), total_rows(total_rows)
+    {
+    }
+
+    template <typename ColumnType>
+    ConstSource(const ColumnType & col, const ColumnUInt8 & null_map, size_t total_rows) : Base(col, null_map), total_rows(total_rows)
     {
     }
 
@@ -155,32 +206,17 @@ struct ConstSource
 
     size_t getSizeForReserve() const
     {
-        return total_rows * base.getSizeForReserve();
+        return total_rows * Base::getSizeForReserve();
     }
 
-    Slice getWhole() const
+    size_t getColumnSize() const // overrides for IArraySource
     {
-        return base.getWhole();
+        return total_rows;
     }
 
-    Slice getSliceFromLeft(size_t offset) const
+    bool isConst() const // overrides for IArraySource
     {
-        return base.getSliceFromLeft(offset);
-    }
-
-    Slice getSliceFromLeft(size_t offset, size_t length) const
-    {
-        return base.getSliceFromLeft(offset, length);
-    }
-
-    Slice getSliceFromRight(size_t offset) const
-    {
-        return base.getSliceFromRight(offset);
-    }
-
-    Slice getSliceFromRight(size_t offset, size_t length) const
-    {
-        return base.getSliceFromRight(offset, length);
+        return true;
     }
 };
 
@@ -196,7 +232,7 @@ struct StringSource
     size_t row_num = 0;
     ColumnString::Offset_t prev_offset = 0;
 
-    StringSource(const ColumnString & col)
+    explicit StringSource(const ColumnString & col)
         : elements(col.getChars()), offsets(col.getOffsets())
     {
     }
@@ -220,6 +256,11 @@ struct StringSource
     size_t getSizeForReserve() const
     {
         return elements.size();
+    }
+
+    size_t getElementSize() const
+    {
+        return offsets[row_num] - prev_offset;
     }
 
     Slice getWhole() const
@@ -255,7 +296,7 @@ struct StringSource
     {
         size_t elem_size = offsets[row_num] - prev_offset - 1;
         if (offset > elem_size)
-            return {&elements[prev_offset], elem_size};
+            return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[prev_offset + elem_size - offset], std::min(length, offset)};
     }
 };
@@ -271,7 +312,7 @@ struct FixedStringSource
     size_t string_size;
     size_t row_num = 0;
 
-    FixedStringSource(const ColumnFixedString & col)
+    explicit FixedStringSource(const ColumnFixedString & col)
         : string_size(col.getN())
     {
         const auto & chars = col.getChars();
@@ -298,6 +339,11 @@ struct FixedStringSource
     size_t getSizeForReserve() const
     {
         return end - pos;
+    }
+
+    size_t getElementSize() const
+    {
+        return string_size;
     }
 
     Slice getWhole() const
@@ -329,14 +375,14 @@ struct FixedStringSource
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
         if (offset > string_size)
-            return {pos, string_size};
+            return {pos, length + string_size > offset ? std::min(string_size, length + string_size - offset) : 0};
         return {pos + string_size - offset, std::min(length, offset)};
     }
 };
 
 
 template <typename T>
-struct NumericArraySink
+struct NumericArraySink : public IArraySink
 {
     typename ColumnVector<T>::Container_t & elements;
     typename ColumnArray::Offsets_t & offsets;
@@ -466,7 +512,7 @@ struct DynamicStringSource final : IStringSource
 {
     Impl impl;
 
-    DynamicStringSource(const IColumn & col) : impl(static_cast<const typename Impl::Column &>(col)) {}
+    explicit DynamicStringSource(const IColumn & col) : impl(static_cast<const typename Impl::Column &>(col)) {}
 
     void next() override { impl.next(); }
     bool isEnd() const override { return impl.isEnd(); }
@@ -490,7 +536,6 @@ inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & 
 using StringSources = std::vector<std::unique_ptr<IStringSource>>;
 
 
-
 struct GenericArraySlice
 {
     const IColumn * elements;
@@ -499,7 +544,7 @@ struct GenericArraySlice
 };
 
 
-struct GenericArraySource
+struct GenericArraySource : public IArraySource
 {
     using Slice = GenericArraySlice;
     using Column = ColumnArray;
@@ -510,7 +555,7 @@ struct GenericArraySource
     size_t row_num = 0;
     ColumnArray::Offset_t prev_offset = 0;
 
-    GenericArraySource(const ColumnArray & arr)
+    explicit GenericArraySource(const ColumnArray & arr)
         : elements(arr.getData()), offsets(arr.getOffsets())
     {
     }
@@ -531,9 +576,24 @@ struct GenericArraySource
         return row_num;
     }
 
-    size_t getSizeForReserve() const
+    const typename ColumnArray::Offsets_t & getOffsets() const override
+    {
+        return offsets;
+    }
+
+    size_t getSizeForReserve() const override
     {
         return elements.size();
+    }
+
+    size_t getColumnSize() const override
+    {
+        return elements.size();
+    }
+
+    size_t getElementSize() const
+    {
+        return offsets[row_num] - prev_offset;
     }
 
     Slice getWhole() const
@@ -569,12 +629,12 @@ struct GenericArraySource
     {
         size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
-            return {&elements, prev_offset, elem_size};
+            return {&elements, prev_offset, length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements, offsets[row_num] - offset, std::min(length, offset)};
     }
 };
 
-struct GenericArraySink
+struct GenericArraySink : public IArraySink
 {
     IColumn & elements;
     ColumnArray::Offsets_t & offsets;
@@ -611,6 +671,106 @@ struct GenericArraySink
 };
 
 
+template <typename Slice>
+struct NullableArraySlice : public Slice
+{
+    const UInt8 * null_map = nullptr;
+
+    NullableArraySlice() = default;
+    NullableArraySlice(const Slice & base) : Slice(base) {}
+};
+
+
+template <typename ArraySource>
+struct NullableArraySource : public ArraySource
+{
+    using Slice = NullableArraySlice<typename ArraySource::Slice>;
+    using ArraySource::prev_offset;
+    using ArraySource::row_num;
+    using ArraySource::offsets;
+
+    const ColumnUInt8::Container_t & null_map;
+
+    NullableArraySource(const ColumnArray & arr, const ColumnUInt8 & null_map)
+            : ArraySource(arr), null_map(null_map.getData())
+    {
+    }
+
+    Slice getWhole() const
+    {
+        Slice slice = ArraySource::getWhole();
+        slice.null_map = &null_map[prev_offset];
+        return slice;
+    }
+
+    Slice getSliceFromLeft(size_t offset) const
+    {
+        Slice slice = ArraySource::getSliceFromLeft(offset);
+        if (offsets[row_num] > prev_offset + offset)
+            slice.null_map = &null_map[prev_offset + offset];
+        else
+            slice.null_map = &null_map[prev_offset];
+        return slice;
+    }
+
+    Slice getSliceFromLeft(size_t offset, size_t length) const
+    {
+        Slice slice = ArraySource::getSliceFromLeft(offset, length);
+        if (offsets[row_num] > prev_offset + offset)
+            slice.null_map = &null_map[prev_offset + offset];
+        else
+            slice.null_map = &null_map[prev_offset];
+        return slice;
+    }
+
+    Slice getSliceFromRight(size_t offset) const
+    {
+        Slice slice = ArraySource::getSliceFromRight(offset);
+        if (offsets[row_num] > prev_offset + offset)
+            slice.null_map = &null_map[offsets[row_num] - offset];
+        else
+            slice.null_map = &null_map[prev_offset];
+        return slice;
+    }
+
+    Slice getSliceFromRight(size_t offset, size_t length) const
+    {
+        Slice slice = ArraySource::getSliceFromRight(offset, length);
+        if (offsets[row_num] > prev_offset + offset)
+            slice.null_map = &null_map[offsets[row_num] - offset];
+        else
+            slice.null_map = &null_map[prev_offset];
+        return slice;
+    }
+
+    bool isNullable() const
+    {
+        return true;
+    }
+};
+
+template <typename ArraySink>
+struct NullableArraySink : public ArraySink
+{
+    ColumnUInt8::Container_t & null_map;
+
+    NullableArraySink(ColumnArray & arr, ColumnUInt8 & null_map, size_t column_size)
+        : ArraySink(arr, column_size), null_map(null_map.getData())
+    {
+    }
+
+    void reserve(size_t num_elements)
+    {
+        ArraySink::reserve(num_elements);
+        null_map.reserve(num_elements);
+    }
+};
+
+
+std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows);
+std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size);
+
+
 template <typename T>
 using NumericSlice = const T *;
 
@@ -624,7 +784,7 @@ struct NumericSource
     const T * pos;
     const T * end;
 
-    NumericSource(const Column & col)
+    explicit NumericSource(const Column & col)
     {
         const auto & container = col.getData();
         begin = container.data();
@@ -700,15 +860,21 @@ struct NumericSink
 template <typename T>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 {
-    sink.elements.resize(sink.current_offset + slice.size);
-    memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size * sizeof(T));
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
+    if (sink.elements.size() < sink.current_offset + slice.size)
+        sink.elements.resize(sink.current_offset + slice.size);
+    /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
+    /// TODO: Implement more efficient memcpy without overflow.
+    memcpy(&sink.elements[sink.current_offset], slice.data, slice.size * sizeof(T));
     sink.current_offset += slice.size;
 }
 
 template <typename T, typename U>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
-    sink.elements.resize(sink.current_offset + slice.size);
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
+    if (sink.elements.size() < sink.current_offset + slice.size)
+        sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
         sink.elements[sink.current_offset] = slice.data[i];
@@ -728,19 +894,68 @@ inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, FixedStr
     memcpySmallAllowReadWriteOverflow15(&sink.elements[sink.current_offset], slice.data, slice.size);
 }
 
-/// Assuming same types of underlying columns for slice and sink.
+/// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericArraySlice, GenericArraySink).
 inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
 {
-    sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
+    if (typeid(slice.elements) == typeid(static_cast<const IColumn *>(&sink.elements)))
+    {
+        sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
+        sink.current_offset += slice.size;
+    }
+    else
+        throw Exception("Function writeSlice expect same column types for GenericArraySlice and GenericArraySink.",
+                        ErrorCodes::LOGICAL_ERROR);
+}
+
+template <typename T>
+inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, NumericArraySink<T> & sink)
+{
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
+    if (sink.elements.size() < sink.current_offset + slice.size)
+        sink.elements.resize(sink.current_offset + slice.size);
+    for (size_t i = 0; i < slice.size; ++i)
+    {
+        Field field;
+        slice.elements->get(slice.begin + i, field);
+        sink.elements.push_back(applyVisitor(FieldVisitorConvertToNumber<T>(), field));
+    }
     sink.current_offset += slice.size;
 }
 
-template <typename T, typename U>
-void ALWAYS_INLINE writeSlice(const NumericSlice<T> & slice, NumericSink<U> & sink)
+template <typename T>
+inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, GenericArraySink & sink)
 {
-    *sink.pos = *slice;
+    for (size_t i = 0; i < slice.size; ++i)
+    {
+        Field field = static_cast<typename NearestFieldType<T>::Type>(slice.data[i]);
+        sink.elements.insert(field);
+    }
+    sink.current_offset += slice.size;
 }
 
+template <typename ArraySlice, typename ArraySink>
+inline ALWAYS_INLINE void writeSlice(const NullableArraySlice<ArraySlice> & slice, NullableArraySink<ArraySink> & sink)
+{
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
+    if (sink.null_map.size() < sink.current_offset + slice.size)
+        sink.null_map.resize(sink.current_offset + slice.size);
+    /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
+    /// TODO: Implement more efficient memcpy without overflow.
+    memcpy(&sink.null_map[sink.current_offset], slice.null_map, slice.size * sizeof(UInt8));
+    writeSlice(static_cast<const ArraySlice &>(slice), static_cast<ArraySink &>(sink));
+}
+
+template <typename ArraySlice, typename ArraySink>
+inline ALWAYS_INLINE void writeSlice(const ArraySlice & slice, NullableArraySink<ArraySink> & sink)
+{
+    /// It's possible to write slice into the middle of numeric column. Used in numeric array concat.
+    if (sink.null_map.size() < sink.current_offset + slice.size)
+        sink.null_map.resize(sink.current_offset + slice.size);
+    /// Can't use memcpySmallAllowReadWriteOverflow15 when need to write slice into the middle of numeric column.
+    /// TODO: Implement more efficient memcpy without overflow.
+    memset(&sink.null_map[sink.current_offset], 0, slice.size * sizeof(UInt8));
+    writeSlice(slice, static_cast<ArraySink &>(sink));
+}
 
 /// Algorithms
 
@@ -774,6 +989,8 @@ void NO_INLINE concat(StringSources & sources, Sink && sink)
     }
 }
 
+void concat(std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & sink);
+
 
 template <typename Source, typename Sink>
 void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink, size_t offset)
@@ -787,11 +1004,17 @@ void NO_INLINE sliceFromLeftConstantOffsetUnbounded(Source && src, Sink && sink,
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, size_t length)
+void NO_INLINE sliceFromLeftConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
     {
-        writeSlice(src.getSliceFromLeft(offset, length), sink);
+        ssize_t size = length;
+        if (size < 0)
+            size += static_cast<ssize_t>(src.getElementSize()) - offset;
+
+        if (size > 0)
+            writeSlice(src.getSliceFromLeft(offset, size), sink);
+
         sink.next();
         src.next();
     }
@@ -809,11 +1032,17 @@ void NO_INLINE sliceFromRightConstantOffsetUnbounded(Source && src, Sink && sink
 }
 
 template <typename Source, typename Sink>
-void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, size_t length)
+void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, size_t offset, ssize_t length)
 {
     while (!src.isEnd())
     {
-        writeSlice(src.getSliceFromRight(offset, length), sink);
+        ssize_t size = length;
+        if (size < 0)
+            size += static_cast<ssize_t>(src.getElementSize()) - offset;
+
+        if (size > 0)
+            writeSlice(src.getSliceFromRight(offset, size), sink);
+
         sink.next();
         src.next();
     }
@@ -822,9 +1051,16 @@ void NO_INLINE sliceFromRightConstantOffsetBounded(Source && src, Sink && sink, 
 template <typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn & offset_column)
 {
+    const bool is_null = offset_column.isNull();
+    auto * nullable = typeid_cast<ColumnNullable *>(&offset_column);
+    ColumnUInt8::Container_t * null_map = nullable ? &nullable->getNullMapConcreteColumn().getData() : nullptr;
+    IColumn * nested_column = nullable ? nullable->getNestedColumn().get() : &offset_column;
+
     while (!src.isEnd())
     {
-        Int64 offset = offset_column.getInt(src.rowNum());
+        auto row_num = src.rowNum();
+        bool has_offset = !is_null && !(null_map && (*null_map)[row_num]);
+        Int64 offset = has_offset ? nested_column->getInt(row_num) : 1;
 
         if (offset != 0)
         {
@@ -846,13 +1082,28 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn 
 template <typename Source, typename Sink>
 void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & offset_column, IColumn & length_column)
 {
+    const bool is_offset_null = offset_column.isNull();
+    auto * offset_nullable = typeid_cast<ColumnNullable *>(&offset_column);
+    ColumnUInt8::Container_t * offset_null_map = offset_nullable ? &offset_nullable->getNullMapConcreteColumn().getData() : nullptr;
+    IColumn * offset_nested_column = offset_nullable ? offset_nullable->getNestedColumn().get() : &offset_column;
+
+    const bool is_length_null = length_column.isNull();
+    auto * length_nullable = typeid_cast<ColumnNullable *>(&length_column);
+    ColumnUInt8::Container_t * length_null_map = length_nullable ? &length_nullable->getNullMapConcreteColumn().getData() : nullptr;
+    IColumn * length_nested_column = length_nullable ? length_nullable->getNestedColumn().get() : &length_column;
+
     while (!src.isEnd())
     {
         size_t row_num = src.rowNum();
-        Int64 offset = offset_column.getInt(row_num);
-        UInt64 size = length_column.getInt(row_num);
+        bool has_offset = !is_offset_null && !(offset_null_map && (*offset_null_map)[row_num]);
+        bool has_length = !is_length_null && !(length_null_map && (*length_null_map)[row_num]);
+        Int64 offset = has_offset ? offset_nested_column->getInt(row_num) : 1;
+        Int64 size = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
 
-        if (offset != 0 && size < 0x8000000000000000ULL)
+        if (size < 0)
+            size += offset > 0 ? static_cast<Int64>(src.getElementSize()) - (offset - 1) : -offset;
+
+        if (offset != 0 && size > 0)
         {
             typename std::decay<Source>::type::Slice slice;
 
@@ -869,6 +1120,18 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & 
     }
 }
 
+
+void sliceFromLeftConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset);
+
+void sliceFromLeftConstantOffsetBounded(IArraySource & src, IArraySink & sink, size_t offset, ssize_t length);
+
+void sliceFromRightConstantOffsetUnbounded(IArraySource & src, IArraySink & sink, size_t offset);
+
+void sliceFromRightConstantOffsetBounded(IArraySource & src, IArraySink & sink, size_t offset, ssize_t length);
+
+void sliceDynamicOffsetUnbounded(IArraySource & src, IArraySink & sink, IColumn & offset_column);
+
+void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, IColumn & offset_column, IColumn & length_column);
 
 template <typename SourceA, typename SourceB, typename Sink>
 void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, const PaddedPODArray<UInt8> & condition)

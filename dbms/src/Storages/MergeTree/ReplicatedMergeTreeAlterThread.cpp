@@ -82,7 +82,7 @@ void ReplicatedMergeTreeAlterThread::run()
 
                     LOG_INFO(log, "Changed version of 'columns' node in ZooKeeper. Waiting for structure write lock.");
 
-                    auto table_lock = storage.lockStructureForAlter();
+                    auto table_lock = storage.lockStructureForAlter(__PRETTY_FUNCTION__);
 
                     const auto columns_changed = columns != storage.data.getColumnsListNonMaterialized();
                     const auto materialized_columns_changed = materialized_columns != storage.data.materialized_columns;
@@ -140,7 +140,7 @@ void ReplicatedMergeTreeAlterThread::run()
                 /// Update parts.
                 if (changed_version || force_recheck_parts)
                 {
-                    auto table_lock = storage.lockStructure(false);
+                    auto table_lock = storage.lockStructure(false, __PRETTY_FUNCTION__);
 
                     if (changed_version)
                         LOG_INFO(log, "ALTER-ing parts");
