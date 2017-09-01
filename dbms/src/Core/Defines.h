@@ -44,7 +44,7 @@
 #define DEFAULT_MERGE_BLOCK_SIZE 8192
 
 #define DEFAULT_MAX_QUERY_SIZE 262144
-#define SHOW_CHARS_ON_SYNTAX_ERROR 160L
+#define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
 #define DEFAULT_MAX_DISTRIBUTED_CONNECTIONS 1024
 #define DEFAULT_INTERACTIVE_DELAY 100000
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 1024
@@ -82,7 +82,7 @@
 #define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64 (work in progress)"
 
 #if !defined(__x86_64__) && !defined(__aarch64__)
-    #error PLATFORM_NOT_SUPPORTED
+//    #error PLATFORM_NOT_SUPPORTED
 #endif
 
 /// Check for presence of address sanitizer

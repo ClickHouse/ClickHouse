@@ -636,7 +636,7 @@ void MergeTreeDataPart::loadIndex()
 
         String index_path = getFullPath() + "primary.idx";
         ReadBufferFromFile index_file(index_path,
-            std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
+            std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 
         for (size_t i = 0; i < size; ++i)
             for (size_t j = 0; j < key_size; ++j)
@@ -679,7 +679,7 @@ void MergeTreeDataPart::loadChecksums(bool require)
 
         return;
     }
-    ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+    ReadBufferFromFile file(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
     if (checksums.read(file))
         assertEOF(file);
 }
@@ -717,7 +717,7 @@ void MergeTreeDataPart::loadColumns(bool require)
         return;
     }
 
-    ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+    ReadBufferFromFile file(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
     columns.readText(file);
 }
 
