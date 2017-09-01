@@ -53,6 +53,8 @@ public:
     ColumnPtr createColumn() const override;
 
     Field getDefault() const override;
+    void insertDefaultInto(IColumn & column) const override;
+
     const DataTypes & getElements() const { return elems; }
 };
 
