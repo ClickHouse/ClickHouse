@@ -461,7 +461,10 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP/RESHARD PARTITION.
-    static String getPartitionID(const Field & partition);
+    String getPartitionIDFromQuery(const Field & partition);
+
+    /// For determining the partition id of inserted blocks.
+    String getPartitionIDFromData(const Row & partition);
 
     Context & context;
     const String date_column_name;
@@ -476,6 +479,16 @@ public:
     ASTPtr primary_expr_ast;
     Block primary_key_sample;
     DataTypes primary_key_data_types;
+
+    ASTPtr partition_expr_ast;
+    ExpressionActionsPtr partition_expr;
+    Names partition_expr_columns;
+
+    ExpressionActionsPtr minmax_idx_expr;
+    Names minmax_idx_columns;
+    DataTypes minmax_idx_column_types;
+    Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
+    SortDescription minmax_idx_sort_descr; /// For use with PKCondition.
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -535,6 +548,8 @@ private:
     void checkNoMultidimensionalArrays(const NamesAndTypesList & columns, bool attach) const;
 
     void initPrimaryKey();
+
+    void initPartitionKey();
 
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.

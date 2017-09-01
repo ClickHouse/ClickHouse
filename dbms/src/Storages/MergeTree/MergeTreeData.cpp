@@ -6,6 +6,8 @@
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
@@ -58,6 +60,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int SYNTAX_ERROR;
 }
 
 
@@ -122,6 +125,7 @@ MergeTreeData::MergeTreeData(
         throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 
     initPrimaryKey();
+    initPartitionKey();
 
     /// Creating directories, if not exist.
     Poco::File(full_path).createDirectories();
@@ -189,6 +193,48 @@ void MergeTreeData::initPrimaryKey()
     primary_key_data_types.resize(primary_key_size);
     for (size_t i = 0; i < primary_key_size; ++i)
         primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
+}
+
+
+void MergeTreeData::initPartitionKey()
+{
+    String partition_expr_str = "toYYYYMM(" + date_column_name + ")";
+    ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
+    partition_expr_ast = parseQuery(
+        parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
+    partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumnsList()).getActions(false);
+    for (const ASTPtr & ast : partition_expr_ast->children)
+        partition_expr_columns.emplace_back(ast->getColumnName());
+
+    const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
+    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context.getSettingsRef());
+    minmax_idx_columns.clear();
+    minmax_idx_column_types.clear();
+    minmax_idx_sort_descr.clear();
+    for (const NameAndTypePair & column : minmax_idx_columns_with_types)
+    {
+        minmax_idx_columns.emplace_back(column.name);
+        minmax_idx_column_types.emplace_back(column.type);
+        minmax_idx_sort_descr.emplace_back(column.name, 1, 1);
+    }
+
+    bool encountered_date_column = false;
+    for (size_t i = 0; i < minmax_idx_column_types.size(); ++i)
+    {
+        if (typeid_cast<const DataTypeDate *>(minmax_idx_column_types[i].get()))
+        {
+            if (!encountered_date_column)
+            {
+                minmax_idx_date_column_pos = i;
+                encountered_date_column = true;
+            }
+            else
+            {
+                /// There is more than one Date column in partition key and we don't know which one to choose.
+                minmax_idx_date_column_pos = -1;
+            }
+        }
+    }
 }
 
 
@@ -315,18 +361,17 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     for (const String & file_name : part_file_names)
     {
-        MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-        if (!MergeTreePartInfo::tryParsePartName(file_name, &part->info))
+        MergeTreePartInfo part_info;
+        if (!MergeTreePartInfo::tryParsePartName(file_name, &part_info))
             continue;
 
-        MergeTreePartInfo::parseMinMaxDatesFromPartName(file_name, part->min_date, part->max_date);
-        part->name = file_name;
+        MutableDataPartPtr part = std::make_shared<DataPart>(*this, file_name, part_info);
         part->relative_path = file_name;
         bool broken = false;
 
         try
         {
-            part->loadColumnsChecksumsIndex(require_part_metadata, true);
+            part->loadColumnsChecksumsIndexes(require_part_metadata, true);
         }
         catch (const Exception & e)
         {
@@ -676,29 +721,30 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
 
-    columns_alter_forbidden.insert(date_column_name);
-
-    if (!merging_params.sign_column.empty())
-        columns_alter_forbidden.insert(merging_params.sign_column);
-
-    /// Primary key columns can be ALTERed only if they are used in the primary key as-is
+    /// Primary or partition key columns can be ALTERed only if they are used in the key as-is
     /// (and not as a part of some expression) and if the ALTER only affects column metadata.
-    /// We don't add sampling_expression columns here because they must be among the primary key columns.
     NameSet columns_alter_metadata_only;
 
-    if (primary_expr)
+    auto add_key_columns = [&](const ExpressionActionsPtr & expr)
     {
-        for (const auto & action : primary_expr->getActions())
+        if (!expr)
+            return;
+
+        for (const ExpressionAction & action : expr->getActions())
         {
             auto action_columns = action.getNeededColumns();
             columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
         }
-        for (const auto & col : primary_expr->getRequiredColumns())
-        {
-            if (!columns_alter_forbidden.count(col))
-                columns_alter_metadata_only.insert(col);
-        }
-    }
+        for (const String & col : expr->getRequiredColumns())
+            columns_alter_metadata_only.insert(col);
+    };
+
+    add_key_columns(partition_expr);
+    add_key_columns(primary_expr);
+    /// We don't process sampling_expression separately because it must be among the primary key columns.
+
+    if (!merging_params.sign_column.empty())
+        columns_alter_forbidden.insert(merging_params.sign_column);
 
     std::map<String, const IDataType *> old_types;
     for (const auto & column : *columns)
@@ -1203,22 +1249,13 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
         if (increment)
             part->info.min_block = part->info.max_block = increment->get();
 
-        String old_name = part->name;
-        String new_name = MergeTreePartInfo::getPartName(part->min_date, part->max_date, part->info.min_block, part->info.max_block, part->info.level);
+        String new_name = MergeTreePartInfo::getPartName(
+                part->getMinDate(), part->getMaxDate(), part->info.min_block, part->info.max_block, part->info.level);
 
         LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << new_name << ".");
 
-        /// Check that new part doesn't exist yet.
-        {
-            part->is_temp = false;
-            part->name = new_name;
-            bool duplicate = data_parts.count(part);
-            part->name = old_name;
-            part->is_temp = true;
-
-            if (duplicate)
-                throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
-        }
+        if (data_parts.count(part))
+            throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
 
         bool in_all_data_parts;
         {
@@ -1538,19 +1575,15 @@ MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & 
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
 {
-    MutableDataPartPtr part = std::make_shared<DataPart>(*this);
-
+    MutableDataPartPtr part = std::make_shared<DataPart>(*this, Poco::Path(relative_path).getFileName());
     part->relative_path = relative_path;
-    part->name = Poco::Path(relative_path).getFileName();
-    part->info = MergeTreePartInfo::fromPartName(part->name);
-    MergeTreePartInfo::parseMinMaxDatesFromPartName(part->name, part->min_date, part->max_date);
     String full_part_path = part->getFullPath();
 
     /// Earlier the list of columns was written incorrectly. Delete it and re-create.
     if (Poco::File(full_part_path + "columns.txt").exists())
         Poco::File(full_part_path + "columns.txt").remove();
 
-    part->loadColumnsChecksumsIndex(false, true);
+    part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = Poco::File(full_part_path).getLastModified().epochTime();
 
     /// If the checksums file is not present, calculate the checksums and write them to disk.
@@ -1704,8 +1737,9 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
     return size;
 }
 
-String MergeTreeData::getPartitionID(const Field & partition)
+String MergeTreeData::getPartitionIDFromQuery(const Field & partition)
 {
+    /// Month-partitioning specific, TODO: generalize.
     String partition_id = partition.getType() == Field::Types::UInt64
         ? toString(partition.get<UInt64>())
         : partition.safeGet<String>();
@@ -1717,6 +1751,15 @@ String MergeTreeData::getPartitionID(const Field & partition)
     return partition_id;
 }
 
+String MergeTreeData::getPartitionIDFromData(const Row & partition)
+{
+    /// Month-partitioning specific, TODO: generalize.
+    if (partition.size() != 1)
+        throw Exception("Invalid partition key size: " + toString(partition.size()), ErrorCodes::LOGICAL_ERROR);
+    if (partition[0].getType() != Field::Types::UInt64)
+        throw Exception(String("Invalid partition key type: ") + partition[0].getTypeName(), ErrorCodes::LOGICAL_ERROR);
+    return toString(partition[0].get<UInt64>());
+}
 
 void MergeTreeData::Transaction::rollback()
 {
