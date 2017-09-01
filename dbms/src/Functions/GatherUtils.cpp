@@ -364,17 +364,17 @@ struct ArrayConcat : public GetArraySinkSelector<ArrayConcat>
     using Sources = std::vector<std::unique_ptr<IArraySource>>;
 
     template <typename Sink>
-    static void selectImpl(Sink && sink, Sources && sources)
+    static void selectImpl(Sink && sink, Sources & sources)
     {
         concat<Sink>(sources, sink);
     }
 
-    static void selectImpl(GenericArraySink & sink, Sources && sources)
+    static void selectImpl(GenericArraySink & sink, Sources & sources)
     {
         concatGeneric(sources, sink);
     }
 
-    static void selectImpl(NullableArraySink<GenericArraySink> & sink, Sources && sources)
+    static void selectImpl(NullableArraySink<GenericArraySink> & sink, Sources & sources)
     {
         concatGeneric(sources, sink);
     }
@@ -384,7 +384,7 @@ struct ArrayConcat : public GetArraySinkSelector<ArrayConcat>
         concatGeneric(sources, sink);
     }
 
-    static void selectImpl(NullableArraySink<GenericArraySink> && sink, Sources && sources)
+    static void selectImpl(NullableArraySink<GenericArraySink> && sink, Sources & sources)
     {
         concatGeneric(sources, sink);
     }
