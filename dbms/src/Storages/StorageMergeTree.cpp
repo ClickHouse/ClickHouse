@@ -528,7 +528,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field
     }
 
     /// New parts with other data may appear in place of deleted parts.
-    context.resetCaches();
+    context.dropCaches();
 }
 
 

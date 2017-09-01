@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int UNFINISHED;
+}
+
 void EmbeddedDictionaries::handleException(const bool throw_on_error) const
 {
     const auto exception_ptr = std::current_exception();
@@ -27,11 +32,14 @@ void EmbeddedDictionaries::handleException(const bool throw_on_error) const
 
 
 template <typename Dictionary>
-bool EmbeddedDictionaries::reloadDictionary(MultiVersion<Dictionary> & dictionary, const bool throw_on_error)
+bool EmbeddedDictionaries::reloadDictionary(MultiVersion<Dictionary> & dictionary, const bool throw_on_error, const bool force_reload)
 {
     const auto & config = context.getConfigRef();
+  
+    bool defined_in_config = Dictionary::isConfigured(config);
+    bool not_initialized = dictionary.get() == nullptr;
 
-    if (Dictionary::isConfigured(config) && (!is_fast_start_stage || !dictionary.get()))
+    if (defined_in_config && (force_reload || !is_fast_start_stage || not_initialized))
     {
         try
         {
@@ -50,8 +58,10 @@ bool EmbeddedDictionaries::reloadDictionary(MultiVersion<Dictionary> & dictionar
 }
 
 
-bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error)
+bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool force_reload)
 {
+    std::unique_lock<std::mutex> lock(mutex);
+
     /** If you can not update the directories, then despite this, do not throw an exception (use the old directories).
       * If there are no old correct directories, then when using functions that depend on them,
       *  will throw an exception.
@@ -63,14 +73,14 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error)
     bool was_exception = false;
 
 #if USE_MYSQL
-    if (!reloadDictionary<TechDataHierarchy>(tech_data_hierarchy, throw_on_error))
+    if (!reloadDictionary<TechDataHierarchy>(tech_data_hierarchy, throw_on_error, force_reload))
         was_exception = true;
 #endif
 
-    if (!reloadDictionary<RegionsHierarchies>(regions_hierarchies, throw_on_error))
+    if (!reloadDictionary<RegionsHierarchies>(regions_hierarchies, throw_on_error, force_reload))
         was_exception = true;
 
-    if (!reloadDictionary<RegionsNames>(regions_names, throw_on_error))
+    if (!reloadDictionary<RegionsNames>(regions_names, throw_on_error, force_reload))
         was_exception = true;
 
     if (!was_exception)
@@ -119,6 +129,12 @@ EmbeddedDictionaries::~EmbeddedDictionaries()
 {
     destroy.set();
     reloading_thread.join();
+}
+
+void EmbeddedDictionaries::reload()
+{
+    if (!reloadImpl(true, true))
+        throw Exception("Some embedded dictionaries were not successfully reloaded", ErrorCodes::UNFINISHED);
 }
 
 
