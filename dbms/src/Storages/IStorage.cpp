@@ -4,13 +4,13 @@
 namespace DB
 {
 
-TableStructureReadLock::TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data)
-    : storage(storage_), data_lock(storage->data_lock, std::defer_lock), structure_lock(storage->structure_lock, std::defer_lock)
+TableStructureReadLock::TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data, const std::string & who)
+    : storage(storage_)
 {
     if (lock_data)
-        data_lock.lock();
+        data_lock = storage->data_lock->getLock(RWLockFIFO::Read, who);
     if (lock_structure)
-        structure_lock.lock();
+        structure_lock = storage->structure_lock->getLock(RWLockFIFO::Read, who);
 }
 
 }
