@@ -41,7 +41,7 @@ if (ENABLE_MYSQL)
     else ()                                   
         set (USE_INTERNAL_MYSQL_LIBRARY 1)
         set (MYSQLCLIENT_LIBRARIES mariadbclient)
-        set (MYSQL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include")
+        set (MYSQL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include" "${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c/include")
     endif ()
 
     set(USE_MYSQL 1)
