@@ -9,7 +9,7 @@
 namespace DB
 {
 
-struct RWLockFIFO;
+class RWLockFIFO;
 using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
 
 
