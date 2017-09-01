@@ -130,7 +130,7 @@ BlockInputStreams StorageSystemColumns::read(
 
             try
             {
-                table_lock = storage->lockStructure(false);
+                table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
             }
             catch (const Exception & e)
             {

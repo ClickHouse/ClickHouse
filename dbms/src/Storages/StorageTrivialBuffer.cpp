@@ -536,7 +536,7 @@ void StorageTrivialBuffer::alter(
             throw Exception("Storage engine " + getName() + " doesn't support primary key.",
                     ErrorCodes::NOT_IMPLEMENTED);
 
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
     /// To avoid presence of blocks of different structure in the buffer.
     flush(false);

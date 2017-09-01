@@ -163,7 +163,7 @@ BlockInputStreams StorageSystemParts::read(
 
         try
         {
-            table_lock = storage->lockStructure(false);    /// For table not to be dropped.
+            table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);    /// For table not to be dropped.
         }
         catch (const Exception & e)
         {
