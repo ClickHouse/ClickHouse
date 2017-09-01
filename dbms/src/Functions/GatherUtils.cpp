@@ -114,7 +114,7 @@ template <typename Base, typename Type, typename ... Types>
 struct ArraySourceSelector<Base, Type, Types ...>
 {
     template <typename ... Args>
-    static void select(IArraySource & source, Args & ... args)
+    static void select(IArraySource & source, Args && ... args)
     {
         if (auto array = typeid_cast<NumericArraySource<Type> *>(&source))
             Base::selectImpl(*array, args ...);
@@ -133,7 +133,7 @@ template <typename Base>
 struct ArraySourceSelector<Base>
 {
     template <typename ... Args>
-    static void select(IArraySource & source, Args & ... args)
+    static void select(IArraySource & source, Args && ... args)
     {
         if (auto array = typeid_cast<GenericArraySource *>(&source))
             Base::selectImpl(*array, args ...);
@@ -158,7 +158,7 @@ template <typename Base, typename Type, typename ... Types>
 struct ArraySinkSelector<Base, Type, Types ...>
 {
     template <typename ... Args>
-    static void select(IArraySink & sink, Args & ... args)
+    static void select(IArraySink & sink, Args && ... args)
     {
         if (auto nullable_numeric_sink = typeid_cast<NullableArraySink<NumericArraySink<Type>> *>(&sink))
             Base::selectImpl(*nullable_numeric_sink, args ...);
@@ -173,7 +173,7 @@ template <typename Base>
 struct ArraySinkSelector<Base>
 {
     template <typename ... Args>
-    static void select(IArraySink & sink, Args & ... args)
+    static void select(IArraySink & sink, Args && ... args)
     {
         if (auto nullable_generic_sink = typeid_cast<NullableArraySink<GenericArraySink> *>(&sink))
             Base::selectImpl(*nullable_generic_sink, args ...);
@@ -191,19 +191,19 @@ template <typename Base>
 struct ArraySinkSourceSelector
 {
     template <typename ... Args>
-    static void select(IArraySource & source, IArraySink & sink, Args & ... args)
+    static void select(IArraySource & source, IArraySink & sink, Args && ... args)
     {
         GetArraySinkSelector<Base>::select(sink, source, args ...);
     }
 
     template <typename Sink, typename ... Args>
-    static void selectImpl(Sink & sink, IArraySource & source, Args & ... args)
+    static void selectImpl(Sink && sink, IArraySource & source, Args && ... args)
     {
         GetArraySourceSelector<Base>::select(source, sink, args ...);
     }
 
     template <typename Source, typename Sink, typename ... Args>
-    static void selectImpl(Source & source, Sink & sink, Args & ... args)
+    static void selectImpl(Source && source, Sink && sink, Args && ... args)
     {
         Base::selectSourceSink(source, sink, args ...);
     }
@@ -216,7 +216,7 @@ struct ArraySinkSourceSelector
 /// Only for NumericArraySource, because can't insert values in the middle of arbitary column.
 /// Used for array concat implementation.
 template <typename Source, typename Sink>
-static void append(Source & source, Sink & sink)
+static void append(Source && source, Sink && sink)
 {
     sink.row_num = 0;
     while (!source.isEnd())
@@ -231,14 +231,14 @@ static void append(Source & source, Sink & sink)
 struct ArrayAppend : public GetArraySourceSelector<ArrayAppend>
 {
     template <typename Source, typename Sink>
-    static void selectImpl(Source & source, Sink & sink)
+    static void selectImpl(Source && source, Sink && sink)
     {
-        append<Source, Sink>(source, sink);
+        append(source, sink);
     }
 };
 
 template <typename Sink>
-static void append(IArraySource & source, Sink & sink)
+static void append(IArraySource & source, Sink && sink)
 {
     ArrayAppend::select(source, sink);
 }
@@ -248,7 +248,7 @@ static void append(IArraySource & source, Sink & sink)
 template <typename SourceType, typename SinkType>
 struct ConcatGenericImpl
 {
-    static void concat(GenericArraySource * generic_source, SinkType & sink)
+    static void concat(GenericArraySource * generic_source, SinkType && sink)
     {
         auto source = static_cast<SourceType *>(generic_source);
         writeSlice(source->getWhole(), sink);
@@ -257,7 +257,7 @@ struct ConcatGenericImpl
 };
 
 template <typename Sink>
-static void NO_INLINE concatGeneric(const std::vector<std::unique_ptr<IArraySource>> & sources, Sink & sink)
+static void NO_INLINE concatGeneric(const std::vector<std::unique_ptr<IArraySource>> & sources, Sink && sink)
 {
     std::vector<GenericArraySource *> generic_sources;
     std::vector<bool> is_nullable;
@@ -318,7 +318,7 @@ static void NO_INLINE concatGeneric(const std::vector<std::unique_ptr<IArraySour
 
 /// Concat for array sources. Sources must be either all numeric either all generic.
 template <typename Sink>
-void NO_INLINE concat(const std::vector<std::unique_ptr<IArraySource>> & sources, Sink & sink)
+void NO_INLINE concat(const std::vector<std::unique_ptr<IArraySource>> & sources, Sink && sink)
 {
     size_t elements_to_reserve = 0;
     bool is_first = true;
@@ -355,7 +355,7 @@ void NO_INLINE concat(const std::vector<std::unique_ptr<IArraySource>> & sources
 
     for (const auto & source : sources)
     {
-        append<Sink>(*source, sink);
+        append(*source, sink);
     }
 }
 
@@ -364,19 +364,29 @@ struct ArrayConcat : public GetArraySinkSelector<ArrayConcat>
     using Sources = std::vector<std::unique_ptr<IArraySource>>;
 
     template <typename Sink>
-    static void selectImpl(Sink & sink, Sources & sources)
+    static void selectImpl(Sink && sink, Sources && sources)
     {
         concat<Sink>(sources, sink);
     }
 
-    static void selectImpl(GenericArraySink & sink, Sources & sources)
+    static void selectImpl(GenericArraySink & sink, Sources && sources)
     {
-        concatGeneric<GenericArraySink>(sources, sink);
+        concatGeneric(sources, sink);
     }
 
-    static void selectImpl(NullableArraySink<GenericArraySink> & sink, Sources & sources)
+    static void selectImpl(NullableArraySink<GenericArraySink> & sink, Sources && sources)
     {
-        concatGeneric<NullableArraySink<GenericArraySink>>(sources, sink);
+        concatGeneric(sources, sink);
+    }
+
+    static void selectImpl(GenericArraySink && sink, Sources && sources)
+    {
+        concatGeneric(sources, sink);
+    }
+
+    static void selectImpl(NullableArraySink<GenericArraySink> && sink, Sources && sources)
+    {
+        concatGeneric(sources, sink);
     }
 };
 
@@ -392,7 +402,7 @@ struct SliceFromLeftConstantOffsetUnboundedSelectArraySource
         : public ArraySinkSourceSelector<SliceFromLeftConstantOffsetUnboundedSelectArraySource>
 {
     template <typename Source, typename Sink>
-    static void selectSourceSink(Source & source, Sink & sink, size_t & offset)
+    static void selectSourceSink(Source && source, Sink && sink, size_t & offset)
     {
         sliceFromLeftConstantOffsetUnbounded(source, sink, offset);
     }
@@ -402,7 +412,7 @@ struct SliceFromLeftConstantOffsetBoundedSelectArraySource
         : public ArraySinkSourceSelector<SliceFromLeftConstantOffsetBoundedSelectArraySource>
 {
     template <typename Source, typename Sink>
-    static void selectSourceSink(Source & source, Sink & sink, size_t & offset, ssize_t & length)
+    static void selectSourceSink(Source && source, Sink && sink, size_t & offset, ssize_t & length)
     {
         sliceFromLeftConstantOffsetBounded(source, sink, offset, length);
     }
@@ -412,7 +422,7 @@ struct SliceFromRightConstantOffsetUnboundedSelectArraySource
         : public ArraySinkSourceSelector<SliceFromRightConstantOffsetUnboundedSelectArraySource>
 {
     template <typename Source, typename Sink>
-    static void selectSourceSink(Source & source, Sink & sink, size_t & offset)
+    static void selectSourceSink(Source && source, Sink && sink, size_t & offset)
     {
         sliceFromRightConstantOffsetUnbounded(source, sink, offset);
     }
@@ -422,7 +432,7 @@ struct SliceFromRightConstantOffsetBoundedSelectArraySource
         : public ArraySinkSourceSelector<SliceFromRightConstantOffsetBoundedSelectArraySource>
 {
     template <typename Source, typename Sink>
-    static void selectSourceSink(Source & source, Sink & sink, size_t & offset, ssize_t & length)
+    static void selectSourceSink(Source && source, Sink && sink, size_t & offset, ssize_t & length)
     {
         sliceFromRightConstantOffsetBounded(source, sink, offset, length);
     }
@@ -432,7 +442,7 @@ struct SliceDynamicOffsetUnboundedSelectArraySource
         : public ArraySinkSourceSelector<SliceDynamicOffsetUnboundedSelectArraySource>
 {
     template <typename Source, typename Sink>
-    static void selectSourceSink(Source & source, Sink & sink, IColumn & offset_column)
+    static void selectSourceSink(Source && source, Sink && sink, IColumn & offset_column)
     {
         sliceDynamicOffsetUnbounded(source, sink, offset_column);
     }
@@ -442,7 +452,7 @@ struct SliceDynamicOffsetBoundedSelectArraySource
         : public ArraySinkSourceSelector<SliceDynamicOffsetBoundedSelectArraySource>
 {
     template <typename Source, typename Sink>
-    static void selectSourceSink(Source & source, Sink & sink, IColumn & offset_column, IColumn & length_column)
+    static void selectSourceSink(Source && source, Sink && sink, IColumn & offset_column, IColumn & length_column)
     {
         sliceDynamicOffsetBounded(source, sink, offset_column, length_column);
     }
