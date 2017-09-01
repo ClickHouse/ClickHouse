@@ -11,6 +11,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 /// Slightly altered implementation from https://github.com/pocoproject/poco/blob/poco-1.6.1/Net/src/SocketAddress.cpp#L86
 static void splitHostAndPort(const std::string & host_and_port, std::string & out_host, UInt16 & out_port)
 {
