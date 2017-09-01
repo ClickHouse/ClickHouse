@@ -70,7 +70,10 @@ if (USE_INTERNAL_MYSQL_LIBRARY)
     macro(install)
     endmacro()
 
+    set(_save ${SKIP_TESTS})
+    set(SKIP_TESTS 1)
     add_subdirectory (mariadb-connector-c)
+    set(SKIP_TESTS ${_save})
 
     # Restore original install() behavior.
     macro(install)
