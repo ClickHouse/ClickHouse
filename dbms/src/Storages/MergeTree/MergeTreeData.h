@@ -482,7 +482,6 @@ public:
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
-    ASTPtr partition_expr_ast;
     ExpressionActionsPtr partition_expr;
     Names partition_expr_columns;
     DataTypes partition_expr_column_types;
@@ -552,7 +551,7 @@ private:
 
     void initPrimaryKey();
 
-    void initPartitionKey();
+    void initPartitionKey(const ASTPtr & partition_key_ast);
 
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.

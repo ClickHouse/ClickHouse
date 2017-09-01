@@ -294,7 +294,7 @@ static ReadBufferFromFile openForReading(const String & path)
 
 void MergeTreeDataPart::Partition::load(const MergeTreeData & storage, const String & part_path)
 {
-    if (storage.partition_expr_column_types.empty())
+    if (!storage.partition_expr)
         return;
 
     ReadBufferFromFile file = openForReading(part_path + "partition.dat");
@@ -305,7 +305,7 @@ void MergeTreeDataPart::Partition::load(const MergeTreeData & storage, const Str
 
 void MergeTreeDataPart::Partition::store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const
 {
-    if (storage.partition_expr_columns.empty())
+    if (!storage.partition_expr)
         return;
 
     WriteBufferFromFile out(part_path + "partition.dat");
@@ -817,7 +817,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
         if (storage.format_version > 0)
         {
-            if (!storage.partition_expr_columns.empty() && !checksums.files.count("partition.dat"))
+            if (storage.partition_expr && !checksums.files.count("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
             for (const String & col_name : storage.minmax_idx_columns)
@@ -845,7 +845,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
         if (storage.format_version > 0)
         {
-            if (!storage.partition_expr_columns.empty())
+            if (storage.partition_expr)
                 check_file_not_empty(path + "partition.dat");
 
             for (const String & col_name : storage.minmax_idx_columns)
