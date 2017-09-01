@@ -129,7 +129,7 @@ public:
     virtual ColumnPtr cut(size_t start, size_t length) const
     {
         ColumnPtr res = cloneEmpty();
-        res.get()->insertRangeFrom(*this, start, length);
+        res->insertRangeFrom(*this, start, length);
         return res;
     }
 

@@ -809,7 +809,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     {
         if (!new_types.count(column.name))
         {
-            bool is_nullable = column.type.get()->isNullable();
+            bool is_nullable = column.type->isNullable();
 
             if (!part || part->hasColumnFiles(column.name))
             {
@@ -1049,7 +1049,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
         for (size_t i = 0, size = part->size; i < size; ++i)
             for (size_t j = 0; j < new_key_size; ++j)
-                new_primary_key_sample.getByPosition(j).type.get()->serializeBinary(*new_index[j].get(), i, index_stream);
+                new_primary_key_sample.getByPosition(j).type->serializeBinary(*new_index[j].get(), i, index_stream);
 
         transaction->rename_map["primary.idx.tmp"] = "primary.idx";
 
