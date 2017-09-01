@@ -49,7 +49,7 @@ struct ArraySourceCreator<>
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows)
 {
-    using Creator = typename ApplyTypeListForClass<ArraySourceCreator, TypeListNumber>::Type;
+    using Creator = typename ApplyTypeListForClass<ArraySourceCreator, TypeListNumbers>::Type;
     if (auto column_nullable = typeid_cast<const ColumnNullable *>(&col.getData()))
     {
         ColumnArray column(column_nullable->getNestedColumn(), col.getOffsetsColumn());
@@ -93,7 +93,7 @@ struct ArraySinkCreator<>
 
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size)
 {
-    using Creator = ApplyTypeListForClass<ArraySinkCreator, TypeListNumber>::Type;
+    using Creator = ApplyTypeListForClass<ArraySinkCreator, TypeListNumbers>::Type;
     if (auto column_nullable = typeid_cast<ColumnNullable *>(&col.getData()))
     {
         ColumnArray column(column_nullable->getNestedColumn(), col.getOffsetsColumn());
@@ -149,7 +149,7 @@ struct ArraySourceSelector<Base>
 };
 
 template <typename Base>
-using GetArraySourceSelector = typename ApplyTypeListForClass<ArraySourceSelector, typename PrependToTypeList<Base, TypeListNumber>::Type>::Type;
+using GetArraySourceSelector = typename ApplyTypeListForClass<ArraySourceSelector, typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
 
 template <typename Base, typename ... Types>
 struct ArraySinkSelector;
@@ -185,7 +185,7 @@ struct ArraySinkSelector<Base>
 };
 
 template <typename Base>
-using GetArraySinkSelector = typename ApplyTypeListForClass<ArraySinkSelector, typename PrependToTypeList<Base, TypeListNumber>::Type>::Type;
+using GetArraySinkSelector = typename ApplyTypeListForClass<ArraySinkSelector, typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
 
 template <typename Base>
 struct ArraySinkSourceSelector
