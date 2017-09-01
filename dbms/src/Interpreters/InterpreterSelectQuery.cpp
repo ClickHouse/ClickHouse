@@ -156,7 +156,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
             storage = context.getTable(database_name, table_name);
         }
 
-        table_lock = storage->lockStructure(false);
+        table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
         if (table_column_names.empty())
             table_column_names = storage->getColumnsListNonMaterialized();
     }

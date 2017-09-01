@@ -352,7 +352,7 @@ public:
         for (const auto & name : ordinary_columns)
             sum_ordinary_columns += map.at(name);
 
-        sum_total = std::max(1UL, sum_index_columns + sum_ordinary_columns);
+        sum_total = std::max(static_cast<decltype(sum_index_columns)>(1), sum_index_columns + sum_ordinary_columns);
     }
 
     /// Approximate size of num_rows column elements if column contains num_total_rows elements

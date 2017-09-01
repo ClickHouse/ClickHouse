@@ -125,7 +125,7 @@ bool CSVRowInputStream::read(Block & block)
     for (size_t i = 0; i < size; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        data_types[i].get()->deserializeTextCSV(*block.getByPosition(i).column.get(), istr, delimiter);
+        data_types[i]->deserializeTextCSV(*block.getByPosition(i).column.get(), istr, delimiter);
         skipWhitespacesAndTabs(istr);
 
         skipDelimiter(istr, delimiter, i + 1 == size);

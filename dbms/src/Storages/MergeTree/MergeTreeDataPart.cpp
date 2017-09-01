@@ -630,22 +630,22 @@ void MergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < key_size; ++i)
         {
-            index[i] = storage.primary_key_data_types[i].get()->createColumn();
-            index[i].get()->reserve(size);
+            index[i] = storage.primary_key_data_types[i]->createColumn();
+            index[i]->reserve(size);
         }
 
         String index_path = getFullPath() + "primary.idx";
         ReadBufferFromFile index_file(index_path,
-            std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
+            std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 
         for (size_t i = 0; i < size; ++i)
             for (size_t j = 0; j < key_size; ++j)
-                storage.primary_key_data_types[j].get()->deserializeBinary(*index[j].get(), index_file);
+                storage.primary_key_data_types[j]->deserializeBinary(*index[j].get(), index_file);
 
         for (size_t i = 0; i < key_size; ++i)
-            if (index[i].get()->size() != size)
+            if (index[i]->size() != size)
                 throw Exception("Cannot read all data from index file " + index_path
-                    + "(expected size: " + toString(size) + ", read: " + toString(index[i].get()->size()) + ")",
+                    + "(expected size: " + toString(size) + ", read: " + toString(index[i]->size()) + ")",
                     ErrorCodes::CANNOT_READ_ALL_DATA);
 
         if (!index_file.eof())
@@ -679,7 +679,7 @@ void MergeTreeDataPart::loadChecksums(bool require)
 
         return;
     }
-    ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+    ReadBufferFromFile file(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
     if (checksums.read(file))
         assertEOF(file);
 }
@@ -717,7 +717,7 @@ void MergeTreeDataPart::loadColumns(bool require)
         return;
     }
 
-    ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+    ReadBufferFromFile file(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
     columns.readText(file);
 }
 

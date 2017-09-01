@@ -22,7 +22,7 @@ struct MergeTreeSettings
     /** Merge settings. */
 
     /// Maximum in total size of parts to merge, when there are maximum (minimum) free threads in background pool (or entries in replication queue).
-    size_t max_bytes_to_merge_at_max_space_in_pool = 150ULL * 1024 * 1024 * 1024;
+    size_t max_bytes_to_merge_at_max_space_in_pool = size_t(150) * 1024 * 1024 * 1024;
     size_t max_bytes_to_merge_at_min_space_in_pool = 1024 * 1024;
 
     /// How many tasks of merging parts are allowed simultaneously in ReplicatedMergeTree queue.

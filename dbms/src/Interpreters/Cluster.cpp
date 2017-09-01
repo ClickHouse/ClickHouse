@@ -1,4 +1,5 @@
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DNSCache.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/SimpleCache.h>
@@ -44,27 +45,14 @@ inline bool isLocal(const Cluster::Address & address)
 }
 
 
-/// To cache DNS requests.
-Poco::Net::SocketAddress resolveSocketAddressImpl1(const String & host, UInt16 port)
-{
-    return Poco::Net::SocketAddress(host, port);
-}
-
-Poco::Net::SocketAddress resolveSocketAddressImpl2(const String & host_and_port)
-{
-    return Poco::Net::SocketAddress(host_and_port);
-}
-
 Poco::Net::SocketAddress resolveSocketAddress(const String & host, UInt16 port)
 {
-    static SimpleCache<decltype(resolveSocketAddressImpl1), &resolveSocketAddressImpl1> cache;
-    return cache(host, port);
+    return Poco::Net::SocketAddress(DNSCache::instance().resolveHost(host), port);
 }
 
 Poco::Net::SocketAddress resolveSocketAddress(const String & host_and_port)
 {
-    static SimpleCache<decltype(resolveSocketAddressImpl2), &resolveSocketAddressImpl2> cache;
-    return cache(host_and_port);
+    return DNSCache::instance().resolveHostAndPort(host_and_port);
 }
 
 }
@@ -74,7 +62,7 @@ Poco::Net::SocketAddress resolveSocketAddress(const String & host_and_port)
 Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     host_name = config.getString(config_prefix + ".host");
-    port = config.getInt(config_prefix + ".port");
+    port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
     resolved_address = resolveSocketAddress(host_name, port);
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
@@ -86,7 +74,7 @@ Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const Stri
 Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_)
     : user(user_), password(password_)
 {
-    UInt16 default_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
+    UInt16 default_port = static_cast<UInt16>(Poco::Util::Application::instance().config().getInt("tcp_port", 0));
 
     /// It's like that 'host_port_' string contains port. If condition is met, it doesn't necessarily mean that port exists (example: [::]).
     if ((nullptr != strchr(host_port_.c_str(), ':')) || !default_port)

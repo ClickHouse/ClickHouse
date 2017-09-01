@@ -621,7 +621,7 @@ void MergeTreeData::setPath(const String & new_full_path, bool move_data)
         Poco::File(full_path).renameTo(new_full_path);
         /// If we don't need to move the data, it means someone else has already moved it.
         /// We hope that he has also reset the caches.
-        context.resetCaches();
+        context.dropCaches();
     }
 
     full_path = new_full_path;
@@ -640,7 +640,7 @@ void MergeTreeData::dropAllData()
     all_data_parts.clear();
     column_sizes.clear();
 
-    context.resetCaches();
+    context.dropCaches();
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
@@ -809,7 +809,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     {
         if (!new_types.count(column.name))
         {
-            bool is_nullable = column.type.get()->isNullable();
+            bool is_nullable = column.type->isNullable();
 
             if (!part || part->hasColumnFiles(column.name))
             {
@@ -1049,7 +1049,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
         for (size_t i = 0, size = part->size; i < size; ++i)
             for (size_t j = 0; j < new_key_size; ++j)
-                new_primary_key_sample.getByPosition(j).type.get()->serializeBinary(*new_index[j].get(), i, index_stream);
+                new_primary_key_sample.getByPosition(j).type->serializeBinary(*new_index[j].get(), i, index_stream);
 
         transaction->rename_map["primary.idx.tmp"] = "primary.idx";
 
@@ -1179,7 +1179,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
         mutable_part.size_in_bytes = MergeTreeData::DataPart::calcTotalSize(path);
 
         /// TODO: we can skip resetting caches when the column is added.
-        data_part->storage.context.resetCaches();
+        data_part->storage.context.dropCaches();
 
         clear();
     }
