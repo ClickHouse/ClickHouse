@@ -126,7 +126,15 @@ MergeTreeData::MergeTreeData(
         throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 
     initPrimaryKey();
-    initPartitionKey();
+
+    ASTPtr partition_expr_ast;
+    {
+        String partition_expr_str = "toYYYYMM(" + date_column_name + ")";
+        ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
+        partition_expr_ast = parseQuery(
+            parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
+    }
+    initPartitionKey(partition_expr_ast);
 
     /// Creating directories, if not exist.
     Poco::File(full_path).createDirectories();
@@ -214,27 +222,30 @@ void MergeTreeData::initPrimaryKey()
 }
 
 
-void MergeTreeData::initPartitionKey()
+void MergeTreeData::initPartitionKey(const ASTPtr & partition_expr_ast)
 {
-    String partition_expr_str = "toYYYYMM(" + date_column_name + ")";
-    ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
-    partition_expr_ast = parseQuery(
-        parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
+    if (!partition_expr_ast || partition_expr_ast->children.empty())
+        return;
+
     partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumnsList()).getActions(false);
-    partition_expr_columns.clear();
-    partition_expr_column_types.clear();
     for (const ASTPtr & ast : partition_expr_ast->children)
     {
         String col_name = ast->getColumnName();
         partition_expr_columns.emplace_back(col_name);
-        partition_expr_column_types.emplace_back(partition_expr->getSampleBlock().getByName(col_name).type);
+
+        const ColumnWithTypeAndName & element = partition_expr->getSampleBlock().getByName(col_name);
+
+        if (element.column && element.column->isConst())
+            throw Exception("Partition key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN);
+        if (element.type->isNullable())
+            throw Exception("Partition key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN);
+
+        partition_expr_column_types.emplace_back(element.type);
     }
 
+    /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
     minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context.getSettingsRef());
-    minmax_idx_columns.clear();
-    minmax_idx_column_types.clear();
-    minmax_idx_sort_descr.clear();
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);
@@ -242,6 +253,7 @@ void MergeTreeData::initPartitionKey()
         minmax_idx_sort_descr.emplace_back(column.name, 1, 1);
     }
 
+    /// Try to find the date column in columns used by the partition key (a common case).
     bool encountered_date_column = false;
     for (size_t i = 0; i < minmax_idx_column_types.size(); ++i)
     {
@@ -1780,9 +1792,13 @@ String MergeTreeData::getPartitionIDFromQuery(const Field & partition)
 
 String MergeTreeData::getPartitionIDFromData(const Row & partition)
 {
-    /// Month-partitioning specific, TODO: generalize.
-    if (partition.size() != 1)
+    if (partition.size() != partition_expr_columns.size())
         throw Exception("Invalid partition key size: " + toString(partition.size()), ErrorCodes::LOGICAL_ERROR);
+
+    if (partition.empty())
+        return "all";
+
+    /// Month-partitioning specific, TODO: generalize.
     if (partition[0].getType() != Field::Types::UInt64)
         throw Exception(String("Invalid partition key type: ") + partition[0].getTypeName(), ErrorCodes::LOGICAL_ERROR);
     return toString(partition[0].get<UInt64>());
