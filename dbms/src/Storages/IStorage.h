@@ -23,7 +23,7 @@ class Context;
 class IBlockInputStream;
 class IBlockOutputStream;
 
-struct RWLockFIFO;
+class RWLockFIFO;
 using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
 
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
