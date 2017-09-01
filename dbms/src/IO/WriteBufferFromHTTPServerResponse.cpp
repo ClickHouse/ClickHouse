@@ -120,7 +120,8 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 
     }
 
-    if (out) {
+    if (out)
+    {
         out->position() = position();
         out->next();
     }
