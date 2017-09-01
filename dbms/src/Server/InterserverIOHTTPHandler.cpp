@@ -36,7 +36,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
     ReadBufferFromIStream body(request.stream());
 
-    WriteBufferFromHTTPServerResponse out(response);
+    WriteBufferFromHTTPServerResponse out(request, response);
 
     auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
 
