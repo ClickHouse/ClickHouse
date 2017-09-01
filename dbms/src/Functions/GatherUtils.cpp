@@ -11,7 +11,8 @@ struct ArraySourceCreator;
 template <typename Type, typename ... Types>
 struct ArraySourceCreator<Type, Types ...>
 {
-    static std::unique_ptr<IArraySource> create(const ColumnArray & col, const ColumnUInt8 * null_map, bool is_const, size_t total_rows)
+    static std::unique_ptr<IArraySource>
+    create(const ColumnArray & col, const ColumnUInt8 * null_map, bool is_const, size_t total_rows)
     {
         if (typeid_cast<const ColumnVector<Type> *>(&col.getData()))
         {
@@ -33,7 +34,8 @@ struct ArraySourceCreator<Type, Types ...>
 template <>
 struct ArraySourceCreator<>
 {
-    static std::unique_ptr<IArraySource> create(const ColumnArray & col, const ColumnUInt8 * null_map, bool is_const, size_t total_rows)
+    static std::unique_ptr<IArraySource>
+    create(const ColumnArray & col, const ColumnUInt8 * null_map, bool is_const, size_t total_rows)
     {
         if (null_map)
         {
@@ -118,11 +120,11 @@ struct ArraySourceSelector<Base, Type, Types ...>
     {
         if (auto array = typeid_cast<NumericArraySource<Type> *>(&source))
             Base::selectImpl(*array, args ...);
-        else if(auto nullable_array = typeid_cast<NullableArraySource<NumericArraySource<Type>> *>(&source))
+        else if (auto nullable_array = typeid_cast<NullableArraySource<NumericArraySource<Type>> *>(&source))
             Base::selectImpl(*nullable_array, args ...);
         else if (auto const_array = typeid_cast<ConstSource<NumericArraySource<Type>> *>(&source))
             Base::selectImpl(*const_array, args ...);
-        else if(auto const_nullable_array = typeid_cast<ConstSource<NullableArraySource<NumericArraySource<Type>>> *>(&source))
+        else if (auto const_nullable_array = typeid_cast<ConstSource<NullableArraySource<NumericArraySource<Type>>> *>(&source))
             Base::selectImpl(*const_nullable_array, args ...);
         else
             ArraySourceSelector<Base, Types ...>::select(source, args ...);
@@ -137,11 +139,11 @@ struct ArraySourceSelector<Base>
     {
         if (auto array = typeid_cast<GenericArraySource *>(&source))
             Base::selectImpl(*array, args ...);
-        else if(auto nullable_array = typeid_cast<NullableArraySource<GenericArraySource> *>(&source))
+        else if (auto nullable_array = typeid_cast<NullableArraySource<GenericArraySource> *>(&source))
             Base::selectImpl(*nullable_array, args ...);
         else if (auto const_array = typeid_cast<ConstSource<GenericArraySource> *>(&source))
             Base::selectImpl(*const_array, args ...);
-        else if(auto const_nullable_array = typeid_cast<ConstSource<NullableArraySource<GenericArraySource>> *>(&source))
+        else if (auto const_nullable_array = typeid_cast<ConstSource<NullableArraySource<GenericArraySource>> *>(&source))
             Base::selectImpl(*const_nullable_array, args ...);
         else
             throw Exception(std::string("Unknown ArraySource type: ") + typeid(source).name(), ErrorCodes::LOGICAL_ERROR);
@@ -149,7 +151,8 @@ struct ArraySourceSelector<Base>
 };
 
 template <typename Base>
-using GetArraySourceSelector = typename ApplyTypeListForClass<ArraySourceSelector, typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
+using GetArraySourceSelector = typename ApplyTypeListForClass<ArraySourceSelector,
+        typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
 
 template <typename Base, typename ... Types>
 struct ArraySinkSelector;
@@ -185,7 +188,8 @@ struct ArraySinkSelector<Base>
 };
 
 template <typename Base>
-using GetArraySinkSelector = typename ApplyTypeListForClass<ArraySinkSelector, typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
+using GetArraySinkSelector = typename ApplyTypeListForClass<ArraySinkSelector,
+        typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
 
 template <typename Base>
 struct ArraySinkSourceSelector
@@ -269,7 +273,7 @@ static void NO_INLINE concatGenericArray(const std::vector<std::unique_ptr<IArra
 
     for (auto i : ext::range(0, sources.size()))
     {
-        const auto &source = sources[i];
+        const auto & source = sources[i];
         if (auto generic_source = typeid_cast<GenericArraySource *>(source.get()))
             generic_sources.push_back(static_cast<GenericArraySource *>(generic_source));
         else if (auto const_generic_source = typeid_cast<ConstSource<GenericArraySource> *>(source.get()))
@@ -288,8 +292,9 @@ static void NO_INLINE concatGenericArray(const std::vector<std::unique_ptr<IArra
             is_nullable[i] = is_const[i] = true;
         }
         else
-            throw Exception(std::string("GenericArraySource expected for GenericArraySink, got: ") + typeid(source).name(),
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(
+                    std::string("GenericArraySource expected for GenericArraySink, got: ") + typeid(source).name(),
+                    ErrorCodes::LOGICAL_ERROR);
     }
 
     while (!sink.isEnd())
@@ -339,17 +344,23 @@ void NO_INLINE concat(const std::vector<std::unique_ptr<IArraySource>> & sources
         if (source->isConst())
         {
             for (size_t i : ext::range(1, offsets.size()))
+            {
                 sink.offsets[i] += offsets[0];
+            }
         }
         else
         {
             for (size_t i : ext::range(1, offsets.size()))
+            {
                 sink.offsets[i] += offsets[i - 1] - (i > 1 ? offsets[i - 2] : 0);
+            }
         }
     }
 
     for (auto i : ext::range(1, sink.offsets.size()))
+    {
         sink.offsets[i] += sink.offsets[i - 1];
+    }
 
     sink.reserve(elements_to_reserve);
 
