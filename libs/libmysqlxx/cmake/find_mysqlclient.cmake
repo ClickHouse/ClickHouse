@@ -28,7 +28,7 @@ if (ENABLE_MYSQL)
         "/usr/local/include/mysql"
         "/usr/include/mysql")
 
-    find_path (MYSQL_INCLUDE_DIR NAMES mysql/mysql.h PATHS ${MYSQL_INCLUDE_PATHS})
+    find_path (MYSQL_INCLUDE_DIR NAMES mysql.h PATHS ${MYSQL_INCLUDE_PATHS})
 
     if (USE_STATIC_LIBRARIES)
         find_library (STATIC_MYSQLCLIENT_LIB mariadbclient mysqlclient PATHS ${MYSQL_LIB_PATHS})
@@ -38,7 +38,6 @@ if (ENABLE_MYSQL)
    endif ()
 
     if (MYSQL_INCLUDE_DIR AND (STATIC_MYSQLCLIENT_LIB OR MYSQLCLIENT_LIBRARIES))
-        include_directories (MYSQL_INCLUDE_DIR)
     else ()                                   
         set (USE_INTERNAL_MYSQL_LIBRARY 1)
         set (MYSQLCLIENT_LIBRARIES mariadbclient)

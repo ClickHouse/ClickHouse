@@ -32,6 +32,10 @@ target_include_directories (mysqlxx PUBLIC include)
 
 set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
 
+if (USE_MYSQL AND NOT USE_INTERNAL_MYSQL_LIBRARY)
+    include_directories (MYSQL_INCLUDE_DIR)
+endif ()
+
 if (USE_INTERNAL_MYSQL_LIBRARY)
 elseif (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
     set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)

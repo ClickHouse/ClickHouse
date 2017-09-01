@@ -1,4 +1,4 @@
-#include <mysql/mysql.h>
+#include <mysql.h>
 
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Exception.h>
