@@ -1065,7 +1065,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             /// Can throw an exception.
             DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
 
-            auto table_lock = lockStructure(false);
+            auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
 
             MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
             MergeTreeData::Transaction transaction;
@@ -1430,7 +1430,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     /// We don't change table structure, only data in some parts
     /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
     /// If we will lock the whole table here, a deadlock can occur. For example, if use use Buffer table (CLICKHOUSE-3238)
-    auto lock_read_structure = lockStructure(false);
+    auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
 
     auto zookeeper = getZooKeeper();
 
@@ -2107,7 +2107,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     TableStructureReadLockPtr table_lock;
     if (!to_detached)
-        table_lock = lockStructure(true);
+        table_lock = lockStructure(true, __PRETTY_FUNCTION__);
 
     ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
 
@@ -2408,7 +2408,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
     {
         /// Just to read current structure. Alter will be done in separate thread.
-        auto table_lock = lockStructure(false);
+        auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
 
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
@@ -3788,7 +3788,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
 
     Logger * log = log_ ? log_ : this->log;
 
-    auto table_lock = lockStructure(false);
+    auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
     auto zookeeper = getZooKeeper();
 
     MergeTreeData::DataPartsVector parts = data.grabOldParts();

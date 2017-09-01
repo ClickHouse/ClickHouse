@@ -124,7 +124,7 @@ public:
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
 private:
-    using SlotToShard = std::vector<size_t>;
+    using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
 
 public:

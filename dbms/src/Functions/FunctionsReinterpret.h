@@ -157,7 +157,7 @@ public:
             for (size_t i = 0; i < size; ++i)
             {
                 ToFieldType value = 0;
-                memcpy(&value, &data_from[offset], std::min(sizeof(ToFieldType), offsets_from[i] - offset - 1));
+                memcpy(&value, &data_from[offset], std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
                 vec_res[i] = value;
                 offset = offsets_from[i];
             }

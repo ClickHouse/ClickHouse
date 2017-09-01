@@ -98,12 +98,12 @@ BlockInputStreams StorageSystemDictionaries::read(
             col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
                 return attr.type->getName();
             }));
-            col_bytes_allocated.column->insert(dict_ptr->getBytesAllocated());
-            col_query_count.column->insert(dict_ptr->getQueryCount());
+            col_bytes_allocated.column->insert(static_cast<UInt64>(dict_ptr->getBytesAllocated()));
+            col_query_count.column->insert(static_cast<UInt64>(dict_ptr->getQueryCount()));
             col_hit_rate.column->insert(dict_ptr->getHitRate());
-            col_element_count.column->insert(dict_ptr->getElementCount());
+            col_element_count.column->insert(static_cast<UInt64>(dict_ptr->getElementCount()));
             col_load_factor.column->insert(dict_ptr->getLoadFactor());
-            col_creation_time.column->insert(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime()));
+            col_creation_time.column->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime())));
             col_source.column->insert(dict_ptr->getSource()->toString());
         }
         else

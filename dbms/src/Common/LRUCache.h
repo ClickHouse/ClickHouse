@@ -43,7 +43,7 @@ private:
 
 public:
     LRUCache(size_t max_size_, const Delay & expiration_delay_ = Delay::zero())
-        : max_size(std::max(1ul, max_size_)), expiration_delay(expiration_delay_) {}
+        : max_size(std::max(static_cast<size_t>(1), max_size_)), expiration_delay(expiration_delay_) {}
 
     MappedPtr get(const Key & key)
     {

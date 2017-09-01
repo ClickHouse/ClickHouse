@@ -103,7 +103,7 @@ void MemoryWriteBuffer::addChunk()
     }
     else
     {
-        next_chunk_size = std::max(1ul, static_cast<size_t>(chunk_tail->size() * growth_rate));
+        next_chunk_size = std::max(static_cast<size_t>(1), static_cast<size_t>(chunk_tail->size() * growth_rate));
         next_chunk_size = std::min(next_chunk_size, max_chunk_size);
     }
 
