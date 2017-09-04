@@ -13,7 +13,7 @@ extern "C" {
  */
 
 #define BTRIE_NULL   (uintptr_t) -1
-#define MAX_PAGES    1024 * 16
+#define MAX_PAGES    1024 * 16 * 1024
 
 typedef struct btrie_node_s btrie_node_t;
 
