@@ -16,14 +16,13 @@ namespace ErrorCodes
 
 const std::string lib_config_settings = ".settings";
 
-struct CStringsHolder
+class CStringsHolder
 {
-    ClickHouseLibrary::CStrings strings; // will pass pointer to lib
-    std::unique_ptr<ClickHouseLibrary::CString[]> ptr_holder = nullptr;
-    std::vector<std::string> strings_holder;
-
-    void prepare()
+public:
+    using strings_type = std::vector<std::string>;
+    CStringsHolder(strings_type strings_pass)
     {
+        strings_holder = strings_pass;
         strings.size = strings_holder.size();
         ptr_holder = std::make_unique<ClickHouseLibrary::CString[]>(strings.size);
         strings.data = ptr_holder.get();
@@ -34,24 +33,30 @@ struct CStringsHolder
             ++i;
         }
     }
+
+    ClickHouseLibrary::CStrings strings; // will pass pointer to lib
+
+private:
+    std::unique_ptr<ClickHouseLibrary::CString[]> ptr_holder = nullptr;
+    strings_type strings_holder;
+
 };
 
 CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
 {
-    CStringsHolder holder;
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_root, config_keys);
+    CStringsHolder::strings_type strings;
     for (const auto & key : config_keys)
     {
         std::string key_name = key;
         auto bracket_pos = key.find('[');
         if (bracket_pos != std::string::npos && bracket_pos > 0)
             key_name = key.substr(0, bracket_pos);
-        holder.strings_holder.emplace_back(key_name);
-        holder.strings_holder.emplace_back(config.getString(config_root + '.' + key));
+        strings.emplace_back(key_name);
+        strings.emplace_back(config.getString(config_root + '.' + key));
     }
-    holder.prepare();
-    return holder;
+    return CStringsHolder(strings);
 }
 
 bool dataToBlock(const void * data, Block & block)

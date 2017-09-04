@@ -25,7 +25,7 @@ SharedLibrary::~SharedLibrary()
         std::terminate();
 }
 
-void * SharedLibrary::getImpl(const std::string & name, bool no_throw = false)
+void * SharedLibrary::getImpl(const std::string & name, bool no_throw)
 {
     dlerror();
 
