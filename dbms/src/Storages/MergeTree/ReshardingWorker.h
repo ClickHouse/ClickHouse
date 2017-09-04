@@ -2,10 +2,11 @@
 
 #include <Storages/MergeTree/ReshardingJob.h>
 #include <Storages/AlterCommands.h>
-#include <common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 #include <Common/ZooKeeper/RWLock.h>
 #include <Common/ZooKeeper/SingleBarrier.h>
+#include <common/logger_useful.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -14,10 +15,10 @@
 #include <atomic>
 #include <functional>
 
+
 namespace DB
 {
 
-class Context;
 class Cluster;
 class StorageReplicatedMergeTree;
 
@@ -42,7 +43,7 @@ public:
 
 public:
     ReshardingWorker(const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_name, Context & context_);
+        const std::string & config_name, const Context & context_);
 
     ReshardingWorker(const ReshardingWorker &) = delete;
     ReshardingWorker & operator=(const ReshardingWorker &) = delete;
@@ -385,7 +386,8 @@ private:
     std::string distributed_lock_path;
     std::string coordination_path;
 
-    Context & context;
+    /// Use own Context (not reference) to execute queries in isolated environment
+    Context context;
     Logger * log = &Logger::get("ReshardingWorker");
 
     zkutil::EventPtr event = std::make_shared<Poco::Event>();
