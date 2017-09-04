@@ -77,3 +77,5 @@ void IDataType::insertDefaultInto(IColumn & column) const
 {
     column.insertDefault();
 }
+
+}
