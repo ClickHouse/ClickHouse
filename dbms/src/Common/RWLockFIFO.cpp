@@ -7,13 +7,37 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::Client client)
 {
     GroupsContainer::iterator it_group;
     ClientsContainer::iterator it_client;
 
+    auto this_thread_id = std::this_thread::get_id();
+
     std::unique_lock<std::mutex> lock(mutex);
+
+    /// Check if the same thread is acquiring previously acquired lock
+    auto it_handler = thread_to_handler.find(this_thread_id);
+    if (it_handler != thread_to_handler.end())
+    {
+        auto handler_ptr = it_handler->second.lock();
+
+        if (!handler_ptr)
+            throw Exception("Lock handler cannot be nullptr. This is a bug", ErrorCodes::LOGICAL_ERROR);
+
+        if (type != Read || handler_ptr->it_group->type != Read)
+            throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
+
+        handler_ptr->it_client->info += "; " + client.info;
+
+        return  handler_ptr;
+    }
 
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)
     {
@@ -44,7 +68,11 @@ RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::C
     it_client->enqueue_time = time(nullptr);
     it_client->type = type;
 
-    LockHandler res = std::make_unique<LockHandlerImpl>(shared_from_this(), it_group, it_client);
+    LockHandler res(new LockHandlerImpl(shared_from_this(), it_group, it_client));
+
+    /// Insert myself (weak_ptr to the handler) to threads set to implement recursive lock
+    it_handler = thread_to_handler.emplace(this_thread_id, res).first;
+    res->it_handler = it_handler;
 
     /// We are first, we should not wait anything
     /// If we are not the first client in the group, a notification could be already sent
@@ -79,14 +107,18 @@ RWLockFIFO::Clients RWLockFIFO::getClientsInTheQueue() const
 }
 
 
-void RWLockFIFO::LockHandlerImpl::unlock()
+RWLockFIFO::LockHandlerImpl::~LockHandlerImpl()
 {
     std::unique_lock<std::mutex> lock(parent->mutex);
 
-    auto & clients = it_group->clients;
-    clients.erase(it_client);
+    /// Remove weak_ptr to the handler, since there are no owners of the current lock
+    parent->thread_to_handler.erase(it_handler);
 
-    if (clients.empty())
+    /// Removes myself from client list of our group
+    it_group->clients.erase(it_client);
+
+    /// Remove the group if we were the last client and notify the next group
+    if (it_group->clients.empty())
     {
         auto & queue = parent->queue;
         queue.erase(it_group);
@@ -99,11 +131,8 @@ void RWLockFIFO::LockHandlerImpl::unlock()
 }
 
 
-RWLockFIFO::LockHandlerImpl::~LockHandlerImpl()
-{
-    if (parent)
-        unlock();
-}
-
+RWLockFIFO::LockHandlerImpl::LockHandlerImpl(RWLockFIFOPtr && parent, RWLockFIFO::GroupsContainer::iterator it_group,
+                                             RWLockFIFO::ClientsContainer::iterator it_client)
+    : parent{std::move(parent)}, it_group{it_group}, it_client{it_client} {}
 
 }
