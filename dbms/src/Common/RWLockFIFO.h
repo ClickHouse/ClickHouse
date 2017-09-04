@@ -4,6 +4,8 @@
 #include <vector>
 #include <mutex>
 #include <condition_variable>
+#include <thread>
+#include <map>
 #include <string>
 
 
@@ -15,7 +17,7 @@ using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
 
 
 /// Implements shared lock with FIFO service
-/// It does not work as recursive mutex, so a deadlock will occur if you try to acquire 2 locks in the same thread
+/// You could call it recursively (several calls from the same thread) in Read mode
 class RWLockFIFO : public std::enable_shared_from_this<RWLockFIFO>
 {
 public:
@@ -36,6 +38,8 @@ public:
     {
         explicit Client(const std::string & info = {}) : info{info} {}
 
+        bool isStarted() { return start_time != 0; }
+
         std::string info;
         int thread_number = 0;
         std::time_t enqueue_time = 0;
@@ -43,8 +47,11 @@ public:
         Type type;
     };
 
+
+    /// Just use LockHandler::reset() to release the lock
     class LockHandlerImpl;
-    using LockHandler = std::unique_ptr<LockHandlerImpl>;
+    using LockHandler = std::shared_ptr<LockHandlerImpl>;
+
 
     /// Waits in the queue and returns appropriate lock
     LockHandler getLock(Type type, Client client = Client{});
@@ -66,6 +73,7 @@ private:
     struct Group;
     using GroupsContainer = std::list<Group>;
     using ClientsContainer = std::list<Client>;
+    using ThreadToHandler = std::map<std::thread::id, std::weak_ptr<LockHandlerImpl>>;
 
     /// Group of clients that should be executed concurrently
     /// i.e. a group could contain several readers, but only one writer
@@ -86,15 +94,13 @@ public:
         RWLockFIFOPtr parent;
         GroupsContainer::iterator it_group;
         ClientsContainer::iterator it_client;
+        ThreadToHandler::iterator it_handler;
+
+        LockHandlerImpl(RWLockFIFOPtr && parent, GroupsContainer::iterator it_group, ClientsContainer::iterator it_client);
 
     public:
-        LockHandlerImpl(RWLockFIFOPtr && parent, GroupsContainer::iterator it_group, ClientsContainer::iterator it_client)
-                : parent{std::move(parent)}, it_group{it_group}, it_client{it_client} {}
 
         LockHandlerImpl(const LockHandlerImpl & other) = delete;
-
-        /// Unlocks acquired lock
-        void unlock();
 
         ~LockHandlerImpl();
 
@@ -105,6 +111,7 @@ private:
 
     mutable std::mutex mutex;
     GroupsContainer queue;
+    ThreadToHandler thread_to_handler;
 };
 
 
