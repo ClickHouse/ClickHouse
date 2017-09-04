@@ -395,6 +395,12 @@ ColumnPtr DataTypeArray::createColumn() const
 }
 
 
+Field DataTypeArray::getDefault() const
+{
+    return Array();
+}
+
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (arguments->children.size() != 1)

@@ -129,8 +129,13 @@ bool JSONEachRowRowInputStream::read(Block & block)
 
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < columns; ++i)
+    {
         if (!read_columns[i])
-            block.getByPosition(i).column->insertDefault();
+        {
+            ColumnWithTypeAndName & elem = block.getByPosition(i);
+            elem.type->insertDefaultInto(*elem.column);
+        }
+    }
 
     return true;
 }

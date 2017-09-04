@@ -30,4 +30,9 @@ ColumnPtr IDataType::createConstColumn(size_t size, const Field & field) const
     return std::make_shared<ColumnConst>(column, size);
 }
 
+void IDataType::insertDefaultInto(IColumn & column) const
+{
+    column.insertDefault();
+}
+
 }

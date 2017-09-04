@@ -87,10 +87,7 @@ public:
 
     ColumnPtr createColumn() const override;
 
-    Field getDefault() const override
-    {
-        return Array();
-    }
+    Field getDefault() const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
     const DataTypeTraits::EnrichedDataTypePtr & getEnrichedNestedType() const { return enriched_nested; }
