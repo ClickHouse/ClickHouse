@@ -651,7 +651,7 @@ public:
     {
         block.getByPosition(result).column = DataTypeUInt32().createConstColumn(
             block.rows(),
-            time(0));
+            static_cast<UInt64>(time(0)));
     }
 };
 

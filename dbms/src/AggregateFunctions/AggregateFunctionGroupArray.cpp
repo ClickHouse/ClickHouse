@@ -24,9 +24,9 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
         return AggregateFunctionPtr(res);
 
     if (typeid_cast<const DataTypeString *>(argument_type.get()))
-        return std::make_shared<GroupArrayGeneralListImpl<NodeString, has_limit::value>>(std::forward<TArgs>(args)...);
+        return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeString, has_limit::value>>(std::forward<TArgs>(args)...);
 
-    return std::make_shared<GroupArrayGeneralListImpl<NodeGeneral, has_limit::value>>(std::forward<TArgs>(args)...);
+    return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeGeneral, has_limit::value>>(std::forward<TArgs>(args)...);
 };
 
 

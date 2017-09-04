@@ -335,7 +335,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
         {
             auto & table = iterator->table();
             if (table.get() != this)
-                selected_tables.emplace_back(table, table->lockStructure(false));
+                selected_tables.emplace_back(table, table->lockStructure(false, __PRETTY_FUNCTION__));
         }
 
         iterator->next();
@@ -351,7 +351,7 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
     params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(

@@ -445,8 +445,20 @@ String InterpreterCreateQuery::setEngine(
         String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
         String as_table_name = create.as_table;
 
-        storage_name = as_storage->getName();
-        create.storage = typeid_cast<const ASTCreateQuery &>(*context.getCreateQuery(as_database_name, as_table_name)).storage;
+        auto as_create_ptr = context.getCreateQuery(as_database_name, as_table_name);
+        auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
+
+        if (!create.storage)
+        {
+            if (as_create.is_view || as_create.is_materialized_view)
+                create.storage = as_create.inner_storage;
+            else
+                create.storage = as_create.storage;
+
+            storage_name = typeid_cast<const ASTFunction &>(*create.storage).name;
+        }
+        else
+            storage_name = as_storage->getName();
     }
     else if (create.is_temporary)
         set_engine("Memory");
@@ -494,7 +506,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
-        as_storage_lock = as_storage->lockStructure(false);
+        as_storage_lock = as_storage->lockStructure(false, __PRETTY_FUNCTION__);
     }
 
     /// Set and retrieve list of columns.
@@ -545,7 +557,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// If the CREATE SELECT query is, insert the data into the table
     if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
     {
-        auto table_lock = res->lockStructure(true);
+        auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
 
         /// Also see InterpreterInsertQuery.
         BlockOutputStreamPtr out =

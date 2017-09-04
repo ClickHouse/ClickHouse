@@ -9,35 +9,52 @@
 
 /* ***************************************************************
 *  NOTES/WARNINGS
-*****************************************************************/
-/* The streaming API defined here will soon be deprecated by the
-* new one in 'zstd.h'; consider migrating towards newer streaming
-* API. See 'lib/README.md'.
-*****************************************************************/
+******************************************************************/
+/* The streaming API defined here is deprecated.
+ * Consider migrating towards ZSTD_compressStream() API in `zstd.h`
+ * See 'lib/README.md'.
+ *****************************************************************/
 
-#ifndef ZSTD_BUFFERED_H_23987
-#define ZSTD_BUFFERED_H_23987
 
 #if defined (__cplusplus)
 extern "C" {
 #endif
 
+#ifndef ZSTD_BUFFERED_H_23987
+#define ZSTD_BUFFERED_H_23987
+
 /* *************************************
 *  Dependencies
 ***************************************/
 #include <stddef.h>      /* size_t */
+#include "zstd.h"        /* ZSTD_CStream, ZSTD_DStream, ZSTDLIB_API */
 
 
 /* ***************************************************************
 *  Compiler specifics
 *****************************************************************/
-/* ZSTD_DLL_EXPORT :
-*  Enable exporting of functions when building a Windows DLL */
-#if defined(_WIN32) && defined(ZSTD_DLL_EXPORT) && (ZSTD_DLL_EXPORT==1)
-#  define ZSTDLIB_API __declspec(dllexport)
+/* Deprecation warnings */
+/* Should these warnings be a problem,
+   it is generally possible to disable them,
+   typically with -Wno-deprecated-declarations for gcc
+   or _CRT_SECURE_NO_WARNINGS in Visual.
+   Otherwise, it's also possible to define ZBUFF_DISABLE_DEPRECATE_WARNINGS */
+#ifdef ZBUFF_DISABLE_DEPRECATE_WARNINGS
+#  define ZBUFF_DEPRECATED(message) ZSTDLIB_API  /* disable deprecation warnings */
 #else
-#  define ZSTDLIB_API
-#endif
+#  if defined (__cplusplus) && (__cplusplus >= 201402) /* C++14 or greater */
+#    define ZBUFF_DEPRECATED(message) [[deprecated(message)]] ZSTDLIB_API
+#  elif (defined(__GNUC__) && (__GNUC__ >= 5)) || defined(__clang__)
+#    define ZBUFF_DEPRECATED(message) ZSTDLIB_API __attribute__((deprecated(message)))
+#  elif defined(__GNUC__) && (__GNUC__ >= 3)
+#    define ZBUFF_DEPRECATED(message) ZSTDLIB_API __attribute__((deprecated))
+#  elif defined(_MSC_VER)
+#    define ZBUFF_DEPRECATED(message) ZSTDLIB_API __declspec(deprecated(message))
+#  else
+#    pragma message("WARNING: You need to implement ZBUFF_DEPRECATED for this compiler")
+#    define ZBUFF_DEPRECATED(message) ZSTDLIB_API
+#  endif
+#endif /* ZBUFF_DISABLE_DEPRECATE_WARNINGS */
 
 
 /* *************************************
@@ -49,16 +66,16 @@ extern "C" {
 *  ZBUFF and ZSTD are 100% interoperable,
 *  frames created by one can be decoded by the other one */
 
-typedef struct ZBUFF_CCtx_s ZBUFF_CCtx;
-ZSTDLIB_API ZBUFF_CCtx* ZBUFF_createCCtx(void);
-ZSTDLIB_API size_t      ZBUFF_freeCCtx(ZBUFF_CCtx* cctx);
+typedef ZSTD_CStream ZBUFF_CCtx;
+ZBUFF_DEPRECATED("use ZSTD_createCStream") ZBUFF_CCtx* ZBUFF_createCCtx(void);
+ZBUFF_DEPRECATED("use ZSTD_freeCStream")   size_t      ZBUFF_freeCCtx(ZBUFF_CCtx* cctx);
 
-ZSTDLIB_API size_t ZBUFF_compressInit(ZBUFF_CCtx* cctx, int compressionLevel);
-ZSTDLIB_API size_t ZBUFF_compressInitDictionary(ZBUFF_CCtx* cctx, const void* dict, size_t dictSize, int compressionLevel);
+ZBUFF_DEPRECATED("use ZSTD_initCStream")           size_t ZBUFF_compressInit(ZBUFF_CCtx* cctx, int compressionLevel);
+ZBUFF_DEPRECATED("use ZSTD_initCStream_usingDict") size_t ZBUFF_compressInitDictionary(ZBUFF_CCtx* cctx, const void* dict, size_t dictSize, int compressionLevel);
 
-ZSTDLIB_API size_t ZBUFF_compressContinue(ZBUFF_CCtx* cctx, void* dst, size_t* dstCapacityPtr, const void* src, size_t* srcSizePtr);
-ZSTDLIB_API size_t ZBUFF_compressFlush(ZBUFF_CCtx* cctx, void* dst, size_t* dstCapacityPtr);
-ZSTDLIB_API size_t ZBUFF_compressEnd(ZBUFF_CCtx* cctx, void* dst, size_t* dstCapacityPtr);
+ZBUFF_DEPRECATED("use ZSTD_compressStream") size_t ZBUFF_compressContinue(ZBUFF_CCtx* cctx, void* dst, size_t* dstCapacityPtr, const void* src, size_t* srcSizePtr);
+ZBUFF_DEPRECATED("use ZSTD_flushStream")    size_t ZBUFF_compressFlush(ZBUFF_CCtx* cctx, void* dst, size_t* dstCapacityPtr);
+ZBUFF_DEPRECATED("use ZSTD_endStream")      size_t ZBUFF_compressEnd(ZBUFF_CCtx* cctx, void* dst, size_t* dstCapacityPtr);
 
 /*-*************************************************
 *  Streaming compression - howto
@@ -101,14 +118,14 @@ ZSTDLIB_API size_t ZBUFF_compressEnd(ZBUFF_CCtx* cctx, void* dst, size_t* dstCap
 * **************************************************/
 
 
-typedef struct ZBUFF_DCtx_s ZBUFF_DCtx;
-ZSTDLIB_API ZBUFF_DCtx* ZBUFF_createDCtx(void);
-ZSTDLIB_API size_t      ZBUFF_freeDCtx(ZBUFF_DCtx* dctx);
+typedef ZSTD_DStream ZBUFF_DCtx;
+ZBUFF_DEPRECATED("use ZSTD_createDStream") ZBUFF_DCtx* ZBUFF_createDCtx(void);
+ZBUFF_DEPRECATED("use ZSTD_freeDStream")   size_t      ZBUFF_freeDCtx(ZBUFF_DCtx* dctx);
 
-ZSTDLIB_API size_t ZBUFF_decompressInit(ZBUFF_DCtx* dctx);
-ZSTDLIB_API size_t ZBUFF_decompressInitDictionary(ZBUFF_DCtx* dctx, const void* dict, size_t dictSize);
+ZBUFF_DEPRECATED("use ZSTD_initDStream")           size_t ZBUFF_decompressInit(ZBUFF_DCtx* dctx);
+ZBUFF_DEPRECATED("use ZSTD_initDStream_usingDict") size_t ZBUFF_decompressInitDictionary(ZBUFF_DCtx* dctx, const void* dict, size_t dictSize);
 
-ZSTDLIB_API size_t ZBUFF_decompressContinue(ZBUFF_DCtx* dctx,
+ZBUFF_DEPRECATED("use ZSTD_decompressStream") size_t ZBUFF_decompressContinue(ZBUFF_DCtx* dctx,
                                             void* dst, size_t* dstCapacityPtr,
                                       const void* src, size_t* srcSizePtr);
 
@@ -141,18 +158,22 @@ ZSTDLIB_API size_t ZBUFF_decompressContinue(ZBUFF_DCtx* dctx,
 /* *************************************
 *  Tool functions
 ***************************************/
-ZSTDLIB_API unsigned ZBUFF_isError(size_t errorCode);
-ZSTDLIB_API const char* ZBUFF_getErrorName(size_t errorCode);
+ZBUFF_DEPRECATED("use ZSTD_isError")      unsigned ZBUFF_isError(size_t errorCode);
+ZBUFF_DEPRECATED("use ZSTD_getErrorName") const char* ZBUFF_getErrorName(size_t errorCode);
 
 /** Functions below provide recommended buffer sizes for Compression or Decompression operations.
 *   These sizes are just hints, they tend to offer better latency */
-ZSTDLIB_API size_t ZBUFF_recommendedCInSize(void);
-ZSTDLIB_API size_t ZBUFF_recommendedCOutSize(void);
-ZSTDLIB_API size_t ZBUFF_recommendedDInSize(void);
-ZSTDLIB_API size_t ZBUFF_recommendedDOutSize(void);
+ZBUFF_DEPRECATED("use ZSTD_CStreamInSize")  size_t ZBUFF_recommendedCInSize(void);
+ZBUFF_DEPRECATED("use ZSTD_CStreamOutSize") size_t ZBUFF_recommendedCOutSize(void);
+ZBUFF_DEPRECATED("use ZSTD_DStreamInSize")  size_t ZBUFF_recommendedDInSize(void);
+ZBUFF_DEPRECATED("use ZSTD_DStreamOutSize") size_t ZBUFF_recommendedDOutSize(void);
+
+#endif  /* ZSTD_BUFFERED_H_23987 */
 
 
 #ifdef ZBUFF_STATIC_LINKING_ONLY
+#ifndef ZBUFF_STATIC_H_30298098432
+#define ZBUFF_STATIC_H_30298098432
 
 /* ====================================================================================
  * The definitions in this section are considered experimental.
@@ -169,23 +190,23 @@ ZSTDLIB_API size_t ZBUFF_recommendedDOutSize(void);
 /*--- Custom memory allocator ---*/
 /*! ZBUFF_createCCtx_advanced() :
  *  Create a ZBUFF compression context using external alloc and free functions */
-ZSTDLIB_API ZBUFF_CCtx* ZBUFF_createCCtx_advanced(ZSTD_customMem customMem);
+ZBUFF_DEPRECATED("use ZSTD_createCStream_advanced") ZBUFF_CCtx* ZBUFF_createCCtx_advanced(ZSTD_customMem customMem);
 
 /*! ZBUFF_createDCtx_advanced() :
  *  Create a ZBUFF decompression context using external alloc and free functions */
-ZSTDLIB_API ZBUFF_DCtx* ZBUFF_createDCtx_advanced(ZSTD_customMem customMem);
+ZBUFF_DEPRECATED("use ZSTD_createDStream_advanced") ZBUFF_DCtx* ZBUFF_createDCtx_advanced(ZSTD_customMem customMem);
 
 
 /*--- Advanced Streaming Initialization ---*/
-ZSTDLIB_API size_t ZBUFF_compressInit_advanced(ZBUFF_CCtx* zbc,
+ZBUFF_DEPRECATED("use ZSTD_initDStream_usingDict") size_t ZBUFF_compressInit_advanced(ZBUFF_CCtx* zbc,
                                                const void* dict, size_t dictSize,
                                                ZSTD_parameters params, unsigned long long pledgedSrcSize);
 
-#endif /* ZBUFF_STATIC_LINKING_ONLY */
+
+#endif    /* ZBUFF_STATIC_H_30298098432 */
+#endif    /* ZBUFF_STATIC_LINKING_ONLY */
 
 
 #if defined (__cplusplus)
 }
 #endif
-
-#endif  /* ZSTD_BUFFERED_H_23987 */

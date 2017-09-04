@@ -130,7 +130,7 @@ BlockInputStreams StorageSystemColumns::read(
 
             try
             {
-                table_lock = storage->lockStructure(false);
+                table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
             }
             catch (const Exception & e)
             {
@@ -193,9 +193,9 @@ BlockInputStreams StorageSystemColumns::read(
                 }
                 else
                 {
-                    data_compressed_bytes_column->insert(it->second.data_compressed);
-                    data_uncompressed_bytes_column->insert(it->second.data_uncompressed);
-                    marks_bytes_column->insert(it->second.marks);
+                    data_compressed_bytes_column->insert(static_cast<UInt64>(it->second.data_compressed));
+                    data_uncompressed_bytes_column->insert(static_cast<UInt64>(it->second.data_uncompressed));
+                    marks_bytes_column->insert(static_cast<UInt64>(it->second.marks));
                 }
             }
         }

@@ -53,7 +53,7 @@ BlockIO InterpreterDropQuery::execute()
         {
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = table->lockForAlter();
+            auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
             /// Delete table data
             table->drop();
             table->is_dropped = true;
@@ -116,7 +116,7 @@ BlockIO InterpreterDropQuery::execute()
         table.first->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table.first->lockForAlter();
+        auto table_lock = table.first->lockForAlter(__PRETTY_FUNCTION__);
 
         String current_table_name = table.first->getTableName();
 

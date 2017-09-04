@@ -176,7 +176,7 @@ size_t ColumnAggregateFunction::byteSize() const
     size_t res = getData().size() * sizeof(getData()[0]);
 
     for (const auto & arena : arenas)
-        res += arena.get()->size();
+        res += arena->size();
 
     return res;
 }
@@ -188,7 +188,7 @@ size_t ColumnAggregateFunction::allocatedBytes() const
     size_t res = getData().allocated_bytes();
 
     for (const auto & arena : arenas)
-        res += arena.get()->size();
+        res += arena->size();
 
     return res;
 }

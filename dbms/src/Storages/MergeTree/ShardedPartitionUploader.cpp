@@ -65,8 +65,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr data_part = std::make_shared<MergeTreeData::DataPart>(data);
-    data_part->name = part_name;
+    MergeTreeData::MutableDataPartPtr data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name);
     data_part->relative_path = relative_part_name;
     data_part->is_temp = true;
 
@@ -104,10 +103,8 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
     assertEOF(body);
 
-    data_part->info = MergeTreePartInfo::fromPartName(part_name);
-    MergeTreePartInfo::parseMinMaxDatesFromPartName(part_name, data_part->min_date, data_part->max_date);
     data_part->modification_time = time(nullptr);
-    data_part->loadColumnsChecksumsIndex(true, false);
+    data_part->loadColumnsChecksumsIndexes(true, false);
     data_part->is_sharded = false;
     data_part->checksums.checkEqual(checksums, false);
 
@@ -146,7 +143,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
     LOG_TRACE(log, "Sending part " << part_name);
 
-    auto storage_lock = storage.lockStructure(false);
+    auto storage_lock = storage.lockStructure(false, __PRETTY_FUNCTION__);
 
     MergeTreeData::DataPartPtr part = findShardedPart(part_name, shard_no);
 

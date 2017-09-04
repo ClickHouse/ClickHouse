@@ -105,6 +105,7 @@ namespace ErrorCodes
     extern const int RESHARDING_NULLABLE_SHARDING_KEY;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int TOO_MUCH_FETCHES;
+    extern const int BAD_DATA_PART_NAME;
 }
 
 
@@ -1064,7 +1065,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             /// Can throw an exception.
             DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
 
-            auto table_lock = lockStructure(false);
+            auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
 
             MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
             MergeTreeData::Transaction transaction;
@@ -1073,8 +1074,15 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             /// Logging
             Stopwatch stopwatch;
 
+            MergeTreeDataMerger::FuturePart future_merged_part(parts);
+            if (future_merged_part.name != entry.new_part_name)
+                throw Exception(
+                    "Future merged part name `" + future_merged_part.name +
+                    "` differs from part name in log entry: `" + entry.new_part_name + "`",
+                    ErrorCodes::BAD_DATA_PART_NAME);
+
             auto part = merger.mergePartsToTemporaryPart(
-                parts, entry.new_part_name, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
+                future_merged_part, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
 
             zkutil::Ops ops;
 
@@ -1112,7 +1120,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
             if (!do_fetch)
             {
-                merger.renameMergedTemporaryPart(parts, part, entry.new_part_name, &transaction);
+                merger.renameMergedTemporaryPart(part, parts, &transaction);
                 getZooKeeper()->multi(ops);        /// After long merge, get fresh ZK handle, because previous session may be expired.
 
                 if (auto part_log = context.getPartLog(database_name, table_name))
@@ -1419,9 +1427,10 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
     auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name);
 
-    /// We don't change table structure, only data in some parts, disable reading from them
-    auto lock_read_structure = lockStructure(false);
-    auto lock_write_data = lockDataForAlter();
+    /// We don't change table structure, only data in some parts
+    /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
+    /// If we will lock the whole table here, a deadlock can occur. For example, if use use Buffer table (CLICKHOUSE-3238)
+    auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
 
     auto zookeeper = getZooKeeper();
 
@@ -1775,8 +1784,7 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
             }
             else
             {
-                MergeTreeData::DataPartsVector parts;
-                String merged_name;
+                MergeTreeDataMerger::FuturePart future_merged_part;
 
                 size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge(data.settings.max_replicated_merges_in_queue, merges_queued);
 
@@ -1784,10 +1792,10 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
 
                 if (max_parts_size_for_merge > 0
                     && merger.selectPartsToMerge(
-                        parts, merged_name, false,
+                        future_merged_part, false,
                         max_parts_size_for_merge,
                         can_merge)
-                    && createLogEntryToMergeParts(parts, merged_name, deduplicate))
+                    && createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate))
                 {
                     success = true;
                     need_pull = true;
@@ -2099,7 +2107,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     TableStructureReadLockPtr table_lock;
     if (!to_detached)
-        table_lock = lockStructure(true);
+        table_lock = lockStructure(true, __PRETTY_FUNCTION__);
 
     ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
 
@@ -2360,26 +2368,25 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const String & p
     {
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
-        MergeTreeData::DataPartsVector parts;
-        String merged_name;
-
         size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
+        MergeTreeDataMerger::FuturePart future_merged_part;
         bool selected = false;
 
         if (partition_id.empty())
         {
-            selected = merger.selectPartsToMerge(parts, merged_name, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
+            selected = merger.selectPartsToMerge(
+                future_merged_part, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
         }
         else
         {
-            selected = merger.selectAllPartsToMergeWithinPartition(parts, merged_name, disk_space, can_merge, partition_id, final);
+            selected = merger.selectAllPartsToMergeWithinPartition(future_merged_part, disk_space, can_merge, partition_id, final);
         }
 
         if (!selected)
             return false;
 
-        if (!createLogEntryToMergeParts(parts, merged_name, deduplicate, &merge_entry))
+        if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
             return false;
     }
 
@@ -2401,7 +2408,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
     {
         /// Just to read current structure. Alter will be done in separate thread.
-        auto table_lock = lockStructure(false);
+        auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
 
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
@@ -2611,7 +2618,7 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
 
     /// We don't block merges, so anyone can manage this task (not only leader)
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
 
     if (fake_part_name.empty())
@@ -2651,7 +2658,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field
         return;
     }
 
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
 
     if (fake_part_name.empty())
@@ -2701,7 +2708,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & query, const Fie
     if (attach_part)
         partition_id = field.safeGet<String>();
     else
-        partition_id = MergeTreeData::getPartitionID(field);
+        partition_id = data.getPartitionIDFromQuery(field);
 
     String source_dir = "detached/";
 
@@ -3207,7 +3214,7 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 
 void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const String & from_, const Settings & settings)
 {
-    String partition_id = MergeTreeData::getPartitionID(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition);
 
     String from = from_;
     if (from.back() == '/')
@@ -3452,7 +3459,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
         }
 
         bool include_all = partition.isNull();
-        String partition_id = !partition.isNull() ? MergeTreeData::getPartitionID(partition) : String();
+        String partition_id = !partition.isNull() ? data.getPartitionIDFromQuery(partition) : String();
 
         /// Make a list of local partitions that need to be resharded.
         std::set<std::string> unique_partition_list;
@@ -3478,12 +3485,12 @@ void StorageReplicatedMergeTree::reshardPartitions(
 
             /// Verify that there is enough free space for all tasks locally and on all replicas.
             auto replica_to_space_info = gatherReplicaSpaceInfo(weighted_zookeeper_paths);
-            for (const auto & partition : partition_list)
+            for (const auto & partition_id : partition_list)
             {
-                size_t partition_size = data.getPartitionSize(partition);
+                size_t partition_size = data.getPartitionSize(partition_id);
                 if (!checkSpaceForResharding(replica_to_space_info, partition_size))
                     throw Exception{"Insufficient space available for resharding operation "
-                        "on partition " + partition, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING};
+                        "on partition id: " + partition_id, ErrorCodes::INSUFFICIENT_SPACE_FOR_RESHARDING};
             }
         }
 
@@ -3547,7 +3554,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
             ReshardingJob job;
             job.database_name = database_name;
             job.table_name = getTableName();
-            job.partition = *it;
+            job.partition_id = *it;
             job.paths = weighted_zookeeper_paths;
             job.sharding_key_expr = sharding_key_expr;
             job.coordinator_id = coordinator_id;
@@ -3563,7 +3570,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
             ReshardingJob job;
             job.database_name = database_name;
             job.table_name = getTableName();
-            job.partition = *it;
+            job.partition_id = *it;
             job.paths = weighted_zookeeper_paths;
             job.sharding_key_expr = sharding_key_expr;
             job.do_copy = do_copy;
@@ -3708,7 +3715,7 @@ StorageReplicatedMergeTree::gatherReplicaSpaceInfo(const WeightedZooKeeperPaths 
 
     ThreadPool pool(task_info_list.size());
 
-    using Tasks = std::vector<std::packaged_task<size_t()> >;
+    using Tasks = std::vector<std::packaged_task<size_t()>>;
     Tasks tasks(task_info_list.size());
 
     try
@@ -3781,7 +3788,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
 
     Logger * log = log_ ? log_ : this->log;
 
-    auto table_lock = lockStructure(false);
+    auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
     auto zookeeper = getZooKeeper();
 
     MergeTreeData::DataPartsVector parts = data.grabOldParts();
@@ -3790,11 +3797,26 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
     if (!count)
         return;
 
+    /// Part names that were successfully deleted from filesystem and should be deleted from ZooKeeper
+    Strings part_names;
+    auto remove_from_zookeeper = [&] ()
+    {
+        LOG_DEBUG(log, "Removed " << part_names.size() << " old parts from filesystem. Removing them from ZooKeeper.");
+
+        try
+        {
+            removePartsFromZooKeeper(zookeeper, part_names);
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "There is a problem with deleting parts from ZooKeeper: " << getCurrentExceptionMessage(false));
+        }
+    };
+
     try
     {
-        LOG_DEBUG(log, "Removing " << parts.size() << " old parts from file system");
+        LOG_DEBUG(log, "Removing " << parts.size() << " old parts from filesystem");
 
-        Strings part_names;
         while (!parts.empty())
         {
             MergeTreeData::DataPartPtr & part = parts.back();
@@ -3802,41 +3824,81 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
             part_names.emplace_back(part->name);
             parts.pop_back();
         }
-
-        LOG_DEBUG(log, "Removed " << part_names.size() << " old parts from file system. Removing them from ZooKeeper.");
-
-        try
-        {
-            removePartsFromZooKeeper(zookeeper, part_names);
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            LOG_ERROR(log, "There is a problem with deleting parts from ZooKeeper: " << getCurrentExceptionMessage(false));
-        }
     }
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /// Finalize deletion of parts already deleted from filesystem, rollback remaining parts
         data.addOldParts(parts);
+        remove_from_zookeeper();
+
         throw;
     }
 
+    /// Finalize deletion
+    remove_from_zookeeper();
+
     LOG_DEBUG(log, "Removed " << count << " old parts");
+}
+
+
+static int32_t tryMultiWithRetries(zkutil::ZooKeeperPtr & zookeeper, zkutil::Ops & ops) noexcept
+{
+    int32_t code;
+    try
+    {
+        code = zookeeper->tryMultiWithRetries(ops);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        code = e.code;
+    }
+
+    return code;
 }
 
 
 void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names)
 {
     zkutil::Ops ops;
+    auto it_first_node_in_batch = part_names.cbegin();
 
     for (auto it = part_names.cbegin(); it != part_names.cend(); ++it)
     {
         removePartFromZooKeeper(*it, ops);
 
-        if (ops.size() >= zkutil::MULTI_BATCH_SIZE || next(it) == part_names.cend())
+        auto it_next = std::next(it);
+        if (ops.size() >= zkutil::MULTI_BATCH_SIZE || it_next == part_names.cend())
         {
-            zookeeper->tryMulti(ops);
+            /// It is Ok to use multi with retries to delete nodes, because new nodes with the same names cannot appear here
+            auto code = tryMultiWithRetries(zookeeper, ops);
             ops.clear();
+
+            if (code == ZNONODE)
+            {
+                /// Fallback
+                LOG_DEBUG(log, "There are no some part nodes in ZooKeeper, will remove part nodes sequentially");
+
+                for (auto it_in_batch = it_first_node_in_batch; it_in_batch != it_next; ++it_in_batch)
+                {
+                    zkutil::Ops cur_ops;
+                    removePartFromZooKeeper(*it_in_batch, cur_ops);
+                    auto cur_code = tryMultiWithRetries(zookeeper, cur_ops);
+
+                    if (cur_code == ZNONODE)
+                        LOG_DEBUG(log, "There is no part " << *it_in_batch << " in ZooKeeper, it was only in filesystem");
+                    else if (cur_code != ZOK)
+                        LOG_WARNING(log, "Cannot remove part " << *it_in_batch << " from ZooKeeper: " << ::zerror(cur_code));
+                }
+            }
+            else if (code != ZOK)
+            {
+                LOG_WARNING(log, "There was a problem with deleting " << (it_next - it_first_node_in_batch)
+                    << " nodes from ZooKeeper: " << ::zerror(code));
+            }
+
+            it_first_node_in_batch = it_next;
         }
     }
 }

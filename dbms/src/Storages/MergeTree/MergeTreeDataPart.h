@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Core/Field.h>
+#include <Core/Row.h>
+#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Columns/IColumn.h>
@@ -79,6 +80,21 @@ struct MergeTreeDataPartChecksums
 };
 
 
+/// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
+/// parts based on conditions on these columns imposed by a query.
+/// Currently this index is built using only columns required by partition expression, but in principle it
+/// can be built using any set of columns.
+struct MinMaxIndex
+{
+    void update(const Block & block, const Names & column_names);
+    void merge(const MinMaxIndex & other);
+
+    bool initialized = false;
+    Row min_column_values;
+    Row max_column_values;
+};
+
+
 class MergeTreeData;
 
 
@@ -88,7 +104,15 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(MergeTreeData & storage_) : storage(storage_) {}
+    MergeTreeDataPart(MergeTreeData & storage_, const String & name_)
+        : storage(storage_), name(name_), info(MergeTreePartInfo::fromPartName(name_))
+    {
+    }
+
+    MergeTreeDataPart(MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
+        : storage(storage_), name(name_), info(info_)
+    {
+    }
 
     /// Returns checksum of column's binary file.
     const Checksum * tryGetBinChecksum(const String & name) const;
@@ -112,14 +136,16 @@ struct MergeTreeDataPart
 
     bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
 
+    /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
+    DayNum_t getMinDate() const;
+    DayNum_t getMaxDate() const;
 
     MergeTreeData & storage;
 
     String name;
     MergeTreePartInfo info;
 
-    DayNum_t min_date;
-    DayNum_t max_date;
+    Row partition;
 
     /// A directory path (realative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
@@ -143,6 +169,8 @@ struct MergeTreeDataPart
     /// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
     using Index = Columns;
     Index index;
+
+    MinMaxIndex minmax_idx;
 
     Checksums checksums;
 
@@ -185,7 +213,7 @@ struct MergeTreeDataPart
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
-    void loadColumnsChecksumsIndex(bool require_columns_checksums, bool check_consistency);
+    void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
 
     /// Checks that .bin and .mrk files exist
     bool hasColumnFiles(const String & column) const;
@@ -203,6 +231,8 @@ private:
 
     /// Loads index file. Also calculates this->size if size=0
     void loadIndex();
+
+    void loadPartitionAndMinMaxIndex();
 
     void checkConsistency(bool require_part_metadata);
 };

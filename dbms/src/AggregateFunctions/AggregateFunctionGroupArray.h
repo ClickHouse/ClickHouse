@@ -31,9 +31,6 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
 /// A particular case is an implementation for numeric types.
 template <typename T>
 struct GroupArrayNumericData
@@ -92,7 +89,7 @@ public:
         }
         else
         {
-            UInt64 elems_to_insert = std::min(max_elems - cur_elems.value.size(), rhs_elems.value.size());
+            UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
             cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
         }
     }
@@ -146,12 +143,10 @@ public:
 /// General case
 
 
-/// Nodes used to implement linked list for stoarge of groupArray states
-struct NodeString;
-struct NodeGeneral;
+/// Nodes used to implement a linked list for storage of groupArray states
 
 template <typename Node>
-struct NodeBase
+struct GroupArrayListNodeBase
 {
     Node * next;
     UInt64 size; // size of payload
@@ -159,7 +154,7 @@ struct NodeBase
     /// Returns pointer to actual payload
     char * data()
     {
-        static_assert(sizeof(NodeBase) == sizeof(Node));
+        static_assert(sizeof(GroupArrayListNodeBase) == sizeof(Node));
         return reinterpret_cast<char *>(this) + sizeof(Node);
     }
 
@@ -189,9 +184,9 @@ struct NodeBase
     }
 };
 
-struct NodeString : public NodeBase<NodeString>
+struct GroupArrayListNodeString : public GroupArrayListNodeBase<GroupArrayListNodeString>
 {
-    using Node = NodeString;
+    using Node = GroupArrayListNodeString;
 
     /// Create node from string
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
@@ -212,9 +207,9 @@ struct NodeString : public NodeBase<NodeString>
     }
 };
 
-struct NodeGeneral : public NodeBase<NodeGeneral>
+struct GroupArrayListNodeGeneral : public GroupArrayListNodeBase<GroupArrayListNodeGeneral>
 {
-    using Node = NodeGeneral;
+    using Node = GroupArrayListNodeGeneral;
 
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
@@ -267,7 +262,7 @@ public:
     void setParameters(const Array & params) override
     {
         if (!limit_num_elems && !params.empty())
-            throw Exception("This instatintion of " + getName() + "aggregate function doesn't accept any parameters. It is a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("This instantiation of " + getName() + "aggregate function doesn't accept any parameters. It is a bug.", ErrorCodes::LOGICAL_ERROR);
     }
 
     void setArgument(const DataTypePtr & argument)
@@ -395,7 +390,7 @@ public:
 
         auto & column_data = column_array.getData();
 
-        if (std::is_same<Node, NodeString>::value)
+        if (std::is_same<Node, GroupArrayListNodeString>::value)
         {
             auto & string_offsets = static_cast<ColumnString &>(column_data).getOffsets();
             string_offsets.reserve(string_offsets.size() + data(place).elems);
@@ -414,9 +409,6 @@ public:
         return true;
     }
 };
-
-}
-
 
 #undef AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE
 
