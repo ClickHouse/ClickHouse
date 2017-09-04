@@ -18,8 +18,8 @@ static void execute_1(size_t threads, int round, int cycles)
 
     static auto fifo_lock = RWLockFIFO::create();
 
-    static __thread std::random_device rd;
-    static __thread std::mt19937 gen(rd());
+    static thread_local std::random_device rd;
+    static thread_local std::mt19937 gen(rd());
 
     for (int  i = 0; i < cycles; ++i)
     {
