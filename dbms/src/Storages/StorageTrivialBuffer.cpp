@@ -380,9 +380,9 @@ void StorageTrivialBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageTrivialBuffer::optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageTrivialBuffer::optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings)
 {
-    if (!partition.empty())
+    if (!partition_id.empty())
         throw Exception("Partition cannot be specified when optimizing table of type TrivialBuffer",
             ErrorCodes::NOT_IMPLEMENTED);
 
@@ -536,7 +536,7 @@ void StorageTrivialBuffer::alter(
             throw Exception("Storage engine " + getName() + " doesn't support primary key.",
                     ErrorCodes::NOT_IMPLEMENTED);
 
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
     /// To avoid presence of blocks of different structure in the buffer.
     flush(false);

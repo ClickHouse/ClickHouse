@@ -72,4 +72,8 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
     return stream_name;
 }
 
+
+void IDataType::insertDefaultInto(IColumn & column) const
+{
+    column.insertDefault();
 }

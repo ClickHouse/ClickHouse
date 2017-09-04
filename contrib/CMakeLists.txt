@@ -63,3 +63,8 @@ endif ()
 if (NOT ARCH_ARM)
 	add_subdirectory (libcpuid)
 endif ()
+
+if (USE_INTERNAL_MYSQL_LIBRARY)
+    add_subdirectory (mariadb-connector-c)
+    target_include_directories (${MYSQLCLIENT_LIBRARIES} BEFORE PUBLIC ${MYSQL_INCLUDE_DIR})
+endif ()

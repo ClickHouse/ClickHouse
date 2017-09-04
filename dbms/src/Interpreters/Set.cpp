@@ -83,7 +83,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
         /// Obtain a key to insert to the set
         typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 
-        typename Method::Data::iterator it = method.data.find(key);
+        typename Method::Data::iterator it;
         bool inserted;
         method.data.emplace(key, it, inserted);
 

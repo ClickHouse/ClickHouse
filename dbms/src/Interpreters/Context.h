@@ -128,12 +128,16 @@ public:
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
+    /// Global application configuration settings.
+    void setConfig(const ConfigurationPtr & config);
+    ConfigurationPtr getConfig() const;
+    Poco::Util::AbstractConfiguration & getConfigRef() const;
+
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
       * The accumulated quota values are not reset if the quota is not deleted.
       */
     void setUsersConfig(const ConfigurationPtr & config);
-
     ConfigurationPtr getUsersConfig();
 
     /// Must be called before getClientInfo.
@@ -205,6 +209,8 @@ public:
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
+    EmbeddedDictionaries & getEmbeddedDictionaries();
+    ExternalDictionaries & getExternalDictionaries();
     void tryCreateEmbeddedDictionaries() const;
     void tryCreateExternalDictionaries() const;
 
@@ -248,8 +254,8 @@ public:
     Context & getGlobalContext();
     bool hasGlobalContext() const { return global_context != nullptr; }
 
-    void setSessionContext(Context & context_)                                { session_context = &context_; }
-    void setGlobalContext(Context & context_)                                { global_context = &context_; }
+    void setSessionContext(Context & context_)                                  { session_context = &context_; }
+    void setGlobalContext(Context & context_)                                   { global_context = &context_; }
 
     const Settings & getSettingsRef() const { return settings; };
     Settings & getSettingsRef() { return settings; };
@@ -265,6 +271,7 @@ public:
     void setProcessListElement(ProcessListElement * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
     ProcessListElement * getProcessListElement();
+    const ProcessListElement * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -273,19 +280,29 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(size_t max_size_in_bytes);
-    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
-
     void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
 
+    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
+    void setUncompressedCache(size_t max_size_in_bytes);
+    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
+    void dropUncompressedCache() const;
+
     /// Create a cache of marks of specified size. This can be done only once.
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
+    void dropMarkCache() const;
+
+    /** Clear the caches of the uncompressed blocks and marks.
+      * This is usually done when renaming tables, changing the type of columns, deleting a table.
+      *  - since caches are linked to file names, and become incorrect.
+      *  (when deleting a table - it is necessary, since in its place another can appear)
+      * const - because the change in the cache is not considered significant.
+      */
+    void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
 
@@ -294,14 +311,6 @@ public:
 
     void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker();
-
-    /** Clear the caches of the uncompressed blocks and marks.
-      * This is usually done when renaming tables, changing the type of columns, deleting a table.
-      *  - since caches are linked to file names, and become incorrect.
-      *  (when deleting a table - it is necessary, since in its place another can appear)
-      * const - because the change in the cache is not considered significant.
-      */
-    void resetCaches() const;
 
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
@@ -352,8 +361,8 @@ private:
       */
     void checkDatabaseAccessRights(const std::string & database_name) const;
 
-    const EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-    const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+    EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
+    ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 

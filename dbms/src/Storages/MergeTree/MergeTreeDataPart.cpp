@@ -285,6 +285,58 @@ const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksu
 }
 
 
+void MinMaxIndex::update(const Block & block, const Names & column_names)
+{
+    if (!initialized)
+    {
+        min_column_values.resize(column_names.size());
+        max_column_values.resize(column_names.size());
+    }
+
+    for (size_t i = 0; i < column_names.size(); ++i)
+    {
+        Field min_value;
+        Field max_value;
+        const ColumnWithTypeAndName & column = block.getByName(column_names[i]);
+        column.column->getExtremes(min_value, max_value);
+
+        if (!initialized)
+        {
+            min_column_values[i] = Field(min_value);
+            max_column_values[i] = Field(max_value);
+        }
+        else
+        {
+            min_column_values[i] = std::min(min_column_values[i], min_value);
+            max_column_values[i] = std::max(max_column_values[i], max_value);
+        }
+    }
+
+    initialized = true;
+}
+
+void MinMaxIndex::merge(const MinMaxIndex & other)
+{
+    if (!other.initialized)
+        return;
+
+    if (!initialized)
+    {
+        min_column_values.assign(other.min_column_values);
+        max_column_values.assign(other.max_column_values);
+        initialized = true;
+    }
+    else
+    {
+        for (size_t i = 0; i < min_column_values.size(); ++i)
+        {
+            min_column_values[i] = std::min(min_column_values[i], other.min_column_values[i]);
+            max_column_values[i] = std::max(max_column_values[i], other.max_column_values[i]);
+        }
+    }
+}
+
+
 /// Returns the size of .bin file for column `name` if found, zero otherwise.
 size_t MergeTreeDataPart::getColumnCompressedSize(const String & name) const
 {
@@ -383,6 +435,24 @@ String MergeTreeDataPart::getNameWithPrefix() const
         throw Exception("relative_path " + relative_path + " of part " + name + " is invalid or not set", ErrorCodes::LOGICAL_ERROR);
 
     return res;
+}
+
+
+DayNum_t MergeTreeDataPart::getMinDate() const
+{
+    if (storage.minmax_idx_date_column_pos != -1)
+        return DayNum_t(minmax_idx.min_column_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+    else
+        return DayNum_t();
+}
+
+
+DayNum_t MergeTreeDataPart::getMaxDate() const
+{
+    if (storage.minmax_idx_date_column_pos != -1)
+        return DayNum_t(minmax_idx.max_column_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+    else
+        return DayNum_t();
 }
 
 
@@ -528,11 +598,12 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
 }
 
 
-void MergeTreeDataPart::loadColumnsChecksumsIndex(bool require_columns_checksums, bool check_consistency)
+void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndex();
+    loadPartitionAndMinMaxIndex();
     if (check_consistency)
         checkConsistency(require_columns_checksums);
 }
@@ -559,22 +630,22 @@ void MergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < key_size; ++i)
         {
-            index[i] = storage.primary_key_data_types[i].get()->createColumn();
-            index[i].get()->reserve(size);
+            index[i] = storage.primary_key_data_types[i]->createColumn();
+            index[i]->reserve(size);
         }
 
         String index_path = getFullPath() + "primary.idx";
         ReadBufferFromFile index_file(index_path,
-            std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
+            std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(index_path).getSize()));
 
         for (size_t i = 0; i < size; ++i)
             for (size_t j = 0; j < key_size; ++j)
-                storage.primary_key_data_types[j].get()->deserializeBinary(*index[j].get(), index_file);
+                storage.primary_key_data_types[j]->deserializeBinary(*index[j].get(), index_file);
 
         for (size_t i = 0; i < key_size; ++i)
-            if (index[i].get()->size() != size)
+            if (index[i]->size() != size)
                 throw Exception("Cannot read all data from index file " + index_path
-                    + "(expected size: " + toString(size) + ", read: " + toString(index[i].get()->size()) + ")",
+                    + "(expected size: " + toString(size) + ", read: " + toString(index[i]->size()) + ")",
                     ErrorCodes::CANNOT_READ_ALL_DATA);
 
         if (!index_file.eof())
@@ -582,6 +653,20 @@ void MergeTreeDataPart::loadIndex()
     }
 
     size_in_bytes = calcTotalSize(getFullPath());
+}
+
+void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
+{
+    DayNum_t min_date;
+    DayNum_t max_date;
+    MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
+
+    const auto & date_lut = DateLUT::instance();
+    partition = Row(1, static_cast<UInt64>(date_lut.toNumYYYYMM(min_date)));
+
+    minmax_idx.min_column_values = Row(1, static_cast<UInt64>(min_date));
+    minmax_idx.max_column_values = Row(1, static_cast<UInt64>(max_date));
+    minmax_idx.initialized = true;
 }
 
 void MergeTreeDataPart::loadChecksums(bool require)
@@ -594,7 +679,7 @@ void MergeTreeDataPart::loadChecksums(bool require)
 
         return;
     }
-    ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+    ReadBufferFromFile file(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
     if (checksums.read(file))
         assertEOF(file);
 }
@@ -632,7 +717,7 @@ void MergeTreeDataPart::loadColumns(bool require)
         return;
     }
 
-    ReadBufferFromFile file(path, std::min(static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+    ReadBufferFromFile file(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
     columns.readText(file);
 }
 

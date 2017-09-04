@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -29,7 +30,7 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
     if (!query_table)
         return;
 
-    if (const ASTIdentifier * ast_id = typeid_cast<const ASTIdentifier *>(query_table.get()))
+    if (auto ast_id = typeid_cast<const ASTIdentifier *>(query_table.get()))
     {
         auto query_database = query.database();
 
@@ -41,7 +42,7 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
         select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
         select_table_name = ast_id->name;
     }
-    else if (const ASTSelectQuery * ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
+    else if (auto ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
     {
         extractDependentTable(*ast_select, select_database_name, select_table_name);
     }
@@ -66,12 +67,17 @@ StorageMaterializedView::StorageMaterializedView(
     database_name(database_name_), context(context_), columns(columns_)
 {
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
+
+    if (!create.select)
+        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
+
+    if (!create.inner_storage)
+        throw Exception("ENGINE of MaterializedView should be specified explicitly", ErrorCodes::INCORRECT_QUERY);
+
     ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*create.select);
 
     /// If the internal query does not specify a database, retrieve it from the context and write it to the query.
     select.setDatabaseIfNeeded(database_name);
-
-    inner_query = create.select;
 
     extractDependentTable(select, select_database_name, select_table_name);
 
@@ -80,7 +86,8 @@ StorageMaterializedView::StorageMaterializedView(
             DatabaseAndTableName(select_database_name, select_table_name),
             DatabaseAndTableName(database_name, table_name));
 
-    auto inner_table_name = getInnerTableName();
+    String inner_table_name = getInnerTableName();
+    inner_query = create.select;
 
     /// If there is an ATTACH request, then the internal table must already be connected.
     if (!attach_)
@@ -91,18 +98,7 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->table = inner_table_name;
         manual_create_query->columns = create.columns;
         manual_create_query->children.push_back(manual_create_query->columns);
-
-        /// If you do not specify a storage type in the query, try retrieving it from SELECT query.
-        if (!create.inner_storage)
-        {
-            /// TODO also try to extract `params` to create a table
-            auto func = std::make_shared<ASTFunction>();
-            func->name = context.getTable(select_database_name, select_table_name)->getName();
-            manual_create_query->storage = func;
-        }
-        else
-            manual_create_query->storage = create.inner_storage;
-
+        manual_create_query->storage = create.inner_storage;
         manual_create_query->children.push_back(manual_create_query->storage);
 
         /// Execute the query.
@@ -170,9 +166,9 @@ void StorageMaterializedView::drop()
     }
 }
 
-bool StorageMaterializedView::optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageMaterializedView::optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings)
 {
-    return getInnerTable()->optimize(query, partition, final, deduplicate, settings);
+    return getInnerTable()->optimize(query, partition_id, final, deduplicate, settings);
 }
 
 StoragePtr StorageMaterializedView::getInnerTable() const

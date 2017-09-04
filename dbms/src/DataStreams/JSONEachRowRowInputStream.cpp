@@ -120,7 +120,7 @@ bool JSONEachRowRowInputStream::read(Block & block)
         read_columns[index] = true;
 
         auto & col = block.getByPosition(index);
-        col.type.get()->deserializeTextJSON(*col.column.get(), istr);
+        col.type->deserializeTextJSON(*col.column, istr);
     }
 
     skipWhitespaceIfAny(istr);
@@ -129,8 +129,13 @@ bool JSONEachRowRowInputStream::read(Block & block)
 
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < columns; ++i)
+    {
         if (!read_columns[i])
-            block.getByPosition(i).column.get()->insertDefault();
+        {
+            ColumnWithTypeAndName & elem = block.getByPosition(i);
+            elem.type->insertDefaultInto(*elem.column);
+        }
+    }
 
     return true;
 }

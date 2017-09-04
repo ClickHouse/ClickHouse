@@ -136,7 +136,7 @@ bool TSKVRowInputStream::read(Block & block)
                     read_columns[index] = true;
 
                     auto & col = block.getByPosition(index);
-                    col.type.get()->deserializeTextEscaped(*col.column.get(), istr);
+                    col.type->deserializeTextEscaped(*col.column, istr);
                 }
             }
             else
@@ -176,8 +176,13 @@ bool TSKVRowInputStream::read(Block & block)
 
     /// Fill in the not met columns with default values.
     for (size_t i = 0; i < columns; ++i)
+    {
         if (!read_columns[i])
-            block.getByPosition(i).column.get()->insertDefault();
+        {
+            ColumnWithTypeAndName & elem = block.getByPosition(i);
+            elem.type->insertDefaultInto(*elem.column);
+        }
+    }
 
     return true;
 }

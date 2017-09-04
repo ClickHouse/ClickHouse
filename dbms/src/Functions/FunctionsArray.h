@@ -61,6 +61,22 @@ namespace ErrorCodes
   *
   * arrayReduce('agg', arr1, ...) - apply the aggregate function `agg` to arrays `arr1...`
   *  If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function.
+  *
+  *  arrayConcat(arr1, ...) - concatenate arrays.
+  *
+  *  arraySlice(arr, offset, length) - make slice of array. Offsets and length may be < 0 or Null
+  *   - if offset < 0, indexation from right element
+  *   - if length < 0, length = len(array) - (positive_index(offset) - 1) + length
+  *   indexation:
+  *     [ 1,  2,  3,  4,  5,  6]
+  *     [-6, -5, -4, -3, -2, -1]
+  *   examples:
+  *     arraySlice([1, 2, 3, 4, 5, 6], -4, 2) -> [3, 4]
+  *     arraySlice([1, 2, 3, 4, 5, 6], 2, -1) -> [2, 3, 4, 5] (6 - (2 - 1) + (-1) = 4)
+  *     arraySlice([1, 2, 3, 4, 5, 6], -5, -1) = arraySlice([1, 2, 3, 4, 5, 6], 2, -1) -> [2, 3, 4, 5]
+  *
+  *  arrayPushBack(arr, x), arrayPushFront(arr, x)
+  *  arrayPopBack(arr), arrayPopFront(arr)
   */
 
 
@@ -1403,6 +1419,130 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 private:
     AggregateFunctionPtr aggregate_function;
+};
+
+
+class FunctionArrayConcat : public IFunction
+{
+public:
+    static constexpr auto name = "arrayConcat";
+    static FunctionPtr create(const Context & context);
+
+    String getName() const override;
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+};
+
+
+class FunctionArraySlice : public IFunction
+{
+public:
+    static constexpr auto name = "arraySlice";
+    static FunctionPtr create(const Context & context);
+
+    String getName() const override;
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+};
+
+
+class FunctionArrayPush : public IFunction
+{
+public:
+    FunctionArrayPush(bool push_front, const char * name) : push_front(push_front), name(name) {}
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+private:
+    bool push_front;
+    const char * name;
+};
+
+class FunctionArrayPushFront : public FunctionArrayPush
+{
+public:
+    static constexpr auto name = "arrayPushFront";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayPushFront() : FunctionArrayPush(true, name) {}
+};
+
+class FunctionArrayPushBack : public FunctionArrayPush
+{
+public:
+    static constexpr auto name = "arrayPushBack";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayPushBack() : FunctionArrayPush(false, name) {}
+};
+
+class FunctionArrayPop : public IFunction
+{
+public:
+    FunctionArrayPop(bool pop_front, const char * name) : pop_front(pop_front), name(name) {}
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+private:
+    bool pop_front;
+    const char * name;
+};
+
+class FunctionArrayPopFront : public FunctionArrayPop
+{
+public:
+    static constexpr auto name = "arrayPopFront";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayPopFront() : FunctionArrayPop(true, name) {}
+};
+
+class FunctionArrayPopBack : public FunctionArrayPop
+{
+public:
+    static constexpr auto name = "arrayPopBack";
+
+    static FunctionPtr create(const Context & context);
+
+    FunctionArrayPopBack() : FunctionArrayPop(false, name) {}
 };
 
 

@@ -94,7 +94,7 @@ private:
     struct Stream
     {
         Stream(const std::string & data_path, size_t offset, size_t max_read_buffer_size)
-            : plain(data_path, std::min(max_read_buffer_size, Poco::File(data_path).getSize())),
+            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(data_path).getSize())),
             compressed(plain)
         {
             if (offset)
@@ -163,7 +163,7 @@ private:
         }
     };
 
-    using MarksForColumns = std::vector<std::pair<size_t, Mark> >;
+    using MarksForColumns = std::vector<std::pair<size_t, Mark>>;
 
     using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
     FileStreams streams;

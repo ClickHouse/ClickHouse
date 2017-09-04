@@ -47,7 +47,7 @@ struct NanLikeValueConstructor<ResultType, false>
     }
 };
 
-template<typename T, ReservoirSamplerOnEmpty::Enum OnEmpty = ReservoirSamplerOnEmpty::THROW, typename Comparer = std::less<T> >
+template<typename T, ReservoirSamplerOnEmpty::Enum OnEmpty = ReservoirSamplerOnEmpty::THROW, typename Comparer = std::less<T>>
 class ReservoirSampler
 {
 public:
