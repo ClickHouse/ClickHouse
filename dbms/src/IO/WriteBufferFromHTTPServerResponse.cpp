@@ -30,7 +30,8 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
         setResponseDefaultHeaders(response);
 
 #if POCO_CLICKHOUSE_PATCH
-        std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
+        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+            std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
 #endif
     }
 }
@@ -42,16 +43,24 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
     {
         headers_finished_sending = true;
 
+        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+        {
 #if POCO_CLICKHOUSE_PATCH
-        /// Send end of headers delimiter.
-        if (response_header_ostr)
-            *response_header_ostr << "\r\n" << std::flush;
+            /// Send end of headers delimiter.
+            if (response_header_ostr)
+                *response_header_ostr << "\r\n" << std::flush;
 #else
-        /// Newline autosent by response.send()
-        /// if nothing to send in body:
-        if (!response_body_ostr)
-            response_body_ostr = &(response.send());
+            /// Newline autosent by response.send()
+            /// if nothing to send in body:
+            if (!response_body_ostr)
+                response_body_ostr = &(response.send());
 #endif
+        }
+        else
+        {
+            if (!response_body_ostr)
+                response_body_ostr = &(response.send());
+        }
     }
 }
 
@@ -63,7 +72,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 
         startSendHeaders();
 
-        if (!out)
+        if (!out && request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
         {
             if (compress)
             {
@@ -111,17 +120,21 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 
     }
 
-    out->position() = position();
-    out->next();
+    if (out)
+    {
+        out->position() = position();
+        out->next();
+    }
 }
 
 
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
+    Poco::Net::HTTPServerRequest & request_,
     Poco::Net::HTTPServerResponse & response_,
     bool compress_,
     ZlibCompressionMethod compression_method_,
     size_t size)
-    : BufferWithOwnMemory<WriteBuffer>(size), response(response_),
+    : BufferWithOwnMemory<WriteBuffer>(size), request(request_), response(response_),
     compress(compress_), compression_method(compression_method_)
 {
 }
