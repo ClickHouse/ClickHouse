@@ -932,7 +932,7 @@ class DDLQueryStatusInputSream : public IProfilingBlockInputStream
 {
 public:
 
-    DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, Context & context)
+    DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
     : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
     {
         sample = Block{
@@ -1072,7 +1072,7 @@ private:
 
 private:
     String node_path;
-    Context & context;
+    const Context & context;
     Stopwatch watch;
     Logger * log;
 
@@ -1087,7 +1087,7 @@ private:
 };
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, Context & context)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
 {
     ASTPtr query_ptr;
 

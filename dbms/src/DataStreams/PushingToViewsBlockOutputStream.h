@@ -72,7 +72,7 @@ public:
 private:
     StoragePtr storage;
     BlockOutputStreamPtr output;
-    Context context;
+    const Context & context;
     ASTPtr query_ptr;
     std::vector<std::pair<ASTPtr, BlockOutputStreamPtr>> views;
 };
