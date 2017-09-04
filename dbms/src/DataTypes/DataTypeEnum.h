@@ -106,6 +106,7 @@ public:
     ColumnPtr createColumn() const override { return std::make_shared<ColumnType>(); }
 
     Field getDefault() const override;
+    void insertDefaultInto(IColumn & column) const override;
 };
 
 

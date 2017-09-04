@@ -21,13 +21,14 @@
 #include <ext/range.h>
 
 
+
+namespace DB
+{
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-namespace DB
-{
 
 /** Calculates quantile for time in milliseconds, less than 30 seconds.
   * If the value is greater than 30 seconds, the value is set to 30 seconds.

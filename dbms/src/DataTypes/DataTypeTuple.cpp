@@ -35,12 +35,12 @@ std::string DataTypeTuple::getName() const
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
-    return *static_cast<ColumnTuple &>(column).getData().getByPosition(idx).column.get();
+    return *static_cast<ColumnTuple &>(column).getData().getByPosition(idx).column;
 }
 
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
-    return *static_cast<const ColumnTuple &>(column).getData().getByPosition(idx).column.get();
+    return *static_cast<const ColumnTuple &>(column).getData().getByPosition(idx).column;
 }
 
 
@@ -68,7 +68,7 @@ void DataTypeTuple::serializeBinary(const IColumn & column, size_t row_num, Writ
 
 
 template <typename F>
-static void deserializeSafe(const DataTypes & elems, IColumn & column, ReadBuffer & istr, F && impl)
+static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
 {
     /// We use the assumption that tuples of zero size do not exist.
     size_t old_size = extractElementColumn(column, 0).size();
@@ -93,7 +93,7 @@ static void deserializeSafe(const DataTypes & elems, IColumn & column, ReadBuffe
 
 void DataTypeTuple::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    deserializeSafe(elems, column, istr, [&]
+    addElementSafe(elems, column, [&]
     {
         for (const auto & i : ext::range(0, ext::size(elems)))
             elems[i]->deserializeBinary(extractElementColumn(column, i), istr);
@@ -117,7 +117,7 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr) const
     const size_t size = elems.size();
     assertChar('(', istr);
 
-    deserializeSafe(elems, column, istr, [&]
+    addElementSafe(elems, column, [&]
     {
         for (const auto i : ext::range(0, size))
         {
@@ -169,7 +169,7 @@ void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr) con
     const size_t size = elems.size();
     assertChar('[', istr);
 
-    deserializeSafe(elems, column, istr, [&]
+    addElementSafe(elems, column, [&]
     {
         for (const auto i : ext::range(0, size))
         {
@@ -208,7 +208,7 @@ void DataTypeTuple::serializeTextCSV(const IColumn & column, size_t row_num, Wri
 
 void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-    deserializeSafe(elems, column, istr, [&]
+    addElementSafe(elems, column, [&]
     {
         const size_t size = elems.size();
         for (const auto i : ext::range(0, size))
@@ -254,6 +254,15 @@ ColumnPtr DataTypeTuple::createColumn() const
 Field DataTypeTuple::getDefault() const
 {
     return Tuple(ext::map<TupleBackend>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
+}
+
+void DataTypeTuple::insertDefaultInto(IColumn & column) const
+{
+    addElementSafe(elems, column, [&]
+    {
+        for (const auto & i : ext::range(0, ext::size(elems)))
+            elems[i]->insertDefaultInto(extractElementColumn(column, i));
+    });
 }
 
 
