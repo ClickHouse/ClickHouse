@@ -3381,7 +3381,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
     const Field & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-    Context & context)
+    const Context & context)
 {
     auto & resharding_worker = context.getReshardingWorker();
     if (!resharding_worker.isStarted())

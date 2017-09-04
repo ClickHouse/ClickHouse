@@ -202,6 +202,7 @@ void SystemLog<LogElement>::threadFunction()
                 if (element.first)
                 {
                     /// Shutdown.
+                    /// NOTE: MergeTree engine can write data even it is already in shutdown state.
                     flush();
                     break;
                 }

@@ -320,7 +320,7 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 ///
 
 ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_name, Context & context_)
+    const std::string & config_name, const Context & context_)
     : context{context_}, get_zookeeper{[&]() { return context.getZooKeeper(); }}
 {
     Arguments arguments(config, config_name);

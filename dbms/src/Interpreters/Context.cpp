@@ -262,7 +262,7 @@ Context::~Context()
 }
 
 
-InterserverIOHandler & Context::getInterserverIOHandler()                        { return shared->interserver_io_handler; }
+InterserverIOHandler & Context::getInterserverIOHandler()                       { return shared->interserver_io_handler; }
 
 std::unique_lock<Poco::Mutex> Context::getLock() const
 {
@@ -271,8 +271,8 @@ std::unique_lock<Poco::Mutex> Context::getLock() const
     return std::unique_lock<Poco::Mutex>(shared->mutex);
 }
 
-ProcessList & Context::getProcessList()                                            { return shared->process_list; }
-const ProcessList & Context::getProcessList() const                                { return shared->process_list; }
+ProcessList & Context::getProcessList()                                         { return shared->process_list; }
+const ProcessList & Context::getProcessList() const                             { return shared->process_list; }
 MergeList & Context::getMergeList()                                             { return shared->merge_list; }
 const MergeList & Context::getMergeList() const                                 { return shared->merge_list; }
 
@@ -1100,12 +1100,7 @@ void Context::setProcessListElement(ProcessList::Element * elem)
     process_list_elem = elem;
 }
 
-ProcessList::Element * Context::getProcessListElement()
-{
-    return process_list_elem;
-}
-
-const ProcessList::Element * Context::getProcessListElement() const
+ProcessList::Element * Context::getProcessListElement() const
 {
     return process_list_elem;
 }
@@ -1190,7 +1185,7 @@ void Context::setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_w
     shared->resharding_worker = resharding_worker;
 }
 
-ReshardingWorker & Context::getReshardingWorker()
+ReshardingWorker & Context::getReshardingWorker() const
 {
     auto lock = getLock();
     if (!shared->resharding_worker)
@@ -1207,11 +1202,11 @@ void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
     shared->ddl_worker = ddl_worker;
 }
 
-DDLWorker & Context::getDDLWorker()
+DDLWorker & Context::getDDLWorker() const
 {
     auto lock = getLock();
     if (!shared->ddl_worker)
-        throw Exception("DDL background thread not initialized.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("DDL background thread is not initialized.", ErrorCodes::LOGICAL_ERROR);
     return *shared->ddl_worker;
 }
 
