@@ -15,15 +15,20 @@ public:
 
     ~SharedLibrary();
 
-    void * getImpl(const std::string & name, bool no_throw);
-
     template <typename Func>
-    Func get(const std::string & name, bool no_throw = false)
+    Func get(const std::string & name)
     {
-        return reinterpret_cast<Func>(getImpl(name, no_throw));
+        return reinterpret_cast<Func>(getImpl(name));
+    }
+    template <typename Func>
+    Func tryGet(const std::string & name)
+    {
+        return reinterpret_cast<Func>(getImpl(name, true));
     }
 
 private:
+    void * getImpl(const std::string & name, bool no_throw = false);
+
     void * handle = nullptr;
 };
 

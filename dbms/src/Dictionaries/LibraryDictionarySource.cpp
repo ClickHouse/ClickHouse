@@ -20,15 +20,15 @@ struct CStringsHolder
 {
     ClickHouseLibrary::CStrings strings; // will pass pointer to lib
     std::unique_ptr<ClickHouseLibrary::CString[]> ptr_holder = nullptr;
-    std::vector<std::string> stringHolder;
+    std::vector<std::string> strings_holder;
 
     void prepare()
     {
-        strings.size = stringHolder.size();
+        strings.size = strings_holder.size();
         ptr_holder = std::make_unique<ClickHouseLibrary::CString[]>(strings.size);
         strings.data = ptr_holder.get();
         size_t i = 0;
-        for (auto & str : stringHolder)
+        for (auto & str : strings_holder)
         {
             strings.data[i] = str.c_str();
             ++i;
@@ -47,8 +47,8 @@ CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, 
         auto bracket_pos = key.find('[');
         if (bracket_pos != std::string::npos && bracket_pos > 0)
             key_name = key.substr(0, bracket_pos);
-        holder.stringHolder.emplace_back(key_name);
-        holder.stringHolder.emplace_back(config.getString(config_root + '.' + key));
+        holder.strings_holder.emplace_back(key_name);
+        holder.strings_holder.emplace_back(config.getString(config_root + '.' + key));
     }
     holder.prepare();
     return holder;
@@ -202,7 +202,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 
 bool LibraryDictionarySource::isModified() const
 {
-    auto fptr = library->get<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_isModified", true);
+    auto fptr = library->tryGet<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_isModified");
     if (fptr)
         return fptr(&settings->strings);
     return true;
@@ -210,7 +210,7 @@ bool LibraryDictionarySource::isModified() const
 
 bool LibraryDictionarySource::supportsSelectiveLoad() const
 {
-    auto fptr = library->get<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_supportsSelectiveLoad", true);
+    auto fptr = library->tryGet<void * (*)(decltype(&settings->strings))>("ClickHouseDictionary_v1_supportsSelectiveLoad");
     if (fptr)
         return fptr(&settings->strings);
     return true;

@@ -134,7 +134,7 @@ void IBlockInputStream::getLeavesImpl(BlockInputStreams & res, BlockInputStreamP
             (*it)->getLeavesImpl(res, *it);
 }
 
-/// By default all instanses is different streams
+/// By default all instances is different streams
 String IBlockInputStream::getID() const
 {
     std::stringstream res;
