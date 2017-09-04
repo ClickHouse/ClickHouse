@@ -116,20 +116,20 @@ def generate_structure(args):
 
     if args.use_lib:
         dictionaries.extend([
-            [ 'lib_flat', 0, True ],
-            [ 'lib_hashed', 0, True ],
-            [ 'lib_cache', 0, True ],
-            [ 'lib_complex_integers_key_hashed', 1, False ],
-            [ 'lib_complex_integers_key_cache', 1, False ],
-            [ 'lib_complex_mixed_key_hashed', 2, False ],
-            [ 'lib_complex_mixed_key_cache', 2, False ],
-            [ 'lib_c_flat', 0, True ],
-            [ 'lib_c_hashed', 0, True ],
-            [ 'lib_c_cache', 0, True ],
-            [ 'lib_c_complex_integers_key_hashed', 1, False ],
-            [ 'lib_c_complex_integers_key_cache', 1, False ],
-            [ 'lib_c_complex_mixed_key_hashed', 2, False ],
-            [ 'lib_c_complex_mixed_key_cache', 2, False ],
+            # [ 'library_flat', 0, True ],
+            # [ 'library_hashed', 0, True ],
+            # [ 'library_cache', 0, True ],
+            # [ 'library_complex_integers_key_hashed', 1, False ],
+            # [ 'library_complex_integers_key_cache', 1, False ],
+            # [ 'library_complex_mixed_key_hashed', 2, False ],
+            # [ 'library_complex_mixed_key_cache', 2, False ],
+            # [ 'library_c_flat', 0, True ],
+            # [ 'library_c_hashed', 0, True ],
+            # [ 'library_c_cache', 0, True ],
+            # [ 'library_c_complex_integers_key_hashed', 1, False ],
+            # [ 'library_c_complex_integers_key_cache', 1, False ],
+            # [ 'library_c_complex_mixed_key_hashed', 2, False ],
+            # [ 'library_c_complex_mixed_key_cache', 2, False ],
         ])
 
 
@@ -388,18 +388,18 @@ def generate_dictionaries(args):
     </http>
     '''.format(https_host=args.https_host, https_port=args.https_port, https_path=args.https_path)
 
-    source_lib = '''
+    source_library = '''
     <lib>
         <filename>{filename}</filename>
     </lib>
-    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_lib.so'))
+    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dictionary_library/libdictionary_library.so'))
 
     # Todo?
-    #source_lib_c = '''
+    #source_library_c = '''
     #<lib>
     #    <filename>{filename}</filename>
     #</lib>
-    #'''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_lib_c.so'))
+    #'''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_library_c.so'))
 
 
     layout_flat = '<flat />'
@@ -524,20 +524,20 @@ def generate_dictionaries(args):
 
     if args.use_lib:
         sources_and_layouts.extend([
-        #[ source_lib, layout_flat ],
-        [ source_lib, layout_hashed ],
-        [ source_lib, layout_cache ],
-        #[ source_lib, layout_complex_key_cache ],
-        #[ source_lib, layout_complex_key_hashed ],
-        #[ source_lib, layout_complex_key_hashed ],
-        #[ source_lib, layout_complex_key_cache ],
-        #[ source_lib_c, layout_flat ],
-        #[ source_lib_c, layout_hashed ],
-        #[ source_lib_c, layout_cache ],
-        #[ source_lib_c, layout_complex_key_cache ],
-        #[ source_lib_c, layout_complex_key_hashed ],
-        #[ source_lib_c, layout_complex_key_hashed ],
-        #[ source_lib_c, layout_complex_key_cache ],
+        #[ source_library, layout_flat ],
+        #[ source_library, layout_hashed ],
+        #[ source_library, layout_cache ],
+        #[ source_library, layout_complex_key_cache ],
+        #[ source_library, layout_complex_key_hashed ],
+        #[ source_library, layout_complex_key_hashed ],
+        #[ source_library, layout_complex_key_cache ],
+        #[ source_library_c, layout_flat ],
+        #[ source_library_c, layout_hashed ],
+        #[ source_library_c, layout_cache ],
+        #[ source_library_c, layout_complex_key_cache ],
+        #[ source_library_c, layout_complex_key_hashed ],
+        #[ source_library_c, layout_complex_key_hashed ],
+        #[ source_library_c, layout_complex_key_cache ],
     ])
 
     for (name, key_idx, has_parent), (source, layout) in zip(dictionaries, sources_and_layouts):
