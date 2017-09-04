@@ -22,8 +22,8 @@ TEST(Common, RWLockFIFO_1)
 
     static auto fifo_lock = RWLockFIFO::create();
 
-    static __thread std::random_device rd;
-    static __thread std::mt19937 gen(rd());
+    static thread_local std::random_device rd;
+    static thread_local std::mt19937 gen(rd());
 
     auto func = [&] (size_t threads, int round) {
         for (int  i = 0; i < cycles; ++i)

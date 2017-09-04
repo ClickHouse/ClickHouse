@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <thread>
 #include <map>
+#include <string>
 
 
 namespace DB
