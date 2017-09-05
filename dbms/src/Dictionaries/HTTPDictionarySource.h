@@ -10,7 +10,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-/// Allows loading dictionaries from executable
+/// Allows loading dictionaries from http[s] source
 class HTTPDictionarySource final : public IDictionarySource
 {
 public:

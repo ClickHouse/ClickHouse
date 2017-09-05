@@ -50,6 +50,13 @@ endif ()
 if (ARCH_AARCH64 OR CMAKE_SYSTEM_PROCESSOR MATCHES "arm")
     set (ARCH_ARM 1)
 endif ()
+if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "i386")
+    set (ARCH_I386 1)
+endif ()
+if ( ( ARCH_ARM AND NOT ARCH_AARCH64 ) OR ARCH_I386)
+    set (ARCH_32 1)
+    message (WARNING "Support 32bit platforms is highly experimental")
+endif ()
 
 set (COMMON_WARNING_FLAGS "-Wall")    # -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
@@ -162,7 +169,7 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 # Using system libs can cause lot of warnings in includes. 
-if (UNBUNDLED OR NOT (CMAKE_SYSTEM MATCHES "Linux" OR APPLE))
+if (UNBUNDLED OR NOT (CMAKE_SYSTEM MATCHES "Linux" OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 

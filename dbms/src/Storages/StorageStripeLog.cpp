@@ -72,7 +72,7 @@ protected:
 
             data_in.emplace(
                 storage.full_path() + "data.bin", 0, 0,
-                std::min(max_read_buffer_size, Poco::File(storage.full_path() + "data.bin").getSize()));
+                std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(storage.full_path() + "data.bin").getSize()));
 
             block_in.emplace(*data_in, 0, true, index_begin, index_end);
         }

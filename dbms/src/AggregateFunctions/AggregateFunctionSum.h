@@ -21,7 +21,7 @@ struct AggregateFunctionSumData
 
 /// Counts the sum of the numbers.
 template <typename T>
-class AggregateFunctionSum final : public IUnaryAggregateFunction<AggregateFunctionSumData<typename NearestFieldType<T>::Type>, AggregateFunctionSum<T> >
+class AggregateFunctionSum final : public IUnaryAggregateFunction<AggregateFunctionSumData<typename NearestFieldType<T>::Type>, AggregateFunctionSum<T>>
 {
 public:
     String getName() const override { return "sum"; }

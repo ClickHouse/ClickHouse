@@ -77,7 +77,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
     try
     {
-        auto storage_lock = owned_storage->lockStructure(false);
+        auto storage_lock = owned_storage->lockStructure(false, __PRETTY_FUNCTION__);
 
         MergeTreeData::DataPartPtr part;
 
@@ -224,8 +224,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-    new_data_part->name = part_name;
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name);
     new_data_part->relative_path = relative_part_path;
     new_data_part->is_temp = true;
 
@@ -265,10 +264,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
     assertEOF(in);
 
-    new_data_part->info = MergeTreePartInfo::fromPartName(part_name);
-    MergeTreePartInfo::parseMinMaxDatesFromPartName(part_name, new_data_part->min_date, new_data_part->max_date);
     new_data_part->modification_time = time(nullptr);
-    new_data_part->loadColumnsChecksumsIndex(true, false);
+    new_data_part->loadColumnsChecksumsIndexes(true, false);
     new_data_part->is_sharded = false;
     new_data_part->checksums.checkEqual(checksums, false);
 

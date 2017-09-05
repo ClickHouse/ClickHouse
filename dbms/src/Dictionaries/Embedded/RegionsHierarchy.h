@@ -3,7 +3,6 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <common/Types.h>
-#include <ext/singleton.h>
 
 
 #define REGION_TYPE_CITY       6
@@ -61,7 +60,6 @@ private:
     std::string path;
 
 public:
-    RegionsHierarchy();
     RegionsHierarchy(const std::string & path_);
 
     /// Reloads, if necessary, the hierarchy of regions. Not threadsafe.
@@ -140,15 +138,5 @@ public:
         if (region >= populations.size())
             return 0;
         return populations[region];
-    }
-};
-
-
-class RegionsHierarchySingleton : public ext::singleton<RegionsHierarchySingleton>, public RegionsHierarchy
-{
-friend class ext::singleton<RegionsHierarchySingleton>;
-protected:
-    RegionsHierarchySingleton()
-    {
     }
 };

@@ -10,13 +10,6 @@ LimitByBlockInputStream::LimitByBlockInputStream(BlockInputStreamPtr input_, siz
     children.push_back(input_);
 }
 
-String LimitByBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "LimitBy(" << this << ")";
-    return res.str();
-}
-
 Block LimitByBlockInputStream::readImpl()
 {
     /// Execute until end of stream or until

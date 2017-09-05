@@ -91,11 +91,11 @@ BlockInputStreams StorageSystemProcesses::read(
         block.getByPosition(i++).column->insert(process.client_info.http_user_agent);
         block.getByPosition(i++).column->insert(process.client_info.quota_key);
         block.getByPosition(i++).column->insert(process.elapsed_seconds);
-        block.getByPosition(i++).column->insert(process.read_rows);
-        block.getByPosition(i++).column->insert(process.read_bytes);
-        block.getByPosition(i++).column->insert(process.total_rows);
-        block.getByPosition(i++).column->insert(process.written_rows);
-        block.getByPosition(i++).column->insert(process.written_bytes);
+        block.getByPosition(i++).column->insert(UInt64(process.read_rows));
+        block.getByPosition(i++).column->insert(UInt64(process.read_bytes));
+        block.getByPosition(i++).column->insert(UInt64(process.total_rows));
+        block.getByPosition(i++).column->insert(UInt64(process.written_rows));
+        block.getByPosition(i++).column->insert(UInt64(process.written_bytes));
         block.getByPosition(i++).column->insert(process.memory_usage);
         block.getByPosition(i++).column->insert(process.query);
     }

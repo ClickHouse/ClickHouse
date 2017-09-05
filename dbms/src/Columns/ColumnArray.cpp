@@ -328,7 +328,7 @@ ColumnPtr ColumnArray::convertToFullColumnIfConst() const
     else
         new_data = data;
 
-    if (auto full_column = offsets.get()->convertToFullColumnIfConst())
+    if (auto full_column = offsets->convertToFullColumnIfConst())
         new_offsets = full_column;
     else
         new_offsets = offsets;
