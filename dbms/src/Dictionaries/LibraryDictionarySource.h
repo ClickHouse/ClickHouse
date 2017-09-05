@@ -15,7 +15,7 @@ class Logger;
 
 namespace DB
 {
-struct CStringsHolder;
+class CStringsHolder;
 
 /// Allows loading dictionaries from dynamic libraries (.so)
 /// Experimental version
