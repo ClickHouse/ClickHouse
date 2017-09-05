@@ -16,13 +16,6 @@ public:
 
     String getName() const override { return "One"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << this;
-        return res.str();
-    }
-
 protected:
     Block readImpl() override
     {

@@ -22,8 +22,6 @@ public:
 
     String getName() const override { return "LimitBy"; }
 
-    String getID() const override;
-
 protected:
     Block readImpl() override;
 
