@@ -14,7 +14,6 @@ public:
     Block read() override { return Block(); }
     String getName() const override { return "Null"; }
 
-    String getID() const override;
 };
 
 }
