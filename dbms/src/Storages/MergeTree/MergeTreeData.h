@@ -348,9 +348,6 @@ public:
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
     void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
 
-    /// Removes the part from the list of parts (including all_data_parts), but doesn't move the directory.
-    void detachPartInPlace(const DataPartPtr & part);
-
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
     /// but not from the disk.
     DataPartsVector grabOldParts();
