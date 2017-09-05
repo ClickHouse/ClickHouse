@@ -349,12 +349,13 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
     type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
+
         const auto & file = storage.files[stream_name];
-        const auto & stream = streams[stream_name];
+        const auto stream_it = streams.find(stream_name);
 
         Mark mark;
         mark.rows = (file.marks.empty() ? 0 : file.marks.back().rows) + column.size();
-        mark.offset = stream->plain_offset + stream->plain.count();
+        mark.offset = stream_it != streams.end() ? stream_it->second->plain_offset + stream_it->second->plain.count() : 0;
 
         out_marks.emplace_back(file.column_index, mark);
     }, {});
@@ -422,17 +423,17 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
 
     IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        String stream_name = IDataType::getFileNameForStream(name, substream_path);
+        String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
+
         if (!files.count(stream_name))
         {
-            ++file_count;
-
             ColumnData & column_data = files[stream_name];
-            column_data.column_index = column_names.size();
+            column_data.column_index = file_count;
             column_data.data_file = Poco::File{
                 path + escapeForFileName(name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION};
 
             column_names.push_back(stream_name);
+            ++file_count;
         }
     };
 
