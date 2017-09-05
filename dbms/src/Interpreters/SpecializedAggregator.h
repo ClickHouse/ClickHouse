@@ -1,3 +1,4 @@
+#include <Common/TypeList.h>
 #include <Interpreters/Aggregator.h>
 
 #include <AggregateFunctions/AggregateFunctionArgMinMax.h>
@@ -38,43 +39,6 @@ namespace DB
   * This template is intended to instantiate it in runtime,
   *  by running the compiler, compiling shared library, and using it with `dlopen`.
   */
-
-
-/** List of types - for convenient listing of aggregate functions.
-  */
-template <typename... TTail>
-struct TypeList
-{
-    static constexpr size_t size = 0;
-
-    template <size_t I>
-    using At = std::nullptr_t;
-
-    template <typename Func, size_t index = 0>
-    static void forEach(Func && func)
-    {
-    }
-};
-
-
-template <typename THead, typename... TTail>
-struct TypeList<THead, TTail...>
-{
-    using Head = THead;
-    using Tail = TypeList<TTail...>;
-
-    static constexpr size_t size = 1 + sizeof...(TTail);
-
-    template <size_t I>
-    using At = typename std::template conditional<I == 0, Head, typename Tail::template At<I - 1>>::type;
-
-    template <typename Func, size_t index = 0>
-    static void ALWAYS_INLINE forEach(Func && func)
-    {
-        func.template operator()<Head, index>();
-        Tail::template forEach<Func, index + 1>(std::forward<Func>(func));
-    }
-};
 
 
 struct AggregateFunctionsUpdater

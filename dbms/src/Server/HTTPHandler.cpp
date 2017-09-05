@@ -130,9 +130,10 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
 }
 
 
-static std::chrono::steady_clock::duration parseSessionTimeout(const HTMLForm & params)
+static std::chrono::steady_clock::duration parseSessionTimeout(
+    const Poco::Util::AbstractConfiguration & config,
+    const HTMLForm & params)
 {
-    const auto & config = Poco::Util::Application::instance().config();
     unsigned session_timeout = config.getInt("default_session_timeout", 60);
 
     if (params.has("session_timeout"))
@@ -245,7 +246,7 @@ void HTTPHandler::processQuery(
     if (session_is_set)
     {
         session_id = params.get("session_id");
-        session_timeout = parseSessionTimeout(params);
+        session_timeout = parseSessionTimeout(server.config(), params);
         std::string session_check = params.get("session_check", "");
 
         session = context.acquireSession(session_id, session_timeout, session_check == "1");
@@ -296,7 +297,7 @@ void HTTPHandler::processQuery(
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, client_supports_http_compression, http_response_compression_method, buffer_size_http);
+        request, response, client_supports_http_compression, http_response_compression_method, buffer_size_http);
     if (internal_compression)
         used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
     else

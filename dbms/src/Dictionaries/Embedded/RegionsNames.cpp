@@ -28,10 +28,9 @@ std::string RegionsNames::dumpSupportedLanguagesNames()
     return res;
 }
 
-void RegionsNames::reload()
+void RegionsNames::reload(const Poco::Util::AbstractConfiguration & config)
 {
-    std::string directory = Poco::Util::Application::instance().config().getString(config_key);
-    reload(directory);
+    reload(config.getString(config_key));
 }
 
 void RegionsNames::reload(const std::string & directory)
@@ -110,7 +109,7 @@ void RegionsNames::reload(const std::string & directory)
 }
 
 
-bool RegionsNames::isConfigured()
+bool RegionsNames::isConfigured(const Poco::Util::AbstractConfiguration & config)
 {
-    return Poco::Util::Application::instance().config().has(config_key);
+    return config.has(config_key);
 }

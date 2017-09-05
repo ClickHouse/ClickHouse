@@ -10,19 +10,21 @@
 namespace DB
 {
 
-struct ShardedBlockWithDateInterval final
+struct BlockWithShardNum final
 {
-    ShardedBlockWithDateInterval(const Block & block_, size_t shard_no_, UInt16 min_date_, UInt16 max_date_);
-    ShardedBlockWithDateInterval(const ShardedBlockWithDateInterval &) = delete;
-    ShardedBlockWithDateInterval & operator=(const ShardedBlockWithDateInterval &) = delete;
+    BlockWithShardNum(Block && block_, size_t shard_no_)
+        : block(std::move(block_)), shard_no(shard_no_)
+    {
+    }
+
+    BlockWithShardNum(const BlockWithShardNum &) = delete;
+    BlockWithShardNum & operator=(const BlockWithShardNum &) = delete;
 
     Block block;
     size_t shard_no;
-    UInt16 min_date;
-    UInt16 max_date;
 };
 
-using ShardedBlocksWithDateIntervals = std::list<ShardedBlockWithDateInterval>;
+using BlocksWithShardNum = std::list<BlockWithShardNum>;
 
 struct ReshardingJob;
 
@@ -40,7 +42,7 @@ public:
       * give the same block to the input, the output will be the same blocks in the
       * in the same order.
       */
-    ShardedBlocksWithDateIntervals shardBlock(const Block & block);
+    BlocksWithShardNum shardBlock(const Block & block);
 
 private:
     IColumn::Selector createSelector(Block block);
@@ -48,7 +50,7 @@ private:
     MergeTreeData & data;
     const ReshardingJob & job;
     Logger * log;
-    std::vector<size_t> slots;
+    std::vector<UInt64> slots;
     ExpressionActionsPtr sharding_key_expr;
     std::string sharding_key_column_name;
 };

@@ -1301,7 +1301,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), uptime);
+        block.getByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), static_cast<UInt64>(uptime));
     }
 
 private:

@@ -70,7 +70,7 @@ void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & is
 
 void DataTypeAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    function.get()->serialize(static_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr);
+    function->serialize(static_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr);
 }
 
 void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr) const
@@ -147,7 +147,7 @@ void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuff
 static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num)
 {
     WriteBufferFromOwnString buffer;
-    function.get()->serialize(static_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer);
+    function->serialize(static_cast<const ColumnAggregateFunction &>(column).getData()[row_num], buffer);
     return buffer.str();
 }
 

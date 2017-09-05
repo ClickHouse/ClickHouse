@@ -125,7 +125,7 @@ ODBC
       <db>DatabaseName</db>
       <table>TableName</table>
       <connection_string>DSN=some_parameters</connection_string>
-      <invalidate_query>SQL_REQUEST</invalidate_query>
+      <invalidate_query>SQL_QUERY</invalidate_query>
   </odbc>
 
 Поля настройки:
@@ -307,10 +307,10 @@ MySQL
             <host>example01-2</host>
             <priority>1</priority>
         </replica>
-        <db>conv_main</db>
-        <table>counters</table>
+        <db>db_name</db>
+        <table>table_name</table>
         <where>id=10</where>
-        <invalidate_query>SQL_REQUEST</invalidate_query>
+        <invalidate_query>SQL_QUERY</invalidate_query>
     </mysql>
   </source>
 
@@ -328,6 +328,26 @@ MySQL
 * ``table`` - имя таблицы.
 * ``where`` - условие выбора. Необязательный параметр.
 * ``invalidate_query`` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе :ref:`dicts-external_dicts_dict_lifetime`.
+  
+MySQL можно подключить на локальном хосте через сокеты, для этого необходимо задать ``host`` и ``socket``.
+
+Пример настройки:
+
+.. code-block:: xml
+
+  <source>
+    <mysql>
+        <host>localhost</host>
+        <socket>/path/to/socket/file.sock</socket>
+        <user>clickhouse</user>
+        <password>qwerty</password>
+        <db>db_name</db>
+        <table>table_name</table>
+        <where>id=10</where>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+    </mysql>
+  </source>
+
 
 .. _dicts-external_dicts_dict_sources-clickhouse:
 

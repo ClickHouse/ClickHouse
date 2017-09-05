@@ -271,7 +271,7 @@ void ReadBufferAIO::finalize()
     bytes_read -= region_left_padding;
 
     /// Ignore redundant bytes on the right.
-    bytes_read = std::min(bytes_read, static_cast<off_t>(requested_byte_count));
+    bytes_read = std::min(static_cast<off_t>(bytes_read), static_cast<off_t>(requested_byte_count));
 
     if (bytes_read > 0)
         fill_buffer.buffer().resize(region_left_padding + bytes_read);

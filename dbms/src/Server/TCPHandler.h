@@ -18,6 +18,7 @@ namespace CurrentMetrics
     extern const Metric TCPConnection;
 }
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -76,7 +77,7 @@ public:
     TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
         : Poco::Net::TCPServerConnection(socket_)
         , server(server_)
-        , log(&Logger::get("TCPHandler"))
+        , log(&Poco::Logger::get("TCPHandler"))
         , connection_context(server.context())
         , query_context(server.context())
     {
@@ -86,7 +87,7 @@ public:
 
 private:
     IServer & server;
-    Logger * log;
+    Poco::Logger * log;
 
     String client_name;
     UInt64 client_version_major = 0;

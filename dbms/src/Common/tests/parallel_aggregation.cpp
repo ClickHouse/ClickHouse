@@ -57,7 +57,7 @@ using Mutex = std::mutex;
     Key,
     HashTableCellWithLock<
         Key,
-        HashMapCell<Key, Value, DefaultHash<Key> > >,
+        HashMapCell<Key, Value, DefaultHash<Key>> >,
     DefaultHash<Key>,
     HashTableGrower<21>,
     HashTableAllocator>;*/

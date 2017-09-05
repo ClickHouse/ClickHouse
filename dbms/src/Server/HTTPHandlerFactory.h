@@ -3,9 +3,8 @@
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-
+#include <common/logger_useful.h>
 #include "IServer.h"
-
 #include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "NotFoundHandler.h"

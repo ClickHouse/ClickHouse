@@ -16,6 +16,7 @@
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DNSCache.h>
 
 #include <Common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
@@ -85,7 +86,7 @@ struct HostID
     {
         try
         {
-            return DB::isLocalAddress(Poco::Net::SocketAddress(host_name, port));
+            return DB::isLocalAddress(Poco::Net::SocketAddress(DNSCache::instance().resolveHost(host_name), port));
         }
         catch (const Poco::Exception & e)
         {
@@ -220,7 +221,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
     {
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
-        max_tasks_in_queue = std::max(1UL, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+        max_tasks_in_queue = std::max(static_cast<UInt64>(1), config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -506,7 +507,8 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
     try
     {
-        executeQuery(istr, ostr, false, context, nullptr);
+        Context local_context(context);
+        executeQuery(istr, ostr, false, local_context, nullptr);
     }
     catch (...)
     {
@@ -982,7 +984,7 @@ public:
             }
 
             if (num_hosts_finished != 0 || try_number != 0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(20LU, try_number + 1)));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(static_cast<size_t>(20), try_number + 1)));
 
             /// TODO: add shared lock
             if (!zookeeper->exists(node_path))
@@ -1017,8 +1019,8 @@ public:
                 res.getByName("port").column->insert(static_cast<UInt64>(port));
                 res.getByName("status").column->insert(static_cast<Int64>(status.code));
                 res.getByName("error").column->insert(status.message);
-                res.getByName("num_hosts_remaining").column->insert(waiting_hosts.size() - (++num_hosts_finished));
-                res.getByName("num_hosts_active").column->insert(cur_active_hosts.size());
+                res.getByName("num_hosts_remaining").column->insert(static_cast<UInt64>(waiting_hosts.size() - (++num_hosts_finished)));
+                res.getByName("num_hosts_active").column->insert(static_cast<UInt64>(cur_active_hosts.size()));
             }
         }
 
