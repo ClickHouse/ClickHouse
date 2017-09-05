@@ -141,6 +141,31 @@ struct MergeTreeDataPart
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
 
+    /**
+     * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
+     * Part state should be modified under data_parts mutex.
+     *
+     * Possible state transitions:
+     * Temporary -> Precommitted: we are trying to commit a fetched, inserted or merged part to active set
+     * Precommitted -> Outdated:  we could not to add a part to active set and doing a rollback (for example it is duplicated part)
+     * Precommitted -> Commited:  we successfully committed a part to active dataset
+     * Precommitted -> Outdated:  a part was replaced by a covering part or DROP PARTITION
+     * Outdated -> Deleting:      a cleaner selected this part for deletion
+     */
+    enum class State
+    {
+        Temporary,      /// the part is generating now, it is not in data_parts list
+        Precommitted,   /// the part is in data_parts, but not used for SELECTs
+        Committed,      /// active data part, used by current and upcoming SELECTs
+        Outdated,       /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
+        Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
+    };
+
+    State state{State::Temporary};
+
+    bool isCommited() { return state == State::Committed; }
+    static bool isCommitedPart(const std::shared_ptr<MergeTreeDataPart> & part) { return part->isCommited(); }
+
     /// For resharding.
     size_t shard_no = 0;
 
