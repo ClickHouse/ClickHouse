@@ -132,9 +132,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     MergeTreeDataPart::MinMaxIndex minmax_idx;
     minmax_idx.update(block, data.minmax_idx_columns);
 
-    String new_partition_id = data.getPartitionIDFromData(block_with_partition.partition);
+    MergeTreeDataPart::Partition partition(std::move(block_with_partition.partition));
 
-    MergeTreePartInfo new_part_info(new_partition_id, temp_index, temp_index, 0);
+    MergeTreePartInfo new_part_info(partition.getID(data), temp_index, temp_index, 0);
     String part_name;
     if (data.format_version == 0)
     {
@@ -155,7 +155,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         part_name = new_part_info.getPartName();
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name, new_part_info);
-    new_data_part->partition = MergeTreeDataPart::Partition(std::move(block_with_partition.partition));
+    new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->relative_path = TMP_PREFIX + part_name;
     new_data_part->is_temp = true;

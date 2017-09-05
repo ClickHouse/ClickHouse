@@ -160,6 +160,10 @@ struct MergeTreeDataPart
         /// For month-based partitioning.
         explicit Partition(UInt32 yyyymm) : value(1, static_cast<UInt64>(yyyymm)) {}
 
+        String getID(const MergeTreeData & storage) const;
+
+        void serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out) const;
+
         void load(const MergeTreeData & storage, const String & part_path);
         void store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const;
 

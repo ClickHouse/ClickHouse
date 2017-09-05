@@ -8,12 +8,16 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Core/Defines.h>
+#include <Core/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
+#include <Common/hex.h>
+#include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeDate.h>
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
@@ -291,6 +295,73 @@ static ReadBufferFromFile openForReading(const String & path)
     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 }
 
+
+String MergeTreeDataPart::Partition::getID(const MergeTreeData & storage) const
+{
+    if (value.size() != storage.partition_expr_columns.size())
+        throw Exception("Invalid partition key size: " + toString(value.size()), ErrorCodes::LOGICAL_ERROR);
+
+    if (value.empty())
+        return "all";
+
+     /// In case all partition fields are represented by integral types, try to produce a human-readable partition id.
+    /// Otherwise use a hex-encoded hash.
+    bool are_all_integral = true;
+    for (const Field & field : value)
+    {
+        if (field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64)
+        {
+            are_all_integral = false;
+            break;
+        }
+    }
+
+    String result;
+
+    if (are_all_integral)
+    {
+        FieldVisitorToString to_string_visitor;
+        for (size_t i = 0; i < value.size(); ++i)
+        {
+            if (i > 0)
+                result += '-';
+
+            if (typeid_cast<const DataTypeDate *>(storage.partition_expr_column_types[i].get()))
+                result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(value[i].get<UInt64>())));
+            else
+                result += applyVisitor(to_string_visitor, value[i]);
+        }
+
+        return result;
+    }
+
+    SipHash hash;
+    FieldVisitorHash hashing_visitor(hash);
+    for (const Field & field : value)
+        applyVisitor(hashing_visitor, field);
+
+    char hash_data[16];
+    hash.get128(hash_data);
+    result.resize(32);
+    for (size_t i = 0; i < 16; ++i)
+        writeHexByteLowercase(hash_data[i], &result[2 * i]);
+
+    return result;
+}
+
+void MergeTreeDataPart::Partition::serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out) const
+{
+    for (size_t i = 0; i < storage.partition_expr_column_types.size(); ++i)
+    {
+        if (i > 0)
+            writeCString(", ", out);
+
+        const DataTypePtr & type = storage.partition_expr_column_types[i];
+        ColumnPtr column = type->createColumn();
+        column->insert(value[i]);
+        type->serializeTextQuoted(*column, 0, out);
+    }
+}
 
 void MergeTreeDataPart::Partition::load(const MergeTreeData & storage, const String & part_path)
 {

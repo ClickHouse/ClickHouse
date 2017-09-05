@@ -14,6 +14,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/CompressedReadBuffer.h>
 #include <IO/HexWriteBuffer.h>
+#include <IO/Operators.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -22,17 +23,17 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/localBackup.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Poco/DirectoryIterator.h>
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
-#include <IO/Operators.h>
+#include <Common/localBackup.h>
+
+#include <Poco/DirectoryIterator.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -1788,20 +1789,6 @@ String MergeTreeData::getPartitionIDFromQuery(const Field & partition)
             ErrorCodes::INVALID_PARTITION_NAME);
 
     return partition_id;
-}
-
-String MergeTreeData::getPartitionIDFromData(const Row & partition)
-{
-    if (partition.size() != partition_expr_columns.size())
-        throw Exception("Invalid partition key size: " + toString(partition.size()), ErrorCodes::LOGICAL_ERROR);
-
-    if (partition.empty())
-        return "all";
-
-    /// Month-partitioning specific, TODO: generalize.
-    if (partition[0].getType() != Field::Types::UInt64)
-        throw Exception(String("Invalid partition key type: ") + partition[0].getTypeName(), ErrorCodes::LOGICAL_ERROR);
-    return toString(partition[0].get<UInt64>());
 }
 
 void MergeTreeData::Transaction::rollback()
