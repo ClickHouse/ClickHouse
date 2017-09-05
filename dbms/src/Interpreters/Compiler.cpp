@@ -24,6 +24,10 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_DLOPEN;
+}
 
 Compiler::Compiler(const std::string & path_, size_t threads)
     : path(path_), pool(threads)

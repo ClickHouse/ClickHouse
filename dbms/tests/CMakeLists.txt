@@ -19,3 +19,5 @@ macro(grep_gtest_sources BASE_DIR DST_VAR)
     # Cold match files that are not in tests/ directories
     file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
 endmacro()
+
+add_subdirectory (external_dictionaries)
