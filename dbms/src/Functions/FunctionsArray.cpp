@@ -2413,8 +2413,7 @@ void FunctionRange::executeImpl(Block & block, const ColumnNumbers & arguments, 
     {
         throw Exception{
             "Illegal column " + col->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN
-        };
+            ErrorCodes::ILLEGAL_COLUMN};
     }
 }
 
