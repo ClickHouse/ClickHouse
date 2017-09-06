@@ -66,8 +66,8 @@ namespace
     enum class ReturnCodes : int
     {
         CANNOT_DUP_STDIN    = 42,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
-        CANNOT_DUP_STDOUT     = 43,
-        CANNOT_DUP_STDERR     = 44,
+        CANNOT_DUP_STDOUT   = 43,
+        CANNOT_DUP_STDERR   = 44,
         CANNOT_EXEC         = 45,
     };
 }
@@ -78,7 +78,8 @@ namespace DB
 
 ShellCommand::~ShellCommand()
 {
-    tryWait();
+    if (!wait_called)
+        tryWait();
 }
 
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only)
