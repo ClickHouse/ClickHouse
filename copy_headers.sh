@@ -34,7 +34,7 @@ for src_file in $($CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpop
     sed -r -e 's/^\w+\.o://');
 do
     dst_file=$src_file;
-    mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
+    mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/build\///; s/\/[^/]*$/\//;')";
     cp "$src_file" "$DST/$dst_file";
 done
 
