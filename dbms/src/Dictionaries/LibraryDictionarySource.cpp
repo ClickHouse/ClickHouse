@@ -190,7 +190,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
         columns_pass.data[key_columns_n] = column->getName().c_str();
         ++key_columns_n;
     }
-    const ClickHouseLibrary::VectorUInt64 requested_rows_c{static_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
+    const ClickHouseLibrary::VectorUInt64 requested_rows_c{reinterpret_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataAllocate call because library->get may throw.
