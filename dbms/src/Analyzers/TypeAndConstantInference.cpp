@@ -356,7 +356,6 @@ void processHigherOrderFunction(const String & column_name,
         if (lambda && lambda->name == "lambda")
         {
             const DataTypeExpression * lambda_type = typeid_cast<const DataTypeExpression *>(types[i].get());
-            const DataTypes & lambda_argument_types = lambda_type->getArgumentTypes();
 
             if (!lambda_type)
                 throw Exception("Logical error: IFunction::getLambdaArgumentTypes returned data type for lambda expression,"
@@ -368,6 +367,8 @@ void processHigherOrderFunction(const String & column_name,
             /// Set types for every lambda parameter.
 
             AnalyzeLambdas::LambdaParameters parameters = AnalyzeLambdas::extractLambdaParameters(lambda->arguments->children[0]);
+
+            const DataTypes & lambda_argument_types = lambda_type->getArgumentTypes();
 
             if (parameters.size() != lambda_argument_types.size())
                 throw Exception("DataTypeExpression for lambda function has different number of argument types than number of lambda parameters",
