@@ -472,24 +472,29 @@ public:
         char * begin = out;
 
         /// Write everything backwards.
-        for (size_t offset = 0; offset <= 24; offset += 8)
+        for (size_t octet = 0; octet < 4; ++octet)
         {
-            if (offset > 0)
-                *(out++) = '.';
+            if (octet > 0)
+            {
+                *out = '.';
+                ++out;
+            }
 
             /// Get the next byte.
-            UInt32 value = (ip >> offset) & static_cast<UInt32>(255);
+            UInt32 value = (ip >> (octet * 8)) & static_cast<UInt32>(0xFF);
 
             /// Faster than sprintf.
             if (value == 0)
             {
-                *(out++) = '0';
+                *out = '0';
+                ++out;
             }
             else
             {
                 while (value > 0)
                 {
-                    *(out++) = '0' + value % 10;
+                    *out = '0' + value % 10;
+                    ++out;
                     value /= 10;
                 }
             }
@@ -498,7 +503,8 @@ public:
         /// And reverse.
         std::reverse(begin, out);
 
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
