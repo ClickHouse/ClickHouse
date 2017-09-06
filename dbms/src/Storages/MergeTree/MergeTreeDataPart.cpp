@@ -109,19 +109,19 @@ bool MergeTreeDataPartChecksums::read(ReadBuffer & in)
     readText(format_version, in);
     assertChar('\n', in);
 
-    if (format_version < 1 || format_version > 4)
-        throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
-
-    if (format_version == 1)
-        return false;
-    if (format_version == 2)
-        return read_v2(in);
-    if (format_version == 3)
-        return read_v3(in);
-    if (format_version == 4)
-        return read_v4(in);
-
-    return false;
+    switch (format_version)
+    {
+        case 1:
+            return false;
+        case 2:
+            return read_v2(in);
+        case 3:
+            return read_v3(in);
+        case 4:
+            return read_v4(in);
+        default:
+            throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
+    }
 }
 
 bool MergeTreeDataPartChecksums::read_v2(ReadBuffer & in)
