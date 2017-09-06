@@ -351,7 +351,18 @@ String MergeTreeDataPart::Partition::getID(const MergeTreeData & storage) const
 
 void MergeTreeDataPart::Partition::serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out) const
 {
-    for (size_t i = 0; i < storage.partition_expr_column_types.size(); ++i)
+    size_t key_size = storage.partition_expr_column_types.size();
+
+    if (key_size == 0)
+    {
+        writeCString("tuple()", out);
+        return;
+    }
+
+    if (key_size > 1)
+        writeChar('(', out);
+
+    for (size_t i = 0; i < key_size; ++i)
     {
         if (i > 0)
             writeCString(", ", out);
@@ -361,6 +372,9 @@ void MergeTreeDataPart::Partition::serializeTextQuoted(const MergeTreeData & sto
         column->insert(value[i]);
         type->serializeTextQuoted(*column, 0, out);
     }
+
+    if (key_size > 1)
+        writeChar(')', out);
 }
 
 void MergeTreeDataPart::Partition::load(const MergeTreeData & storage, const String & part_path)

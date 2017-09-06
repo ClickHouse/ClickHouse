@@ -410,7 +410,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const std::string & prefix, const String & with_name);
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
     /// Returns the size of partition in bytes.
     size_t getPartitionSize(const std::string & partition_id) const;
@@ -461,7 +461,7 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP/RESHARD PARTITION.
-    String getPartitionIDFromQuery(const Field & partition);
+    String getPartitionIDFromQuery(const ASTPtr & partition, const Context & context);
 
     MergeTreeDataFormatVersion format_version;
 

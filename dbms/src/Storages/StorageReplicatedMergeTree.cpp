@@ -16,6 +16,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -2348,13 +2349,13 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & query, con
 }
 
 
-bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings)
+bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
     assertNotReadonly();
 
     if (!is_leader_node)
     {
-        sendRequestToLeaderReplica(query, settings);
+        sendRequestToLeaderReplica(query, context.getSettingsRef());
         return true;
     }
 
@@ -2375,13 +2376,14 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const String & p
         MergeTreeDataMerger::FuturePart future_merged_part;
         bool selected = false;
 
-        if (partition_id.empty())
+        if (!partition)
         {
             selected = merger.selectPartsToMerge(
                 future_merged_part, false, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge);
         }
         else
         {
+            String partition_id = data.getPartitionIDFromQuery(partition, context);
             selected = merger.selectAllPartsToMergeWithinPartition(future_merged_part, disk_space, can_merge, partition_id, final);
         }
 
@@ -2619,13 +2621,13 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(co
 
 
 void StorageReplicatedMergeTree::clearColumnInPartition(
-    const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
+    const ASTPtr & partition, const Field & column_name, const Context & context)
 {
     assertNotReadonly();
 
     /// We don't block merges, so anyone can manage this task (not only leader)
 
-    String partition_id = data.getPartitionIDFromQuery(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition, context);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
 
     if (fake_part_name.empty())
@@ -2646,26 +2648,26 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     /// If necessary, wait until the operation is performed on itself or on all replicas.
-    if (settings.replication_alter_partitions_sync != 0)
+    if (context.getSettingsRef().replication_alter_partitions_sync != 0)
     {
-        if (settings.replication_alter_partitions_sync == 1)
+        if (context.getSettingsRef().replication_alter_partitions_sync == 1)
             waitForReplicaToProcessLogEntry(replica_name, entry);
         else
             waitForAllReplicasToProcessLogEntry(entry);
     }
 }
 
-void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings)
+void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
 {
     assertNotReadonly();
 
     if (!is_leader_node)
     {
-        sendRequestToLeaderReplica(query, settings);
+        sendRequestToLeaderReplica(query, context.getSettingsRef());
         return;
     }
 
-    String partition_id = data.getPartitionIDFromQuery(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition, context);
     String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
 
     if (fake_part_name.empty())
@@ -2696,9 +2698,9 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     /// If necessary, wait until the operation is performed on itself or on all replicas.
-    if (settings.replication_alter_partitions_sync != 0)
+    if (context.getSettingsRef().replication_alter_partitions_sync != 0)
     {
-        if (settings.replication_alter_partitions_sync == 1)
+        if (context.getSettingsRef().replication_alter_partitions_sync == 1)
             waitForReplicaToProcessLogEntry(replica_name, entry);
         else
             waitForAllReplicasToProcessLogEntry(entry);
@@ -2706,16 +2708,16 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const Field
 }
 
 
-void StorageReplicatedMergeTree::attachPartition(const ASTPtr & query, const Field & field, bool attach_part, const Settings & settings)
+void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
     assertNotReadonly();
 
     String partition_id;
 
     if (attach_part)
-        partition_id = field.safeGet<String>();
+        partition_id = typeid_cast<const ASTLiteral &>(*partition).value.safeGet<String>();
     else
-        partition_id = data.getPartitionIDFromQuery(field);
+        partition_id = data.getPartitionIDFromQuery(partition, context);
 
     String source_dir = "detached/";
 
@@ -3219,9 +3221,9 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 }
 
 
-void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const String & from_, const Settings & settings)
+void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const String & from_, const Context & context)
 {
-    String partition_id = data.getPartitionIDFromQuery(partition);
+    String partition_id = data.getPartitionIDFromQuery(partition, context);
 
     String from = from_;
     if (from.back() == '/')
@@ -3373,20 +3375,15 @@ void StorageReplicatedMergeTree::fetchPartition(const Field & partition, const S
 }
 
 
-void StorageReplicatedMergeTree::freezePartition(const Field & partition, const String & with_name, const Settings & settings)
+void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {
-    /// The prefix can be arbitrary. Not necessarily a month - you can specify only a year.
-    String prefix = partition.getType() == Field::Types::UInt64
-        ? toString(partition.get<UInt64>())
-        : partition.safeGet<String>();
-
-    data.freezePartition(prefix, with_name);
+    data.freezePartition(partition, with_name, context);
 }
 
 
 void StorageReplicatedMergeTree::reshardPartitions(
     const ASTPtr & query, const String & database_name,
-    const Field & partition,
+    const ASTPtr & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
     const Context & context)
@@ -3466,8 +3463,8 @@ void StorageReplicatedMergeTree::reshardPartitions(
                 throw Exception{"Shard paths must be distinct", ErrorCodes::DUPLICATE_SHARD_PATHS};
         }
 
-        bool include_all = partition.isNull();
-        String partition_id = !partition.isNull() ? data.getPartitionIDFromQuery(partition) : String();
+        bool include_all = !partition;
+        String partition_id = partition ? data.getPartitionIDFromQuery(partition, context) : String();
 
         /// Make a list of local partitions that need to be resharded.
         std::set<std::string> unique_partition_list;

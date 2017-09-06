@@ -35,7 +35,7 @@ private:
 
         Type type;
 
-        Field partition;
+        ASTPtr partition;
         Field column_name;
         bool detach = false; /// true for DETACH PARTITION.
 
@@ -52,7 +52,7 @@ private:
         /// For FREEZE PARTITION
         String with_name;
 
-        static PartitionCommand dropPartition(const Field & partition, bool detach)
+        static PartitionCommand dropPartition(const ASTPtr & partition, bool detach)
         {
             PartitionCommand res;
             res.type = DROP_PARTITION;
@@ -61,7 +61,7 @@ private:
             return res;
         }
 
-        static PartitionCommand clearColumn(const Field & partition, const Field & column_name)
+        static PartitionCommand clearColumn(const ASTPtr & partition, const Field & column_name)
         {
             PartitionCommand res;
             res.type = CLEAR_COLUMN;
@@ -70,7 +70,7 @@ private:
             return res;
         }
 
-        static PartitionCommand attachPartition(const Field & partition, bool part)
+        static PartitionCommand attachPartition(const ASTPtr & partition, bool part)
         {
             PartitionCommand res;
             res.type = ATTACH_PARTITION;
@@ -79,7 +79,7 @@ private:
             return res;
         }
 
-        static PartitionCommand fetchPartition(const Field & partition, const String & from)
+        static PartitionCommand fetchPartition(const ASTPtr & partition, const String & from)
         {
             PartitionCommand res;
             res.type = FETCH_PARTITION;
@@ -88,7 +88,7 @@ private:
             return res;
         }
 
-        static PartitionCommand freezePartition(const Field & partition, const String & with_name)
+        static PartitionCommand freezePartition(const ASTPtr & partition, const String & with_name)
         {
             PartitionCommand res;
             res.type = FREEZE_PARTITION;
@@ -97,7 +97,7 @@ private:
             return res;
         }
 
-        static PartitionCommand reshardPartitions(const Field & partition_,
+        static PartitionCommand reshardPartitions(const ASTPtr & partition_,
             const WeightedZooKeeperPaths & weighted_zookeeper_paths_, const ASTPtr & sharding_key_expr_,
             bool do_copy_, const Field & coordinator_)
         {
