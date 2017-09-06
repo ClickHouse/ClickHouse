@@ -60,19 +60,19 @@ BlockIO InterpreterAlterQuery::execute()
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
-                table->dropPartition(query_ptr, command.partition, command.detach, context.getSettingsRef());
+                table->dropPartition(query_ptr, command.partition, command.detach, context);
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:
-                table->attachPartition(query_ptr, command.partition, command.part, context.getSettingsRef());
+                table->attachPartition(command.partition, command.part, context);
                 break;
 
             case PartitionCommand::FETCH_PARTITION:
-                table->fetchPartition(command.partition, command.from, context.getSettingsRef());
+                table->fetchPartition(command.partition, command.from, context);
                 break;
 
             case PartitionCommand::FREEZE_PARTITION:
-                table->freezePartition(command.partition, command.with_name, context.getSettingsRef());
+                table->freezePartition(command.partition, command.with_name, context);
                 break;
 
             case PartitionCommand::RESHARD_PARTITION:
@@ -82,7 +82,7 @@ BlockIO InterpreterAlterQuery::execute()
                 break;
 
             case PartitionCommand::CLEAR_COLUMN:
-                table->clearColumnInPartition(query_ptr, command.partition, command.column_name, context.getSettingsRef());
+                table->clearColumnInPartition(command.partition, command.column_name, context);
                 break;
         }
     }
@@ -136,10 +136,9 @@ void InterpreterAlterQuery::parseAlter(
                 if (!params.clear_column)
                     throw Exception("Can't DROP COLUMN from partition. It is possible only CLEAR COLUMN in partition", ErrorCodes::BAD_ARGUMENTS);
 
-                const Field & partition = typeid_cast<const ASTLiteral &>(*(params.partition)).value;
                 const Field & column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
 
-                out_partition_commands.emplace_back(PartitionCommand::clearColumn(partition, column_name));
+                out_partition_commands.emplace_back(PartitionCommand::clearColumn(params.partition, column_name));
             }
             else
             {
@@ -185,30 +184,22 @@ void InterpreterAlterQuery::parseAlter(
         }
         else if (params.type == ASTAlterQuery::DROP_PARTITION)
         {
-            const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-            out_partition_commands.emplace_back(PartitionCommand::dropPartition(partition, params.detach));
+            out_partition_commands.emplace_back(PartitionCommand::dropPartition(params.partition, params.detach));
         }
         else if (params.type == ASTAlterQuery::ATTACH_PARTITION)
         {
-            const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-            out_partition_commands.emplace_back(PartitionCommand::attachPartition(partition, params.part));
+            out_partition_commands.emplace_back(PartitionCommand::attachPartition(params.partition, params.part));
         }
         else if (params.type == ASTAlterQuery::FETCH_PARTITION)
         {
-            const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-            out_partition_commands.emplace_back(PartitionCommand::fetchPartition(partition, params.from));
+            out_partition_commands.emplace_back(PartitionCommand::fetchPartition(params.partition, params.from));
         }
         else if (params.type == ASTAlterQuery::FREEZE_PARTITION)
         {
-            const Field & partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-            out_partition_commands.emplace_back(PartitionCommand::freezePartition(partition, params.with_name));
+            out_partition_commands.emplace_back(PartitionCommand::freezePartition(params.partition, params.with_name));
         }
         else if (params.type == ASTAlterQuery::RESHARD_PARTITION)
         {
-            Field partition;
-            if (params.partition)
-                partition = dynamic_cast<const ASTLiteral &>(*params.partition).value;
-
             WeightedZooKeeperPaths weighted_zookeeper_paths;
 
             const ASTs & ast_weighted_zookeeper_paths = typeid_cast<const ASTExpressionList &>(*params.weighted_zookeeper_paths).children;
@@ -223,7 +214,7 @@ void InterpreterAlterQuery::parseAlter(
                 coordinator = dynamic_cast<const ASTLiteral &>(*params.coordinator).value;
 
             out_partition_commands.emplace_back(PartitionCommand::reshardPartitions(
-                partition, weighted_zookeeper_paths, params.sharding_key_expr,
+                params.partition, weighted_zookeeper_paths, params.sharding_key_expr,
                 params.do_copy, coordinator));
         }
         else

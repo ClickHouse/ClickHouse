@@ -48,7 +48,7 @@ public:
         setEmpty();
     }
 
-    AutoArray(size_t size_)
+    explicit AutoArray(size_t size_)
     {
         init(size_, false);
     }

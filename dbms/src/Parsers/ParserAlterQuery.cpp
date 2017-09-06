@@ -2,8 +2,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserPartition.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -46,8 +46,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier table_parser;
     ParserCompoundIdentifier parser_name;
     ParserCompoundColumnDeclaration parser_col_decl;
-    ParserLiteral parser_literal;
-    ParserUnsignedInteger parser_uint;
+    ParserPartition parser_partition;
     ParserStringLiteral parser_string_literal;
 
     ASTPtr table;
@@ -106,7 +105,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (s_drop_partition.ignore(pos, expected))
         {
-            if (!parser_literal.parse(pos, params.partition, expected))
+            if (!parser_partition.parse(pos, params.partition, expected))
                 return false;
 
             params.type = ASTAlterQuery::DROP_PARTITION;
@@ -130,13 +129,13 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (s_in_partition.ignore(pos, expected))
             {
-                if (!parser_literal.parse(pos, params.partition, expected))
+                if (!parser_partition.parse(pos, params.partition, expected))
                     return false;
             }
         }
         else if (s_detach_partition.ignore(pos, expected))
         {
-            if (!parser_literal.parse(pos, params.partition, expected))
+            if (!parser_partition.parse(pos, params.partition, expected))
                 return false;
 
             params.type = ASTAlterQuery::DROP_PARTITION;
@@ -144,14 +143,14 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (s_attach_partition.ignore(pos, expected))
         {
-            if (!parser_literal.parse(pos, params.partition, expected))
+            if (!parser_partition.parse(pos, params.partition, expected))
                 return false;
 
             params.type = ASTAlterQuery::ATTACH_PARTITION;
         }
         else if (s_attach_part.ignore(pos, expected))
         {
-            if (!parser_literal.parse(pos, params.partition, expected))
+            if (!parser_string_literal.parse(pos, params.partition, expected))
                 return false;
 
             params.part = true;
@@ -159,7 +158,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (s_fetch_partition.ignore(pos, expected))
         {
-            if (!parser_literal.parse(pos, params.partition, expected))
+            if (!parser_partition.parse(pos, params.partition, expected))
                 return false;
 
             if (!s_from.ignore(pos, expected))
@@ -174,7 +173,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (s_freeze_partition.ignore(pos, expected))
         {
-            if (!parser_literal.parse(pos, params.partition, expected))
+            if (!parser_partition.parse(pos, params.partition, expected))
                 return false;
 
             /// WITH NAME 'name' - place local backup to directory with specified name
@@ -225,7 +224,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (s_partition.ignore(pos, expected))
             {
-                if (!parser_uint.parse(pos, params.partition, expected))
+                if (!parser_partition.parse(pos, params.partition, expected))
                     return false;
             }
 

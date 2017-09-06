@@ -270,7 +270,7 @@ void StorageDistributed::shutdown()
 
 void StorageDistributed::reshardPartitions(
     const ASTPtr & query, const String & database_name,
-    const Field & partition,
+    const ASTPtr & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
     const Context & context)
@@ -322,8 +322,7 @@ void StorageDistributed::reshardPartitions(
         ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
 
         parameters.type = ASTAlterQuery::RESHARD_PARTITION;
-        if (!partition.isNull())
-            parameters.partition = std::make_shared<ASTLiteral>(StringRange(), partition);
+        parameters.partition = partition->clone();
 
         ASTPtr expr_list = std::make_shared<ASTExpressionList>();
         for (const auto & entry : weighted_zookeeper_paths)

@@ -380,9 +380,9 @@ void StorageTrivialBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageTrivialBuffer::optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings)
+bool StorageTrivialBuffer::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
-    if (!partition_id.empty())
+    if (partition)
         throw Exception("Partition cannot be specified when optimizing table of type TrivialBuffer",
             ErrorCodes::NOT_IMPLEMENTED);
 

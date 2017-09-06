@@ -60,9 +60,10 @@ public:
           */
         ASTPtr primary_key;
 
-        /** In DROP PARTITION and RESHARD PARTITION queries, the name of the partition is stored here.
+        /** In DROP PARTITION and RESHARD PARTITION queries, the value or ID of the partition is stored here.
           */
         ASTPtr partition;
+
         bool detach = false;        /// true for DETACH PARTITION
 
         bool part = false;          /// true for ATTACH PART

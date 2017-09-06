@@ -6,13 +6,19 @@
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTNameTypePair.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTPartition.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/ValuesRowInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/CompressedReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ConcatReadBuffer.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/Operators.h>
 #include <DataTypes/DataTypeDate.h>
@@ -63,6 +69,7 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int SYNTAX_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int INVALID_PARTITION_VALUE;
 }
 
 
@@ -1714,8 +1721,21 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 }
 
 
-void MergeTreeData::freezePartition(const std::string & prefix, const String & with_name)
+void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context)
 {
+    String prefix;
+    if (format_version == 0)
+    {
+        const auto & partition = dynamic_cast<const ASTPartition &>(*partition_ast);
+        /// Month-partitioning specific - allow partition ID can be passed in the partition value.
+        if (const auto * partition_lit = dynamic_cast<const ASTLiteral *>(partition.value.get()))
+            prefix = partition_lit->value.getType() == Field::Types::UInt64
+                ? toString(partition_lit->value.get<UInt64>())
+                : partition_lit->value.safeGet<String>();
+    }
+    else
+        prefix = getPartitionIDFromQuery(partition_ast, context);
+
     LOG_DEBUG(log, "Freezing parts with prefix " + prefix);
 
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
@@ -1777,18 +1797,61 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
     return size;
 }
 
-String MergeTreeData::getPartitionIDFromQuery(const Field & partition)
+String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & partition_ast, const Context & context)
 {
-    /// Month-partitioning specific, TODO: generalize.
-    String partition_id = partition.getType() == Field::Types::UInt64
-        ? toString(partition.get<UInt64>())
-        : partition.safeGet<String>();
+    const auto & partition = typeid_cast<const ASTPartition &>(*partition_ast);
 
-    if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
-        throw Exception("Invalid partition format: " + partition_id + ". Partition should consist of 6 digits: YYYYMM",
-            ErrorCodes::INVALID_PARTITION_NAME);
+    if (!partition.value)
+        return partition.id;
 
-    return partition_id;
+    if (format_version == 0)
+    {
+        /// Month-partitioning specific - allow partition ID can be passed in the partition value.
+        const auto * partition_lit = typeid_cast<const ASTLiteral *>(partition.value.get());
+        if (partition_lit && partition_lit->value.getType() == Field::Types::String)
+        {
+            String partition_id = partition_lit->value.get<String>();
+            if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
+                throw Exception(
+                    "Invalid partition format: " + partition_id + ". Partition should consist of 6 digits: YYYYMM",
+                    ErrorCodes::INVALID_PARTITION_VALUE);
+            return partition_id;
+        }
+    }
+
+    /// Re-parse partition key fields using the information about expected field types.
+
+    size_t fields_count = partition_expr_column_types.size();
+    if (partition.fields_count != fields_count)
+        throw Exception(
+            "Wrong number of fields in the partition expression: " + toString(partition.fields_count) +
+            ", must be: " + toString(fields_count),
+            ErrorCodes::INVALID_PARTITION_VALUE);
+
+    Row partition_row(fields_count);
+
+    if (fields_count)
+    {
+        ReadBufferFromMemory left_paren_buf("(", 1);
+        ReadBufferFromMemory fields_buf(partition.fields_str.data, partition.fields_str.size);
+        ReadBufferFromMemory right_paren_buf(")", 1);
+        ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
+
+        ValuesRowInputStream input_stream(buf, context, /* interpret_expressions = */true);
+        Block block;
+        for (size_t i = 0; i < fields_count; ++i)
+            block.insert(ColumnWithTypeAndName(partition_expr_column_types[i], partition_expr_columns[i]));
+
+        if (!input_stream.read(block))
+            throw Exception(
+                "Could not parse partition value: `" + partition.fields_str.toString() + "`",
+                ErrorCodes::INVALID_PARTITION_VALUE);
+
+        for (size_t i = 0; i < fields_count; ++i)
+            block.getByPosition(i).column->get(0, partition_row[i]);
+    }
+
+    return MergeTreeDataPart::Partition(std::move(partition_row)).getID(*this);
 }
 
 void MergeTreeData::Transaction::rollback()

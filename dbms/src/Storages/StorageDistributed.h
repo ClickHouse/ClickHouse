@@ -76,7 +76,7 @@ public:
 
     void reshardPartitions(
         const ASTPtr & query, const String  & database_name,
-        const Field & partition,
+        const ASTPtr & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
         const Context & context) override;

@@ -69,6 +69,7 @@ public:
     bool operator< (const TokenIterator & rhs) const { return index < rhs.index; }
     bool operator<= (const TokenIterator & rhs) const { return index <= rhs.index; }
     bool operator== (const TokenIterator & rhs) const { return index == rhs.index; }
+    bool operator!= (const TokenIterator & rhs) const { return index != rhs.index; }
 
     bool isValid() { return get().type < TokenType::EndOfStream; }
 
