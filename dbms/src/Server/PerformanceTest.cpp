@@ -74,7 +74,7 @@ public:
 
         bool reserved = (value[0] == '[' || value[0] == '{' || value == "null");
         if (!reserved && wrap)
-            value = '\"' + value + '\"';
+            value = '"' + value + '"';
 
         content[key] = value;
     }
@@ -115,7 +115,7 @@ public:
             if (it != content.begin())
                 repr += ',';
             /// construct "key": "value" string with padding
-            repr += "\n" + pad(padding) + '\"' + it->first + '\"' + ": " + it->second;
+            repr += "\n" + pad(padding) + '"' + it->first + '"' + ": " + it->second;
         }
 
         repr += "\n" + pad(padding - 1) + '}';
@@ -380,7 +380,8 @@ struct Stats
         double & avg_speed_value)
     {
         avg_speed_value = ((avg_speed_value * number_of_info_batches) + new_speed_info);
-        avg_speed_value /= (++number_of_info_batches);
+        ++number_of_info_batches;
+        avg_speed_value /= number_of_info_batches;
 
         if (avg_speed_first == 0)
         {
@@ -670,12 +671,14 @@ private:
         for (const String & precondition : preconditions)
         {
             if (precondition == "flush_disk_cache")
+            {
                 if (system(
                         "(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
                 {
                     std::cerr << "Failed to flush disk cache" << std::endl;
                     return false;
                 }
+            }
 
             if (precondition == "ram_size")
             {
@@ -753,7 +756,7 @@ private:
             {
                 if (!checkPreconditions(test_config))
                 {
-                    std::cerr << "Preconditions are not fulfilled for test \"" + test_config->getString("name", "") + "\" ";
+                    std::cerr << "Preconditions are not fulfilled for test '" + test_config->getString("name", "") + "' ";
                     continue;
                 }
 
@@ -1222,7 +1225,7 @@ public:
                 String array_string = "[";
                 for (size_t i = 0; i != values.size(); ++i)
                 {
-                    array_string += '\"' + values[i] + '\"';
+                    array_string += '"' + values[i] + '"';
                     if (i != values.size() - 1)
                     {
                         array_string += ", ";
@@ -1360,7 +1363,7 @@ public:
 static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_files, const bool recursive = false)
 {
     if (dir.extension().string() == ".xml")
-        std::cerr << "Warning: \"" + dir.string() + "\" is a directory, but has .xml extension" << std::endl;
+        std::cerr << "Warning: '" + dir.string() + "' is a directory, but has .xml extension" << std::endl;
 
     FS::directory_iterator end;
     for (FS::directory_iterator it(dir); it != end; ++it)
@@ -1445,7 +1448,7 @@ int mainEntryClickHousePerformanceTest(int argc, char ** argv)
                 FS::path file(filename);
 
                 if (!FS::exists(file))
-                    throw DB::Exception("File \"" + filename + "\" does not exist", 1);
+                    throw DB::Exception("File '" + filename + "' does not exist", 1);
 
                 if (FS::is_directory(file))
                 {
@@ -1455,7 +1458,7 @@ int mainEntryClickHousePerformanceTest(int argc, char ** argv)
                 else
                 {
                     if (file.extension().string() != ".xml")
-                        throw DB::Exception("File \"" + filename + "\" does not have .xml extension", 1);
+                        throw DB::Exception("File '" + filename + "' does not have .xml extension", 1);
                 }
             }
         }
