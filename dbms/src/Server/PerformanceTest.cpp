@@ -152,7 +152,7 @@ struct StopConditionsSet
             else if (key == "average_speed_not_changing_for_ms")
                 average_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
             else
-                throw DB::Exception("Met unkown stop condition: " + key, 1);
+                throw DB::Exception("Met unkown stop condition: " + key);
 
             ++initialized_count;
         }
@@ -860,12 +860,12 @@ private:
 
         if (!test_config->has("query") && !test_config->has("query_file"))
         {
-            throw DB::Exception("Missing query fields in test's config: " + test_name, 1);
+            throw DB::Exception("Missing query fields in test's config: " + test_name);
         }
 
         if (test_config->has("query") && test_config->has("query_file"))
         {
-            throw DB::Exception("Found both query and query_file fields. Choose only one", 1);
+            throw DB::Exception("Found both query and query_file fields. Choose only one");
         }
 
         if (test_config->has("query"))
@@ -877,7 +877,7 @@ private:
         {
             const String filename = test_config->getString("query_file");
             if (filename.empty())
-                throw DB::Exception("Empty file name", 1);
+                throw DB::Exception("Empty file name");
 
             bool tsv = fs::path(filename).extension().string() == ".tsv";
 
@@ -901,13 +901,13 @@ private:
 
         if (queries.empty())
         {
-            throw DB::Exception("Did not find any query to execute: " + test_name, 1);
+            throw DB::Exception("Did not find any query to execute: " + test_name);
         }
 
         if (test_config->has("substitutions"))
         {
             if (queries.size() > 1)
-                throw DB::Exception("Only one query is allowed when using substitutions", 1);
+                throw DB::Exception("Only one query is allowed when using substitutions");
 
             /// Make "subconfig" of inner xml block
             ConfigurationPtr substitutions_view(test_config->createView("substitutions"));
@@ -918,7 +918,7 @@ private:
 
         if (!test_config->has("type"))
         {
-            throw DB::Exception("Missing type property in config: " + test_name, 1);
+            throw DB::Exception("Missing type property in config: " + test_name);
         }
 
         String config_exec_type = test_config->getString("type");
@@ -927,9 +927,9 @@ private:
         else if (config_exec_type == "once")
             exec_type = ExecutionType::Once;
         else
-            throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name, 1);
+            throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name);
 
-        times_to_run = test_config->getUInt("times_to_run", 1);
+        times_to_run = test_config->getUInt("times_to_run");
 
         stop_conditions_by_run.clear();
         TestStopConditions stop_conditions_template;
@@ -940,7 +940,7 @@ private:
         }
 
         if (stop_conditions_template.empty())
-            throw DB::Exception("No termination conditions were found in config", 1);
+            throw DB::Exception("No termination conditions were found in config");
 
         for (size_t i = 0; i < times_to_run * queries.size(); ++i)
             stop_conditions_by_run.push_back(stop_conditions_template);
@@ -967,7 +967,7 @@ private:
         else
         {
             if (lite_output)
-                throw DB::Exception("Specify main_metric for lite output", 1);
+                throw DB::Exception("Specify main_metric for lite output");
         }
 
         if (metrics.size() > 0)
@@ -1015,7 +1015,7 @@ private:
             {
                 if (std::find(non_loop_metrics.begin(), non_loop_metrics.end(), metric) != non_loop_metrics.end())
                 {
-                    throw DB::Exception("Wrong type of metric for loop execution type (" + metric + ")", 1);
+                    throw DB::Exception("Wrong type of metric for loop execution type (" + metric + ")");
                 }
             }
         }
@@ -1025,7 +1025,7 @@ private:
             {
                 if (std::find(loop_metrics.begin(), loop_metrics.end(), metric) != loop_metrics.end())
                 {
-                    throw DB::Exception("Wrong type of metric for non-loop execution type (" + metric + ")", 1);
+                    throw DB::Exception("Wrong type of metric for non-loop execution type (" + metric + ")");
                 }
             }
         }
@@ -1377,122 +1377,119 @@ static void getFilesFromDir(const fs::path & dir, std::vector<String> & input_fi
 }
 
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
+try
 {
-    using namespace DB;
+    using boost::program_options::value;
+    using Strings = std::vector<String>;
 
-    try
+    boost::program_options::options_description desc("Allowed options");
+    desc.add_options()("help", "produce help message")("lite", "use lite version of output")(
+        "profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")(
+        "host,h", value<String>()->default_value("localhost"), "")("port", value<UInt16>()->default_value(9000), "")(
+        "database", value<String>()->default_value("default"), "")("user", value<String>()->default_value("default"), "")(
+        "password", value<String>()->default_value(""), "")("tags", value<Strings>()->multitoken(), "Run only tests with tag")(
+        "skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")("names",
+        value<Strings>()->multitoken(),
+        "Run tests with specific name")("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")(
+        "names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")("skip-names-regexp",
+        value<Strings>()->multitoken(),
+        "Do not run tests with names matching regexp")("recursive,r", "Recurse in directories to find all xml's");
+
+    /// These options will not be displayed in --help
+    boost::program_options::options_description hidden("Hidden options");
+    hidden.add_options()("input-files", value<std::vector<String>>(), "");
+
+    /// But they will be legit, though. And they must be given without name
+    boost::program_options::positional_options_description positional;
+    positional.add("input-files", -1);
+
+    boost::program_options::options_description cmdline_options;
+    cmdline_options.add(desc).add(hidden);
+
+    boost::program_options::variables_map options;
+    boost::program_options::store(
+        boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(positional).run(), options);
+    boost::program_options::notify(options);
+
+    if (options.count("help"))
     {
-        using boost::program_options::value;
-        using Strings = std::vector<String>;
+        std::cout << "Usage: " << argv[0] << " [options] [test_file ...] [tests_folder]\n";
+        std::cout << desc << "\n";
+        return 0;
+    }
 
-        boost::program_options::options_description desc("Allowed options");
-        desc.add_options()("help", "produce help message")("lite", "use lite version of output")(
-            "profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")(
-            "host,h", value<String>()->default_value("localhost"), "")("port", value<UInt16>()->default_value(9000), "")(
-            "database", value<String>()->default_value("default"), "")("user", value<String>()->default_value("default"), "")(
-            "password", value<String>()->default_value(""), "")("tags", value<Strings>()->multitoken(), "Run only tests with tag")(
-            "skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")("names",
-            value<Strings>()->multitoken(),
-            "Run tests with specific name")("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")(
-            "names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")("skip-names-regexp",
-            value<Strings>()->multitoken(),
-            "Do not run tests with names matching regexp")("recursive,r", "Recurse in directories to find all xml's");
+    Strings input_files;
+    bool recursive = options.count("recursive");
 
-        /// These options will not be displayed in --help
-        boost::program_options::options_description hidden("Hidden options");
-        hidden.add_options()("input-files", value<std::vector<String>>(), "");
+    if (!options.count("input-files"))
+    {
+        std::cerr << "Trying to find test scenario files in the current folder...";
+        fs::path curr_dir(".");
 
-        /// But they will be legit, though. And they must be given without name
-        boost::program_options::positional_options_description positional;
-        positional.add("input-files", -1);
+        getFilesFromDir(curr_dir, input_files, recursive);
 
-        boost::program_options::options_description cmdline_options;
-        cmdline_options.add(desc).add(hidden);
-
-        boost::program_options::variables_map options;
-        boost::program_options::store(
-            boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(positional).run(), options);
-        boost::program_options::notify(options);
-
-        if (options.count("help"))
+        if (input_files.empty())
         {
-            std::cout << "Usage: " << argv[0] << " [options] [test_file ...] [tests_folder]\n";
-            std::cout << desc << "\n";
-            return 0;
-        }
-
-        Strings input_files;
-        bool recursive = options.count("recursive");
-
-        if (!options.count("input-files"))
-        {
-            std::cerr << "Trying to find test scenario files in the current folder...";
-            fs::path curr_dir(".");
-
-            getFilesFromDir(curr_dir, input_files, recursive);
-
-            if (input_files.empty())
-            {
-                std::cerr << std::endl;
-                throw DB::Exception("Did not find any xml files", 1);
-            }
-            else
-                std::cerr << " found " << input_files.size() << " files." << std::endl;
+            std::cerr << std::endl;
+            throw DB::Exception("Did not find any xml files");
         }
         else
+            std::cerr << " found " << input_files.size() << " files." << std::endl;
+    }
+    else
+    {
+        input_files = options["input-files"].as<Strings>();
+        Strings collected_files;
+
+        for (const String filename : input_files)
         {
-            input_files = options["input-files"].as<Strings>();
-            Strings collected_files;
+            fs::path file(filename);
 
-            for (const String filename : input_files)
+            if (!fs::exists(file))
+                throw DB::Exception("File '" + filename + "' does not exist");
+
+            if (fs::is_directory(file))
             {
-                fs::path file(filename);
-
-                if (!fs::exists(file))
-                    throw DB::Exception("File '" + filename + "' does not exist", 1);
-
-                if (fs::is_directory(file))
-                {
-                    getFilesFromDir(file, collected_files, recursive);
-                }
-                else
-                {
-                    if (file.extension().string() != ".xml")
-                        throw DB::Exception("File '" + filename + "' does not have .xml extension", 1);
-                    collected_files.push_back(filename);
-                }
+                getFilesFromDir(file, collected_files, recursive);
             }
-
-            input_files = std::move(collected_files);
+            else
+            {
+                if (file.extension().string() != ".xml")
+                    throw DB::Exception("File '" + filename + "' does not have .xml extension");
+                collected_files.push_back(filename);
+            }
         }
 
-        Strings tests_tags = options.count("tags") ? options["tags"].as<Strings>() : Strings({});
-        Strings skip_tags = options.count("skip-tags") ? options["skip-tags"].as<Strings>() : Strings({});
-        Strings tests_names = options.count("names") ? options["names"].as<Strings>() : Strings({});
-        Strings skip_names = options.count("skip-names") ? options["skip-names"].as<Strings>() : Strings({});
-        Strings tests_names_regexp = options.count("names-regexp") ? options["names-regexp"].as<Strings>() : Strings({});
-        Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
+        input_files = std::move(collected_files);
+    }
 
-        PerformanceTest performanceTest(options["host"].as<String>(),
-            options["port"].as<UInt16>(),
-            options["database"].as<String>(),
-            options["user"].as<String>(),
-            options["password"].as<String>(),
-            options.count("lite") > 0,
-            options["profiles-file"].as<String>(),
-            std::move(input_files),
-            std::move(tests_tags),
-            std::move(skip_tags),
-            std::move(tests_names),
-            std::move(skip_names),
-            std::move(tests_names_regexp),
-            std::move(skip_names_regexp));
-    }
-    catch (...)
-    {
-        std::cout << getCurrentExceptionMessage(/*with stacktrace = */ true) << std::endl;
-        return getCurrentExceptionCode();
-    }
+    Strings tests_tags = options.count("tags") ? options["tags"].as<Strings>() : Strings({});
+    Strings skip_tags = options.count("skip-tags") ? options["skip-tags"].as<Strings>() : Strings({});
+    Strings tests_names = options.count("names") ? options["names"].as<Strings>() : Strings({});
+    Strings skip_names = options.count("skip-names") ? options["skip-names"].as<Strings>() : Strings({});
+    Strings tests_names_regexp = options.count("names-regexp") ? options["names-regexp"].as<Strings>() : Strings({});
+    Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
+
+    DB::PerformanceTest performanceTest(options["host"].as<String>(),
+        options["port"].as<UInt16>(),
+        options["database"].as<String>(),
+        options["user"].as<String>(),
+        options["password"].as<String>(),
+        options.count("lite") > 0,
+        options["profiles-file"].as<String>(),
+        std::move(input_files),
+        std::move(tests_tags),
+        std::move(skip_tags),
+        std::move(tests_names),
+        std::move(skip_names),
+        std::move(tests_names_regexp),
+        std::move(skip_names_regexp));
 
     return 0;
+}
+catch (...)
+{
+    std::cout << DB::getCurrentExceptionMessage(/*with stacktrace = */ true) << std::endl;
+    int code = DB::getCurrentExceptionCode();
+    return code ? code : 1;
 }
