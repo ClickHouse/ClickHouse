@@ -321,7 +321,7 @@ int Server::main(const std::vector<std::string> & args)
             try_listen = true;
         }
 
-        auto make_socket_address = [&](const std::string & host, std::uint16_t port) {
+        auto make_socket_address = [&](const std::string & host, UInt16 port) {
             Poco::Net::SocketAddress socket_address;
             try
             {
