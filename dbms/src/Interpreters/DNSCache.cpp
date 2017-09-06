@@ -59,7 +59,7 @@ static void splitHostAndPort(const std::string & host_and_port, std::string & ou
     {
         struct servent * se = getservbyname(port_str.c_str(), nullptr);
         if (se)
-            out_port = ntohs(static_cast<uint16_t>(se->s_port));
+            out_port = ntohs(static_cast<UInt16>(se->s_port));
         else
             throw Exception("Service not found", ErrorCodes::BAD_ARGUMENTS);
     }

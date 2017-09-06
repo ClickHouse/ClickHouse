@@ -325,7 +325,7 @@ public:
         auto endp = tp + ipv6_bytes_length;
         auto curtok = src;
         auto saw_xdigit = false;
-        uint16_t val{};
+        UInt16 val{};
         unsigned char * colonp = nullptr;
 
         while (const auto ch = *src++)
@@ -355,7 +355,7 @@ public:
                     continue;
                 }
 
-                if (tp + sizeof(uint16_t) > endp)
+                if (tp + sizeof(UInt16) > endp)
                     return clear_dst();
 
                 *tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
@@ -380,7 +380,7 @@ public:
 
         if (saw_xdigit)
         {
-            if (tp + sizeof(uint16_t) > endp)
+            if (tp + sizeof(UInt16) > endp)
                 return clear_dst();
 
             *tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
