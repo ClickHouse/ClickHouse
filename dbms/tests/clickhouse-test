@@ -93,7 +93,7 @@ def main(args):
                 print("Won't run stateful tests because test data wasn't loaded. See README.txt.")
                 continue
 
-            for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir))):
+            for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir)), reverse=True):
                 if SERVER_DIED:
                     break
 
