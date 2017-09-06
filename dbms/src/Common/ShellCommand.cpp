@@ -76,6 +76,10 @@ namespace
 namespace DB
 {
 
+ShellCommand::~ShellCommand()
+{
+    wait();
+}
 
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only)
 {
@@ -176,6 +180,10 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & pa
 
 int ShellCommand::tryWait()
 {
+    if (wait_called)
+        return EXIT_SUCCESS;
+    wait_called = true;
+
     int status = 0;
     if (-1 == waitpid(pid, &status, 0))
         throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);
