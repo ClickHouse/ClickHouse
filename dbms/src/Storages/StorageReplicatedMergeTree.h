@@ -133,19 +133,19 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
-    void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
-    void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
-    void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
-    void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void reshardPartitions(
         const ASTPtr & query, const String & database_name,
-        const Field & partition,
+        const ASTPtr & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
         const Context & context) override;
