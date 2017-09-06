@@ -181,8 +181,6 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & pa
 
 int ShellCommand::tryWait()
 {
-    if (wait_called)
-        return EXIT_SUCCESS;
     wait_called = true;
 
     int status = 0;
