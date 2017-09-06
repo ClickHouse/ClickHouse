@@ -325,9 +325,10 @@ public:
         auto endp = tp + ipv6_bytes_length;
         auto curtok = src;
         auto saw_xdigit = false;
-        UInt16 val{};
+        UInt32 val{};
         unsigned char * colonp = nullptr;
 
+        /// Assuming zero-terminated string.
         while (const auto ch = *src++)
         {
             const auto num = unhex(ch);
