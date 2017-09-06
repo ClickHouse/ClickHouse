@@ -39,7 +39,7 @@
   * The tool walks through given or default folder in order to find files with
   * tests' descriptions and launches it.
   */
-namespace FS = boost::filesystem;
+namespace fs = boost::filesystem;
 using String = std::string;
 const String FOUR_SPACES = "    ";
 
@@ -879,7 +879,7 @@ private:
             if (filename.empty())
                 throw DB::Exception("Empty file name", 1);
 
-            bool tsv = FS::path(filename).extension().string() == ".tsv";
+            bool tsv = fs::path(filename).extension().string() == ".tsv";
 
             ReadBufferFromFile query_file(filename);
 
@@ -1360,18 +1360,18 @@ public:
 };
 }
 
-static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_files, const bool recursive = false)
+static void getFilesFromDir(const fs::path & dir, std::vector<String> & input_files, const bool recursive = false)
 {
     if (dir.extension().string() == ".xml")
         std::cerr << "Warning: '" + dir.string() + "' is a directory, but has .xml extension" << std::endl;
 
-    FS::directory_iterator end;
-    for (FS::directory_iterator it(dir); it != end; ++it)
+    fs::directory_iterator end;
+    for (fs::directory_iterator it(dir); it != end; ++it)
     {
-        const FS::path file = (*it);
-        if (recursive && FS::is_directory(file))
+        const fs::path file = (*it);
+        if (recursive && fs::is_directory(file))
             getFilesFromDir(file, input_files, recursive);
-        else if (!FS::is_directory(file) && file.extension().string() == ".xml")
+        else if (!fs::is_directory(file) && file.extension().string() == ".xml")
             input_files.push_back(file.string());
     }
 }
@@ -1427,7 +1427,7 @@ int mainEntryClickHousePerformanceTest(int argc, char ** argv)
         if (!options.count("input-files"))
         {
             std::cerr << "Trying to find test scenario files in the current folder...";
-            FS::path curr_dir(".");
+            fs::path curr_dir(".");
 
             getFilesFromDir(curr_dir, input_files, recursive);
 
@@ -1442,25 +1442,28 @@ int mainEntryClickHousePerformanceTest(int argc, char ** argv)
         else
         {
             input_files = options["input-files"].as<Strings>();
+            Strings collected_files;
 
             for (const String filename : input_files)
             {
-                FS::path file(filename);
+                fs::path file(filename);
 
-                if (!FS::exists(file))
+                if (!fs::exists(file))
                     throw DB::Exception("File '" + filename + "' does not exist", 1);
 
-                if (FS::is_directory(file))
+                if (fs::is_directory(file))
                 {
-                    input_files.erase(std::remove(input_files.begin(), input_files.end(), filename), input_files.end());
-                    getFilesFromDir(file, input_files, recursive);
+                    getFilesFromDir(file, collected_files, recursive);
                 }
                 else
                 {
                     if (file.extension().string() != ".xml")
                         throw DB::Exception("File '" + filename + "' does not have .xml extension", 1);
+                    collected_files.push_back(filename);
                 }
             }
+
+            input_files = std::move(collected_files);
         }
 
         Strings tests_tags = options.count("tags") ? options["tags"].as<Strings>() : Strings({});
