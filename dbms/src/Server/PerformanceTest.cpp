@@ -5,8 +5,8 @@
 #include <thread>
 #include <unistd.h>
 
-#include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/program_options.hpp>
 #include <sys/stat.h>
 
 #include <common/DateLUT.h>
@@ -15,8 +15,8 @@
 #include <Client/Connection.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
-#include <common/ThreadPool.h>
 #include <Common/getFQDNOrHostName.h>
+#include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Core/Types.h>
 #include <DataStreams/RemoteBlockInputStream.h>
@@ -24,8 +24,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Settings.h>
+#include <common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
-#include <Common/getMultipleKeysFromConfig.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/Exception.h>
@@ -53,7 +53,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-static String pad(size_t padding) {
+static String pad(size_t padding)
+{
     return String(padding * 4, ' ');
 }
 
@@ -81,7 +82,7 @@ public:
     template <typename T>
     typename std::enable_if<std::is_arithmetic<T>::value>::type set(const String key, T value)
     {
-        set(key, std::to_string(value), /*wrap= */false);
+        set(key, std::to_string(value), /*wrap= */ false);
     }
 
     void set(const String key, const std::vector<JSONString> & run_infos)
@@ -101,7 +102,10 @@ public:
         content[key] = value;
     }
 
-    String asString() const { return asString(padding); }
+    String asString() const
+    {
+        return asString(padding);
+    }
     String asString(size_t padding) const
     {
         String repr = "{";
@@ -222,12 +226,12 @@ public:
         return !conditions_all_of.initialized_count && !conditions_any_of.initialized_count;
     }
 
-#define DEFINE_REPORT_FUNC(FUNC_NAME, CONDITION)                        \
-    void FUNC_NAME(UInt64 value)                                        \
-    {                                                                   \
-        conditions_all_of.report(value, conditions_all_of.CONDITION);   \
-        conditions_any_of.report(value, conditions_any_of.CONDITION);   \
-    }                                                                   \
+#define DEFINE_REPORT_FUNC(FUNC_NAME, CONDITION)                      \
+    void FUNC_NAME(UInt64 value)                                      \
+    {                                                                 \
+        conditions_all_of.report(value, conditions_all_of.CONDITION); \
+        conditions_any_of.report(value, conditions_any_of.CONDITION); \
+    }
 
     DEFINE_REPORT_FUNC(reportTotalTime, total_time_ms);
     DEFINE_REPORT_FUNC(reportRowsRead, rows_read);
@@ -241,9 +245,7 @@ public:
 
     bool areFulfilled() const
     {
-        return
-            (conditions_all_of.initialized_count
-                && conditions_all_of.fulfilled_count >= conditions_all_of.initialized_count)
+        return (conditions_all_of.initialized_count && conditions_all_of.fulfilled_count >= conditions_all_of.initialized_count)
             || (conditions_any_of.initialized_count && conditions_any_of.fulfilled_count);
     }
 
@@ -318,8 +320,8 @@ struct Stats
                 result += "\n";
             }
             result += FOUR_SPACES + "0.95:   " + std::to_string(sampler.quantileInterpolated(95 / 100.0)) + "\n";
-            result += FOUR_SPACES + "0.99: "   + std::to_string(sampler.quantileInterpolated(99 / 100.0)) + "\n";
-            result += FOUR_SPACES + "0.999: "  + std::to_string(sampler.quantileInterpolated(99.9 / 100.)) + "\n";
+            result += FOUR_SPACES + "0.99: " + std::to_string(sampler.quantileInterpolated(99 / 100.0)) + "\n";
+            result += FOUR_SPACES + "0.999: " + std::to_string(sampler.quantileInterpolated(99.9 / 100.)) + "\n";
             result += FOUR_SPACES + "0.9999: " + std::to_string(sampler.quantileInterpolated(99.99 / 100.));
 
             return result;
@@ -476,7 +478,7 @@ struct Stats
     }
 };
 
-double Stats::avg_rows_speed_precision  = 0.001;
+double Stats::avg_rows_speed_precision = 0.001;
 double Stats::avg_bytes_speed_precision = 0.001;
 
 class PerformanceTest
@@ -484,8 +486,7 @@ class PerformanceTest
 public:
     using Strings = std::vector<String>;
 
-    PerformanceTest(
-        const String & host_,
+    PerformanceTest(const String & host_,
         const UInt16 port_,
         const String & default_database_,
         const String & user_,
@@ -498,8 +499,7 @@ public:
         Strings && tests_names_,
         Strings && skip_names_,
         Strings && tests_names_regexp_,
-        Strings && skip_names_regexp_
-    )
+        Strings && skip_names_regexp_)
         : connection(host_, port_, default_database_, user_, password_),
           gotSIGINT(false),
           lite_output(lite_output_),
@@ -593,11 +593,9 @@ private:
 
     /// Removes configurations that has a given value. If leave is true, the logic is reversed.
     void removeConfigurationsIf(
-            std::vector<XMLConfigurationPtr> & configs,
-            FilterType filter_type, const Strings & values, bool leave = false)
+        std::vector<XMLConfigurationPtr> & configs, FilterType filter_type, const Strings & values, bool leave = false)
     {
-        auto checker = [&filter_type, &values, &leave](XMLConfigurationPtr & config)
-        {
+        auto checker = [&filter_type, &values, &leave](XMLConfigurationPtr & config) {
             if (values.size() == 0)
                 return false;
 
@@ -612,7 +610,8 @@ private:
                 for (size_t i = 0; i != tags_keys.size(); ++i)
                     tags[i] = config->getString("tags.tag[" + std::to_string(i) + "]");
 
-                for (const String & config_tag : tags) {
+                for (const String & config_tag : tags)
+                {
                     if (std::find(values.begin(), values.end(), config_tag) != values.end())
                         remove_or_not = true;
                 }
@@ -631,8 +630,7 @@ private:
                     return std::regex_search(config_name, pattern);
                 };
 
-                remove_or_not = config->has("name") ? (std::find_if(values.begin(), values.end(), regex_checker) != values.end())
-                                                    : false;
+                remove_or_not = config->has("name") ? (std::find_if(values.begin(), values.end(), regex_checker) != values.end()) : false;
             }
 
             if (leave)
@@ -672,7 +670,8 @@ private:
         for (const String & precondition : preconditions)
         {
             if (precondition == "flush_disk_cache")
-                if (system("(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
+                if (system(
+                        "(>&2 echo 'Flushing disk cache...') && (sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches') && (>&2 echo 'Flushed.')"))
                 {
                     std::cerr << "Failed to flush disk cache" << std::endl;
                     return false;
@@ -784,8 +783,7 @@ private:
     }
 
     void extractSettings(
-            const XMLConfigurationPtr & config, const String & key,
-            const Strings & settings_list, std::map<String, String> & settings_to_apply)
+        const XMLConfigurationPtr & config, const String & key, const Strings & settings_list, std::map<String, String> & settings_to_apply)
     {
         for (const String & setup : settings_list)
         {
@@ -834,15 +832,15 @@ private:
             /// and, if found any settings in test's xml configuration
             /// with the same name, sets its value to settings
             std::map<String, String>::iterator it;
-            #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
-                it = settings_to_apply.find(#NAME);      \
-                if (it != settings_to_apply.end())       \
-                    settings.set(#NAME, settings_to_apply[#NAME]);
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+    it = settings_to_apply.find(#NAME);      \
+    if (it != settings_to_apply.end())       \
+        settings.set(#NAME, settings_to_apply[#NAME]);
 
             APPLY_FOR_SETTINGS(EXTRACT_SETTING)
             APPLY_FOR_LIMITS(EXTRACT_SETTING)
 
-            #undef EXTRACT_SETTING
+#undef EXTRACT_SETTING
 
             if (std::find(config_settings.begin(), config_settings.end(), "average_rows_speed_precision") != config_settings.end())
             {
@@ -1074,10 +1072,8 @@ private:
 
         RemoteBlockInputStream stream(connection, query, global_context, &settings);
 
-        stream.setProgressCallback([&](const Progress & value)
-            {
-                this->checkFulfilledConditionsAndUpdate(value, stream, statistics, stop_conditions);
-            });
+        stream.setProgressCallback(
+            [&](const Progress & value) { this->checkFulfilledConditionsAndUpdate(value, stream, statistics, stop_conditions); });
 
         stream.readPrefix();
         while (Block block = stream.read())
@@ -1091,10 +1087,7 @@ private:
     }
 
     void checkFulfilledConditionsAndUpdate(
-            const Progress & progress,
-            RemoteBlockInputStream & stream,
-            Stats & statistics,
-            TestStopConditions & stop_conditions)
+        const Progress & progress, RemoteBlockInputStream & stream, Stats & statistics, TestStopConditions & stop_conditions)
     {
         statistics.add(progress.rows, progress.bytes);
 
@@ -1102,10 +1095,8 @@ private:
         stop_conditions.reportBytesReadUncompressed(statistics.total_bytes_read);
         stop_conditions.reportTotalTime(statistics.watch.elapsed() / (1000 * 1000));
         stop_conditions.reportMinTimeNotChangingFor(statistics.min_time_watch.elapsed() / (1000 * 1000));
-        stop_conditions.reportMaxSpeedNotChangingFor(
-                statistics.max_rows_speed_watch.elapsed() / (1000 * 1000));
-        stop_conditions.reportAverageSpeedNotChangingFor(
-                statistics.avg_rows_speed_watch.elapsed() / (1000 * 1000));
+        stop_conditions.reportMaxSpeedNotChangingFor(statistics.max_rows_speed_watch.elapsed() / (1000 * 1000));
+        stop_conditions.reportAverageSpeedNotChangingFor(statistics.avg_rows_speed_watch.elapsed() / (1000 * 1000));
 
         if (stop_conditions.areFulfilled())
         {
@@ -1128,8 +1119,7 @@ private:
 
         for (size_t i = 0; i != xml_substitutions.size(); ++i)
         {
-            const ConfigurationPtr xml_substitution(
-                    substitutions_view->createView("substitution[" + std::to_string(i) + "]"));
+            const ConfigurationPtr xml_substitution(substitutions_view->createView("substitution[" + std::to_string(i) + "]"));
 
             /// Property values for substitution will be stored in a vector
             /// accessible by property name
@@ -1273,7 +1263,6 @@ public:
                 }
 
 
-
                 if (exec_type == ExecutionType::Loop)
                 {
                     /// in seconds
@@ -1291,9 +1280,9 @@ public:
 
                             quantiles.set(quantile_key, statistics.sampler.quantileInterpolated(percent / 100.0));
                         }
-                        quantiles.set("0.95",   statistics.sampler.quantileInterpolated(95    / 100.0));
-                        quantiles.set("0.99",   statistics.sampler.quantileInterpolated(99    / 100.0));
-                        quantiles.set("0.999",  statistics.sampler.quantileInterpolated(99.9  / 100.0));
+                        quantiles.set("0.95", statistics.sampler.quantileInterpolated(95 / 100.0));
+                        quantiles.set("0.99", statistics.sampler.quantileInterpolated(99 / 100.0));
+                        quantiles.set("0.999", statistics.sampler.quantileInterpolated(99.9 / 100.0));
                         quantiles.set("0.9999", statistics.sampler.quantileInterpolated(99.99 / 100.0));
 
                         runJSON.set("quantiles", quantiles.asString());
@@ -1303,16 +1292,13 @@ public:
                         runJSON.set("total_time", statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "queries_per_second") != metrics.end())
-                        runJSON.set("queries_per_second", double(statistics.queries) /
-                                                          statistics.total_time);
+                        runJSON.set("queries_per_second", double(statistics.queries) / statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "rows_per_second") != metrics.end())
-                        runJSON.set("rows_per_second", double(statistics.total_rows_read) /
-                                                       statistics.total_time);
+                        runJSON.set("rows_per_second", double(statistics.total_rows_read) / statistics.total_time);
 
                     if (std::find(metrics.begin(), metrics.end(), "bytes_per_second") != metrics.end())
-                        runJSON.set("bytes_per_second", double(statistics.total_bytes_read) /
-                                                        statistics.total_time);
+                        runJSON.set("bytes_per_second", double(statistics.total_bytes_read) / statistics.total_time);
                 }
                 else
                 {
@@ -1387,7 +1373,7 @@ static void getFilesFromDir(const FS::path & dir, std::vector<String> & input_fi
     }
 }
 
-int mainEntryClickhousePerformanceTest(int argc, char ** argv)
+int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 {
     using namespace DB;
 
@@ -1397,22 +1383,17 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
         using Strings = std::vector<String>;
 
         boost::program_options::options_description desc("Allowed options");
-        desc.add_options()
-            ("help",                                                                     "produce help message")
-            ("lite",                                                                     "use lite version of output")
-            ("profiles-file",        value<String>()->default_value(""),            "Specify a file with global profiles")
-            ("host,h",               value<String>()->default_value("localhost"),   "")
-            ("port",                 value<UInt16>()->default_value(9000),               "")
-            ("database",             value<String>()->default_value("default"),     "")
-            ("user",                 value<String>()->default_value("default"),     "")
-            ("password",             value<String>()->default_value(""),            "")
-            ("tags",                 value<Strings>()->multitoken(),                     "Run only tests with tag")
-            ("skip-tags",            value<Strings>()->multitoken(),                     "Do not run tests with tag")
-            ("names",                value<Strings>()->multitoken(),                     "Run tests with specific name")
-            ("skip-names",           value<Strings>()->multitoken(),                     "Do not run tests with name")
-            ("names-regexp",         value<Strings>()->multitoken(),                     "Run tests with names matching regexp")
-            ("skip-names-regexp",    value<Strings>()->multitoken(),                     "Do not run tests with names matching regexp")
-            ("recursive,r",                                                              "Recurse in directories to find all xml's");
+        desc.add_options()("help", "produce help message")("lite", "use lite version of output")(
+            "profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")(
+            "host,h", value<String>()->default_value("localhost"), "")("port", value<UInt16>()->default_value(9000), "")(
+            "database", value<String>()->default_value("default"), "")("user", value<String>()->default_value("default"), "")(
+            "password", value<String>()->default_value(""), "")("tags", value<Strings>()->multitoken(), "Run only tests with tag")(
+            "skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")("names",
+            value<Strings>()->multitoken(),
+            "Run tests with specific name")("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")(
+            "names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")("skip-names-regexp",
+            value<Strings>()->multitoken(),
+            "Do not run tests with names matching regexp")("recursive,r", "Recurse in directories to find all xml's");
 
         /// These options will not be displayed in --help
         boost::program_options::options_description hidden("Hidden options");
@@ -1468,7 +1449,7 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
 
                 if (FS::is_directory(file))
                 {
-                    input_files.erase( std::remove(input_files.begin(), input_files.end(), filename) , input_files.end() );
+                    input_files.erase(std::remove(input_files.begin(), input_files.end(), filename), input_files.end());
                     getFilesFromDir(file, input_files, recursive);
                 }
                 else
@@ -1479,27 +1460,14 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             }
         }
 
-        Strings tests_tags = options.count("tags")
-            ? options["tags"].as<Strings>()
-            : Strings({});
-        Strings skip_tags = options.count("skip-tags")
-            ? options["skip-tags"].as<Strings>()
-            : Strings({});
-        Strings tests_names = options.count("names")
-            ? options["names"].as<Strings>()
-            : Strings({});
-        Strings skip_names = options.count("skip-names")
-            ? options["skip-names"].as<Strings>()
-            : Strings({});
-        Strings tests_names_regexp = options.count("names-regexp")
-            ? options["names-regexp"].as<Strings>()
-            : Strings({});
-        Strings skip_names_regexp = options.count("skip-names-regexp")
-            ? options["skip-names-regexp"].as<Strings>()
-            : Strings({});
+        Strings tests_tags = options.count("tags") ? options["tags"].as<Strings>() : Strings({});
+        Strings skip_tags = options.count("skip-tags") ? options["skip-tags"].as<Strings>() : Strings({});
+        Strings tests_names = options.count("names") ? options["names"].as<Strings>() : Strings({});
+        Strings skip_names = options.count("skip-names") ? options["skip-names"].as<Strings>() : Strings({});
+        Strings tests_names_regexp = options.count("names-regexp") ? options["names-regexp"].as<Strings>() : Strings({});
+        Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
 
-        PerformanceTest performanceTest(
-            options["host"].as<String>(),
+        PerformanceTest performanceTest(options["host"].as<String>(),
             options["port"].as<UInt16>(),
             options["database"].as<String>(),
             options["user"].as<String>(),
@@ -1512,12 +1480,11 @@ int mainEntryClickhousePerformanceTest(int argc, char ** argv)
             std::move(tests_names),
             std::move(skip_names),
             std::move(tests_names_regexp),
-            std::move(skip_names_regexp)
-        );
+            std::move(skip_names_regexp));
     }
     catch (...)
     {
-        std::cout << getCurrentExceptionMessage(/*with stacktrace = */true) << std::endl;
+        std::cout << getCurrentExceptionMessage(/*with stacktrace = */ true) << std::endl;
         return getCurrentExceptionCode();
     }
 
