@@ -78,7 +78,7 @@ namespace DB
 
 ShellCommand::~ShellCommand()
 {
-    wait();
+    tryWait();
 }
 
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only)
