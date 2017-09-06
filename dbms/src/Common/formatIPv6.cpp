@@ -54,7 +54,7 @@ static void formatIPv4(const unsigned char * src, char *& dst, UInt8 zeroed_tail
 void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_count)
 {
     struct { int base, len; } best{-1}, cur{-1};
-    std::array<uint16_t, IPV6_BINARY_LENGTH / sizeof(uint16_t)> words{};
+    std::array<UInt16, IPV6_BINARY_LENGTH / sizeof(UInt16)> words{};
 
     /** Preprocess:
         *    Copy the input (bytewise) array into a wordwise array.
