@@ -328,11 +328,6 @@ private:
         static const int max_frames = 50;
         void * frames[max_frames];
 
-
-
-
-
-
 #if USE_UNWIND
         int frames_size = backtraceLibUnwind(frames, max_frames, context);
 

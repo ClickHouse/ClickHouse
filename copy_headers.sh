@@ -28,6 +28,7 @@ fi
 
 for src_file in $($CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
     $(cat "$SOURCE_PATH/build/include_directories.txt") \
+    "$SOURCE_PATH/build/dbms/src/Common/config_version.h" \
     "$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
     tr -d '\\' |
     sed -r -e 's/^\w+\.o://');
