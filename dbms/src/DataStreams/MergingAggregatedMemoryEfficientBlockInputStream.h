@@ -146,7 +146,7 @@ private:
         /// An event by which the main thread is telling merging threads that it is possible to process the next group of blocks.
         std::condition_variable have_space;
 
-        ParallelMergeData(size_t max_threads) : pool(max_threads) {}
+        explicit ParallelMergeData(size_t max_threads) : pool(max_threads) {}
     };
 
     std::unique_ptr<ParallelMergeData> parallel_merge_data;

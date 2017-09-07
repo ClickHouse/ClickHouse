@@ -49,8 +49,6 @@ try
     arg_nums.push_back(0);
     arg_nums.push_back(1);
 
-    size_t res_num = 2;
-
     DataTypePtr res_type = f.getReturnType(arg_types);
 
     ColumnWithTypeAndName descr_res;
@@ -61,6 +59,7 @@ try
         Stopwatch stopwatch;
         stopwatch.start();
 
+        size_t res_num = 2;
         f.execute(block, arg_nums, res_num);
 
         stopwatch.stop();

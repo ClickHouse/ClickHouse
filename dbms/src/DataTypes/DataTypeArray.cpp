@@ -230,11 +230,11 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
     IColumn & nested_column = column_array.getData();
 
     size_t size = 0;
-    bool first = true;
     assertChar('[', istr);
 
     try
     {
+        bool first = true;
         while (!istr.eof() && *istr.position() != ']')
         {
             if (!first)

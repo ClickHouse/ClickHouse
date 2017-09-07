@@ -837,9 +837,9 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             Range key_range_transformed;
-            bool evaluation_is_not_possible = false;
             if (!element.monotonic_functions_chain.empty())
             {
+                bool evaluation_is_not_possible = false;
                 key_range_transformed = *key_range;
                 DataTypePtr current_type = data_types[element.key_column];
                 for (auto & func : element.monotonic_functions_chain)

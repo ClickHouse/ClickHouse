@@ -17,19 +17,12 @@ namespace DB
 class Exception : public Poco::Exception
 {
 public:
-    Exception(int code = 0) : Poco::Exception(code) {}
+    Exception() {}  /// For deferred initialization.
     Exception(const std::string & msg, int code = 0) : Poco::Exception(msg, code) {}
     Exception(const std::string & msg, const std::string & arg, int code = 0) : Poco::Exception(msg, arg, code) {}
     Exception(const std::string & msg, const Exception & exc, int code = 0) : Poco::Exception(msg, exc, code), trace(exc.trace) {}
-    Exception(const Exception & exc) : Poco::Exception(exc), trace(exc.trace) {}
     explicit Exception(const Poco::Exception & exc) : Poco::Exception(exc.displayText()) {}
-    ~Exception() throw() override {}
-    Exception & operator = (const Exception & exc)
-    {
-        Poco::Exception::operator=(exc);
-        trace = exc.trace;
-        return *this;
-    }
+
     const char * name() const throw() override { return "DB::Exception"; }
     const char * className() const throw() override { return "DB::Exception"; }
     DB::Exception * clone() const override { return new DB::Exception(*this); }
@@ -49,16 +42,12 @@ private:
 class ErrnoException : public Exception
 {
 public:
-    ErrnoException(int code = 0, int saved_errno_ = 0)
-        : Exception(code), saved_errno(saved_errno_) {}
     ErrnoException(const std::string & msg, int code = 0, int saved_errno_ = 0)
         : Exception(msg, code), saved_errno(saved_errno_) {}
     ErrnoException(const std::string & msg, const std::string & arg, int code = 0, int saved_errno_ = 0)
         : Exception(msg, arg, code), saved_errno(saved_errno_) {}
     ErrnoException(const std::string & msg, const Exception & exc, int code = 0, int saved_errno_ = 0)
         : Exception(msg, exc, code), saved_errno(saved_errno_) {}
-    ErrnoException(const ErrnoException & exc)
-        : Exception(exc), saved_errno(exc.saved_errno) {}
 
     int getErrno() const { return saved_errno; }
 

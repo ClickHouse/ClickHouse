@@ -180,7 +180,7 @@ class StorageFileBlockOutputStream : public IBlockOutputStream
 {
 public:
 
-    StorageFileBlockOutputStream(StorageFile & storage_)
+    explicit StorageFileBlockOutputStream(StorageFile & storage_)
         : storage(storage_), lock(storage.rwlock)
     {
         if (storage.use_table_fd)
