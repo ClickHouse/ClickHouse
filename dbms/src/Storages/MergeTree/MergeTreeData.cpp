@@ -1294,7 +1294,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
             part->info.min_block = part->info.max_block = increment->get();
 
         String new_name;
-        if (format_version == 0)
+        if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
             new_name = part->info.getPartNameV0(part->getMinDate(), part->getMaxDate());
         else
             new_name = part->info.getPartName();
@@ -1724,7 +1724,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context)
 {
     String prefix;
-    if (format_version == 0)
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         const auto & partition = dynamic_cast<const ASTPartition &>(*partition_ast);
         /// Month-partitioning specific - allow partition ID can be passed in the partition value.
@@ -1804,7 +1804,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & partition_ast, cons
     if (!partition.value)
         return partition.id;
 
-    if (format_version == 0)
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - allow partition ID can be passed in the partition value.
         const auto * partition_lit = typeid_cast<const ASTLiteral *>(partition.value.get());

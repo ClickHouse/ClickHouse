@@ -176,7 +176,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     part->info.level = 0;
 
     String part_name;
-    if (storage.data.format_version == 0)
+    if (storage.data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         part_name = part->info.getPartNameV0(part->getMinDate(), part->getMaxDate());
     else
         part_name = part->info.getPartName();

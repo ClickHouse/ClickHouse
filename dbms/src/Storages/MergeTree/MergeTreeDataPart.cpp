@@ -810,7 +810,7 @@ void MergeTreeDataPart::loadIndex()
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
 {
-    if (storage.format_version == 0)
+    if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         DayNum_t min_date;
         DayNum_t max_date;
@@ -900,7 +900,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
             }
         }
 
-        if (storage.format_version > 0)
+        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
             if (storage.partition_expr && !checksums.files.count("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -928,7 +928,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         if (!storage.sort_descr.empty())
             check_file_not_empty(path + "primary.idx");
 
-        if (storage.format_version > 0)
+        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
             if (storage.partition_expr)
                 check_file_not_empty(path + "partition.dat");
