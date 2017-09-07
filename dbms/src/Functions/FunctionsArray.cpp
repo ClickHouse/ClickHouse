@@ -1071,7 +1071,7 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
 void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     /// Check nullability.
-    bool is_nullable;
+    bool is_nullable = false;
 
     const ColumnArray * col_array = nullptr;
     const ColumnConst * col_const_array = nullptr;

@@ -2402,7 +2402,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
     LOG_DEBUG(log, "Doing ALTER");
 
-    int new_columns_version;
+    int new_columns_version = -1;   /// Initialization is to suppress (useless) false positive warning found by cppcheck.
     String new_columns_str;
     zkutil::Stat stat;
 
@@ -2427,8 +2427,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
         new_columns_str = ColumnsDescription<false>{
             new_columns, new_materialized_columns,
-            new_alias_columns, new_column_defaults
-        }.toString();
+            new_alias_columns, new_column_defaults}.toString();
 
         /// Do ALTER.
         getZooKeeper()->set(zookeeper_path + "/columns", new_columns_str, -1, &stat);

@@ -27,6 +27,9 @@ endif ()
 cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
 cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 
+# Write compile_commands.json
+set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
+
 find_program (CCACHE_FOUND ccache)
 if (CCACHE_FOUND AND NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" AND NOT CMAKE_CXX_COMPILER MATCHES "ccache")
   set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE "ccache")
