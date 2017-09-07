@@ -46,7 +46,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
     char * buf;
     if ((mode & MODE_DIRECT))
-        buf = direct_buf.data;
+        buf = direct_buf.data();
     else
         buf = &simple_buf[0];
 
