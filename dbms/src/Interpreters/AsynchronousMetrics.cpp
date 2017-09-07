@@ -126,6 +126,8 @@ void AsynchronousMetrics::update()
         }
     }
 
+    set("Uptime", context.getUptimeSeconds());
+
     {
         auto databases = context.getDatabases();
 
