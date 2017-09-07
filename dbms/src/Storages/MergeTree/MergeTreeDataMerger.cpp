@@ -84,7 +84,7 @@ void MergeTreeDataMerger::FuturePart::assign(MergeTreeData::DataPartsVector part
     part_info.max_block = parts.back()->info.max_block;
     part_info.level = max_level + 1;
 
-    if (parts.front()->storage.format_version == 0)
+    if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         DayNum_t min_date = DayNum_t(std::numeric_limits<UInt16>::max());
         DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
@@ -1060,7 +1060,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         MergeTreeData::MutableDataPartPtr & part_from_shard = entry.second;
 
         std::string new_name;
-        if (data.format_version == 0)
+        if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
             new_name = part_from_shard->info.getPartNameV0(part_from_shard->getMinDate(), part_from_shard->getMaxDate());
         else
             new_name = part_from_shard->info.getPartName();
