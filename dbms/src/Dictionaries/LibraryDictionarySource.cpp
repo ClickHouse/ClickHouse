@@ -155,7 +155,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
-    const ClickHouseLibrary::VectorUInt64 ids_data{ids.data(), ids.size()};
+    const ClickHouseLibrary::VectorUInt64 ids_data{static_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
     ClickHouseLibrary::CStrings columns_pass{
         static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
