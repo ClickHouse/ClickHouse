@@ -117,7 +117,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
             ++blocks_sent;
             ++in_progress;
 
-            char * buf = buffers[i].data;
+            char * buf = buffers[i].data();
 
             long rand_result1 = 0;
             long rand_result2 = 0;
