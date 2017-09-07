@@ -2576,7 +2576,7 @@ static String getFakePartNameCoveringPartRange(
 {
     /// Artificial high level is choosen, to make this part "covering" all parts inside.
     MergeTreePartInfo part_info(partition_id, left, right, 999999999);
-    if (format_version == 0)
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// The date range is all month long.
         const auto & lut = DateLUT::instance();

@@ -26,7 +26,7 @@ bool MergeTreePartInfo::tryParsePartName(const String & dir_name, MergeTreePartI
     ReadBufferFromString in(dir_name);
 
     String partition_id;
-    if (format_version == 0)
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         UInt32 min_yyyymmdd = 0;
         UInt32 max_yyyymmdd = 0;
