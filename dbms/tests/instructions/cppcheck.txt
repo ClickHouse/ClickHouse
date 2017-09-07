@@ -1,0 +1,17 @@
+# Install cppcheck
+
+mkdir cppcheck && cd cppcheck
+git clone git@github.com:danmar/cppcheck.git .
+mkdir build && cd build
+CC=gcc-7 CXX=g++-7 cmake -D CMAKE_BUILD_TYPE=Release ..
+make -j24
+sudo make install
+
+# Perform analysis
+# cd ClickHouse_clean
+
+cppcheck -j24 -i contrib -i build --enable=all . 2> cppcheck-errors.txt
+
+# Check is pretty fast.
+# It doesn't understand atomics, lambdas, std::rethrow_exception, macros, it have poor logic inference.
+# But the result is worth looking and at least few real errors found.
