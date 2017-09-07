@@ -82,11 +82,11 @@ struct HostID
         return host_name + ":" + DB::toString(port);
     }
 
-    bool isLocalAddress() const
+    bool isLocalAddress(UInt16 clickhouse_port) const
     {
         try
         {
-            return DB::isLocalAddress(Poco::Net::SocketAddress(DNSCache::instance().resolveHost(host_name), port));
+            return DB::isLocalAddress(Poco::Net::SocketAddress(host_name, port), clickhouse_port);
         }
         catch (const Poco::Exception & e)
         {
@@ -287,7 +287,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     bool host_in_hostlist = false;
     for (const HostID & host : task->entry.hosts)
     {
-        if (!host.isLocalAddress())
+        if (!host.isLocalAddress(context.getTCPPort()))
             continue;
 
         if (host_in_hostlist)
@@ -464,7 +464,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.resolved_address))
+            if (isLocalAddress(address.resolved_address, context.getTCPPort()))
             {
                 if (found_via_resolving)
                 {
