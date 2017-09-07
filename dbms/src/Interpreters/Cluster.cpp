@@ -29,7 +29,7 @@ namespace
 /// Default shard weight.
 static constexpr UInt32 default_weight = 1;
 
-inline bool isLocal(const Cluster::Address & address)
+inline bool isLocal(const Cluster::Address & address, UInt16 clickhouse_port)
 {
     ///    If there is replica, for which:
     /// - its port is the same that the server is listening;
@@ -41,7 +41,7 @@ inline bool isLocal(const Cluster::Address & address)
     /// Also, replica is considered non-local, if it has default database set
     ///  (only reason is to avoid query rewrite).
 
-    return address.default_database.empty() && isLocalAddress(address.resolved_address);
+    return address.default_database.empty() && isLocalAddress(address.resolved_address, clickhouse_port);
 }
 
 
@@ -61,23 +61,23 @@ Poco::Net::SocketAddress resolveSocketAddress(const String & host_and_port)
 
 Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
+    UInt16 clickhouse_port = config.getInt("tcp_port", 0);
+
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
     resolved_address = resolveSocketAddress(host_name, port);
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
-    is_local = isLocal(*this);
+    is_local = isLocal(*this, clickhouse_port);
 }
 
 
-Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_)
+Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port)
     : user(user_), password(password_)
 {
-    UInt16 default_port = static_cast<UInt16>(Poco::Util::Application::instance().config().getInt("tcp_port", 0));
-
     /// It's like that 'host_port_' string contains port. If condition is met, it doesn't necessarily mean that port exists (example: [::]).
-    if ((nullptr != strchr(host_port_.c_str(), ':')) || !default_port)
+    if ((nullptr != strchr(host_port_.c_str(), ':')) || !clickhouse_port)
     {
         resolved_address = resolveSocketAddress(host_port_);
         host_name = host_port_.substr(0, host_port_.find(':'));
@@ -85,11 +85,11 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
     }
     else
     {
-        resolved_address = resolveSocketAddress(host_port_, default_port);
+        resolved_address = resolveSocketAddress(host_port_, clickhouse_port);
         host_name = host_port_;
-        port = default_port;
+        port = clickhouse_port;
     }
-    is_local = isLocal(*this);
+    is_local = isLocal(*this, clickhouse_port);
 }
 
 
@@ -333,7 +333,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
 
 Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password)
+                 const String & username, const String & password, UInt16 clickhouse_port)
 {
     UInt32 current_shard_num = 1;
 
@@ -341,7 +341,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (auto & replica : shard)
-            current.emplace_back(replica, username, password);
+            current.emplace_back(replica, username, password, clickhouse_port);
 
         addresses_with_failover.emplace_back(current);
 
