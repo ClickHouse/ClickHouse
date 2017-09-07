@@ -15,7 +15,7 @@ private:
     IServer & server;
 
 public:
-    RootRequestHandler(IServer & server_) : server(server_)
+    explicit RootRequestHandler(IServer & server_) : server(server_)
     {
     }
 

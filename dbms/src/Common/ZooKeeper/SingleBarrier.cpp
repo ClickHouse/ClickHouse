@@ -67,8 +67,6 @@ void SingleBarrier::enter(UInt64 timeout)
 {
     __sync_synchronize();
 
-    bool is_first_crossing = true;
-
     RWLock lock{get_zookeeper, path + "/lock"};
 
     try
@@ -92,6 +90,7 @@ void SingleBarrier::enter(UInt64 timeout)
             throw KeeperException{code};
 
         Stopwatch watch;
+        bool is_first_crossing = true;
 
         while (true)
         {

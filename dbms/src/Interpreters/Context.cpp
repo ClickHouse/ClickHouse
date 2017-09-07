@@ -100,7 +100,7 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
-    int interserver_io_port;                                /// and port,
+    UInt16 interserver_io_port = 0;                         /// and port.
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.

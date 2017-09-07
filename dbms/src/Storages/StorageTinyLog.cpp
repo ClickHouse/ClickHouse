@@ -96,7 +96,7 @@ private:
 class TinyLogBlockOutputStream : public IBlockOutputStream
 {
 public:
-    TinyLogBlockOutputStream(StorageTinyLog & storage_)
+    explicit TinyLogBlockOutputStream(StorageTinyLog & storage_)
         : storage(storage_)
     {
         for (const auto & col : storage.getColumnsList())

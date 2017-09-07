@@ -46,7 +46,7 @@ void run()
     }
 }
 
-void runTest(unsigned int num, const std::function<bool()> func)
+void runTest(unsigned int num, const std::function<bool()> & func)
 {
     bool ok;
 

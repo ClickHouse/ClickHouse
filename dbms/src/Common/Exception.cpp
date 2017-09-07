@@ -30,7 +30,6 @@ void throwFromErrno(const std::string & s, int code, int e)
     const size_t buf_size = 128;
     char buf[buf_size];
 #ifndef _GNU_SOURCE
-    const char * unknown_message = "Unknown error ";
     int rc = strerror_r(e, buf, buf_size);
 #ifdef __APPLE__
     if (rc != 0 && rc != EINVAL)
@@ -40,6 +39,7 @@ void throwFromErrno(const std::string & s, int code, int e)
     {
         std::string tmp = std::to_string(code);
         const char * code = tmp.c_str();
+        const char * unknown_message = "Unknown error ";
         strcpy(buf, unknown_message);
         strcpy(buf + strlen(unknown_message), code);
     }

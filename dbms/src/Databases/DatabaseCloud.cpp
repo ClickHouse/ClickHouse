@@ -176,7 +176,7 @@ struct TableSet
     using Container = std::map<String, TableDescription>;
     Container map;
 
-    TableSet(const String & data)
+    explicit TableSet(const String & data)
     {
         ReadBufferFromString in(data);
         read(in);
@@ -466,7 +466,7 @@ private:
     }
 
 public:
-    DatabaseCloudIterator(DatabasePtr database)
+    explicit DatabaseCloudIterator(DatabasePtr database)
         : owned_database(database),
         zookeeper(parent().context.getZooKeeper()),
         zookeeper_path(parent().zookeeper_path + "/tables/" + parent().name),

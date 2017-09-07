@@ -114,7 +114,7 @@ private:
 class StripeLogBlockOutputStream : public IBlockOutputStream
 {
 public:
-    StripeLogBlockOutputStream(StorageStripeLog & storage_)
+    explicit StripeLogBlockOutputStream(StorageStripeLog & storage_)
         : storage(storage_), lock(storage.rwlock),
         data_out_compressed(storage.full_path() + "data.bin", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
         data_out(data_out_compressed, CompressionMethod::LZ4, storage.max_compress_block_size),

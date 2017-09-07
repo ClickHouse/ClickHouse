@@ -33,16 +33,13 @@ const int CreateMode::Ephemeral = ZOO_EPHEMERAL;
 const int CreateMode::EphemeralSequential = ZOO_EPHEMERAL | ZOO_SEQUENCE;
 const int CreateMode::PersistentSequential = ZOO_SEQUENCE;
 
-void check(int32_t code, const std::string path = "")
+
+static void check(int32_t code, const std::string & path)
 {
     if (code != ZOK)
-    {
-        if (path.size())
-            throw KeeperException(code, path);
-        else
-            throw KeeperException(code);
-    }
+        throw KeeperException(code, path);
 }
+
 
 struct WatchContext
 {

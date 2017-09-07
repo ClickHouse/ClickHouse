@@ -58,6 +58,8 @@ static String pad(size_t padding)
     return String(padding * 4, ' ');
 }
 
+
+/// NOTE The code is totally wrong.
 class JSONString
 {
 private:
@@ -65,7 +67,7 @@ private:
     size_t padding;
 
 public:
-    JSONString(size_t padding_ = 1) : padding(padding_){};
+    explicit JSONString(size_t padding_ = 1) : padding(padding_){};
 
     void set(const String key, String value, bool wrap = true)
     {
@@ -1041,16 +1043,13 @@ private:
             TestStopConditions & stop_conditions = stop_conditions_by_run[run_index];
             Stats & statistics = statistics_by_run[run_index];
 
-            size_t iteration = 0;
-
             statistics.clear();
             execute(query, statistics, stop_conditions);
 
             if (exec_type == ExecutionType::Loop)
             {
-                while (!gotSIGINT)
+                for (size_t iteration = 1; !gotSIGINT; ++iteration)
                 {
-                    ++iteration;
                     stop_conditions.reportIterations(iteration);
                     if (stop_conditions.areFulfilled())
                         break;

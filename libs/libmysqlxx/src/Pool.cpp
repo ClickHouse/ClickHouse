@@ -85,8 +85,8 @@ Pool::~Pool()
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    for (Connections::iterator it = connections.begin(); it != connections.end(); it++)
-        delete static_cast<Connection *>(*it);
+    for (auto & connection : connections)
+        delete static_cast<Connection *>(connection);
 }
 
 
@@ -97,10 +97,10 @@ Pool::Entry Pool::Get()
     initialize();
     for (;;)
     {
-        for (Connections::iterator it = connections.begin(); it != connections.end(); it++)
+        for (auto & connection : connections)
         {
-            if ((*it)->ref_count == 0)
-                return Entry(*it, this);
+            if (connection->ref_count == 0)
+                return Entry(connection, this);
         }
 
         if (connections.size() < static_cast<size_t>(max_connections))
@@ -124,11 +124,11 @@ Pool::Entry Pool::tryGet()
     initialize();
 
     /// Searching for connection which was established but wasn't used.
-    for (Connections::iterator it = connections.begin(); it != connections.end(); ++it)
+    for (auto & connection : connections)
     {
-        if ((*it)->ref_count == 0)
+        if (connection->ref_count == 0)
         {
-            Entry res(*it, this);
+            Entry res(connection, this);
             return res.tryForceConnected() ? res : Entry();
         }
     }

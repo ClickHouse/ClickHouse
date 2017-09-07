@@ -17,6 +17,8 @@
 #include <common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 
+#include <IO/BufferWithOwnMemory.h>
+
 #include <cstdlib>
 
 #ifdef __APPLE__
@@ -37,29 +39,9 @@ enum Mode
 };
 
 
-struct AlignedBuffer
-{
-    int size;
-    char * data;
-
-    AlignedBuffer(int size_)
-    {
-        size_t page = sysconf(_SC_PAGESIZE);
-        size = size_;
-        int rc = posix_memalign(reinterpret_cast<void **>(&data), page, (size + page - 1) / page * page);
-        if (data == nullptr || rc != 0)
-            throwFromErrno("memalign failed");
-    }
-
-    ~AlignedBuffer()
-    {
-        free(data);
-    }
-};
-
 void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count)
 {
-    AlignedBuffer direct_buf(block_size);
+    DB::Memory direct_buf(block_size, sysconf(_SC_PAGESIZE));
     std::vector<char> simple_buf(block_size);
 
     char * buf;

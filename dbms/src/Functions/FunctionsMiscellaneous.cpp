@@ -1280,7 +1280,7 @@ public:
         return std::make_shared<FunctionUptime>(context.getUptimeSeconds());
     }
 
-    FunctionUptime(time_t uptime_) : uptime(uptime_)
+    explicit FunctionUptime(time_t uptime_) : uptime(uptime_)
     {
     }
 
@@ -1598,7 +1598,7 @@ public:
         return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext());
     }
 
-    FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
+    explicit FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
     {
     }
 

@@ -2304,7 +2304,7 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 
     if (!checkDataType<DataTypeUInt8>(arg) &&
         !checkDataType<DataTypeUInt16>(arg) &&
-        !checkDataType<DataTypeUInt32>(arg) &
+        !checkDataType<DataTypeUInt32>(arg) &&
         !checkDataType<DataTypeUInt64>(arg))
     {
         throw Exception{

@@ -245,10 +245,10 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
 
     BlockInputStreamPtr input_stream;
     BlockOutputStreamPtr output_stream;
-    IProfilingBlockInputStream * input_stream_casted;
 
     if (elem->tryGetQueryStreams(input_stream, output_stream))
     {
+        IProfilingBlockInputStream * input_stream_casted;
         if (input_stream && (input_stream_casted = dynamic_cast<IProfilingBlockInputStream *>(input_stream.get())))
         {
             input_stream_casted->cancel();

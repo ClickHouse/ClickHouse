@@ -380,7 +380,7 @@ namespace
     {
         const MergeTreeData & data;
 
-        TableMetadata(const MergeTreeData & data_)
+        explicit TableMetadata(const MergeTreeData & data_)
             : data(data_) {}
 
         void write(WriteBuffer & out) const

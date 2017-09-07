@@ -8,7 +8,7 @@ struct C
 {
     volatile int data;
 
-    C(int n = 0) : data(n) {}
+    explicit C(int n = 0) : data(n) {}
 
     C(const C & x)
     {
@@ -140,7 +140,7 @@ C f10()
 
 C f11()
 {
-    return rand() % 2 ? f1() : f2();
+    return (rand() % 2) ? f1() : f2();
 }
 
 C f12()

@@ -62,7 +62,7 @@ struct HostID
 
     HostID() = default;
 
-    HostID(const Cluster::Address & address)
+    explicit HostID(const Cluster::Address & address)
     : host_name(address.host_name), port(address.port) {}
 
     static HostID fromString(const String & host_port_str)

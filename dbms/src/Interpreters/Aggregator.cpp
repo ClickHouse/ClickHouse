@@ -1734,7 +1734,7 @@ private:
         std::mutex mutex;
         std::condition_variable condvar;
 
-        ParallelMergeData(size_t threads) : pool(threads) {}
+        explicit ParallelMergeData(size_t threads) : pool(threads) {}
 
         ~ParallelMergeData()
         {

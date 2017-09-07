@@ -7,6 +7,7 @@
 
 #include <iostream>
 
+
 namespace Poco
 {
 class Logger;
@@ -15,6 +16,7 @@ class Logger;
 
 namespace DB
 {
+
 class CStringsHolder;
 
 /// Allows loading dictionaries from dynamic libraries (.so)

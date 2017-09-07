@@ -102,7 +102,7 @@ template <bool positive>
 struct ColumnFixedString::less
 {
     const ColumnFixedString & parent;
-    less(const ColumnFixedString & parent_) : parent(parent_) {}
+    explicit less(const ColumnFixedString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
         /// TODO: memcmp slows down.

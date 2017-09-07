@@ -115,7 +115,7 @@ public:
     {
     }
 
-    Status(const std::string & str)
+    explicit Status(const std::string & str)
     {
         size_t pos = str.find(',');
         code = static_cast<ReshardingWorker::StatusCode>(std::stoull(str.substr(0, pos)));
@@ -2094,8 +2094,6 @@ ReshardingWorker::StatusCode ReshardingWorker::getStatusCommon(const std::string
 
 std::string ReshardingWorker::dumpCoordinatorState(const std::string & coordinator_id)
 {
-    std::string out;
-
     auto current_host = getFQDNOrHostName();
 
     WriteBufferFromOwnString buf;
