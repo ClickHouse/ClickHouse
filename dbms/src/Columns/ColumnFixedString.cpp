@@ -289,6 +289,27 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
 {
     min = String();
     max = String();
+
+    size_t col_size = size();
+
+    if (col_size == 0)
+        return;
+
+    size_t min_idx = 0;
+    size_t max_idx = 0;
+
+    less<true> less_op(*this);
+
+    for (size_t i = 1; i < col_size; ++i)
+    {
+        if (less_op(i, min_idx))
+            min_idx = i;
+        if (less_op(max_idx, i))
+            max_idx = i;
+    }
+
+    get(min_idx, min);
+    get(max_idx, max);
 }
 
 }
