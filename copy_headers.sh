@@ -34,7 +34,8 @@ for src_file in $($CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpop
     sed -r -e 's/^\w+\.o://');
 do
     dst_file=$src_file;
-    mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/build\///; s/\/[^/]*$/\//;')";
+    dst_file=$(echo $dst_file | sed -r -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
+    mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done
 
