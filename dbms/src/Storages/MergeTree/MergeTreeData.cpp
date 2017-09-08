@@ -70,6 +70,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int INVALID_PARTITION_VALUE;
+    extern const int METADATA_MISMATCH;
 }
 
 
@@ -81,7 +82,8 @@ MergeTreeData::MergeTreeData(
     const ColumnDefaults & column_defaults_,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
-    const String & date_column_name_,
+    const String & date_column_name,
+    const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
     size_t index_granularity_,
     const MergingParams & merging_params_,
@@ -97,6 +99,7 @@ MergeTreeData::MergeTreeData(
     merging_params(merging_params_),
     settings(settings_),
     primary_expr_ast(primary_expr_ast_),
+    partition_expr_ast(partition_expr_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
     full_path(full_path_), columns(columns_),
@@ -114,23 +117,32 @@ MergeTreeData::MergeTreeData(
 
     initPrimaryKey();
 
-    try
+    MergeTreeDataFormatVersion min_format_version(0);
+    if (!date_column_name.empty())
     {
-        String partition_expr_str = "toYYYYMM(" + date_column_name_ + ")";
-        ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
-        partition_expr_ast = parseQuery(
-            parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
+        try
+        {
+            String partition_expr_str = "toYYYYMM(" + date_column_name + ")";
+            ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
+            partition_expr_ast = parseQuery(
+                parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
 
-        initPartitionKey(partition_expr_ast);
+            initPartitionKey();
 
-        if (minmax_idx_date_column_pos == -1)
-            throw Exception("Could not find Date column in the partition key", ErrorCodes::BAD_TYPE_OF_FIELD);
+            if (minmax_idx_date_column_pos == -1)
+                throw Exception("Could not find Date column", ErrorCodes::BAD_TYPE_OF_FIELD);
+        }
+        catch (Exception & e)
+        {
+            /// Better error message.
+            e.addMessage("(while initializing MergeTree partition key from date column `" + date_column_name + "`)");
+            throw;
+        }
     }
-    catch (Exception & e)
+    else
     {
-        /// Better error message.
-        e.addMessage("(while initializing MergeTree partition key from date column `" + date_column_name_ + "`)");
-        throw;
+        initPartitionKey();
+        min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
     /// Creating directories, if not exist.
@@ -140,7 +152,7 @@ MergeTreeData::MergeTreeData(
     String version_file_path = full_path + "format_version.txt";
     if (!attach)
     {
-        format_version = 0;
+        format_version = min_format_version;
         WriteBufferFromFile buf(version_file_path);
         writeIntText(format_version.toUnderType(), buf);
     }
@@ -153,6 +165,11 @@ MergeTreeData::MergeTreeData(
     }
     else
         format_version = 0;
+
+    if (format_version < min_format_version)
+        throw Exception(
+            "MergeTree data format version on disk doesn't support custom partitioning",
+            ErrorCodes::METADATA_MISMATCH);
 }
 
 
@@ -219,7 +236,7 @@ void MergeTreeData::initPrimaryKey()
 }
 
 
-void MergeTreeData::initPartitionKey(const ASTPtr & partition_expr_ast)
+void MergeTreeData::initPartitionKey()
 {
     if (!partition_expr_ast || partition_expr_ast->children.empty())
         return;
