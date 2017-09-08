@@ -21,7 +21,7 @@ class DistinctSortedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     /// Empty columns_ means all collumns.
-    DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, Names columns_);
+    DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, const Names & columns);
 
     String getName() const override { return "DistinctSorted"; }
 

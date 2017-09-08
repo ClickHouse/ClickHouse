@@ -181,7 +181,7 @@ private:
         size_t pos;
 
         Cursor() {}
-        explicit Cursor(MergingBlockPtr block_, size_t pos_ = 0) : block(block_), pos(pos_) {}
+        explicit Cursor(const MergingBlockPtr & block_, size_t pos_ = 0) : block(block_), pos(pos_) {}
 
         bool operator< (const Cursor & rhs) const
         {
