@@ -10,7 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
 #include <Poco/Exception.h>
-#include <boost/random.hpp>
+#include <pcg_random.hpp>
 
 
 /// Implementing the Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the sample_count size.
@@ -196,7 +196,7 @@ private:
     size_t sample_count;
     size_t total_values = 0;
     Array samples;
-    boost::taus88 rng;
+    pcg32_fast rng;
     bool sorted = false;
 
 
