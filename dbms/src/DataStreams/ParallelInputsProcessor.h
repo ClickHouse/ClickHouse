@@ -76,7 +76,7 @@ public:
       * - where you must first make JOIN in parallel, while noting which keys are not found,
       *   and only after the completion of this work, create blocks of keys that are not found.
       */
-    ParallelInputsProcessor(BlockInputStreams inputs_, BlockInputStreamPtr additional_input_at_end_, size_t max_threads_, Handler & handler_)
+    ParallelInputsProcessor(const BlockInputStreams & inputs_, const BlockInputStreamPtr & additional_input_at_end_, size_t max_threads_, Handler & handler_)
         : inputs(inputs_), additional_input_at_end(additional_input_at_end_), max_threads(std::min(inputs_.size(), max_threads_)), handler(handler_)
     {
         for (size_t i = 0; i < inputs_.size(); ++i)
@@ -155,7 +155,7 @@ private:
         size_t i;        /// The source number (for debugging).
 
         InputData() {}
-        InputData(BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
+        InputData(const BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
     };
 
     template <StreamUnionMode mode2 = mode>

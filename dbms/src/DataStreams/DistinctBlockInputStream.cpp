@@ -8,14 +8,14 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctBlockInputStream::DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_hint_, Names columns_)
+DistinctBlockInputStream::DistinctBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, Names columns_)
     : columns_names(columns_)
     , limit_hint(limit_hint_)
     , max_rows(limits.max_rows_in_distinct)
     , max_bytes(limits.max_bytes_in_distinct)
     , overflow_mode(limits.distinct_overflow_mode)
 {
-    children.push_back(input_);
+    children.push_back(input);
 }
 
 String DistinctBlockInputStream::getID() const

@@ -219,7 +219,7 @@ struct SettingMilliseconds
     SettingMilliseconds(UInt64 milliseconds = 0) : value(milliseconds * 1000) {}
 
     operator Poco::Timespan() const { return value; }
-    SettingMilliseconds & operator= (Poco::Timespan x) { set(x); return *this; }
+    SettingMilliseconds & operator= (const Poco::Timespan & x) { set(x); return *this; }
 
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
 
@@ -228,7 +228,7 @@ struct SettingMilliseconds
         return DB::toString(totalMilliseconds());
     }
 
-    void set(Poco::Timespan x)
+    void set(const Poco::Timespan & x)
     {
         value = x;
         changed = true;
