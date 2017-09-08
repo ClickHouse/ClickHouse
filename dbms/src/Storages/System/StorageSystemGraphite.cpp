@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NO_ELEMENTS_IN_CONFIG;
+}
+
 namespace
 {
 
@@ -42,7 +47,11 @@ static Pattern readOnePattern(
 
     config.keys(path, keys);
 
-    for (const auto & key : keys) {
+    if (keys.empty())
+        throw Exception("Empty pattern in Graphite rollup configuration", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    for (const auto & key : keys)
+    {
         const String key_path = path + "." + key;
 
         if (startsWith(key, "regexp"))
@@ -74,7 +83,8 @@ static std::vector<Pattern> readPatterns(
 
     config.keys(section, keys);
 
-    for (const auto & key : keys) {
+    for (const auto & key : keys)
+    {
         if (startsWith(key, "pattern"))
         {
             Pattern pattern(readOnePattern(config, section + "." + key));
