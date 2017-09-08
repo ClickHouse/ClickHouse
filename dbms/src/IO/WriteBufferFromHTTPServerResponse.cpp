@@ -131,7 +131,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     Poco::Net::HTTPServerRequest & request_,
     Poco::Net::HTTPServerResponse & response_,
-    int keep_alive_timeout_,
+    unsigned keep_alive_timeout_,
     bool compress_,
     ZlibCompressionMethod compression_method_,
     size_t size)
