@@ -87,7 +87,7 @@ public:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_,
-        ASTPtr & primary_expr_ast_,
+        const ASTPtr & primary_expr_ast_,
         const String & date_column_name_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
         size_t index_granularity_,
@@ -334,7 +334,7 @@ private:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_,
-        ASTPtr & primary_expr_ast_,
+        const ASTPtr & primary_expr_ast_,
         const String & date_column_name_,
         const ASTPtr & sampling_expression_,
         size_t index_granularity_,

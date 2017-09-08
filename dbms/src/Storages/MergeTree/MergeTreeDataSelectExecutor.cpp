@@ -222,9 +222,21 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             data.minmax_idx_sort_descr, data.minmax_idx_expr);
 
         if (settings.force_index_by_date && minmax_idx_condition->alwaysUnknownOrTrue())
-            throw Exception(
-                "Index by date (" + data.date_column_name + ") is not used and setting 'force_index_by_date' is set.",
-                ErrorCodes::INDEX_NOT_USED);
+        {
+            String msg = "MinMax index by columns (";
+            bool first = true;
+            for (const String & col : data.minmax_idx_columns)
+            {
+                if (first)
+                    first = false;
+                else
+                    msg += ", ";
+                msg += col;
+            }
+            msg += ") is not used and setting 'force_index_by_date' is set";
+
+            throw Exception(msg, ErrorCodes::INDEX_NOT_USED);
+        }
     }
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,

@@ -80,8 +80,9 @@ MergeTreeData::MergeTreeData(
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     Context & context_,
-    ASTPtr & primary_expr_ast_,
-    const String & date_column_name_, const ASTPtr & sampling_expression_,
+    const ASTPtr & primary_expr_ast_,
+    const String & date_column_name_,
+    const ASTPtr & sampling_expression_,
     size_t index_granularity_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
@@ -91,10 +92,11 @@ MergeTreeData::MergeTreeData(
     BrokenPartCallback broken_part_callback_,
     PartsCleanCallback parts_clean_callback_)
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
-    date_column_name(date_column_name_), sampling_expression(sampling_expression_),
+    sampling_expression(sampling_expression_),
     index_granularity(index_granularity_),
     merging_params(merging_params_),
-    settings(settings_), primary_expr_ast(primary_expr_ast_ ? primary_expr_ast_->clone() : nullptr),
+    settings(settings_),
+    primary_expr_ast(primary_expr_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
     full_path(full_path_), columns(columns_),
@@ -102,29 +104,6 @@ MergeTreeData::MergeTreeData(
     parts_clean_callback(parts_clean_callback_ ? parts_clean_callback_ : [this](){ clearOldParts(); }),
     log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
-    /// Check that the date column exists and is of type Date.
-    const auto check_date_exists = [this] (const NamesAndTypesList & columns)
-    {
-        for (const auto & column : columns)
-        {
-            if (column.name == date_column_name)
-            {
-                if (!typeid_cast<const DataTypeDate *>(column.type.get()))
-                    throw Exception("Date column (" + date_column_name + ") for storage of MergeTree family must have type Date."
-                        " Provided column of type " + column.type->getName() + "."
-                        " You may have separate column with type " + column.type->getName() + ".", ErrorCodes::BAD_TYPE_OF_FIELD);
-                return true;
-            }
-        }
-
-        return false;
-    };
-
-    if (!check_date_exists(*columns) && !check_date_exists(materialized_columns))
-        throw Exception{
-            "Date column (" + date_column_name + ") does not exist in table declaration.",
-            ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
-
     checkNoMultidimensionalArrays(*columns, attach);
     checkNoMultidimensionalArrays(materialized_columns, attach);
 
@@ -135,14 +114,24 @@ MergeTreeData::MergeTreeData(
 
     initPrimaryKey();
 
-    ASTPtr partition_expr_ast;
+    try
     {
-        String partition_expr_str = "toYYYYMM(" + date_column_name + ")";
+        String partition_expr_str = "toYYYYMM(" + date_column_name_ + ")";
         ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
         partition_expr_ast = parseQuery(
             parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
+
+        initPartitionKey(partition_expr_ast);
+
+        if (minmax_idx_date_column_pos == -1)
+            throw Exception("Could not find Date column in the partition key", ErrorCodes::BAD_TYPE_OF_FIELD);
     }
-    initPartitionKey(partition_expr_ast);
+    catch (Exception & e)
+    {
+        /// Better error message.
+        e.addMessage("(while initializing MergeTree partition key from date column `" + date_column_name_ + "`)");
+        throw;
+    }
 
     /// Creating directories, if not exist.
     Poco::File(full_path).createDirectories();
