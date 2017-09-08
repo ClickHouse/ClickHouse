@@ -87,7 +87,7 @@ public:
     WriteBufferFromHTTPServerResponse(
         Poco::Net::HTTPServerRequest & request_,
         Poco::Net::HTTPServerResponse & response_,
-        int keep_alive_timeout,
+        int keep_alive_timeout_,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
         size_t size = DBMS_DEFAULT_BUFFER_SIZE);
