@@ -6,10 +6,10 @@
 namespace DB
 {
 
-LimitBlockInputStream::LimitBlockInputStream(BlockInputStreamPtr input_, size_t limit_, size_t offset_, bool always_read_till_end_)
+LimitBlockInputStream::LimitBlockInputStream(const BlockInputStreamPtr & input, size_t limit_, size_t offset_, bool always_read_till_end_)
     : limit(limit_), offset(offset_), always_read_till_end(always_read_till_end_)
 {
-    children.push_back(input_);
+    children.push_back(input);
 }
 
 

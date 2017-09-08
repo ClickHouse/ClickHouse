@@ -3,11 +3,11 @@
 namespace DB
 {
 
-LimitByBlockInputStream::LimitByBlockInputStream(BlockInputStreamPtr input_, size_t group_size_, Names columns_)
+LimitByBlockInputStream::LimitByBlockInputStream(const BlockInputStreamPtr & input, size_t group_size_, Names columns_)
     : columns_names(columns_)
     , group_size(group_size_)
 {
-    children.push_back(input_);
+    children.push_back(input);
 }
 
 Block LimitByBlockInputStream::readImpl()

@@ -116,7 +116,7 @@ typename std::enable_if<std::is_pointer<T>::value, T>::type exception_cast(std::
 {
     try
     {
-        std::rethrow_exception(e);
+        std::rethrow_exception(std::move(e));
     }
     catch (typename std::remove_pointer<T>::type & concrete)
     {
