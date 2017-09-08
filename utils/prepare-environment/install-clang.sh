@@ -14,9 +14,15 @@ cd llvm
 svn co "http://llvm.org/svn/llvm-project/llvm/${BRANCH}" llvm
 cd llvm/tools
 svn co "http://llvm.org/svn/llvm-project/cfe/${BRANCH}" clang
-cd ..
-cd projects/
+svn co "http://llvm.org/svn/llvm-project/lld/${BRANCH}" lld
+svn co "http://llvm.org/svn/llvm-project/polly/${BRANCH}" polly
+cd clang/tools
+svn co "http://llvm.org/svn/llvm-project/clang-tools-extra/${BRANCH}" extra
+cd ../../../..
+cd llvm/projects/
 svn co "http://llvm.org/svn/llvm-project/compiler-rt/${BRANCH}" compiler-rt
+svn co "http://llvm.org/svn/llvm-project/libcxx/${BRANCH}" libcxx
+svn co "http://llvm.org/svn/llvm-project/libcxxabi/${BRANCH}" libcxxabi
 cd ../..
 mkdir build
 cd build/
