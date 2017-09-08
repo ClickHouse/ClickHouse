@@ -40,7 +40,7 @@ StorageMergeTree::StorageMergeTree(
     const ColumnDefaults & column_defaults_,
     bool attach,
     Context & context_,
-    ASTPtr & primary_expr_ast_,
+    const ASTPtr & primary_expr_ast_,
     const String & date_column_name_,
     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
     size_t index_granularity_,

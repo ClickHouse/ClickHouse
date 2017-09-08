@@ -182,7 +182,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     Context & context_,
-    ASTPtr & primary_expr_ast_,
+    const ASTPtr & primary_expr_ast_,
     const String & date_column_name_,
     const ASTPtr & sampling_expression_,
     size_t index_granularity_,
@@ -304,7 +304,7 @@ StoragePtr StorageReplicatedMergeTree::create(
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     Context & context_,
-    ASTPtr & primary_expr_ast_,
+    const ASTPtr & primary_expr_ast_,
     const String & date_column_name_,
     const ASTPtr & sampling_expression_,
     size_t index_granularity_,
@@ -388,12 +388,24 @@ namespace
         void write(WriteBuffer & out) const
         {
             out << "metadata format version: 1" << "\n"
-                << "date column: " << data.date_column_name << "\n"
-                << "sampling expression: " << formattedAST(data.sampling_expression) << "\n"
+                << "date column: ";
+
+            if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+                out << data.minmax_idx_columns[data.minmax_idx_date_column_pos] << "\n";
+            else
+                out << "\n";
+
+            out << "sampling expression: " << formattedAST(data.sampling_expression) << "\n"
                 << "index granularity: " << data.index_granularity << "\n"
                 << "mode: " << static_cast<int>(data.merging_params.mode) << "\n"
                 << "sign column: " << data.merging_params.sign_column << "\n"
                 << "primary key: " << formattedAST(data.primary_expr_ast) << "\n";
+
+            if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+            {
+                out << "data format version: " << data.format_version.toUnderType() << "\n";
+                out << "partition key: " << formattedAST(data.partition_expr_ast) << "\n";
+            }
         }
 
         String toString() const
@@ -410,12 +422,21 @@ namespace
             in >> "metadata format version: 1";
 
             in >> "\ndate column: ";
-            String read_date_column_name;
-            in >> read_date_column_name;
+            String read_date_column;
+            in >> read_date_column;
 
-            if (read_date_column_name != data.date_column_name)
-                throw Exception("Existing table metadata in ZooKeeper differs in date index column."
-                    " Stored in ZooKeeper: " + read_date_column_name + ", local: " + data.date_column_name,
+            if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+            {
+                const String & local_date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
+                if (local_date_column != read_date_column)
+                    throw Exception("Existing table metadata in ZooKeeper differs in date index column."
+                        " Stored in ZooKeeper: " + read_date_column + ", local: " + local_date_column,
+                        ErrorCodes::METADATA_MISMATCH);
+            }
+            else if (!read_date_column.empty())
+                throw Exception(
+                    "Existing table metadata in ZooKeeper differs in date index column."
+                    " Stored in ZooKeeper: " + read_date_column + ", local is custom-partitioned.",
                     ErrorCodes::METADATA_MISMATCH);
 
             in >> "\nsampling expression: ";
@@ -469,6 +490,37 @@ namespace
                     ErrorCodes::METADATA_MISMATCH);
 
             in >> "\n";
+            MergeTreeDataFormatVersion read_data_format_version;
+            if (in.eof())
+                read_data_format_version = 0;
+            else
+            {
+                in >> "data format version: ";
+                in >> read_data_format_version.toUnderType();
+            }
+
+            if (read_data_format_version != data.format_version)
+                throw Exception("Existing table metadata in ZooKeeper differs in data format version."
+                    " Stored in ZooKeeper: " + DB::toString(read_data_format_version.toUnderType()) +
+                    ", local: " + DB::toString(data.format_version.toUnderType()),
+                    ErrorCodes::METADATA_MISMATCH);
+
+            if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+            {
+                in >> "\npartition key: ";
+                String read_partition_key;
+                String local_partition_key = formattedAST(data.partition_expr_ast);
+                in >> read_partition_key;
+
+                if (read_partition_key != local_partition_key)
+                    throw Exception(
+                        "Existing table metadata in ZooKeeper differs in partition key expression."
+                        " Stored in ZooKeeper: " + read_partition_key + ", local: " + local_partition_key,
+                        ErrorCodes::METADATA_MISMATCH);
+
+                in >> "\n";
+            }
+
             assertEOF(in);
         }
 
