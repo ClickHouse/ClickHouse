@@ -1,3 +1,5 @@
+#include <random>
+#include <Common/randomSeed.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 
 
@@ -18,7 +20,8 @@ BlockInputStreams narrowBlockInputStreams(BlockInputStreams & inputs, size_t wid
     for (size_t i = 0; i < size; ++i)
         distribution[i] = i % width;
 
-    std::random_shuffle(distribution.begin(), distribution.end());
+    std::mt19937 generator(randomSeed());
+    std::shuffle(distribution.begin(), distribution.end(), generator);
 
     for (size_t i = 0; i < size; ++i)
         partitions[distribution[i]].push_back(inputs[i]);
