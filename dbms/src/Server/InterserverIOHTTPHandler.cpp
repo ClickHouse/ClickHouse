@@ -37,7 +37,7 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
     ReadBufferFromIStream body(request.stream());
 
     const auto & config = server.config();
-    int keep_alive_timeout = config.getInt("keep_alive_timeout", 10);
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
 
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
 

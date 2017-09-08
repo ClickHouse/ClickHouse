@@ -63,7 +63,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
         }
 
         const auto & config = context.getConfigRef();
-        setResponseDefaultHeaders(response, config.getInt("keep_alive_timeout", 10));
+        setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
 
         if (ok && !verbose)
         {

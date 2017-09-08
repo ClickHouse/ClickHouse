@@ -302,9 +302,9 @@ int Server::main(const std::vector<std::string> & args)
     }
 
     {
-        Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
+        Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
-        Poco::ThreadPool server_pool(3, config().getInt("max_connections", 1024));
+        Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
         Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
         http_params->setTimeout(settings.receive_timeout);
         http_params->setKeepAliveTimeout(keep_alive_timeout);

@@ -15,7 +15,7 @@
 
 namespace DB
 {
-void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, int keep_alive_timeout)
+void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout)
 {
     if (!response.getKeepAlive())
         return;

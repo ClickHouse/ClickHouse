@@ -17,7 +17,7 @@ void RootRequestHandler::handleRequest(
     try
     {
         const auto & config = server.config();
-        setResponseDefaultHeaders(response, config.getInt("keep_alive_timeout", 10));
+        setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
 
         response.setContentType("text/html; charset=UTF-8");
 
