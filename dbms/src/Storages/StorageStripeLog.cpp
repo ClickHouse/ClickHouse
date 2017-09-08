@@ -40,7 +40,7 @@ namespace ErrorCodes
 }
 
 
-class StripeLogBlockInputStream : public IProfilingBlockInputStream
+class StripeLogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
     StripeLogBlockInputStream(const NameSet & column_names_, StorageStripeLog & storage_, size_t max_read_buffer_size_,
@@ -111,7 +111,7 @@ private:
 };
 
 
-class StripeLogBlockOutputStream : public IBlockOutputStream
+class StripeLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
     explicit StripeLogBlockOutputStream(StorageStripeLog & storage_)

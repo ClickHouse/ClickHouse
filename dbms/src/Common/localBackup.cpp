@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-static void localBackupImpl(Poco::Path source_path, Poco::Path destination_path, size_t level)
+static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, size_t level)
 {
     if (level >= 1000)
         throw DB::Exception("Too deep recursion", DB::ErrorCodes::TOO_DEEP_RECURSION);
@@ -73,7 +73,7 @@ static void localBackupImpl(Poco::Path source_path, Poco::Path destination_path,
     }
 }
 
-void localBackup(Poco::Path source_path, Poco::Path destination_path)
+void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path)
 {
     if (Poco::File(destination_path).exists()
         && Poco::DirectoryIterator(destination_path) != Poco::DirectoryIterator())

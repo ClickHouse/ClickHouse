@@ -63,7 +63,7 @@ struct OutputData<StreamUnionMode::ExtraInfo>
   */
 
 template <StreamUnionMode mode = StreamUnionMode::Basic>
-class UnionBlockInputStream : public IProfilingBlockInputStream
+class UnionBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
     using ExceptionCallback = std::function<void()>;
