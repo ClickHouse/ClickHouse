@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace ClickHouseLibrary
 {
 using CString = const char *;
