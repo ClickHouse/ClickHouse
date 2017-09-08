@@ -8,9 +8,9 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, Names columns_)
+DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, const Names & columns)
     : description(input->getSortDescription())
-    , columns_names(columns_)
+    , columns_names(columns)
     , limit_hint(limit_hint_)
     , max_rows(limits.max_rows_in_distinct)
     , max_bytes(limits.max_bytes_in_distinct)

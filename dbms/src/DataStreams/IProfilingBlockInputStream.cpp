@@ -142,7 +142,7 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 
 bool IProfilingBlockInputStream::checkLimits()
 {
-    auto handle_overflow_mode = [this] (OverflowMode mode, const String & message, int code)
+    auto handle_overflow_mode = [] (OverflowMode mode, const String & message, int code)
     {
         switch (mode)
         {
