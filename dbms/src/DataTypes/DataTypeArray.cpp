@@ -29,13 +29,13 @@ namespace ErrorCodes
 }
 
 
-DataTypeArray::DataTypeArray(DataTypePtr nested_)
+DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
     : enriched_nested(std::make_pair(nested_, std::make_shared<DataTypeVoid>())), nested{nested_}
 {
     offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
 }
 
-DataTypeArray::DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_)
+DataTypeArray::DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_)
     : enriched_nested{enriched_nested_}, nested{enriched_nested.first}
 {
     offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();

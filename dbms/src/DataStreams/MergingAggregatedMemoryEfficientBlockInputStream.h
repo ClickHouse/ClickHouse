@@ -56,7 +56,7 @@ namespace DB
   *  data from sources can also be read in several threads (reading_threads)
   *  for optimal performance in the presence of a fast network or disks (from where these blocks are read).
   */
-class MergingAggregatedMemoryEfficientBlockInputStream : public IProfilingBlockInputStream
+class MergingAggregatedMemoryEfficientBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
     MergingAggregatedMemoryEfficientBlockInputStream(
@@ -137,7 +137,7 @@ private:
         std::exception_ptr exception;
         /// It is necessary to give out blocks in the order of the key (bucket_num).
         /// If the value is an empty block, you need to wait for its merge.
-        /// (This means the promise that there will be data here, which is important because the data should be given out 
+        /// (This means the promise that there will be data here, which is important because the data should be given out
         /// in the order of the key - bucket_num)
         std::map<int, Block> merged_blocks;
         std::mutex merged_blocks_mutex;

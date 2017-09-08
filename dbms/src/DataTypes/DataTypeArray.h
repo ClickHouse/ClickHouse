@@ -19,8 +19,8 @@ private:
     DataTypePtr offsets;
 
 public:
-    DataTypeArray(DataTypePtr nested_);
-    DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_);
+    DataTypeArray(const DataTypePtr & nested_);
+    DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_);
 
     std::string getName() const override
     {

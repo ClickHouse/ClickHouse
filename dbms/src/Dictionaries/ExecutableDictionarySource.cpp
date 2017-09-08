@@ -54,7 +54,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 /** A stream, that also runs and waits for background thread
   * (that will feed data into pipe to be read from the other side of the pipe).
   */
-class BlockInputStreamWithBackgroundThread : public IProfilingBlockInputStream
+class BlockInputStreamWithBackgroundThread final : public IProfilingBlockInputStream
 {
 public:
     BlockInputStreamWithBackgroundThread(

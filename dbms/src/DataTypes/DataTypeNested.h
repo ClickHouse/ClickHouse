@@ -17,7 +17,7 @@ private:
     NamesAndTypesListPtr nested;
 
 public:
-    DataTypeNested(NamesAndTypesListPtr nested_);
+    DataTypeNested(const NamesAndTypesListPtr & nested_);
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Nested"; }

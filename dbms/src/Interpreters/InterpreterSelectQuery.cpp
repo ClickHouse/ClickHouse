@@ -167,7 +167,7 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
     query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
 
     /// Save the new temporary tables in the query context
-    for (auto & it : query_analyzer->getExternalTables())
+    for (const auto & it : query_analyzer->getExternalTables())
         if (!context.tryGetExternalTable(it.first))
             context.addExternalTable(it.first, it.second);
 

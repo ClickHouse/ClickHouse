@@ -71,18 +71,22 @@ Block DistinctSortedBlockInputStream::readImpl()
 
         if (!checkLimits())
         {
-            if (overflow_mode == OverflowMode::THROW)
-                throw Exception("DISTINCT-Set size limit exceeded."
-                    " Rows: " + toString(data.getTotalRowCount()) +
-                    ", limit: " + toString(max_rows) +
-                    ". Bytes: " + toString(data.getTotalByteCount()) +
-                    ", limit: " + toString(max_bytes) + ".",
-                    ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+            switch (overflow_mode)
+            {
+                case OverflowMode::THROW:
+                    throw Exception("DISTINCT-Set size limit exceeded."
+                        " Rows: " + toString(data.getTotalRowCount()) +
+                        ", limit: " + toString(max_rows) +
+                        ". Bytes: " + toString(data.getTotalByteCount()) +
+                        ", limit: " + toString(max_bytes) + ".",
+                        ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
-            if (overflow_mode == OverflowMode::BREAK)
-                return Block();
+                case OverflowMode::BREAK:
+                    return Block();
 
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+                default:
+                    throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+            }
         }
 
         prev_block.block = block;

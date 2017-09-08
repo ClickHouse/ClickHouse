@@ -37,7 +37,7 @@ Compiler::Compiler(const std::string & path_, size_t threads)
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)
     {
-        std::string name = dir_it.name();
+        const std::string & name = dir_it.name();
         if (endsWith(name, ".so"))
         {
             files.insert(name.substr(0, name.size() - 3));

@@ -69,7 +69,7 @@ public:
       * The function takes the number of rows in the last block, the number of bytes in the last block.
       * Note that the callback can be called from different threads.
       */
-    void setProgressCallback(ProgressCallback callback);
+    void setProgressCallback(const ProgressCallback & callback);
 
 
     /** In this method:

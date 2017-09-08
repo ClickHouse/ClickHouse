@@ -223,7 +223,7 @@ PKCondition::PKCondition(
     const Context & context,
     const NamesAndTypesList & all_columns,
     const SortDescription & sort_descr_,
-    ExpressionActionsPtr pk_expr_)
+    const ExpressionActionsPtr & pk_expr_)
     : sort_descr(sort_descr_), pk_expr(pk_expr_), prepared_sets(query_info.sets)
 {
     for (size_t i = 0; i < sort_descr.size(); ++i)

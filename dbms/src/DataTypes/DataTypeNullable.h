@@ -11,7 +11,7 @@ namespace DB
 class DataTypeNullable final : public IDataType
 {
 public:
-    DataTypeNullable(DataTypePtr nested_data_type_);
+    DataTypeNullable(const DataTypePtr & nested_data_type_);
     std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
     bool isNullable() const override { return true; }
