@@ -162,7 +162,7 @@ private:
     }
 
 public:
-    HostExactPattern(const String & host_) : host(host_) {}
+    explicit HostExactPattern(const String & host_) : host(host_) {}
 
     bool contains(const Poco::Net::IPAddress & addr) const override
     {
@@ -192,7 +192,7 @@ private:
     }
 
 public:
-    HostRegexpPattern(const String & host_regexp_) : host_regexp(host_regexp_) {}
+    explicit HostRegexpPattern(const String & host_regexp_) : host_regexp(host_regexp_) {}
 
     bool contains(const Poco::Net::IPAddress & addr) const override
     {

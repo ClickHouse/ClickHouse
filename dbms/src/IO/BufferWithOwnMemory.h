@@ -86,6 +86,7 @@ struct Memory : boost::noncopyable, Allocator<false>
         }
     }
 
+private:
     static size_t align(const size_t value, const size_t alignment)
     {
         if (!alignment)
@@ -94,7 +95,6 @@ struct Memory : boost::noncopyable, Allocator<false>
         return (value + alignment - 1) / alignment * alignment;
     }
 
-private:
     void alloc()
     {
         if (!m_capacity)

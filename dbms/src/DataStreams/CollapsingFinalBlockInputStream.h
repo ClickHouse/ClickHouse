@@ -15,11 +15,13 @@ namespace DB
 class CollapsingFinalBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    CollapsingFinalBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_,
-                                     const String & sign_column_name_)
+    CollapsingFinalBlockInputStream(
+        const BlockInputStreams & inputs,
+        const SortDescription & description_,
+        const String & sign_column_name_)
         : description(description_), sign_column_name(sign_column_name_)
     {
-        children.insert(children.end(), inputs_.begin(), inputs_.end());
+        children.insert(children.end(), inputs.begin(), inputs.end());
     }
 
     ~CollapsingFinalBlockInputStream();
@@ -55,10 +57,10 @@ private:
 
     struct MergingBlock : boost::noncopyable
     {
-        MergingBlock(Block block_,
+        MergingBlock(const Block & block_,
                      size_t stream_index_,
                      const SortDescription & desc,
-                     String sign_column_name,
+                     const String & sign_column_name,
                      BlockPlainPtrs * output_blocks)
             : block(block_), stream_index(stream_index_), output_blocks(output_blocks)
         {
@@ -179,7 +181,7 @@ private:
         size_t pos;
 
         Cursor() {}
-        explicit Cursor(MergingBlockPtr block_, size_t pos_ = 0) : block(block_), pos(pos_) {}
+        explicit Cursor(const MergingBlockPtr & block_, size_t pos_ = 0) : block(block_), pos(pos_) {}
 
         bool operator< (const Cursor & rhs) const
         {

@@ -223,9 +223,9 @@ public:
         StopThread = -2
     };
 
-    SignalListener(BaseDaemon & daemon_)
-    : log(&Logger::get("BaseDaemon"))
-    , daemon(daemon_)
+    explicit SignalListener(BaseDaemon & daemon_)
+        : log(&Logger::get("BaseDaemon"))
+        , daemon(daemon_)
     {
     }
 
@@ -400,7 +400,7 @@ static void terminate_handler()
     if (terminating)
     {
         abort();
-        return;
+        return; /// Just for convenience.
     }
 
     terminating = true;

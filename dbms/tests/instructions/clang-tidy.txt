@@ -1,0 +1,15 @@
+# http://clang.llvm.org/extra/clang-tidy/
+# Install latest clang with extra tools.
+# Look at utils/prepare-environment/install-clang.sh
+
+sudo apt-get install jq
+
+cd build
+CC=clang CXX=clang++ cmake ..
+
+cd ..
+
+for i in $(jq --raw-output '.[] | .file' build/compile_commands.json | grep -v -F 'contrib'); do
+    echo "$i";
+    clang-tidy "$i" -p build -header-filter='dbms|libs' -checks='boost-*,bugprone-*,clang-analyzer-*,performance-*'; 
+done

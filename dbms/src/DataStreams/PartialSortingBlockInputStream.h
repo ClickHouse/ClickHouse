@@ -15,7 +15,7 @@ class PartialSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     /// limit - if not 0, then you can sort each block not completely, but only `limit` first rows by order.
-    PartialSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_, size_t limit_ = 0)
+    PartialSortingBlockInputStream(const BlockInputStreamPtr & input_, SortDescription & description_, size_t limit_ = 0)
         : description(description_), limit(limit_)
     {
         children.push_back(input_);

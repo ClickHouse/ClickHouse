@@ -1018,23 +1018,27 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 {
     if (!no_more_keys && params.max_rows_to_group_by && result_size > params.max_rows_to_group_by)
     {
-        if (params.group_by_overflow_mode == OverflowMode::THROW)
-            throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
-                + " rows, maximum: " + toString(params.max_rows_to_group_by),
-                ErrorCodes::TOO_MUCH_ROWS);
-        else if (params.group_by_overflow_mode == OverflowMode::BREAK)
-            return false;
-        else if (params.group_by_overflow_mode == OverflowMode::ANY)
-            no_more_keys = true;
-        else
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+        switch (params.group_by_overflow_mode)
+        {
+            case OverflowMode::THROW:
+                throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
+                    + " rows, maximum: " + toString(params.max_rows_to_group_by),
+                    ErrorCodes::TOO_MUCH_ROWS);
+
+            case OverflowMode::BREAK:
+                return false;
+
+            case OverflowMode::ANY:
+                no_more_keys = true;
+                break;
+        }
     }
 
     return true;
 }
 
 
-void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
+void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result)
 {
     if (isCancelled())
         return;
@@ -1734,7 +1738,7 @@ private:
         std::mutex mutex;
         std::condition_variable condvar;
 
-        ParallelMergeData(size_t threads) : pool(threads) {}
+        explicit ParallelMergeData(size_t threads) : pool(threads) {}
 
         ~ParallelMergeData()
         {
@@ -1989,7 +1993,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 }
 
 
-void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads)
+void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataVariants & result, size_t max_threads)
 {
     if (isCancelled())
         return;

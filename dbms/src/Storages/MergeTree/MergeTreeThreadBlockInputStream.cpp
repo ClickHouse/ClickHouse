@@ -36,8 +36,6 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
     }
     else
         min_marks_to_read = min_marks_to_read_;
-
-    log = &Logger::get("MergeTreeThreadBlockInputStream");
 }
 
 

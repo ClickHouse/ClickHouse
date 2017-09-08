@@ -153,7 +153,7 @@ void removeDuplicateColumns(NamesAndTypesList & columns)
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & ast_,
     const Context & context_,
-    StoragePtr storage_,
+    const StoragePtr & storage_,
     const NamesAndTypesList & columns_,
     size_t subquery_depth_,
     bool do_global_)
@@ -1853,7 +1853,7 @@ struct ExpressionAnalyzer::ScopeStack
 };
 
 
-void ExpressionAnalyzer::getRootActions(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions)
+void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions)
 {
     ScopeStack scopes(actions, settings);
     getActionsImpl(ast, no_subqueries, only_consts, scopes);
@@ -1919,7 +1919,7 @@ void ExpressionAnalyzer::getArrayJoinedColumns()
 
 
 /// Fills the array_join_result_to_source: on which columns-arrays to replicate, and how to call them after that.
-void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
+void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
 {
     if (typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
         return;
@@ -1973,7 +1973,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(ASTPtr ast)
 }
 
 
-void ExpressionAnalyzer::getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack)
+void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack)
 {
     /// If the result of the calculation already exists in the block.
     if ((typeid_cast<ASTFunction *>(ast.get()) || typeid_cast<ASTLiteral *>(ast.get()))
@@ -2615,7 +2615,7 @@ Block ExpressionAnalyzer::getSelectSampleBlock()
     return temp_actions->getSampleBlock();
 }
 
-void ExpressionAnalyzer::getActionsBeforeAggregation(ASTPtr ast, ExpressionActionsPtr & actions, bool no_subqueries)
+void ExpressionAnalyzer::getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries)
 {
     ASTFunction * node = typeid_cast<ASTFunction *>(ast.get());
 
@@ -2848,7 +2848,7 @@ Names ExpressionAnalyzer::getRequiredColumns()
 }
 
 
-void ExpressionAnalyzer::getRequiredColumnsImpl(ASTPtr ast,
+void ExpressionAnalyzer::getRequiredColumnsImpl(const ASTPtr & ast,
     NameSet & required_columns, NameSet & ignored_names,
     const NameSet & available_joined_columns, NameSet & required_joined_columns)
 {

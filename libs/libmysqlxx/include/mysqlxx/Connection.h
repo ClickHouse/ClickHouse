@@ -47,7 +47,7 @@ private:
   * In order to use connection in other thread, you should call MySQL C API function mysql_thread_init() before and
   * mysql_thread_end() after working with it.
   */
-class Connection : private boost::noncopyable
+class Connection final : private boost::noncopyable
 {
 public:
     /// For delayed initialisation
@@ -69,10 +69,10 @@ public:
     /// All settings will be got from config_name section of configuration.
     Connection(const std::string & config_name);
 
-    virtual ~Connection();
+    ~Connection();
 
     /// Provides delayed initialization or reconnection with other settings.
-    virtual void connect(const char * db,
+    void connect(const char * db,
         const char * server,
         const char * user,
         const char * password,

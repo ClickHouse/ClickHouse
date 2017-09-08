@@ -14,13 +14,12 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-const std::string lib_config_settings = ".settings";
 
 class CStringsHolder
 {
 public:
-    using strings_type = std::vector<std::string>;
-    CStringsHolder(strings_type strings_pass)
+    using Container = std::vector<std::string>;
+    explicit CStringsHolder(const Container & strings_pass)
     {
         strings_holder = strings_pass;
         strings.size = strings_holder.size();
@@ -38,15 +37,22 @@ public:
 
 private:
     std::unique_ptr<ClickHouseLibrary::CString[]> ptr_holder = nullptr;
-    strings_type strings_holder;
+    Container strings_holder;
 
 };
+
+
+namespace
+{
+
+const std::string lib_config_settings = ".settings";
+
 
 CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_root, config_keys);
-    CStringsHolder::strings_type strings;
+    CStringsHolder::Container strings;
     for (const auto & key : config_keys)
     {
         std::string key_name = key;
@@ -59,10 +65,12 @@ CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, 
     return CStringsHolder(strings);
 }
 
+
 bool dataToBlock(const void * data, Block & block)
 {
     if (!data)
         return true;
+
     auto columns_received = static_cast<const ClickHouseLibrary::ColumnsUInt64 *>(data);
     std::vector<IColumn *> columns(block.columns());
     for (const auto i : ext::range(0, columns.size()))
@@ -81,6 +89,9 @@ bool dataToBlock(const void * data, Block & block)
     }
     return false;
 }
+
+}
+
 
 LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
