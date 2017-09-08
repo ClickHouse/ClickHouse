@@ -79,7 +79,7 @@ public:
       *  if several queries are executed simultaneously.
       * If the source can not be glued together with any other - return the object's address as an identifier.
       */
-    virtual String getID() const = 0;
+    virtual String getID() const;
 
     /// If this stream generates data in grouped by some keys, return true.
     virtual bool isGroupedOutput() const { return false; }
@@ -113,7 +113,7 @@ protected:
     BlockInputStreams children;
 
 private:
-    void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = nullptr);
+    void getLeavesImpl(BlockInputStreams & res, const BlockInputStreamPtr & this_shared_ptr);
 
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 

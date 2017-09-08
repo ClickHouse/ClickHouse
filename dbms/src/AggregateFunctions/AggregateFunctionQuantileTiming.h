@@ -21,13 +21,14 @@
 #include <ext/range.h>
 
 
+
+namespace DB
+{
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-namespace DB
-{
 
 /** Calculates quantile for time in milliseconds, less than 30 seconds.
   * If the value is greater than 30 seconds, the value is set to 30 seconds.
@@ -790,7 +791,7 @@ public:
 
 
 template <typename ArgumentFieldType>
-class AggregateFunctionQuantileTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTiming<ArgumentFieldType> >
+class AggregateFunctionQuantileTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTiming<ArgumentFieldType>>
 {
 private:
     double level;
@@ -910,7 +911,7 @@ public:
   * Returns an array of results.
   */
 template <typename ArgumentFieldType>
-class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType> >
+class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType>>
 {
 private:
     QuantileLevels<double> levels;

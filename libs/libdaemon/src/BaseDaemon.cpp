@@ -73,6 +73,8 @@ using Poco::Message;
 using Poco::Util::AbstractConfiguration;
 
 
+constexpr char BaseDaemon::DEFAULT_GRAPHITE_CONFIG_NAME[];
+
 /** Для передачи информации из обработчика сигнала для обработки в другом потоке.
   * Если при получении сигнала надо делать что-нибудь серьёзное (например, вывести сообщение в лог),
   *  то передать нужную информацию через pipe в другой поток и сделать там всю работу
@@ -221,9 +223,9 @@ public:
         StopThread = -2
     };
 
-    SignalListener(BaseDaemon & daemon_)
-    : log(&Logger::get("BaseDaemon"))
-    , daemon(daemon_)
+    explicit SignalListener(BaseDaemon & daemon_)
+        : log(&Logger::get("BaseDaemon"))
+        , daemon(daemon_)
     {
     }
 
@@ -326,11 +328,6 @@ private:
         static const int max_frames = 50;
         void * frames[max_frames];
 
-
-
-
-
-
 #if USE_UNWIND
         int frames_size = backtraceLibUnwind(frames, max_frames, context);
 
@@ -403,7 +400,7 @@ static void terminate_handler()
     if (terminating)
     {
         abort();
-        return;
+        return; /// Just for convenience.
     }
 
     terminating = true;

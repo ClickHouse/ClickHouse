@@ -102,7 +102,7 @@ template <bool positive>
 struct ColumnFixedString::less
 {
     const ColumnFixedString & parent;
-    less(const ColumnFixedString & parent_) : parent(parent_) {}
+    explicit less(const ColumnFixedString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
         /// TODO: memcmp slows down.
@@ -196,9 +196,9 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
         }
         else
         {
+            size_t res_chars_size = res->chars.size();
             for (size_t i = 0; i < SIMD_BYTES; ++i)
             {
-                size_t res_chars_size = res->chars.size();
                 if (filt_pos[i])
                 {
                     res->chars.resize(res_chars_size + n);

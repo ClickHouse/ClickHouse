@@ -28,8 +28,8 @@ private:
     {
         bool operator()(const LogEntryPtr & lhs, const LogEntryPtr & rhs) const
         {
-            return std::forward_as_tuple(lhs.get()->create_time, lhs.get())
-                 < std::forward_as_tuple(rhs.get()->create_time, rhs.get());
+            return std::forward_as_tuple(lhs->create_time, lhs.get())
+                 < std::forward_as_tuple(rhs->create_time, rhs.get());
         }
     };
 

@@ -63,7 +63,7 @@ bool ValuesRowInputStream::read(Block & block)
         bool rollback_on_exception = false;
         try
         {
-            col.type.get()->deserializeTextQuoted(*col.column.get(), istr);
+            col.type->deserializeTextQuoted(*col.column, istr);
             rollback_on_exception = true;
             skipWhitespaceIfAny(istr);
 
@@ -94,7 +94,7 @@ bool ValuesRowInputStream::read(Block & block)
                     throw;
 
                 if (rollback_on_exception)
-                    col.column.get()->popBack(1);
+                    col.column->popBack(1);
 
                 IDataType & type = *block.safeGetByPosition(i).type;
 

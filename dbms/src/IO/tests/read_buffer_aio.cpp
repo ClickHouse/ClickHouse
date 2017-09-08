@@ -20,7 +20,7 @@ void prepare3(std::string  & filename, std::string & buf);
 void prepare4(std::string  & filename, std::string & buf);
 std::string createTmpFile();
 void die(const std::string & msg);
-void runTest(unsigned int num, const std::function<bool()> func);
+void runTest(unsigned int num, const std::function<bool()> & func);
 
 bool test1(const std::string & filename);
 bool test2(const std::string & filename, const std::string & buf);
@@ -67,7 +67,7 @@ void run()
     std::string buf5;
     prepare4(filename5, buf5);
 
-    const std::vector<std::function<bool()> > tests =
+    const std::vector<std::function<bool()>> tests =
     {
         std::bind(test1, std::ref(filename)),
         std::bind(test2, std::ref(filename), std::ref(buf)),
@@ -184,7 +184,7 @@ void die(const std::string & msg)
     ::exit(EXIT_FAILURE);
 }
 
-void runTest(unsigned int num, const std::function<bool()> func)
+void runTest(unsigned int num, const std::function<bool()> & func)
 {
     bool ok;
 

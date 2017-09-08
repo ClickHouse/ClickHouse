@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <common/DateLUT.h>
 
+
 namespace DB
 {
 
@@ -11,9 +12,15 @@ namespace DB
 struct MergeTreePartInfo
 {
     String partition_id;
-    Int64 min_block;
-    Int64 max_block;
-    UInt32 level;
+    Int64 min_block = 0;
+    Int64 max_block = 0;
+    UInt32 level = 0;
+
+    MergeTreePartInfo() = default;
+    MergeTreePartInfo(String partition_id_, Int64 min_block_, Int64 max_block_, UInt32 level_)
+        : partition_id(std::move(partition_id_)), min_block(min_block_), max_block(max_block_), level(level_)
+    {
+    }
 
     bool operator<(const MergeTreePartInfo & rhs) const
     {

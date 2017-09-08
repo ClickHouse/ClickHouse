@@ -500,7 +500,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     {
         index_columns.resize(sort_description.size());
         for (size_t i = 0, size = sort_description.size(); i < size; ++i)
-            index_columns[i] = primary_columns[i].column.get()->cloneEmpty();
+            index_columns[i] = primary_columns[i].column->cloneEmpty();
     }
 
     /// Now write the data.
@@ -545,8 +545,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
                 {
                     const IColumn & primary_column = *primary_columns[j].column.get();
-                    index_columns[j].get()->insertFrom(primary_column, i);
-                    primary_columns[j].type.get()->serializeBinary(primary_column, i, *index_stream);
+                    index_columns[j]->insertFrom(primary_column, i);
+                    primary_columns[j].type->serializeBinary(primary_column, i, *index_stream);
                 }
             }
 

@@ -220,7 +220,7 @@ bool DictionaryStructure::isKeySizeFixed() const
     if (!key)
         return true;
 
-    for (const auto key_i : * key)
+    for (const auto & key_i : *key)
         if (key_i.underlying_type == AttributeUnderlyingType::String)
             return false;
 

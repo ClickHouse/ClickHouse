@@ -762,7 +762,7 @@ private:
                     : makeNullableColumnIfNot(arg_else.column);
             }
             else
-                throw Exception("Illegal column " + cond_col->getName() + " of first argument of function " + getName()
+                throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
                     + ". Must be ColumnUInt8 or ColumnConstUInt8.",
                     ErrorCodes::ILLEGAL_COLUMN);
             return true;
@@ -802,7 +802,7 @@ private:
                     : block.getByPosition(result).type->createColumn()->cloneResized(block.rows());
             }
             else
-                throw Exception("Illegal column " + cond_col->getName() + " of first argument of function " + getName()
+                throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
                     + ". Must be ColumnUInt8 or ColumnConstUInt8.",
                     ErrorCodes::ILLEGAL_COLUMN);
             return true;
@@ -1058,7 +1058,7 @@ public:
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else
-            throw Exception("Illegal column " + cond_col->getName() + " of first argument of function " + getName()
+            throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
                 + ". Must be ColumnUInt8 or ColumnConstUInt8.",
                 ErrorCodes::ILLEGAL_COLUMN);
     }

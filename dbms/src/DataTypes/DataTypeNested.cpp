@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-DataTypeNested::DataTypeNested(NamesAndTypesListPtr nested_)
+DataTypeNested::DataTypeNested(const NamesAndTypesListPtr & nested_)
     : nested(nested_)
 {
 }

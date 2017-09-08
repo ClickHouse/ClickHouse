@@ -19,8 +19,8 @@ private:
     DataTypePtr offsets;
 
 public:
-    DataTypeArray(DataTypePtr nested_);
-    DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_);
+    DataTypeArray(const DataTypePtr & nested_);
+    DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_);
 
     std::string getName() const override
     {
@@ -87,10 +87,7 @@ public:
 
     ColumnPtr createColumn() const override;
 
-    Field getDefault() const override
-    {
-        return Array();
-    }
+    Field getDefault() const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
     const DataTypeTraits::EnrichedDataTypePtr & getEnrichedNestedType() const { return enriched_nested; }

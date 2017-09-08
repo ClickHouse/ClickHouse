@@ -145,7 +145,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
 
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
-    /// The virtual column `_sample_factor - 1 / <used sampling factor>` can be requested in the query.
+    /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
     Names virt_column_names;
     Names real_column_names;
 
@@ -198,13 +198,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
     const Settings & settings = context.getSettingsRef();
     SortDescription sort_descr = data.getSortDescription();
-    ColumnsWithTypeAndName date_columns = {{DataTypeDate{}.createColumn(), std::make_shared<DataTypeDate>(), data.date_column_name}};
 
     PKCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
         data.getPrimaryExpression());
-    PKCondition date_condition(query_info, context, available_real_and_virtual_columns,
-        SortDescription(1, SortColumnDescription(data.date_column_name, 1, 1)),
-        std::make_shared<ExpressionActions>(date_columns, settings));
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
@@ -217,15 +213,17 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         throw Exception(exception_message.str(), ErrorCodes::INDEX_NOT_USED);
     }
 
-    if (settings.force_index_by_date && date_condition.alwaysUnknownOrTrue())
+    PKCondition minmax_idx_condition(
+            query_info, context, available_real_and_virtual_columns,
+            data.minmax_idx_sort_descr, data.minmax_idx_expr);
+
+    if (settings.force_index_by_date && minmax_idx_condition.alwaysUnknownOrTrue())
         throw Exception("Index by date (" + data.date_column_name + ") is not used and setting 'force_index_by_date' is set.",
             ErrorCodes::INDEX_NOT_USED);
 
-    /// Select the parts in which there can be data that satisfy `date_condition` and that match the condition on `_part`,
+    /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
     {
-        const DataTypes data_types_date { std::make_shared<DataTypeDate>() };
-
         auto prev_parts = parts;
         parts.clear();
 
@@ -234,10 +232,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             if (part_values.find(part->name) == part_values.end())
                 continue;
 
-            Field left = static_cast<UInt64>(part->min_date);
-            Field right = static_cast<UInt64>(part->max_date);
-
-            if (!date_condition.mayBeTrueInRange(1, &left, &right, data_types_date))
+            if (!minmax_idx_condition.mayBeTrueInRange(
+                        data.minmax_idx_columns.size(),
+                        &part->minmax_idx.min_column_values[0], &part->minmax_idx.max_column_values[0],
+                        data.minmax_idx_column_types))
                 continue;
 
             if (max_block_number_to_read && part->info.max_block > max_block_number_to_read)
@@ -476,7 +474,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     }
 
     LOG_DEBUG(log, "Key condition: " << key_condition.toString());
-    LOG_DEBUG(log, "Date condition: " << date_condition.toString());
+    LOG_DEBUG(log, "MinMax index condition: " << minmax_idx_condition.toString());
 
     /// PREWHERE
     ExpressionActionsPtr prewhere_actions;
@@ -856,7 +854,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges res;
 
     size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
-    size_t marks_count = index.at(0).get()->size();
+    size_t marks_count = index.at(0)->size();
 
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())

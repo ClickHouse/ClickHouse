@@ -52,9 +52,6 @@ struct Test
             {
                 DB::WriteBufferFromFile wb(filename);
                 wb.write(reinterpret_cast<const char *>(&store), sizeof(store));
-                const unsigned char * p = reinterpret_cast<const unsigned char *>(&store);
-                for (size_t i = 0; i < sizeof(store); ++i)
-                    ++p;
             }
 
             {

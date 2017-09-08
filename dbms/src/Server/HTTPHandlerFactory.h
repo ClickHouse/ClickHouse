@@ -3,9 +3,8 @@
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-
+#include <common/logger_useful.h>
 #include "IServer.h"
-
 #include "HTTPHandler.h"
 #include "InterserverIOHTTPHandler.h"
 #include "NotFoundHandler.h"
@@ -48,7 +47,7 @@ public:
             if (uri == "/")
                 return new RootRequestHandler(server);
             if (uri == "/ping")
-                return new PingRequestHandler;
+                return new PingRequestHandler(server);
             else if (startsWith(uri, "/replicas_status"))
                 return new ReplicasStatusHandler(server.context());
         }

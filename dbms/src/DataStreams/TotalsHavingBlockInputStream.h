@@ -20,8 +20,8 @@ private:
 
 public:
     TotalsHavingBlockInputStream(
-        BlockInputStreamPtr input_,
-        bool overflow_row_, ExpressionActionsPtr expression_,
+        const BlockInputStreamPtr & input_,
+        bool overflow_row_, const ExpressionActionsPtr & expression_,
         const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_);
 
     String getName() const override { return "TotalsHaving"; }

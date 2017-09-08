@@ -88,7 +88,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 }
 
 /// Verifying that the function depends only on the specified columns
-static bool isValidFunction(ASTPtr expression, const NameSet & columns)
+static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
 {
     for (size_t i = 0; i < expression->children.size(); ++i)
         if (!isValidFunction(expression->children[i], columns))
@@ -103,7 +103,7 @@ static bool isValidFunction(ASTPtr expression, const NameSet & columns)
 }
 
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
-static void extractFunctions(ASTPtr expression, const NameSet & columns, std::vector<ASTPtr> & result)
+static void extractFunctions(const ASTPtr & expression, const NameSet & columns, std::vector<ASTPtr> & result)
 {
     const ASTFunction * function = typeid_cast<const ASTFunction *>(&*expression);
     if (function && function->name == "and")

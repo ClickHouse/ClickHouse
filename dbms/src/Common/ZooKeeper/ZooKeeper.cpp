@@ -1,3 +1,4 @@
+#include <random>
 #include <functional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
@@ -32,16 +33,13 @@ const int CreateMode::Ephemeral = ZOO_EPHEMERAL;
 const int CreateMode::EphemeralSequential = ZOO_EPHEMERAL | ZOO_SEQUENCE;
 const int CreateMode::PersistentSequential = ZOO_SEQUENCE;
 
-void check(int32_t code, const std::string path = "")
+
+static void check(int32_t code, const std::string & path)
 {
     if (code != ZOK)
-    {
-        if (path.size())
-            throw KeeperException(code, path);
-        else
-            throw KeeperException(code);
-    }
+        throw KeeperException(code, path);
 }
+
 
 struct WatchContext
 {
@@ -70,11 +68,12 @@ void ZooKeeper::processCallback(zhandle_t * zh, int type, int state, const char 
         destroyContext(context);
 }
 
-void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_)
+void ZooKeeper::init(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_)
 {
     log = &Logger::get("ZooKeeper");
     zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
     hosts = hosts_;
+    identity = identity_;
     session_timeout_ms = session_timeout_ms_;
 
     impl = zookeeper_init(hosts.c_str(), nullptr, session_timeout_ms, nullptr, nullptr, 0);
@@ -83,12 +82,23 @@ void ZooKeeper::init(const std::string & hosts_, int32_t session_timeout_ms_)
     if (!impl)
         throw KeeperException("Fail to initialize zookeeper. Hosts are " + hosts);
 
-    default_acl = &ZOO_OPEN_ACL_UNSAFE;
+    if (!identity.empty())
+    {
+        auto code = zoo_add_auth(impl, "digest", identity.c_str(), static_cast<int>(identity.size()), 0, 0);
+        if (code != ZOK)
+            throw KeeperException("Zookeeper authentication failed. Hosts are  " + hosts, code);
+
+        default_acl = &ZOO_CREATOR_ALL_ACL;
+    }
+    else
+        default_acl = &ZOO_OPEN_ACL_UNSAFE;
+
+    LOG_TRACE(log, "initialized, hosts: " << hosts);
 }
 
-ZooKeeper::ZooKeeper(const std::string & hosts, int32_t session_timeout_ms)
+ZooKeeper::ZooKeeper(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms)
 {
-    init(hosts, session_timeout_ms);
+    init(hosts, identity, session_timeout_ms);
 }
 
 struct ZooKeeperArgs
@@ -99,6 +109,7 @@ struct ZooKeeperArgs
         config.keys(config_name, keys);
 
         std::vector<std::string> hosts_strings;
+        std::string root;
 
         session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
         for (const auto & key : keys)
@@ -106,17 +117,29 @@ struct ZooKeeperArgs
             if (startsWith(key, "node"))
             {
                 hosts_strings.push_back(
-                    config.getString(config_name + "." + key + ".host") + ":" + config.getString(config_name + "." + key + ".port", "2181"));
+                    config.getString(config_name + "." + key + ".host") + ":"
+                    + config.getString(config_name + "." + key + ".port", "2181")
+                );
             }
             else if (key == "session_timeout_ms")
             {
                 session_timeout_ms = config.getInt(config_name + "." + key);
             }
+            else if (key == "identity")
+            {
+                identity = config.getString(config_name + "." + key);
+            }
+            else if (key == "root")
+            {
+                root = config.getString(config_name + "." + key);
+            }
             else throw KeeperException(std::string("Unknown key ") + key + " in config file");
         }
 
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        std::random_shuffle(hosts_strings.begin(), hosts_strings.end());
+        std::random_device rd;
+        std::mt19937 g(rd());
+        std::shuffle(hosts_strings.begin(), hosts_strings.end(), g);
 
         for (auto & host : hosts_strings)
         {
@@ -124,16 +147,24 @@ struct ZooKeeperArgs
                 hosts += ",";
             hosts += host;
         }
+
+        if (!root.empty())
+        {
+            if (root.front() != '/')
+                throw KeeperException(std::string("Root path in config file should start with '/', but got ") + root);
+            hosts += root;
+        }
     }
 
     std::string hosts;
-    size_t session_timeout_ms;
+    std::string identity;
+    int session_timeout_ms;
 };
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
     ZooKeeperArgs args(config, config_name);
-    init(args.hosts, args.session_timeout_ms);
+    init(args.hosts, args.identity, args.session_timeout_ms);
 }
 
 WatchCallback ZooKeeper::callbackForEvent(const EventPtr & event)
@@ -707,7 +738,7 @@ ZooKeeper::~ZooKeeper()
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(hosts, session_timeout_ms);
+    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms);
 }
 
 Op::Create::Create(const std::string & path_, const std::string & value_, ACLPtr acl_, int32_t flags_)

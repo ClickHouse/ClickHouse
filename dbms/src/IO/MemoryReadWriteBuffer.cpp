@@ -15,12 +15,10 @@ namespace ErrorCodes
 class ReadBufferFromMemoryWriteBuffer : public ReadBuffer, boost::noncopyable, private Allocator<false>
 {
 public:
-
-    ReadBufferFromMemoryWriteBuffer(MemoryWriteBuffer && origin)
-    :
-    ReadBuffer(nullptr, 0),
-    chunk_list(std::move(origin.chunk_list)),
-    end_pos(origin.position())
+    explicit ReadBufferFromMemoryWriteBuffer(MemoryWriteBuffer && origin)
+    : ReadBuffer(nullptr, 0),
+        chunk_list(std::move(origin.chunk_list)),
+        end_pos(origin.position())
     {
         chunk_head = chunk_list.begin();
         setChunk();
@@ -76,10 +74,15 @@ private:
 
 
 MemoryWriteBuffer::MemoryWriteBuffer(size_t max_total_size_, size_t initial_chunk_size_, double growth_rate_, size_t max_chunk_size_)
-: WriteBuffer(nullptr, 0), max_total_size(max_total_size_), initial_chunk_size(initial_chunk_size_), max_chunk_size(max_chunk_size_), growth_rate(growth_rate_)
+    : WriteBuffer(nullptr, 0),
+    max_total_size(max_total_size_),
+    initial_chunk_size(initial_chunk_size_),
+    max_chunk_size(max_chunk_size_),
+    growth_rate(growth_rate_)
 {
     addChunk();
 }
+
 
 void MemoryWriteBuffer::nextImpl()
 {
@@ -93,6 +96,7 @@ void MemoryWriteBuffer::nextImpl()
     addChunk();
 }
 
+
 void MemoryWriteBuffer::addChunk()
 {
     size_t next_chunk_size;
@@ -103,7 +107,7 @@ void MemoryWriteBuffer::addChunk()
     }
     else
     {
-        next_chunk_size = std::max(1ul, static_cast<size_t>(chunk_tail->size() * growth_rate));
+        next_chunk_size = std::max(static_cast<size_t>(1), static_cast<size_t>(chunk_tail->size() * growth_rate));
         next_chunk_size = std::min(next_chunk_size, max_chunk_size);
     }
 
@@ -126,6 +130,7 @@ void MemoryWriteBuffer::addChunk()
     set(chunk_tail->begin(), chunk_tail->size());
 }
 
+
 std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
 {
     auto res = std::make_shared<ReadBufferFromMemoryWriteBuffer>(std::move(*this));
@@ -136,6 +141,7 @@ std::shared_ptr<ReadBuffer> MemoryWriteBuffer::getReadBufferImpl()
 
     return res;
 }
+
 
 MemoryWriteBuffer::~MemoryWriteBuffer()
 {

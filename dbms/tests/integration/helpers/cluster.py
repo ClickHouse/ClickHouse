@@ -12,6 +12,7 @@ from dicttoxml import dicttoxml
 import xml.dom.minidom
 
 import docker
+from docker.errors import ContainerError
 
 from .client import Client, CommandRequest
 
@@ -28,13 +29,15 @@ class ClickHouseCluster:
     these directories will contain logs, database files, docker-compose config, ClickHouse configs etc.
     """
 
-    def __init__(self, base_path, name=None, base_configs_dir=None, server_bin_path=None, client_bin_path=None):
+    def __init__(self, base_path, name=None, base_configs_dir=None, server_bin_path=None, client_bin_path=None,
+                 zookeeper_config_path=None):
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else ''
 
         self.base_configs_dir = base_configs_dir or os.environ.get('CLICKHOUSE_TESTS_BASE_CONFIG_DIR', '/etc/clickhouse-server/')
         self.server_bin_path = server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse')
         self.client_bin_path = client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client')
+        self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(HELPERS_DIR, 'zookeeper_config.xml')
 
         self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
@@ -42,6 +45,8 @@ class ClickHouseCluster:
         self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
 
         self.base_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name', self.project_name]
+        self.base_zookeeper_cmd = None
+        self.pre_zookkeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
 
@@ -68,13 +73,15 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper,
-            self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
+            self.zookeeper_config_path, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
 
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
         if with_zookeeper and not self.with_zookeeper:
             self.with_zookeeper = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
+            self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
 
         return instance
 
@@ -102,9 +109,14 @@ class ClickHouseCluster:
         for instance in self.instances.values():
             instance.create_dir(destroy_dir=destroy_dirs)
 
-        subprocess.check_call(self.base_cmd + ['up', '-d'])
-
         self.docker_client = docker.from_env()
+
+        if self.with_zookeeper and self.base_zookeeper_cmd:
+            subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--no-recreate'])
+            for command in self.pre_zookkeeper_commands:
+                self.run_zookeeper_client_command(command, repeats=5)
+
+        subprocess.check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
@@ -123,7 +135,7 @@ class ClickHouseCluster:
     def shutdown(self, kill=True):
         if kill:
             subprocess.check_call(self.base_cmd + ['kill'])
-        subprocess.check_call(self.base_cmd + ['down', '--volumes'])
+        subprocess.check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
         self.is_up = False
 
         self.docker_client = None
@@ -132,6 +144,22 @@ class ClickHouseCluster:
             instance.docker_client = None
             instance.ip_address = None
             instance.client = None
+
+
+    def run_zookeeper_client_command(self, command, zoo_node = 'zoo1', repeats=1, sleep_for=1):
+        cli_cmd = 'zkCli.sh  ' + command
+        zoo_name = self.get_instance_docker_id(zoo_node)
+        network_mode = 'container:' + zoo_name
+        for i in range(0, repeats - 1):
+            try:
+                return self.docker_client.containers.run('zookeeper', cli_cmd, remove=True, network_mode=network_mode)
+            except ContainerError:
+                time.sleep(sleep_for)
+
+        return self.docker_client.containers.run('zookeeper', cli_cmd, remove=True, network_mode=network_mode)
+
+    def add_zookeeper_startup_command(self, command):
+        self.pre_zookkeeper_commands.append(command)
 
 
 DOCKER_COMPOSE_TEMPLATE = '''
@@ -157,7 +185,7 @@ services:
 class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macroses,
-            with_zookeeper, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
+            with_zookeeper, zookeeper_config_path, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -171,6 +199,7 @@ class ClickHouseInstance:
         self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
         self.macroses = macroses if macroses is not None else {}
         self.with_zookeeper = with_zookeeper
+        self.zookeeper_config_path = zookeeper_config_path
 
         self.base_configs_dir = base_configs_dir
         self.server_bin_path = server_bin_path
@@ -266,14 +295,14 @@ class ClickHouseInstance:
 
         os.makedirs(self.path)
 
-        configs_dir = p.join(self.path, 'configs')
+        configs_dir = p.abspath(p.join(self.path, 'configs'))
         os.mkdir(configs_dir)
 
         shutil.copy(p.join(self.base_configs_dir, 'config.xml'), configs_dir)
         shutil.copy(p.join(self.base_configs_dir, 'users.xml'), configs_dir)
 
-        config_d_dir = p.join(configs_dir, 'config.d')
-        users_d_dir = p.join(configs_dir, 'users.d')
+        config_d_dir = p.abspath(p.join(configs_dir, 'config.d'))
+        users_d_dir = p.abspath(p.join(configs_dir, 'users.d'))
         os.mkdir(config_d_dir)
         os.mkdir(users_d_dir)
 
@@ -287,7 +316,7 @@ class ClickHouseInstance:
 
         # Put ZooKeeper config
         if self.with_zookeeper:
-            shutil.copy(p.join(HELPERS_DIR, 'zookeeper_config.xml'), config_d_dir)
+            shutil.copy(self.zookeeper_config_path, config_d_dir)
 
         # Copy config dir
         if self.custom_config_dir:
@@ -301,12 +330,12 @@ class ClickHouseInstance:
         for path in self.custom_user_config_paths:
             shutil.copy(path, users_d_dir)
 
-        db_dir = p.join(self.path, 'database')
+        db_dir = p.abspath(p.join(self.path, 'database'))
         os.mkdir(db_dir)
         if self.clickhouse_path_dir is not None:
             distutils.dir_util.copy_tree(self.clickhouse_path_dir, db_dir)
 
-        logs_dir = p.join(self.path, 'logs')
+        logs_dir = p.abspath(p.join(self.path, 'logs'))
         os.mkdir(logs_dir)
 
         depends_on = '[]'

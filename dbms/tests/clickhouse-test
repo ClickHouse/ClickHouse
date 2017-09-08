@@ -8,6 +8,7 @@ import lxml.etree as et
 from argparse import ArgumentParser
 from argparse import FileType
 from pprint import pprint
+import shlex
 import subprocess
 from subprocess import check_call
 from subprocess import Popen
@@ -34,7 +35,7 @@ def main(args):
 
 
     def is_data_present():
-        proc = Popen(args.client, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
         (stdout, stderr) = proc.communicate("EXISTS TABLE test.hits")
         if proc.returncode != 0:
             raise CalledProcessError(proc.returncode, args.client, stderr)
@@ -92,7 +93,12 @@ def main(args):
                 print("Won't run stateful tests because test data wasn't loaded. See README.txt.")
                 continue
 
-            for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir))):
+            # Reverse sort order: we want run newest test first.
+            # And not reverse subtests
+            def key_func(item):
+                prefix, suffix = item.split('_', 1)
+                return -int(prefix), suffix
+            for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir)), key=key_func):
                 if SERVER_DIED:
                     break
 

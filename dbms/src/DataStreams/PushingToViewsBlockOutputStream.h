@@ -26,7 +26,7 @@ public:
           * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
           *  but it's clear that here is not the best place for this functionality.
           */
-        addTableLock(storage->lockStructure(true));
+        addTableLock(storage->lockStructure(true, __PRETTY_FUNCTION__));
 
         Dependencies dependencies = context.getDependencies(database, table);
         for (const auto & database_table : dependencies)
@@ -72,7 +72,7 @@ public:
 private:
     StoragePtr storage;
     BlockOutputStreamPtr output;
-    Context context;
+    const Context & context;
     ASTPtr query_ptr;
     std::vector<std::pair<ASTPtr, BlockOutputStreamPtr>> views;
 };

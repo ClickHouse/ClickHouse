@@ -24,6 +24,10 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_DLOPEN;
+}
 
 Compiler::Compiler(const std::string & path_, size_t threads)
     : path(path_), pool(threads)
@@ -33,7 +37,7 @@ Compiler::Compiler(const std::string & path_, size_t threads)
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)
     {
-        std::string name = dir_it.name();
+        const std::string & name = dir_it.name();
         if (endsWith(name, ".so"))
         {
             files.insert(name.substr(0, name.size() - 3));
@@ -177,6 +181,17 @@ SharedLibraryPtr Compiler::getOrCount(
 }
 
 
+/// This will guarantee that code will compile only when version of headers match version of running server.
+static void addCodeToAssertHeadersMatch(WriteBuffer & out)
+{
+    out <<
+        "#include <Common/config_version.h>\n"
+        "#if VERSION_REVISION != " << ClickHouseRevision::get() << "\n"
+        "#error \"ClickHouse headers revision doesn't match runtime revision of the server.\"\n"
+        "#endif\n\n";
+}
+
+
 void Compiler::compile(
     HashedKey hashed_key,
     std::string file_name,
@@ -193,6 +208,8 @@ void Compiler::compile(
 
     {
         WriteBufferFromFile out(cpp_file_path);
+
+        addCodeToAssertHeadersMatch(out);
         out << get_code();
     }
 

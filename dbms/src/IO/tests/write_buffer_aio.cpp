@@ -15,7 +15,7 @@ namespace fs = boost::filesystem;
 
 void run();
 void die(const std::string & msg);
-void runTest(unsigned int num, const std::function<bool()> func);
+void runTest(unsigned int num, const std::function<bool()> & func);
 std::string createTmpFile();
 std::string generateString(size_t n);
 
@@ -32,7 +32,7 @@ bool test10();
 
 void run()
 {
-    const std::vector<std::function<bool()> > tests =
+    const std::vector<std::function<bool()>> tests =
     {
         test1,
         test2,
@@ -60,7 +60,7 @@ void die(const std::string & msg)
     ::exit(EXIT_FAILURE);
 }
 
-void runTest(unsigned int num, const std::function<bool()> func)
+void runTest(unsigned int num, const std::function<bool()> & func)
 {
     bool ok;
 

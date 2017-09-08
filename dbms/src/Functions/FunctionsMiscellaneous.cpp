@@ -1280,7 +1280,7 @@ public:
         return std::make_shared<FunctionUptime>(context.getUptimeSeconds());
     }
 
-    FunctionUptime(time_t uptime_) : uptime(uptime_)
+    explicit FunctionUptime(time_t uptime_) : uptime(uptime_)
     {
     }
 
@@ -1301,7 +1301,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), uptime);
+        block.getByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), static_cast<UInt64>(uptime));
     }
 
 private:
@@ -1598,7 +1598,7 @@ public:
         return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext());
     }
 
-    FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
+    explicit FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
     {
     }
 
@@ -1709,7 +1709,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     else
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
-        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password);
+        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort());
         auto names_and_types_list = std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, database_name, table_name, global_context));
         const auto & names = names_and_types_list->getNames();
         has_column = std::find(names.begin(), names.end(), column_name) != names.end();

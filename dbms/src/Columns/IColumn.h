@@ -129,7 +129,7 @@ public:
     virtual ColumnPtr cut(size_t start, size_t length) const
     {
         ColumnPtr res = cloneEmpty();
-        res.get()->insertRangeFrom(*this, start, length);
+        res->insertRangeFrom(*this, start, length);
         return res;
     }
 
@@ -275,14 +275,16 @@ protected:
         size_t num_rows = size();
 
         if (num_rows != selector.size())
-            throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+            throw Exception(
+                    "Size of selector: " + std::to_string(selector.size()) + " doesn't match size of column: " + std::to_string(num_rows),
+                    ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
         Columns columns(num_columns);
         for (auto & column : columns)
             column = cloneEmpty();
 
         {
-            size_t reserve_size = num_rows / num_columns * 1.1;    /// 1.1 is just a guess. Better to use n-sigma rule.
+            size_t reserve_size = num_rows * 1.1 / num_columns;    /// 1.1 is just a guess. Better to use n-sigma rule.
 
             if (reserve_size > 1)
                 for (auto & column : columns)

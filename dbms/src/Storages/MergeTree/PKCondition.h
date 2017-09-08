@@ -20,7 +20,7 @@ class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
 
-/** Range with open or closed ends; Perhaps unlimited.
+/** Range with open or closed ends; possibly unbounded.
   */
 struct Range
 {
@@ -31,12 +31,12 @@ private:
 public:
     Field left;                       /// the left border, if any
     Field right;                      /// the right border, if any
-    bool left_bounded = false;        /// limited to the left
-    bool right_bounded = false;       /// limited to the right
+    bool left_bounded = false;        /// bounded at the left
+    bool right_bounded = false;       /// bounded at the right
     bool left_included = false;       /// includes the left border, if any
     bool right_included = false;      /// includes the right border, if any
 
-    /// The whole set.
+    /// The whole unversum.
     Range() {}
 
     /// One point.
@@ -148,7 +148,7 @@ public:
         /// r to the right of me.
         if (r.left_bounded
             && right_bounded
-            && (less(right, r.left)                            /// ...} {...
+            && (less(right, r.left)                          /// ...} {...
                 || ((!right_included || !r.left_included)    /// ...) [... or ...] (...
                     && equals(r.left, right))))
             return false;
@@ -193,21 +193,21 @@ public:
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
-  *  as well as logical links AND/OR/NOT above these conditions.
+  *  as well as logical operators AND/OR/NOT above these conditions.
   *
   * Constructs a reverse polish notation from these conditions
-  *  and can calculate (interpret) its feasibility over key ranges.
+  *  and can calculate (interpret) its satisfiability over key ranges.
   */
 class PKCondition
 {
 public:
-    /// Does not include the SAMPLE section. all_columns - the set of all columns of the table.
+    /// Does not take into account the SAMPLE section. all_columns - the set of all columns of the table.
     PKCondition(
         const SelectQueryInfo & query_info,
         const Context & context,
         const NamesAndTypesList & all_columns,
         const SortDescription & sort_descr,
-        ExpressionActionsPtr pk_expr);
+        const ExpressionActionsPtr & pk_expr);
 
     /// Whether the condition is feasible in the key range.
     /// left_pk and right_pk must contain all fields in the sort_descr in the appropriate order.
