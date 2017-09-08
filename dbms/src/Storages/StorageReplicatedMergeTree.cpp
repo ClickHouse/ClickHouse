@@ -638,7 +638,7 @@ void StorageReplicatedMergeTree::createReplica()
     zookeeper->exists(replica_path, &stat);
     auto my_create_time = stat.czxid;
 
-    std::random_shuffle(replicas.begin(), replicas.end());
+    std::shuffle(replicas.begin(), replicas.end(), rng);
     for (const String & replica : replicas)
     {
         if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica, &stat))
@@ -881,7 +881,7 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
     int expected_columns_version = columns_version;
 
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-    std::random_shuffle(replicas.begin(), replicas.end());
+    std::shuffle(replicas.begin(), replicas.end(), rng);
     String expected_columns_str = part->columns.toString();
 
     for (const String & replica : replicas)
@@ -1931,7 +1931,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 
     /// Select replicas in uniformly random order.
-    std::random_shuffle(replicas.begin(), replicas.end());
+    std::shuffle(replicas.begin(), replicas.end(), rng);
 
     for (const String & replica : replicas)
     {
@@ -1956,7 +1956,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const LogEntry 
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 
     /// Select replicas in uniformly random order.
-    std::random_shuffle(replicas.begin(), replicas.end());
+    std::shuffle(replicas.begin(), replicas.end(), rng);
 
     for (const String & replica : replicas)
     {
