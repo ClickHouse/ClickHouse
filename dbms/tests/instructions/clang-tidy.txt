@@ -8,4 +8,7 @@ CC=clang CXX=clang++ cmake ..
 
 cd ..
 
-jq '.[] | .file' build/compile_commands.json | grep -v -F 'contrib' | head -n1 | xargs -I{} clang-tidy {} -p build -header-filter='dbms|libs' -checks='boost-*,bugprone-*,clang-analyzer-*,performance-*'
+for i in $(jq --raw-output '.[] | .file' build/compile_commands.json | grep -v -F 'contrib'); do
+    echo "$i";
+    clang-tidy "$i" -p build -header-filter='dbms|libs' -checks='boost-*,bugprone-*,clang-analyzer-*,performance-*'; 
+done
