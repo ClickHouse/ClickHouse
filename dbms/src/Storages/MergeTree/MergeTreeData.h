@@ -236,7 +236,7 @@ public:
                     const NamesAndTypesList & alias_columns_,
                     const ColumnDefaults & column_defaults_,
                     Context & context_,
-                    ASTPtr & primary_expr_ast_,
+                    const ASTPtr & primary_expr_ast_,
                     const String & date_column_name_,
                     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
                     size_t index_granularity_,
@@ -466,7 +466,6 @@ public:
     MergeTreeDataFormatVersion format_version;
 
     Context & context;
-    const String date_column_name;
     const ASTPtr sampling_expression;
     const size_t index_granularity;
 
@@ -479,6 +478,7 @@ public:
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
+    ASTPtr partition_expr_ast;
     ExpressionActionsPtr partition_expr;
     Names partition_expr_columns;
     DataTypes partition_expr_column_types;
