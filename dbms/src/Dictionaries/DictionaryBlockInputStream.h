@@ -250,7 +250,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     data_types.reserve(keys.size());
     const DictionaryStructure& dictionaty_structure = dictionary->getStructure();
     if (data_types.empty() && dictionaty_structure.key)
-        for (const auto key : *dictionaty_structure.key)
+        for (const auto & key : *dictionaty_structure.key)
             data_types.push_back(key.type);
 
     for (const auto & column : view)

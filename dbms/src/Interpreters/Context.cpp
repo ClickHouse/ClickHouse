@@ -770,7 +770,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 }
 
 
-void Context::addExternalTable(const String & table_name, StoragePtr storage)
+void Context::addExternalTable(const String & table_name, const StoragePtr & storage)
 {
     if (external_tables.end() != external_tables.find(table_name))
         throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
@@ -1217,7 +1217,7 @@ void Context::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
     if (shared->zookeeper)
         throw Exception("ZooKeeper client has already been set.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->zookeeper = zookeeper;
+    shared->zookeeper = std::move(zookeeper);
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const

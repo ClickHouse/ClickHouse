@@ -206,7 +206,7 @@ bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutpu
 }
 
 
-void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage)
+void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, const StoragePtr & storage)
 {
     std::lock_guard<std::mutex> lock(mutex);
 

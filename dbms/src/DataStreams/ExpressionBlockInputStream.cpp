@@ -5,7 +5,7 @@
 namespace DB
 {
 
-ExpressionBlockInputStream::ExpressionBlockInputStream(const BlockInputStreamPtr & input, ExpressionActionsPtr expression_)
+ExpressionBlockInputStream::ExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_)
     : expression(expression_)
 {
     children.push_back(input);
