@@ -107,7 +107,7 @@ ColumnsWithTypeAndName toNestedColumns(const ColumnsWithTypeAndName & args)
             auto nullable_col = static_cast<const ColumnNullable *>(arg.column.get());
             ColumnPtr nested_col = (nullable_col) ? nullable_col->getNestedColumn() : nullptr;
             auto nullable_type = static_cast<const DataTypeNullable *>(arg.type.get());
-            DataTypePtr nested_type = nullable_type->getNestedType();
+            const DataTypePtr & nested_type = nullable_type->getNestedType();
 
             new_args.emplace_back(nested_col, nested_type, arg.name);
         }
@@ -129,7 +129,7 @@ DataTypes toNestedDataTypes(const DataTypes & args)
         if (arg->isNullable())
         {
             auto nullable_type = static_cast<const DataTypeNullable *>(arg.get());
-            DataTypePtr nested_type = nullable_type->getNestedType();
+            const DataTypePtr & nested_type = nullable_type->getNestedType();
             new_args.push_back(nested_type);
         }
         else
