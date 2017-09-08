@@ -4,9 +4,6 @@ if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (libboost)
 endif ()
 
-if (USE_INTERNAL_POCO_LIBRARY)
-    add_subdirectory (libpoco)
-endif ()
 
 if (USE_INTERNAL_LZ4_LIBRARY)
     add_subdirectory (liblz4)
@@ -62,4 +59,11 @@ endif ()
 
 if (NOT ARCH_ARM)
     add_subdirectory (libcpuid)
+endif ()
+
+if (USE_INTERNAL_POCO_LIBRARY)
+    set (_save ${ENABLE_TESTS})
+    set (ENABLE_TESTS 0)
+    add_subdirectory (poco)
+    set (ENABLE_TESTS ${_save})
 endif ()
