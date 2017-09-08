@@ -41,7 +41,8 @@ StorageMergeTree::StorageMergeTree(
     bool attach,
     Context & context_,
     const ASTPtr & primary_expr_ast_,
-    const String & date_column_name_,
+    const String & date_column_name,
+    const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
     size_t index_granularity_,
     const MergeTreeData::MergingParams & merging_params_,
@@ -53,7 +54,7 @@ StorageMergeTree::StorageMergeTree(
     data(database_name, table_name,
          full_path, columns_,
          materialized_columns_, alias_columns_, column_defaults_,
-         context_, primary_expr_ast_, date_column_name_,
+         context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
          sampling_expression_, index_granularity_, merging_params_,
          settings_, database_name_ + "." + table_name, false, attach),
     reader(data), writer(data), merger(data, context.getBackgroundPool()),
