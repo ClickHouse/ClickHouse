@@ -50,6 +50,7 @@ private:
     bool compress = false;
     ZlibCompressionMethod compression_method;
     int compression_level = Z_DEFAULT_COMPRESSION;
+    int keep_alive_timeout = 0;
 
     std::ostream * response_body_ostr = nullptr;
 
@@ -86,6 +87,7 @@ public:
     WriteBufferFromHTTPServerResponse(
         Poco::Net::HTTPServerRequest & request_,
         Poco::Net::HTTPServerResponse & response_,
+        int keep_alive_timeout,
         bool compress_ = false,        /// If true - set Content-Encoding header and compress the result.
         ZlibCompressionMethod compression_method_ = ZlibCompressionMethod::Gzip,
         size_t size = DBMS_DEFAULT_BUFFER_SIZE);
