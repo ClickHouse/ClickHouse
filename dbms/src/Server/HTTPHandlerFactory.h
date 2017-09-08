@@ -47,7 +47,7 @@ public:
             if (uri == "/")
                 return new RootRequestHandler(server);
             if (uri == "/ping")
-                return new PingRequestHandler;
+                return new PingRequestHandler(server);
             else if (startsWith(uri, "/replicas_status"))
                 return new ReplicasStatusHandler(server.context());
         }
