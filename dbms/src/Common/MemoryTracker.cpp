@@ -49,7 +49,7 @@ void MemoryTracker::alloc(Int64 size)
 {
     Int64 will_be = amount += size;
 
-    if (!next)
+    if (!next.load(std::memory_order_relaxed))
         CurrentMetrics::add(metric, size);
 
     Int64 current_limit = limit.load(std::memory_order_relaxed);
@@ -89,8 +89,8 @@ void MemoryTracker::alloc(Int64 size)
     if (will_be > peak.load(std::memory_order_relaxed))        /// Races doesn't matter. Could rewrite with CAS, but not worth.
         peak.store(will_be, std::memory_order_relaxed);
 
-    if (next)
-        next->alloc(size);
+    if (auto loaded_next = next.load(std::memory_order_relaxed))
+        loaded_next->alloc(size);
 }
 
 
@@ -108,8 +108,8 @@ void MemoryTracker::free(Int64 size)
     amount -= size_to_subtract;
     /// NOTE above code is not atomic. It's easy to fix.
 
-    if (next)
-        next->free(size);
+    if (auto loaded_next = next.load(std::memory_order_relaxed))
+        loaded_next->free(size);
     else
         CurrentMetrics::sub(metric, size_to_subtract);
 }
@@ -117,7 +117,7 @@ void MemoryTracker::free(Int64 size)
 
 void MemoryTracker::reset()
 {
-    if (!next)
+    if (!next.load(std::memory_order_relaxed))
         CurrentMetrics::sub(metric, amount);
 
     amount.store(0, std::memory_order_relaxed);
