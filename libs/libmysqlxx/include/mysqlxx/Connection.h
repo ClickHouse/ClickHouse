@@ -43,6 +43,12 @@ private:
   * Or using socket:
   *        mysqlxx::Connection connection("Test", "localhost", "root", "qwerty", 0, "/path/to/socket/file.sock");
   *
+  * Or using custom certificate authority file:
+  *        mysqlxx::Connection connection("Test", "localhost", "root", "qwerty", 3306, "/path/to/ca/file.pem");
+  *
+  * Or using custom certificate and key file:
+  *        mysqlxx::Connection connection("Test", "localhost", "root", "qwerty", 3306, "", "/path/to/cert/file.pem", "/path/to/key/file.pem");
+  *
   * Attention! It's strictly recommended to use connection in thread where it was created.
   * In order to use connection in other thread, you should call MySQL C API function mysql_thread_init() before and
   * mysql_thread_end() after working with it.
@@ -62,6 +68,9 @@ public:
         const char * password = 0,
         unsigned port = 0,
         const char * socket = "",
+        const char * ssl_ca = "",
+        const char * ssl_cert = "",
+        const char * ssl_key = "",
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
 
@@ -78,6 +87,9 @@ public:
         const char * password,
         unsigned port,
         const char * socket,
+        const char* ssl_ca,
+        const char* ssl_cert,
+        const char* ssl_key,
         unsigned timeout = MYSQLXX_DEFAULT_TIMEOUT,
         unsigned rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
 
@@ -91,6 +103,9 @@ public:
         std::string password = cfg.getString(config_name + ".password");
         unsigned port = cfg.getInt(config_name + ".port", 0);
         std::string socket = cfg.getString(config_name + ".socket", "");
+        std::string ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
+        std::string ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
+        std::string ssl_key = cfg.getString(config_name + ".ssl_key", "");
 
         unsigned timeout =
             cfg.getInt(config_name + ".connect_timeout",
@@ -102,7 +117,18 @@ public:
                 cfg.getInt("mysql_rw_timeout",
                     MYSQLXX_DEFAULT_RW_TIMEOUT));
 
-        connect(db.c_str(), server.c_str(), user.c_str(), password.c_str(), port, socket.c_str(), timeout, rw_timeout);
+        connect(
+                db.c_str(),
+                server.c_str(),
+                user.c_str(),
+                password.c_str(),
+                port,
+                socket.c_str(),
+                ssl_ca.c_str(),
+                ssl_cert.c_str(),
+                ssl_key.c_str(),
+                timeout,
+                rw_timeout);
     }
 
     /// If MySQL connection was established.
