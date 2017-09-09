@@ -30,11 +30,7 @@ cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
-find_program (CCACHE_FOUND ccache)
-if (CCACHE_FOUND AND NOT CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" AND NOT CMAKE_CXX_COMPILER MATCHES "ccache")
-  set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE "ccache")
-  set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK "ccache")
-endif ()
+include (cmake/find_ccache.cmake)
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
     message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
