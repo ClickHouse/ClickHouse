@@ -5,6 +5,7 @@
 #include <memory>
 #include <chrono>
 #include <mutex>
+#include <atomic>
 
 #include <common/logger_useful.h>
 
@@ -254,8 +255,8 @@ private:
     const Delay expiration_delay;
 
     mutable std::mutex mutex;
-    size_t hits = 0;
-    size_t misses = 0;
+    std::atomic<size_t> hits {0};
+    std::atomic<size_t> misses {0};
 
     WeightFunction weight_function;
 
