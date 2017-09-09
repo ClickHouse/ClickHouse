@@ -89,18 +89,25 @@ else ()
     set (CXX11_ABI_FLAGS "")
 endif ()
 
-set (COMPILER_FLAGS                       "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
+set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
 option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
 if (PIPE)
-    set (COMPILER_FLAGS                   "${COMPILER_FLAGS} -pipe")
+    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pipe")
 endif ()
 
 include (cmake/test_cpu.cmake)
 
 option (ARCHNATIVE "Enable -march=native compiler flag" OFF)
 if (ARCHNATIVE)
-    set (COMPILER_FLAGS                   "${COMPILER_FLAGS} -march=native")
+    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
+endif ()
+
+option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" OFF)
+if (USE_LIBCXX)
+    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pthread") # NOTE: Why this is not the default and why this is needed only with libc++?
+    set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+    set (CMAKE_CXX_FLAGS_DEBUG           "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
 endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
@@ -115,11 +122,18 @@ set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
 
 if (NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc")
+    if (NOT USE_LIBCXX)
+        set (CMAKE_EXE_LINKER_FLAGS      "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
+    endif ()
 endif ()
 
 if (NOT APPLE)
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
+
+    if (USE_LIBCXX AND (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+        set (CMAKE_EXE_LINKER_FLAGS      "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -Wl,-Bstatic -lc++ -lc++abi -Wl,-Bdynamic")
+    endif ()
 endif ()
 
 include (cmake/test_compiler.cmake)
