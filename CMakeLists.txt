@@ -132,7 +132,7 @@ if (NOT APPLE)
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 
     if (USE_LIBCXX AND (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-        set (CMAKE_EXE_LINKER_FLAGS      "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -Wl,-Bstatic -lc++ -lc++abi -Wl,-Bdynamic")
+        link_libraries (-Wl,-Bstatic -stdlib=libc++ -static-libstdc++ c++ c++abi -Wl,-Bdynamic)
     endif ()
 endif ()
 
