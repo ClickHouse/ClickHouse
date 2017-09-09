@@ -1,6 +1,5 @@
 #include <map>
 #include <set>
-#include <random>
 
 #include <boost/functional/hash/hash.hpp>
 #include <Poco/Mutex.h>
@@ -9,6 +8,7 @@
 #include <Poco/Net/IPAddress.h>
 
 #include <common/logger_useful.h>
+#include <pcg_random.hpp>
 
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
@@ -175,7 +175,7 @@ struct ContextShared
 
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
-    std::mt19937_64 rng{randomSeed()};
+    pcg64 rng{randomSeed()};
 
     ContextShared()
     {

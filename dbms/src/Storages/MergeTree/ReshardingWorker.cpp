@@ -31,11 +31,14 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 
+#include <boost/noncopyable.hpp>
+
 #include <future>
 #include <chrono>
 #include <cstdlib>
 #include <ctime>
-#include <random>
+#include <pcg_random.hpp>
+
 
 namespace DB
 {
@@ -1391,19 +1394,8 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
     /// Description of tasks for each replica of a shard.
     /// For fault tolerance purposes, some fields are provided
     /// to perform attempts on more than one replica if needed.
-    struct ShardTaskInfo
+    struct ShardTaskInfo : private boost::noncopyable
     {
-        ShardTaskInfo()
-        {
-            rng = std::mt19937(randomSeed());
-        }
-
-        ShardTaskInfo(const ShardTaskInfo &) = delete;
-        ShardTaskInfo & operator=(const ShardTaskInfo &) = delete;
-
-        ShardTaskInfo(ShardTaskInfo &&) = default;
-        ShardTaskInfo & operator=(ShardTaskInfo &&) = default;
-
         /// one task for each replica
         std::vector<TaskInfo> shard_tasks;
         /// index to the replica to be used
@@ -1411,7 +1403,7 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
         /// result of the operation on the current replica
         bool is_success = false;
         /// For pseudo-random number generation.
-        std::mt19937 rng;
+        pcg64 rng{randomSeed()};
     };
 
     const WeightedZooKeeperPath & weighted_path = current_job.paths[log_record.shard_no];

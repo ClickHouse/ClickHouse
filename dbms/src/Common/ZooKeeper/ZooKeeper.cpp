@@ -1,9 +1,11 @@
 #include <random>
+#include <pcg_random.hpp>
 #include <functional>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
+#include <Common/randomSeed.h>
 
 
 namespace ProfileEvents
@@ -137,9 +139,8 @@ struct ZooKeeperArgs
         }
 
         /// Shuffle the hosts to distribute the load among ZooKeeper nodes.
-        std::random_device rd;
-        std::mt19937 g(rd());
-        std::shuffle(hosts_strings.begin(), hosts_strings.end(), g);
+        pcg64 rng(randomSeed());
+        std::shuffle(hosts_strings.begin(), hosts_strings.end(), rng);
 
         for (auto & host : hosts_strings)
         {
