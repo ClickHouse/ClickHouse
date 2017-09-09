@@ -7,12 +7,14 @@
 #include <iomanip>
 #include <vector>
 #include <random>
+#include <pcg_random.hpp>
 
 #include <Poco/NumberParser.h>
 #include <Poco/NumberFormatter.h>
 #include <Poco/Exception.h>
 
 #include <Common/Exception.h>
+#include <Common/randomSeed.h>
 
 #include <common/ThreadPool.h>
 #include <Common/Stopwatch.h>
@@ -50,11 +52,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
     else
         buf = &simple_buf[0];
 
-    std::mt19937 rng;
-
-    timespec times;
-    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &times);
-    rng.seed(times.tv_nsec);
+    pcg64 rng(randomSeed());
 
     for (size_t i = 0; i < count; ++i)
     {

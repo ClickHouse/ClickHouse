@@ -8,6 +8,7 @@
 #include <Interpreters/Quota.h>
 
 #include <set>
+#include <random>
 
 
 namespace DB
@@ -159,7 +160,7 @@ void QuotaForInterval::check(
 }
 
 
-void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng)
+void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, pcg64 & rng)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_elem, config_keys);
@@ -250,7 +251,7 @@ String QuotaForIntervals::toString() const
 }
 
 
-void Quota::loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng)
+void Quota::loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, pcg64 & rng)
 {
     name = name_;
 
@@ -308,7 +309,7 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
 
 void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 {
-    std::mt19937 rng;
+    pcg64 rng;
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys("quotas", config_keys);

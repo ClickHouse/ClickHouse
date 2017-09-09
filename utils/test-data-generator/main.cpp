@@ -1,5 +1,6 @@
 #include <iostream>
 #include <random>
+#include <pcg_random.hpp>
 #include <cmath>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -42,8 +43,8 @@ struct Models
 struct Generator
 {
     WriteBufferFromFileDescriptor out;
-    std::mt19937_64 random;
-    std::mt19937_64 random_with_seed;
+    pcg64 random;
+    pcg64 random_with_seed;
     Models models;
 
 //    UInt64 WatchID = random();

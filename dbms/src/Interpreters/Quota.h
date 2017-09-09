@@ -3,7 +3,7 @@
 #include <cstring>
 #include <unordered_map>
 #include <memory>
-#include <random>
+#include <pcg_random.hpp>
 
 #include <Poco/Timespan.h>
 
@@ -191,7 +191,7 @@ public:
         return cont.empty();
     }
 
-    void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng);
+    void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, pcg64 & rng);
 
     /// Set maximum values (limits) from passed argument.
     /// Remove intervals that does not exist in argument. Add intervals from argument, that we don't have.
@@ -241,7 +241,7 @@ struct Quota
 
     bool keyed_by_ip = false;
 
-    void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng);
+    void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, pcg64 & rng);
     QuotaForIntervalsPtr get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
 };
 
