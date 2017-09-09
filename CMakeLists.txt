@@ -119,16 +119,14 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 
 if (NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc")
-    if (NOT USE_LIBCXX)
-        set (CMAKE_EXE_LINKER_FLAGS      "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
-    endif ()
+    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
 endif ()
 
 if (NOT APPLE)
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 
     if (USE_LIBCXX AND (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-        link_libraries (-Wl,-Bstatic -stdlib=libc++ -static-libstdc++ c++ c++abi -Wl,-Bdynamic)
+        link_libraries (-Wl,-Bstatic -stdlib=libc++ c++ c++abi -Wl,-Bdynamic)
     endif ()
 endif ()
 
