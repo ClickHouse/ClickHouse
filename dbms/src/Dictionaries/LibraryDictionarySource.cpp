@@ -85,7 +85,7 @@ bool dataToBlock(const void * data, Block & block)
 
         for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
         {
-            columns[row_n]->insert(columns_received->data[col_n].data[row_n]);
+            columns[row_n]->insert(static_cast<UInt64>(columns_received->data[col_n].data[row_n]));
         }
     }
     return false;
