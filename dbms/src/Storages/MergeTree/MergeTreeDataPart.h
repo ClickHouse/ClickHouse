@@ -153,16 +153,54 @@ struct MergeTreeDataPart
     enum class State
     {
         Temporary,      /// the part is generating now, it is not in data_parts list
-        Precommitted,   /// the part is in data_parts, but not used for SELECTs
+        PreCommitted,   /// the part is in data_parts, but not used for SELECTs
         Committed,      /// active data part, used by current and upcoming SELECTs
         Outdated,       /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
         Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
     };
 
-    State state{State::Temporary};
+    mutable State state{State::Temporary};
 
-    bool isCommited() { return state == State::Committed; }
-    static bool isCommitedPart(const std::shared_ptr<MergeTreeDataPart> & part) { return part->isCommited(); }
+    /// Returns name of state
+    static String stateToString(State state);
+    String stateString() const;
+
+    String getNameWithState() const
+    {
+        return name + " (state " + stateString() + ")";
+    }
+
+    /// Returns true if state of part is one of affordable_states
+    bool tryCheckState(std::initializer_list<State> affordable_states) const
+    {
+        for (auto affordable_state : affordable_states)
+        {
+            if (state == affordable_state)
+                return true;
+        }
+        return false;
+    }
+
+    /// Throws an exception if state of the part is not in affordable_states
+    void checkState(std::initializer_list<State> affordable_states) const
+    {
+        if (!tryCheckState(affordable_states))
+        {
+            String states_str;
+            for (auto state : affordable_states)
+                states_str += stateToString(state) + " ";
+
+            throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str);
+        }
+    }
+
+    /// Returns a lambda that returns true only for part with states from specified list
+    static inline decltype(auto) getStatesFilter(std::initializer_list<State> affordable_states)
+    {
+        return [affordable_states] (const std::shared_ptr<const MergeTreeDataPart> & part) {
+            return part->tryCheckState(affordable_states);
+        };
+    }
 
     /// For resharding.
     size_t shard_no = 0;
