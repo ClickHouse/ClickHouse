@@ -41,6 +41,8 @@
 
 #include <Poco/DirectoryIterator.h>
 
+#include <boost/range/adaptor/filtered.hpp>
+
 #include <algorithm>
 #include <iomanip>
 #include <thread>
@@ -360,13 +362,13 @@ String MergeTreeData::MergingParams::getModeName() const
 {
     switch (mode)
     {
-        case Ordinary:         return "";
-        case Collapsing:     return "Collapsing";
-        case Summing:         return "Summing";
-        case Aggregating:     return "Aggregating";
-        case Unsorted:         return "Unsorted";
+        case Ordinary:      return "";
+        case Collapsing:    return "Collapsing";
+        case Summing:       return "Summing";
+        case Aggregating:   return "Aggregating";
+        case Unsorted:      return "Unsorted";
         case Replacing:     return "Replacing";
-        case Graphite:         return "Graphite";
+        case Graphite:      return "Graphite";
 
         default:
             throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
@@ -376,10 +378,10 @@ String MergeTreeData::MergingParams::getModeName() const
 
 Int64 MergeTreeData::getMaxDataPartIndex()
 {
-    std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
+    std::lock_guard<std::mutex> lock_all(data_parts_mutex);
 
     Int64 max_block_id = 0;
-    for (const auto & part : all_data_parts)
+    for (const auto & part : data_parts)
         max_block_id = std::max(max_block_id, part->info.max_block);
 
     return max_block_id;
@@ -391,10 +393,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     LOG_DEBUG(log, "Loading data parts");
 
     std::lock_guard<std::mutex> lock(data_parts_mutex);
-    std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
+    //std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
     data_parts.clear();
-    all_data_parts.clear();
+    //all_data_parts.clear();
 
     Strings part_file_names;
     Poco::DirectoryIterator end;
@@ -494,6 +496,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
 
         part->modification_time = Poco::File(full_path + file_name).getLastModified().epochTime();
+        part->state = DataPartState::Committed;
 
         data_parts.insert(part);
     }
@@ -507,7 +510,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     for (auto & part : broken_parts_to_detach)
         part->renameAddPrefix(true, "");
 
-    all_data_parts = data_parts;
+    //all_data_parts = data_parts;
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
     /// were merged), but that for some reason are still not deleted from the filesystem.
@@ -620,19 +623,18 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
     time_t now = time(nullptr);
 
     {
-        std::lock_guard<std::mutex> lock_all_parts(all_data_parts_mutex);
+        std::lock_guard<std::mutex> lock_parts(data_parts_mutex);
 
-        for (auto it = all_data_parts.begin(); it != all_data_parts.end();)
+        for (auto it = data_parts.begin(); it != data_parts.end(); ++it)
         {
-            if (it->unique() && /// After this ref_count cannot increase.
+            if ((*it)->state == DataPartState::Outdated &&
+                it->unique() && /// Grab only parts that is not using by anyone (SELECTs for example)
                 (*it)->remove_time < now &&
                 now - (*it)->remove_time > settings.old_parts_lifetime.totalSeconds())
             {
+                (*it)->state = DataPartState::Deleting;
                 res.push_back(*it);
-                all_data_parts.erase(it++);
             }
-            else
-                ++it;
         }
     }
 
@@ -643,10 +645,33 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 }
 
 
-void MergeTreeData::addOldParts(const MergeTreeData::DataPartsVector & parts)
+void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector & parts)
 {
-    std::lock_guard<std::mutex> lock(all_data_parts_mutex);
-    all_data_parts.insert(parts.begin(), parts.end());
+    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    for (auto & part : parts)
+    {
+        /// We should modify it under data_parts_mutex
+        part->checkState({DataPartState::Deleting});
+        part->state = DataPartState::Outdated;
+    }
+}
+
+void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts)
+{
+    std::lock_guard<std::mutex> lock(data_parts_mutex);
+
+    /// TODO: use data_parts iterators instead of pointers
+    for (auto & part : parts)
+    {
+        if (part->state != DataPartState::Deleting)
+            throw Exception("An attempt to delete part " + part->getNameWithState() + " with unexpected state", ErrorCodes::LOGICAL_ERROR);
+
+        auto it = data_parts.find(part);
+        if (it == data_parts.end())
+            throw Exception("Deleting data part " + part->name + " is not exist", ErrorCodes::LOGICAL_ERROR);
+
+        data_parts.erase(it);
+    }
 }
 
 void MergeTreeData::clearOldParts()
@@ -684,12 +709,12 @@ void MergeTreeData::dropAllData()
     LOG_TRACE(log, "dropAllData: waiting for locks.");
 
     std::lock_guard<std::mutex> lock(data_parts_mutex);
-    std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
+    //std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
     LOG_TRACE(log, "dropAllData: removing data from memory.");
 
     data_parts.clear();
-    all_data_parts.clear();
+    //all_data_parts.clear();
     column_sizes.clear();
 
     context.dropCaches();
@@ -1288,17 +1313,15 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrem
             + " existing part(s) (including " + removed[0]->name + ")", ErrorCodes::LOGICAL_ERROR);
 }
 
+
+
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
 {
     if (out_transaction && out_transaction->data)
         throw Exception("Using the same MergeTreeData::Transaction for overlapping transactions is invalid", ErrorCodes::LOGICAL_ERROR);
 
-    if (part->state != MergeTreeDataPart::State::Temporary)
-        throw Exception("Unexpected state of part " + part->name, ErrorCodes::LOGICAL_ERROR);
-
-    /// ReplicatedMergeTree engines (that use out_transaction) don't commit part immediately
-    auto res_state = (out_transaction) ? MergeTreeDataPart::State::Precommitted : MergeTreeDataPart::State::Committed;
+    part->checkState({DataPartState::Temporary});
 
     DataPartsVector replaced;
     {
@@ -1327,33 +1350,40 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
         LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << new_name << ".");
 
-        if (data_parts.count(part))
-            throw Exception("Part " + new_name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
-
-        bool in_all_data_parts;
+        auto it_duplicate = data_parts.find(part);
+        if (it_duplicate != data_parts.end())
         {
-            std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
-            in_all_data_parts = all_data_parts.count(part) != 0;
-        }
-        /// New part can be removed from data_parts but not from filesystem and ZooKeeper
-        if (in_all_data_parts)
-            clearOldPartsAndRemoveFromZK();
+            String message = "Part " + (*it_duplicate)->getNameWithState() + " already exists";
+            if ((*it_duplicate)->tryCheckState({DataPartState::Outdated, DataPartState::Deleting}))
+                message += ", but it will be deleted soon";
 
-        /// Rename the part.
-        /// TODO: What if it is obsolete?
-        part->renameTo(new_name);
-        part->is_temp = false;
+            throw Exception(message, ErrorCodes::DUPLICATE_DATA_PART);
+        }
+
+        /// Rename the part only in memory. Will rename it on disk only if all check is passed.
+        /// It allows us maintain invariant: if non-temporary parts in filesystem then they are in data_parts
         part->name = new_name;
 
-        bool obsolete = false; /// Is the part covered by some other part?
+        /// Is the part covered by some other part?
+        bool obsolete = false;
 
-        /// Parts contained in the part are consecutive in data_parts, intersecting the insertion place
-        /// for the part itself.
-        auto it = data_parts.lower_bound(part);
+        auto check_replacing_part_state = [&] (const DataPartPtr & cur_part)
+        {
+            cur_part->checkState({DataPartState::PreCommitted, DataPartState::Committed});
+            if (cur_part->state == DataPartState::PreCommitted)
+                throw Exception("Could not add part " + new_name + " while replacing part " + cur_part->name + " is in pre-committed state", ErrorCodes::LOGICAL_ERROR);
+        };
+
+        /// Don't consider parts going to be deleted
+        auto active_parts = getDataPartsRange({DataPartState::Committed, DataPartState::PreCommitted});
+        /// Parts contained in the part are consecutive in data_parts, intersecting the insertion place for the part itself.
+        auto it_middle = active_parts.convert(data_parts.lower_bound(part));
+
         /// Go to the left.
-        while (it != data_parts.begin())
+        for (auto it = it_middle; it != active_parts.begin();)
         {
             --it;
+
             if (!part->contains(**it))
             {
                 if ((*it)->contains(*part))
@@ -1361,47 +1391,79 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
                 ++it;
                 break;
             }
+
+            check_replacing_part_state(*it);
             replaced.push_back(*it);
-            (*it)->remove_time = time(nullptr);
-            (*it)->state = MergeTreeDataPart::State::Outdated;
-            removePartContributionToColumnSizes(*it);
-            data_parts.erase(it++); /// Yes, ++, not --.
+//            replaced.push_back(*it);
+//            (*it)->remove_time = time(nullptr);
+//            (*it)->state = replaced_parts_state;
+//            removePartContributionToColumnSizes(*it);
+//            data_parts.erase(it++); /// Yes, ++, not --.
         }
-        std::reverse(replaced.begin(), replaced.end()); /// Parts must be in ascending order.
+
+        /// Parts must be in ascending order.
+        std::reverse(replaced.begin(), replaced.end());
+
         /// Go to the right.
-        while (it != data_parts.end())
+        for (auto it = it_middle; it != active_parts.end();)
         {
+            if ((*it)->name == part->name)
+                throw Exception("Unexpected duplicate part " + part->getNameWithState() + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
             if (!part->contains(**it))
             {
-                if ((*it)->name == part->name || (*it)->contains(*part))
+                if ((*it)->contains(*part))
                     obsolete = true;
                 break;
             }
+
+            check_replacing_part_state(*it);
             replaced.push_back(*it);
-            (*it)->remove_time = time(nullptr);
-            (*it)->state = MergeTreeDataPart::State::Outdated;
-            removePartContributionToColumnSizes(*it);
-            data_parts.erase(it++);
+            ++it;
+//            replaced.push_back(*it);
+//            (*it)->remove_time = time(nullptr);
+//            (*it)->state = replaced_parts_state;
+//            removePartContributionToColumnSizes(*it);
+//            data_parts.erase(it++);
         }
 
         if (obsolete)
         {
             LOG_WARNING(log, "Obsolete part " << part->name << " added");
-            /// TODO: Why we can't delete it immediately?
-            /// TODO: Maybe Deleting or Temporary state is more appropriate.
-            part->state = MergeTreeDataPart::State::Outdated;
             part->remove_time = time(nullptr);
+            /// I case of fail, we want to delete part from filesystem immediately (to avoid any conflicts)
+            part->is_temp = true;
         }
         else
         {
-            part->state = res_state;
-            data_parts.insert(part);
-            addPartContributionToColumnSizes(part);
-        }
+            /// Now we can rename part on filesystem
+            part->is_temp = false;
+            part->renameTo(new_name);
 
-        {
-            std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
-            all_data_parts.insert(part);
+            if (!out_transaction)
+            {
+                /// Ordinary MergeTree engines (they don't use out_transaction) commit parts immediately
+                part->state = DataPartState::Committed;
+                addPartContributionToColumnSizes(part);
+            }
+            else
+            {
+                /// Whereas ReplicatedMergeTree uses intermediate PreCommitted state
+                part->state = DataPartState::PreCommitted;
+            }
+
+            data_parts.insert(part);
+
+            auto current_time = time(nullptr);
+            for (auto & replacing_part : replaced)
+            {
+                if (!out_transaction)
+                {
+                    replacing_part->remove_time = current_time;
+                    replacing_part->state = DataPartState::Outdated;
+                    removePartContributionToColumnSizes(replacing_part);
+                }
+            }
         }
     }
 
@@ -1415,75 +1477,73 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     return replaced;
 }
 
-void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout)
+void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout)
 {
-    for (auto & part : remove)
-    {
-        if (part->state != MergeTreeDataPart::State::Precommitted && part->state != MergeTreeDataPart::State::Committed)
-            throw Exception("Unexpected state of part " + part->name, ErrorCodes::LOGICAL_ERROR);
-    }
-
-    for (auto & part : add)
-    {
-        if (part->state != MergeTreeDataPart::State::Temporary)
-            throw Exception("Unexpected state of part " + part->name, ErrorCodes::LOGICAL_ERROR);
-    }
-
     std::lock_guard<std::mutex> lock(data_parts_mutex);
 
-    for (const DataPartPtr & part : remove)
+    for (auto & part : remove)
     {
-        part->remove_time = clear_without_timeout ? 0 : time(nullptr);
-        part->state = MergeTreeDataPart::State::Outdated;
+        if (!data_parts.count(part))
+            throw Exception("Part " + part->getNameWithState() + " not found in data_parts", ErrorCodes::LOGICAL_ERROR);
 
-        if (data_parts.erase(part))
-            removePartContributionToColumnSizes(part);
+        part->checkState({DataPartState::PreCommitted, DataPartState::Committed, DataPartState::Outdated});
     }
 
-    for (const DataPartPtr & part : add)
+    auto remove_time = clear_without_timeout ? 0 : time(nullptr);
+    for (const DataPartPtr & part : remove)
     {
-        if (data_parts.insert(part).second)
-        {
-            part->state = MergeTreeDataPart::State::Precommitted;
-            addPartContributionToColumnSizes(part);
-        }
-        /// TODO: Why there are no assertion in the else branch?
+        if (part->state == DataPartState::Committed)
+            removePartContributionToColumnSizes(part);
+        part->state = DataPartState::Outdated;
+        part->remove_time = remove_time;
     }
 }
 
 
-void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String & prefix, bool restore_covered, bool move_to_detached)
+void MergeTreeData::renameAndDetachPart(const DataPartPtr & part_to_detach, const String & prefix, bool restore_covered,
+                                        bool move_to_detached)
 {
-    LOG_INFO(log, "Renaming " << part->relative_path << " to " << prefix << part->name << " and detaching it.");
+    LOG_INFO(log, "Renaming " << part_to_detach->relative_path << " to " << prefix << part_to_detach->name << " and detaching it.");
 
     std::lock_guard<std::mutex> lock(data_parts_mutex);
-    std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
+    //std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
 
-    if (!all_data_parts.erase(part))
-        throw Exception("No such data part", ErrorCodes::NO_SUCH_DATA_PART);
+    auto it_part = data_parts.find(part_to_detach);
+    if (it_part == data_parts.end())
+        throw Exception("No such data part " + part_to_detach->getNameWithState(), ErrorCodes::NO_SUCH_DATA_PART);
+
+    /// What if part_to_detach is reference to *it_part? Make a new owner just in case.
+    auto part = *it_part;
 
     removePartContributionToColumnSizes(part);
-    data_parts.erase(part);
+    part->state = DataPartState::Deleting;
     if (move_to_detached || !prefix.empty())
         part->renameAddPrefix(move_to_detached, prefix);
 
     if (restore_covered)
     {
-        auto it = all_data_parts.lower_bound(part);
+        auto suitable_parts = getDataPartsRange({DataPartState::PreCommitted, DataPartState::Committed, DataPartState::Outdated});
+        auto it = suitable_parts.convert(data_parts.lower_bound(part));
+
         Strings restored;
         bool error = false;
 
         Int64 pos = part->info.min_block;
 
-        if (it != all_data_parts.begin())
+        if (it != suitable_parts.begin())
         {
             --it;
             if (part->contains(**it))
             {
                 if ((*it)->info.min_block != part->info.min_block)
                     error = true;
-                data_parts.insert(*it);
-                addPartContributionToColumnSizes(*it);
+
+                if ((*it)->state != DataPartState::Committed)
+                {
+                    addPartContributionToColumnSizes(*it);
+                    (*it)->state = DataPartState::Committed;
+                }
+
                 pos = (*it)->info.max_block + 1;
                 restored.push_back((*it)->name);
             }
@@ -1494,14 +1554,19 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String &
         else
             error = true;
 
-        for (; it != all_data_parts.end() && part->contains(**it); ++it)
+        for (; it != suitable_parts.end() && part->contains(**it); ++it)
         {
             if ((*it)->info.min_block < pos)
                 continue;
             if ((*it)->info.min_block > pos)
                 error = true;
-            data_parts.insert(*it);
-            addPartContributionToColumnSizes(*it);
+
+            if ((*it)->state != DataPartState::Committed)
+            {
+                addPartContributionToColumnSizes(*it);
+                (*it)->state = DataPartState::Committed;
+            }
+
             pos = (*it)->info.max_block + 1;
             restored.push_back((*it)->name);
         }
@@ -1519,25 +1584,6 @@ void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String &
     }
 }
 
-MergeTreeData::DataParts MergeTreeData::getDataParts() const
-{
-    MergeTreeData::DataParts res;
-    {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
-        std::copy_if(data_parts.begin(), data_parts.end(), std::inserter(res, res.begin()), MergeTreeDataPart::isCommitedPart);
-    }
-    return res;
-}
-
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const
-{
-    MergeTreeData::DataPartsVector res;
-    {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
-        std::copy_if(data_parts.begin(), data_parts.end(), std::inserter(res, res.begin()), MergeTreeDataPart::isCommitedPart);
-    }
-    return res;
-}
 
 size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
@@ -1545,16 +1591,14 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 
     size_t res = 0;
     for (auto & part : data_parts)
-        res += part->size_in_bytes;
+    {
+        if (part->state == DataPartState::Committed)
+            res += part->size_in_bytes;
+    }
 
     return res;
 }
 
-MergeTreeData::DataParts MergeTreeData::getAllDataParts() const
-{
-    std::lock_guard<std::mutex> lock(all_data_parts_mutex);
-    return all_data_parts;
-}
 
 size_t MergeTreeData::getMaxPartsCountForPartition() const
 {
@@ -1566,6 +1610,9 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
 
     for (const auto & part : data_parts)
     {
+        if (part->state != DataPartState::Committed)
+            continue;
+
         if (cur_partition_id && part->info.partition_id == *cur_partition_id)
         {
             ++cur_count;
@@ -1620,9 +1667,10 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     std::lock_guard<std::mutex> lock(data_parts_mutex);
 
     /// The part can be covered only by the previous or the next one in data_parts.
-    auto it = data_parts.lower_bound(part_info);
+    auto committed_parts = getDataPartsRange({DataPartState::Committed});
+    auto it = committed_parts.convert(data_parts.lower_bound(part_info));
 
-    if (it != data_parts.end())
+    if (it != committed_parts.end())
     {
         if ((*it)->name == part_name)
             return *it;
@@ -1630,7 +1678,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
             return *it;
     }
 
-    if (it != data_parts.begin())
+    if (it != committed_parts.begin())
     {
         --it;
         if ((*it)->info.contains(part_info))
@@ -1644,9 +1692,9 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    std::lock_guard<std::mutex> lock(all_data_parts_mutex);
-    auto it = all_data_parts.lower_bound(part_info);
-    if (it != all_data_parts.end() && (*it)->name == part_name)
+    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    auto it = data_parts.lower_bound(part_info);
+    if (it != data_parts.end() && (*it)->name == part_name && (*it)->state == DataPartState::Committed)
         return *it;
 
     return nullptr;
@@ -1927,6 +1975,58 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     return partition_id;
 }
 
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(std::initializer_list<DataPartState> affordable_states) const
+{
+    DataPartsVector res;
+    {
+        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::copy_if(data_parts.begin(), data_parts.end(), std::back_inserter(res),
+                     DataPart::getStatesFilter({DataPartState::Committed}));
+    }
+    return res;
+}
+
+MergeTreeData::DataParts MergeTreeData::getDataParts(std::initializer_list<DataPartState> affordable_states) const
+{
+    DataParts res;
+    {
+        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::copy_if(data_parts.begin(), data_parts.end(), std::inserter(res, res.end()),
+                     DataPart::getStatesFilter({DataPartState::Committed}));
+    }
+    return res;
+}
+
+MergeTreeData::DataParts MergeTreeData::getDataParts() const
+{
+    return getDataParts({DataPartState::Committed});
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const
+{
+    return getDataPartsVector({DataPartState::Committed});
+}
+
+MergeTreeData::DataParts MergeTreeData::getAllDataParts() const
+{
+    return getDataParts({DataPartState::PreCommitted, DataPartState::Committed, DataPartState::Outdated});
+}
+
+MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
+    const String & partition_id, std::lock_guard<std::mutex> & data_parts_lock)
+{
+    auto min_block = std::numeric_limits<Int64>::min();
+    MergeTreePartInfo dummy_part_info(partition_id, min_block, min_block, 0);
+
+    auto committed_parts = getDataPartsRange({DataPartState::Committed});
+    auto it = committed_parts.convert(data_parts.lower_bound(dummy_part_info));
+
+    if (it != committed_parts.end() && (*it)->info.partition_id == partition_id)
+        return *it;
+    return {};
+}
+
+
 void MergeTreeData::Transaction::rollback()
 {
     if (data && (!parts_to_remove_on_rollback.empty() || !parts_to_add_on_rollback.empty()))
@@ -1949,21 +2049,58 @@ void MergeTreeData::Transaction::rollback()
 
         LOG_DEBUG(data->log, "Undoing transaction." << ss.str());
 
-        data->replaceParts(parts_to_remove_on_rollback, parts_to_add_on_rollback, true);
-
+        /// PreCommitted -> Outdated
+        replaceParts(DataPartState::Outdated, DataPartState::Committed, true);
         clear();
     }
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
-    const String & partition_id, std::lock_guard<std::mutex> & data_parts_lock)
+void MergeTreeData::Transaction::commit()
 {
-    auto min_block = std::numeric_limits<Int64>::min();
-    MergeTreePartInfo dummy_part_info(partition_id, min_block, min_block, 0);
-    auto it = data_parts.lower_bound(dummy_part_info);
-    if (it != data_parts.end() && (*it)->info.partition_id == partition_id)
-        return *it;
-    return {};
+    /// PreCommitted -> Committed, Committed -> Outdated
+    replaceParts(DataPartState::Committed, DataPartState::Outdated, false);
+    clear();
 }
+
+void MergeTreeData::Transaction::replaceParts(MergeTreeData::DataPartState move_precommitted_to,
+                                              MergeTreeData::DataPartState move_committed_to, bool remove_without_delay)
+{
+    auto & committed_parts = parts_to_add_on_rollback;
+    auto & precommitted_parts = parts_to_remove_on_rollback;
+
+    /// TODO: also make sense to activate CleanupThread's cv
+    auto remove_time = (remove_without_delay) ? 0 : time(nullptr);
+
+    {
+        std::lock_guard<std::mutex> lock(data->data_parts_mutex);
+
+        for (auto & part : committed_parts)
+            part->checkState({DataPartState::Committed});
+        for (auto & part : precommitted_parts)
+            part->checkState({DataPartState::PreCommitted});
+
+        /// If it is rollback then do nothing, else make it Outdated and remove their size contribution
+        if (move_committed_to != DataPartState::Committed)
+        {
+            for (auto & part : committed_parts)
+            {
+                part->state = move_committed_to;
+                part->remove_time = remove_time;
+                data->removePartContributionToColumnSizes(part);
+            }
+        }
+
+        /// If it is rollback just change state to Outdated, else change state to Committed and add their size contribution
+        for (auto & part : precommitted_parts)
+        {
+            part->state = move_precommitted_to;
+            if (move_precommitted_to == DataPartState::Committed)
+                data->addPartContributionToColumnSizes(part);
+            else
+                part->remove_time = remove_time;
+        }
+    }
+}
+
 
 }
