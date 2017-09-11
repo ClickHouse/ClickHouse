@@ -231,6 +231,9 @@ private:
     std::string socket;
     unsigned connect_timeout;
     unsigned rw_timeout;
+    std::string ssl_ca;
+    std::string ssl_cert;
+    std::string ssl_key;
 
     /// True if connection was established at least once.
     bool was_successful{false};

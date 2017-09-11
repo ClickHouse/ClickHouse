@@ -43,7 +43,7 @@ public:
     /// Get packet from any replica.
     Connection::Packet receivePacket();
 
-    /// Get information about the last received package.
+    /// Get information about the last received packet.
     BlockExtraInfo getBlockExtraInfo() const;
 
     /// Break all active connections.

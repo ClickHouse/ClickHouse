@@ -2,7 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <atomic>
-#include <random>
+#include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
@@ -321,7 +321,7 @@ private:
 
     Logger * log;
 
-    std::mt19937 rng{randomSeed()};
+    pcg64 rng{randomSeed()};
 
     StorageReplicatedMergeTree(
         const String & zookeeper_path_,
