@@ -1466,7 +1466,7 @@ void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTr
 
         /// If the part needs to be removed, it is more reliable to delete the directory after the changes in ZooKeeper.
         if (!entry.detach)
-            data.replaceParts({part}, {}, true);
+            data.removePartsFromWorkingSet({part}, true);
     }
 
     LOG_INFO(log, (entry.detach ? "Detached " : "Removed ") << removed_parts << " parts inside " << entry.new_part_name << ".");
@@ -3851,19 +3851,24 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
     auto zookeeper = getZooKeeper();
 
     MergeTreeData::DataPartsVector parts = data.grabOldParts();
+    MergeTreeData::DataPartsVector parts_deleted_from_filesystem;
     size_t count = parts.size();
 
     if (!count)
         return;
 
     /// Part names that were successfully deleted from filesystem and should be deleted from ZooKeeper
-    Strings part_names;
     auto remove_from_zookeeper = [&] ()
     {
-        LOG_DEBUG(log, "Removed " << part_names.size() << " old parts from filesystem. Removing them from ZooKeeper.");
+        LOG_DEBUG(log, "Removed " << parts_deleted_from_filesystem.size() << " old parts from filesystem. Removing them from ZooKeeper.");
 
         try
         {
+            Strings part_names;
+            for (auto & part: parts_deleted_from_filesystem)
+                part_names.emplace_back(part->name);
+
+            /// It is important to delete parts from ZooKeeper as reliable as possible
             removePartsFromZooKeeper(zookeeper, part_names);
         }
         catch (...)
@@ -3880,7 +3885,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
         {
             MergeTreeData::DataPartPtr & part = parts.back();
             part->remove();
-            part_names.emplace_back(part->name);
+            parts_deleted_from_filesystem.emplace_back(part);
             parts.pop_back();
         }
     }
@@ -3889,14 +3894,16 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
         /// Finalize deletion of parts already deleted from filesystem, rollback remaining parts
-        data.addOldParts(parts);
+        data.rollbackDeletingParts(parts);
         remove_from_zookeeper();
+        data.removePartsFinally(parts_deleted_from_filesystem);
 
         throw;
     }
 
     /// Finalize deletion
     remove_from_zookeeper();
+    data.removePartsFinally(parts_deleted_from_filesystem);
 
     LOG_DEBUG(log, "Removed " << count << " old parts");
 }
