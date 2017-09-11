@@ -146,7 +146,7 @@ void AsynchronousMetrics::update()
 
         for (const auto & db : databases)
         {
-            for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
             {
                 auto & table = iterator->table();
                 StorageMergeTree * table_merge_tree = typeid_cast<StorageMergeTree *>(table.get());
