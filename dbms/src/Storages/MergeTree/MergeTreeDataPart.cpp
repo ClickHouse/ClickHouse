@@ -8,16 +8,12 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Core/Defines.h>
-#include <Core/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
-#include <Common/hex.h>
-#include <Common/typeid_cast.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeDate.h>
 
 #include <Poco/File.h>
 #include <Poco/Path.h>
@@ -38,6 +34,7 @@ namespace ErrorCodes
     extern const int NO_FILE_IN_DATA_PART;
     extern const int EXPECTED_END_OF_FILE;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
+    extern const int CORRUPTED_DATA;
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int UNKNOWN_FORMAT;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
@@ -294,113 +291,6 @@ static ReadBufferFromFile openForReading(const String & path)
 {
     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 }
-
-
-String MergeTreeDataPart::Partition::getID(const MergeTreeData & storage) const
-{
-    if (value.size() != storage.partition_expr_columns.size())
-        throw Exception("Invalid partition key size: " + toString(value.size()), ErrorCodes::LOGICAL_ERROR);
-
-    if (value.empty())
-        return "all";
-
-     /// In case all partition fields are represented by integral types, try to produce a human-readable partition id.
-    /// Otherwise use a hex-encoded hash.
-    bool are_all_integral = true;
-    for (const Field & field : value)
-    {
-        if (field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64)
-        {
-            are_all_integral = false;
-            break;
-        }
-    }
-
-    String result;
-
-    if (are_all_integral)
-    {
-        FieldVisitorToString to_string_visitor;
-        for (size_t i = 0; i < value.size(); ++i)
-        {
-            if (i > 0)
-                result += '-';
-
-            if (typeid_cast<const DataTypeDate *>(storage.partition_expr_column_types[i].get()))
-                result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(value[i].get<UInt64>())));
-            else
-                result += applyVisitor(to_string_visitor, value[i]);
-        }
-
-        return result;
-    }
-
-    SipHash hash;
-    FieldVisitorHash hashing_visitor(hash);
-    for (const Field & field : value)
-        applyVisitor(hashing_visitor, field);
-
-    char hash_data[16];
-    hash.get128(hash_data);
-    result.resize(32);
-    for (size_t i = 0; i < 16; ++i)
-        writeHexByteLowercase(hash_data[i], &result[2 * i]);
-
-    return result;
-}
-
-void MergeTreeDataPart::Partition::serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out) const
-{
-    size_t key_size = storage.partition_expr_column_types.size();
-
-    if (key_size == 0)
-    {
-        writeCString("tuple()", out);
-        return;
-    }
-
-    if (key_size > 1)
-        writeChar('(', out);
-
-    for (size_t i = 0; i < key_size; ++i)
-    {
-        if (i > 0)
-            writeCString(", ", out);
-
-        const DataTypePtr & type = storage.partition_expr_column_types[i];
-        ColumnPtr column = type->createColumn();
-        column->insert(value[i]);
-        type->serializeTextQuoted(*column, 0, out);
-    }
-
-    if (key_size > 1)
-        writeChar(')', out);
-}
-
-void MergeTreeDataPart::Partition::load(const MergeTreeData & storage, const String & part_path)
-{
-    if (!storage.partition_expr)
-        return;
-
-    ReadBufferFromFile file = openForReading(part_path + "partition.dat");
-    value.resize(storage.partition_expr_column_types.size());
-    for (size_t i = 0; i < storage.partition_expr_column_types.size(); ++i)
-        storage.partition_expr_column_types[i]->deserializeBinary(value[i], file);
-}
-
-void MergeTreeDataPart::Partition::store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const
-{
-    if (!storage.partition_expr)
-        return;
-
-    WriteBufferFromFile out(part_path + "partition.dat");
-    HashingWriteBuffer out_hashing(out);
-    for (size_t i = 0; i < value.size(); ++i)
-        storage.partition_expr_column_types[i]->serializeBinary(value[i], out_hashing);
-    checksums.files["partition.dat"].file_size = out_hashing.count();
-    checksums.files["partition.dat"].file_hash = out_hashing.getHash();
-}
-
 
 void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & storage, const String & part_path)
 {
@@ -817,7 +707,7 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
 
         const auto & date_lut = DateLUT::instance();
-        partition = Partition(date_lut.toNumYYYYMM(min_date));
+        partition = MergeTreePartition(date_lut.toNumYYYYMM(min_date));
         minmax_idx = MinMaxIndex(min_date, max_date);
     }
     else
@@ -826,6 +716,13 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
         partition.load(storage, full_path);
         minmax_idx.load(storage, full_path);
     }
+
+    String calculated_partition_id = partition.getID(storage);
+    if (calculated_partition_id != info.partition_id)
+        throw Exception(
+            "While loading part "  + getFullPath() + ": calculated partition ID: " + calculated_partition_id
+            + " differs from partition ID in part name: " + info.partition_id,
+            ErrorCodes::CORRUPTED_DATA);
 }
 
 void MergeTreeDataPart::loadChecksums(bool require)

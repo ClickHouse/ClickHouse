@@ -1293,6 +1293,15 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     {
         std::lock_guard<std::mutex> lock(data_parts_mutex);
 
+        if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
+        {
+            if (part->partition.value != existing_part_in_partition->partition.value)
+                throw Exception(
+                    "Partition value mismatch between two parts with the same partition ID. Existing part: "
+                    + existing_part_in_partition->name + ", newly added part: " + part->name,
+                    ErrorCodes::CORRUPTED_DATA);
+        }
+
         /** It is important that obtaining new block number and adding that block to parts set is done atomically.
           * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
           */
@@ -1405,18 +1414,6 @@ void MergeTreeData::replaceParts(const DataPartsVector & remove, const DataParts
         if (data_parts.insert(part).second)
             addPartContributionToColumnSizes(part);
     }
-}
-
-void MergeTreeData::attachPart(const DataPartPtr & part)
-{
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
-    std::lock_guard<std::mutex> lock_all(all_data_parts_mutex);
-
-    if (!all_data_parts.insert(part).second)
-        throw Exception("Part " + part->name + " is already attached", ErrorCodes::DUPLICATE_DATA_PART);
-
-    data_parts.insert(part);
-    addPartContributionToColumnSizes(part);
 }
 
 void MergeTreeData::renameAndDetachPart(const DataPartPtr & part, const String & prefix, bool restore_covered, bool move_to_detached)
@@ -1733,7 +1730,7 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         const auto & partition = dynamic_cast<const ASTPartition &>(*partition_ast);
-        /// Month-partitioning specific - allow partition ID can be passed in the partition value.
+        /// Month-partitioning specific - partition ID can be passed in the partition value.
         if (const auto * partition_lit = dynamic_cast<const ASTLiteral *>(partition.value.get()))
             prefix = partition_lit->value.getType() == Field::Types::UInt64
                 ? toString(partition_lit->value.get<UInt64>())
@@ -1803,17 +1800,17 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
     return size;
 }
 
-String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & partition_ast, const Context & context)
+String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context)
 {
-    const auto & partition = typeid_cast<const ASTPartition &>(*partition_ast);
+    const auto & partition_ast = typeid_cast<const ASTPartition &>(*ast);
 
-    if (!partition.value)
-        return partition.id;
+    if (!partition_ast.value)
+        return partition_ast.id;
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        /// Month-partitioning specific - allow partition ID can be passed in the partition value.
-        const auto * partition_lit = typeid_cast<const ASTLiteral *>(partition.value.get());
+        /// Month-partitioning specific - partition ID can be passed in the partition value.
+        const auto * partition_lit = typeid_cast<const ASTLiteral *>(partition_ast.value.get());
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
@@ -1828,9 +1825,9 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & partition_ast, cons
     /// Re-parse partition key fields using the information about expected field types.
 
     size_t fields_count = partition_expr_column_types.size();
-    if (partition.fields_count != fields_count)
+    if (partition_ast.fields_count != fields_count)
         throw Exception(
-            "Wrong number of fields in the partition expression: " + toString(partition.fields_count) +
+            "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
             ", must be: " + toString(fields_count),
             ErrorCodes::INVALID_PARTITION_VALUE);
 
@@ -1839,7 +1836,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & partition_ast, cons
     if (fields_count)
     {
         ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition.fields_str.data, partition.fields_str.size);
+        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data, partition_ast.fields_str.size);
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
@@ -1850,14 +1847,31 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & partition_ast, cons
 
         if (!input_stream.read(block))
             throw Exception(
-                "Could not parse partition value: `" + partition.fields_str.toString() + "`",
+                "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
 
         for (size_t i = 0; i < fields_count; ++i)
             block.getByPosition(i).column->get(0, partition_row[i]);
     }
 
-    return MergeTreeDataPart::Partition(std::move(partition_row)).getID(*this);
+    MergeTreePartition partition(std::move(partition_row));
+    String partition_id = partition.getID(*this);
+
+    {
+        std::lock_guard<std::mutex> data_parts_lock(data_parts_mutex);
+        DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
+        if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
+        {
+            WriteBufferFromOwnString buf;
+            writeCString("Parsed partition value: ", buf);
+            partition.serializeTextQuoted(*this, buf);
+            writeCString(" doesn't match partition value for an existing part with the same partition ID: ", buf);
+            writeString(existing_part_in_partition->name, buf);
+            throw Exception(buf.str(), ErrorCodes::INVALID_PARTITION_VALUE);
+        }
+    }
+
+    return partition_id;
 }
 
 void MergeTreeData::Transaction::rollback()
@@ -1888,5 +1902,15 @@ void MergeTreeData::Transaction::rollback()
     }
 }
 
+MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
+    const String & partition_id, std::lock_guard<std::mutex> & data_parts_lock)
+{
+    auto min_block = std::numeric_limits<Int64>::min();
+    MergeTreePartInfo dummy_part_info(partition_id, min_block, min_block, 0);
+    auto it = data_parts.lower_bound(dummy_part_info);
+    if (it != data_parts.end() && (*it)->info.partition_id == partition_id)
+        return *it;
+    return {};
+}
 
 }
