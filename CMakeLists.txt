@@ -156,6 +156,18 @@ set (CMAKE_C_FLAGS_MSAN                  "${CMAKE_C_FLAGS_MSAN}    ${SAN_FLAGS} 
 set (CMAKE_CXX_FLAGS_TSAN                "${CMAKE_CXX_FLAGS_TSAN}  ${SAN_FLAGS} -fsanitize=thread")
 set (CMAKE_C_FLAGS_TSAN                  "${CMAKE_C_FLAGS_TSAN}    ${SAN_FLAGS} -fsanitize=thread")
 
+# Using "include-what-you-use" tool.
+option (USE_INCLUDE_WHAT_YOU_USE "Use 'include-what-you-use' tool" OFF)
+if (USE_INCLUDE_WHAT_YOU_USE)
+    find_program(IWYU_PATH NAMES include-what-you-use iwyu)
+    if (NOT IWYU_PATH)
+        message(FATAL_ERROR "Could not find the program include-what-you-use")
+    endif()
+    if (${CMAKE_VERSION} VERSION_LESS "3.3.0")
+        message(FATAL_ERROR "include-what-you-use requires CMake version at least 3.3.")
+    endif()
+endif ()
+
 # Flags for test coverage
 if (TEST_COVERAGE)
     set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fprofile-arcs -ftest-coverage -DIS_DEBUG")
