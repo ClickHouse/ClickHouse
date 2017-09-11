@@ -97,7 +97,10 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 
-void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag)
+void DatabaseOrdinary::loadTables(
+    Context & context,
+    ThreadPool * thread_pool,
+    bool has_force_restore_data_flag)
 {
     log = &Logger::get("DatabaseOrdinary (" + name + ")");
 
@@ -241,8 +244,14 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
 
 
 void DatabaseOrdinary::createTable(
-    const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings)
+    const Context & context,
+    const String & table_name,
+    const StoragePtr & table,
+    const ASTPtr & query,
+    const String & engine)
 {
+    const auto & settings = context.getSettingsRef();
+
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
 
@@ -298,7 +307,9 @@ void DatabaseOrdinary::createTable(
 }
 
 
-void DatabaseOrdinary::removeTable(const String & table_name)
+void DatabaseOrdinary::removeTable(
+    const Context & context,
+    const String & table_name)
 {
     StoragePtr res = detachTable(table_name);
 
@@ -332,14 +343,17 @@ static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 
 
 void DatabaseOrdinary::renameTable(
-    const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
+    const Context & context,
+    const String & table_name,
+    IDatabase & to_database,
+    const String & to_table_name)
 {
     DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
 
     if (!to_database_concrete)
         throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
-    StoragePtr table = tryGetTable(table_name);
+    StoragePtr table = tryGetTable(context, table_name);
 
     if (!table)
         throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -366,12 +380,14 @@ void DatabaseOrdinary::renameTable(
     ast_create_query.table = to_table_name;
 
     /// NOTE Non-atomic.
-    to_database_concrete->createTable(to_table_name, table, ast, table->getName(), settings);
-    removeTable(table_name);
+    to_database_concrete->createTable(context, to_table_name, table, ast, table->getName());
+    removeTable(context, table_name);
 }
 
 
-time_t DatabaseOrdinary::getTableMetadataModificationTime(const String & table_name)
+time_t DatabaseOrdinary::getTableMetadataModificationTime(
+    const Context & context,
+    const String & table_name)
 {
     String table_metadata_path = getTableMetadataPath(path, table_name);
     Poco::File meta_file(table_metadata_path);
@@ -387,7 +403,9 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(const String & table_n
 }
 
 
-ASTPtr DatabaseOrdinary::getCreateQuery(const String & table_name) const
+ASTPtr DatabaseOrdinary::getCreateQuery(
+    const Context & context,
+    const String & table_name) const
 {
     ASTPtr ast = getCreateQueryImpl(path, table_name);
 
@@ -404,8 +422,15 @@ void DatabaseOrdinary::shutdown()
     /// You can not hold a lock during shutdown.
     /// Because inside `shutdown` function the tables can work with database, and mutex is not recursive.
 
-    for (auto iterator = getIterator(); iterator->isValid(); iterator->next())
-        iterator->table()->shutdown();
+    Tables tables_snapshot;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        tables_snapshot = tables;
+    }
+
+    for (const auto & kv: tables_snapshot) {
+        kv.second->shutdown();
+    }
 
     std::lock_guard<std::mutex> lock(mutex);
     tables.clear();

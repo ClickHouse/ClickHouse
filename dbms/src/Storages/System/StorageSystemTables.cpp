@@ -100,13 +100,13 @@ BlockInputStreams StorageSystemTables::read(
             continue;
         }
 
-        for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
         {
             auto table_name = iterator->name();
             col_db.column->insert(database_name);
             col_name.column->insert(table_name);
             col_engine.column->insert(iterator->table()->getName());
-            col_meta_mod_time.column->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(table_name)));
+            col_meta_mod_time.column->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
         }
     }
 
