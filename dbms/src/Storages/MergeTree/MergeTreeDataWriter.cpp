@@ -132,7 +132,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     MergeTreeDataPart::MinMaxIndex minmax_idx;
     minmax_idx.update(block, data.minmax_idx_columns);
 
-    MergeTreeDataPart::Partition partition(std::move(block_with_partition.partition));
+    MergeTreePartition partition(std::move(block_with_partition.partition));
 
     MergeTreePartInfo new_part_info(partition.getID(data), temp_index, temp_index, 0);
     String part_name;

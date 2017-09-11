@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreePartition.h>
 #include <Columns/IColumn.h>
 #include <shared_mutex>
 
@@ -149,29 +150,7 @@ struct MergeTreeDataPart
     using Index = Columns;
     Index index;
 
-    struct Partition
-    {
-        Row value;
-
-    public:
-        Partition() = default;
-        explicit Partition(Row value_) : value(std::move(value_)) {}
-
-        /// For month-based partitioning.
-        explicit Partition(UInt32 yyyymm) : value(1, static_cast<UInt64>(yyyymm)) {}
-
-        String getID(const MergeTreeData & storage) const;
-
-        void serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out) const;
-
-        void load(const MergeTreeData & storage, const String & part_path);
-        void store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const;
-
-        void assign(const Partition & other) { value.assign(other.value); }
-
-    };
-
-    Partition partition;
+    MergeTreePartition partition;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.

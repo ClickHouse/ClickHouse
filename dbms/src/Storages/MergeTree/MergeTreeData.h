@@ -337,9 +337,6 @@ public:
     /// clearOldParts (ignoring old_parts_lifetime).
     void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 
-    /// Adds new part to the list of known parts and to the working set.
-    void attachPart(const DataPartPtr & part);
-
     /// Renames the part to detached/<prefix>_<part> and forgets about it. The data won't be deleted in
     /// clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
@@ -568,6 +565,9 @@ private:
     /// Adds or subtracts the contribution of the part to compressed column sizes.
     void addPartContributionToColumnSizes(const DataPartPtr & part);
     void removePartContributionToColumnSizes(const DataPartPtr & part);
+
+    /// If there is no part in the partition with ID `partition_id`, returns empty ptr.
+    DataPartPtr getAnyPartInPartition(const String & partition_id, std::lock_guard<std::mutex> & data_parts_lock);
 };
 
 }

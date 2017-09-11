@@ -322,7 +322,8 @@ void StorageDistributed::reshardPartitions(
         ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
 
         parameters.type = ASTAlterQuery::RESHARD_PARTITION;
-        parameters.partition = partition->clone();
+        if (partition)
+            parameters.partition = partition->clone();
 
         ASTPtr expr_list = std::make_shared<ASTExpressionList>();
         for (const auto & entry : weighted_zookeeper_paths)
