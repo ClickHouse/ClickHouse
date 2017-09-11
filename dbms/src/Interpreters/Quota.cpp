@@ -8,6 +8,7 @@
 #include <Interpreters/Quota.h>
 
 #include <set>
+#include <random>
 
 
 namespace DB
@@ -37,10 +38,11 @@ template void QuotaValues<size_t>::initFromConfig(const String & config_elem, Po
 template void QuotaValues<std::atomic<size_t>>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
 
 
-void QuotaForInterval::initFromConfig(const String & config_elem, time_t duration_, time_t offset_, Poco::Util::AbstractConfiguration & config)
+void QuotaForInterval::initFromConfig(const String & config_elem, time_t duration_, bool randomize_, time_t offset_, Poco::Util::AbstractConfiguration & config)
 {
-    rounded_time = 0;
+    rounded_time.store(0, std::memory_order_relaxed);
     duration = duration_;
+    randomize = randomize_;
     offset = offset_;
     max.initFromConfig(config_elem, config);
 }
@@ -61,8 +63,10 @@ String QuotaForInterval::toString() const
 {
     std::stringstream res;
 
+    auto loaded_rounded_time = rounded_time.load(std::memory_order_relaxed);
+
     res << std::fixed << std::setprecision(3)
-        << "Interval:       " << LocalDateTime(rounded_time) << " - " << LocalDateTime(rounded_time + duration) << ".\n"
+        << "Interval:       " << LocalDateTime(loaded_rounded_time) << " - " << LocalDateTime(loaded_rounded_time + duration) << ".\n"
         << "Queries:        " << used.queries         << ".\n"
         << "Errors:         " << used.errors         << ".\n"
         << "Result rows:    " << used.result_rows     << ".\n"
@@ -107,10 +111,22 @@ void QuotaForInterval::checkAndAddExecutionTime(time_t current_time, const Strin
 
 void QuotaForInterval::updateTime(time_t current_time)
 {
-    if (current_time >= rounded_time + static_cast<int>(duration))
+    /** If current time is greater than end of interval,
+      *  then clear accumulated quota values and switch to next interval [rounded_time, rounded_time + duration).
+      */
+
+    auto loaded_rounded_time = rounded_time.load(std::memory_order_acquire);
+    while (true)
     {
-        rounded_time = (current_time - offset) / duration * duration + offset;
-        used.clear();
+        if (current_time < loaded_rounded_time + static_cast<time_t>(duration))
+            break;
+
+        time_t new_rounded_time = (current_time - offset) / duration * duration + offset;
+        if (rounded_time.compare_exchange_strong(loaded_rounded_time, new_rounded_time))
+        {
+            used.clear();
+            break;
+        }
     }
 }
 
@@ -136,7 +152,7 @@ void QuotaForInterval::check(
 
         message << " has been exceeded. "
             << resource_name << ": " << used_amount << ", max: " << max_amount << ". "
-            << "Interval will end at " << LocalDateTime(rounded_time + duration) << ". "
+            << "Interval will end at " << LocalDateTime(rounded_time.load(std::memory_order_relaxed) + duration) << ". "
             << "Name of quota template: '" << quota_name << "'.";
 
         throw Exception(message.str(), ErrorCodes::QUOTA_EXPIRED);
@@ -144,7 +160,7 @@ void QuotaForInterval::check(
 }
 
 
-void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng)
+void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, pcg64 & rng)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_elem, config_keys);
@@ -158,14 +174,14 @@ void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::A
         time_t duration = config.getInt(interval_config_elem + ".duration", 0);
         time_t offset = 0;
 
-        if (!duration) /// Skip quaotas with zero duration
+        if (!duration) /// Skip quotas with zero duration
             continue;
 
         bool randomize = config.getBool(interval_config_elem + ".randomize", false);
         if (randomize)
             offset = std::uniform_int_distribution<decltype(duration)>(0, duration - 1)(rng);
 
-        cont[duration].initFromConfig(interval_config_elem, duration, offset, config);
+        cont[duration].initFromConfig(interval_config_elem, duration, randomize, offset, config);
     }
 }
 
@@ -182,7 +198,7 @@ void QuotaForIntervals::setMax(const QuotaForIntervals & quota)
     for (auto & x : quota.cont)
     {
         if (!cont.count(x.first))
-            cont[x.first] = x.second;
+            cont.emplace(x.first, x.second);
         else
             cont[x.first].max = x.second.max;
     }
@@ -235,7 +251,7 @@ String QuotaForIntervals::toString() const
 }
 
 
-void Quota::loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng)
+void Quota::loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, pcg64 & rng)
 {
     name = name_;
 
@@ -254,7 +270,7 @@ void Quota::loadFromConfig(const String & config_elem, const String & name_, Poc
 
     QuotaForIntervals new_max(name, {});
     new_max.initFromConfig(config_elem, config, rng);
-    if (!(new_max == max))
+    if (!new_max.hasEqualConfiguration(max))
     {
         max = new_max;
         for (auto & quota : quota_for_keys)
@@ -293,7 +309,7 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
 
 void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 {
-    std::mt19937 rng;
+    pcg64 rng;
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys("quotas", config_keys);
@@ -310,9 +326,9 @@ void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 
     for (Poco::Util::AbstractConfiguration::Keys::const_iterator it = config_keys.begin(); it != config_keys.end(); ++it)
     {
-        if (!cont[*it])
-            cont[*it] = std::make_unique<Quota>();
-        cont[*it]->loadFromConfig("quotas." + *it, *it, config, rng);
+        if (!cont.count(*it))
+            cont.try_emplace(*it);
+        cont[*it].loadFromConfig("quotas." + *it, *it, config, rng);
     }
 }
 
@@ -322,7 +338,7 @@ QuotaForIntervalsPtr Quotas::get(const String & name, const String & quota_key, 
     if (cont.end() == it)
         throw Exception("Unknown quota " + name, ErrorCodes::UNKNOWN_QUOTA);
 
-    return it->second->get(quota_key, user_name, ip);
+    return it->second.get(quota_key, user_name, ip);
 }
 
 }

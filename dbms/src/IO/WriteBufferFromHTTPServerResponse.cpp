@@ -27,7 +27,7 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
         if (add_cors_header)
             response.set("Access-Control-Allow-Origin", "*");
 
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
 
 #if POCO_CLICKHOUSE_PATCH
         if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
@@ -131,11 +131,16 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     Poco::Net::HTTPServerRequest & request_,
     Poco::Net::HTTPServerResponse & response_,
+    unsigned keep_alive_timeout_,
     bool compress_,
     ZlibCompressionMethod compression_method_,
     size_t size)
-    : BufferWithOwnMemory<WriteBuffer>(size), request(request_), response(response_),
-    compress(compress_), compression_method(compression_method_)
+    : BufferWithOwnMemory<WriteBuffer>(size)
+    , request(request_)
+    , response(response_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , compress(compress_)
+    , compression_method(compression_method_)
 {
 }
 

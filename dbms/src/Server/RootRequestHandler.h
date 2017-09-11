@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Poco/Net/HTTPRequestHandler.h>
-
 #include "IServer.h"
+
+#include <Poco/Net/HTTPRequestHandler.h>
 
 
 namespace DB

@@ -4,6 +4,7 @@
 #include <Poco/File.h>
 #include "LibraryDictionarySourceExternal.h"
 #include <common/logger_useful.h>
+#include <ext/bit_cast.h>
 
 namespace DB
 {
@@ -84,7 +85,7 @@ bool dataToBlock(const void * data, Block & block)
 
         for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
         {
-            columns[row_n]->insert(columns_received->data[col_n].data[row_n]);
+            columns[row_n]->insert(static_cast<UInt64>(columns_received->data[col_n].data[row_n]));
         }
     }
     return false;
@@ -155,7 +156,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
-    const ClickHouseLibrary::VectorUInt64 ids_data{static_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
+    const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
     ClickHouseLibrary::CStrings columns_pass{
         static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
@@ -201,7 +202,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
         columns_pass.data[key_columns_n] = column->getName().c_str();
         ++key_columns_n;
     }
-    const ClickHouseLibrary::VectorUInt64 requested_rows_c{reinterpret_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
+    const ClickHouseLibrary::VectorUInt64 requested_rows_c{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataAllocate call because library->get may throw.

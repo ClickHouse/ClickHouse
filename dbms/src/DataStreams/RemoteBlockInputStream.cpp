@@ -236,7 +236,7 @@ void RemoteBlockInputStream::readSuffixImpl()
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read");
 
-    /// Get the remaining packages so that there is no out of sync in the connections to the replicas.
+    /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     Connection::Packet packet = multiplexed_connections->drain();
     switch (packet.type)
     {

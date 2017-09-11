@@ -22,7 +22,7 @@ private:
     {
         size_t old_size = s.size();
         s.resize(old_size * 2);
-        internal_buffer = Buffer(reinterpret_cast<Position>(&s[old_size]), reinterpret_cast<Position>(&*s.end()));
+        internal_buffer = Buffer(reinterpret_cast<Position>(&s[old_size]), reinterpret_cast<Position>(&s[s.size()]));
         working_buffer = internal_buffer;
     }
 

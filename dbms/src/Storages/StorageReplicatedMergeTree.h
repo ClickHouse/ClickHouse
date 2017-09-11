@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <atomic>
+#include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
@@ -21,6 +22,7 @@
 #include <Storages/MergeTree/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/RemotePartChecker.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
 
@@ -318,6 +320,8 @@ private:
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
 
     Logger * log;
+
+    pcg64 rng{randomSeed()};
 
     StorageReplicatedMergeTree(
         const String & zookeeper_path_,
