@@ -206,7 +206,8 @@ bool PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::contains(Coo
 }
 
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
-Distance PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::distance(
+PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Distance
+PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::distance(
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Point & point,
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & polygon)
 {
@@ -222,7 +223,7 @@ Distance PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::distance
 }
 
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
-std::vector<PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::HalfPlane>
+std::vector<typename PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::HalfPlane>
 PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::findHalfPlanes(
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Box & box,
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & intersection)
@@ -360,14 +361,14 @@ struct CallPointInPolygonWithGrid<Type, Types ...>
     {
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&y))
             return pointInPolygonWithGrid(x, *column, polygon);
-        return CallPointInPolygonWithGrid<Types ...>::call<T>(x, y, polygon);
+        return CallPointInPolygonWithGrid<Types ...>::template call<T>(x, y, polygon);
     }
 
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
     {
         using Impl = typename ApplyTypeListForClass<CallPointInPolygonWithGrid, TypeListNumbers>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
-            return Impl::call<Type>(*column, y, polygon);
+            return Impl::template call<Type>(*column, y, polygon);
         return CallPointInPolygonWithGrid<Types ...>::call(x, y, polygon);
     }
 };

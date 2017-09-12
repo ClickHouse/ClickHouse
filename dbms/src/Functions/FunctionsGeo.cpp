@@ -185,7 +185,7 @@ class FunctionPointInPolygonWithGrid : public IFunction
 {
 
 public:
-    static const char name[] = "pointInPolygonWithGrid";
+    static constexpr auto name = "pointInPolygonWithGrid";
 
     static FunctionPtr create(const Context & context)
     {
