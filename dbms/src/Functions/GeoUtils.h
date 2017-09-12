@@ -206,7 +206,7 @@ bool PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::contains(Coo
 }
 
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
-PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Distance
+typename PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Distance
 PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::distance(
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Point & point,
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & polygon)
