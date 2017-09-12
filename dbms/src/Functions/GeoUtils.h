@@ -5,7 +5,17 @@
 #include <Columns/ColumnVector.h>
 #include <Core/TypeListNumber.h>
 
+#if !__clang__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 #include <boost/geometry.hpp>
+
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
