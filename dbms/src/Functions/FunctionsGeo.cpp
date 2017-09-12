@@ -267,15 +267,10 @@ public:
 
         for (size_t i = 2; i < arguments.size(); ++i)
         {
-            auto const_array_col = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
-            if (!const_array_col)
-            {
-                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be constant array of tuples.",
-                                ErrorCodes::ILLEGAL_COLUMN);
-            }
+            auto const_array_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
+            auto array_col = const_array_col ? checkAndGetColumn<ColumnArray>(&const_array_col->getDataColumn()) : nullptr;
+            auto tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
 
-            const auto & array_data = const_array_col->getDataColumn();
-            auto tuple_col = checkAndGetColumn<ColumnTuple>(&array_data);
             if (!tuple_col)
             {
                 throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be constant array of tuples.",
