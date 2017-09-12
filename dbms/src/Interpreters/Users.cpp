@@ -162,7 +162,7 @@ private:
     }
 
 public:
-    HostExactPattern(const String & host_) : host(host_) {}
+    explicit HostExactPattern(const String & host_) : host(host_) {}
 
     bool contains(const Poco::Net::IPAddress & addr) const override
     {
@@ -192,7 +192,7 @@ private:
     }
 
 public:
-    HostRegexpPattern(const String & host_regexp_) : host_regexp(host_regexp_) {}
+    explicit HostRegexpPattern(const String & host_regexp_) : host_regexp(host_regexp_) {}
 
     bool contains(const Poco::Net::IPAddress & addr) const override
     {
@@ -284,8 +284,8 @@ User::User(const String & name_, const String & config_elem, Poco::Util::Abstrac
             throw Exception("password_sha256_hex for user " + name + " has length " + toString(password_sha256_hex.size()) + " but must be exactly 64 symbols.", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    profile     = config.getString(config_elem + ".profile");
-    quota         = config.getString(config_elem + ".quota");
+    profile = config.getString(config_elem + ".profile");
+    quota = config.getString(config_elem + ".quota");
 
     addresses.addFromConfig(config_elem + ".networks", config);
 
@@ -314,7 +314,7 @@ void Users::loadFromConfig(Poco::Util::AbstractConfiguration & config)
     config.keys("users", config_keys);
 
     for (const std::string & key : config_keys)
-        cont[key] = User(key, "users." + key, config);
+        cont.emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple(key, "users." + key, config));
 }
 
 const User & Users::get(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const

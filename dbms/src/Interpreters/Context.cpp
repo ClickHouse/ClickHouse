@@ -1,6 +1,5 @@
 #include <map>
 #include <set>
-#include <random>
 
 #include <boost/functional/hash/hash.hpp>
 #include <Poco/Mutex.h>
@@ -9,6 +8,7 @@
 #include <Poco/Net/IPAddress.h>
 
 #include <common/logger_useful.h>
+#include <pcg_random.hpp>
 
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
@@ -100,7 +100,7 @@ struct ContextShared
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
-    int interserver_io_port;                                /// and port,
+    UInt16 interserver_io_port = 0;                         /// and port.
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
@@ -175,7 +175,7 @@ struct ContextShared
 
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
-    std::mt19937_64 rng{randomSeed()};
+    pcg64 rng{randomSeed()};
 
     ContextShared()
     {
@@ -262,7 +262,7 @@ Context::~Context()
 }
 
 
-InterserverIOHandler & Context::getInterserverIOHandler()                        { return shared->interserver_io_handler; }
+InterserverIOHandler & Context::getInterserverIOHandler()                       { return shared->interserver_io_handler; }
 
 std::unique_lock<Poco::Mutex> Context::getLock() const
 {
@@ -271,8 +271,8 @@ std::unique_lock<Poco::Mutex> Context::getLock() const
     return std::unique_lock<Poco::Mutex>(shared->mutex);
 }
 
-ProcessList & Context::getProcessList()                                            { return shared->process_list; }
-const ProcessList & Context::getProcessList() const                                { return shared->process_list; }
+ProcessList & Context::getProcessList()                                         { return shared->process_list; }
+const ProcessList & Context::getProcessList() const                             { return shared->process_list; }
 MergeList & Context::getMergeList()                                             { return shared->merge_list; }
 const MergeList & Context::getMergeList() const                                 { return shared->merge_list; }
 
@@ -621,7 +621,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
 
     Databases::const_iterator it = shared->databases.find(db);
     return shared->databases.end() != it
-        && it->second->isTableExist(table_name);
+        && it->second->isTableExist(*this, table_name);
 }
 
 
@@ -645,7 +645,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
     if (shared->databases.end() == it)
         throw Exception("Database " + db + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
 
-    if (!it->second->isTableExist(table_name))
+    if (!it->second->isTableExist(*this, table_name))
         throw Exception("Table " + db + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 }
 
@@ -659,7 +659,7 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
         checkDatabaseAccessRights(db);
 
     Databases::const_iterator it = shared->databases.find(db);
-    if (shared->databases.end() != it && it->second->isTableExist(table_name))
+    if (shared->databases.end() != it && it->second->isTableExist(*this, table_name))
         throw Exception("Table " + db + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
@@ -758,7 +758,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
         return {};
     }
 
-    auto table = it->second->tryGetTable(table_name);
+    auto table = it->second->tryGetTable(*this, table_name);
     if (!table)
     {
         if (exception)
@@ -770,7 +770,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
 }
 
 
-void Context::addExternalTable(const String & table_name, StoragePtr storage)
+void Context::addExternalTable(const String & table_name, const StoragePtr & storage)
 {
     if (external_tables.end() != external_tables.find(table_name))
         throw Exception("Temporary table " + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
@@ -826,7 +826,7 @@ std::unique_ptr<DDLGuard> Context::getDDLGuardIfTableDoesntExist(const String & 
     auto lock = getLock();
 
     Databases::const_iterator it = shared->databases.find(database);
-    if (shared->databases.end() != it && it->second->isTableExist(table))
+    if (shared->databases.end() != it && it->second->isTableExist(*this, table))
         return {};
 
     return getDDLGuard(database, table, message);
@@ -859,7 +859,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
     String db = resolveDatabase(database_name, current_database);
     assertDatabaseExists(db);
 
-    return shared->databases[db]->getCreateQuery(table_name);
+    return shared->databases[db]->getCreateQuery(*this, table_name);
 }
 
 
@@ -1100,12 +1100,7 @@ void Context::setProcessListElement(ProcessList::Element * elem)
     process_list_elem = elem;
 }
 
-ProcessList::Element * Context::getProcessListElement()
-{
-    return process_list_elem;
-}
-
-const ProcessList::Element * Context::getProcessListElement() const
+ProcessList::Element * Context::getProcessListElement() const
 {
     return process_list_elem;
 }
@@ -1190,7 +1185,7 @@ void Context::setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_w
     shared->resharding_worker = resharding_worker;
 }
 
-ReshardingWorker & Context::getReshardingWorker()
+ReshardingWorker & Context::getReshardingWorker() const
 {
     auto lock = getLock();
     if (!shared->resharding_worker)
@@ -1207,11 +1202,11 @@ void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
     shared->ddl_worker = ddl_worker;
 }
 
-DDLWorker & Context::getDDLWorker()
+DDLWorker & Context::getDDLWorker() const
 {
     auto lock = getLock();
     if (!shared->ddl_worker)
-        throw Exception("DDL background thread not initialized.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("DDL background thread is not initialized.", ErrorCodes::LOGICAL_ERROR);
     return *shared->ddl_worker;
 }
 
@@ -1222,7 +1217,7 @@ void Context::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
     if (shared->zookeeper)
         throw Exception("ZooKeeper client has already been set.", ErrorCodes::LOGICAL_ERROR);
 
-    shared->zookeeper = zookeeper;
+    shared->zookeeper = std::move(zookeeper);
 }
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const

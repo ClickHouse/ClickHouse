@@ -82,7 +82,7 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
     struct Arrow
     {
         Arrow() = default;
-        Arrow(size_t to_position_) :
+        explicit Arrow(size_t to_position_) :
             to_position(to_position_), is_selected(true)
         {
         }

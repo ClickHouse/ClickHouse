@@ -69,7 +69,7 @@ public:
       * The function takes the number of rows in the last block, the number of bytes in the last block.
       * Note that the callback can be called from different threads.
       */
-    void setProgressCallback(ProgressCallback callback);
+    void setProgressCallback(const ProgressCallback & callback);
 
 
     /** In this method:
@@ -174,8 +174,6 @@ protected:
     ProgressCallback progress_callback;
     ProcessListElement * process_list_elem = nullptr;
 
-    bool enabled_extremes = false;
-
     /// Additional information that can be generated during the work process.
 
     /// Total values during aggregation.
@@ -184,6 +182,10 @@ protected:
     Block extremes;
     /// The approximate total number of rows to read. For progress bar.
     size_t total_rows_approx = 0;
+
+private:
+    bool enabled_extremes = false;
+
     /// Information about the approximate total number of rows is collected in the parent source.
     bool collected_total_rows_approx = false;
 
@@ -218,7 +220,7 @@ protected:
     void collectTotalRowsApprox();
 
     /** Send information about the approximate total number of rows to the progress bar.
-      * It is done so that sending occurs only in the upper source.
+      * It is done so that sending occurs only in the upper stream.
       */
     void collectAndSendTotalRowsApprox();
 };

@@ -389,16 +389,16 @@ def generate_dictionaries(args):
     '''.format(https_host=args.https_host, https_port=args.https_port, https_path=args.https_path)
 
     source_library = '''
-    <lib>
-        <filename>{filename}</filename>
-    </lib>
+    <library>
+        <path>{filename}</path>
+    </library>
     '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dictionary_library/libdictionary_library.so'))
 
     # Todo?
     #source_library_c = '''
-    #<lib>
-    #    <filename>{filename}</filename>
-    #</lib>
+    #<library>
+    #    <path>{filename}</path>
+    #</library>
     #'''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_library_c.so'))
 
 

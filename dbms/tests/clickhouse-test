@@ -93,7 +93,12 @@ def main(args):
                 print("Won't run stateful tests because test data wasn't loaded. See README.txt.")
                 continue
 
-            for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir))):
+            # Reverse sort order: we want run newest test first.
+            # And not reverse subtests
+            def key_func(item):
+                prefix, suffix = item.split('_', 1)
+                return -int(prefix), suffix
+            for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir)), key=key_func):
                 if SERVER_DIED:
                     break
 

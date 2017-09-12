@@ -50,7 +50,7 @@ struct PartialSortingLess
 {
     const ColumnsWithSortDescriptions & columns;
 
-    PartialSortingLess(const ColumnsWithSortDescriptions & columns_) : columns(columns_) {}
+    explicit PartialSortingLess(const ColumnsWithSortDescriptions & columns_) : columns(columns_) {}
 
     bool operator() (size_t a, size_t b) const
     {
@@ -70,7 +70,7 @@ struct PartialSortingLessWithCollation
 {
     const ColumnsWithSortDescriptions & columns;
 
-    PartialSortingLessWithCollation(const ColumnsWithSortDescriptions & columns_) : columns(columns_) {}
+    explicit PartialSortingLessWithCollation(const ColumnsWithSortDescriptions & columns_) : columns(columns_) {}
 
     bool operator() (size_t a, size_t b) const
     {

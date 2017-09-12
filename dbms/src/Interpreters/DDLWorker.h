@@ -18,7 +18,7 @@ struct DDLLogEntry;
 struct DDLTask;
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, Context & context);
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
 
 
 class DDLWorker

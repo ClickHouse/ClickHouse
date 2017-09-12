@@ -39,8 +39,7 @@ int main(int argc, char ** argv)
                 int code;
                 try
                 {
-                    code = zk.tryMulti(ops);std::string unused;
-                    //code = zk.tryCreate("/test", "", zkutil::CreateMode::Persistent, unused);
+                    code = zk.tryMulti(ops);
                 }
                 catch (zkutil::KeeperException & e)
                 {

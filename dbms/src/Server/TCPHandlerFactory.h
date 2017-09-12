@@ -17,7 +17,7 @@ private:
     Poco::Logger * log;
 
 public:
-    TCPHandlerFactory(IServer & server_)
+    explicit TCPHandlerFactory(IServer & server_)
         : server(server_)
         , log(&Logger::get("TCPHandlerFactory"))
     {

@@ -57,7 +57,7 @@ private:
     size_t index = 0;
 
 public:
-    TokenIterator(Tokens & tokens) : tokens(&tokens) {}
+    explicit TokenIterator(Tokens & tokens) : tokens(&tokens) {}
 
     const Token & get() { return (*tokens)[index]; }
     const Token & operator*() { return get(); }

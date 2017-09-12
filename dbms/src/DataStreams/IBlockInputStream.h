@@ -49,6 +49,8 @@ public:
 
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).
+      * NOTE: Only one thread can read from one instance of IBlockInputStream simultaneously.
+      * This also applies for readPrefix, readSuffix.
       */
     virtual Block read() = 0;
 
@@ -113,7 +115,7 @@ protected:
     BlockInputStreams children;
 
 private:
-    void getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr = nullptr);
+    void getLeavesImpl(BlockInputStreams & res, const BlockInputStreamPtr & this_shared_ptr);
 
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 

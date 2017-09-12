@@ -28,11 +28,13 @@ fi
 
 for src_file in $($CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
     $(cat "$SOURCE_PATH/build/include_directories.txt") \
+    "$SOURCE_PATH/build/dbms/src/Common/config_version.h" \
     "$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
     tr -d '\\' |
     sed -r -e 's/^\w+\.o://');
 do
     dst_file=$src_file;
+    dst_file=$(echo $dst_file | sed -r -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
     mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done

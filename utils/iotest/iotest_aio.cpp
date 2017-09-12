@@ -16,6 +16,8 @@
 #include <common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 
+#include <IO/BufferWithOwnMemory.h>
+
 #include <stdlib.h>
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
@@ -61,42 +63,6 @@ enum Mode
 };
 
 
-struct AlignedBuffer
-{
-    int size = 0;
-    char * data = nullptr;
-
-    AlignedBuffer() {}
-
-    void init(int size_)
-    {
-        uninit();
-        size_t page = sysconf(_SC_PAGESIZE);
-        size = size_;
-        data = static_cast<char*>(memalign(page, (size + page - 1) / page * page));
-        if (!data)
-            throwFromErrno("memalign failed");
-    }
-
-    void uninit()
-    {
-        if (data)
-            free(data);
-        data = nullptr;
-        size = 0;
-    }
-
-    AlignedBuffer(int size_) : size(0), data(NULL)
-    {
-        init(size_);
-    }
-
-    ~AlignedBuffer()
-    {
-        uninit();
-    }
-};
-
 struct AioContext
 {
     aio_context_t ctx;
@@ -119,11 +85,9 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 {
     AioContext ctx;
 
-    std::vector<AlignedBuffer> buffers(buffers_count);
+    std::vector<DB::Memory> buffers(buffers_count);
     for (size_t i = 0; i < buffers_count; ++i)
-    {
-        buffers[i].init(block_size);
-    }
+        buffers[i] = DB::Memory(block_size, sysconf(_SC_PAGESIZE));
 
     drand48_data rand_data;
     timespec times;
@@ -153,7 +117,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
             ++blocks_sent;
             ++in_progress;
 
-            char * buf = buffers[i].data;
+            char * buf = buffers[i].data();
 
             long rand_result1 = 0;
             long rand_result2 = 0;

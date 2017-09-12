@@ -1,10 +1,10 @@
-/**
+/*
  * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under both the BSD-style license (found in the
+ * LICENSE file in the root directory of this source tree) and the GPLv2 (found
+ * in the COPYING file in the root directory of this source tree).
  */
 
 /* *****************************************************************************
@@ -714,11 +714,9 @@ typedef struct COVER_best_s {
  * Initialize the `COVER_best_t`.
  */
 static void COVER_best_init(COVER_best_t *best) {
-  if (!best) {
-    return;
-  }
-  pthread_mutex_init(&best->mutex, NULL);
-  pthread_cond_init(&best->cond, NULL);
+  if (best==NULL) return; /* compatible with init on NULL */
+  (void)pthread_mutex_init(&best->mutex, NULL);
+  (void)pthread_cond_init(&best->cond, NULL);
   best->liveJobs = 0;
   best->dict = NULL;
   best->dictSize = 0;

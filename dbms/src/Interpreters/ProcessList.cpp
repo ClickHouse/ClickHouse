@@ -206,7 +206,7 @@ bool ProcessListElement::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutpu
 }
 
 
-void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage)
+void ProcessList::addTemporaryTable(ProcessListElement & elem, const String & table_name, const StoragePtr & storage)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -245,10 +245,10 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
 
     BlockInputStreamPtr input_stream;
     BlockOutputStreamPtr output_stream;
-    IProfilingBlockInputStream * input_stream_casted;
 
     if (elem->tryGetQueryStreams(input_stream, output_stream))
     {
+        IProfilingBlockInputStream * input_stream_casted;
         if (input_stream && (input_stream_casted = dynamic_cast<IProfilingBlockInputStream *>(input_stream.get())))
         {
             input_stream_casted->cancel();

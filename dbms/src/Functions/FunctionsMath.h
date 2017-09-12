@@ -92,8 +92,7 @@ private:
             {
                 throw Exception{
                     "Illegal type " + arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-                };
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
             }
         };
 
@@ -158,8 +157,7 @@ private:
         {
             throw Exception{
                 "Illegal column " + arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
         }
     }
 };

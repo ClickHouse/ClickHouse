@@ -279,7 +279,7 @@ void StorageTrivialBuffer::flush(bool check_thresholds, bool is_called_from_back
 class TrivialBufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    TrivialBufferBlockOutputStream(StorageTrivialBuffer & buffer_) : buffer(buffer_) {}
+    explicit TrivialBufferBlockOutputStream(StorageTrivialBuffer & buffer_) : buffer(buffer_) {}
     void write(const Block & block) override
     {
         if (!block)

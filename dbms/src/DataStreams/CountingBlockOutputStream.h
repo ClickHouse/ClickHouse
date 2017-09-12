@@ -16,7 +16,7 @@ public:
     CountingBlockOutputStream(const BlockOutputStreamPtr & stream_)
         : stream(stream_) {}
 
-    void setProgressCallback(ProgressCallback callback)
+    void setProgressCallback(const ProgressCallback & callback)
     {
         progress_callback = callback;
     }
@@ -35,9 +35,9 @@ public:
 
     void writePrefix() override                         { stream->writePrefix(); }
     void writeSuffix() override                         { stream->writeSuffix(); }
-    void flush() override                                 { stream->flush(); }
+    void flush() override                               { stream->flush(); }
     void onProgress(const Progress & progress) override { stream->onProgress(progress); }
-    String getContentType() const override                { return stream->getContentType(); }
+    String getContentType() const override              { return stream->getContentType(); }
 
 protected:
 

@@ -28,9 +28,9 @@ namespace DB
 class AsynchronousBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    AsynchronousBlockInputStream(BlockInputStreamPtr in_)
+    AsynchronousBlockInputStream(const BlockInputStreamPtr & in)
     {
-        children.push_back(in_);
+        children.push_back(in);
     }
 
     String getName() const override { return "Asynchronous"; }
@@ -57,10 +57,7 @@ public:
         if (started)
         {
             pool.wait();
-            if (exception)
-                std::rethrow_exception(exception);
             children.back()->readSuffix();
-            started = false;
         }
     }
 
@@ -82,18 +79,23 @@ public:
 
     ~AsynchronousBlockInputStream() override
     {
-        if (started)
-            pool.wait();
+        try
+        {
+            pool.wait();    /// It's ok to call wait even if there is no active threads.
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
 protected:
-    ThreadPool pool{1};
+    ThreadPool pool{1}; /// Rethrows exceptions automatically on wait.
     Poco::Event ready;
     bool started = false;
     bool first = true;
 
     Block block;
-    std::exception_ptr exception;
 
 
     Block readImpl() override
@@ -101,21 +103,18 @@ protected:
         /// If there were no calculations yet, calculate the first block synchronously
         if (!started)
         {
-            calculate(current_memory_tracker);
             started = true;
+            calculate(current_memory_tracker);
         }
         else    /// If the calculations are already in progress - wait for the result
             pool.wait();
-
-        if (exception)
-            std::rethrow_exception(exception);
 
         Block res = block;
         if (!res)
             return res;
 
         /// Start the next block calculation
-        block = Block();
+        block.clear();
         next();
 
         return res;
@@ -134,22 +133,15 @@ protected:
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
-        try
+        if (first)
         {
-            if (first)
-            {
-                first = false;
-                setThreadName("AsyncBlockInput");
-                current_memory_tracker = memory_tracker;
-                children.back()->readPrefix();
-            }
+            first = false;
+            setThreadName("AsyncBlockInput");
+            current_memory_tracker = memory_tracker;
+            children.back()->readPrefix();
+        }
 
-            block = children.back()->read();
-        }
-        catch (...)
-        {
-            exception = std::current_exception();
-        }
+        block = children.back()->read();
 
         ready.set();
     }
