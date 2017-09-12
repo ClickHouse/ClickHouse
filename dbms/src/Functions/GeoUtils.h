@@ -211,11 +211,11 @@ PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::distance(
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Point & point,
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & polygon)
 {
-    const auto & inners = polygon.inners();
+    const auto & outer = polygon.outer();
     Distance distance = 0;
-    for (auto i : ext::range(0, inners.size() - 1))
+    for (auto i : ext::range(0, outer.size() - 1))
     {
-        Segment segment(inners[i], inners[i + 1]);
+        Segment segment(outer[i], outer[i + 1]);
         Distance current = boost::geometry::comparable_distance(point, segment);
         distance = i ? std::min(current, distance) : current;
     }
@@ -228,25 +228,25 @@ PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::findHalfPlanes(
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Box & box,
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & intersection)
 {
-    std::vector<HalfPlane> half_plains;
+    std::vector<HalfPlane> half_planes;
     Polygon bound;
     boost::geometry::convert(box, bound);
-    const auto & inners = intersection.inners();
+    const auto & outer = intersection.outer();
 
-    for (auto i : ext::range(0, inners.size() - 1))
+    for (auto i : ext::range(0, outer.size() - 1))
     {
         /// Want to detect is intersection edge was formed from box edge or from polygon edge.
         /// If center of the edge closer to box, than don't form the half-plane.
-        Segment segment(inners[i], inners[i + 1]);
+        Segment segment(outer[i], outer[i + 1]);
         Point center = (segment.first + segment.second) / 2;
         if (distance(center, polygon) < distance(center, bound))
         {
-            half_plains.push_back({});
-            half_plains.back().fill(segment.first, segment.second);
+            half_planes.push_back({});
+            half_planes.back().fill(segment.first, segment.second);
         }
     }
 
-    return half_plains;
+    return half_planes;
 }
 
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
@@ -276,20 +276,23 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Box & box,
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & intersection)
 {
-    auto half_plains = findHalfPlanes(box, intersection);
+    if (!intersection.inners().empty())
+        addCell(index, {intersection});
 
-    if (half_plains.empty())
+    auto half_planes = findHalfPlanes(box, intersection);
+
+    if (half_planes.empty())
         addCell(index, box);
-    else if (half_plains.size() == 1)
+    else if (half_planes.size() == 1)
     {
         cells[index].type = CellType::singleLine;
-        cells[index].half_palins[0] = half_plains[0];
+        cells[index].half_palins[0] = half_planes[0];
     }
-    else if (half_plains.size() == 2)
+    else if (half_planes.size() == 2)
     {
         cells[index].type = CellType::pairOfLinesSinglePolygon;
-        cells[index].half_plains[0] = half_plains[0];
-        cells[index].half_plains[1] = half_plains[1];
+        cells[index].half_planes[0] = half_planes[0];
+        cells[index].half_planes[1] = half_planes[1];
     }
     else
         addCell(index, {intersection});
@@ -302,18 +305,21 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & first,
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & second)
 {
-    auto first_half_plains = findHalfPlanes(box, first);
-    auto second_half_plains = findHalfPlanes(box, second);
+    if (!first.inners().empty() || !second.inners().empty())
+        addCell(index, {first, second});
 
-    if (first_half_plains.empty())
+    auto first_half_planes = findHalfPlanes(box, first);
+    auto second_half_planes = findHalfPlanes(box, second);
+
+    if (first_half_planes.empty())
         addCell(index, box, first);
-    else if (second_half_plains.empty())
+    else if (second_half_planes.empty())
         addCell(index, box, second);
-    else if (first_half_plains.size() == 1 && second_half_plains.size() == 1)
+    else if (first_half_planes.size() == 1 && second_half_planes.size() == 1)
     {
         cells[index].type = CellType::pairOfLinesDifferentPolygons;
-        cells[index].half_plains[0] = first_half_plains[0];
-        cells[index].half_plains[1] = second_half_plains[1];
+        cells[index].half_planes[0] = first_half_planes[0];
+        cells[index].half_planes[1] = second_half_planes[1];
     }
     else
         addCell(index, {first, second});

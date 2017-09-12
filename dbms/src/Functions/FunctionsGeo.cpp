@@ -245,7 +245,7 @@ public:
 
             for (auto j : ext::range(0, elements.size()))
             {
-                if (!checkDataType<Float32>(elements[j].get()) || !checkDataType<Float64>(elements[j].get()))
+                if (!checkDataType<DataTypeFloat32>(elements[j].get()) || !checkDataType<DataTypeFloat64>(elements[j].get()))
                 {
                     throw Exception("Tuple element " + toString(j + 1) + " in argument " + toString(i + 1) + " must be float.",
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
