@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsGeo.h>
+#include <Functions/GeoUtils.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -9,6 +10,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnTuple.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnArray.h>
 
 
 namespace DB
@@ -17,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -176,6 +180,141 @@ public:
     }
 };
 
+
+class FunctionPointInPolygonWithGrid : public IFunction
+{
+
+public:
+    static const char name[] = "pointInPolygonWithGrid";
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionPointInPolygonWithGrid>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isVariadic() const override
+    {
+        return true;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 0;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() < 3)
+        {
+            throw Exception("Too few arguments", ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION);
+        }
+
+        for (size_t i = 0; i < 2; ++i)
+            if (!arguments[i]->isNumeric())
+                throw Exception("Argument " + std::to_string(i + 1) + " for function " + getName() + " must be numeric.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        for (size_t i = 2; i < arguments.size(); ++i)
+        {
+            auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+            if (array == nullptr)
+            {
+                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be array of tuples.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+
+            auto * tuple = checkAndGetDataType<DataTypeTuple>(array->getNestedType().get());
+            if (tuple == nullptr)
+            {
+                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be array of tuples.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+
+            const DataTypes & elements = tuple->getElements();
+
+            if (elements.size() != 2)
+            {
+                throw Exception("Tuples in argument " + toString(i + 1) + " must have exactly two elements.",
+                                ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            for (auto j : ext::range(0, elements.size()))
+            {
+                if (!checkDataType<Float32>(elements[j].get()) || !checkDataType<Float64>(elements[j].get()))
+                {
+                    throw Exception("Tuple element " + toString(j + 1) + " in argument " + toString(i + 1) + " must be float.",
+                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                }
+            }
+        }
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        using Point = boost::geometry::model::d2::point_xy<Float32>;
+        using Polygon = boost::geometry::model::polygon<Point, false>;
+        using Box = boost::geometry::model::box<Point>;
+
+        Polygon polygon;
+
+        for (size_t i = 2; i < arguments.size(); ++i)
+        {
+            auto const_array_col = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
+            if (!const_array_col)
+            {
+                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be constant array of tuples.",
+                                ErrorCodes::ILLEGAL_COLUMN);
+            }
+
+            const auto & array_data = const_array_col->getDataColumn();
+            auto tuple_col = checkAndGetColumn<ColumnTuple>(&array_data);
+            if (!tuple_col)
+            {
+                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be constant array of tuples.",
+                                ErrorCodes::ILLEGAL_COLUMN);
+            }
+
+            const auto & tuple_block = tuple_col->getData();
+            const auto & column_x = tuple_block.safeGetByPosition(0).column;
+            const auto & column_y = tuple_block.safeGetByPosition(0).column;
+
+            if (!polygon.outer().empty())
+                polygon.inners().emplace_back();
+
+            auto & container = polygon.outer().empty() ? polygon.outer() : polygon.inners().back();
+
+            auto size = column_x->size();
+
+            if (size == 0)
+            {
+                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " shouldn't be empty.",
+                                ErrorCodes::ILLEGAL_COLUMN);
+            }
+
+            for (auto j : ext::range(0, size))
+            {
+                auto x = static_cast<Float32>((*column_x)[j].get<Float64>());
+                auto y = static_cast<Float32>((*column_y)[j].get<Float64>());
+                container.push_back(Point(x, y));
+            }
+        }
+
+        const auto & column_x = block.safeGetByPosition(arguments[0]).column;
+        const auto & column_y = block.safeGetByPosition(arguments[1]).column;
+        auto & result_column = block.safeGetByPosition(result).column;
+        result_column = pointInPolygonWithGrid(*column_x, *column_y, polygon);
+    }
+};
+
+
 template <>
 const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygon";
 template <>
@@ -192,5 +331,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonFranklin>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWinding>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonCrossing>>();
+
+    factory.registerFunction<FunctionPointInPolygonWithGrid>();
 }
 }
