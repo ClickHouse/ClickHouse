@@ -110,7 +110,7 @@ private:
     /// Returns a list of half-planes were formed from intersection edges without box edges.
     inline std::vector<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
 
-    using DistanceStrategy = boost::geometry::strategy::distance::pythagoras;
+    using DistanceStrategy = boost::geometry::strategy::distance::pythagoras<>;
     // using Distance = typename boost::geometry::default_distance_result<Point, Segment>::type;
     using Distance = typename boost::geometry::strategy::distance::services::return_type<DistanceStrategy, Point, Point>::type;
     /// min(distance(point, edge) : edge in polygon)
