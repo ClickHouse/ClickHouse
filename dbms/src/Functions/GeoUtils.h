@@ -108,7 +108,7 @@ private:
     /// Returns a list of half-planes were formed from intersection edges without box edges.
     inline std::vector<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
 
-    using Distance = boost::geometry::default_comparable_distance_result<Point, Segment>::type
+    using Distance = typename boost::geometry::default_comparable_distance_result<Point, Segment>::type;
     /// min(distance(point, edge) : edge in polygon)
     inline Distance distance(const Point & point, const Polygon & polygon);
 };
@@ -355,19 +355,19 @@ struct CallPointInPolygonWithGrid;
 template <typename Type, typename ... Types>
 struct CallPointInPolygonWithGrid<Type, Types ...>
 {
-    template <typename T, typename U>
+    template <typename T>
     static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
     {
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&y))
             return pointInPolygonWithGrid(x, *column, polygon);
-        return CallPointInPolygonWithGrid<Types ...>::call(x, y, polygon);
+        return CallPointInPolygonWithGrid<Types ...>::call<T>(x, y, polygon);
     }
 
-    template <typename T, typename U>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
     {
+        using Impl = typename ApplyTypeListForClass<CallPointInPolygonWithGrid, TypeListNumbers>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
-            return pointInPolygonWithGrid(*column, y, polygon);
+            return Impl::call<Type>(*column, y, polygon);
         return CallPointInPolygonWithGrid<Types ...>::call(x, y, polygon);
     }
 };
