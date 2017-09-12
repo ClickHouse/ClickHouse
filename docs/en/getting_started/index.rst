@@ -74,6 +74,8 @@ Other methods of installation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The Docker image is located here: https://hub.docker.com/r/yandex/clickhouse-server/
 
+There are RPM packages for CentOS, RHEL: https://github.com/Altinity/clickhouse-rpm-install
+
 There is Gentoo overlay located here: https://github.com/kmeaw/clickhouse-overlay
 
 
