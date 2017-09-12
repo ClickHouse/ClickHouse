@@ -199,7 +199,7 @@ bool PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::contains(Coo
         case CellType::pairOfLinesDifferentPolygons:
             return cell.half_planes[0].contains(x, y) || cell.half_planes[1].contains(x, y);
         case CellType::complexPolygon:
-            return boost::geometry::covered_by(Point(x, y), polygons[cell.index_of_inner_polygon]));
+            return boost::geometry::covered_by(Point(x, y), polygons[cell.index_of_inner_polygon]);
         default:
             return false;
 
