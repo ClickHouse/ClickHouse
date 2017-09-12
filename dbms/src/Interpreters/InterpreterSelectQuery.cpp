@@ -128,12 +128,9 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
 
 bool InterpreterSelectQuery::hasAggregation(const ASTSelectQuery & query_ptr)
 {
-    for (const IAST * head = query_ptr.get(); head; head = head->next_union_all.get())
-    {
-        const ASTSelectQuery & head_query = static_cast<const ASTSelectQuery &>(*head);
-        if (head_query.group_expression_list || head_query.having_expression)
+    for (const ASTSelectQuery * elem = &query_ptr; elem; elem = static_cast<const ASTSelectQuery *>(elem->next_union_all.get()))
+        if (elem->group_expression_list || elem->having_expression)
             return true;
-    }
 
     return false;
 }
