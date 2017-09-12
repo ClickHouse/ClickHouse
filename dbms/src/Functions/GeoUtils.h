@@ -5,6 +5,7 @@
 #include <Columns/ColumnVector.h>
 #include <Core/TypeListNumber.h>
 
+///
 #if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
