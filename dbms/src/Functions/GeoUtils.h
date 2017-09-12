@@ -35,6 +35,7 @@ public:
     using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
     using Box = boost::geometry::model::box<Point>;
     using Segment = boost::geometry::model::segment<Point>;
+    using PointInPolygonCrossing = boost::geometry::strategy::within::crossings_multiply<Point>;
 
     explicit PointInPolygonWithGrid(const Polygon & polygon) : polygon(polygon) {}
 
@@ -198,7 +199,7 @@ bool PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::contains(Coo
         case CellType::pairOfLinesDifferentPolygons:
             return cell.half_planes[0].contains(x, y) || cell.half_planes[1].contains(x, y);
         case CellType::complexPolygon:
-            return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
+            return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon], PointInPolygonCrossing());
         default:
             return false;
 
@@ -267,7 +268,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
 
     Point center((min_corner.x() + max_corner.x()) / 2, (min_corner.y() + max_corner.y()) / 2);
 
-    if (boost::geometry::within(center, polygon))
+    if (boost::geometry::within(center, polygon, PointInPolygonCrossing()))
         cells[index].type = CellType::inner;
     else
         cells[index].type = CellType::outer;
