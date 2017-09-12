@@ -771,26 +771,29 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
 
-    /// Primary or partition key columns can be ALTERed only if they are used in the key as-is
+    /// Primary key columns can be ALTERed only if they are used in the key as-is
     /// (and not as a part of some expression) and if the ALTER only affects column metadata.
     NameSet columns_alter_metadata_only;
 
-    auto add_key_columns = [&](const ExpressionActionsPtr & expr)
+    if (partition_expr)
     {
-        if (!expr)
-            return;
+        /// Forbid altering partition key columns because it can change partition ID format.
+        /// TODO: in some cases (e.g. adding an Enum value) a partition key column can still be ALTERed.
+        /// We should allow it.
+        for (const String & col : partition_expr->getRequiredColumns())
+            columns_alter_forbidden.insert(col);
+    }
 
-        for (const ExpressionAction & action : expr->getActions())
+    if (primary_expr)
+    {
+        for (const ExpressionAction & action : primary_expr->getActions())
         {
             auto action_columns = action.getNeededColumns();
             columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
         }
-        for (const String & col : expr->getRequiredColumns())
+        for (const String & col : primary_expr->getRequiredColumns())
             columns_alter_metadata_only.insert(col);
-    };
-
-    add_key_columns(partition_expr);
-    add_key_columns(primary_expr);
+    }
     /// We don't process sampling_expression separately because it must be among the primary key columns.
 
     if (!merging_params.sign_column.empty())
