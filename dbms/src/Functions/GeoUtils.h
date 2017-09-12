@@ -20,7 +20,7 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
 #include <boost/geometry/geometries/segment.hpp>
-#include <boost/geometry/algorithms/distance.hpp>
+#include <boost/geometry/algorithms/comparable_distance.hpp>
 #include <boost/geometry/strategies/cartesian/distance_pythagoras.hpp>
 
 #include <array>
@@ -46,7 +46,6 @@ public:
     using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
     using Box = boost::geometry::model::box<Point>;
     using Segment = boost::geometry::model::segment<Point>;
-    using PointInPolygonCrossing = boost::geometry::strategy::within::crossings_multiply<Point>;
 
     explicit PointInPolygonWithGrid(const Polygon & polygon) : polygon(polygon) {}
 
@@ -120,9 +119,7 @@ private:
     /// Returns a list of half-planes were formed from intersection edges without box edges.
     inline std::vector<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
 
-    using DistanceStrategy = boost::geometry::strategy::distance::pythagoras<>;
-    // using Distance = typename boost::geometry::default_distance_result<Point, Segment>::type;
-    using Distance = typename boost::geometry::strategy::distance::services::return_type<DistanceStrategy, Point, Point>::type;
+    using Distance = typename boost::geometry::default_comparable_distance_result<Point, Segment>::type;
     /// min(distance(point, edge) : edge in polygon)
     inline Distance distance(const Point & point, const Polygon & polygon);
 };
@@ -212,7 +209,7 @@ bool PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::contains(Coo
         case CellType::pairOfLinesDifferentPolygons:
             return cell.half_planes[0].contains(x, y) || cell.half_planes[1].contains(x, y);
         case CellType::complexPolygon:
-            return boost::geometry::covered_by(Point(x, y), polygons[cell.index_of_inner_polygon]);
+            return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
         default:
             return false;
 
@@ -230,7 +227,7 @@ PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::distance(
     for (auto i : ext::range(0, outer.size() - 1))
     {
         Segment segment(outer[i], outer[i + 1]);
-        Distance current = boost::geometry::distance(point, segment, DistanceStrategy());
+        Distance current = boost::geometry::comparable_distance(point, segment);
         distance = i ? std::min(current, distance) : current;
     }
     return distance;
@@ -281,7 +278,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
 
     Point center((min_corner.x() + max_corner.x()) / 2, (min_corner.y() + max_corner.y()) / 2);
 
-    if (boost::geometry::covered_by(center, polygon))
+    if (boost::geometry::within(center, polygon))
         cells[index].type = CellType::inner;
     else
         cells[index].type = CellType::outer;
