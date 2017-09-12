@@ -76,6 +76,7 @@ message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${
 # How to make sutable poco:
 # poco-1.7.9-release
 # 6a49c94d18c654d7a20b8c8ea47071b1fdd4813b
-#
+# proller/clickhouse_unbundled
+# proller/clickhouse_task   # uses c++11, can't push to poco
 #
 #
