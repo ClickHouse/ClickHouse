@@ -163,7 +163,7 @@ template <bool positive>
 struct ColumnString::less
 {
     const ColumnString & parent;
-    less(const ColumnString & parent_) : parent(parent_) {}
+    explicit less(const ColumnString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
         size_t left_len = parent.sizeAt(lhs);

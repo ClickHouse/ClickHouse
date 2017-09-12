@@ -366,7 +366,7 @@ void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Fi
 {
     attribute.string_arena = std::make_unique<Arena>();
     auto & null_value_ref = std::get<StringRef>(attribute.null_values);
-    const String string = null_value.get<typename NearestFieldType<String>::Type>();
+    const String & string = null_value.get<typename NearestFieldType<String>::Type>();
     const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
     null_value_ref = StringRef{string_in_arena, string.size()};
     std::get<ContainerPtrType<StringRef>>(attribute.arrays) =

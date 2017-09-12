@@ -41,7 +41,7 @@ struct CollectAliases
         ASTPtr node;
         Kind kind;
 
-        AliasInfo(ASTPtr node, Kind kind) : node(node), kind(kind) {}
+        AliasInfo(const ASTPtr & node, Kind kind) : node(node), kind(kind) {}
     };
 
     using Aliases = std::unordered_map<String, AliasInfo>;

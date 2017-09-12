@@ -49,7 +49,7 @@ namespace ErrorCodes
 }
 
 
-class LogBlockInputStream : public IProfilingBlockInputStream
+class LogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
     LogBlockInputStream(
@@ -130,10 +130,10 @@ private:
 };
 
 
-class LogBlockOutputStream : public IBlockOutputStream
+class LogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    LogBlockOutputStream(StorageLog & storage_)
+    explicit LogBlockOutputStream(StorageLog & storage_)
         : storage(storage_),
         lock(storage.rwlock),
         marks_stream(storage.marks_file.path(), 4096, O_APPEND | O_CREAT | O_WRONLY),

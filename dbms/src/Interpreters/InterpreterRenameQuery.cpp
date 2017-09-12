@@ -118,7 +118,7 @@ BlockIO InterpreterRenameQuery::execute()
         context.assertTableDoesntExist(elem.to_database_name, elem.to_table_name);
 
         context.getDatabase(elem.from_database_name)->renameTable(
-            context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name, context.getSettingsRef());
+            context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name);
     }
 
     return {};

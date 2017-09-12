@@ -284,7 +284,7 @@ protected:
             column = cloneEmpty();
 
         {
-            size_t reserve_size = num_rows / num_columns * 1.1;    /// 1.1 is just a guess. Better to use n-sigma rule.
+            size_t reserve_size = num_rows * 1.1 / num_columns;    /// 1.1 is just a guess. Better to use n-sigma rule.
 
             if (reserve_size > 1)
                 for (auto & column : columns)

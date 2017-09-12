@@ -93,8 +93,8 @@ private:
         const ASTPtr & query_ptr_,
         const Context & context_);
 
-    void init(BlockInputStreamPtr input, const Names & required_column_names = Names{});
-    void basicInit(BlockInputStreamPtr input);
+    void init(const BlockInputStreamPtr & input, const Names & required_column_names = Names{});
+    void basicInit(const BlockInputStreamPtr & input);
     void initQueryAnalyzer();
 
     /// Execute one SELECT query from the UNION ALL chain.

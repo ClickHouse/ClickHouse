@@ -4,6 +4,7 @@
 #include <Poco/File.h>
 #include "LibraryDictionarySourceExternal.h"
 #include <common/logger_useful.h>
+#include <ext/bit_cast.h>
 
 namespace DB
 {
@@ -14,13 +15,12 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-const std::string lib_config_settings = ".settings";
 
 class CStringsHolder
 {
 public:
-    using strings_type = std::vector<std::string>;
-    CStringsHolder(strings_type strings_pass)
+    using Container = std::vector<std::string>;
+    explicit CStringsHolder(const Container & strings_pass)
     {
         strings_holder = strings_pass;
         strings.size = strings_holder.size();
@@ -38,15 +38,22 @@ public:
 
 private:
     std::unique_ptr<ClickHouseLibrary::CString[]> ptr_holder = nullptr;
-    strings_type strings_holder;
+    Container strings_holder;
 
 };
+
+
+namespace
+{
+
+const std::string lib_config_settings = ".settings";
+
 
 CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_root, config_keys);
-    CStringsHolder::strings_type strings;
+    CStringsHolder::Container strings;
     for (const auto & key : config_keys)
     {
         std::string key_name = key;
@@ -59,10 +66,12 @@ CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, 
     return CStringsHolder(strings);
 }
 
+
 bool dataToBlock(const void * data, Block & block)
 {
     if (!data)
         return true;
+
     auto columns_received = static_cast<const ClickHouseLibrary::ColumnsUInt64 *>(data);
     std::vector<IColumn *> columns(block.columns());
     for (const auto i : ext::range(0, columns.size()))
@@ -76,11 +85,14 @@ bool dataToBlock(const void * data, Block & block)
 
         for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
         {
-            columns[row_n]->insert(columns_received->data[col_n].data[row_n]);
+            columns[row_n]->insert(static_cast<UInt64>(columns_received->data[col_n].data[row_n]));
         }
     }
     return false;
 }
+
+}
+
 
 LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
@@ -120,7 +132,7 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
     ClickHouseLibrary::CStrings columns{
-        reinterpret_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
+        static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
@@ -144,10 +156,10 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
 {
     LOG_TRACE(log, "loadIds " << toString() << " size = " << ids.size());
 
-    const ClickHouseLibrary::VectorUInt64 ids_data{ids.data(), ids.size()};
+    const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
     ClickHouseLibrary::CStrings columns_pass{
-        reinterpret_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
+        static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
@@ -183,14 +195,14 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 */
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(key_columns.size());
     ClickHouseLibrary::CStrings columns_pass{
-        reinterpret_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), key_columns.size()};
+        static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), key_columns.size()};
     size_t key_columns_n = 0;
     for (auto & column : key_columns)
     {
         columns_pass.data[key_columns_n] = column->getName().c_str();
         ++key_columns_n;
     }
-    const ClickHouseLibrary::VectorUInt64 requested_rows_c{requested_rows.data(), requested_rows.size()};
+    const ClickHouseLibrary::VectorUInt64 requested_rows_c{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataAllocate call because library->get may throw.

@@ -3,7 +3,7 @@
 #include <cstring>
 #include <unordered_map>
 #include <memory>
-#include <random>
+#include <pcg_random.hpp>
 
 #include <Poco/Timespan.h>
 
@@ -99,16 +99,17 @@ inline auto QuotaValues<std::atomic<size_t>>::tuple() const
 /// Time, rounded down to start of interval; limits for that interval and accumulated values.
 struct QuotaForInterval
 {
-    time_t rounded_time = 0;
+    std::atomic<time_t> rounded_time {0};
     size_t duration = 0;
+    bool randomize = false;
     time_t offset = 0;        /// Offset of interval for randomization (to avoid DoS if intervals for many users end at one time).
     QuotaValues<size_t> max;
     QuotaValues<std::atomic<size_t>> used;
 
-    QuotaForInterval() {}
+    QuotaForInterval() = default;
     QuotaForInterval(time_t duration_) : duration(duration_) {}
 
-    void initFromConfig(const String & config_elem, time_t duration_, time_t offset_, Poco::Util::AbstractConfiguration & config);
+    void initFromConfig(const String & config_elem, time_t duration_, bool randomize_, time_t offset_, Poco::Util::AbstractConfiguration & config);
 
     /// Increase current value.
     void addQuery() noexcept;
@@ -125,14 +126,30 @@ struct QuotaForInterval
     /// Get a text, describing what quota is exceeded.
     String toString() const;
 
+    /// Only compare configuration, not accumulated (used) values or random offsets.
     bool operator== (const QuotaForInterval & rhs) const
     {
-        return
-            rounded_time    == rhs.rounded_time &&
-            duration        == rhs.duration &&
-            max                == rhs.max &&
-            used            == rhs.used;
+        return randomize == rhs.randomize
+            && duration == rhs.duration
+            && max == rhs.max;
     }
+
+    QuotaForInterval & operator= (const QuotaForInterval & rhs)
+    {
+        rounded_time.store(rhs.rounded_time.load(std::memory_order_relaxed));
+        duration = rhs.duration;
+        randomize = rhs.randomize;
+        offset = rhs.offset;
+        max = rhs.max;
+        used = rhs.used;
+        return *this;
+    }
+
+    QuotaForInterval(const QuotaForInterval & rhs)
+    {
+        *this = rhs;
+    }
+
 private:
     /// Reset counters of used resources, if interval for quota is expired.
     void updateTime(time_t current_time);
@@ -174,7 +191,7 @@ public:
         return cont.empty();
     }
 
-    void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng);
+    void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, pcg64 & rng);
 
     /// Set maximum values (limits) from passed argument.
     /// Remove intervals that does not exist in argument. Add intervals from argument, that we don't have.
@@ -192,7 +209,7 @@ public:
     /// Get text, describing what part of quota has been exceeded.
     String toString() const;
 
-    bool operator== (const QuotaForIntervals & rhs) const
+    bool hasEqualConfiguration(const QuotaForIntervals & rhs) const
     {
         return cont == rhs.cont && quota_name == rhs.quota_name;
     }
@@ -224,7 +241,7 @@ struct Quota
 
     bool keyed_by_ip = false;
 
-    void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, std::mt19937 & rng);
+    void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, pcg64 & rng);
     QuotaForIntervalsPtr get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
 };
 
@@ -233,13 +250,13 @@ class Quotas
 {
 private:
     /// Name of quota -> quota.
-    using Container = std::unordered_map<String, std::unique_ptr<Quota>>;
+    using Container = std::unordered_map<String, Quota>;
     Container cont;
 
 public:
     void loadFromConfig(Poco::Util::AbstractConfiguration & config);
     QuotaForIntervalsPtr get(const String & name, const String & quota_key,
-                            const String & user_name, const Poco::Net::IPAddress & ip);
+        const String & user_name, const Poco::Net::IPAddress & ip);
 };
 
 }

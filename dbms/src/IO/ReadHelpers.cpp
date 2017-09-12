@@ -49,6 +49,7 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
 {
     /// If string is not like UUID - implementation specific behaviour.
 
+    /// FIXME This code looks like trash.
     parseHex(&src36[0], dst16 + 8, 4);
     parseHex(&src36[9], dst16 + 12, 2);
     parseHex(&src36[14], dst16 + 14, 2);

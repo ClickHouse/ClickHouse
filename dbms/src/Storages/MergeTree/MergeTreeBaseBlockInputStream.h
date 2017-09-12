@@ -72,7 +72,6 @@ protected:
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
 
-    Logger * log;
     size_t max_block_size_marks;
 };
 

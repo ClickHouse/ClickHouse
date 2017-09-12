@@ -206,8 +206,8 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
             << "name: " << sample.safeGetByPosition(i).name << ", " << std::string(max_length_of_column_name - sample.safeGetByPosition(i).name.size(), ' ')
             << "type: " << data_types[i]->getName() << ", " << std::string(max_length_of_data_type_name - data_types[i]->getName().size(), ' ');
 
-        auto prev_position = istr.position();
-        auto curr_position = istr.position();
+        BufferBase::Position prev_position = istr.position();
+        BufferBase::Position curr_position = istr.position();
         std::exception_ptr exception;
 
         try

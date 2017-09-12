@@ -27,6 +27,8 @@
 #include "Poco/Net/HTTPServerParams.h"
 #include "Poco/Mutex.h"
 
+#include <atomic>
+
 
 namespace Poco {
 namespace Net {
@@ -45,7 +47,7 @@ public:
 
 	virtual ~HTTPServerConnection();
 		/// Destroys the HTTPServerConnection.
-		
+
 	void run();
 		/// Handles all HTTP requests coming in.
 
@@ -56,7 +58,7 @@ protected:
 private:
 	HTTPServerParams::Ptr          _pParams;
 	HTTPRequestHandlerFactory::Ptr _pFactory;
-	bool _stopped;
+	std::atomic<bool> _stopped;
 	Poco::FastMutex _mutex;
 };
 

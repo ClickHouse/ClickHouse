@@ -25,7 +25,7 @@ void printStat(const zkutil::Stat & s)
     std::cout << "  pzxid: " << s.pzxid << std::endl;
 }
 
-void waitForWatch(zkutil::EventPtr event)
+void waitForWatch(const zkutil::EventPtr & event)
 {
     std::cout << "waiting for watch" << std::endl;
     event->wait();

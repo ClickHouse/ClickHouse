@@ -306,16 +306,16 @@ int main(int argc, char ** argv)
 
     setAffinity();
 
-    if (!method || method == 0) test<identity>  (n, &data[0], "0: identity");
-    if (!method || method == 1) test<intHash32> (n, &data[0], "1: intHash32");
-    if (!method || method == 2) test<intHash64> (n, &data[0], "2: intHash64");
-    if (!method || method == 3) test<hash3>     (n, &data[0], "3: two rounds");
-    if (!method || method == 4) test<hash4>     (n, &data[0], "4: two rounds and two variables");
-    if (!method || method == 5) test<hash5>     (n, &data[0], "5: two rounds with less ops");
-    if (!method || method == 6) test<murmurMix> (n, &data[0], "6: murmur64 mixer");
-    if (!method || method == 7) test<mulShift>  (n, &data[0], "7: mulShift");
-    if (!method || method == 8) test<tabulation>(n, &data[0], "8: tabulation");
-    if (!method || method == 9) test<crc32Hash> (n, &data[0], "9: crc32");
+    if (!method || method == 1) test<identity>  (n, &data[0], "0: identity");
+    if (!method || method == 2) test<intHash32> (n, &data[0], "1: intHash32");
+    if (!method || method == 3) test<intHash64> (n, &data[0], "2: intHash64");
+    if (!method || method == 4) test<hash3>     (n, &data[0], "3: two rounds");
+    if (!method || method == 5) test<hash4>     (n, &data[0], "4: two rounds and two variables");
+    if (!method || method == 6) test<hash5>     (n, &data[0], "5: two rounds with less ops");
+    if (!method || method == 7) test<murmurMix> (n, &data[0], "6: murmur64 mixer");
+    if (!method || method == 8) test<mulShift>  (n, &data[0], "7: mulShift");
+    if (!method || method == 9) test<tabulation>(n, &data[0], "8: tabulation");
+    if (!method || method == 10) test<crc32Hash> (n, &data[0], "9: crc32");
 
     return 0;
 }

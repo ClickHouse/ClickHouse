@@ -23,7 +23,10 @@ void * ClickHouseDictionary_v1_loadIds(
     void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * columns, const struct ClickHouseLibrary::VectorUInt64 * ids)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
-    std::cerr << "loadIds lib call ptr=" << data_ptr << " => " << ptr << " size=" << ids->size << "\n";
+
+    if (ids)
+        std::cerr << "loadIds lib call ptr=" << data_ptr << " => " << ptr << " size=" << ids->size << "\n";
+
     if (settings)
     {
         std::cerr << "settings passed: " << settings->size << "\n";

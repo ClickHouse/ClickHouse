@@ -18,7 +18,7 @@ namespace DB
 class ForkBlockInputStreams : private boost::noncopyable
 {
 public:
-    ForkBlockInputStreams(BlockInputStreamPtr source_) : source(source_) {}
+    ForkBlockInputStreams(const BlockInputStreamPtr & source_) : source(source_) {}
 
     /// Create a source. Call the function as many times as many forked sources you need.
     BlockInputStreamPtr createInput()

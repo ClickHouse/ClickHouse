@@ -79,7 +79,7 @@ inline std::string Element::name() const
 class ElementComparator
 {
 public:
-	bool operator()(const Element::Ptr& s1, const Element::Ptr& s2)
+	bool operator()(const Element::Ptr& s1, const Element::Ptr& s2) const
 	{
 		return s1->name() < s2->name();
 	}

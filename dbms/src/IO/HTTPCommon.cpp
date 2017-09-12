@@ -15,14 +15,14 @@
 
 namespace DB
 {
-void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response)
+void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout)
 {
     if (!response.getKeepAlive())
         return;
 
-    Poco::Timespan keep_alive_timeout(Poco::Util::Application::instance().config().getInt("keep_alive_timeout", 10), 0);
-    if (keep_alive_timeout.totalSeconds())
-        response.set("Keep-Alive", "timeout=" + std::to_string(keep_alive_timeout.totalSeconds()));
+    Poco::Timespan timeout(keep_alive_timeout, 0);
+    if (timeout.totalSeconds())
+        response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
 std::once_flag ssl_init_once;

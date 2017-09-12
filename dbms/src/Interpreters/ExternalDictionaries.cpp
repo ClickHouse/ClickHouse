@@ -320,19 +320,16 @@ void ExternalDictionaries::reloadFromConfigFile(const std::string & config_path,
                         {
                             failed_dict_it->second = FailedDictionaryInfo{
                                 std::move(dict_ptr),
-                                std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}
-                            };
+                                std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}};
                         }
                         else
                             failed_dictionaries.emplace(name, FailedDictionaryInfo{
                                 std::move(dict_ptr),
-                                std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}
-                            });
+                                std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}});
 
                         std::rethrow_exception(exception_ptr);
                     }
-
-                    if (!dict_ptr->isCached())
+                    else if (!dict_ptr->isCached())
                     {
                         const auto & lifetime = dict_ptr->getLifetime();
                         if (lifetime.min_sec != 0 && lifetime.max_sec != 0)

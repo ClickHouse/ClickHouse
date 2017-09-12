@@ -2,16 +2,18 @@
 
 #include <memory>
 #include <string>
-#include <boost/core/noncopyable.hpp>
+#include <boost/noncopyable.hpp>
+
 
 namespace DB
 {
-/** Allows you to open a dynamic library and get a pointer to a function from it.
+
+    /** Allows you to open a dynamic library and get a pointer to a function from it.
   */
 class SharedLibrary : private boost::noncopyable
 {
 public:
-    SharedLibrary(const std::string & path);
+    explicit SharedLibrary(const std::string & path);
 
     ~SharedLibrary();
 
@@ -33,4 +35,5 @@ private:
 };
 
 using SharedLibraryPtr = std::shared_ptr<SharedLibrary>;
+
 }

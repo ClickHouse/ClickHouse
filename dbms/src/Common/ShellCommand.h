@@ -27,6 +27,7 @@ class ShellCommand
 {
 private:
     pid_t pid;
+    bool wait_called = false;
 
     ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd)
         : pid(pid), in(in_fd), out(out_fd), err(err_fd) {};
@@ -37,6 +38,8 @@ public:
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
     ReadBufferFromFile err;
+
+    ~ShellCommand();
 
     /// Run the command using /bin/sh -c
     static std::unique_ptr<ShellCommand> execute(const std::string & command, bool pipe_stdin_only = false);

@@ -173,7 +173,7 @@ public:
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
-    void addExternalTable(const String & table_name, StoragePtr storage);
+    void addExternalTable(const String & table_name, const StoragePtr & storage);
     StoragePtr tryRemoveExternalTable(const String & table_name);
 
     void addDatabase(const String & database_name, const DatabasePtr & database);
@@ -270,8 +270,7 @@ public:
       */
     void setProcessListElement(ProcessListElement * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
-    ProcessListElement * getProcessListElement();
-    const ProcessListElement * getProcessListElement() const;
+    ProcessListElement * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -307,10 +306,10 @@ public:
     BackgroundProcessingPool & getBackgroundPool();
 
     void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
-    ReshardingWorker & getReshardingWorker();
+    ReshardingWorker & getReshardingWorker() const;
 
     void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
-    DDLWorker & getDDLWorker();
+    DDLWorker & getDDLWorker() const;
 
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
