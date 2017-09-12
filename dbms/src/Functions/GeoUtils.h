@@ -238,7 +238,7 @@ PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::findHalfPlanes(
         /// Want to detect is intersection edge was formed from box edge or from polygon edge.
         /// If center of the edge closer to box, than don't form the half-plane.
         Segment segment(outer[i], outer[i + 1]);
-        Point center = (segment.first + segment.second) / 2;
+        Point center((segment.first.x() + segment.second.x()) / 2, (segment.first.y() + segment.second.y()) / 2);
         if (distance(center, polygon) < distance(center, bound))
         {
             half_planes.push_back({});
@@ -262,7 +262,11 @@ template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
 void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
         size_t index, const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Box & empty_box)
 {
-    Point center = (empty_box.min_corner() + empty_box.max_corner()) / 2;
+    const auto & min_corner = empty_box.min_corner();
+    const auto & max_corner = empty_box.max_corner();
+
+    Point center((min_corner.x() + max_corner.x()) / 2, (min_corner.y() + max_corner.y()) / 2);
+
     if (boost::geometry::within(center, polygon))
         cells[index].type = CellType::inner;
     else
@@ -286,7 +290,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
     else if (half_planes.size() == 1)
     {
         cells[index].type = CellType::singleLine;
-        cells[index].half_palins[0] = half_planes[0];
+        cells[index].half_planes[0] = half_planes[0];
     }
     else if (half_planes.size() == 2)
     {
@@ -382,13 +386,12 @@ struct CallPointInPolygonWithGrid<Type, Types ...>
 template <>
 struct CallPointInPolygonWithGrid<>
 {
-    template <typename T, typename U>
+    template <typename T>
     static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
     {
         throw Exception(std::string("Unknown numeric column type: ") + typeid(y).name(), ErrorCodes::LOGICAL_ERROR);
     }
 
-    template <typename T, typename U>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
     {
         throw Exception(std::string("Unknown numeric column type: ") + typeid(x).name(), ErrorCodes::LOGICAL_ERROR);
