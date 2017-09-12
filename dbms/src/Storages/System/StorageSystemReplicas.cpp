@@ -62,7 +62,7 @@ BlockInputStreams StorageSystemReplicas::read(
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
-        for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
             if (typeid_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replicated_tables[db.first][iterator->name()] = iterator->table();
 

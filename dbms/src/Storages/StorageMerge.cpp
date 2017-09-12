@@ -58,7 +58,7 @@ StorageMerge::StorageMerge(
 bool StorageMerge::isRemote() const
 {
     auto database = context.getDatabase(source_database);
-    auto iterator = database->getIterator();
+    auto iterator = database->getIterator(context);
 
     while (iterator->isValid())
     {
@@ -327,7 +327,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
 {
     StorageListWithLocks selected_tables;
     auto database = context.getDatabase(source_database);
-    auto iterator = database->getIterator();
+    auto iterator = database->getIterator(context);
 
     while (iterator->isValid())
     {
