@@ -463,14 +463,14 @@ float calcLinestringRotation(const Linestring & points)
 template <typename Polygon>
 void normalizePolygon(Polygon & polygon)
 {
-    auto & inner = polygon.inner();
-    if (calcLinestringRotation(inner) < 0)
-        std::reverse(inner.begin(), inner.end());
+    auto & outer = polygon.outer();
+    if (calcLinestringRotation(outer) < 0)
+        std::reverse(outer.begin(), outer.end());
 
-    auto & outers = polygon.outers();
-    for (auto & outer : outers)
-        if (calcLinestringRotation(outer) > 0)
-            std::reverse(outer.begin(), outer.end());
+    auto & inners = polygon.inners();
+    for (auto & inner : inners)
+        if (calcLinestringRotation(inner) > 0)
+            std::reverse(inner.begin(), inner.end());
 }
 
 } /// GeoUtils
