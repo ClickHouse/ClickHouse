@@ -267,8 +267,7 @@ public:
 
         for (size_t i = 2; i < arguments.size(); ++i)
         {
-            auto const_array_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
-            auto array_col = const_array_col ? checkAndGetColumn<ColumnArray>(&const_array_col->getDataColumn()) : nullptr;
+            auto array_col = checkAndGetColumnConstData<ColumnArray>(block.getByPosition(arguments[i]).column.get());
             auto tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
 
             if (!tuple_col)
@@ -305,8 +304,8 @@ public:
         auto column_x = block.safeGetByPosition(arguments[0]).column;
         auto column_y = block.safeGetByPosition(arguments[1]).column;
 
-        auto column_const_x = checkAndGetColumnConst(column_x.get());
-        auto column_const_y = checkAndGetColumnConst(column_y.get());
+        auto column_const_x = checkAndGetColumn<ColumnConst>(column_x.get());
+        auto column_const_y = checkAndGetColumn<ColumnConst>(column_y.get());
 
         if (column_const_x && column_const_y)
         {
