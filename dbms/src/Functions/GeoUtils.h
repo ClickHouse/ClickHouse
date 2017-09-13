@@ -335,7 +335,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
     {
         cells[index].type = CellType::pairOfLinesDifferentPolygons;
         cells[index].half_planes[0] = first_half_planes[0];
-        cells[index].half_planes[1] = second_half_planes[1];
+        cells[index].half_planes[1] = second_half_planes[0];
     }
     else
         addCell(index, {first, second});

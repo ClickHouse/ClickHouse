@@ -300,6 +300,9 @@ public:
                 auto y = static_cast<Float32>((*column_y)[j].get<Float64>());
                 container.push_back(Point(x, y));
             }
+
+            if (!boost::geometry::equals(container.front(), container.back()))
+                container.push_back(container.front());
         }
 
         auto column_x = block.safeGetByPosition(arguments[0]).column;
