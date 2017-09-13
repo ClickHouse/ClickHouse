@@ -19,17 +19,18 @@ static ReadBufferFromFile openForReading(const String & path)
     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 }
 
+/// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
+/// So if you want to change this method, be sure to guarantee compatibility with existing table data.
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
     if (value.size() != storage.partition_expr_columns.size())
         throw Exception("Invalid partition key size: " + toString(value.size()), ErrorCodes::LOGICAL_ERROR);
 
     if (value.empty())
-        return "all";
+        return "all"; /// It is tempting to use an empty string here. But that would break directory structure in ZK.
 
-    /// In case all partition fields are represented by integral types, try to produce a human-readable partition id.
+    /// In case all partition fields are represented by integral types, try to produce a human-readable ID.
     /// Otherwise use a hex-encoded hash.
-
     bool are_all_integral = true;
     for (const Field & field : value)
     {
@@ -51,9 +52,12 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
                 result += '-';
 
             if (typeid_cast<const DataTypeDate *>(storage.partition_expr_column_types[i].get()))
-                result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(value[i].get<UInt64>())));
+                result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(value[i].safeGet<UInt64>())));
             else
                 result += applyVisitor(to_string_visitor, value[i]);
+
+            /// It is tempting to output DateTime as YYYYMMDDhhmmss, but that would make partition ID
+            /// timezone-dependent.
         }
 
         return result;
