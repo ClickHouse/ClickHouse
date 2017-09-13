@@ -203,9 +203,12 @@ def main(args):
                                     failure = et.Element("failure", attrib = {"message": "result differs with reference"})
                                     report_testcase.append(failure)
 
-                                    stdout_element = et.Element("system-out")
-                                    stdout_element.text = et.CDATA(diff)
-                                    report_testcase.append(stdout_element)
+                                    try:
+                                        stdout_element = et.Element("system-out")
+                                        stdout_element.text = et.CDATA(diff)
+                                        report_testcase.append(stdout_element)
+                                    except Exception as e:
+                                        print("{0} - test internal error\n{1}".format(MSG_FAIL, e))
 
                                     failures = failures + 1
                                     print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff.encode('utf-8')))
