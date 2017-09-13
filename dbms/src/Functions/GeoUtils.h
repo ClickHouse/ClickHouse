@@ -449,7 +449,7 @@ float calcLinestringRotation(const Linestring & points)
             if (std::isfinite(sqr_len_product))
             {
                 float vec_prod = from.x() * to.y() - from.y() * to.x();
-                float sin_ang = vec_prod * vec_prod / sqr_len_product;
+                float sin_ang = vec_prod * std::fabs(vec_prod) / sqr_len_product;
                 sin_ang = std::max(-1.f, std::min(1.f, sin_ang));
                 rotation += std::asin(sin_ang);
             }
