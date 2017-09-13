@@ -76,8 +76,8 @@ private:
 
         void fill(const Point & from, const Point & to)
         {
-            a = to.y() - from.y();
-            b = from.x() - to.y();
+            a = - (to.y() - from.y());
+            b = to.x() - from.y();
             c = -from.x() * a - from.y() * b;
         }
 
