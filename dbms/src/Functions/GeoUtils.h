@@ -4,8 +4,10 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Core/TypeListNumber.h>
+#include <Common/typeid_cast.h>
+#include <ext/range.h>
 
-///
+/// Warning in boost::geometry during template strategy substitution.
 #if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
@@ -26,16 +28,22 @@
 
 #include <array>
 #include <vector>
-#include <ext/range.h>
-#include <Common/typeid_cast.h>
+#include <iterator>
+#include <cmath>
+#include <algorithm>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
+
+
+namespace GeoUtils
+{
+
 
 template <typename CoordinateType = Float32, UInt16 gridHeight = 8, UInt16 gridWidth = 8>
 class PointInPolygonWithGrid
@@ -76,7 +84,7 @@ private:
 
         void fill(const Point & from, const Point & to)
         {
-            a = - (to.y() - from.y());
+            a = -(to.y() - from.y());
             b = to.x() - from.x();
             c = -from.x() * a - from.y() * b;
         }
@@ -110,10 +118,13 @@ private:
 
     /// Complex case. Will check intersection directly.
     inline void addCell(size_t index, const MultiPolygon & intersection);
+
     /// Empty intersection or intersection == box.
     inline void addCell(size_t index, const Box & empty_box);
+
     /// Intersection is a single polygon.
     inline void addCell(size_t index, const Box & box, const Polygon & intersection);
+
     /// Intersection is a pair of polygons.
     inline void addCell(size_t index, const Box & box, const Polygon & first, const Polygon & second);
 
@@ -121,6 +132,7 @@ private:
     inline std::vector<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
 
     using Distance = typename boost::geometry::default_comparable_distance_result<Point, Segment>::type;
+
     /// min(distance(point, edge) : edge in polygon)
     inline Distance distance(const Point & point, const Polygon & polygon);
 };
@@ -416,4 +428,51 @@ ColumnPtr pointInPolygonWithGrid(const IColumn & x, const IColumn & y, PointInPo
     return Impl::call(x, y, polygon);
 }
 
+/// Total angle (signed) between neighbor vectors in linestring. Zero if linestring.size() < 2.
+template <typename Linestring>
+float calcLinestringRotation(const Linestring & points)
+{
+    using Point = boost::geometry::model::d2::point_xy<float>;
+    float rotation = 0;
+
+    for (auto it = points.begin(); std::next(it) != points.end(); ++it)
+    {
+        if (it != points.begin())
+        {
+            auto prev = std::prev(it);
+            auto next = std::next(it);
+            Point from(it->x() - prev->x(), it->y() - prev->y());
+            Point to(next->x() - it->x(), next->y() - it->y());
+            float sqr_from_len = from.x() * from.x() + from.y() * from.y();
+            float sqr_to_len = to.x() * to.x() + to.y() * to.y();
+            float sqr_len_product = (sqr_from_len * sqr_to_len);
+            if (std::isfinite(sqr_len_product))
+            {
+                float vec_prod = from.x() * to.y() - from.y() * to.x();
+                float sin_ang = vec_prod * vec_prod / sqr_len_product;
+                sin_ang = std::max(-1.f, std::min(1.f, sin_ang));
+                rotation += std::asin(sin_ang);
+            }
+        }
+    }
+
+    return rotation;
 }
+
+/// Make inner linestring counter-clockwise and outers clockwise oriented.
+template <typename Polygon>
+void normalizePolygon(Polygon & polygon)
+{
+    auto & inner = polygon.inner();
+    if (calcLinestringRotation(inner) < 0)
+        std::reverse(inner.begin(), inner.end());
+
+    auto & outers = polygon.outers();
+    for (auto & outer : outers)
+        if (calcLinestringRotation(outer) > 0)
+            std::reverse(outer.begin(), outer.end());
+}
+
+} /// GeoUtils
+
+} /// DB

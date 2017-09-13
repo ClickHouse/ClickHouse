@@ -301,9 +301,12 @@ public:
                 container.push_back(Point(x, y));
             }
 
+            /// Polygon assumed to be closed. Allow user to escape repeating of first point.
             if (!boost::geometry::equals(container.front(), container.back()))
                 container.push_back(container.front());
         }
+
+        GeoUtils::normalizePolygon(polygon);
 
         auto column_x = block.safeGetByPosition(arguments[0]).column;
         auto column_y = block.safeGetByPosition(arguments[1]).column;
@@ -323,7 +326,7 @@ public:
 
 
         auto & result_column = block.safeGetByPosition(result).column;
-        result_column = pointInPolygonWithGrid(*column_x, *column_y, polygon);
+        result_column = GeoUtils::pointInPolygonWithGrid(*column_x, *column_y, polygon);
 
         if (column_const_x && column_const_y)
             result_column = std::make_shared<ColumnConst>(result_column, column_const_x->size());
