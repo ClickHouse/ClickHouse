@@ -10,6 +10,7 @@ namespace DB
 class MergeTreeData;
 struct MergeTreeDataPartChecksums;
 
+/// This class represents a partition value of a single part and encapsulates its loading/storing logic.
 struct MergeTreePartition
 {
     Row value;

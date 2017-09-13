@@ -46,10 +46,10 @@ namespace ErrorCodes
 /// The date column is specified. For each part min and max dates are remembered.
 /// Essentially it is an index too.
 ///
-/// Data is partitioned by month. Parts belonging to different months are not merged - for the ease of
-/// administration (data sync and backup).
+/// Data is partitioned by the value of the partitioning expression.
+/// Parts belonging to different partitions are not merged - for the ease of administration (data sync and backup).
 ///
-/// File structure:
+/// File structure of old-style month-partitioned tables (format_version = 0):
 /// Part directory - / min-date _ max-date _ min-id _ max-id _ level /
 /// Inside the part directory:
 /// checksums.txt - contains the list of all files along with their sizes and checksums.
@@ -57,6 +57,13 @@ namespace ErrorCodes
 /// primary.idx - contains the primary index.
 /// [Column].bin - contains compressed column data.
 /// [Column].mrk - marks, pointing to seek positions allowing to skip n * k rows.
+///
+/// File structure of tables with custom partitioning (format_version >= 1):
+/// Part directory - / partiiton-id _ min-id _ max-id _ level /
+/// Inside the part directory:
+/// The same files as for month-partitioned tables, plus
+/// partition.dat - contains the value of the partitioning expression
+/// minmax_[Column].idx - MinMax indexes (see MergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
 ///
 /// Several modes are implemented. Modes determine additional actions during merge:
 /// - Ordinary - don't do anything special
