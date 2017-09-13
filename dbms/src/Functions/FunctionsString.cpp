@@ -705,7 +705,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(block.getByPosition(0).type.get()))
+        if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(block.getByPosition(arguments[0]).type.get()))
             return FunctionArrayConcat().executeImpl(block, arguments, result);
 
         if (arguments.size() == 2)
