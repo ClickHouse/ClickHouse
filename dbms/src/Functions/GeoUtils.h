@@ -151,13 +151,13 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::buildGrid()
 
     for (size_t row = 0; row < gridHeight; ++row)
     {
-        CoordinateType x_min = min_corner.x() + row * cell_width;
-        CoordinateType x_max = min_corner.x() + (row + 1) * cell_width;
+        CoordinateType y_min = min_corner.y() + row * cell_height;
+        CoordinateType y_max = min_corner.y() + (row + 1) * cell_height;
 
         for (size_t col = 0; col < gridWidth; ++col)
         {
-            CoordinateType y_min = min_corner.y() + col * cell_height;
-            CoordinateType y_max = min_corner.y() + (col + 1) * cell_height;
+            CoordinateType x_min = min_corner.x() + col * cell_width;
+            CoordinateType x_max = min_corner.x() + (col + 1) * cell_width;
             Box cell_box(Point(x_min, y_min), Point(x_max, y_max));
 
             Polygon cell_bound;
@@ -183,8 +183,8 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::buildGrid()
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
 bool PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::contains(CoordinateType x, CoordinateType y)
 {
-    CoordinateType float_row = (x + x_shift) * x_scale;
-    CoordinateType float_col = (y + y_shift) * y_scale;
+    CoordinateType float_row = (y + y_shift) * y_scale;
+    CoordinateType float_col = (x + x_shift) * x_scale;
 
     if (float_row < 0 || float_row > gridHeight)
         return false;
