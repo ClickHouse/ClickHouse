@@ -279,7 +279,7 @@ public:
 
             const auto & tuple_block = tuple_col->getData();
             const auto & column_x = tuple_block.safeGetByPosition(0).column;
-            const auto & column_y = tuple_block.safeGetByPosition(0).column;
+            const auto & column_y = tuple_block.safeGetByPosition(1).column;
 
             if (!polygon.outer().empty())
                 polygon.inners().emplace_back();
