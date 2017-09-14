@@ -158,8 +158,8 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::buildGrid()
 
     x_scale = 1 / cell_width;
     y_scale = 1 / cell_height;
-    x_shift = min_corner.x();
-    y_shift = min_corner.y();
+    x_shift = -min_corner.x();
+    y_shift = -min_corner.y();
 
     for (size_t row = 0; row < gridHeight; ++row)
     {

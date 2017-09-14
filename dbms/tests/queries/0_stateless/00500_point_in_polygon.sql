@@ -15,6 +15,9 @@ SELECT pointInPolygonWithGrid(0.1, 0.1, [(6., 0.), (8., 4.), (5., 8.), (0., 2.),
 SELECT 'single line';
 SELECT pointInPolygonWithGrid(4.1, 0.1, [(6., 0.), (8., 4.), (5., 8.), (0., 2.), (6., 0.)]);
 SELECT pointInPolygonWithGrid(4.9, 0.9, [(6., 0.), (8., 4.), (5., 8.), (0., 2.), (6., 0.)]);
+SELECT 'shifted grid';
+SELECT pointInPolygonWithGrid(0., 0., [(6., 1.), (8., 4.), (5., 8.), (1., 2.), (6., 1.)]);
+SELECT pointInPolygonWithGrid(6., 5., [(6., 1.), (8., 4.), (5., 8.), (1., 2.), (6., 1.)]);
 
 SELECT 'pair of lines, single polygon';
 SELECT pointInPolygonWithGrid(0.1, 0.1, [(0., 0.), (8., 7.), (7., 8.), (0., 0.)]);
