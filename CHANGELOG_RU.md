@@ -3,7 +3,7 @@
 ## Новые возможности:
 * Запросы `SYSTEM` для административных действий с сервером: `SYSTEM RELOAD DICTIONARY`, `SYSTEM RELOAD DICTIONARIES`, `SYSTEM DROP DNS CACHE`, `SYSTEM SHUTDOWN`, `SYSTEM KILL`.
 * Добавлены функции для работы с массивами: `concat`, `arraySlice`, `arrayPushBack`, `arrayPushFront`, `arrayPopBack`, `arrayPopFront`.
-* Добавлены параметры `root` и `identity` для конфигурации ZooKeeper. Это позволяет использовать разных пользователей одного ZooKeeper кластера.
+* Добавлены параметры `root` и `identity` для конфигурации ZooKeeper. Это позволяет изолировать разных пользователей одного ZooKeeper кластера.
 * Добавлены агрегатные функции `groupBitAnd`, `groupBitOr`, `groupBitXor` (для совместимости доступны также под именами `BIT_AND`, `BIT_OR`, `BIT_XOR`).
 * Возможность загрузки внешних словарей из MySQL с указанием сокета на файловой системе.
 * Возможность загрузки внешних словарей из MySQL через SSL соединение (параметры `ssl_cert`, `ssl_key`, `ssl_ca`).
