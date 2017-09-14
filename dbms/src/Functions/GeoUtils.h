@@ -117,7 +117,7 @@ private:
     T ALWAYS_INLINE getCellIndex(T row, T col) const { return row * gridWidth + col; }
 
     /// Complex case. Will check intersection directly.
-    inline void addCell(size_t index, const MultiPolygon & intersection);
+    inline void addComplexPolygonCell(size_t index, const Box & box);
 
     /// Empty intersection or intersection == box.
     inline void addCell(size_t index, const Box & empty_box);
@@ -187,7 +187,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::buildGrid()
             else if (intersection.size() == 2)
                 addCell(cellIndex, cell_box, intersection.front(), intersection.back());
             else
-                addCell(cellIndex, intersection);
+                addCell(cellIndex, cell_box);
         }
     }
 }
@@ -274,11 +274,27 @@ PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::findHalfPlanes(
 }
 
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
-void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
-        size_t index, const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::MultiPolygon & intersection)
+void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addComplexPolygonCell(
+        size_t index, const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Box & box)
 {
     cells[index].type = CellType::complexPolygon;
     cells[index].index_of_inner_polygon = polygons.size();
+
+    /// Expand box in (1 + eps_factor) times to eliminate errors for points on box bound.
+    static constexpr float eps_factor = 0.01;
+    float x_eps = eps_factor * (box.max_corner().x() - box.min_corner().x());
+    float y_eps = eps_factor * (box.max_corner().y() - box.min_corner().y());
+
+    Point min_corner(box.min_corner().x() - x_eps, box.min_corner().y - y_eps);
+    Point max_corner(box.max_corner().x() + x_eps, box.max_corner().y + y_eps);
+    Box box_with_eps_bound(min_corner, max_corner);
+
+    Polygon bound;
+    boost::geometry::convert(box_with_eps_bound, bound);
+
+    MultiPolygon intersection;
+    boost::geometry::intersection(polygon, bound, intersection);
+
     polygons.push_back(intersection);
 }
 
@@ -305,7 +321,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & intersection)
 {
     if (!intersection.inners().empty())
-        addCell(index, {intersection});
+        addComplexPolygonCell(index, box);
 
     auto half_planes = findHalfPlanes(box, intersection);
 
@@ -323,7 +339,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
         cells[index].half_planes[1] = half_planes[1];
     }
     else
-        addCell(index, {intersection});
+        addComplexPolygonCell(index, box);
 }
 
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
@@ -334,7 +350,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
         const PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Polygon & second)
 {
     if (!first.inners().empty() || !second.inners().empty())
-        addCell(index, {first, second});
+        addComplexPolygonCell(index, box);
 
     auto first_half_planes = findHalfPlanes(box, first);
     auto second_half_planes = findHalfPlanes(box, second);
@@ -350,7 +366,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
         cells[index].half_planes[1] = second_half_planes[0];
     }
     else
-        addCell(index, {first, second});
+        addComplexPolygonCell(index, box);
 }
 
 
