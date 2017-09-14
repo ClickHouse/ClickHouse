@@ -285,8 +285,8 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addComplexPo
     float x_eps = eps_factor * (box.max_corner().x() - box.min_corner().x());
     float y_eps = eps_factor * (box.max_corner().y() - box.min_corner().y());
 
-    Point min_corner(box.min_corner().x() - x_eps, box.min_corner().y - y_eps);
-    Point max_corner(box.max_corner().x() + x_eps, box.max_corner().y + y_eps);
+    Point min_corner(box.min_corner().x() - x_eps, box.min_corner().y() - y_eps);
+    Point max_corner(box.max_corner().x() + x_eps, box.max_corner().y() + y_eps);
     Box box_with_eps_bound(min_corner, max_corner);
 
     Polygon bound;
