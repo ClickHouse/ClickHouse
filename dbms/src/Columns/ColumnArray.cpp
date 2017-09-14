@@ -354,7 +354,7 @@ void ColumnArray::getExtremes(Field & min, Field & max) const
     {
         if (compareAt(i, min_idx, *this, /* nan_direction_hint = */ 1) < 0)
             min_idx = i;
-        if (compareAt(i, max_idx, *this, /* nan_direction_hint = */ -1) > 0)
+        else if (compareAt(i, max_idx, *this, /* nan_direction_hint = */ -1) > 0)
             max_idx = i;
     }
 
