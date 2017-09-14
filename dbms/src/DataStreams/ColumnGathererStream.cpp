@@ -118,8 +118,13 @@ void ColumnGathererStream::fetchNewBlock(Source & source, size_t source_num)
 void ColumnGathererStream::readSuffixImpl()
 {
     const BlockStreamProfileInfo & profile_info = getProfileInfo();
+
+    /// Don't print info for small parts (< 10M rows)
+    if (profile_info.rows < 10000000)
+        return;
+
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
-    LOG_DEBUG(log, std::fixed << std::setprecision(2)
+    LOG_TRACE(log, std::fixed << std::setprecision(2)
         << "Gathered column " << name
         << " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
         << " in " << seconds << " sec., "
