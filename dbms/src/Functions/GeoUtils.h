@@ -187,7 +187,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::buildGrid()
             else if (intersection.size() == 2)
                 addCell(cellIndex, cell_box, intersection.front(), intersection.back());
             else
-                addCell(cellIndex, cell_box);
+                addComplexPolygonCell(cellIndex, cell_box);
         }
     }
 }
