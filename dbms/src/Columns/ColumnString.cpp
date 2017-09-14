@@ -280,7 +280,7 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     {
         if (less_op(i, min_idx))
             min_idx = i;
-        if (less_op(max_idx, i))
+        else if (less_op(max_idx, i))
             max_idx = i;
     }
 
