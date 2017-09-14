@@ -29,6 +29,19 @@ MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUAR
 MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
 
+def remove_control_characters(s):
+    """
+    https://github.com/html5lib/html5lib-python/issues/96#issuecomment-43438438
+    """
+    def str_to_int(s, default, base=10):
+        if int(s, base) < 0x10000:
+            return unichr(int(s, base))
+        return default
+    s = re.sub(ur"&#(\d+);?", lambda c: str_to_int(c.group(1), c.group(0)), s)
+    s = re.sub(ur"&#[xX]([0-9a-fA-F]+);?", lambda c: str_to_int(c.group(1), c.group(0), base=16), s)
+    s = re.sub(ur"[\x00-\x08\x0b\x0e-\x1f\x7f]", "", s)
+    return s
+
 def main(args):
 
     SERVER_DIED = False
@@ -202,14 +215,14 @@ def main(args):
 
                                     failure = et.Element("failure", attrib = {"message": "result differs with reference"})
                                     report_testcase.append(failure)
-
+                                    
+                                    stdout_element = et.Element("system-out")
                                     try:
-                                        stdout_element = et.Element("system-out")
                                         stdout_element.text = et.CDATA(diff)
-                                        report_testcase.append(stdout_element)
                                     except Exception as e:
-                                        print("{0} - test internal error\n{1}".format(MSG_FAIL, e))
-
+                                        stdout_element.text = et.CDATA(remove_control_characters(diff))
+                                    
+                                    report_testcase.append(stdout_element)
                                     failures = failures + 1
                                     print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff.encode('utf-8')))
                                 else:
