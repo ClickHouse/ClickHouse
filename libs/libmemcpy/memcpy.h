@@ -5,7 +5,7 @@ extern "C"
 {
 #endif
 
-#include "FastMemcpy.h"
+#include "impl/FastMemcpy.h"
 
 void * __attribute__((__weak__)) memcpy(void * __restrict destination, const void * __restrict source, size_t size)
 {
