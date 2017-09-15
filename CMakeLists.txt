@@ -109,7 +109,7 @@ endif ()
 
 # Special options for better optimized code with clang
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -mllvm -inline-threshold=10000")
+    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
 endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
