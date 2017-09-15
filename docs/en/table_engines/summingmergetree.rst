@@ -37,6 +37,8 @@ Examples:
   [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
   [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 
+For aggregating Map use function sumMap(key, value).
+
 For nested data structures, you don't need to specify the columns as a list of columns for totaling.
 
 This table engine is not particularly useful. Remember that when saving just pre-aggregated data, you lose some of the system's advantages.
