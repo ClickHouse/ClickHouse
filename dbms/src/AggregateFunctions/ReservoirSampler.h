@@ -30,7 +30,7 @@ namespace ReservoirSamplerOnEmpty
     };
 }
 
-template<typename ResultType, bool IsFloatingPoint>
+template <typename ResultType, bool IsFloatingPoint>
 struct NanLikeValueConstructor
 {
     static ResultType getValue()
@@ -38,7 +38,7 @@ struct NanLikeValueConstructor
         return std::numeric_limits<ResultType>::quiet_NaN();
     }
 };
-template<typename ResultType>
+template <typename ResultType>
 struct NanLikeValueConstructor<ResultType, false>
 {
     static ResultType getValue()
@@ -47,7 +47,7 @@ struct NanLikeValueConstructor<ResultType, false>
     }
 };
 
-template<typename T, ReservoirSamplerOnEmpty::Enum OnEmpty = ReservoirSamplerOnEmpty::THROW, typename Comparer = std::less<T>>
+template <typename T, ReservoirSamplerOnEmpty::Enum OnEmpty = ReservoirSamplerOnEmpty::THROW, typename Comparer = std::less<T>>
 class ReservoirSampler
 {
 public:

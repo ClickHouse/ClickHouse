@@ -90,7 +90,7 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     /// Insert the summed row for the current group into the result.
@@ -99,16 +99,16 @@ private:
     /** For nested Map, a merge by key is performed with the ejection of rows of nested arrays, in which
       * all items are zero.
       */
-    template <class TSortCursor>
+    template <typename TSortCursor>
     bool mergeMaps(Row & row, TSortCursor & cursor);
 
-    template <class TSortCursor>
+    template <typename TSortCursor>
     bool mergeMap(const MapDescription & map, Row & row, TSortCursor & cursor);
 
     /** Add the row under the cursor to the `row`.
       * Returns false if the result is zero.
       */
-    template <class TSortCursor>
+    template <typename TSortCursor>
     bool addRow(Row & row, TSortCursor & cursor);
 };
 

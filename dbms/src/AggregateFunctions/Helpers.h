@@ -34,7 +34,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
         return nullptr;
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, class Data>
+template <template <typename, typename> class AggregateFunctionTemplate, typename Data>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
          if (typeid_cast<const DataTypeUInt8 *>(&argument_type)) return new AggregateFunctionTemplate<UInt8, Data>;
@@ -53,7 +53,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
         return nullptr;
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, class Data, typename ... TArgs>
+template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename ... TArgs>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {
          if (typeid_cast<const DataTypeUInt8 *>(&argument_type)) return new AggregateFunctionTemplate<UInt8, Data>(std::forward<TArgs>(args)...);

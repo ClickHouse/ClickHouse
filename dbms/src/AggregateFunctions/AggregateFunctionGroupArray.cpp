@@ -8,7 +8,7 @@ namespace DB
 namespace
 {
 
-template <template <typename, typename> class AggregateFunctionTemplate, class Data, typename ... TArgs>
+template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename ... TArgs>
 static IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type, TArgs && ... args)
 {
          if (typeid_cast<const DataTypeDate     *>(&argument_type)) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
