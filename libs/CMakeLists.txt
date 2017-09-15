@@ -6,6 +6,7 @@ endif ()
 add_subdirectory (libcommon)
 add_subdirectory (libpocoext)
 add_subdirectory (libdaemon)
+add_subdirectory (libmemcpy)
 
 if (USE_MYSQL)
     add_subdirectory (libmysqlxx)
