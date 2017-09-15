@@ -1,4 +1,13 @@
-#include "glibc-compatibility.h"
+/** Allows to build programs with libc 2.18 and run on systems with at least libc 2.11,
+  *  such as Ubuntu Lucid or CentOS 6.
+  *
+  * Highly experimental, not recommended, disabled by default.
+  *
+  * Also look at http://www.lightofdawn.org/wiki/wiki.cgi/NewAppsOnOldGlibc
+  *
+  * If you want even older systems, such as Ubuntu Hardy,
+  *  add fallocate, pipe2, __longjmp_chk, __vasprintf_chk.
+  */
 
 #if defined (__cplusplus)
 extern "C" {
@@ -14,6 +23,8 @@ long int __fdelt_chk(long int d)
     return d / __NFDBITS;
 }
 
+#include <sys/poll.h>
+#include <stddef.h>
 
 int __poll_chk(struct pollfd * fds, nfds_t nfds, int timeout, size_t fdslen)
 {
@@ -22,12 +33,15 @@ int __poll_chk(struct pollfd * fds, nfds_t nfds, int timeout, size_t fdslen)
     return poll(fds, nfds, timeout);
 }
 
+#include <pthread.h>
 
 size_t __pthread_get_minstack(const pthread_attr_t * attr)
 {
     return 1048576;        /// This is a guess. Don't sure it is correct.
 }
 
+#include <signal.h>
+#include <unistd.h>
 #include <string.h>
 #include <sys/syscall.h>
 
