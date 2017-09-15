@@ -149,7 +149,7 @@ w6  = -1.63092934096575273989e-03; /* 0xBF5AB89D, 0x0B9E43E4 */
 double lgamma_r(double x, int *signgamp)
 {
 	union {double f; uint64_t i;} u = {x};
-	double_t t,y,z,nadj,p,p1,p2,p3,q,r,w;
+	double_t t,y,z,nadj=0,p,p1,p2,p3,q,r,w;
 	uint32_t ix;
 	int sign,i;
 
