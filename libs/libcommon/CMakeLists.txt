@@ -90,7 +90,8 @@ target_link_libraries (
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARIES})
+    ${RT_LIBRARIES}
+    memcpy)
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)
