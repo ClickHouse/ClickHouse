@@ -5,7 +5,7 @@ It has the following advantages over `libc`-supplied implementation:
 - it is linked statically, so the function can have position-dependent code;
 - your binaries will not depend on `glibc`'s memcpy, that forces dependency on specific symbol version like `memcpy@@GLIBC_2.14` and consequently on specific version of `glibc` library;
 - you can include `memcpy.h` directly and the function has the chance to be inlined, which is beneficial for small but unknown at compile time sizes of memory regions;
-- this version of `memcpy` pretend to be faster (in our benchmarks, the difference is withing few percents).
+- this version of `memcpy` pretend to be faster (in our benchmarks, the difference is within few percents).
 
 Currently it uses the implementation from **Linwei** (skywind3000@163.com).
 Look at https://www.zhihu.com/question/35172305 for discussion.
