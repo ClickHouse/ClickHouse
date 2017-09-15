@@ -192,7 +192,7 @@ if (UNBUNDLED)
 else ()
     set(NOT_UNBUNDLED 1)
 endif ()
-# Using system libs can cause lot of warnings in includes. 
+# Using system libs can cause lot of warnings in includes.
 if (UNBUNDLED OR NOT (CMAKE_SYSTEM MATCHES "Linux" OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()

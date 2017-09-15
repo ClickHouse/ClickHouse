@@ -1,17 +1,45 @@
-/** Allows to build programs with libc 2.18 and run on systems with at least libc 2.11,
+/** Allows to build programs with libc 2.18 and run on systems with at least libc 2.4,
   *  such as Ubuntu Lucid or CentOS 6.
   *
   * Highly experimental, not recommended, disabled by default.
   *
   * Also look at http://www.lightofdawn.org/wiki/wiki.cgi/NewAppsOnOldGlibc
-  *
-  * If you want even older systems, such as Ubuntu Hardy,
-  *  add fallocate, pipe2, __longjmp_chk, __vasprintf_chk.
   */
 
 #if defined (__cplusplus)
 extern "C" {
 #endif
+
+#include <pthread.h>
+
+size_t __pthread_get_minstack(const pthread_attr_t * attr)
+{
+    return 1048576;        /// This is a guess. Don't sure it is correct.
+}
+
+#include <signal.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/syscall.h>
+
+long int syscall(long int __sysno, ...) __THROW;
+
+int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
+{
+    siginfo_t info;
+
+    memset(&info, 0, sizeof(siginfo_t));
+    info.si_signo = sig;
+    info.si_code = SI_ASYNCNL;
+    info.si_pid = caller_pid;
+    info.si_uid = getuid();
+    info.si_value = val;
+
+    return syscall(__NR_rt_sigqueueinfo, info.si_pid, sig, &info);
+}
+
+
+/// NOTE This disables some of FORTIFY_SOURCE functionality.
 
 #include <sys/select.h>
 #include <stdlib.h>
@@ -33,33 +61,51 @@ int __poll_chk(struct pollfd * fds, nfds_t nfds, int timeout, size_t fdslen)
     return poll(fds, nfds, timeout);
 }
 
-#include <pthread.h>
+#include <setjmp.h>
 
-size_t __pthread_get_minstack(const pthread_attr_t * attr)
+void longjmp(jmp_buf env, int val);
+
+void __longjmp_chk(jmp_buf env, int val)
 {
-    return 1048576;        /// This is a guess. Don't sure it is correct.
+    return longjmp(env, val);
 }
 
-#include <signal.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/syscall.h>
+#include <stdio.h>
 
-extern long int syscall (long int __sysno, ...) __THROW;
+int vasprintf(char **s, const char *fmt, va_list ap);
 
-int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
+int __vasprintf_chk(char **s, const char *fmt, va_list ap)
 {
-    siginfo_t info;
-
-    memset(&info, 0, sizeof(siginfo_t));
-    info.si_signo = sig;
-    info.si_code = SI_ASYNCNL;
-    info.si_pid = caller_pid;
-    info.si_uid = getuid();
-    info.si_value = val;
-
-    return syscall(__NR_rt_sigqueueinfo, info.si_pid, sig, &info);
+    return vasprintf(s, fmt, ap);
 }
+
+size_t __fread_chk(void *ptr, size_t size, size_t nmemb, FILE *stream)
+{
+    return fread(ptr, size, nmemb, stream);
+}
+
+
+#include <stdarg.h>
+
+int vsscanf(const char *str, const char *format, va_list ap);
+
+int __isoc99_vsscanf(const char *str, const char *format, va_list ap)
+{
+    return vsscanf(str, format, ap);
+}
+
+int sscanf(const char *restrict s, const char *restrict fmt, ...)
+{
+    int ret;
+    va_list ap;
+    va_start(ap, fmt);
+    ret = vsscanf(s, fmt, ap);
+    va_end(ap);
+    return ret;
+}
+
+int __isoc99_sscanf(const char *str, const char *format, ...) __attribute__((weak, alias("sscanf")));
+
 
 #if defined (__cplusplus)
 }
