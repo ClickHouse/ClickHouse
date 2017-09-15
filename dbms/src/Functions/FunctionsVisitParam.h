@@ -49,7 +49,7 @@ struct HasParam
     }
 };
 
-template<typename NumericType>
+template <typename NumericType>
 struct ExtractNumericType
 {
     using ResultType = NumericType;
@@ -239,7 +239,7 @@ struct ExtractParamImpl
 
 /** For the case where the type of field to extract is a string.
  */
-template<typename ParamExtractor>
+template <typename ParamExtractor>
 struct ExtractParamToStringImpl
 {
     static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets,

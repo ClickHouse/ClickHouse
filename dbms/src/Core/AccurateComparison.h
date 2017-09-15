@@ -161,7 +161,7 @@ inline bool_if_safe_conversion<A, B> greaterOp(A a, B b)
 
 constexpr DB::Int64 MAX_INT64_WITH_EXACT_FLOAT64_REPR = 9007199254740992LL; // 2^53
 
-template<>
+template <>
 inline bool greaterOp<DB::Float64, DB::Int64>(DB::Float64 f, DB::Int64 i)
 {
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
@@ -171,7 +171,7 @@ inline bool greaterOp<DB::Float64, DB::Int64>(DB::Float64 f, DB::Int64 i)
             || (f > static_cast<DB::Float64>(std::numeric_limits<DB::Int64>::min()) && static_cast<DB::Int64>(f) > i);
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::Int64, DB::Float64>(DB::Int64 i, DB::Float64 f)
 {
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
@@ -181,7 +181,7 @@ inline bool greaterOp<DB::Int64, DB::Float64>(DB::Int64 i, DB::Float64 f)
             || (f < static_cast<DB::Float64>(std::numeric_limits<DB::Int64>::max()) && i > static_cast<DB::Int64>(f));
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::Float64, DB::UInt64>(DB::Float64 f, DB::UInt64 u)
 {
     if (u <= static_cast<DB::UInt64>(MAX_INT64_WITH_EXACT_FLOAT64_REPR))
@@ -191,7 +191,7 @@ inline bool greaterOp<DB::Float64, DB::UInt64>(DB::Float64 f, DB::UInt64 u)
             || (f >= 0 && static_cast<DB::UInt64>(f) > u);
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::UInt64, DB::Float64>(DB::UInt64 u, DB::Float64 f)
 {
     if (u <= static_cast<DB::UInt64>(MAX_INT64_WITH_EXACT_FLOAT64_REPR))
@@ -202,49 +202,49 @@ inline bool greaterOp<DB::UInt64, DB::Float64>(DB::UInt64 u, DB::Float64 f)
 }
 
 // Case 3b for float32
-template<>
+template <>
 inline bool greaterOp<DB::Float32, DB::Int64>(DB::Float32 f, DB::Int64 i)
 {
     return greaterOp(static_cast<DB::Float64>(f), i);
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::Int64, DB::Float32>(DB::Int64 i, DB::Float32 f)
 {
     return greaterOp(i, static_cast<DB::Float64>(f));
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::Float32, DB::UInt64>(DB::Float32 f, DB::UInt64 u)
 {
     return greaterOp(static_cast<DB::Float64>(f), u);
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
 {
     return greaterOp(u, static_cast<DB::Float64>(f));
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::Float64, DB::UInt128>(DB::Float64 f, DB::UInt128 u)
 {
     return u.low == 0 && greaterOp(f, u.high);
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
 {
     return u.low != 0 || greaterOp(u.high, f);
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
 {
     return greaterOp(static_cast<DB::Float64>(f), u);
 }
 
-template<>
+template <>
 inline bool greaterOp<DB::UInt128, DB::Float32>(DB::UInt128 u, DB::Float32 f)
 {
     return greaterOp(u, static_cast<DB::Float64>(f));
@@ -262,73 +262,73 @@ inline bool_if_safe_conversion<A, B> equalsOp(A a, B b)
     return a == b;
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::Float64, DB::UInt64>(DB::Float64 f, DB::UInt64 u)
 {
     return static_cast<DB::UInt64>(f) == u && f == static_cast<DB::Float64>(u);
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::UInt64, DB::Float64>(DB::UInt64 u, DB::Float64 f)
 {
     return u == static_cast<DB::UInt64>(f) && static_cast<DB::Float64>(u) == f;
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::Float64, DB::Int64>(DB::Float64 f, DB::Int64 u)
 {
     return static_cast<DB::Int64>(f) == u && f == static_cast<DB::Float64>(u);
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::Int64, DB::Float64>(DB::Int64 u, DB::Float64 f)
 {
     return u == static_cast<DB::Int64>(f) && static_cast<DB::Float64>(u) == f;
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::Float32, DB::UInt64>(DB::Float32 f, DB::UInt64 u)
 {
     return static_cast<DB::UInt64>(f) == u && f == static_cast<DB::Float32>(u);
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::UInt64, DB::Float32>(DB::UInt64 u, DB::Float32 f)
 {
     return u == static_cast<DB::UInt64>(f) && static_cast<DB::Float32>(u) == f;
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::Float32, DB::Int64>(DB::Float32 f, DB::Int64 u)
 {
     return static_cast<DB::Int64>(f) == u && f == static_cast<DB::Float32>(u);
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::Int64, DB::Float32>(DB::Int64 u, DB::Float32 f)
 {
     return u == static_cast<DB::Int64>(f) && static_cast<DB::Float32>(u) == f;
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::UInt128, DB::Float64>(DB::UInt128 u, DB::Float64 f)
 {
     return u.low == 0 && equalsOp(static_cast<UInt64>(u.high), f);
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::UInt128, DB::Float32>(DB::UInt128 u, DB::Float32 f)
 {
     return equalsOp(u, static_cast<DB::Float64>(f));
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::Float64, DB::UInt128>(DB::Float64 f, DB::UInt128 u)
 {
     return equalsOp(u, f);
 }
 
-template<>
+template <>
 inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
 {
     return equalsOp(static_cast<DB::Float64>(f), u);

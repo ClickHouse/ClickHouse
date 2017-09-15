@@ -68,7 +68,7 @@ public:
     void readSuffixImpl() override;
 
     /// for use in implementations of IColumn::gather()
-    template<typename Column>
+    template <typename Column>
     void gather(Column & column_res);
 
 private:
@@ -110,7 +110,7 @@ private:
     Poco::Logger * log;
 };
 
-template<typename Column>
+template <typename Column>
 void ColumnGathererStream::gather(Column & column_res)
 {
     if (source_to_fully_copy) /// Was set on a previous iteration

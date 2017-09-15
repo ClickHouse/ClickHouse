@@ -58,7 +58,7 @@ Block ReplacingSortedBlockInputStream::readImpl()
 }
 
 
-template<class TSortCursor>
+template <typename TSortCursor>
 void ReplacingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
