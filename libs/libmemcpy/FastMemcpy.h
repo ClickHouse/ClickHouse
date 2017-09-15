@@ -577,11 +577,10 @@ static INLINE void *memcpy_tiny(void *dst, const void *src, size_t size) {
 //---------------------------------------------------------------------
 // main routine
 //---------------------------------------------------------------------
-static void* memcpy_fast(void *destination, const void *source, size_t size)
+static INLINE void* memcpy_fast(void *destination, const void *source, size_t size)
 {
     unsigned char *dst = (unsigned char*)destination;
     const unsigned char *src = (const unsigned char*)source;
-    static size_t cachesize = 0x200000; // something around half of LL-cache size
     size_t padding;
 
     // small memory copy
@@ -601,7 +600,8 @@ static void* memcpy_fast(void *destination, const void *source, size_t size)
     }
 
     // medium size copy
-    if (size <= cachesize) {
+    if (size <= 0x200000)   // something around half of LL-cache size
+    {
         __m128i c0, c1, c2, c3, c4, c5, c6, c7;
 
         for (; size >= 128; size -= 128) {
