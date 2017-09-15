@@ -58,7 +58,7 @@ You can compile packages and install them. You can also use programs without ins
     Client: dbms/src/Client/
     Server: dbms/src/Server/
 
-For the server, create a catalog with data, such as:
+For the server, create a directory with data, such as:
 
 .. code-block:: text
 
@@ -74,6 +74,8 @@ Other methods of installation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 The Docker image is located here: https://hub.docker.com/r/yandex/clickhouse-server/
 
+There are RPM packages for CentOS, RHEL: https://github.com/Altinity/clickhouse-rpm-install
+
 There is Gentoo overlay located here: https://github.com/kmeaw/clickhouse-overlay
 
 
@@ -86,7 +88,7 @@ To start the server (as a daemon), run:
 
     sudo service clickhouse-server start
 
-View the logs in the catalog `/var/log/clickhouse-server/`
+View the logs in the directory `/var/log/clickhouse-server/`
 
 If the server doesn't start, check the configurations in the file `/etc/clickhouse-server/config.xml`
 
