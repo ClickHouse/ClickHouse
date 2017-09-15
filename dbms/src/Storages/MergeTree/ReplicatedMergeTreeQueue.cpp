@@ -532,8 +532,6 @@ bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const String & new_
 
         if (future_part.contains(result_part))
         {
-            out_reason = "Not executing log entry for part " + new_part_name
-                + " because another log entry for covering part " + future_part_name + " is being processed.";
             return false;
         }
     }

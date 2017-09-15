@@ -75,6 +75,14 @@ else ()
     message (STATUS "Disabling libtcmalloc for valgrind better analysis")
 endif ()
 
+if (GLIBC_COMPATIBILITY)
+    set (GLIBC_COMPATIBILITY_LIBRARIES glibc-compatibility)
+endif ()
+
+if (USE_INTERNAL_MEMCPY)
+    set (MEMCPY_LIBRARIES memcpy)
+endif ()
+
 find_package (Threads)
 
 target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
@@ -90,7 +98,9 @@ target_link_libraries (
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARIES})
+    ${RT_LIBRARIES}
+    ${GLIBC_COMPATIBILITY_LIBRARIES}
+    ${MEMCPY_LIBRARIES})
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

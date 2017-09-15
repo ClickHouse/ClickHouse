@@ -76,6 +76,8 @@ ClickHouse содержит настройки ограничения досту
 ~~~~~~~~~~~~~~~~~~~~~~~
 Docker образ: https://hub.docker.com/r/yandex/clickhouse-server/
 
+RPM пакеты для CentOS, RHEL: https://github.com/Altinity/clickhouse-rpm-install
+
 Gentoo overlay: https://github.com/kmeaw/clickhouse-overlay
 
 

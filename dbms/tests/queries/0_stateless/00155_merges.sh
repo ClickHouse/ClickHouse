@@ -63,6 +63,8 @@ function test {
     echo
 }
 
+merged_rows_0=`clickhouse-client -q "select value from system.events where event = 'MergedRows'"`
+
 test 8191 8191
 test 8191 8192
 test 8192 8191
@@ -75,5 +77,8 @@ test 8193 8191
 test 8193 8194
 test 8194 8193
 test 8194 8194
+
+merged_rows_1=`clickhouse-client -q "select value from system.events where event = 'MergedRows'"`
+[[ $merged_rows_1 -le $merged_rows_0 ]]
 
 cleanup
