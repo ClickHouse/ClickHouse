@@ -581,7 +581,7 @@ static void* memcpy_fast(void *destination, const void *source, size_t size)
 {
     unsigned char *dst = (unsigned char*)destination;
     const unsigned char *src = (const unsigned char*)source;
-    static size_t cachesize = 0x200000; // L2-cache size
+    static size_t cachesize = 0x200000; // something around half of LL-cache size
     size_t padding;
 
     // small memory copy
