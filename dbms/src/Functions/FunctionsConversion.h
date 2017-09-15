@@ -705,7 +705,7 @@ private:
         }
     }
 
-    template<typename ToDataType2 = ToDataType, typename Name2 = Name>
+    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
     DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
         typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value ||
             std::is_same<Name2, NameToUnixTimestamp>::value ||
@@ -721,7 +721,7 @@ private:
 
     /** Conversion of anything to String. For DateTime, it allows second optional argument - time zone.
       */
-    template<typename ToDataType2 = ToDataType, typename Name2 = Name>
+    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
     DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
         typename std::enable_if<std::is_same<ToDataType2, DataTypeString>::value>::type * = nullptr) const
     {
@@ -747,7 +747,7 @@ private:
         return std::make_shared<ToDataType2>();
     }
 
-    template<typename ToDataType2 = ToDataType, typename Name2 = Name>
+    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
     DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
         typename std::enable_if<std::is_same<Name2, NameToUnixTimestamp>::value, void>::type * = nullptr) const
     {
@@ -773,7 +773,7 @@ private:
         return std::make_shared<ToDataType2>();
     }
 
-    template<typename ToDataType2 = ToDataType, typename Name2 = Name>
+    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
     DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
         typename std::enable_if<std::is_same<Name2, NameToDate>::value>::type * = nullptr) const
     {

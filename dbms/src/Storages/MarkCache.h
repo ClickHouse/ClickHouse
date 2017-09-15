@@ -53,7 +53,7 @@ public:
         return key;
     }
 
-    template<typename LoadFunc>
+    template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
         auto result = Base::getOrSet(key, load);
