@@ -23,6 +23,7 @@
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/AggregateFunctionStatistics.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
+#include <AggregateFunctions/AggregateFunctionSumMap.h>
 #include <AggregateFunctions/AggregateFunctionTopK.h>
 #include <AggregateFunctions/AggregateFunctionUniq.h>
 #include <AggregateFunctions/AggregateFunctionUniqUpTo.h>
