@@ -70,7 +70,7 @@ void __longjmp_chk(jmp_buf env, int val)
     return longjmp(env, val);
 }
 
-#include <stdio.h>
+#include <stdarg.h>
 
 int vasprintf(char **s, const char *fmt, va_list ap);
 
@@ -79,13 +79,12 @@ int __vasprintf_chk(char **s, const char *fmt, va_list ap)
     return vasprintf(s, fmt, ap);
 }
 
-size_t __fread_chk(void *ptr, size_t size, size_t nmemb, FILE *stream)
+size_t fread(void *ptr, size_t size, size_t nmemb, void *stream);
+
+size_t __fread_chk(void *ptr, size_t size, size_t nmemb, void *stream)
 {
     return fread(ptr, size, nmemb, stream);
 }
-
-
-#include <stdarg.h>
 
 int vsscanf(const char *str, const char *format, va_list ap);
 
