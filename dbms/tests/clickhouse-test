@@ -124,8 +124,6 @@ def main(args):
                         print "{0:70}".format(name + ": "),
                         sys.stdout.flush()
                         
-                        print 1/0
-    
                         if not args.zookeeper and 'zookeeper' in name:
                             report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
                             print(MSG_SKIPPED + " - no zookeeper")
