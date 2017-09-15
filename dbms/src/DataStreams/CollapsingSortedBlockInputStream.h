@@ -90,7 +90,7 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursors and calls to virtual functions.
      */
-    template<class TSortCursor>
+    template <typename TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     /// Output to result rows for the current primary key.

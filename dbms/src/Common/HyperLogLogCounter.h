@@ -36,7 +36,7 @@ namespace details
 {
 
 /// Look-up table of logarithms for integer numbers, used in HyperLogLogCounter.
-template<UInt8 K>
+template <UInt8 K>
 struct LogLUT
 {
     LogLUT()
@@ -60,15 +60,15 @@ private:
     double log_table[M + 1];
 };
 
-template<UInt8 K> struct MinCounterTypeHelper;
-template<> struct MinCounterTypeHelper<0>    { using Type = UInt8; };
-template<> struct MinCounterTypeHelper<1>    { using Type = UInt16; };
-template<> struct MinCounterTypeHelper<2>    { using Type = UInt32; };
-template<> struct MinCounterTypeHelper<3>    { using Type = UInt64; };
+template <UInt8 K> struct MinCounterTypeHelper;
+template <> struct MinCounterTypeHelper<0>    { using Type = UInt8; };
+template <> struct MinCounterTypeHelper<1>    { using Type = UInt16; };
+template <> struct MinCounterTypeHelper<2>    { using Type = UInt32; };
+template <> struct MinCounterTypeHelper<3>    { using Type = UInt64; };
 
 /// Auxiliary structure for automatic determining minimum size of counter's type depending on its maximum value.
 /// Used in HyperLogLogCounter in order to spend memory efficiently.
-template<UInt64 MaxValue> struct MinCounterType
+template <UInt64 MaxValue> struct MinCounterType
 {
     using Type = typename MinCounterTypeHelper<
         (MaxValue >= 1 << 8) +
@@ -78,7 +78,7 @@ template<UInt64 MaxValue> struct MinCounterType
 };
 
 /// Denominator of expression for HyperLogLog algorithm.
-template<UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
+template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode, typename Enable = void>
 class __attribute__ ((packed)) Denominator;
 
@@ -118,7 +118,7 @@ struct IntermediateDenominator<HashValueType, DenominatorType, DenominatorMode::
 /// "Lightweight" implementation of expression's denominator for HyperLogLog algorithm.
 /// Uses minimum amount of memory, but estimates may be unstable.
 /// Satisfiable when rank storage is small enough.
-template<UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
+template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
     denominator_mode,
@@ -162,7 +162,7 @@ private:
 /// Fully-functional version of expression's denominator for HyperLogLog algorithm.
 /// Spends more space that lightweight version. Estimates will always be stable.
 /// Used when rank storage is big.
-template<UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
+template <UInt8 precision, int max_rank, typename HashValueType, typename DenominatorType,
     DenominatorMode denominator_mode>
 class __attribute__ ((packed)) Denominator<precision, max_rank, HashValueType, DenominatorType,
     denominator_mode,

@@ -38,7 +38,7 @@ inline uint32_t getbit ( const void * block, int len, uint32_t bit )
   return 0;
 }
 
-template< typename T >
+template < typename T >
 inline uint32_t getbit ( T & blob, uint32_t bit )
 {
   return getbit(&blob,sizeof(blob),bit);
@@ -54,7 +54,7 @@ inline void flipbit ( void * block, int len, uint32_t bit )
   if(byte < len) b[byte] ^= (1 << bit);
 }
 
-template< typename T >
+template < typename T >
 inline void flipbit ( T & blob, uint32_t bit )
 {
   flipbit(&blob,sizeof(blob),bit);
@@ -146,7 +146,7 @@ bool AvalancheTest ( pfHash hash, const int reps )
 // BIC test variant - store all intermediate data in a table, draw diagram
 // afterwards (much faster)
 
-template< typename keytype, typename hashtype >
+template < typename keytype, typename hashtype >
 void BicTest3 ( pfHash hash, const int reps, bool verbose = true )
 {
   const int keybytes = sizeof(keytype);
