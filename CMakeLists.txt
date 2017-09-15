@@ -71,11 +71,11 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
+option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
+option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Implies USE_INTERNAL_MEMCPY." OFF)
 
 if (GLIBC_COMPATIBILITY)
-    set (GLIBC_COMPATIBILITY_COMPILE_FLAGS   "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/glibc_compatibility.h")
-    set (GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
+    set (USE_INTERNAL_MEMCPY ON)
 endif ()
 
 if (CXX11_ABI STREQUAL ENABLE)

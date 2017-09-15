@@ -6,7 +6,14 @@ endif ()
 add_subdirectory (libcommon)
 add_subdirectory (libpocoext)
 add_subdirectory (libdaemon)
-add_subdirectory (libmemcpy)
+
+if (USE_INTERNAL_MEMCPY)
+    add_subdirectory (libmemcpy)
+endif()
+
+if (GLIBC_COMPATIBILITY)
+    add_subdirectory (libglibc-compatibility)
+endif ()
 
 if (USE_MYSQL)
     add_subdirectory (libmysqlxx)
