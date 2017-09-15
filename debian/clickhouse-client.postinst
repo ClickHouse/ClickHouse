@@ -1,2 +1,5 @@
+#!/bin/sh
+set -e
+
 mkdir -p /etc/clickhouse-client/conf.d
 chown -R clickhouse: /etc/clickhouse-client
