@@ -105,6 +105,13 @@ int sscanf(const char *restrict s, const char *restrict fmt, ...)
 
 int __isoc99_sscanf(const char *str, const char *format, ...) __attribute__((weak, alias("sscanf")));
 
+int open(const char *path, int oflag);
+
+int __open_2(const char *path, int oflag)
+{
+    return open(path, oflag);
+}
+
 
 #if defined (__cplusplus)
 }
