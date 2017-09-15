@@ -1,22 +1,22 @@
 # ClickHouse release 1.1.54289
 
 ## New features:
-* `SYSTEM` requests for server administration: `SYSTEM RELOAD DICTIONARY`, `SYSTEM RELOAD DICTIONARIES`, `SYSTEM DROP DNS CACHE`, `SYSTEM SHUTDOWN`, `SYSTEM KILL`.
+* `SYSTEM` queries for server administration: `SYSTEM RELOAD DICTIONARY`, `SYSTEM RELOAD DICTIONARIES`, `SYSTEM DROP DNS CACHE`, `SYSTEM SHUTDOWN`, `SYSTEM KILL`.
 * Added functions for working with arrays: `concat`, `arraySlice`, `arrayPushBack`, `arrayPushFront`, `arrayPopBack`, `arrayPopFront`.
 * Added the `root` and `identity` parameters for the ZooKeeper configuration. This allows you to isolate individual users on the same ZooKeeper cluster.
 * Added the aggregate functions `groupBitAnd`, `groupBitOr`, and `groupBitXor` (for compatibility, they can also be accessed with the names `BIT_AND`, `BIT_OR`, and `BIT_XOR`).
-* External dictionaries can be loaded from MySQL by specifying a socket in the file system.
+* External dictionaries can be loaded from MySQL by specifying a socket in the filesystem.
 * External dictionaries can be loaded from MySQL over SSL (the `ssl_cert`, `ssl_key`, and `ssl_ca` parameters).
-* Added the `max_network_bandwidth_for_user` setting to restrict the overall bandwidth use for requests per user.
+* Added the `max_network_bandwidth_for_user` setting to restrict the overall bandwidth use for queries per user.
 * Support for `DROP TABLE` for temporary tables.
 * Support for reading `DateTime` values in Unix timestamp format from the `CSV` and `JSONEachRow` formats.
 * Lagging replicas in distributed queries are now excluded by default (the default threshold is 5 minutes).
-* FIFO blocking is used during ALTER: an ALTER query isn't blocked indefinitely for continuously running queries.
+* FIFO locking is used during ALTER: an ALTER query isn't blocked indefinitely for continuously running queries.
 * Option to set `umask` in the config file.
 * Improved performance for queries with `DISTINCT`.
 
 ## Bug fixes:
-* Improved the process for deleting old nodes in ZooKeeper. Previously, old nodes sometimes didn't get deleted if there were frequent inserts, which caused the server to be slow to shut down, among other things.
+* Improved the process for deleting old nodes in ZooKeeper. Previously, old nodes sometimes didn't get deleted if there were very frequent inserts, which caused the server to be slow to shut down, among other things.
 * Fixed randomization when choosing hosts for the connection to ZooKeeper.
 * Fixed the exclusion of lagging replicas in distributed queries if the replica is localhost.
 * Fixed an error where a data part in a `ReplicatedMergeTree` table could be broken after running `ALTER MODIFY` on an element in a `Nested` structure.
@@ -26,9 +26,9 @@
 * Resolved the deadlock in the `ALTER ... CLEAR COLUMN IN PARTITION` query for `Buffer` tables.
 * Fixed the invalid default value for `Enum`s (0 instead of the minimum) when using the `JSONEachRow` and `TSKV` formats.
 * Resolved the appearance of zombie processes when using a dictionary with an `executable` source.
-* Fixed the segfault for the HEAD query.
+* Fixed segfault for the HEAD query.
 
-## Improvements to development workflow and ClickHouse assembly:
+## Improvements to development workflow and ClickHouse build:
 * You can use `pbuilder` to build ClickHouse.
 * You can use `libc++` instead of `libstdc++` for builds on Linux.
 * Added instructions for using static code analysis tools: `Coverity`, `clang-tidy`, and `cppcheck`.
