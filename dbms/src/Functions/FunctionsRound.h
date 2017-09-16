@@ -331,7 +331,6 @@ public:
         /// Return the real signs of all values.
         val = _mm_mul_ps(val, sign);
 
-        normalize(val, mask);
         _mm_storeu_ps(out, val);
     }
 
