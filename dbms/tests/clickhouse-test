@@ -123,9 +123,9 @@ def main(args):
                     try:
                         print "{0:70}".format(name + ": "),
                         sys.stdout.flush()
-                        
+
                         print 1/0
-    
+
                         if not args.zookeeper and 'zookeeper' in name:
                             report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
                             print(MSG_SKIPPED + " - no zookeeper")
@@ -136,27 +136,27 @@ def main(args):
                             reference_file = os.path.join(suite_dir, name) + '.reference'
                             stdout_file = os.path.join(suite_dir, name) + '.stdout'
                             stderr_file = os.path.join(suite_dir, name) + '.stderr'
-    
+
                             if ext == '.sql':
                                 command = "{0} --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
                             else:
                                 command = "{0} > {1} 2> {2}".format(case_file, stdout_file, stderr_file)
-    
+
                             proc = Popen(command, shell = True)
                             start_time = datetime.now()
                             while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
                                 sleep(0)
-    
+
                             if proc.returncode is None:
                                 try:
                                     proc.kill()
                                 except OSError as e:
                                     if e.errno != ESRCH:
                                         raise
-    
+
                                 failure = et.Element("failure", attrib = {"message": "Timeout"})
                                 report_testcase.append(failure)
-    
+
                                 failures = failures + 1
                                 print("{0} - Timeout!".format(MSG_FAIL))
                             else:
@@ -164,45 +164,45 @@ def main(args):
                                 stdout = unicode(stdout, errors='replace', encoding='utf-8')
                                 stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
                                 stderr = unicode(stderr, errors='replace', encoding='utf-8')
-    
+
                                 if proc.returncode != 0:
                                     failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
                                     report_testcase.append(failure)
-    
+
                                     stdout_element = et.Element("system-out")
                                     stdout_element.text = et.CDATA(stdout)
                                     report_testcase.append(stdout_element)
-    
+
                                     failures = failures + 1
                                     print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
-    
+
                                     if stderr:
                                         stderr_element = et.Element("system-err")
                                         stderr_element.text = et.CDATA(stderr)
                                         report_testcase.append(stderr_element)
                                         print(stderr)
-    
+
                                     if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                         SERVER_DIED = True
-    
+
                                 elif stderr:
                                     failure = et.Element("failure", attrib = {"message": "having stderror"})
                                     report_testcase.append(failure)
-    
+
                                     stderr_element = et.Element("system-err")
                                     stderr_element.text = et.CDATA(stderr)
                                     report_testcase.append(stderr_element)
-    
+
                                     failures = failures + 1
                                     print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
                                 elif 'Exception' in stdout:
                                     failure = et.Element("error", attrib = {"message": "having exception"})
                                     report_testcase.append(failure)
-    
+
                                     stdout_element = et.Element("system-out")
                                     stdout_element.text = et.CDATA(stdout)
                                     report_testcase.append(stdout_element)
-    
+
                                     failures = failures + 1
                                     print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
                                 elif not os.path.isfile(reference_file):
@@ -211,20 +211,20 @@ def main(args):
                                     print("{0} - no reference file".format(MSG_UNKNOWN))
                                 else:
                                     result_is_different = subprocess.call(['cmp', '-s', reference_file, stdout_file], stdout = PIPE)
-    
+
                                     if result_is_different:
                                         (diff, _) = Popen(['diff', '--side-by-side', reference_file, stdout_file], stdout = PIPE).communicate()
                                         diff = unicode(diff, errors='replace', encoding='utf-8')
-    
+
                                         failure = et.Element("failure", attrib = {"message": "result differs with reference"})
                                         report_testcase.append(failure)
-                                        
+
                                         stdout_element = et.Element("system-out")
                                         try:
                                             stdout_element.text = et.CDATA(diff)
                                         except:
                                             stdout_element.text = et.CDATA(remove_control_characters(diff))
-                                        
+
                                         report_testcase.append(stdout_element)
                                         failures = failures + 1
                                         print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff.encode('utf-8')))
