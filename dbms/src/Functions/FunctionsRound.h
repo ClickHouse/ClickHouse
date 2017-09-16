@@ -7,10 +7,12 @@
 #include <cmath>
 #include <type_traits>
 #include <array>
+#include <ext/bit_cast.h>
 
 #if __SSE4_1__
     #include <smmintrin.h>
 #endif
+
 
 /** If you want negative zeros will be replaced by zeros in result of calculations.
   * Disabled by performance reasons.
@@ -42,38 +44,46 @@ namespace ErrorCodes
     * - N = 0: round to an integer
     */
 
-template <typename A>
+template <typename T>
+inline typename std::enable_if<std::is_integral<T>::value && (sizeof(T) <= sizeof(UInt32)), T>::type
+roundDownToPowerOfTwo(T x)
+{
+    return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
+}
+
+template <typename T>
+inline typename std::enable_if<std::is_integral<T>::value && (sizeof(T) == sizeof(UInt64)), T>::type
+roundDownToPowerOfTwo(T x)
+{
+    return x <= 0 ? 0 : (T(1) << (63 - __builtin_clzll(x)));
+}
+
+template <typename T>
+inline typename std::enable_if<std::is_same<T, Float32>::value, T>::type
+roundDownToPowerOfTwo(T x)
+{
+    return ext::bit_cast<T>(ext::bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
+}
+
+template <typename T>
+inline typename std::enable_if<std::is_same<T, Float64>::value, T>::type
+roundDownToPowerOfTwo(T x)
+{
+    return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
+}
+
+
+template <typename T>
 struct RoundToExp2Impl
 {
-    using ResultType = A;
+    using ResultType = T;
 
-    static inline A apply(A x)
+    static inline T apply(T x)
     {
-        return x <= 0 ? static_cast<A>(0) : (static_cast<A>(1) << static_cast<UInt64>(log2(static_cast<double>(x))));
+        return roundDownToPowerOfTwo<T>(x);
     }
 };
 
-template <>
-struct RoundToExp2Impl<Float32>
-{
-    using ResultType = Float32;
-
-    static inline Float32 apply(Float32 x)
-    {
-        return static_cast<Float32>(x < 1 ? 0. : pow(2., floor(log2(x))));
-    }
-};
-
-template <>
-struct RoundToExp2Impl<Float64>
-{
-    using ResultType = Float64;
-
-    static inline Float64 apply(Float64 x)
-    {
-        return x < 1 ? 0. : pow(2., floor(log2(x)));
-    }
-};
 
 template <typename A>
 struct RoundDurationImpl
