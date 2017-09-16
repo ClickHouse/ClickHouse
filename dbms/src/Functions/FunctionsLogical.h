@@ -101,7 +101,7 @@ template <typename Op, size_t N>
 struct AssociativeOperationImpl
 {
     /// Erases the N last columns from `in` (if there are less, then all) and puts into `result` their combination.
-    static void execute(UInt8ColumnPtrs & in, UInt8Container & result)
+    static void NO_INLINE execute(UInt8ColumnPtrs & in, UInt8Container & result)
     {
         if (N > in.size())
         {
