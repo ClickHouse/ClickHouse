@@ -144,7 +144,7 @@ enum class RoundingMode
 };
 
 
-/** Implementing low-level rounding functions for integer values.
+/** Rounding functions for integer values.
   */
 template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct IntegerRoundingComputation
@@ -156,27 +156,40 @@ struct IntegerRoundingComputation
         return scale;
     }
 
-    template <size_t scale>
-    static inline T computeImpl(T x)
+    static ALWAYS_INLINE T computeImpl(T x, T scale)
     {
         switch (rounding_mode)
         {
             case RoundingMode::Trunc:
+            {
                 return x / scale * scale;
+            }
             case RoundingMode::Floor:
+            {
                 if (x < 0)
                     x -= scale - 1;
                 return x / scale * scale;
+            }
             case RoundingMode::Ceil:
+            {
                 if (x >= 0)
                     x += scale - 1;
                 return x / scale * scale;
+            }
             case RoundingMode::Round:
-                return (x + scale / 2) / scale * scale;
+            {
+                bool negative = x < 0;
+                if (negative)
+                    x = -x;
+                x = (x + scale / 2) / scale * scale;
+                if (negative)
+                    x = -x;
+                return x;
+            }
         }
     }
 
-    static inline T compute(T x, size_t scale)
+    static ALWAYS_INLINE T compute(T x, T scale)
     {
         switch (scale_mode)
         {
@@ -185,37 +198,11 @@ struct IntegerRoundingComputation
             case ScaleMode::Positive:
                 return x;
             case ScaleMode::Negative:
-            {
-                switch (scale)
-                {
-                    case 10ULL: return computeImpl<10ULL>(x);
-                    case 100ULL: return computeImpl<100ULL>(x);
-                    case 1000ULL: return computeImpl<1000ULL>(x);
-                    case 10000ULL: return computeImpl<10000ULL>(x);
-                    case 100000ULL: return computeImpl<100000ULL>(x);
-                    case 1000000ULL: return computeImpl<1000000ULL>(x);
-                    case 10000000ULL: return computeImpl<10000000ULL>(x);
-                    case 100000000ULL: return computeImpl<100000000ULL>(x);
-                    case 1000000000ULL: return computeImpl<1000000000ULL>(x);
-                    case 10000000000ULL: return computeImpl<10000000000ULL>(x);
-                    case 100000000000ULL: return computeImpl<100000000000ULL>(x);
-                    case 1000000000000ULL: return computeImpl<1000000000000ULL>(x);
-                    case 10000000000000ULL: return computeImpl<10000000000000ULL>(x);
-                    case 100000000000000ULL: return computeImpl<100000000000000ULL>(x);
-                    case 1000000000000000ULL: return computeImpl<1000000000000000ULL>(x);
-                    case 10000000000000000ULL: return computeImpl<10000000000000000ULL>(x);
-                    case 100000000000000000ULL: return computeImpl<100000000000000000ULL>(x);
-                    case 1000000000000000000ULL: return computeImpl<1000000000000000000ULL>(x);
-                    case 10000000000000000000ULL: return computeImpl<10000000000000000000ULL>(x);
-                    default:
-                        throw Exception("Logical error: unexpected 'scale' parameter passed to function IntegerRoundingComputation::compute",
-                            ErrorCodes::LOGICAL_ERROR);
-                }
-            }
+                return computeImpl(x, scale);
         }
     }
 
-    static inline void compute(const T * __restrict in, size_t scale, T * __restrict out)
+    static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
     {
         *out = compute(*in, scale);
     }
