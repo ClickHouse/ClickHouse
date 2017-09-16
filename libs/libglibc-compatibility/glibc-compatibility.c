@@ -39,8 +39,6 @@ int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 }
 
 
-/// NOTE This disables some of FORTIFY_SOURCE functionality.
-
 #include <sys/select.h>
 #include <stdlib.h>
 
@@ -64,6 +62,8 @@ int __poll_chk(struct pollfd * fds, nfds_t nfds, int timeout, size_t fdslen)
 #include <setjmp.h>
 
 void longjmp(jmp_buf env, int val);
+
+/// NOTE This disables some of FORTIFY_SOURCE functionality.
 
 void __longjmp_chk(jmp_buf env, int val)
 {
