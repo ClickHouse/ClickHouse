@@ -390,7 +390,6 @@ struct Dispatcher
 {
     static void apply(Block & block, const ColumnVector<T> * col, const ColumnNumbers & arguments, size_t result)
     {
-        ScaleMode scale_mode;
         size_t scale = 1;
         Int64 scale_arg = 0;
 
@@ -415,19 +414,16 @@ struct Dispatcher
 
         if (scale_arg == 0)
         {
-            scale_mode = ScaleMode::Zero;
             scale = 1;
             FunctionRoundingImpl<T, rounding_mode, ScaleMode::Zero>::apply(col->getData(), scale, vec_res);
         }
         else if (scale_arg > 0)
         {
-            scale_mode = ScaleMode::Positive;
             scale = pow(10, scale_arg);
             FunctionRoundingImpl<T, rounding_mode, ScaleMode::Positive>::apply(col->getData(), scale, vec_res);
         }
         else
         {
-            scale_mode = ScaleMode::Negative;
             scale = pow(10, -scale_arg);
             FunctionRoundingImpl<T, rounding_mode, ScaleMode::Negative>::apply(col->getData(), scale, vec_res);
         }
