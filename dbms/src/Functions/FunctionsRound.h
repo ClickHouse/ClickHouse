@@ -37,7 +37,7 @@ namespace ErrorCodes
     * - N = 0: round to an integer
     */
 
-template<typename A>
+template <typename A>
 struct RoundToExp2Impl
 {
     using ResultType = A;
@@ -48,7 +48,7 @@ struct RoundToExp2Impl
     }
 };
 
-template<>
+template <>
 struct RoundToExp2Impl<Float32>
 {
     using ResultType = Float32;
@@ -59,7 +59,7 @@ struct RoundToExp2Impl<Float32>
     }
 };
 
-template<>
+template <>
 struct RoundToExp2Impl<Float64>
 {
     using ResultType = Float64;
@@ -70,7 +70,7 @@ struct RoundToExp2Impl<Float64>
     }
 };
 
-template<typename A>
+template <typename A>
 struct RoundDurationImpl
 {
     using ResultType = UInt16;
@@ -96,7 +96,7 @@ struct RoundDurationImpl
     }
 };
 
-template<typename A>
+template <typename A>
 struct RoundAgeImpl
 {
     using ResultType = UInt8;
@@ -116,17 +116,17 @@ struct RoundAgeImpl
 /** Quick calculation of the remainder of the division to apply to the rounding of integers.
     * Without verification, because the divisor is always positive.
     */
-template<typename T, typename Enable = void>
+template <typename T, typename Enable = void>
 struct FastModulo;
 
-template<typename T>
+template <typename T>
 struct FastModulo<T, typename std::enable_if<std::is_integral<T>::value>::type>
 {
 private:
-    template<typename InputType, typename Enable = void>
+    template <typename InputType, typename Enable = void>
     struct Extend;
 
-    template<typename InputType>
+    template <typename InputType>
     struct Extend<InputType,
         typename std::enable_if<std::is_same<InputType, Int8>::value
             || std::is_same<InputType, Int16>::value>::type>
@@ -134,7 +134,7 @@ private:
         using Type = Int64;
     };
 
-    template<typename InputType>
+    template <typename InputType>
     struct Extend<InputType,
         typename std::enable_if<std::is_same<InputType, UInt8>::value
             || std::is_same<InputType, UInt16>::value>::type>
@@ -142,7 +142,7 @@ private:
         using Type = UInt64;
     };
 
-    template<typename InputType>
+    template <typename InputType>
     struct Extend<InputType,
         typename std::enable_if<std::is_integral<InputType>::value
             && (sizeof(InputType) >= 4)>::type>
@@ -186,10 +186,10 @@ enum ScaleMode
 
 /** Implementing low-level rounding functions for integer values.
     */
-template<typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
+template <typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
 struct IntegerRoundingComputation;
 
-template<typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, int rounding_mode, ScaleMode scale_mode>
 struct IntegerRoundingComputation<T, rounding_mode, scale_mode,
     typename std::enable_if<std::is_integral<T>::value
         && ((scale_mode == PositiveScale) || (scale_mode == ZeroScale))>::type>
@@ -207,7 +207,7 @@ struct IntegerRoundingComputation<T, rounding_mode, scale_mode,
     }
 };
 
-template<typename T>
+template <typename T>
 struct IntegerRoundingComputation<T, _MM_FROUND_NINT, NegativeScale,
     typename std::enable_if<std::is_integral<T>::value>::type>
 {
@@ -234,7 +234,7 @@ struct IntegerRoundingComputation<T, _MM_FROUND_NINT, NegativeScale,
     }
 };
 
-template<typename T>
+template <typename T>
 struct IntegerRoundingComputation<T, _MM_FROUND_CEIL, NegativeScale,
     typename std::enable_if<std::is_integral<T>::value>::type>
 {
@@ -256,7 +256,7 @@ struct IntegerRoundingComputation<T, _MM_FROUND_CEIL, NegativeScale,
     }
 };
 
-template<typename T>
+template <typename T>
 struct IntegerRoundingComputation<T, _MM_FROUND_FLOOR, NegativeScale,
     typename std::enable_if<std::is_integral<T>::value>::type>
 {
@@ -360,10 +360,10 @@ protected:
 
 /** Implementation of low-level round-off functions for floating-point values.
     */
-template<typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, int rounding_mode, ScaleMode scale_mode>
 class FloatRoundingComputation;
 
-template<int rounding_mode>
+template <int rounding_mode>
 class FloatRoundingComputation<Float32, rounding_mode, PositiveScale>
     : public BaseFloatRoundingComputation<Float32>
 {
@@ -389,7 +389,7 @@ public:
     }
 };
 
-template<int rounding_mode>
+template <int rounding_mode>
 class FloatRoundingComputation<Float32, rounding_mode, NegativeScale>
     : public BaseFloatRoundingComputation<Float32>
 {
@@ -433,7 +433,7 @@ private:
     }
 };
 
-template<int rounding_mode>
+template <int rounding_mode>
 class FloatRoundingComputation<Float32, rounding_mode, ZeroScale>
     : public BaseFloatRoundingComputation<Float32>
 {
@@ -454,7 +454,7 @@ public:
     }
 };
 
-template<int rounding_mode>
+template <int rounding_mode>
 class FloatRoundingComputation<Float64, rounding_mode, PositiveScale>
     : public BaseFloatRoundingComputation<Float64>
 {
@@ -480,7 +480,7 @@ public:
     }
 };
 
-template<int rounding_mode>
+template <int rounding_mode>
 class FloatRoundingComputation<Float64, rounding_mode, NegativeScale>
     : public BaseFloatRoundingComputation<Float64>
 {
@@ -524,7 +524,7 @@ private:
     }
 };
 
-template<int rounding_mode>
+template <int rounding_mode>
 class FloatRoundingComputation<Float64, rounding_mode, ZeroScale>
     : public BaseFloatRoundingComputation<Float64>
 {
@@ -622,12 +622,12 @@ public:
 
 /** Implementing high-level rounding functions.
     */
-template<typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
+template <typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
 struct FunctionRoundingImpl;
 
 /** Implement high-level rounding functions for integer values.
     */
-template<typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, int rounding_mode, ScaleMode scale_mode>
 struct FunctionRoundingImpl<T, rounding_mode, scale_mode,
     typename std::enable_if<std::is_integral<T>::value && (scale_mode != NullScale)>::type>
 {
@@ -659,7 +659,7 @@ public:
 
 /** Implement high-level round-off functions for floating-point values.
     */
-template<typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, int rounding_mode, ScaleMode scale_mode>
 struct FunctionRoundingImpl<T, rounding_mode, scale_mode,
     typename std::enable_if<std::is_floating_point<T>::value && (scale_mode != NullScale)>::type>
 {
@@ -739,7 +739,7 @@ public:
 
 /** Implementation of high-level rounding functions in the case when a zero value is returned.
     */
-template<typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, int rounding_mode, ScaleMode scale_mode>
 struct FunctionRoundingImpl<T, rounding_mode, scale_mode,
     typename std::enable_if<scale_mode == NullScale>::type>
 {
@@ -761,13 +761,13 @@ namespace
 {
     /// Individual degrees of the number 10.
 
-    template<size_t N>
+    template <size_t N>
     struct PowerOf10
     {
         static const size_t value = 10 * PowerOf10<N - 1>::value;
     };
 
-    template<>
+    template <>
     struct PowerOf10<0>
     {
         static const size_t value = 1;
@@ -776,30 +776,30 @@ namespace
 
 /// Declaring and defining a container containing a table of powers of 10.
 
-template<size_t... TArgs>
+template <size_t... TArgs>
 struct TableContainer
 {
     static const std::array<size_t, sizeof...(TArgs)> values;
 };
 
-template<size_t... TArgs>
+template <size_t... TArgs>
 const std::array<size_t, sizeof...(TArgs)> TableContainer<TArgs...>::values {{ TArgs... }};
 
 /// The generator of the first N degrees.
 
-template<size_t N, size_t... TArgs>
+template <size_t N, size_t... TArgs>
 struct FillArrayImpl
 {
     using result = typename FillArrayImpl<N - 1, PowerOf10<N>::value, TArgs...>::result;
 };
 
-template<size_t... TArgs>
+template <size_t... TArgs>
 struct FillArrayImpl<0, TArgs...>
 {
     using result = TableContainer<PowerOf10<0>::value, TArgs...>;
 };
 
-template<size_t N>
+template <size_t N>
 struct FillArray
 {
     using result = typename FillArrayImpl<N - 1>::result;
@@ -809,10 +809,10 @@ struct FillArray
     * then converts it to a value that can be used in operations of
     * multiplication and division. Therefore, it is called a scale.
     */
-template<typename T, typename U, typename Enable = void>
+template <typename T, typename U, typename Enable = void>
 struct ScaleForRightType;
 
-template<typename T, typename U>
+template <typename T, typename U>
 struct ScaleForRightType<T, U,
     typename std::enable_if<
         std::is_floating_point<T>::value
@@ -857,7 +857,7 @@ struct ScaleForRightType<T, U,
     }
 };
 
-template<typename T, typename U>
+template <typename T, typename U>
 struct ScaleForRightType<T, U,
     typename std::enable_if<
         std::is_floating_point<T>::value
@@ -888,7 +888,7 @@ struct ScaleForRightType<T, U,
     }
 };
 
-template<typename T, typename U>
+template <typename T, typename U>
 struct ScaleForRightType<T, U,
     typename std::enable_if<
         std::is_integral<T>::value
@@ -925,7 +925,7 @@ struct ScaleForRightType<T, U,
     }
 };
 
-template<typename T, typename U>
+template <typename T, typename U>
 struct ScaleForRightType<T, U,
     typename std::enable_if<
         std::is_integral<T>::value
@@ -946,7 +946,7 @@ struct ScaleForRightType<T, U,
 
 /** Turn the precision parameter into a scale.
     */
-template<typename T>
+template <typename T>
 struct ScaleForLeftType
 {
     static inline void apply(const ColumnPtr & column, ScaleMode & scale_mode, size_t & scale)
@@ -1025,7 +1025,7 @@ struct Dispatcher
     * (U)Int8/16/32/64 or Float32/64, and accept an additional optional
     * parameter (default is 0).
     */
-template<typename Name, int rounding_mode>
+template <typename Name, int rounding_mode>
 class FunctionRounding : public IFunction
 {
 public:
@@ -1033,13 +1033,13 @@ public:
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRounding>(); }
 
 private:
-    template<typename T>
+    template <typename T>
     bool checkType(const IDataType * type) const
     {
         return typeid_cast<const T *>(type);
     }
 
-    template<typename T>
+    template <typename T>
     bool executeForType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))

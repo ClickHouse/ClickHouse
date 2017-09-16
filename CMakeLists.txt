@@ -71,11 +71,11 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
+option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
+option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Implies USE_INTERNAL_MEMCPY." OFF)
 
 if (GLIBC_COMPATIBILITY)
-    set (GLIBC_COMPATIBILITY_COMPILE_FLAGS   "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/glibc_compatibility.h")
-    set (GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
+    set (USE_INTERNAL_MEMCPY ON)
 endif ()
 
 if (CXX11_ABI STREQUAL ENABLE)
@@ -105,6 +105,11 @@ if (USE_LIBCXX)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pthread") # NOTE: Why this is not the default and why this is needed only with libc++?
     set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     set (CMAKE_CXX_FLAGS_DEBUG           "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
+endif ()
+
+# Special options for better optimized code with clang
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
 endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
@@ -192,7 +197,7 @@ if (UNBUNDLED)
 else ()
     set(NOT_UNBUNDLED 1)
 endif ()
-# Using system libs can cause lot of warnings in includes. 
+# Using system libs can cause lot of warnings in includes.
 if (UNBUNDLED OR NOT (CMAKE_SYSTEM MATCHES "Linux" OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
