@@ -12,6 +12,11 @@
     #include <smmintrin.h>
 #endif
 
+/** If you want negative zeros will be replaced by zeros in result of calculations.
+  * Disabled by performance reasons.
+#define NO_NEGATIVE_ZEROS
+  */
+
 
 namespace DB
 {
@@ -113,170 +118,100 @@ struct RoundAgeImpl
     }
 };
 
-/** Quick calculation of the remainder of the division to apply to the rounding of integers.
-    * Without verification, because the divisor is always positive.
-    */
-template <typename T, typename Enable = void>
-struct FastModulo;
-
-template <typename T>
-struct FastModulo<T, typename std::enable_if<std::is_integral<T>::value>::type>
-{
-private:
-    template <typename InputType, typename Enable = void>
-    struct Extend;
-
-    template <typename InputType>
-    struct Extend<InputType,
-        typename std::enable_if<std::is_same<InputType, Int8>::value
-            || std::is_same<InputType, Int16>::value>::type>
-    {
-        using Type = Int64;
-    };
-
-    template <typename InputType>
-    struct Extend<InputType,
-        typename std::enable_if<std::is_same<InputType, UInt8>::value
-            || std::is_same<InputType, UInt16>::value>::type>
-    {
-        using Type = UInt64;
-    };
-
-    template <typename InputType>
-    struct Extend<InputType,
-        typename std::enable_if<std::is_integral<InputType>::value
-            && (sizeof(InputType) >= 4)>::type>
-    {
-        using Type = InputType;
-    };
-
-    using U = typename Extend<T>::Type;
-
-public:
-    using Divisor = std::pair<size_t, typename libdivide::divider<U>>;
-
-    static inline Divisor prepare(size_t b)
-    {
-        return std::make_pair(b, libdivide::divider<U>(b));
-    }
-
-    static inline T compute(T a, const Divisor & divisor)
-    {
-        U val = static_cast<U>(a);
-        U rem = val - (val / divisor.second) * static_cast<U>(divisor.first);
-        return static_cast<T>(rem);
-    }
-};
 
 /** This parameter controls the behavior of the rounding functions.
-    */
-enum ScaleMode
+  */
+enum class ScaleMode
 {
-    PositiveScale,    // round to a number with N decimal places after the decimal point
-    NegativeScale,    // round to an integer with N zero characters
-    ZeroScale,        // round to an integer
-    NullScale         // return zero value
+    Positive,   // round to a number with N decimal places after the decimal point
+    Negative,   // round to an integer with N zero characters
+    Zero,       // round to an integer
+    Null        // return zero value
 };
 
-#if !defined(_MM_FROUND_NINT)
-#define _MM_FROUND_NINT  0
-#define _MM_FROUND_FLOOR 1
-#define _MM_FROUND_CEIL  2
+enum class RoundingMode
+{
+#if __SSE4_1__
+    Round   = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC,
+    Floor   = _MM_FROUND_TO_NEG_INF | _MM_FROUND_NO_EXC,
+    Ceil    = _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC,
+    Trunc   = _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC,
+#else
+    Round   = 8,    /// Values are correspond to above just in case.
+    Floor   = 9,
+    Ceil    = 10,
+    Trunc   = 11,
 #endif
+};
+
 
 /** Implementing low-level rounding functions for integer values.
-    */
-template <typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
-struct IntegerRoundingComputation;
-
-template <typename T, int rounding_mode, ScaleMode scale_mode>
-struct IntegerRoundingComputation<T, rounding_mode, scale_mode,
-    typename std::enable_if<std::is_integral<T>::value
-        && ((scale_mode == PositiveScale) || (scale_mode == ZeroScale))>::type>
+  */
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
+struct IntegerRoundingComputation
 {
-    using Divisor = int;
-
-    static inline Divisor prepare(size_t scale)
+    template <size_t scale>
+    static inline T computeImpl(T x)
     {
-        return 0;
+        switch (rounding_mode)
+        {
+            case RoundingMode::Trunc:
+                return x / scale * scale;
+            case RoundingMode::Floor:
+                if (x < 0)
+                    x -= scale - 1;
+                return x / scale * scale;
+            case RoundingMode::Ceil:
+                if (x >= 0)
+                    x += scale - 1;
+                return x / scale * scale;
+            case RoundingMode::Round:
+                return (x + scale / 2) / scale * scale;
+        }
     }
 
-    static inline T compute(T in, const Divisor & scale)
+    static inline T compute(T x, size_t scale)
     {
-        return in;
+        switch (scale_mode)
+        {
+            case ScaleMode::Null:
+                return 0;
+            case ScaleMode::Zero:
+                return x;
+            case ScaleMode::Positive:
+                return x;
+            case ScaleMode::Negative:
+            {
+                switch (scale)
+                {
+                    case 10ULL: return computeImpl<10ULL>(x);
+                    case 100ULL: return computeImpl<100ULL>(x);
+                    case 1000ULL: return computeImpl<1000ULL>(x);
+                    case 10000ULL: return computeImpl<10000ULL>(x);
+                    case 100000ULL: return computeImpl<100000ULL>(x);
+                    case 1000000ULL: return computeImpl<1000000ULL>(x);
+                    case 10000000ULL: return computeImpl<10000000ULL>(x);
+                    case 100000000ULL: return computeImpl<100000000ULL>(x);
+                    case 1000000000ULL: return computeImpl<1000000000ULL>(x);
+                    case 10000000000ULL: return computeImpl<10000000000ULL>(x);
+                    case 100000000000ULL: return computeImpl<100000000000ULL>(x);
+                    case 1000000000000ULL: return computeImpl<1000000000000ULL>(x);
+                    case 10000000000000ULL: return computeImpl<10000000000000ULL>(x);
+                    case 100000000000000ULL: return computeImpl<100000000000000ULL>(x);
+                    case 1000000000000000ULL: return computeImpl<1000000000000000ULL>(x);
+                    case 10000000000000000ULL: return computeImpl<10000000000000000ULL>(x);
+                    case 100000000000000000ULL: return computeImpl<100000000000000000ULL>(x);
+                    case 1000000000000000000ULL: return computeImpl<1000000000000000000ULL>(x);
+                    case 10000000000000000000ULL: return computeImpl<10000000000000000000ULL>(x);
+                    default:
+                        throw Exception("Logical error: unexpected 'scale' parameter passed to function IntegerRoundingComputation::compute",
+                            ErrorCodes::LOGICAL_ERROR);
+                }
+            }
+        }
     }
 };
 
-template <typename T>
-struct IntegerRoundingComputation<T, _MM_FROUND_NINT, NegativeScale,
-    typename std::enable_if<std::is_integral<T>::value>::type>
-{
-    using Op = FastModulo<T>;
-    using Divisor = typename Op::Divisor;
-
-    static inline Divisor prepare(size_t scale)
-    {
-        return Op::prepare(scale);
-    }
-
-    static inline T compute(T in, const Divisor & scale)
-    {
-        T factor = (in < 0) ? -1 : 1;
-        in *= factor;
-        T rem = Op::compute(in, scale);
-        in -= rem;
-        T res;
-        if ((2 * rem) < static_cast<T>(scale.first))
-            res = in;
-        else
-            res = in + scale.first;
-        return factor * res;
-    }
-};
-
-template <typename T>
-struct IntegerRoundingComputation<T, _MM_FROUND_CEIL, NegativeScale,
-    typename std::enable_if<std::is_integral<T>::value>::type>
-{
-    using Op = FastModulo<T>;
-    using Divisor = typename Op::Divisor;
-
-    static inline Divisor prepare(size_t scale)
-    {
-        return Op::prepare(scale);
-    }
-
-    static inline T compute(T in, const Divisor & scale)
-    {
-        T factor = (in < 0) ? -1 : 1;
-        in *= factor;
-        T rem = Op::compute(in, scale);
-        T res = in - rem + scale.first;
-        return factor * res;
-    }
-};
-
-template <typename T>
-struct IntegerRoundingComputation<T, _MM_FROUND_FLOOR, NegativeScale,
-    typename std::enable_if<std::is_integral<T>::value>::type>
-{
-    using Op = FastModulo<T>;
-    using Divisor = typename Op::Divisor;
-
-    static inline Divisor prepare(size_t scale)
-    {
-        return Op::prepare(scale);
-    }
-
-    static inline T compute(T in, const Divisor & scale)
-    {
-        T factor = (in < 0) ? -1 : 1;
-        in *= factor;
-        T rem = Op::compute(in, scale);
-        T res = in - rem;
-        return factor * res;
-    }
-};
 
 #if __SSE4_1__
 template <typename T>
@@ -290,17 +225,6 @@ public:
     static const size_t data_count = 4;
 
 protected:
-    /// Prevent the appearance of negative zeros defined in the IEEE-754 standard.
-    static inline void normalize(__m128 & val, const __m128 & mask)
-    {
-        __m128 mask1 = _mm_cmpeq_ps(val, getZero());
-        __m128 mask2 = _mm_and_ps(mask, mask1);
-        mask2 = _mm_cmpeq_ps(mask2, getZero());
-        mask2 = _mm_min_ps(mask2, getTwo());
-        mask2 = _mm_sub_ps(mask2, getOne());
-        val = _mm_mul_ps(val, mask2);
-    }
-
     static inline const __m128 & getZero()
     {
         static const __m128 zero = _mm_set1_ps(0.0);
@@ -328,17 +252,6 @@ public:
     static const size_t data_count = 2;
 
 protected:
-    /// Prevent the occurrence of negative zeros defined in the IEEE-754 standard.
-    static inline void normalize(__m128d & val, const __m128d & mask)
-    {
-        __m128d mask1 = _mm_cmpeq_pd(val, getZero());
-        __m128d mask2 = _mm_and_pd(mask, mask1);
-        mask2 = _mm_cmpeq_pd(mask2, getZero());
-        mask2 = _mm_min_pd(mask2, getTwo());
-        mask2 = _mm_sub_pd(mask2, getOne());
-        val = _mm_mul_pd(val, mask2);
-    }
-
     static inline const __m128d & getZero()
     {
         static const __m128d zero = _mm_set1_pd(0.0);
@@ -360,11 +273,11 @@ protected:
 
 /** Implementation of low-level round-off functions for floating-point values.
     */
-template <typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 class FloatRoundingComputation;
 
-template <int rounding_mode>
-class FloatRoundingComputation<Float32, rounding_mode, PositiveScale>
+template <RoundingMode rounding_mode>
+class FloatRoundingComputation<Float32, rounding_mode, ScaleMode::Positive>
     : public BaseFloatRoundingComputation<Float32>
 {
 public:
@@ -377,20 +290,18 @@ public:
     static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
     {
         __m128 val = _mm_loadu_ps(in);
-        __m128 mask = _mm_cmplt_ps(val, getZero());
 
         /// Rounding algorithm.
         val = _mm_mul_ps(val, scale);
-        val = _mm_round_ps(val, rounding_mode);
+        val = _mm_round_ps(val, int(rounding_mode));
         val = _mm_div_ps(val, scale);
 
-        normalize(val, mask);
         _mm_storeu_ps(out, val);
     }
 };
 
-template <int rounding_mode>
-class FloatRoundingComputation<Float32, rounding_mode, NegativeScale>
+template <RoundingMode rounding_mode>
+class FloatRoundingComputation<Float32, rounding_mode, ScaleMode::Negative>
     : public BaseFloatRoundingComputation<Float32>
 {
 public:
@@ -403,23 +314,22 @@ public:
     static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
     {
         __m128 val = _mm_loadu_ps(in);
-        __m128 mask = _mm_cmplt_ps(val, getZero());
 
         /// Turn negative values into positive values.
-        __m128 factor = _mm_cmpge_ps(val, getZero());
-        factor = _mm_min_ps(factor, getTwo());
-        factor = _mm_sub_ps(factor, getOne());
-        val = _mm_mul_ps(val, factor);
+        __m128 sign = _mm_cmpge_ps(val, getZero());
+        sign = _mm_min_ps(sign, getTwo());
+        sign = _mm_sub_ps(sign, getOne());
+        val = _mm_mul_ps(val, sign);
 
         /// Rounding algorithm.
         val = _mm_div_ps(val, scale);
         __m128 res = _mm_cmpge_ps(val, getOneTenth());
-        val = _mm_round_ps(val, rounding_mode);
+        val = _mm_round_ps(val, int(rounding_mode));
         val = _mm_mul_ps(val, scale);
         val = _mm_and_ps(val, res);
 
         /// Return the real signs of all values.
-        val = _mm_mul_ps(val, factor);
+        val = _mm_mul_ps(val, sign);
 
         normalize(val, mask);
         _mm_storeu_ps(out, val);
@@ -433,8 +343,8 @@ private:
     }
 };
 
-template <int rounding_mode>
-class FloatRoundingComputation<Float32, rounding_mode, ZeroScale>
+template <RoundingMode rounding_mode>
+class FloatRoundingComputation<Float32, rounding_mode, ScaleMode::Zero>
     : public BaseFloatRoundingComputation<Float32>
 {
 public:
@@ -445,17 +355,13 @@ public:
     static inline void compute(const Float32 * __restrict in, const Scale & scale, Float32 * __restrict out)
     {
         __m128 val = _mm_loadu_ps(in);
-        __m128 mask = _mm_cmplt_ps(val, getZero());
-
-        val = _mm_round_ps(val, rounding_mode);
-
-        normalize(val, mask);
+        val = _mm_round_ps(val, int(rounding_mode));
         _mm_storeu_ps(out, val);
     }
 };
 
-template <int rounding_mode>
-class FloatRoundingComputation<Float64, rounding_mode, PositiveScale>
+template <RoundingMode rounding_mode>
+class FloatRoundingComputation<Float64, rounding_mode, ScaleMode::Positive>
     : public BaseFloatRoundingComputation<Float64>
 {
 public:
@@ -468,20 +374,18 @@ public:
     static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
     {
         __m128d val = _mm_loadu_pd(in);
-        __m128d mask = _mm_cmplt_pd(val, getZero());
 
         /// Rounding algorithm.
         val = _mm_mul_pd(val, scale);
-        val = _mm_round_pd(val, rounding_mode);
+        val = _mm_round_pd(val, int(rounding_mode));
         val = _mm_div_pd(val, scale);
 
-        normalize(val, mask);
         _mm_storeu_pd(out, val);
     }
 };
 
-template <int rounding_mode>
-class FloatRoundingComputation<Float64, rounding_mode, NegativeScale>
+template <RoundingMode rounding_mode>
+class FloatRoundingComputation<Float64, rounding_mode, ScaleMode::Negative>
     : public BaseFloatRoundingComputation<Float64>
 {
 public:
@@ -494,25 +398,23 @@ public:
     static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
     {
         __m128d val = _mm_loadu_pd(in);
-        __m128d mask = _mm_cmplt_pd(val, getZero());
 
         /// Turn negative values into positive values.
-        __m128d factor = _mm_cmpge_pd(val, getZero());
-        factor = _mm_min_pd(factor, getTwo());
-        factor = _mm_sub_pd(factor, getOne());
-        val = _mm_mul_pd(val, factor);
+        __m128d sign = _mm_cmpge_pd(val, getZero());
+        sign = _mm_min_pd(sign, getTwo());
+        sign = _mm_sub_pd(sign, getOne());
+        val = _mm_mul_pd(val, sign);
 
         /// Rounding algorithm.
         val = _mm_div_pd(val, scale);
         __m128d res = _mm_cmpge_pd(val, getOneTenth());
-        val = _mm_round_pd(val, rounding_mode);
+        val = _mm_round_pd(val, int(rounding_mode));
         val = _mm_mul_pd(val, scale);
         val = _mm_and_pd(val, res);
 
         /// Return the real signs of all values.
-        val = _mm_mul_pd(val, factor);
+        val = _mm_mul_pd(val, sign);
 
-        normalize(val, mask);
         _mm_storeu_pd(out, val);
     }
 
@@ -524,8 +426,8 @@ private:
     }
 };
 
-template <int rounding_mode>
-class FloatRoundingComputation<Float64, rounding_mode, ZeroScale>
+template <RoundingMode rounding_mode>
+class FloatRoundingComputation<Float64, rounding_mode, ScaleMode::Zero>
     : public BaseFloatRoundingComputation<Float64>
 {
 public:
@@ -536,34 +438,26 @@ public:
     static inline void compute(const Float64 * __restrict in, const Scale & scale, Float64 * __restrict out)
     {
         __m128d val = _mm_loadu_pd(in);
-        __m128d mask = _mm_cmplt_pd(val, getZero());
-
-        val = _mm_round_pd(val, rounding_mode);
-
-        normalize(val, mask);
+        val = _mm_round_pd(val, int(rounding_mode));
         _mm_storeu_pd(out, val);
     }
 };
 #else
+
 /// Implementation for ARM. Not vectorized. Does not fix negative zeros.
 
-template <int mode>
-float roundWithMode(float x)
-{
-    if (mode == _MM_FROUND_NINT)     return roundf(x);
-    if (mode == _MM_FROUND_FLOOR)     return floorf(x);
-    if (mode == _MM_FROUND_CEIL)     return ceilf(x);
-    __builtin_unreachable();
-}
+template <RoundingMode rounding_mode> float roundWithMode(float x);
+template <> float roundWithMode<RoundingMode::Round>(float x) { return roundf(x); }
+template <> float roundWithMode<RoundingMode::Floor>(float x) { return floorf(x); }
+template <> float roundWithMode<RoundingMode::Ceil>(float x) { return ceilf(x); }
+template <> float roundWithMode<RoundingMode::Trunc>(float x) { return truncf(x); }
 
-template <int mode>
-double roundWithMode(double x)
-{
-    if (mode == _MM_FROUND_NINT)     return round(x);
-    if (mode == _MM_FROUND_FLOOR)     return floor(x);
-    if (mode == _MM_FROUND_CEIL)     return ceil(x);
-    __builtin_unreachable();
-}
+template <RoundingMode rounding_mode> double roundWithMode(double x);
+template <> double roundWithMode<RoundingMode::Round>(double x) { return round(x); }
+template <> double roundWithMode<RoundingMode::Floor>(double x) { return floor(x); }
+template <> double roundWithMode<RoundingMode::Ceil>(double x) { return ceil(x); }
+template <> double roundWithMode<RoundingMode::Trunc>(double x) { return trunc(x); }
+
 
 template <typename T>
 class BaseFloatRoundingComputation
@@ -578,11 +472,11 @@ public:
     }
 };
 
-template <typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 class FloatRoundingComputation;
 
-template <typename T, int rounding_mode>
-class FloatRoundingComputation<T, rounding_mode, PositiveScale>
+template <typename T, RoundingMode rounding_mode>
+class FloatRoundingComputation<T, rounding_mode, ScaleMode::Positive>
     : public BaseFloatRoundingComputation<T>
 {
 public:
@@ -592,8 +486,8 @@ public:
     }
 };
 
-template <typename T, int rounding_mode>
-class FloatRoundingComputation<T, rounding_mode, NegativeScale>
+template <typename T, RoundingMode rounding_mode>
+class FloatRoundingComputation<T, rounding_mode, ScaleMode::Negative>
     : public BaseFloatRoundingComputation<T>
 {
 public:
@@ -603,8 +497,8 @@ public:
     }
 };
 
-template <typename T, int rounding_mode>
-class FloatRoundingComputation<T, rounding_mode, ZeroScale>
+template <typename T, RoundingMode rounding_mode>
+class FloatRoundingComputation<T, rounding_mode, ScaleMode::Zero>
     : public BaseFloatRoundingComputation<T>
 {
 public:
@@ -621,15 +515,15 @@ public:
 
 
 /** Implementing high-level rounding functions.
-    */
-template <typename T, int rounding_mode, ScaleMode scale_mode, typename Enable = void>
+  */
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode, typename Enable = void>
 struct FunctionRoundingImpl;
 
 /** Implement high-level rounding functions for integer values.
-    */
-template <typename T, int rounding_mode, ScaleMode scale_mode>
+  */
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FunctionRoundingImpl<T, rounding_mode, scale_mode,
-    typename std::enable_if<std::is_integral<T>::value && (scale_mode != NullScale)>::type>
+    typename std::enable_if<std::is_integral<T>::value && (scale_mode != ScaleMode::Null)>::type>
 {
 private:
     using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode>;
@@ -637,31 +531,28 @@ private:
 public:
     static inline void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
     {
-        auto divisor = Op::prepare(scale);
-
         const T* begin_in = &in[0];
         const T* end_in = begin_in + in.size();
 
         T* __restrict p_out = &out[0];
         for (const T* __restrict p_in = begin_in; p_in != end_in; ++p_in)
         {
-            *p_out = Op::compute(*p_in, divisor);
+            *p_out = Op::compute(*p_in, scale);
             ++p_out;
         }
     }
 
     static inline T apply(T val, size_t scale)
     {
-        auto divisor = Op::prepare(scale);
-        return Op::compute(val, divisor);
+        return Op::compute(val, scale);
     }
 };
 
 /** Implement high-level round-off functions for floating-point values.
-    */
-template <typename T, int rounding_mode, ScaleMode scale_mode>
+  */
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FunctionRoundingImpl<T, rounding_mode, scale_mode,
-    typename std::enable_if<std::is_floating_point<T>::value && (scale_mode != NullScale)>::type>
+    typename std::enable_if<std::is_floating_point<T>::value && (scale_mode != ScaleMode::Null)>::type>
 {
 private:
     using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
@@ -739,9 +630,9 @@ public:
 
 /** Implementation of high-level rounding functions in the case when a zero value is returned.
     */
-template <typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct FunctionRoundingImpl<T, rounding_mode, scale_mode,
-    typename std::enable_if<scale_mode == NullScale>::type>
+    typename std::enable_if<scale_mode == ScaleMode::Null>::type>
 {
 public:
     static inline void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
@@ -806,9 +697,9 @@ struct FillArray
 };
 
 /** This pattern defines the precision that the round/ceil/floor functions use,
-    * then converts it to a value that can be used in operations of
-    * multiplication and division. Therefore, it is called a scale.
-    */
+  * then converts it to a value that can be used in operations of
+  * multiplication and division. Therefore, it is called a scale.
+  */
 template <typename T, typename U, typename Enable = void>
 struct ScaleForRightType;
 
@@ -831,23 +722,23 @@ struct ScaleForRightType<T, U,
         {
             if (val < -static_cast<U>(std::numeric_limits<T>::digits10))
             {
-                scale_mode = NullScale;
+                scale_mode = ScaleMode::Null;
                 scale = 1;
             }
             else
             {
-                scale_mode = NegativeScale;
+                scale_mode = ScaleMode::Negative;
                 scale = PowersOf10::values[-val];
             }
         }
         else if (val == 0)
         {
-            scale_mode = ZeroScale;
+            scale_mode = ScaleMode::Zero;
             scale = 1;
         }
         else
         {
-            scale_mode = PositiveScale;
+            scale_mode = ScaleMode::Positive;
             if (val > std::numeric_limits<T>::digits10)
                 val = static_cast<U>(std::numeric_limits<T>::digits10);
             scale = PowersOf10::values[val];
@@ -873,12 +764,12 @@ struct ScaleForRightType<T, U,
         U val = precision_col->template getValue<U>();
         if (val == 0)
         {
-            scale_mode = ZeroScale;
+            scale_mode = ScaleMode::Zero;
             scale = 1;
         }
         else
         {
-            scale_mode = PositiveScale;
+            scale_mode = ScaleMode::Positive;
             if (val > static_cast<U>(std::numeric_limits<T>::digits10))
                 val = static_cast<U>(std::numeric_limits<T>::digits10);
             scale = PowersOf10::values[val];
@@ -906,18 +797,18 @@ struct ScaleForRightType<T, U,
         {
             if (val < -std::numeric_limits<T>::digits10)
             {
-                scale_mode = NullScale;
+                scale_mode = ScaleMode::Null;
                 scale = 1;
             }
             else
             {
-                scale_mode = NegativeScale;
+                scale_mode = ScaleMode::Negative;
                 scale = PowersOf10::values[-val];
             }
         }
         else
         {
-            scale_mode = ZeroScale;
+            scale_mode = ScaleMode::Zero;
             scale = 1;
         }
 
@@ -937,7 +828,7 @@ struct ScaleForRightType<T, U,
         if (!precision_col)
             return false;
 
-        scale_mode = ZeroScale;
+        scale_mode = ScaleMode::Zero;
         scale = 1;
 
         return true;
@@ -970,7 +861,7 @@ struct ScaleForLeftType
 
 /** The main template that applies the rounding function to a value or column.
     */
-template <typename T, int rounding_mode, ScaleMode scale_mode>
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
 struct Cruncher
 {
     using Op = FunctionRoundingImpl<T, rounding_mode, scale_mode>;
@@ -992,7 +883,7 @@ struct Cruncher
 
 /** Select the appropriate processing algorithm depending on the scale.
   */
-template <typename T, typename ColumnType, int rounding_mode>
+template <typename T, typename ColumnType, RoundingMode rounding_mode>
 struct Dispatcher
 {
     static inline void apply(Block & block, const ColumnType * col, const ColumnNumbers & arguments, size_t result)
@@ -1004,18 +895,18 @@ struct Dispatcher
             ScaleForLeftType<T>::apply(block.getByPosition(arguments[1]).column, scale_mode, scale);
         else
         {
-            scale_mode = ZeroScale;
+            scale_mode = ScaleMode::Zero;
             scale = 1;
         }
 
-        if (scale_mode == PositiveScale)
-            Cruncher<T, rounding_mode, PositiveScale>::apply(block, col, arguments, result, scale);
-        else if (scale_mode == ZeroScale)
-            Cruncher<T, rounding_mode, ZeroScale>::apply(block, col, arguments, result, scale);
-        else if (scale_mode == NegativeScale)
-            Cruncher<T, rounding_mode, NegativeScale>::apply(block, col, arguments, result, scale);
-        else if (scale_mode == NullScale)
-            Cruncher<T, rounding_mode, NullScale>::apply(block, col, arguments, result, scale);
+        if (scale_mode == ScaleMode::Positive)
+            Cruncher<T, rounding_mode, ScaleMode::Positive>::apply(block, col, arguments, result, scale);
+        else if (scale_mode == ScaleMode::Zero)
+            Cruncher<T, rounding_mode, ScaleMode::Zero>::apply(block, col, arguments, result, scale);
+        else if (scale_mode == ScaleMode::Negative)
+            Cruncher<T, rounding_mode, ScaleMode::Negative>::apply(block, col, arguments, result, scale);
+        else if (scale_mode == ScaleMode::Null)
+            Cruncher<T, rounding_mode, ScaleMode::Null>::apply(block, col, arguments, result, scale);
         else
             throw Exception("Illegal operation", ErrorCodes::LOGICAL_ERROR);
     }
@@ -1025,7 +916,7 @@ struct Dispatcher
     * (U)Int8/16/32/64 or Float32/64, and accept an additional optional
     * parameter (default is 0).
     */
-template <typename Name, int rounding_mode>
+template <typename Name, RoundingMode rounding_mode>
 class FunctionRounding : public IFunction
 {
 public:
@@ -1130,17 +1021,20 @@ public:
 struct NameRoundToExp2 { static constexpr auto name = "roundToExp2"; };
 struct NameRoundDuration { static constexpr auto name = "roundDuration"; };
 struct NameRoundAge { static constexpr auto name = "roundAge"; };
+
 struct NameRound { static constexpr auto name = "round"; };
 struct NameCeil { static constexpr auto name = "ceil"; };
 struct NameFloor { static constexpr auto name = "floor"; };
+struct NameTrunc { static constexpr auto name = "trunc"; };
 
 using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
 using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl, NameRoundDuration, false>;
 using FunctionRoundAge = FunctionUnaryArithmetic<RoundAgeImpl, NameRoundAge, false>;
 
-using FunctionRound = FunctionRounding<NameRound, _MM_FROUND_NINT>;
-using FunctionFloor = FunctionRounding<NameFloor, _MM_FROUND_FLOOR>;
-using FunctionCeil = FunctionRounding<NameCeil, _MM_FROUND_CEIL>;
+using FunctionRound = FunctionRounding<NameRound, RoundingMode::Round>;
+using FunctionFloor = FunctionRounding<NameFloor, RoundingMode::Floor>;
+using FunctionCeil = FunctionRounding<NameCeil, RoundingMode::Ceil>;
+using FunctionTrunc = FunctionRounding<NameTrunc, RoundingMode::Trunc>;
 
 
 struct PositiveMonotonicity
