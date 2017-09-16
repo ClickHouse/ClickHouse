@@ -12,7 +12,7 @@ if (USE_INTERNAL_LZ4_LIBRARY)
     add_subdirectory (lz4-cmake)
 endif ()
 
-if (USE_INTERNAL_ZLIB_LIBRARY)
+if (USE_INTERNAL_ZSTD_LIBRARY)
     add_subdirectory (zstd-cmake)
 endif ()
 
