@@ -1,8 +1,6 @@
 /** Allows to build programs with libc 2.18 and run on systems with at least libc 2.4,
   *  such as Ubuntu Lucid or CentOS 6.
   *
-  * Highly experimental, not recommended, disabled by default.
-  *
   * Also look at http://www.lightofdawn.org/wiki/wiki.cgi/NewAppsOnOldGlibc
   */
 

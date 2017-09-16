@@ -71,8 +71,13 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
-option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Implies USE_INTERNAL_MEMCPY." OFF)
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64.*|x86_64.*|AMD64.*")
+    option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
+
+    if (CMAKE_SYSTEM MATCHES "Linux")
+        option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
+    endif()
+endif ()
 
 if (GLIBC_COMPATIBILITY)
     set (USE_INTERNAL_MEMCPY ON)
