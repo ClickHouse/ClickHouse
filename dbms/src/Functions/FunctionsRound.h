@@ -339,13 +339,10 @@ public:
 /** Implementing high-level rounding functions.
   */
 template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
-struct FunctionRoundingImpl
+struct FloatRoundingImpl
 {
 private:
-    using Op = typename std::conditional<std::is_floating_point<T>::value,
-        FloatRoundingComputation<T, rounding_mode, scale_mode>,
-        IntegerRoundingComputation<T, rounding_mode, scale_mode>>::type;
-
+    using Op = FloatRoundingComputation<T, rounding_mode, scale_mode>;
     using Data = std::array<T, Op::data_count>;
 
 public:
@@ -381,6 +378,67 @@ public:
         }
     }
 };
+
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
+struct IntegerRoundingImpl
+{
+private:
+    using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode>;
+    using Data = T;
+
+public:
+    template <size_t scale>
+    static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container_t & out)
+    {
+        const T* end_in = in.data() + in.size();
+
+        const T* __restrict p_in = in.data();
+        T* __restrict p_out = out.data();
+
+        while (p_in < end_in)
+        {
+            Op::compute(p_in, scale, p_out);
+            ++p_in;
+            ++p_out;
+        }
+    }
+
+    static NO_INLINE void apply(const PaddedPODArray<T> & in, size_t scale, typename ColumnVector<T>::Container_t & out)
+    {
+        /// Manual function cloning for compiler to generate integer division by constant.
+        switch (scale)
+        {
+            case 1ULL: return applyImpl<1ULL>(in, out);
+            case 10ULL: return applyImpl<10ULL>(in, out);
+            case 100ULL: return applyImpl<100ULL>(in, out);
+            case 1000ULL: return applyImpl<1000ULL>(in, out);
+            case 10000ULL: return applyImpl<10000ULL>(in, out);
+            case 100000ULL: return applyImpl<100000ULL>(in, out);
+            case 1000000ULL: return applyImpl<1000000ULL>(in, out);
+            case 10000000ULL: return applyImpl<10000000ULL>(in, out);
+            case 100000000ULL: return applyImpl<100000000ULL>(in, out);
+            case 1000000000ULL: return applyImpl<1000000000ULL>(in, out);
+            case 10000000000ULL: return applyImpl<10000000000ULL>(in, out);
+            case 100000000000ULL: return applyImpl<100000000000ULL>(in, out);
+            case 1000000000000ULL: return applyImpl<1000000000000ULL>(in, out);
+            case 10000000000000ULL: return applyImpl<10000000000000ULL>(in, out);
+            case 100000000000000ULL: return applyImpl<100000000000000ULL>(in, out);
+            case 1000000000000000ULL: return applyImpl<1000000000000000ULL>(in, out);
+            case 10000000000000000ULL: return applyImpl<10000000000000000ULL>(in, out);
+            case 100000000000000000ULL: return applyImpl<100000000000000000ULL>(in, out);
+            case 1000000000000000000ULL: return applyImpl<1000000000000000000ULL>(in, out);
+            case 10000000000000000000ULL: return applyImpl<10000000000000000000ULL>(in, out);
+            default:
+                throw Exception("Logical error: unexpected 'scale' parameter passed to function IntegerRoundingComputation::compute",
+                    ErrorCodes::LOGICAL_ERROR);
+        }
+    }
+};
+
+template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
+using FunctionRoundingImpl = typename std::conditional<std::is_floating_point<T>::value,
+    FloatRoundingImpl<T, rounding_mode, scale_mode>,
+    IntegerRoundingImpl<T, rounding_mode, scale_mode>>::type;
 
 
 /** Select the appropriate processing algorithm depending on the scale.
