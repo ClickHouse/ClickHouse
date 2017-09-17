@@ -32,8 +32,8 @@ namespace DB
 {
 
 
-/** An aggregation cycle template that allows you to generate a custom variant for a specific combination of aggregate functions.
-  * It differs from the usual one in that calls to aggregate functions should be inlined, and the update cycle of the aggregate functions should be unfold.
+/** An aggregation loop template that allows you to generate a custom variant for a specific combination of aggregate functions.
+  * It differs from the usual one in that calls to aggregate functions should be inlined, and the update loop of the aggregate functions should be unrolled.
   *
   * Since there are too many possible combinations, it is not possible to generate them all in advance.
   * This template is intended to instantiate it in runtime,
