@@ -263,8 +263,8 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
 }
 
 
-/** The main code is compiled with gcc 5.
-  * But SpecializedAggregator is compiled using clang 3.6 into the .so file.
+/** The main code is compiled with gcc 7.
+  * But SpecializedAggregator is compiled using clang 6 into the .so file.
   * This is done because gcc can not get functions inlined,
   *  which were de-virtualized, in a particular case, and the performance is lower.
   * And also it's easier to distribute clang for deploy to the servers.
