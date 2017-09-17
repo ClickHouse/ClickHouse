@@ -14,12 +14,6 @@
 #endif
 
 
-/** If you want negative zeros will be replaced by zeros in result of calculations.
-  * Disabled by performance reasons.
-#define NO_NEGATIVE_ZEROS
-  */
-
-
 namespace DB
 {
 
@@ -30,18 +24,25 @@ namespace ErrorCodes
 
 
 /** Rounding Functions:
-    * roundToExp2 - down to the nearest power of two;
-    * roundDuration - down to the nearest of: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
-    * roundAge - down to the nearest of: 0, 18, 25, 35, 45, 55.
+    * round(x, N) - rounding to nearest (N = 0 by default). Use banker's rounding for floating point numbers.
+    * floor(x, N) is the largest number <= x (N = 0 by default).
+    * ceil(x, N) is the smallest number >= x (N = 0 by default).
+    * trunc(x, N) - is the largest by absolute value number that is not greater than x by absolute value (N = 0 by default).
     *
-    * round(x, N) - arithmetic rounding (N = 0 by default).
-    * ceil(x, N) is the smallest number that is at least x (N = 0 by default).
-    * floor(x, N) is the largest number that is not greater than x (N = 0 by default).
-    *
-    * The value of the parameter N:
+    * The value of the parameter N (scale):
     * - N > 0: round to the number with N decimal places after the decimal point
     * - N < 0: round to an integer with N zero characters
     * - N = 0: round to an integer
+    *
+    * Type of the result is the type of argument.
+    * For integer arguments, when passing negative scale, overflow can occur.
+    * In that case, the behavior is implementation specific.
+    *
+    * roundToExp2 - down to the nearest power of two (see below);
+    *
+    * Deprecated functions:
+    * roundDuration - down to the nearest of: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
+    * roundAge - down to the nearest of: 0, 18, 25, 35, 45, 55.
     */
 
 template <typename T>
@@ -72,6 +73,16 @@ roundDownToPowerOfTwo(T x)
     return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
 }
 
+/** For integer data types:
+  * - if number is greater than zero, round it down to nearest power of two (example: roundToExp2(100) = 64, roundToExp2(64) = 64);
+  * - otherwise, return 0.
+  *
+  * For floating point data types: zero out mantissa, but leave exponent.
+  * - if number is greater than zero, round it down to nearest power of two (example: roundToExp2(3) = 2);
+  * - negative powers are also used (example: roundToExp2(0.7) = 0.5);
+  * - if number is zero, return zero;
+  * - if number is less than zero, the result is symmetrical: roundToExp2(x) = -roundToExp2(-x). (example: roundToExp2(-0.3) = -0.25);
+  */
 
 template <typename T>
 struct RoundToExp2Impl
@@ -467,8 +478,12 @@ struct Dispatcher
             if (!scale_column.isConst())
                 throw Exception("Scale argument for rounding functions must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
-            scale_arg = applyVisitor(FieldVisitorConvertToNumber<Int64>(),
-                static_cast<const ColumnConst &>(scale_column).getField());
+            Field scale_field = static_cast<const ColumnConst &>(scale_column).getField();
+            if (scale_field.getType() != Field::Types::UInt64
+                && scale_field.getType() != Field::Types::Int64)
+                throw Exception("Scale argument for rounding functions must have integer type.", ErrorCodes::ILLEGAL_COLUMN);
+
+            scale_arg = scale_field.get<Int64>();
         }
 
         auto col_res = std::make_shared<ColumnVector<T>>();
