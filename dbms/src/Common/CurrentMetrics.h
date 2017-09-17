@@ -36,13 +36,13 @@ namespace CurrentMetrics
     /// Set value of specified metric.
     inline void set(Metric metric, Value value)
     {
-        values[metric] = value;
+        values[metric].store(value, std::memory_order_relaxed);
     }
 
     /// Add value for specified metric. You must subtract value later; or see class Increment below.
     inline void add(Metric metric, Value value = 1)
     {
-        values[metric] += value;
+        values[metric].fetch_add(value, std::memory_order_relaxed);
     }
 
     inline void sub(Metric metric, Value value = 1)
@@ -70,7 +70,7 @@ namespace CurrentMetrics
         ~Increment()
         {
             if (what)
-                *what -= amount;
+                what->fetch_sub(amount, std::memory_order_relaxed);
         }
 
         Increment(Increment && old)
@@ -88,14 +88,14 @@ namespace CurrentMetrics
 
         void changeTo(Value new_amount)
         {
-            *what += new_amount - amount;
+            what->fetch_add(new_amount - amount, std::memory_order_relaxed);
             amount = new_amount;
         }
 
         /// Subtract value before destructor.
         void destroy()
         {
-            *what -= amount;
+            what->fetch_sub(amount, std::memory_order_relaxed);
             what = nullptr;
         }
     };
