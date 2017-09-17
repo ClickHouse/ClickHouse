@@ -106,21 +106,29 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 }
 
 
-bool ParserEngine::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_engine("ENGINE");
     ParserToken s_eq(TokenType::Equals);
-    ParserIdentifierWithOptionalParameters storage_p;
 
-    if (s_engine.ignore(pos, expected))
-    {
-        if (!s_eq.ignore(pos, expected))
-            return false;
+    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
 
-        if (!storage_p.parse(pos, node, expected))
-            return false;
-    }
+    Pos begin = pos;
 
+    ASTPtr engine;
+
+    if (!s_engine.ignore(pos, expected))
+        return false;
+
+    s_eq.ignore(pos, expected);
+
+    if (!ident_with_optional_params_p.parse(pos, engine, expected))
+        return false;
+
+    auto storage = std::make_shared<ASTStorage>(StringRange(begin, pos));
+    storage->set(storage->engine, engine);
+
+    node = storage;
     return true;
 }
 
@@ -136,16 +144,16 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_database("DATABASE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_as("AS");
-    ParserKeyword s_select("SELECT");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
     ParserKeyword s_populate("POPULATE");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserEngine engine_p;
+    ParserStorage storage_p;
     ParserIdentifier name_p;
     ParserColumnDeclarationList columns_p;
+    ParserSelectQuery select_p;
 
     ASTPtr database;
     ASTPtr table;
@@ -190,7 +198,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        engine_p.parse(pos, storage, expected);
+        storage_p.parse(pos, storage, expected);
     }
     else if (s_table.ignore(pos, expected))
     {
@@ -222,39 +230,31 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!s_rparen.ignore(pos, expected))
                 return false;
 
-            if (!engine_p.parse(pos, storage, expected))
+            if (!storage_p.parse(pos, storage, expected) && !is_temporary)
                 return false;
 
-            /// For engine VIEW, you also need to read AS SELECT
-            if (storage && (typeid_cast<ASTFunction &>(*storage).name == "View"
-                        || typeid_cast<ASTFunction &>(*storage).name == "MaterializedView"))
+            if (storage)
             {
-                if (!s_as.ignore(pos, expected))
-                    return false;
-                Pos before_select = pos;
-                if (!s_select.ignore(pos, expected))
-                    return false;
-                pos = before_select;
-                ParserSelectQuery select_p;
-                select_p.parse(pos, select, expected);
+                const auto & storage_ast = typeid_cast<const ASTStorage &>(*storage);
+                /// For engine VIEW, you also need to read AS SELECT
+                if (storage_ast.engine->name == "View" || storage_ast.engine->name == "MaterializedView")
+                {
+                    if (!s_as.ignore(pos, expected))
+                        return false;
+
+                    if (!select_p.parse(pos, select, expected))
+                        return false;
+                }
             }
         }
         else
         {
-            engine_p.parse(pos, storage, expected);
+            storage_p.parse(pos, storage, expected);
 
             if (!s_as.ignore(pos, expected))
                 return false;
 
-            /// AS SELECT ...
-            Pos before_select = pos;
-            if (s_select.ignore(pos, expected))
-            {
-                pos = before_select;
-                ParserSelectQuery select_p;
-                select_p.parse(pos, select, expected);
-            }
-            else
+            if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
             {
                 /// AS [db.]table
                 if (!name_p.parse(pos, as_table, expected))
@@ -268,7 +268,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
 
                 /// Optional - ENGINE can be specified.
-                engine_p.parse(pos, storage, expected);
+                storage_p.parse(pos, storage, expected);
             }
         }
     }
@@ -315,7 +315,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         /// Optional - internal ENGINE for MATERIALIZED VIEW can be specified
-        engine_p.parse(pos, inner_storage, expected);
+        storage_p.parse(pos, inner_storage, expected);
 
         if (s_populate.ignore(pos, expected))
             is_populate = true;
@@ -344,25 +344,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
     query->cluster = cluster_str;
-    if (inner_storage)
-        query->inner_storage = inner_storage;
+    query->set(query->inner_storage, inner_storage);
 
-    query->columns = columns;
-    query->storage = storage;
+    query->set(query->columns, columns);
+    query->set(query->storage, storage);
     if (as_database)
         query->as_database = typeid_cast<ASTIdentifier &>(*as_database).name;
     if (as_table)
         query->as_table = typeid_cast<ASTIdentifier &>(*as_table).name;
-    query->select = select;
-
-    if (columns)
-        query->children.push_back(columns);
-    if (storage)
-        query->children.push_back(storage);
-    if (select)
-        query->children.push_back(select);
-    if (inner_storage)
-        query->children.push_back(inner_storage);
+    query->set(query->select, select);
 
     return true;
 }

@@ -20,7 +20,7 @@ StorageView::StorageView(
     const String & table_name_,
     const String & database_name_,
     Context & context_,
-    ASTPtr & query_,
+    const ASTCreateQuery & query,
     NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
@@ -28,13 +28,9 @@ StorageView::StorageView(
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
     database_name(database_name_), context(context_), columns(columns_)
 {
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
-    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*create.select);
-
     /// If the internal query does not specify a database, retrieve it from the context and write it to the query.
-    select.setDatabaseIfNeeded(database_name);
-
-    inner_query = create.select;
+    query.select->setDatabaseIfNeeded(database_name);
+    inner_query = query.select->ptr();
 }
 
 

@@ -24,7 +24,7 @@ class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, pub
 public:
     static StoragePtr create(const String & table_name_,
         Context & context_,
-        ASTPtr & query_,
+        const ASTCreateQuery & query,
         NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
