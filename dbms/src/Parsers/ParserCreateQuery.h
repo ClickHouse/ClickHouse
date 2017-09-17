@@ -188,10 +188,10 @@ protected:
 
 
 /** ENGINE = name. */
-class ParserEngine : public IParserBase
+class ParserStorage : public IParserBase
 {
 protected:
-    const char * getName() const { return "ENGINE"; }
+    const char * getName() const { return "storage definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 

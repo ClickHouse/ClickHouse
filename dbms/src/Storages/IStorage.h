@@ -30,6 +30,7 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
+class ASTCreateQuery;
 
 class IStorage;
 

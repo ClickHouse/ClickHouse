@@ -198,9 +198,9 @@ void StorageMergeTree::alter(
 
     auto table_hard_lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
-    IDatabase::ASTModifier engine_modifier;
+    IDatabase::ASTModifier storage_modifier;
     if (primary_key_is_modified)
-        engine_modifier = [&new_primary_key_ast] (ASTPtr & engine_ast)
+        storage_modifier = [&new_primary_key_ast] (IAST & ast)
         {
             auto tuple = std::make_shared<ASTFunction>(new_primary_key_ast->range);
             tuple->name = "tuple";
@@ -209,13 +209,14 @@ void StorageMergeTree::alter(
 
             /// Primary key is in the second place in table engine description and can be represented as a tuple.
             /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
-            typeid_cast<ASTExpressionList &>(*typeid_cast<ASTFunction &>(*engine_ast).arguments).children.at(1) = tuple;
+            auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+            typeid_cast<ASTExpressionList &>(*storage_ast.engine->arguments).children.at(1) = tuple;
         };
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,
         new_columns, new_materialized_columns, new_alias_columns, new_column_defaults,
-        engine_modifier);
+        storage_modifier);
 
     materialized_columns = new_materialized_columns;
     alias_columns = new_alias_columns;
