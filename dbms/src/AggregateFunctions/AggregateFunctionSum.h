@@ -63,6 +63,8 @@ public:
     {
         static_cast<ColumnVector<typename NearestFieldType<T>::Type> &>(to).getData().push_back(this->data(place).sum);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

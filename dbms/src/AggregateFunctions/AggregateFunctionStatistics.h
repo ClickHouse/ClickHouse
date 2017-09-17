@@ -153,6 +153,8 @@ public:
     {
         this->data(place).publish(to);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 /** Implementing the varSamp function.
@@ -416,6 +418,8 @@ public:
     {
         this->data(place).publish(to);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 /** Implementing the covarSamp function.
