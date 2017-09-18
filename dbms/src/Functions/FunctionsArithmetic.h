@@ -38,21 +38,21 @@ struct BinaryOperationImplBase
 {
     using ResultType = ResultType_;
 
-    static void vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
     }
 
-    static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b);
     }
 
-    static void constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
     {
         size_t size = b.size();
         for (size_t i = 0; i < size; ++i)
@@ -76,7 +76,7 @@ struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
 
-    static void vector(const PaddedPODArray<A> & a, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector(const PaddedPODArray<A> & a, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)

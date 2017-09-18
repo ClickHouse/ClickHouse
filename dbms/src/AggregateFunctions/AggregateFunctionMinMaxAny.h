@@ -726,6 +726,8 @@ public:
     {
         this->data(place).insertResultInto(to);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }
