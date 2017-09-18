@@ -1,8 +1,6 @@
 /** Allows to build programs with libc 2.18 and run on systems with at least libc 2.4,
   *  such as Ubuntu Lucid or CentOS 6.
   *
-  * Highly experimental, not recommended, disabled by default.
-  *
   * Also look at http://www.lightofdawn.org/wiki/wiki.cgi/NewAppsOnOldGlibc
   */
 
@@ -39,12 +37,15 @@ int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 }
 
 
-/// NOTE This disables some of FORTIFY_SOURCE functionality.
-
 #include <sys/select.h>
 #include <stdlib.h>
+#include <features.h>
 
+#if __GLIBC__ > 2 || (__GLIBC__ == 2  && __GLIBC_MINOR__ >= 16)
 long int __fdelt_chk(long int d)
+#else
+unsigned long int __fdelt_chk(unsigned long int d)
+#endif
 {
     if (d < 0 || d >= FD_SETSIZE)
         abort();
@@ -64,6 +65,8 @@ int __poll_chk(struct pollfd * fds, nfds_t nfds, int timeout, size_t fdslen)
 #include <setjmp.h>
 
 void longjmp(jmp_buf env, int val);
+
+/// NOTE This disables some of FORTIFY_SOURCE functionality.
 
 void __longjmp_chk(jmp_buf env, int val)
 {
