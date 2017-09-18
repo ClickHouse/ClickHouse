@@ -175,6 +175,42 @@ public:
 };
 */
 
+namespace FunctionPointInPolygonDetail
+{
+
+template <bool, typename Polygon, typename PointInPolygonImpl>
+ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon);
+
+template <typename Polygon, typename PointInPolygonImpl>
+ColumnPtr callPointInPolygonImpl<true, Polygon, PointInPolygonImpl>(
+        const IColumn & x, const IColumn & y, const Polygon & polygon)
+{
+    using Pool = ObjectPoolMap<PointInPolygonImpl, std::string>;
+    /// C++11 has thread-safe function-local statics on most modern compilers.
+    static Pool known_polygons;
+
+    auto factory = [& polygon]
+    {
+        GeoUtils::normalizePolygon(polygon);
+        return new PointInPolygonImpl(polygon);
+    };
+
+    std::string serialized_polygon = GeoUtils::serialize(polygon);
+    auto impl = known_polygons.get(serialized_polygon, factory);
+
+    return GeoUtils::pointInPolygon(x, y, *impl);
+}
+
+template <typename Polygon, typename PointInPolygonImpl>
+ColumnPtr callPointInPolygonImpl<false, Polygon, PointInPolygonImpl>(
+        const IColumn & x, const IColumn & y, const Polygon & polygon)
+{
+    PointInPolygonImpl impl(polygon);
+    return GeoUtils::pointInPolygon(x, y, impl);
+}
+
+}
+
 template <typename PointInPolygonImpl, bool useObjectPool = false>
 class FunctionPointInPolygon : public IFunction
 {
@@ -314,40 +350,14 @@ public:
 
         auto & result_column = block.safeGetByPosition(result).column;
 
-        callPointInPolygonImpl<useObjectPool>(*column_x, *column_y, polygon);
+        FunctionPointInPolygonDetail::callPointInPolygonImpl<useObjectPool, Polygon, PointInPolygonImpl>(
+                *column_x, *column_y, polygon);
 
         if (const_tuple_col)
             result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
     }
 
-    template <bool>
-    ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon);
 
-    template <>
-    ColumnPtr callPointInPolygonImpl<true>(const IColumn & x, const IColumn & y, const Polygon & polygon)
-    {
-        using Pool = ObjectPoolMap<PointInPolygonImpl, std::string>;
-        /// C++11 has thread-safe function-local statics on most modern compilers.
-        static Pool known_polygons;
-
-        auto factory = [& polygon]
-        {
-            GeoUtils::normalizePolygon(polygon);
-            return new PointInPolygonImpl(polygon);
-        };
-
-        std::string serialized_polygon = GeoUtils::serialize(polygon);
-        auto impl = known_polygons.get(serialized_polygon, factory);
-
-        return GeoUtils::pointInPolygon(x, y, *impl);
-    }
-
-    template <>
-    ColumnPtr callPointInPolygonImpl<false>(const IColumn & x, const IColumn & y, const Polygon & polygon)
-    {
-        PointInPolygonImpl impl(polygon);
-        return GeoUtils::pointInPolygon(x, y, impl);
-    }
 };
 
 
@@ -360,7 +370,7 @@ using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::frankl
 using PointInPolygonCrossing = GeoUtils::PointInPolygon<PointInPolygonCrossingStrategy>;
 using PointInPolygonWinding = GeoUtils::PointInPolygon<PointInPolygonWindingStrategy>;
 using PointInPolygonFranklin = GeoUtils::PointInPolygon<PointInPolygonFranklinStrategy>;
-using PointInPolygonWithGrid = GeoUtils::PointInPolygon<GeoUtils::PointInPolygonWithGrid<>>;
+using PointInPolygonWithGrid = GeoUtils::PointInPolygon<GeoUtils::PointInPolygonWithGrid<>, true>;
 
 template <>
 const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygon";
