@@ -9,9 +9,15 @@ void registerFunctionsRound(FunctionFactory & factory)
     factory.registerFunction<FunctionRoundToExp2>();
     factory.registerFunction<FunctionRoundDuration>();
     factory.registerFunction<FunctionRoundAge>();
-    factory.registerFunction<FunctionRound>();
-    factory.registerFunction<FunctionCeil>();
-    factory.registerFunction<FunctionFloor>();
+
+    factory.registerFunction("round", FunctionRound::create, FunctionFactory::CaseInsensitive);
+    factory.registerFunction("floor", FunctionFloor::create, FunctionFactory::CaseInsensitive);
+    factory.registerFunction("ceil", FunctionCeil::create, FunctionFactory::CaseInsensitive);
+    factory.registerFunction("trunc", FunctionTrunc::create, FunctionFactory::CaseInsensitive);
+
+    /// Compatibility aliases.
+    factory.registerFunction("ceiling", FunctionCeil::create, FunctionFactory::CaseInsensitive);
+    factory.registerFunction("truncate", FunctionTrunc::create, FunctionFactory::CaseInsensitive);
 }
 
 }

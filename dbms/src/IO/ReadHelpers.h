@@ -344,14 +344,14 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
         x = -x;
 }
 
-template<typename T>
+template <typename T>
 void tryReadIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     return readIntTextUnsafe<T, false>(x, buf);
 }
 
 
-template <bool throw_exception, class ExcepFun, class NoExcepFun, class... Args>
+template <bool throw_exception, typename ExcepFun, typename NoExcepFun, typename... Args>
 bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args &&... args)
 {
     if (throw_exception)
@@ -482,13 +482,13 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-template <class T>
+template <typename T>
 inline bool tryReadFloatText(T & x, ReadBuffer & buf)
 {
     return readFloatTextImpl<T, bool>(x, buf);
 }
 
-template <class T>
+template <typename T>
 inline void readFloatText(T & x, ReadBuffer & buf)
 {
     readFloatTextImpl<T, void>(x, buf);
@@ -569,7 +569,7 @@ struct NullSink
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
 void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 
-template<class IteratorSrc, class IteratorDst>
+template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 
 /// In YYYY-MM-DD format

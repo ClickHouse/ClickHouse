@@ -176,6 +176,8 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -256,6 +258,8 @@ public:
     }
 
     IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
