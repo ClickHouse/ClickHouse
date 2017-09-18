@@ -117,4 +117,4 @@ ENDIF (ZSTD_LEGACY_SUPPORT)
 
 ADD_LIBRARY(zstd ${Sources} ${Headers})
 
-target_include_directories (zstd PUBLIC ${LIBRARY_DIR}) 
+target_include_directories (zstd PUBLIC ${LIBRARY_DIR})
