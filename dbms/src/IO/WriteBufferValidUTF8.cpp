@@ -36,7 +36,7 @@ namespace
 
 WriteBufferValidUTF8::WriteBufferValidUTF8(
     WriteBuffer & output_buffer, bool group_replacements, const char * replacement, size_t size)
-    : BufferWithOwnMemory<WriteBuffer>(std::max(32LU, size)), output_buffer(output_buffer),
+    : BufferWithOwnMemory<WriteBuffer>(std::max(static_cast<size_t>(32), size)), output_buffer(output_buffer),
     group_replacements(group_replacements), replacement(replacement)
 {
 }

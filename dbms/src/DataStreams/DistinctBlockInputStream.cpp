@@ -8,14 +8,14 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctBlockInputStream::DistinctBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_hint_, Names columns_)
-    : columns_names(columns_)
+DistinctBlockInputStream::DistinctBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, const Names & columns)
+    : columns_names(columns)
     , limit_hint(limit_hint_)
     , max_rows(limits.max_rows_in_distinct)
     , max_bytes(limits.max_bytes_in_distinct)
     , overflow_mode(limits.distinct_overflow_mode)
 {
-    children.push_back(input_);
+    children.push_back(input);
 }
 
 String DistinctBlockInputStream::getID() const
@@ -68,18 +68,22 @@ Block DistinctBlockInputStream::readImpl()
 
         if (!checkLimits())
         {
-            if (overflow_mode == OverflowMode::THROW)
-                throw Exception("DISTINCT-Set size limit exceeded."
-                    " Rows: " + toString(data.getTotalRowCount()) +
-                    ", limit: " + toString(max_rows) +
-                    ". Bytes: " + toString(data.getTotalByteCount()) +
-                    ", limit: " + toString(max_bytes) + ".",
-                    ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+            switch (overflow_mode)
+            {
+                case OverflowMode::THROW:
+                    throw Exception("DISTINCT-Set size limit exceeded."
+                        " Rows: " + toString(data.getTotalRowCount()) +
+                        ", limit: " + toString(max_rows) +
+                        ". Bytes: " + toString(data.getTotalByteCount()) +
+                        ", limit: " + toString(max_bytes) + ".",
+                        ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
-            if (overflow_mode == OverflowMode::BREAK)
-                return Block();
+                case OverflowMode::BREAK:
+                    return Block();
 
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+                default:
+                    throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+            }
         }
 
         size_t all_columns = block.columns();

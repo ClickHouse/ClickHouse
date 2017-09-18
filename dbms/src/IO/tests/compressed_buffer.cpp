@@ -43,7 +43,6 @@ int main(int argc, char ** argv)
         {
             DB::ReadBufferFromFile buf("test1");
             DB::CompressedReadBuffer compressed_buf(buf);
-            std::string s;
 
             stopwatch.restart();
             for (size_t i = 0; i < n; ++i)

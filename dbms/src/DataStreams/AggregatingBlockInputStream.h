@@ -22,10 +22,10 @@ public:
       * Aggregate functions are searched everywhere in the expression.
       * Columns corresponding to keys and arguments of aggregate functions must already be computed.
       */
-    AggregatingBlockInputStream(BlockInputStreamPtr input_, const Aggregator::Params & params_, bool final_)
+    AggregatingBlockInputStream(const BlockInputStreamPtr & input, const Aggregator::Params & params_, bool final_)
         : params(params_), aggregator(params), final(final_)
     {
-        children.push_back(input_);
+        children.push_back(input);
     }
 
     String getName() const override { return "Aggregating"; }

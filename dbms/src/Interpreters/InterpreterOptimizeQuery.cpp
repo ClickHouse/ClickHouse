@@ -22,7 +22,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         throw Exception("FINAL flag for OPTIMIZE query is meaningful only with specified PARTITION", ErrorCodes::BAD_ARGUMENTS);
 
     StoragePtr table = context.getTable(ast.database, ast.table);
-    auto table_lock = table->lockStructure(true);
+    auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
     table->optimize(query_ptr, ast.partition, ast.final, ast.deduplicate, context.getSettings());
     return {};
 }

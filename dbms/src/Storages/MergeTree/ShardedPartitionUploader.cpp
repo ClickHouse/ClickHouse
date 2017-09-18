@@ -143,7 +143,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
     LOG_TRACE(log, "Sending part " << part_name);
 
-    auto storage_lock = storage.lockStructure(false);
+    auto storage_lock = storage.lockStructure(false, __PRETTY_FUNCTION__);
 
     MergeTreeData::DataPartPtr part = findShardedPart(part_name, shard_no);
 

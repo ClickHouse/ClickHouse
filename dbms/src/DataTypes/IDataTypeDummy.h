@@ -63,6 +63,11 @@ public:
     {
         throw Exception("Method getDefault() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    void insertDefaultInto(IColumn & column) const override
+    {
+        throw Exception("Method insertDefaultInto() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 }

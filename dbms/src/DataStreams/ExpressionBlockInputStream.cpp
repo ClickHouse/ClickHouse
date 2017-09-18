@@ -5,10 +5,10 @@
 namespace DB
 {
 
-ExpressionBlockInputStream::ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_)
+ExpressionBlockInputStream::ExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_)
     : expression(expression_)
 {
-    children.push_back(input_);
+    children.push_back(input);
 }
 
 String ExpressionBlockInputStream::getName() const { return "Expression"; }

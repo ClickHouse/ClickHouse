@@ -15,7 +15,7 @@
 using namespace DB;
 
 
-void inputThread(BlockInputStreamPtr in, BlockOutputStreamPtr out, WriteBuffer & wb, std::mutex & mutex)
+void inputThread(const BlockInputStreamPtr & in, BlockOutputStreamPtr out, WriteBuffer & wb, std::mutex & mutex)
 {
     while (Block block = in->read())
     {

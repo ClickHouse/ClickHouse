@@ -12,9 +12,10 @@ There exist third-party client libraries for ClickHouse:
     - `PhpClickHouseClient <https://github.com/SevaCode/PhpClickHouseClient>`_
     - `phpClickHouse <https://github.com/smi2/phpClickHouse>`_
 * Go
-    - `clickhouse (Go) <https://github.com/kshvakov/clickhouse/>`_
+    - `clickhouse <https://github.com/kshvakov/clickhouse/>`_
     - `go-clickhouse <https://github.com/roistat/go-clickhouse>`_
     - `mailru\go-clickhouse <https://github.com/mailru/go-clickhouse>`_
+    - `golang-clickhouse <https://github.com/leprosus/golang-clickhouse>`_
 * NodeJs
     - `clickhouse (NodeJs) <https://github.com/TimonKK/clickhouse>`_
     - `node-clickhouse <https://github.com/apla/node-clickhouse>`_

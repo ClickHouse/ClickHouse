@@ -52,7 +52,7 @@ namespace ErrorCodes
 }
 
 
-inline UInt64 CacheDictionary::getCellIdx(const Key id) const
+inline size_t CacheDictionary::getCellIdx(const Key id) const
 {
     const auto hash = intHash64(id);
     const auto idx = hash & size_overlap_mask;
@@ -68,7 +68,7 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
         size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))},
         size_overlap_mask{this->size - 1},
         cells{this->size},
-        rnd_engine{randomSeed()}
+        rnd_engine(randomSeed())
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{

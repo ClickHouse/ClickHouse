@@ -1,31 +1,31 @@
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast")
 
 if (USE_INTERNAL_BOOST_LIBRARY)
-	add_subdirectory (libboost)
+    add_subdirectory (libboost)
 endif ()
 
 if (USE_INTERNAL_POCO_LIBRARY)
-	add_subdirectory (libpoco)
+    add_subdirectory (libpoco)
 endif ()
 
 if (USE_INTERNAL_LZ4_LIBRARY)
-	add_subdirectory (liblz4)
+    add_subdirectory (liblz4)
 endif ()
 
 if (USE_INTERNAL_ZSTD_LIBRARY)
-	add_subdirectory (libzstd)
+    add_subdirectory (libzstd)
 endif ()
 
 if (USE_INTERNAL_RE2_LIBRARY)
-	add_subdirectory (libre2)
+    add_subdirectory (libre2)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-	add_subdirectory (libdouble-conversion)
+    add_subdirectory (libdouble-conversion)
 endif ()
 
 if (USE_INTERNAL_ZOOKEEPER_LIBRARY)
-	add_subdirectory (libzookeeper)
+    add_subdirectory (libzookeeper)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
@@ -45,26 +45,21 @@ if (USE_INTERNAL_BTRIE_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
-	add_subdirectory (libunwind)
+    add_subdirectory (libunwind)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
-	add_subdirectory (libzlib-ng)
+    add_subdirectory (libzlib-ng)
 endif ()
 
 if (USE_INTERNAL_CCTZ_LIBRARY)
-	add_subdirectory (libcctz)
+    add_subdirectory (libcctz)
 endif ()
 
 if (ENABLE_LIBTCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
-	add_subdirectory (libtcmalloc)
+    add_subdirectory (libtcmalloc)
 endif ()
 
 if (NOT ARCH_ARM)
-	add_subdirectory (libcpuid)
-endif ()
-
-if (USE_INTERNAL_MYSQL_LIBRARY)
-    add_subdirectory (mariadb-connector-c)
-    target_include_directories (${MYSQLCLIENT_LIBRARIES} BEFORE PUBLIC ${MYSQL_INCLUDE_DIR})
+    add_subdirectory (libcpuid)
 endif ()

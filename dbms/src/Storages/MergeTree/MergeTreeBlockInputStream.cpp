@@ -45,8 +45,6 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     check_columns(check_columns),
     path(data_part->getFullPath())
 {
-    log = &Logger::get("MergeTreeBlockInputStream");
-
     /// Let's estimate total number of rows for progress bar.
     size_t total_rows = 0;
     for (const auto & range : all_mark_ranges)

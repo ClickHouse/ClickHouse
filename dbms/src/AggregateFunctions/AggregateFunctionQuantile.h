@@ -99,6 +99,8 @@ public:
         else
             static_cast<ColumnVector<ArgumentFieldType> &>(to).getData().push_back(sample.quantileInterpolated(level));
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -192,6 +194,8 @@ public:
                 data_to.push_back(sample.quantileInterpolated(levels[i]));
         }
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

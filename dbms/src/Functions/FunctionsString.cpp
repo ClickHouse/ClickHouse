@@ -683,6 +683,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(arguments[0].get()))
+            return FunctionArrayConcat().getReturnTypeImpl(arguments);
+
         if (arguments.size() < 2)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
                 + ", should be at least 2.",
@@ -702,6 +705,9 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
+        if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(block.getByPosition(arguments[0]).type.get()))
+            return FunctionArrayConcat().executeImpl(block, arguments, result);
+
         if (arguments.size() == 2)
             executeBinary(block, arguments, result);
         else

@@ -25,6 +25,7 @@ struct StringRange
         {
             first = token_begin->begin;
             second = token_begin->begin;
+            return;
         }
 
         TokenIterator token_last = token_end;

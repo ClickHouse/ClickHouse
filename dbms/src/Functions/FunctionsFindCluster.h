@@ -167,7 +167,7 @@ protected:
 
     // Match the type of the centrods array and convert them to Float64, because we
     // don't want to have problems calculating negative distances of UInts
-    template<typename CentroidsType>
+    template <typename CentroidsType>
     bool fillCentroids(const IColumn * centroids_array_untyped, std::vector<Float64> & centroids)
     {
         const ColumnConst * const_centroids_array = checkAndGetColumnConst<ColumnVector<Array>>(centroids_array_untyped);
@@ -191,7 +191,7 @@ protected:
         return true;
     }
 
-    template<typename CentroidsType, typename OutputType>
+    template <typename CentroidsType, typename OutputType>
     bool executeOperation(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * centroids_array_untyped)
     {
         // Match the type of the output
@@ -220,7 +220,7 @@ protected:
         return true;
     }
 
-    template<typename InputType, typename OutputType, typename CentroidsType>
+    template <typename InputType, typename OutputType, typename CentroidsType>
     bool executeOperationTyped(const IColumn * in_untyped, PaddedPODArray<OutputType> & dst, const IColumn * centroids_array_untyped)
     {
         const auto maybe_const = in_untyped->convertToFullColumnIfConst();

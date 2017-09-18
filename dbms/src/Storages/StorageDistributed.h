@@ -79,7 +79,7 @@ public:
         const Field & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        Context & context) override;
+        const Context & context) override;
 
     /// From each replica, get a description of the corresponding local table.
     BlockInputStreams describe(const Context & context, const Settings & settings);

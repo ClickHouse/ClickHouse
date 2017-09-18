@@ -16,10 +16,12 @@
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DNSCache.h>
 
 #include <Common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
+#include <Common/randomSeed.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -32,6 +34,9 @@
 #include <Common/ZooKeeper/Lock.h>
 #include <Common/isLocalAddress.h>
 #include <Poco/Timestamp.h>
+
+#include <random>
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -61,7 +66,7 @@ struct HostID
 
     HostID() = default;
 
-    HostID(const Cluster::Address & address)
+    explicit HostID(const Cluster::Address & address)
     : host_name(address.host_name), port(address.port) {}
 
     static HostID fromString(const String & host_port_str)
@@ -81,11 +86,11 @@ struct HostID
         return host_name + ":" + DB::toString(port);
     }
 
-    bool isLocalAddress() const
+    bool isLocalAddress(UInt16 clickhouse_port) const
     {
         try
         {
-            return DB::isLocalAddress(Poco::Net::SocketAddress(host_name, port));
+            return DB::isLocalAddress(Poco::Net::SocketAddress(host_name, port), clickhouse_port);
         }
         catch (const Poco::Exception & e)
         {
@@ -220,7 +225,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
     {
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
-        max_tasks_in_queue = std::max(1UL, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+        max_tasks_in_queue = std::max(static_cast<UInt64>(1), config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
     }
 
     host_fqdn = getFQDNOrHostName();
@@ -286,7 +291,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     bool host_in_hostlist = false;
     for (const HostID & host : task->entry.hosts)
     {
-        if (!host.isLocalAddress())
+        if (!host.isLocalAddress(context.getTCPPort()))
             continue;
 
         if (host_in_hostlist)
@@ -463,7 +468,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.resolved_address))
+            if (isLocalAddress(address.resolved_address, context.getTCPPort()))
             {
                 if (found_via_resolving)
                 {
@@ -654,7 +659,7 @@ void DDLWorker::processTaskAlter(
         bool alter_executed_by_any_replica = false;
         {
             auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
-            std::mt19937 rng(StringRefHash{}(task.host_id_str) + reinterpret_cast<intptr_t>(&rng));
+            pcg64 rng(randomSeed());
 
             for (int num_tries = 0; num_tries < 10; ++num_tries)
             {
@@ -931,7 +936,7 @@ class DDLQueryStatusInputSream : public IProfilingBlockInputStream
 {
 public:
 
-    DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, Context & context)
+    DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
     : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
     {
         sample = Block{
@@ -983,7 +988,7 @@ public:
             }
 
             if (num_hosts_finished != 0 || try_number != 0)
-                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(20LU, try_number + 1)));
+                std::this_thread::sleep_for(std::chrono::milliseconds(50 * std::min(static_cast<size_t>(20), try_number + 1)));
 
             /// TODO: add shared lock
             if (!zookeeper->exists(node_path))
@@ -1018,8 +1023,8 @@ public:
                 res.getByName("port").column->insert(static_cast<UInt64>(port));
                 res.getByName("status").column->insert(static_cast<Int64>(status.code));
                 res.getByName("error").column->insert(status.message);
-                res.getByName("num_hosts_remaining").column->insert(waiting_hosts.size() - (++num_hosts_finished));
-                res.getByName("num_hosts_active").column->insert(cur_active_hosts.size());
+                res.getByName("num_hosts_remaining").column->insert(static_cast<UInt64>(waiting_hosts.size() - (++num_hosts_finished)));
+                res.getByName("num_hosts_active").column->insert(static_cast<UInt64>(cur_active_hosts.size()));
             }
         }
 
@@ -1071,7 +1076,7 @@ private:
 
 private:
     String node_path;
-    Context & context;
+    const Context & context;
     Stopwatch watch;
     Logger * log;
 
@@ -1086,7 +1091,7 @@ private:
 };
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, Context & context)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
 {
     ASTPtr query_ptr;
 

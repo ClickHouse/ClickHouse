@@ -149,6 +149,11 @@ public:
       */
     virtual Field getDefault() const = 0;
 
+    /** Directly insert default value into a column. Default implementation use method IColumn::insertDefault.
+      * This should be overriden if data type default value differs from column default value (example: Enum data types).
+      */
+    virtual void insertDefaultInto(IColumn & column) const;
+
     /// For fixed-size types, return size of value in bytes. For other data types, return some approximate size just for estimation.
     virtual size_t getSizeOfField() const
     {

@@ -70,6 +70,8 @@ public:
         static_cast<ColumnFloat64 &>(to).getData().push_back(
             static_cast<Float64>(this->data(place).sum) / this->data(place).count);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

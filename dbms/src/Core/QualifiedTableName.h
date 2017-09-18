@@ -36,7 +36,7 @@ struct QualifiedTableName
 namespace std
 {
 
-template<> struct hash<DB::QualifiedTableName>
+template <> struct hash<DB::QualifiedTableName>
 {
     using argument_type = DB::QualifiedTableName;
     using result_type = size_t;

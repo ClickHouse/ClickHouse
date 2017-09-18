@@ -19,7 +19,7 @@ bool BinaryRowInputStream::read(Block & block)
 
     size_t columns = block.columns();
     for (size_t i = 0; i < columns; ++i)
-        block.getByPosition(i).type.get()->deserializeBinary(*block.getByPosition(i).column.get(), istr);
+        block.getByPosition(i).type->deserializeBinary(*block.getByPosition(i).column.get(), istr);
 
     return true;
 }

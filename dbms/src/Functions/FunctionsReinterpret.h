@@ -27,7 +27,7 @@ namespace ErrorCodes
   */
 
 
-template<typename Name>
+template <typename Name>
 class FunctionReinterpretAsStringImpl : public IFunction
 {
 public:
@@ -52,7 +52,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    template<typename T>
+    template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         if (auto col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
@@ -112,7 +112,7 @@ public:
 };
 
 
-template<typename ToDataType, typename Name>
+template <typename ToDataType, typename Name>
 class FunctionReinterpretStringAs : public IFunction
 {
 public:
@@ -157,7 +157,7 @@ public:
             for (size_t i = 0; i < size; ++i)
             {
                 ToFieldType value = 0;
-                memcpy(&value, &data_from[offset], std::min(sizeof(ToFieldType), offsets_from[i] - offset - 1));
+                memcpy(&value, &data_from[offset], std::min(static_cast<UInt64>(sizeof(ToFieldType)), offsets_from[i] - offset - 1));
                 vec_res[i] = value;
                 offset = offsets_from[i];
             }

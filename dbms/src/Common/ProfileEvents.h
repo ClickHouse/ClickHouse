@@ -24,7 +24,7 @@ namespace ProfileEvents
     /// Increment a counter for event. Thread-safe.
     inline void increment(Event event, Count amount = 1)
     {
-        counters[event] += amount;
+        counters[event].fetch_add(amount, std::memory_order_relaxed);
     }
 
     /// Get index just after last event identifier.

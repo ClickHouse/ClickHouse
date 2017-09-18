@@ -4,6 +4,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -62,10 +63,30 @@ ASTPtr evaluateConstantExpressionAsLiteral(ASTPtr & node, const Context & contex
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(ASTPtr & node, const Context & context)
 {
-    if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(node.get()))
+    if (auto id = typeid_cast<const ASTIdentifier *>(node.get()))
         return std::make_shared<ASTLiteral>(node->range, Field(id->name));
 
     return evaluateConstantExpressionAsLiteral(node, context);
+}
+
+
+bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result)
+{
+    IParser::Pos begin = pos;
+    ASTPtr res;
+
+    if (!ParserIdentifier().parse(pos, res, expected))
+    {
+        pos = begin;
+        if (!ParserStringLiteral().parse(pos, res, expected))
+            return false;
+
+        result = typeid_cast<const ASTLiteral &>(*res).value.safeGet<String>();
+    }
+    else
+        result = typeid_cast<const ASTIdentifier &>(*res).name;
+
+    return true;
 }
 
 }

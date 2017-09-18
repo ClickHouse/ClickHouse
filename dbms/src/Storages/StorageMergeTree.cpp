@@ -151,7 +151,7 @@ void StorageMergeTree::alter(
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
     auto merge_blocker = merger.cancel();
 
-    auto table_soft_lock = lockDataForAlter();
+    auto table_soft_lock = lockDataForAlter(__PRETTY_FUNCTION__);
 
     data.checkAlter(params);
 
@@ -194,7 +194,7 @@ void StorageMergeTree::alter(
             transactions.push_back(std::move(transaction));
     }
 
-    auto table_hard_lock = lockStructureForAlter();
+    auto table_hard_lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
     IDatabase::ASTModifier engine_modifier;
     if (primary_key_is_modified)
@@ -293,7 +293,7 @@ bool StorageMergeTree::merge(
         data.clearOldTemporaryDirectories();
     }
 
-    auto structure_lock = lockStructure(true);
+    auto structure_lock = lockStructure(true, __PRETTY_FUNCTION__);
 
     size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
@@ -402,8 +402,8 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & query, const Field 
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger.cancel();
 
-    auto lock_read_structure = lockStructure(false);
-    auto lock_write_data = lockDataForAlter();
+    /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
+    auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
 
     String partition_id = data.getPartitionIDFromQuery(partition);
     MergeTreeData::DataParts parts = data.getDataParts();
@@ -452,7 +452,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, const Field & partiti
     /// This protects against "revival" of data for a removed partition after completion of merge.
     auto merge_blocker = merger.cancel();
     /// Waits for completion of merge and does not start new ones.
-    auto lock = lockForAlter();
+    auto lock = lockForAlter(__PRETTY_FUNCTION__);
 
     String partition_id = data.getPartitionIDFromQuery(partition);
 
@@ -500,7 +500,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field
         ActiveDataPartSet active_parts;
         for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
         {
-            String name = it.name();
+            const String & name = it.name();
             MergeTreePartInfo part_info;
             if (!MergeTreePartInfo::tryParsePartName(name, &part_info)
                 || part_info.partition_id != partition_id)
@@ -528,7 +528,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & query, const Field & field
     }
 
     /// New parts with other data may appear in place of deleted parts.
-    context.resetCaches();
+    context.dropCaches();
 }
 
 

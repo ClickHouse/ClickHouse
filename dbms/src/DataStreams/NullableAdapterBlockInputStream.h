@@ -18,7 +18,7 @@ namespace DB
 class NullableAdapterBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    NullableAdapterBlockInputStream(BlockInputStreamPtr input_, const Block & in_sample_,
+    NullableAdapterBlockInputStream(const BlockInputStreamPtr & input, const Block & in_sample_,
         const Block & out_sample_);
 
     String getName() const override { return "NullableAdapterBlockInputStream"; }

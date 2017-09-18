@@ -274,7 +274,7 @@ public:
     }
 
     /// Register temporary table. Then it is accessible by query_id and name.
-    void addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage);
+    void addTemporaryTable(ProcessListElement & elem, const String & table_name, const StoragePtr & storage);
 
     enum class CancellationCode
     {

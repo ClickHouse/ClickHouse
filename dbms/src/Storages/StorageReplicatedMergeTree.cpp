@@ -380,7 +380,7 @@ namespace
     {
         const MergeTreeData & data;
 
-        TableMetadata(const MergeTreeData & data_)
+        explicit TableMetadata(const MergeTreeData & data_)
             : data(data_) {}
 
         void write(WriteBuffer & out) const
@@ -638,7 +638,7 @@ void StorageReplicatedMergeTree::createReplica()
     zookeeper->exists(replica_path, &stat);
     auto my_create_time = stat.czxid;
 
-    std::random_shuffle(replicas.begin(), replicas.end());
+    std::shuffle(replicas.begin(), replicas.end(), rng);
     for (const String & replica : replicas)
     {
         if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica, &stat))
@@ -881,7 +881,7 @@ void StorageReplicatedMergeTree::checkPartAndAddToZooKeeper(
     int expected_columns_version = columns_version;
 
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
-    std::random_shuffle(replicas.begin(), replicas.end());
+    std::shuffle(replicas.begin(), replicas.end(), rng);
     String expected_columns_str = part->columns.toString();
 
     for (const String & replica : replicas)
@@ -1065,7 +1065,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             /// Can throw an exception.
             DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
 
-            auto table_lock = lockStructure(false);
+            auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
 
             MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
             MergeTreeData::Transaction transaction;
@@ -1430,7 +1430,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     /// We don't change table structure, only data in some parts
     /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
     /// If we will lock the whole table here, a deadlock can occur. For example, if use use Buffer table (CLICKHOUSE-3238)
-    auto lock_read_structure = lockStructure(false);
+    auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
 
     auto zookeeper = getZooKeeper();
 
@@ -1931,7 +1931,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 
     /// Select replicas in uniformly random order.
-    std::random_shuffle(replicas.begin(), replicas.end());
+    std::shuffle(replicas.begin(), replicas.end(), rng);
 
     for (const String & replica : replicas)
     {
@@ -1956,7 +1956,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const LogEntry 
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
 
     /// Select replicas in uniformly random order.
-    std::random_shuffle(replicas.begin(), replicas.end());
+    std::shuffle(replicas.begin(), replicas.end(), rng);
 
     for (const String & replica : replicas)
     {
@@ -2107,7 +2107,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     TableStructureReadLockPtr table_lock;
     if (!to_detached)
-        table_lock = lockStructure(true);
+        table_lock = lockStructure(true, __PRETTY_FUNCTION__);
 
     ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
 
@@ -2402,13 +2402,13 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
     LOG_DEBUG(log, "Doing ALTER");
 
-    int new_columns_version;
+    int new_columns_version = -1;   /// Initialization is to suppress (useless) false positive warning found by cppcheck.
     String new_columns_str;
     zkutil::Stat stat;
 
     {
         /// Just to read current structure. Alter will be done in separate thread.
-        auto table_lock = lockStructure(false);
+        auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
 
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
@@ -2427,8 +2427,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
         new_columns_str = ColumnsDescription<false>{
             new_columns, new_materialized_columns,
-            new_alias_columns, new_column_defaults
-        }.toString();
+            new_alias_columns, new_column_defaults}.toString();
 
         /// Do ALTER.
         getZooKeeper()->set(zookeeper_path + "/columns", new_columns_str, -1, &stat);
@@ -3381,7 +3380,7 @@ void StorageReplicatedMergeTree::reshardPartitions(
     const Field & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-    Context & context)
+    const Context & context)
 {
     auto & resharding_worker = context.getReshardingWorker();
     if (!resharding_worker.isStarted())
@@ -3788,7 +3787,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
 
     Logger * log = log_ ? log_ : this->log;
 
-    auto table_lock = lockStructure(false);
+    auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
     auto zookeeper = getZooKeeper();
 
     MergeTreeData::DataPartsVector parts = data.grabOldParts();

@@ -103,7 +103,7 @@ namespace
         IColumn::Offsets_t & res_offsets;
         IColumn::Offset_t current_src_offset = 0;
 
-        ResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) : res_offsets(*res_offsets_) {}
+        explicit ResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) : res_offsets(*res_offsets_) {}
 
         void reserve(ssize_t result_size_hint, size_t src_size)
         {
@@ -147,7 +147,7 @@ namespace
 
     struct NoResultOffsetsBuilder
     {
-        NoResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) {}
+        explicit NoResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) {}
         void reserve(ssize_t result_size_hint, size_t src_size) {}
         void insertOne(size_t array_size) {}
 

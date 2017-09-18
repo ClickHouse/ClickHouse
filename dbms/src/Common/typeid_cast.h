@@ -2,6 +2,7 @@
 
 #include <type_traits>
 #include <typeinfo>
+#include <typeindex>
 #include <string>
 
 #include <Common/Exception.h>

@@ -94,7 +94,7 @@ struct MergeTreeBlockSizePredictor
     inline size_t estimateNumRows(size_t bytes_quota) const
     {
         return (bytes_quota > block_size_bytes)
-            ? static_cast<size_t>((bytes_quota - block_size_bytes) / bytes_per_row_current)
+            ? static_cast<size_t>((bytes_quota - block_size_bytes) / std::max<size_t>(1, bytes_per_row_current))
             : 0;
     }
 

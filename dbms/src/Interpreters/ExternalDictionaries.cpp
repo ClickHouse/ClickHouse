@@ -39,7 +39,7 @@ void ExternalDictionaries::reloadPeriodically()
         if (destroy.tryWait(check_period_sec * 1000))
             return;
 
-        reloadImpl();
+        reloadAndUpdate();
     }
 }
 
@@ -53,7 +53,7 @@ ExternalDictionaries::ExternalDictionaries(Context & context, const bool throw_o
             */
         TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
 
-        reloadImpl(throw_on_error);
+        reloadAndUpdate(throw_on_error);
     }
 
     reloading_thread = std::thread{&ExternalDictionaries::reloadPeriodically, this};
@@ -94,27 +94,14 @@ std::set<std::string> getDictionariesConfigPaths(const Poco::Util::AbstractConfi
 }
 }
 
-void ExternalDictionaries::reloadImpl(const bool throw_on_error)
+void ExternalDictionaries::reloadAndUpdate(bool throw_on_error)
 {
-    const auto config_paths = getDictionariesConfigPaths(context.getConfigRef());
-
-    for (const auto & config_path : config_paths)
-    {
-        try
-        {
-            reloadFromFile(config_path, throw_on_error);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "reloadFromFile has thrown while reading from " + config_path);
-
-            if (throw_on_error)
-                throw;
-        }
-    }
+    reloadFromConfigFiles(throw_on_error);
 
     /// list of recreated dictionaries to perform delayed removal from unordered_map
     std::list<std::string> recreated_failed_dictionaries;
+
+    std::unique_lock<std::mutex> all_lock(all_mutex);
 
     /// retry loading failed dictionaries
     for (auto & failed_dictionary : failed_dictionaries)
@@ -131,7 +118,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
             {
                 /// recalculate next attempt time
                 std::uniform_int_distribution<UInt64> distribution(
-                    0, std::exp2(failed_dictionary.second.error_count));
+                        0, static_cast<UInt64>(std::exp2(failed_dictionary.second.error_count)));
 
                 failed_dictionary.second.next_attempt_time = std::chrono::system_clock::now() +
                     std::chrono::seconds{
@@ -155,7 +142,7 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
                 else
                     dict_it->second.dict = std::make_shared<MultiVersion<IDictionaryBase>>(dict_ptr.release());
 
-                /// erase stored exception on success
+                /// clear stored exception on success
                 dict_it->second.exception = std::exception_ptr{};
 
                 recreated_failed_dictionaries.push_back(name);
@@ -235,7 +222,28 @@ void ExternalDictionaries::reloadImpl(const bool throw_on_error)
     }
 }
 
-void ExternalDictionaries::reloadFromFile(const std::string & config_path, const bool throw_on_error)
+void ExternalDictionaries::reloadFromConfigFiles(const bool throw_on_error, const bool force_reload, const std::string & only_dictionary)
+{
+    const auto config_paths = getDictionariesConfigPaths(context.getConfigRef());
+
+    for (const auto & config_path : config_paths)
+    {
+        try
+        {
+            reloadFromConfigFile(config_path, throw_on_error, force_reload, only_dictionary);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "reloadFromConfigFile has thrown while reading from " + config_path);
+
+            if (throw_on_error)
+                throw;
+        }
+    }
+}
+
+void ExternalDictionaries::reloadFromConfigFile(const std::string & config_path, const bool throw_on_error, const bool force_reload,
+                                                const std::string & only_dictionary)
 {
     const Poco::File config_file{config_path};
 
@@ -245,18 +253,23 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
     }
     else
     {
+        std::unique_lock<std::mutex> all_lock(all_mutex);
+
         auto modification_time_it = last_modification_times.find(config_path);
         if (modification_time_it == std::end(last_modification_times))
             modification_time_it = last_modification_times.emplace(config_path, Poco::Timestamp{0}).first;
         auto & config_last_modified = modification_time_it->second;
 
         const auto last_modified = config_file.getLastModified();
-        if (last_modified > config_last_modified)
+        if (force_reload || last_modified > config_last_modified)
         {
             Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(config_path);
 
-            /// definitions of dictionaries may have changed, recreate all of them
-            config_last_modified = last_modified;
+            /// Definitions of dictionaries may have changed, recreate all of them
+
+            /// If we need update only one dictionary, don't update modification time: might be other dictionaries in the config file
+            if (only_dictionary.empty())
+                config_last_modified = last_modified;
 
             /// get all dictionaries' definitions
             Poco::Util::AbstractConfiguration::Keys keys;
@@ -285,10 +298,17 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
                         continue;
                     }
 
-                    const auto dict_it = dictionaries.find(name);
-                    if (dict_it != std::end(dictionaries))
-                        if (dict_it->second.origin != config_path)
-                            throw std::runtime_error{"Overriding dictionary from file " + dict_it->second.origin};
+                    if (!only_dictionary.empty() && name != only_dictionary)
+                        continue;
+
+                    decltype(dictionaries.begin()) dict_it;
+                    {
+                        std::lock_guard<std::mutex> lock{dictionaries_mutex};
+                        dict_it = dictionaries.find(name);
+                    }
+
+                    if (dict_it != std::end(dictionaries) && dict_it->second.origin != config_path)
+                        throw std::runtime_error{"Overriding dictionary from file " + dict_it->second.origin};
 
                     auto dict_ptr = DictionaryFactory::instance().create(name, *config, key, context);
 
@@ -300,19 +320,16 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
                         {
                             failed_dict_it->second = FailedDictionaryInfo{
                                 std::move(dict_ptr),
-                                std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}
-                            };
+                                std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}};
                         }
                         else
                             failed_dictionaries.emplace(name, FailedDictionaryInfo{
                                 std::move(dict_ptr),
-                                std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}
-                            });
+                                std::chrono::system_clock::now() + std::chrono::seconds{backoff_initial_sec}});
 
                         std::rethrow_exception(exception_ptr);
                     }
-
-                    if (!dict_ptr->isCached())
+                    else if (!dict_ptr->isCached())
                     {
                         const auto & lifetime = dict_ptr->getLifetime();
                         if (lifetime.min_sec != 0 && lifetime.max_sec != 0)
@@ -372,6 +389,21 @@ void ExternalDictionaries::reloadFromFile(const std::string & config_path, const
             }
         }
     }
+}
+
+void ExternalDictionaries::reload()
+{
+    reloadFromConfigFiles(true, true);
+}
+
+void ExternalDictionaries::reloadDictionary(const std::string & name)
+{
+    reloadFromConfigFiles(true, true, name);
+
+    /// Check that specified dict was loaded
+    const std::lock_guard<std::mutex> lock{dictionaries_mutex};
+    if (!dictionaries.count(name))
+        throw Exception("Dictionary " + name + " wasn't loaded during the reload process", ErrorCodes::BAD_ARGUMENTS);
 }
 
 MultiVersion<IDictionaryBase>::Version ExternalDictionaries::getDictionary(const std::string & name) const

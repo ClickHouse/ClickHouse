@@ -2,10 +2,12 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
+#include <Common/randomSeed.h>
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 
+#include <pcg_random.hpp>
 #include <random>
 
 
@@ -115,7 +117,7 @@ void BackgroundProcessingPool::threadFunction()
     memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
     current_memory_tracker = &memory_tracker;
 
-    std::mt19937 rng(reinterpret_cast<intptr_t>(&rng));
+    pcg64 rng(randomSeed());
     std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
 
     while (!shutdown)
