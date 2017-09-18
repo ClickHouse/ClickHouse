@@ -314,14 +314,17 @@ public:
 
         auto & result_column = block.safeGetByPosition(result).column;
 
-        callPointInPolygonImpl(*column_x, *column_y, polygon);
+        callPointInPolygonImpl<useObjectPool>(*column_x, *column_y, polygon);
 
         if (const_tuple_col)
             result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
     }
 
-    typename std::enable_if<useObjectPool, ColumnPtr>::type
-    callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon)
+    template <bool>
+    ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon);
+
+    template <>
+    ColumnPtr callPointInPolygonImpl<true>(const IColumn & x, const IColumn & y, const Polygon & polygon)
     {
         using Pool = ObjectPoolMap<PointInPolygonImpl, std::string>;
         /// C++11 has thread-safe function-local statics on most modern compilers.
@@ -339,20 +342,20 @@ public:
         return GeoUtils::pointInPolygon(x, y, *impl);
     }
 
-    typename std::enable_if<!useObjectPool, ColumnPtr>::type
-    callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon)
+    template <>
+    ColumnPtr callPointInPolygonImpl<false>(const IColumn & x, const IColumn & y, const Polygon & polygon)
     {
         PointInPolygonImpl impl(polygon);
         return GeoUtils::pointInPolygon(x, y, impl);
     }
 };
 
-template <typename... Args>
-using PointInPolygonCrossingStrategy = boost::geometry::strategy::within::crossings_multiply<Args...>;
-template <typename... Args>
-using PointInPolygonWindingStrategy = boost::geometry::strategy::within::winding<Args...>;
-template <typename... Args>
-using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::franklin<Args...>;
+
+using Point = boost::geometry::model::d2::point_xy<Float32>;
+
+using PointInPolygonCrossingStrategy = boost::geometry::strategy::within::crossings_multiply<Point>;
+using PointInPolygonWindingStrategy = boost::geometry::strategy::within::winding<Point>;
+using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::franklin<Point>;
 
 using PointInPolygonCrossing = GeoUtils::PointInPolygon<PointInPolygonCrossingStrategy>;
 using PointInPolygonWinding = GeoUtils::PointInPolygon<PointInPolygonWindingStrategy>;
