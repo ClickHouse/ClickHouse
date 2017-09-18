@@ -13,7 +13,8 @@
 #include <thread>
 #include <unordered_map>
 #include <chrono>
-#include <random>
+#include <pcg_random.hpp>
+
 
 namespace DB
 {
@@ -40,7 +41,11 @@ private:
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
 
+    /// Protects only dictionaries map.
     mutable std::mutex dictionaries_mutex;
+
+    /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
+    mutable std::mutex all_mutex;
 
     using DictionaryPtr = std::shared_ptr<MultiVersion<IDictionaryBase>>;
     struct DictionaryInfo final
@@ -61,7 +66,7 @@ private:
       */
     std::unordered_map<std::string, DictionaryInfo> dictionaries;
 
-    /** Here are dictionaries, that has been never loaded sussessfully.
+    /** Here are dictionaries, that has been never loaded successfully.
       * They are also in 'dictionaries', but with nullptr as 'dict'.
       */
     std::unordered_map<std::string, FailedDictionaryInfo> failed_dictionaries;
@@ -70,7 +75,7 @@ private:
       */
     std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 
-    std::mt19937_64 rnd_engine{randomSeed()};
+    pcg64 rnd_engine{randomSeed()};
 
     Context & context;
 
@@ -81,8 +86,13 @@ private:
 
     std::unordered_map<std::string, Poco::Timestamp> last_modification_times;
 
-    void reloadImpl(bool throw_on_error = false);
-    void reloadFromFile(const std::string & config_path, bool throw_on_error);
+    /// Check dictionaries definitions in config files and reload or/and add new ones if the definition is changed
+    void reloadFromConfigFiles(const bool throw_on_error, const bool force_reload = false, const std::string & only_dictionary = "");
+    void reloadFromConfigFile(const std::string & config_path, const bool throw_on_error, const bool force_reload,
+                                  const std::string & only_dictionary);
+
+    /// Check config files and update expired dictionaries
+    void reloadAndUpdate(bool throw_on_error = false);
 
     void reloadPeriodically();
 
@@ -90,6 +100,12 @@ public:
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     ExternalDictionaries(Context & context, const bool throw_on_error);
     ~ExternalDictionaries();
+
+    /// Forcibly reloads all dictionaries.
+    void reload();
+
+    /// Forcibly reloads specified dictionary.
+    void reloadDictionary(const std::string & name);
 
     MultiVersion<IDictionaryBase>::Version getDictionary(const std::string & name) const;
 };

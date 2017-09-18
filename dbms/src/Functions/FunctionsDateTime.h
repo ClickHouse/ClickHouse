@@ -466,7 +466,7 @@ struct ToYYYYMMDDhhmmssImpl
 };
 
 
-template<typename FromType, typename ToType, typename Transform>
+template <typename FromType, typename ToType, typename Transform>
 struct Transformer
 {
     static void vector(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to, const DateLUTImpl & time_zone)
@@ -651,7 +651,7 @@ public:
     {
         block.getByPosition(result).column = DataTypeUInt32().createConstColumn(
             block.rows(),
-            time(0));
+            static_cast<UInt64>(time(0)));
     }
 };
 

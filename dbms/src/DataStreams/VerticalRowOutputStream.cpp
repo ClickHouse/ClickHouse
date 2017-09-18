@@ -152,7 +152,7 @@ void VerticalRowOutputStream::writeSpecialRow(const Block & block, size_t row_nu
             writeFieldDelimiter();
 
         auto & col = block.getByPosition(i);
-        writeField(*col.column.get(), *col.type.get(), row_num);
+        writeField(*col.column, *col.type, row_num);
     }
 }
 

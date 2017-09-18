@@ -9,9 +9,8 @@
 namespace DB
 {
 
-bool isLocalAddress(const Poco::Net::SocketAddress & address)
+bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port)
 {
-    const UInt16 clickhouse_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
     static auto interfaces = Poco::Net::NetworkInterface::list();
 
     if (clickhouse_port == address.port())

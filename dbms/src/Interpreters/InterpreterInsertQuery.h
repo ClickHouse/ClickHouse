@@ -30,7 +30,7 @@ private:
     Block getSampleBlock();
 
     ASTPtr query_ptr;
-    Context context;
+    const Context & context;
 };
 
 

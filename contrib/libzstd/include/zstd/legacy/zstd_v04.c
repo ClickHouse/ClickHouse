@@ -1,10 +1,10 @@
-/**
+/*
  * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under both the BSD-style license (found in the
+ * LICENSE file in the root directory of this source tree) and the GPLv2 (found
+ * in the COPYING file in the root directory of this source tree).
  */
 
 
@@ -2776,7 +2776,7 @@ static size_t ZSTD_decodeFrameHeader_Part2(ZSTD_DCtx* zc, const void* src, size_
     size_t result;
     if (srcSize != zc->headerSize) return ERROR(srcSize_wrong);
     result = ZSTD_getFrameParams(&(zc->params), src, srcSize);
-    if ((MEM_32bits()) && (zc->params.windowLog > 25)) return ERROR(frameParameter_unsupportedBy32bits);
+    if ((MEM_32bits()) && (zc->params.windowLog > 25)) return ERROR(frameParameter_unsupported);
     return result;
 }
 

@@ -17,11 +17,11 @@ extern const int TYPE_MISMATCH;
 }
 
 NullableAdapterBlockInputStream::NullableAdapterBlockInputStream(
-    BlockInputStreamPtr input_,
+    const BlockInputStreamPtr & input,
     const Block & in_sample_, const Block & out_sample_)
 {
     buildActions(in_sample_, out_sample_);
-    children.push_back(input_);
+    children.push_back(input);
 }
 
 String NullableAdapterBlockInputStream::getID() const

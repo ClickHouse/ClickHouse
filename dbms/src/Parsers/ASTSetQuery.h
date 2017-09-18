@@ -24,7 +24,7 @@ public:
     Changes changes;
 
     ASTSetQuery() = default;
-    ASTSetQuery(const StringRange range_) : IAST(range_) {}
+    explicit ASTSetQuery(const StringRange range_) : IAST(range_) {}
 
     /** Get the text that identifies this element. */
     String getID() const override { return "Set"; };

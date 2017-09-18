@@ -89,7 +89,7 @@ public:
         }
         else
         {
-            UInt64 elems_to_insert = std::min(max_elems - cur_elems.value.size(), rhs_elems.value.size());
+            UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
             cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
         }
     }
@@ -137,6 +137,8 @@ public:
     {
         return true;
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -408,6 +410,8 @@ public:
     {
         return true;
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 #undef AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE

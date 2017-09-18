@@ -31,10 +31,11 @@ install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhous
 
 add_library (clickhouse-benchmark Benchmark.cpp)
 target_link_libraries (clickhouse-benchmark dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_include_directories (clickhouse-benchmark PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
 add_library (clickhouse-performance-test PerformanceTest.cpp)
 target_link_libraries (clickhouse-performance-test dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
-
+target_include_directories (clickhouse-performance-test PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
 add_executable(clickhouse main.cpp)
 target_include_directories(clickhouse PRIVATE ${COMMON_INCLUDE_DIR})

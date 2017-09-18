@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Poco/Net/TCPServerConnectionFactory.h>
-
+#include <common/logger_useful.h>
 #include "IServer.h"
-
 #include "TCPHandler.h"
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -14,10 +14,10 @@ class TCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Logger * log;
+    Poco::Logger * log;
 
 public:
-    TCPHandlerFactory(IServer & server_)
+    explicit TCPHandlerFactory(IServer & server_)
         : server(server_)
         , log(&Logger::get("TCPHandlerFactory"))
     {

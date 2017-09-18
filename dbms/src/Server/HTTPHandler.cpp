@@ -229,6 +229,8 @@ void HTTPHandler::processQuery(
     std::string quota_key = request.get("X-ClickHouse-Quota", params.get("quota_key", ""));
     std::string query_id = params.get("query_id", "");
 
+    const auto & config = server.config();
+
     Context context = server.context();
     context.setGlobalContext(server.context());
 
@@ -246,7 +248,7 @@ void HTTPHandler::processQuery(
     if (session_is_set)
     {
         session_id = params.get("session_id");
-        session_timeout = parseSessionTimeout(server.config(), params);
+        session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
 
         session = context.acquireSession(session_id, session_timeout, session_check == "1");
@@ -296,8 +298,11 @@ void HTTPHandler::processQuery(
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, client_supports_http_compression, http_response_compression_method, buffer_size_http);
+        request, response, keep_alive_timeout,
+        client_supports_http_compression, http_response_compression_method, buffer_size_http);
     if (internal_compression)
         used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
     else

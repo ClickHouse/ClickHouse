@@ -80,7 +80,7 @@ void CompressedWriteBuffer::nextImpl()
 
             size_t res = ZSTD_compress(
                 &compressed_buffer[header_size],
-                compressed_buffer.size(),
+                compressed_buffer.size() - header_size,
                 working_buffer.begin(),
                 uncompressed_size,
                 1);

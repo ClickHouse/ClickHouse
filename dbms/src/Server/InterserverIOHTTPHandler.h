@@ -19,7 +19,7 @@ namespace DB
 class InterserverIOHTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    InterserverIOHTTPHandler(IServer & server_)
+    explicit InterserverIOHTTPHandler(IServer & server_)
         : server(server_)
         , log(&Poco::Logger::get("InterserverIOHTTPHandler"))
     {

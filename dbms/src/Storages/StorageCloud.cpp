@@ -26,6 +26,8 @@ StorageCloud::StorageCloud(
         throw Exception("DatabaseCloud is detached", ErrorCodes::LOGICAL_ERROR);
 
     DatabaseCloud & db = static_cast<DatabaseCloud &>(*owned_db);
+
+    /// This code is unfinished.
 }
 
 }

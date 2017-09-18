@@ -86,7 +86,7 @@ BlockIO InterpreterInsertQuery::execute()
     ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
     StoragePtr table = getTable();
 
-    auto table_lock = table->lockStructure(true);
+    auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
 
     NamesAndTypesListPtr required_columns = std::make_shared<NamesAndTypesList>(table->getColumnsList());
 

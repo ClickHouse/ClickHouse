@@ -45,7 +45,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
         where{config.getString(config_prefix + ".where", "")},
         query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
         sample_block{sample_block}, context(context),
-        is_local{isLocalAddress({ host, port })},
+        is_local{isLocalAddress({ host, port }, config.getInt("tcp_port", 0))},
         pool{is_local ? nullptr : createPool(host, port, db, user, password)},
         load_all_query{query_builder.composeLoadAllQuery()}
 {}

@@ -223,9 +223,9 @@ public:
         StopThread = -2
     };
 
-    SignalListener(BaseDaemon & daemon_)
-    : log(&Logger::get("BaseDaemon"))
-    , daemon(daemon_)
+    explicit SignalListener(BaseDaemon & daemon_)
+        : log(&Logger::get("BaseDaemon"))
+        , daemon(daemon_)
     {
     }
 
@@ -328,11 +328,6 @@ private:
         static const int max_frames = 50;
         void * frames[max_frames];
 
-
-
-
-
-
 #if USE_UNWIND
         int frames_size = backtraceLibUnwind(frames, max_frames, context);
 
@@ -405,7 +400,7 @@ static void terminate_handler()
     if (terminating)
     {
         abort();
-        return;
+        return; /// Just for convenience.
     }
 
     terminating = true;

@@ -1,10 +1,10 @@
-/**
+/*
  * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under both the BSD-style license (found in the
+ * LICENSE file in the root directory of this source tree) and the GPLv2 (found
+ * in the COPYING file in the root directory of this source tree).
  */
 
 
@@ -695,7 +695,7 @@ static size_t ZDICT_analyzeEntropy(void*  dstBuffer, size_t maxDstSize,
         DISPLAYLEVEL(1, "Not enough memory \n");
         goto _cleanup;
     }
-    if (offcodeMax>OFFCODE_MAX) { eSize = ERROR(dictionary_wrong); goto _cleanup; }   /* too large dictionary */
+    if (offcodeMax>OFFCODE_MAX) { eSize = ERROR(dictionaryCreation_failed); goto _cleanup; }   /* too large dictionary */
     for (u=0; u<256; u++) countLit[u] = 1;   /* any character must be described */
     for (u=0; u<=offcodeMax; u++) offcodeCount[u] = 1;
     for (u=0; u<=MaxML; u++) matchLengthCount[u] = 1;

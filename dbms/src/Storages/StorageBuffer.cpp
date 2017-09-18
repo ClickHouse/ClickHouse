@@ -210,7 +210,7 @@ static void appendBlock(const Block & from, Block & to)
 class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
+    explicit BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
 
     void write(const Block & block) override
     {
@@ -440,67 +440,65 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
     size_t bytes = 0;
     time_t time_passed = 0;
 
+    std::lock_guard<std::mutex> lock(buffer.mutex);
+
+    block_to_write = buffer.data.cloneEmpty();
+
+    rows = buffer.data.rows();
+    bytes = buffer.data.bytes();
+    if (buffer.first_write_time)
+        time_passed = current_time - buffer.first_write_time;
+
+    if (check_thresholds)
     {
-        std::lock_guard<std::mutex> lock(buffer.mutex);
+        if (!checkThresholdsImpl(rows, bytes, time_passed))
+            return;
+    }
+    else
+    {
+        if (rows == 0)
+            return;
+    }
 
-        block_to_write = buffer.data.cloneEmpty();
+    buffer.data.swap(block_to_write);
+    buffer.first_write_time = 0;
 
-        rows = buffer.data.rows();
-        bytes = buffer.data.bytes();
-        if (buffer.first_write_time)
-            time_passed = current_time - buffer.first_write_time;
+    CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+    CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
-        if (check_thresholds)
-        {
-            if (!checkThresholdsImpl(rows, bytes, time_passed))
-                return;
-        }
-        else
-        {
-            if (rows == 0)
-                return;
-        }
+    ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
+
+    LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
+
+    if (no_destination)
+        return;
+
+    /** For simplicity, buffer is locked during write.
+        * We could unlock buffer temporary, but it would lead to too much difficulties:
+        * - data, that is written, will not be visible for SELECTs;
+        * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
+        * - this could lead to infinite memory growth.
+        */
+    try
+    {
+        writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
+
+        /// Return the block to its place in the buffer.
+
+        CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+        CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
         buffer.data.swap(block_to_write);
-        buffer.first_write_time = 0;
 
-        CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
-        CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
+        if (!buffer.first_write_time)
+            buffer.first_write_time = current_time;
 
-        ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
-
-        LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
-
-        if (no_destination)
-            return;
-
-        /** For simplicity, buffer is locked during write.
-          * We could unlock buffer temporary, but it would lead to too much difficulties:
-          * - data, that is written, will not be visible for SELECTs;
-          * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
-          * - this could lead to infinite memory growth.
-          */
-        try
-        {
-            writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
-        }
-        catch (...)
-        {
-            ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
-
-            /// Return the block to its place in the buffer.
-
-            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
-            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
-
-            buffer.data.swap(block_to_write);
-
-            if (!buffer.first_write_time)
-                buffer.first_write_time = current_time;
-
-            /// After a while, the next write attempt will happen.
-            throw;
-        }
+        /// After a while, the next write attempt will happen.
+        throw;
     }
 }
 
@@ -592,7 +590,7 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context.getSettings());

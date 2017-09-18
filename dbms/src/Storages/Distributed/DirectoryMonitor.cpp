@@ -115,7 +115,7 @@ void StorageDistributedDirectoryMonitor::run()
 
     std::unique_lock<std::mutex> lock{mutex};
 
-    const auto quit_requested = [this] { return quit; };
+    const auto quit_requested = [this] { return quit.load(std::memory_order_relaxed); };
 
     while (!quit_requested())
     {

@@ -60,7 +60,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 
     {
         StoragePtr table = context.getTable(ast.database, ast.table);
-        auto table_lock = table->lockStructure(false);
+        auto table_lock = table->lockStructure(false, __PRETTY_FUNCTION__);
         columns = table->getColumnsList();
         columns.insert(std::end(columns), std::begin(table->alias_columns), std::end(table->alias_columns));
         column_defaults = table->column_defaults;

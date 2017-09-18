@@ -61,7 +61,7 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
+    explicit MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
 
     void write(const Block & block) override
     {

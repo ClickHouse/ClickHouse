@@ -191,6 +191,7 @@ config-9001.xml
 *-preprocessed.xml
 
 core
+!core/
 vgcore*
 
 *.deb

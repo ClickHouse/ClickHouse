@@ -242,6 +242,12 @@ Field DataTypeEnum<Type>::getDefault() const
 }
 
 template <typename Type>
+void DataTypeEnum<Type>::insertDefaultInto(IColumn & column) const
+{
+    static_cast<ColumnType &>(column).getData().push_back(values.front().second);
+}
+
+template <typename Type>
 static void checkOverflow(Int64 value)
 {
     if (!(std::numeric_limits<Type>::min() <= value && value <= std::numeric_limits<Type>::max()))

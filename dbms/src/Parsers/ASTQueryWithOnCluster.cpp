@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace DB
@@ -21,21 +22,7 @@ bool ASTQueryWithOnCluster::parse(Pos & pos, std::string & cluster_str, Expected
     if (!ParserKeyword{"CLUSTER"}.ignore(pos, expected))
         return false;
 
-    Pos begin = pos;
-    ASTPtr res;
-
-    if (!ParserIdentifier().parse(pos, res, expected))
-    {
-        pos = begin;
-        if (!ParserStringLiteral().parse(pos, res, expected))
-            return false;
-        else
-            cluster_str = typeid_cast<const ASTLiteral &>(*res).value.safeGet<String>();
-    }
-    else
-        cluster_str = typeid_cast<const ASTIdentifier &>(*res).name;
-
-    return true;
+    return parseIdentifierOrStringLiteral(pos, expected, cluster_str);
 }
 
 

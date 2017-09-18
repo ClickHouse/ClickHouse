@@ -5,9 +5,9 @@
 namespace DB
 {
 
-MaterializingBlockInputStream::MaterializingBlockInputStream(BlockInputStreamPtr input_)
+MaterializingBlockInputStream::MaterializingBlockInputStream(const BlockInputStreamPtr & input)
 {
-    children.push_back(input_);
+    children.push_back(input);
 }
 
 String MaterializingBlockInputStream::getName() const

@@ -16,7 +16,8 @@
 # sudo ./copy_headers.sh . /usr/share/clickhouse/headers/
 
 SOURCE_PATH=${1:-.}
-DST=${2:-$SOURCE_PATH/../headers};
+DST=${2:-$SOURCE_PATH/../headers}
+BUILD_PATH=${3:-$SOURCE_PATH/build}
 
 PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
@@ -24,15 +25,22 @@ if [[ -z $CLANG ]]; then
     CLANG="clang"
 fi
 
+START_HEADERS=$(echo \
+    $BUILD_PATH/dbms/src/Common/config_version.h \
+    $SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h \
+    $SOURCE_PATH/dbms/src/AggregateFunctions/AggregateFunction*.h)
+
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 
-for src_file in $($CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
-    $(cat "$SOURCE_PATH/build/include_directories.txt") \
-    "$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
+for src_file in $(echo | $CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
+    $(cat "$BUILD_PATH/include_directories.txt") \
+    $(echo $START_HEADERS | sed -r -e 's/[^ ]+/-include \0/g') \
+    - |
     tr -d '\\' |
-    sed -r -e 's/^\w+\.o://');
+    sed -r -e 's/^-\.o://');
 do
     dst_file=$src_file;
+    dst_file=$(echo $dst_file | sed -r -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
     mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done

@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iomanip>
 #include <random>
+#include <pcg_random.hpp>
 
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
@@ -15,6 +16,7 @@
 #include <Common/Stopwatch.h>
 #include <common/ThreadPool.h>
 #include <AggregateFunctions/ReservoirSampler.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
 
 #include <boost/program_options.hpp>
 
@@ -70,6 +72,10 @@ public:
         json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
     {
         std::cerr << std::fixed << std::setprecision(3);
+
+        /// This is needed to receive blocks with columns of AggregateFunction data type
+        /// (example: when using stage = 'with_mergeable_state')
+        registerAggregateFunctions();
 
         if (stage == "complete")
             query_processing_stage = QueryProcessingStage::Complete;
@@ -225,7 +231,7 @@ private:
 
     void run()
     {
-        std::mt19937 generator(randomSeed());
+        pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
 
         for (size_t i = 0; i < concurrency; ++i)

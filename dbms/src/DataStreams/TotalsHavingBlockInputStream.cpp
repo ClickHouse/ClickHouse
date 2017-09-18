@@ -16,8 +16,8 @@ namespace ErrorCodes
 
 
 TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
-    BlockInputStreamPtr input_,
-    bool overflow_row_, ExpressionActionsPtr expression_,
+    const BlockInputStreamPtr & input_,
+    bool overflow_row_, const ExpressionActionsPtr & expression_,
     const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_)
     : overflow_row(overflow_row_),
     expression(expression_), filter_column_name(filter_column_), totals_mode(totals_mode_),
@@ -172,7 +172,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
             if (init)
             {
                 ColumnPtr new_column = current.type->createColumn();
-                new_column->insert(current.type->getDefault());
+                current.type->insertDefaultInto(*new_column);
                 totals.insert(ColumnWithTypeAndName(new_column, current.type, current.name));
             }
             continue;

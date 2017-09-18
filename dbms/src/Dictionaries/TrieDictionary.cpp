@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 TrieDictionary::TrieDictionary(
@@ -598,6 +599,7 @@ Columns TrieDictionary::getKeyColumns() const
     auto ip_column = std::make_shared<ColumnFixedString>(IPV6_BINARY_LENGTH);
     auto mask_column = std::make_shared<ColumnVector<UInt8>>();
 
+#if defined(__SIZEOF_INT128__)
     auto getter = [& ip_column, & mask_column](__uint128_t ip, size_t mask) {
         UInt64 * ip_array = reinterpret_cast<UInt64 *>(&ip);
         ip_array[0] = Poco::ByteOrder::fromNetwork(ip_array[0]);
@@ -608,6 +610,9 @@ Columns TrieDictionary::getKeyColumns() const
     };
 
     trieTraverse<decltype(getter), __uint128_t>(trie, std::move(getter));
+#else
+    throw Exception("TrieDictionary::getKeyColumns is not implemented for 32bit arch", ErrorCodes::NOT_IMPLEMENTED);
+#endif
     return {ip_column, mask_column};
 }
 

@@ -174,6 +174,38 @@ Block MergingSortedBlockInputStream::readImpl()
     return merged_block;
 }
 
+
+template <typename TSortCursor>
+void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue)
+{
+    size_t i = 0;
+    size_t size = cursors.size();
+    for (; i < size; ++i)
+    {
+        if (&cursors[i] == current.impl)
+        {
+            source_blocks[i] = new detail::SharedBlock(children[i]->read());
+            if (*source_blocks[i])
+            {
+                cursors[i].reset(*source_blocks[i]);
+                queue.push(TSortCursor(&cursors[i]));
+            }
+
+            break;
+        }
+    }
+
+    if (i == size)
+        throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
+}
+
+template
+void MergingSortedBlockInputStream::fetchNextBlock<SortCursor>(const SortCursor & current, std::priority_queue<SortCursor> & queue);
+
+template
+void MergingSortedBlockInputStream::fetchNextBlock<SortCursorWithCollation>(const SortCursorWithCollation & current, std::priority_queue<SortCursorWithCollation> & queue);
+
+
 template <typename TSortCursor>
 void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
@@ -318,31 +350,6 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 
     cancel();
     finished = true;
-}
-
-
-template <typename TSortCursor>
-void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue)
-{
-    size_t i = 0;
-    size_t size = cursors.size();
-    for (; i < size; ++i)
-    {
-        if (&cursors[i] == current.impl)
-        {
-            source_blocks[i] = new detail::SharedBlock(children[i]->read());
-            if (*source_blocks[i])
-            {
-                cursors[i].reset(*source_blocks[i]);
-                queue.push(TSortCursor(&cursors[i]));
-            }
-
-            break;
-        }
-    }
-
-    if (i == size)
-        throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 }
 
 

@@ -506,7 +506,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
-        as_storage_lock = as_storage->lockStructure(false);
+        as_storage_lock = as_storage->lockStructure(false, __PRETTY_FUNCTION__);
     }
 
     /// Set and retrieve list of columns.
@@ -549,7 +549,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (create.is_temporary)
             context.getSessionContext().addExternalTable(table_name, res);
         else
-            context.getDatabase(database_name)->createTable(table_name, res, query_ptr, storage_name, context.getSettingsRef());
+            context.getDatabase(database_name)->createTable(context, table_name, res, query_ptr, storage_name);
     }
 
     res->startup();
@@ -557,7 +557,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// If the CREATE SELECT query is, insert the data into the table
     if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
     {
-        auto table_lock = res->lockStructure(true);
+        auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
 
         /// Also see InterpreterInsertQuery.
         BlockOutputStreamPtr out =

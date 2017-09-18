@@ -14,7 +14,7 @@ namespace Poco
 namespace DB
 {
 
-void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response);
+void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout);
 
 extern std::once_flag ssl_init_once;
 void SSLInit();

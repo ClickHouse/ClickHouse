@@ -16,7 +16,7 @@ class DataTypeTuple final : public IDataType
 private:
     DataTypes elems;
 public:
-    DataTypeTuple(DataTypes elems_) : elems(elems_) {}
+    DataTypeTuple(const DataTypes & elems_) : elems(elems_) {}
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
@@ -53,6 +53,8 @@ public:
     ColumnPtr createColumn() const override;
 
     Field getDefault() const override;
+    void insertDefaultInto(IColumn & column) const override;
+
     const DataTypes & getElements() const { return elems; }
 };
 

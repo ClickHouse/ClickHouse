@@ -854,7 +854,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges res;
 
     size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
-    size_t marks_count = index.at(0).get()->size();
+    size_t marks_count = index.at(0)->size();
 
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())
