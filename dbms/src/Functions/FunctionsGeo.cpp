@@ -178,7 +178,7 @@ public:
 namespace FunctionPointInPolygonDetail
 {
 
-template <typename bool>
+template <bool>
 struct Flag {};
 
 template <typename Polygon, typename PointInPolygonImpl>
