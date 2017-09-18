@@ -255,7 +255,7 @@ struct OneAdder<T, Data, typename std::enable_if<
     std::is_same<Data, AggregateFunctionUniqHLL12Data<T>>::value>::type>
 {
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column, size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
         typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
     {
         const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
@@ -263,7 +263,7 @@ struct OneAdder<T, Data, typename std::enable_if<
     }
 
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column,    size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column,    size_t row_num,
         typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
     {
         StringRef value = column.getDataAt(row_num);
@@ -279,7 +279,7 @@ struct OneAdder<T, Data, typename std::enable_if<
     std::is_same<Data, AggregateFunctionUniqCombinedData<T>>::value>::type>
 {
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column, size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
         typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
     {
         const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
@@ -287,7 +287,7 @@ struct OneAdder<T, Data, typename std::enable_if<
     }
 
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column,    size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column,    size_t row_num,
         typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
     {
         StringRef value = column.getDataAt(row_num);
@@ -300,14 +300,14 @@ struct OneAdder<T, Data, typename std::enable_if<
     std::is_same<Data, AggregateFunctionUniqExactData<T>>::value>::type>
 {
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column, size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
         typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
     {
         data.set.insert(static_cast<const ColumnVector<T2> &>(column).getData()[row_num]);
     }
 
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column, size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
         typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
     {
         StringRef value = column.getDataAt(row_num);
@@ -364,6 +364,8 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -426,6 +428,8 @@ public:
     }
 
     IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

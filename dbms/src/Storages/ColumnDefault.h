@@ -21,7 +21,7 @@ enum class ColumnDefaultType
 
 namespace std
 {
-    template<> struct hash<DB::ColumnDefaultType>
+    template <> struct hash<DB::ColumnDefaultType>
     {
         size_t operator()(const DB::ColumnDefaultType type) const
         {

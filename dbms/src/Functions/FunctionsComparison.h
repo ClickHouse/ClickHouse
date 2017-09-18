@@ -90,7 +90,7 @@ template <typename A, typename B> struct GreaterOrEqualsOp
 };
 
 
-template<typename A, typename B, typename Op>
+template <typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
     /// If you don't specify NO_INLINE, the compiler will inline this function, but we don't need this as this function contains tight loop inside.

@@ -95,4 +95,7 @@ endif
 	dh_install --list-missing --sourcedir=$(DESTDIR)
 
 override_dh_shlibdeps:
-	dh_shlibdeps -Xdebian/clickhouse-server-base/usr/share/clickhouse/bin/*
+	true # We depend only on libc and dh_shlibdeps gives us wrong (too strict) dependency.
+
+override_dh_builddeb:
+	dh_builddeb -- -Z gzip # Older systems don't have "xz", so use "gzip" instead.

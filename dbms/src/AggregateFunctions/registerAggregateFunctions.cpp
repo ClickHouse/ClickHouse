@@ -25,7 +25,6 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory);
-void registerAggregateFunctionDebug(AggregateFunctionFactory & factory);
 
 
 void registerAggregateFunctions()
@@ -52,7 +51,6 @@ void registerAggregateFunctions()
     registerAggregateFunctionUniqUpTo(factory);
     registerAggregateFunctionTopK(factory);
     registerAggregateFunctionsBitwise(factory);
-    registerAggregateFunctionDebug(factory);
 }
 
 }
