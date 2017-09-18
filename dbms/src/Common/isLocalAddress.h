@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/Types.h>
 
 namespace Poco
 {
