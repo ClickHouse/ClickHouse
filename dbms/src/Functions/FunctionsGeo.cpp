@@ -266,7 +266,7 @@ public:
 
         Polygon polygon;
 
-        for (size_t i = 2; i < arguments.size(); ++i)
+        for (size_t i = 1; i < arguments.size(); ++i)
         {
             auto const_array_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
             auto array_col = const_array_col ? checkAndGetColumn<ColumnArray>(&const_array_col->getDataColumn()) : nullptr;
@@ -307,25 +307,23 @@ public:
                 container.push_back(container.front());
         }
 
+        const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
+        auto const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
+        if (const_tuple_col)
+            point_col = &const_tuple_col->getDataColumn();
+        auto tuple_col = checkAndGetColumn<ColumnTuple>(point_col);
 
-        auto column_x = block.safeGetByPosition(arguments[0]).column;
-        auto column_y = block.safeGetByPosition(arguments[1]).column;
-
-        auto column_const_x = checkAndGetColumn<ColumnConst>(column_x.get());
-        auto column_const_y = checkAndGetColumn<ColumnConst>(column_y.get());
-
-        if (column_const_x && column_const_y)
+        if (!tuple_col)
         {
-            column_x = column_const_x->getDataColumnPtr();
-            column_y = column_const_y->getDataColumnPtr();
+            throw Exception("First argument for function " + getName() + " must be constant array of tuples.",
+                            ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (column_const_x)
-            column_x = column_const_x->convertToFullColumn();
-        else if (column_const_y)
-            column_y = column_const_y->convertToFullColumn();
+
+        const auto & tuple_block = tuple_col->getData();
+        const auto & column_x = tuple_block.safeGetByPosition(0).column;
+        const auto & column_y = tuple_block.safeGetByPosition(1).column;
 
         auto & result_column = block.safeGetByPosition(result).column;
-
 
         using PointInPolygonImpl = GeoUtils::PointInPolygonWithGrid<>;
         using Pool = ObjectPoolMap<PointInPolygonImpl, std::string>;
@@ -343,8 +341,8 @@ public:
 
         result_column = GeoUtils::pointInPolygon(*column_x, *column_y, *impl);
 
-        if (column_const_x && column_const_y)
-            result_column = std::make_shared<ColumnConst>(result_column, column_const_x->size());
+        if (const_tuple_col)
+            result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
     }
 };
 
