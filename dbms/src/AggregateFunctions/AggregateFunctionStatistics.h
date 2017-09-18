@@ -47,7 +47,7 @@ bool areComparable(UInt64 a, UInt64 b)
   * Source: "Updating formulae and a pairwise algorithm for computing sample variances"
   * (Chan et al., Stanford University, 12.1979)
   */
-template<typename T, typename Op>
+template <typename T, typename Op>
 class AggregateFunctionVarianceData
 {
 public:
@@ -109,7 +109,7 @@ private:
 
 /** The main code for the implementation of varSamp, stddevSamp, varPop, stddevPop.
   */
-template<typename T, typename Op>
+template <typename T, typename Op>
 class AggregateFunctionVariance final
     : public IUnaryAggregateFunction<AggregateFunctionVarianceData<T, Op>,
         AggregateFunctionVariance<T, Op>>
@@ -153,6 +153,8 @@ public:
     {
         this->data(place).publish(to);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 /** Implementing the varSamp function.
@@ -214,7 +216,7 @@ struct AggregateFunctionStdDevPopImpl
 /** If `compute_marginal_moments` flag is set this class provides the successor
   * CovarianceData support of marginal moments for calculating the correlation.
   */
-template<bool compute_marginal_moments>
+template <bool compute_marginal_moments>
 class BaseCovarianceData
 {
 protected:
@@ -224,7 +226,7 @@ protected:
     void deserialize(const ReadBuffer & buf) {}
 };
 
-template<>
+template <>
 class BaseCovarianceData<true>
 {
 protected:
@@ -262,7 +264,7 @@ protected:
   * (J. Bennett et al., Sandia National Laboratories,
   *  2009 IEEE International Conference on Cluster Computing)
   */
-template<typename T, typename U, typename Op, bool compute_marginal_moments>
+template <typename T, typename U, typename Op, bool compute_marginal_moments>
 class CovarianceData : public BaseCovarianceData<compute_marginal_moments>
 {
 private:
@@ -348,13 +350,13 @@ public:
         Base::deserialize(buf);
     }
 
-    template<bool compute = compute_marginal_moments>
+    template <bool compute = compute_marginal_moments>
     void publish(IColumn & to, typename std::enable_if<compute>::type * = nullptr) const
     {
         static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, Base::left_m2, Base::right_m2, count));
     }
 
-    template<bool compute = compute_marginal_moments>
+    template <bool compute = compute_marginal_moments>
     void publish(IColumn & to, typename std::enable_if<!compute>::type * = nullptr) const
     {
         static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, count));
@@ -367,7 +369,7 @@ private:
     Float64 co_moment = 0.0;
 };
 
-template<typename T, typename U, typename Op, bool compute_marginal_moments = false>
+template <typename T, typename U, typename Op, bool compute_marginal_moments = false>
 class AggregateFunctionCovariance final
     : public IBinaryAggregateFunction<
         CovarianceData<T, U, Op, compute_marginal_moments>,
@@ -416,6 +418,8 @@ public:
     {
         this->data(place).publish(to);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 /** Implementing the covarSamp function.
@@ -465,25 +469,25 @@ struct AggregateFunctionCorrImpl
     }
 };
 
-template<typename T>
+template <typename T>
 using AggregateFunctionVarSamp = AggregateFunctionVariance<T, AggregateFunctionVarSampImpl>;
 
-template<typename T>
+template <typename T>
 using AggregateFunctionStdDevSamp = AggregateFunctionVariance<T, AggregateFunctionStdDevSampImpl>;
 
-template<typename T>
+template <typename T>
 using AggregateFunctionVarPop = AggregateFunctionVariance<T, AggregateFunctionVarPopImpl>;
 
-template<typename T>
+template <typename T>
 using AggregateFunctionStdDevPop = AggregateFunctionVariance<T, AggregateFunctionStdDevPopImpl>;
 
-template<typename T, typename U>
+template <typename T, typename U>
 using AggregateFunctionCovarSamp = AggregateFunctionCovariance<T, U, AggregateFunctionCovarSampImpl>;
 
-template<typename T, typename U>
+template <typename T, typename U>
 using AggregateFunctionCovarPop = AggregateFunctionCovariance<T, U, AggregateFunctionCovarPopImpl>;
 
-template<typename T, typename U>
+template <typename T, typename U>
 using AggregateFunctionCorr = AggregateFunctionCovariance<T, U, AggregateFunctionCorrImpl, true>;
 
 }

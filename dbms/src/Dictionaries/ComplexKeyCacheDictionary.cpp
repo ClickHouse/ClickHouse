@@ -466,6 +466,17 @@ StringRef ComplexKeyCacheDictionary::placeKeysInPool(
     return { place, sum_keys_size };
 }
 
+/// Explicit instantiations.
+
+template StringRef ComplexKeyCacheDictionary::placeKeysInPool<Arena>(
+    const size_t row, const Columns & key_columns, StringRefs & keys,
+    const std::vector<DictionaryAttribute> & key_attributes, Arena & pool);
+
+template StringRef ComplexKeyCacheDictionary::placeKeysInPool<ArenaWithFreeLists>(
+    const size_t row, const Columns & key_columns, StringRefs & keys,
+    const std::vector<DictionaryAttribute> & key_attributes, ArenaWithFreeLists & pool);
+
+
 StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(
     const size_t row, const Columns & key_columns) const
 {
