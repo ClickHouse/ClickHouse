@@ -248,27 +248,6 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
     finished = true;
 }
 
-
-/** Implements `+=` operation.
- *  Returns false if the result is zero.
- */
-class FieldVisitorSum : public StaticVisitor<bool>
-{
-private:
-    const Field & rhs;
-public:
-    explicit FieldVisitorSum(const Field & rhs_) : rhs(rhs_) {}
-
-    bool operator() (UInt64 & x) const { x += get<UInt64>(rhs); return x != 0; }
-    bool operator() (Int64 & x) const { x += get<Int64>(rhs); return x != 0; }
-    bool operator() (Float64 & x) const { x += get<Float64>(rhs); return x != 0; }
-
-    bool operator() (Null & x) const { throw Exception("Cannot sum Nulls", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (String & x) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (Array & x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
-};
-
-
 template <class TSortCursor>
 bool SummingSortedBlockInputStream::mergeMaps(Row & row, TSortCursor & cursor)
 {
