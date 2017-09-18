@@ -1,6 +1,7 @@
 #include <Common/TypeList.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/Aggregator.h>
+#include <AggregateFunctions/AggregateFunctionCount.h>
 
 
 namespace DB
