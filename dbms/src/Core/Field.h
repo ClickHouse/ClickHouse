@@ -152,27 +152,6 @@ public:
         return *this;
     }
 
-    Field & operator+= (const Field & rhs)
-    {
-        if (which != rhs.which)
-            throw Exception("Adding different types is not allowed.", ErrorCodes::BAD_TYPE_OF_FIELD);
-        else
-        {
-            switch (which)
-            {
-                case Types::UInt64: assignConcrete<UInt64>(get<UInt64>() + rhs.get<UInt64>()); break;
-                case Types::Int64: assignConcrete<Int64>(get<Int64>() + rhs.get<Int64>()); break;
-                case Types::Float64: assignConcrete<Float64>(get<Float64>() + rhs.get<Float64>()); break;
-                case Types::String: assignConcrete<String>(get<String>() + rhs.get<String>()); break;
-
-                default:
-                    throw Exception("Bad type of Field to add", ErrorCodes::BAD_TYPE_OF_FIELD);
-            }
-        }
-
-        return *this;
-    }
-
     Field & operator= (Field && rhs)
     {
         if (this != &rhs)

@@ -9,6 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 
+#include <Core/FieldVisitors.h>
 #include <AggregateFunctions/IBinaryAggregateFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <map>
@@ -103,7 +104,7 @@ public:
         for (size_t i = 0; i < size; ++i)
         {
             if (merged_maps.find(keys[i]) != merged_maps.end())
-                merged_maps[keys[i]] += values[i];
+                applyVisitor(FieldVisitorSum(values[i]), merged_maps[keys[i]]);
             else
                 merged_maps[keys[i]] = values[i];
         }
@@ -117,7 +118,7 @@ public:
         for (const auto &rhs_map : rhs_maps)
         {
             if (merged_maps.find(rhs_map.first) != merged_maps.end())
-                merged_maps[rhs_map.first] += rhs_map.second;
+                applyVisitor(FieldVisitorSum(rhs_map.second), merged_maps[rhs_map.first]);
             else
                 merged_maps[rhs_map.first] = rhs_map.second;
         }
