@@ -46,6 +46,7 @@
 #include <thread>
 #include <typeinfo>
 #include <typeindex>
+#include <experimental/optional>
 
 
 namespace ProfileEvents
@@ -1729,20 +1730,26 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
 void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context)
 {
-    String prefix;
+    std::experimental::optional<String> prefix;
+    String partition_id;
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         const auto & partition = dynamic_cast<const ASTPartition &>(*partition_ast);
-        /// Month-partitioning specific - partition ID can be passed in the partition value.
+        /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
         if (const auto * partition_lit = dynamic_cast<const ASTLiteral *>(partition.value.get()))
             prefix = partition_lit->value.getType() == Field::Types::UInt64
                 ? toString(partition_lit->value.get<UInt64>())
                 : partition_lit->value.safeGet<String>();
+        else
+            partition_id = getPartitionIDFromQuery(partition_ast, context);
     }
     else
-        prefix = getPartitionIDFromQuery(partition_ast, context);
+        partition_id = getPartitionIDFromQuery(partition_ast, context);
 
-    LOG_DEBUG(log, "Freezing parts with prefix " + prefix);
+    if (prefix)
+        LOG_DEBUG(log, "Freezing parts with prefix " + prefix.value());
+    else
+        LOG_DEBUG(log, "Freezing parts with partition ID " + partition_id);
 
     String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
     String shadow_path = clickhouse_path + "shadow/";
@@ -1759,19 +1766,27 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it(full_path); it != end; ++it)
     {
-        if (startsWith(it.name(), prefix))
+        MergeTreePartInfo part_info;
+        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info, format_version))
+            continue;
+        if (prefix)
         {
-            LOG_DEBUG(log, "Freezing part " << it.name());
-
-            String part_absolute_path = it.path().absolute().toString();
-            if (!startsWith(part_absolute_path, clickhouse_path))
-                throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
-
-            String backup_part_absolute_path = part_absolute_path;
-            backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
-            localBackup(part_absolute_path, backup_part_absolute_path);
-            ++parts_processed;
+            if (!startsWith(part_info.partition_id, prefix.value()))
+                continue;
         }
+        else if (part_info.partition_id != partition_id)
+            continue;
+
+        LOG_DEBUG(log, "Freezing part " << it.name());
+
+        String part_absolute_path = it.path().absolute().toString();
+        if (!startsWith(part_absolute_path, clickhouse_path))
+            throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
+
+        String backup_part_absolute_path = part_absolute_path;
+        backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
+        localBackup(part_absolute_path, backup_part_absolute_path);
+        ++parts_processed;
     }
 
     LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
