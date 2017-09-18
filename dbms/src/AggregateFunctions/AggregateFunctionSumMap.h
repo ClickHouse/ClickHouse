@@ -179,6 +179,8 @@ public:
         to_data.insert(values);
         to_offsets.push_back((to_offsets.empty() ? 0 : to_offsets.back()) + 2);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }
