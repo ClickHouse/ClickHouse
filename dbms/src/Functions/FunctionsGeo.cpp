@@ -24,14 +24,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-
-template <typename... Args>
-using PointInPolygonCrossing = boost::geometry::strategy::within::crossings_multiply<Args...>;
-template <typename... Args>
-using PointInPolygonWinding = boost::geometry::strategy::within::winding<Args...>;
-template <typename... Args>
-using PointInPolygonFranklin = boost::geometry::strategy::within::franklin<Args...>;
-
+/*
 template <template <typename...> typename Strategy>
 class FunctionPointInPolygon : public IFunction
 {
@@ -180,17 +173,22 @@ public:
         }
     }
 };
+*/
 
-
-class FunctionPointInPolygonWithGrid : public IFunction
+template <typename PointInPolygonImpl, bool useObjectPool = false>
+class FunctionPointInPolygon : public IFunction
 {
-
 public:
-    static constexpr auto name = "pointInPolygonWithGrid";
+
+    using Point = boost::geometry::model::d2::point_xy<Float32>;
+    using Polygon = boost::geometry::model::polygon<Point, false>;
+    using Box = boost::geometry::model::box<Point>;
+
+    static const char * name;
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionPointInPolygonWithGrid>();
+        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl>>();
     }
 
     String getName() const override
@@ -255,10 +253,6 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        using Point = boost::geometry::model::d2::point_xy<Float32>;
-        using Polygon = boost::geometry::model::polygon<Point, false>;
-        using Box = boost::geometry::model::box<Point>;
-
         Polygon polygon;
 
         for (size_t i = 1; i < arguments.size(); ++i)
@@ -320,7 +314,15 @@ public:
 
         auto & result_column = block.safeGetByPosition(result).column;
 
-        using PointInPolygonImpl = GeoUtils::PointInPolygonWithGrid<>;
+        callPointInPolygonImpl(*column_x, *column_y, polygon);
+
+        if (const_tuple_col)
+            result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
+    }
+
+    typename std::enable_if<useObjectPool, ColumnPtr>::type
+    callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon)
+    {
         using Pool = ObjectPoolMap<PointInPolygonImpl, std::string>;
         /// C++11 has thread-safe function-local statics on most modern compilers.
         static Pool known_polygons;
@@ -334,13 +336,28 @@ public:
         std::string serialized_polygon = GeoUtils::serialize(polygon);
         auto impl = known_polygons.get(serialized_polygon, factory);
 
-        result_column = GeoUtils::pointInPolygon(*column_x, *column_y, *impl);
+        return GeoUtils::pointInPolygon(x, y, *impl);
+    }
 
-        if (const_tuple_col)
-            result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
+    typename std::enable_if<!useObjectPool, ColumnPtr>::type
+    callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon)
+    {
+        PointInPolygonImpl impl(polygon);
+        return GeoUtils::pointInPolygon(x, y, impl);
     }
 };
 
+template <typename... Args>
+using PointInPolygonCrossingStrategy = boost::geometry::strategy::within::crossings_multiply<Args...>;
+template <typename... Args>
+using PointInPolygonWindingStrategy = boost::geometry::strategy::within::winding<Args...>;
+template <typename... Args>
+using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::franklin<Args...>;
+
+using PointInPolygonCrossing = GeoUtils::PointInPolygon<PointInPolygonCrossingStrategy>;
+using PointInPolygonWinding = GeoUtils::PointInPolygon<PointInPolygonWindingStrategy>;
+using PointInPolygonFranklin = GeoUtils::PointInPolygon<PointInPolygonFranklinStrategy>;
+using PointInPolygonWithGrid = GeoUtils::PointInPolygon<GeoUtils::PointInPolygonWithGrid<>>;
 
 template <>
 const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygon";
@@ -348,6 +365,8 @@ template <>
 const char * FunctionPointInPolygon<PointInPolygonWinding>::name = "pointInPolygonWinding";
 template <>
 const char * FunctionPointInPolygon<PointInPolygonFranklin>::name = "pointInPolygonFranklin";
+template <>
+const char * FunctionPointInPolygon<PointInPolygonWithGrid>::name = "pointInPolygonWithGrid";
 
 
 void registerFunctionsGeo(FunctionFactory & factory)
@@ -358,7 +377,6 @@ void registerFunctionsGeo(FunctionFactory & factory)
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonFranklin>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWinding>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonCrossing>>();
-
-    factory.registerFunction<FunctionPointInPolygonWithGrid>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid>>();
 }
 }

@@ -396,6 +396,48 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
 }
 
 
+template <typename Strategy, typename CoordinateType = Float32>
+class PointInPolygon
+{
+public:
+    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
+    /// Counter-Clockwise ordering.
+    using Polygon = boost::geometry::model::polygon<Point, false>;
+    using Box = boost::geometry::model::box<Point>;
+
+    explicit PointInPolygon(const Polygon & polygon) : polygon(polygon) {}
+
+    void init()
+    {
+        boost::geometry::envelope(polygon, box);
+
+        const Point & min_corner = box.min_corner();
+        const Point & max_corner = box.max_corner();
+
+        if (min_corner.x() == max_corner.x() || min_corner.y() == max_corner.y())
+            has_empty_bound = true;
+    }
+
+    bool hasEmptyBound() const { return has_empty_bound; }
+
+    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y)
+    {
+        Point point(x, y);
+
+        if (!boost::geometry::within(point, box))
+            return false;
+
+        return boost::geometry::covered_by(point, polygon, strategy);
+    }
+
+private:
+    const Polygon & polygon;
+    Box box;
+    bool has_empty_bound = false;
+    Strategy strategy;
+};
+
+
 /// Algorithms.
 
 template <typename T, typename U, typename PointInPolygonImpl>
