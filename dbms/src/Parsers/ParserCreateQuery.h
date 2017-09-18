@@ -187,7 +187,7 @@ protected:
 };
 
 
-/** ENGINE = name. */
+/** ENGINE = name [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTINGS name = value, ...] */
 class ParserStorage : public IParserBase
 {
 protected:

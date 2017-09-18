@@ -275,10 +275,28 @@ StoragePtr StorageFactory::get(
 
     if (engine_def.parameters)
         throw Exception(
-            "Engine definition cannot take the form of a parametric function.", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
+            "Engine definition cannot take the form of a parametric function", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
+
+    if ((storage_def.partition_by || storage_def.order_by || storage_def.sample_by || storage_def.settings)
+        && !endsWith(name, "MergeTree"))
+    {
+        throw Exception(
+            "Engine " + name + " doesn't support PARTITION BY, ORDER BY, SAMPLE BY or SETTINGS clauses. "
+            "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    auto check_arguments_empty = [&]
+    {
+        if (engine_def.arguments)
+            throw Exception(
+                "Engine " + name + " doesn't support any arguments (" + toString(engine_def.arguments->children.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    };
+
 
     if (name == "Log")
     {
+        check_arguments_empty();
         return StorageLog::create(
             data_path, table_name, columns,
             materialized_columns, alias_columns, column_defaults,
@@ -286,12 +304,14 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "View")
     {
+        check_arguments_empty();
         return StorageView::create(
             table_name, database_name, context, query, columns,
             materialized_columns, alias_columns, column_defaults);
     }
     else if (name == "MaterializedView")
     {
+        check_arguments_empty();
         return StorageMaterializedView::create(
             table_name, database_name, context, query, columns,
             materialized_columns, alias_columns, column_defaults,
@@ -305,6 +325,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "TinyLog")
     {
+        check_arguments_empty();
         return StorageTinyLog::create(
             data_path, table_name, columns,
             materialized_columns, alias_columns, column_defaults,
@@ -312,6 +333,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "StripeLog")
     {
+        check_arguments_empty();
         return StorageStripeLog::create(
             data_path, table_name, columns,
             materialized_columns, alias_columns, column_defaults,
@@ -369,6 +391,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "Set")
     {
+        check_arguments_empty();
         return StorageSet::create(
             data_path, table_name, columns,
             materialized_columns, alias_columns, column_defaults);
@@ -432,6 +455,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "Memory")
     {
+        check_arguments_empty();
         return StorageMemory::create(table_name, columns, materialized_columns, alias_columns, column_defaults);
     }
     else if (name == "Null")

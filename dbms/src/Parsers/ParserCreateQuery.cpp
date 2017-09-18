@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSetQuery.h>
 
 
 namespace DB
@@ -110,12 +111,22 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_engine("ENGINE");
     ParserToken s_eq(TokenType::Equals);
+    ParserKeyword s_partition_by("PARTITION BY");
+    ParserKeyword s_order_by("ORDER BY");
+    ParserKeyword s_sample_by("SAMPLE BY");
+    ParserKeyword s_settings("SETTINGS");
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
+    ParserExpression expression_p;
+    ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
 
     Pos begin = pos;
 
     ASTPtr engine;
+    ASTPtr partition_by;
+    ASTPtr order_by;
+    ASTPtr sample_by;
+    ASTPtr settings;
 
     if (!s_engine.ignore(pos, expected))
         return false;
@@ -125,8 +136,47 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!ident_with_optional_params_p.parse(pos, engine, expected))
         return false;
 
+    while (true)
+    {
+        if (!partition_by && s_partition_by.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, partition_by, expected))
+                continue;
+            else
+                return false;
+        }
+
+        if (!order_by && s_order_by.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, order_by, expected))
+                continue;
+            else
+                return false;
+        }
+
+        if (!sample_by && s_sample_by.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, sample_by, expected))
+                continue;
+            else
+                return false;
+        }
+
+        if (s_settings.ignore(pos, expected))
+        {
+            if (!settings_p.parse(pos, settings, expected))
+                return false;
+        }
+
+        break;
+    }
+
     auto storage = std::make_shared<ASTStorage>(StringRange(begin, pos));
     storage->set(storage->engine, engine);
+    storage->set(storage->partition_by, partition_by);
+    storage->set(storage->order_by, order_by);
+    storage->set(storage->sample_by, sample_by);
+    storage->set(storage->settings, settings);
 
     node = storage;
     return true;
