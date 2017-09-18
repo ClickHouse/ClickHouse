@@ -399,7 +399,7 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
 
 /// Algorithms.
 
-template <typename PointInPolygonImpl, typename T, typename U>
+template <typename T, typename U, typename PointInPolygonImpl>
 ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, PointInPolygonImpl && impl)
 {
     auto size = x.size();
@@ -434,14 +434,14 @@ struct CallPointInPolygon<PointInPolygonImpl, Type, Types ...>
     using Polygon = typename PointInPolygonImpl::Polygon;
 
     template <typename T>
-    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl & impl)
+    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl && impl)
     {
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&y))
             return pointInPolygon(x, *column, impl);
         return CallPointInPolygon<PointInPolygonImpl, Types ...>::template call<T>(x, y, impl);
     }
 
-    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl & impl)
+    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
         using List = typename PrependToTypeList<PointInPolygonImpl, TypeListNumbers>::Type;
         using Impl = typename ApplyTypeListForClass<CallPointInPolygon, List>::Type;
@@ -455,12 +455,12 @@ template <typename PointInPolygonImpl>
 struct CallPointInPolygon<PointInPolygonImpl>
 {
     template <typename T>
-    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl & impl)
+    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl && impl)
     {
         throw Exception(std::string("Unknown numeric column type: ") + typeid(y).name(), ErrorCodes::LOGICAL_ERROR);
     }
 
-    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl & impl)
+    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
         throw Exception(std::string("Unknown numeric column type: ") + typeid(x).name(), ErrorCodes::LOGICAL_ERROR);
     }
@@ -469,7 +469,7 @@ struct CallPointInPolygon<PointInPolygonImpl>
 template <typename PointInPolygonImpl>
 ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using List = typename PrependToTypeList<PointInPolygonImpl, TypeListNumbers>::Type;
+    using List = typename PrependToTypeList<typename std::decay<PointInPolygonImpl>::type, TypeListNumbers>::Type;
     using Impl = typename ApplyTypeListForClass<CallPointInPolygon, List>::Type;
     return Impl::call(x, y, impl);
 }
