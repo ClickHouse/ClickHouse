@@ -110,10 +110,15 @@ MergeTreeData::MergeTreeData(
 {
     merging_params.check(*columns);
 
+    if (primary_expr_ast && merging_params.mode == MergingParams::Unsorted)
+        throw Exception("Primary key cannot be set for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
     if (!primary_expr_ast && merging_params.mode != MergingParams::Unsorted)
-        throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Primary key can be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 
     initPrimaryKey();
+
+    if (sampling_expression && (!primary_expr_ast || !primary_key_sample.has(sampling_expression->getColumnName())))
+        throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
