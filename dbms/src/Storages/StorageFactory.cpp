@@ -65,9 +65,9 @@ namespace ErrorCodes
   * It can be specified in the tuple: (CounterID, Date),
   *  or as one column: CounterID.
   */
-static ASTPtr extractKeyExpressionList(const ASTPtr & node)
+static ASTPtr extractKeyExpressionList(IAST & node)
 {
-    const ASTFunction * expr_func = typeid_cast<const ASTFunction *>(&*node);
+    const ASTFunction * expr_func = typeid_cast<const ASTFunction *>(&node);
 
     if (expr_func && expr_func->name == "tuple")
     {
@@ -78,7 +78,7 @@ static ASTPtr extractKeyExpressionList(const ASTPtr & node)
     {
         /// Primary key consists of one column.
         auto res = std::make_shared<ASTExpressionList>();
-        res->children.push_back(node);
+        res->children.push_back(node.ptr());
         return res;
     }
 }
@@ -292,7 +292,6 @@ StoragePtr StorageFactory::get(
                 "Engine " + name + " doesn't support any arguments (" + toString(engine_def.arguments->children.size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     };
-
 
     if (name == "Log")
     {
@@ -800,86 +799,110 @@ For further info please read the documentation: https://clickhouse.yandex/
             args = engine_def.arguments->children;
 
         /// NOTE Quite complicated.
-        size_t num_additional_params = (replicated ? 2 : 0)
-            + (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-            + (merging_params.mode == MergeTreeData::MergingParams::Graphite);
 
-        String params_for_replicated;
+        bool is_extended_storage_def =
+            storage_def.partition_by || storage_def.order_by || storage_def.sample_by || storage_def.settings;
+
+        const bool allow_extended_storage_def =
+            local_context.getSettingsRef().experimental_allow_extended_storage_definition_syntax;
+
+        if (is_extended_storage_def && !allow_extended_storage_def)
+            throw Exception(
+                "Extended storage definition syntax (PARTITION BY, ORDER BY, SAMPLE BY and SETTINGS clauses) "
+                "is disabled. Enable it with experimental_allow_extended_storage_definition_syntax user setting");
+
+        size_t min_num_params = 0;
+        size_t max_num_params = 0;
+        String needed_params;
+
         if (replicated)
-            params_for_replicated =
+        {
+            needed_params +=
                 "\npath in ZooKeeper,"
-                "\nreplica name,";
-
-        if (merging_params.mode == MergeTreeData::MergingParams::Unsorted
-            && args.size() != num_additional_params + 2)
-        {
-            String params =
-                "\nname of column with date,"
-                "\nindex granularity\n";
-
-            throw Exception("Storage " + name + " requires "
-                + toString(num_additional_params + 2) + " parameters: " + params_for_replicated + params + verbose_help,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                "\nreplica name";
+            min_num_params += 2;
+            max_num_params += 2;
         }
 
-        if (merging_params.mode != MergeTreeData::MergingParams::Summing
-            && merging_params.mode != MergeTreeData::MergingParams::Replacing
-            && merging_params.mode != MergeTreeData::MergingParams::Unsorted
-            && args.size() != num_additional_params + 3
-            && args.size() != num_additional_params + 4)
+        if (!is_extended_storage_def)
         {
-            String params =
-                "\nname of column with date,"
-                "\n[sampling element of primary key],"
-                "\nprimary key expression,"
-                "\nindex granularity\n";
-
-            if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-                params += ", sign column\n";
-
-            if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
-                params += ", 'config_element_for_graphite_schema'\n";
-
-            throw Exception("Storage " + name + " requires "
-                + toString(num_additional_params + 3) + " or "
-                + toString(num_additional_params + 4) + " parameters: " + params_for_replicated + params + verbose_help,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        }
-
-        if ((merging_params.mode == MergeTreeData::MergingParams::Summing
-                || merging_params.mode == MergeTreeData::MergingParams::Replacing)
-            && args.size() != num_additional_params + 3
-            && args.size() != num_additional_params + 4
-            && args.size() != num_additional_params + 5)
-        {
-            String params =
-                "\nname of column with date,"
-                "\n[sampling element of primary key],"
-                "\nprimary key expression,"
-                "\nindex granularity,";
-
-            if (merging_params.mode == MergeTreeData::MergingParams::Summing)
-                params += "\n[list of columns to sum]\n";
+            if (merging_params.mode == MergeTreeData::MergingParams::Unsorted)
+            {
+                if (args.size() == min_num_params && allow_extended_storage_def)
+                    is_extended_storage_def = true;
+                else
+                {
+                    needed_params +=
+                        "\nname of column with date,"
+                        "\nindex granularity";
+                    min_num_params += 2;
+                    max_num_params += 2;
+                }
+            }
             else
-                params += "\n[version]\n";
+            {
+                needed_params +=
+                    ",\nname of column with date"
+                    ",\n[sampling element of primary key]"
+                    ",\nprimary key expression"
+                    ",\nindex granularity";
+                min_num_params += 3;
+                max_num_params += 4;
+            }
+        }
 
-            throw Exception("Storage " + name + " requires "
-                + toString(num_additional_params + 3) + " or "
-                + toString(num_additional_params + 4) + " or "
-                + toString(num_additional_params + 5) + " parameters: " + params_for_replicated + params + verbose_help,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        switch (merging_params.mode)
+        {
+        default:
+            break;
+        case MergeTreeData::MergingParams::Summing:
+            needed_params += ",\n[list of columns to sum]";
+            max_num_params += 1;
+            break;
+        case MergeTreeData::MergingParams::Replacing:
+            needed_params += ",\n[version]";
+            max_num_params += 1;
+            break;
+        case MergeTreeData::MergingParams::Collapsing:
+            needed_params += ",\nsign column";
+            min_num_params += 1;
+            max_num_params += 1;
+            break;
+        case MergeTreeData::MergingParams::Graphite:
+            needed_params += ",\n'config_element_for_graphite_schema'";
+            min_num_params += 1;
+            max_num_params += 1;
+            break;
+        }
+
+        if (args.size() < min_num_params || args.size() > max_num_params)
+        {
+            String msg;
+            if (is_extended_storage_def)
+                msg += "With extended storage definition syntax storage " + name + " requires ";
+            else
+                msg += "Storage " + name + " requires ";
+
+            if (max_num_params)
+            {
+                if (min_num_params == max_num_params)
+                    msg += toString(min_num_params) + " parameters: ";
+                else
+                    msg += toString(min_num_params) + " to " + toString(max_num_params) + " parameters: ";
+                msg += needed_params;
+            }
+            else
+                msg += "no parameters";
+
+            if (!is_extended_storage_def)
+                msg += verbose_help;
+
+            throw Exception(msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         /// For Replicated.
         String zookeeper_path;
         String replica_name;
-
-        /// For all.
-        String date_column_name;
-        ASTPtr partition_expr_ast;
-        ASTPtr primary_expr_list;
-        ASTPtr sampling_expression;
-        UInt64 index_granularity;
 
         if (replicated)
         {
@@ -912,8 +935,8 @@ For further info please read the documentation: https://clickhouse.yandex/
         }
         else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
         {
-            /// If the last element is not an index granularity (literal), then this is the name of the version column.
-            if (!typeid_cast<const ASTLiteral *>(&*args.back()))
+            /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
+            if (!args.empty() && !typeid_cast<const ASTLiteral *>(&*args.back()))
             {
                 if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
                     merging_params.version_column = ast->name;
@@ -925,8 +948,8 @@ For further info please read the documentation: https://clickhouse.yandex/
         }
         else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
         {
-            /// If the last element is not an index granularity (literal), then this is a list of summable columns.
-            if (!typeid_cast<const ASTLiteral *>(&*args.back()))
+            /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
+            if (!args.empty() && !typeid_cast<const ASTLiteral *>(&*args.back()))
             {
                 merging_params.columns_to_sum = extractColumnNames(args.back());
                 args.pop_back();
@@ -952,36 +975,66 @@ For further info please read the documentation: https://clickhouse.yandex/
             setGraphitePatternsFromConfig(context, graphite_config_name, merging_params.graphite_params);
         }
 
-        /// If there is an expression for sampling. MergeTree(date, [sample_key], primary_key, index_granularity)
-        if (args.size() == 4)
+        String date_column_name;
+        ASTPtr partition_expr_list;
+        ASTPtr primary_expr_list;
+        ASTPtr sampling_expression;
+        UInt64 index_granularity;
+
+        if (is_extended_storage_def)
         {
-            sampling_expression = args[1];
-            args.erase(args.begin() + 1);
+            if (storage_def.partition_by)
+                partition_expr_list = extractKeyExpressionList(*storage_def.partition_by);
+
+            if (storage_def.order_by)
+                primary_expr_list = extractKeyExpressionList(*storage_def.order_by);
+
+            if (storage_def.sample_by)
+                sampling_expression = storage_def.sample_by->ptr();
+
+            index_granularity = 8192;
+            if (storage_def.settings)
+            {
+                for (const ASTSetQuery::Change & setting : storage_def.settings->changes)
+                {
+                    if (setting.name == "index_granularity")
+                        index_granularity = setting.value.safeGet<UInt64>();
+                    else
+                        throw Exception("Unknown setting " + setting.name + " for storage " + name, ErrorCodes::BAD_ARGUMENTS);
+                }
+            }
         }
-
-        /// Now only three parameters remain - date (or partitioning expression), primary_key, index_granularity.
-
-        if (auto ast = typeid_cast<ASTIdentifier *>(args[0].get()))
-            date_column_name = ast->name;
-        else if (local_context.getSettingsRef().experimental_merge_tree_allow_custom_partitions)
-            partition_expr_ast = extractKeyExpressionList(args[0]);
         else
-            throw Exception(String("Date column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+        {
+            /// If there is an expression for sampling. MergeTree(date, [sample_key], primary_key, index_granularity)
+            if (args.size() == 4)
+            {
+                sampling_expression = args[1];
+                args.erase(args.begin() + 1);
+            }
 
-        if (merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-            primary_expr_list = extractKeyExpressionList(args[1]);
+            /// Now only three parameters remain - date (or partitioning expression), primary_key, index_granularity.
 
-        auto ast = typeid_cast<ASTLiteral *>(&*args.back());
-        if (ast && ast->value.getType() == Field::Types::UInt64)
+            if (auto ast = typeid_cast<ASTIdentifier *>(args[0].get()))
+                date_column_name = ast->name;
+            else
+                throw Exception(String("Date column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+
+            if (merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+                primary_expr_list = extractKeyExpressionList(*args[1]);
+
+            auto ast = typeid_cast<ASTLiteral *>(&*args.back());
+            if (ast && ast->value.getType() == Field::Types::UInt64)
                 index_granularity = safeGet<UInt64>(ast->value);
-        else
-            throw Exception(String("Index granularity must be a positive integer") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+            else
+                throw Exception(String("Index granularity must be a positive integer") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+        }
 
         if (replicated)
             return StorageReplicatedMergeTree::create(
                 zookeeper_path, replica_name, attach, data_path, database_name, table_name,
                 columns, materialized_columns, alias_columns, column_defaults,
-                context, primary_expr_list, date_column_name, partition_expr_ast,
+                context, primary_expr_list, date_column_name, partition_expr_list,
                 sampling_expression, index_granularity, merging_params,
                 has_force_restore_data_flag,
                 context.getMergeTreeSettings());
@@ -989,7 +1042,7 @@ For further info please read the documentation: https://clickhouse.yandex/
             return StorageMergeTree::create(
                 data_path, database_name, table_name,
                 columns, materialized_columns, alias_columns, column_defaults, attach,
-                context, primary_expr_list, date_column_name, partition_expr_ast,
+                context, primary_expr_list, date_column_name, partition_expr_list,
                 sampling_expression, index_granularity, merging_params,
                 has_force_restore_data_flag,
                 context.getMergeTreeSettings());
