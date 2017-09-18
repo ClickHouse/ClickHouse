@@ -49,6 +49,8 @@ class AggregateFunctionSumMap final : public IBinaryAggregateFunction<struct Agg
 {
 private:
     DataTypePtr type;
+    DataTypePtr keys_type;
+    DataTypePtr values_type;
 
 public:
     String getName() const override { return "sumMap"; }
@@ -68,11 +70,13 @@ public:
         if (!array_type)
             throw Exception("First argument for function " + getName() + " must be an array.",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        keys_type = array_type->getNestedType();
 
         array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
         if (!array_type)
             throw Exception("Second argument for function " + getName() + " must be an array.",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        values_type = array_type->getNestedType();
 
         type = arguments.front();
     }
@@ -126,22 +130,15 @@ public:
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        /// Serialize merged_maps as two vectors. Using boost::archive could be better but it's unavailable.
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
+        writeVarUInt(size, buf);
 
-        Array keys, values;
-        keys.reserve(size);
-        values.reserve(size);
         for (const auto &v : merged_maps)
         {
-            keys.push_back(v.first);
-            values.push_back(v.second);
+            keys_type->serializeBinary(v.first, buf);
+            values_type->serializeBinary(v.second, buf);
         }
-
-        writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(&keys[0]), size * sizeof(keys[0]));
-        buf.write(reinterpret_cast<const char *>(&values[0]), size * sizeof(values[0]));
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
@@ -151,15 +148,12 @@ public:
         size_t size = 0;
         readVarUInt(size, buf);
 
-        Array keys, values;
-        keys.resize(size);
-        values.resize(size);
-        buf.read(reinterpret_cast<char *>(&keys[0]), size * sizeof(keys[0]));
-        buf.read(reinterpret_cast<char *>(&values[0]), size * sizeof(values[0]));
-
         for (size_t i = 0; i < size; ++i)
         {
-            merged_maps[keys[i]] = values[i];
+            Field key, value;
+            keys_type->deserializeBinary(key, buf);
+            values_type->deserializeBinary(value, buf);
+            merged_maps[key] = value;
         }
     }
 
