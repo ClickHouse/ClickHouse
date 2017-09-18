@@ -176,7 +176,7 @@ Block SummingSortedBlockInputStream::readImpl()
 }
 
 
-template <class TSortCursor>
+template <typename TSortCursor>
 void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
@@ -262,7 +262,7 @@ bool SummingSortedBlockInputStream::mergeMaps(Row & row, TSortCursor & cursor)
 }
 
 
-template <class TSortCursor>
+template <typename TSortCursor>
 bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, TSortCursor & cursor)
 {
     /// Strongly non-optimal.
@@ -346,7 +346,7 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 }
 
 
-template <class TSortCursor>
+template <typename TSortCursor>
 bool SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
 {
     bool res = mergeMaps(row, cursor);    /// Is there at least one non-zero number or non-empty array

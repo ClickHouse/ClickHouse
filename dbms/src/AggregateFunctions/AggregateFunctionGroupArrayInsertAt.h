@@ -202,6 +202,8 @@ public:
 
         to_offsets.push_back((to_offsets.empty() ? 0 : to_offsets.back()) + result_array_size);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

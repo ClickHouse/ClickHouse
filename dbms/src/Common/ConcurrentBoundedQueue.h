@@ -11,10 +11,10 @@
 
 namespace detail
 {
-    template <class T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable<T>::value>
+    template <typename T, bool is_nothrow_move_assignable = std::is_nothrow_move_assignable<T>::value>
     struct MoveOrCopyIfThrow;
 
-    template <class T>
+    template <typename T>
     struct MoveOrCopyIfThrow<T, true>
     {
         void operator()(T && src, T & dst) const
@@ -23,7 +23,7 @@ namespace detail
         }
     };
 
-    template <class T>
+    template <typename T>
     struct MoveOrCopyIfThrow<T, false>
     {
         void operator()(T && src, T & dst) const
@@ -32,7 +32,7 @@ namespace detail
         }
     };
 
-    template <class T>
+    template <typename T>
     void moveOrCopyIfThrow(T && src, T & dst)
     {
         MoveOrCopyIfThrow<T>()(std::forward<T>(src), dst);

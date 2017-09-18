@@ -70,6 +70,8 @@ public:
     {
         data(place).count += x;
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -114,6 +116,8 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -182,6 +186,8 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(data(place).count);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 
 private:
     enum { MAX_ARGS = 8 };
