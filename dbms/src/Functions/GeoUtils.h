@@ -537,8 +537,8 @@ std::string serialize(Polygon && polygon)
 
         using RingType = typename std::decay<Polygon>::type::ring_type;
 
-        auto serializeFloat = [&buffer](float value) { buffer.write(static_cast<char *>(&value), sizeof(value)); };
-        auto serializeSize = [&buffer](size_t size) { buffer.write(static_cast<char *>(&size), sizeof(size)); };
+        auto serializeFloat = [&buffer](float value) { buffer.write(reinterpret_cast<char *>(&value), sizeof(value)); };
+        auto serializeSize = [&buffer](size_t size) { buffer.write(reinterpret_cast<char *>(&size), sizeof(size)); };
 
         auto serializeRing = [& buffer, & serializeFloat, & serializeSize](const RingType & ring)
         {
