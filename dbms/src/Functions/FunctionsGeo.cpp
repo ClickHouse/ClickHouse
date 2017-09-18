@@ -210,29 +210,24 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() < 3)
+        if (arguments.size() < 2)
         {
             throw Exception("Too few arguments", ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION);
         }
 
-        for (size_t i = 0; i < 2; ++i)
-            if (!arguments[i]->isNumeric())
-                throw Exception("Argument " + std::to_string(i + 1) + " for function " + getName() + " must be numeric.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        for (size_t i = 2; i < arguments.size(); ++i)
+        for (size_t i = 1; i < arguments.size(); ++i)
         {
             auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-            if (array == nullptr)
+            if (array == nullptr && i != 1)
             {
                 throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be array of tuples.",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
-            auto * tuple = checkAndGetDataType<DataTypeTuple>(array->getNestedType().get());
+            auto * tuple = checkAndGetDataType<DataTypeTuple>(array ? array->getNestedType().get() : arguments[i].get());
             if (tuple == nullptr)
             {
-                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be array of tuples.",
+                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must contains tuple.",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
