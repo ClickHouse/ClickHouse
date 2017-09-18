@@ -137,7 +137,7 @@ protected:
     Logger * log;
 };
 
-template<typename TNestedPool>
+template <typename TNestedPool>
 typename TNestedPool::Entry
 PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
@@ -149,7 +149,7 @@ PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, co
     return results[0].entry;
 }
 
-template<typename TNestedPool>
+template <typename TNestedPool>
 std::vector<typename PoolWithFailoverBase<TNestedPool>::TryResult>
 PoolWithFailoverBase<TNestedPool>::getMany(
         size_t min_entries, size_t max_entries,
@@ -293,7 +293,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
     return try_results;
 }
 
-template<typename TNestedPool>
+template <typename TNestedPool>
 void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
 {
     for (size_t i = 0; i < nested_pools.size(); ++i)
@@ -308,7 +308,7 @@ void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
     throw DB::Exception("Can't find pool to report error.");
 }
 
-template<typename TNestedPool>
+template <typename TNestedPool>
 struct PoolWithFailoverBase<TNestedPool>::PoolState
 {
     UInt64 error_count = 0;
@@ -330,7 +330,7 @@ private:
     std::minstd_rand rng = std::minstd_rand(randomSeed());
 };
 
-template<typename TNestedPool>
+template <typename TNestedPool>
 typename PoolWithFailoverBase<TNestedPool>::PoolStates
 PoolWithFailoverBase<TNestedPool>::updatePoolStates()
 {

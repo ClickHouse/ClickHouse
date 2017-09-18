@@ -11,7 +11,7 @@
 namespace DB
 {
 
-template <class Buffer>
+template <typename Buffer>
 class IHashingBuffer : public BufferWithOwnMemory<Buffer>
 {
 public:
