@@ -368,7 +368,7 @@ using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::frankl
 using PointInPolygonCrossing = GeoUtils::PointInPolygon<PointInPolygonCrossingStrategy>;
 using PointInPolygonWinding = GeoUtils::PointInPolygon<PointInPolygonWindingStrategy>;
 using PointInPolygonFranklin = GeoUtils::PointInPolygon<PointInPolygonFranklinStrategy>;
-using PointInPolygonWithGrid = GeoUtils::PointInPolygon<GeoUtils::PointInPolygonWithGrid<>, true>;
+using PointInPolygonWithGrid = GeoUtils::PointInPolygon<GeoUtils::PointInPolygonWithGrid<>>;
 
 template <>
 const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygon";
@@ -377,7 +377,7 @@ const char * FunctionPointInPolygon<PointInPolygonWinding>::name = "pointInPolyg
 template <>
 const char * FunctionPointInPolygon<PointInPolygonFranklin>::name = "pointInPolygonFranklin";
 template <>
-const char * FunctionPointInPolygon<PointInPolygonWithGrid>::name = "pointInPolygonWithGrid";
+const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygonWithGrid";
 
 
 void registerFunctionsGeo(FunctionFactory & factory)
@@ -388,6 +388,6 @@ void registerFunctionsGeo(FunctionFactory & factory)
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonFranklin>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWinding>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonCrossing>>();
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid>>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid>, true>();
 }
 }
