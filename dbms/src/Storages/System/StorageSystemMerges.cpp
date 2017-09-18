@@ -54,7 +54,7 @@ BlockInputStreams StorageSystemMerges::read(
         block.getByPosition(i++).column->insert(merge.database);
         block.getByPosition(i++).column->insert(merge.table);
         block.getByPosition(i++).column->insert(merge.elapsed);
-        block.getByPosition(i++).column->insert(std::min(1., merge.progress)); /// little cheat
+        block.getByPosition(i++).column->insert(merge.progress);
         block.getByPosition(i++).column->insert(merge.num_parts);
         block.getByPosition(i++).column->insert(merge.source_part_names);
         block.getByPosition(i++).column->insert(merge.result_part_name);

@@ -1,39 +1,14 @@
 #include <Common/TypeList.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/Aggregator.h>
-
-#include <AggregateFunctions/AggregateFunctionArgMinMax.h>
-#include <AggregateFunctions/AggregateFunctionArray.h>
-#include <AggregateFunctions/AggregateFunctionAvg.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
-#include <AggregateFunctions/AggregateFunctionForEach.h>
-#include <AggregateFunctions/AggregateFunctionGroupArray.h>
-#include <AggregateFunctions/AggregateFunctionGroupArrayInsertAt.h>
-#include <AggregateFunctions/AggregateFunctionGroupUniqArray.h>
-#include <AggregateFunctions/AggregateFunctionIf.h>
-#include <AggregateFunctions/AggregateFunctionMerge.h>
-#include <AggregateFunctions/AggregateFunctionMinMaxAny.h>
-#include <AggregateFunctions/AggregateFunctionNull.h>
-#include <AggregateFunctions/AggregateFunctionQuantileDeterministic.h>
-#include <AggregateFunctions/AggregateFunctionQuantileExact.h>
-#include <AggregateFunctions/AggregateFunctionQuantileExactWeighted.h>
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <AggregateFunctions/AggregateFunctionQuantileTDigest.h>
-#include <AggregateFunctions/AggregateFunctionQuantileTiming.h>
-#include <AggregateFunctions/AggregateFunctionSequenceMatch.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
-#include <AggregateFunctions/AggregateFunctionStatistics.h>
-#include <AggregateFunctions/AggregateFunctionSum.h>
-#include <AggregateFunctions/AggregateFunctionTopK.h>
-#include <AggregateFunctions/AggregateFunctionUniq.h>
-#include <AggregateFunctions/AggregateFunctionUniqUpTo.h>
 
 
 namespace DB
 {
 
 
-/** An aggregation cycle template that allows you to generate a custom variant for a specific combination of aggregate functions.
-  * It differs from the usual one in that calls to aggregate functions should be inlined, and the update cycle of the aggregate functions should be unfold.
+/** An aggregation loop template that allows you to generate a custom variant for a specific combination of aggregate functions.
+  * It differs from the usual one in that calls to aggregate functions should be inlined, and the update loop of the aggregate functions should be unrolled.
   *
   * Since there are too many possible combinations, it is not possible to generate them all in advance.
   * This template is intended to instantiate it in runtime,
@@ -263,8 +238,8 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
 }
 
 
-/** The main code is compiled with gcc 5.
-  * But SpecializedAggregator is compiled using clang 3.6 into the .so file.
+/** The main code is compiled with gcc 7.
+  * But SpecializedAggregator is compiled using clang 6 into the .so file.
   * This is done because gcc can not get functions inlined,
   *  which were de-virtualized, in a particular case, and the performance is lower.
   * And also it's easier to distribute clang for deploy to the servers.
