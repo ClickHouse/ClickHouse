@@ -386,7 +386,7 @@ public:
   * - amount of merged rows and their size (PK columns subset is used in case of Vertical merge)
   * - time elapsed for current merge.
   */
-class MergeProgressCallback : public ProgressCallback
+class MergeProgressCallback
 {
 public:
     MergeProgressCallback(MergeList::Entry & merge_entry_, UInt64 & watch_prev_elapsed_)
@@ -540,14 +540,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     BlockInputStreams src_streams;
     UInt64 watch_prev_elapsed = 0;
 
-    for (size_t i = 0; i < parts.size(); ++i)
+    for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeBlockInputStream>(
-            data, parts[i], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, merging_column_names, MarkRanges(1, MarkRange(0, parts[i]->size)),
+            data, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, merging_column_names, MarkRanges(1, MarkRange(0, part->size)),
             false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
-        input->setProgressCallback(
-            MergeProgressCallback{merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg});
+        input->setProgressCallback(MergeProgressCallback(
+                merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
         if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
             src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
@@ -680,8 +680,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
                     data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_name_, MarkRanges{MarkRange(0, parts[part_num]->size)},
                     false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
 
-                column_part_stream->setProgressCallback(
-                    MergeProgressCallbackVerticalStep{merge_entry, sum_input_rows_exact, column_sizes, column_name, watch_prev_elapsed});
+                column_part_stream->setProgressCallback(MergeProgressCallbackVerticalStep(
+                        merge_entry, sum_input_rows_exact, column_sizes, column_name, watch_prev_elapsed));
 
                 column_part_streams[part_num] = std::move(column_part_stream);
             }
