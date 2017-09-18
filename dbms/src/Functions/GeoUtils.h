@@ -186,7 +186,6 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::buildGrid()
     calcGridAttributes(box);
 
     const Point & min_corner = box.min_corner();
-    const Point & max_corner = box.max_corner();
 
     for (size_t row = 0; row < gridHeight; ++row)
     {
@@ -436,7 +435,7 @@ struct CallPointInPolygon<Type, Types ...>
     {
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&y))
             return pointInPolygon(x, *column, impl);
-        return CallPointInPolygon<PointInPolygonImpl, Types ...>::template call<T>(x, y, impl);
+        return CallPointInPolygon<Types ...>::template call<T>(x, y, impl);
     }
 
     template <typename PointInPolygonImpl>
@@ -445,7 +444,7 @@ struct CallPointInPolygon<Type, Types ...>
         using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNumbers>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
-        return CallPointInPolygon<PointInPolygonImpl, Types ...>::call(x, y, impl);
+        return CallPointInPolygon<Types ...>::call(x, y, impl);
     }
 };
 
