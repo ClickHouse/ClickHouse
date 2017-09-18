@@ -87,12 +87,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     }
     else
     {
-        const ASTFunction & engine = *create.storage->engine;
+        const ASTStorage & storage = *create.storage;
+        const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
-        if (engine.arguments || engine.parameters)
+        if (engine.arguments || engine.parameters
+            || storage.partition_by || storage.order_by || storage.sample_by || storage.settings)
         {
             std::stringstream ostr;
-            formatAST(*create.storage, ostr, 0, false, false);
+            formatAST(storage, ostr, 0, false, false);
             throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
         }
 

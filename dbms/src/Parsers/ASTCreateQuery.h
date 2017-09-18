@@ -15,6 +15,10 @@ class ASTStorage : public IAST
 {
 public:
     ASTFunction * engine = nullptr;
+    IAST * partition_by = nullptr;
+    IAST * order_by = nullptr;
+    IAST * sample_by = nullptr;
+    ASTSetQuery * settings = nullptr;
 
     ASTStorage() = default;
     ASTStorage(StringRange range_) : IAST(range_) {}
@@ -27,6 +31,14 @@ public:
 
         if (engine)
             res->set(res->engine, engine->clone());
+        if (partition_by)
+            res->set(res->partition_by, partition_by->clone());
+        if (order_by)
+            res->set(res->order_by, order_by->clone());
+        if (sample_by)
+            res->set(res->sample_by, sample_by->clone());
+        if (settings)
+            res->set(res->settings, settings->clone());
 
         return res;
     }
@@ -38,6 +50,27 @@ public:
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ENGINE" << (s.hilite ? hilite_none : "") << " = ";
             engine->formatImpl(s, state, frame);
         }
+        if (partition_by)
+        {
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PARTITION BY " << (s.hilite ? hilite_none : "");
+            partition_by->formatImpl(s, state, frame);
+        }
+        if (order_by)
+        {
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ORDER BY " << (s.hilite ? hilite_none : "");
+            order_by->formatImpl(s, state, frame);
+        }
+        if (sample_by)
+        {
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SAMPLE BY " << (s.hilite ? hilite_none : "");
+            sample_by->formatImpl(s, state, frame);
+        }
+        if (settings)
+        {
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SETTINGS " << (s.hilite ? hilite_none : "");
+            settings->formatImpl(s, state, frame);
+        }
+
     }
 };
 
