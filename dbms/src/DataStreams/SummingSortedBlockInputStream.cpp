@@ -248,7 +248,7 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
     finished = true;
 }
 
-template <class TSortCursor>
+template <typename TSortCursor>
 bool SummingSortedBlockInputStream::mergeMaps(Row & row, TSortCursor & cursor)
 {
     bool non_empty_map_present = false;
