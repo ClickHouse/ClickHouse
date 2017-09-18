@@ -443,7 +443,8 @@ struct CallPointInPolygon<PointInPolygonImpl, Type, Types ...>
 
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl & impl)
     {
-        using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNumbers>::Type;
+        using List = typename PrependToTypeList<PointInPolygonImpl, TypeListNumbers>::Type;
+        using Impl = typename ApplyTypeListForClass<CallPointInPolygon, List>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<PointInPolygonImpl, Types ...>::call(x, y, impl);
@@ -468,7 +469,8 @@ struct CallPointInPolygon<PointInPolygonImpl>
 template <typename PointInPolygonImpl>
 ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNumbers>::Type;
+    using List = typename PrependToTypeList<PointInPolygonImpl, TypeListNumbers>::Type;
+    using Impl = typename ApplyTypeListForClass<CallPointInPolygon, List>::Type;
     return Impl::call(x, y, impl);
 }
 
