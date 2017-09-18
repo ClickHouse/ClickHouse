@@ -31,6 +31,7 @@
 #include <iterator>
 #include <cmath>
 #include <algorithm>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -58,7 +59,7 @@ public:
 
     explicit PointInPolygonWithGrid(const Polygon & polygon) : polygon(polygon) {}
 
-    inline void buildGrid();
+    inline void init();
 
     bool hasEmptyBound() const { return has_empty_bound; }
 
@@ -102,9 +103,12 @@ private:
         CellType type;
     };
 
-    const Polygon & polygon;
+    Polygon polygon;
     std::array<Cell, gridHeight * gridWidth> cells;
     std::vector<MultiPolygon> polygons;
+
+    CoordinateType cell_width;
+    CoordinateType cell_height;
 
     CoordinateType x_shift;
     CoordinateType y_shift;
@@ -112,6 +116,11 @@ private:
     CoordinateType y_scale;
 
     bool has_empty_bound = false;
+    bool was_grid_built = false;
+
+    void buildGrid();
+
+    void calcGridAttributes(Box & box);
 
     template <typename T>
     T ALWAYS_INLINE getCellIndex(T row, T col) const { return row * gridWidth + col; }
@@ -137,18 +146,26 @@ private:
     inline Distance distance(const Point & point, const Polygon & polygon);
 };
 
+template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
+void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::init()
+{
+    if (!was_grid_built)
+        buildGrid();
+
+    was_grid_built = true;
+}
 
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
-void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::buildGrid()
+void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::calcGridAttributes(
+        PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::Box & box)
 {
-    Box box;
     boost::geometry::envelope(polygon, box);
 
     const Point & min_corner = box.min_corner();
     const Point & max_corner = box.max_corner();
 
-    CoordinateType cell_width = (max_corner.x() - min_corner.x()) / gridWidth;
-    CoordinateType cell_height = (max_corner.y() - min_corner.y()) / gridHeight;
+    cell_width = (max_corner.x() - min_corner.x()) / gridWidth;
+    cell_height = (max_corner.y() - min_corner.y()) / gridHeight;
 
     if (cell_width == 0 || cell_height == 0)
     {
@@ -160,6 +177,16 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::buildGrid()
     y_scale = 1 / cell_height;
     x_shift = -min_corner.x();
     y_shift = -min_corner.y();
+}
+
+template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
+void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::buildGrid()
+{
+    Box box;
+    calcGridAttributes(box);
+
+    const Point & min_corner = box.min_corner();
+    const Point & max_corner = box.max_corner();
 
     for (size_t row = 0; row < gridHeight; ++row)
     {
@@ -372,16 +399,14 @@ void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::addCell(
 
 /// Algorithms.
 
-template <typename T, typename U>
-ColumnPtr pointInPolygonWithGrid(const ColumnVector<T> & x, const ColumnVector<U> & y,
-                                 PointInPolygonWithGrid<>::Polygon & polygon)
+template <typename PointInPolygonImpl, typename T, typename U>
+ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, PointInPolygonImpl && impl)
 {
     auto size = x.size();
 
-    PointInPolygonWithGrid<> helper(polygon);
-    helper.buildGrid();
+    impl.init();
 
-    if (helper.hasEmptyBound())
+    if (impl.hasEmptyBound())
     {
         return std::make_shared<ColumnVector<UInt8>>(size, 0);
     }
@@ -394,54 +419,57 @@ ColumnPtr pointInPolygonWithGrid(const ColumnVector<T> & x, const ColumnVector<U
 
     for (auto i : ext::range(0, size))
     {
-        data[i] = static_cast<UInt8>(helper.contains(x_data[i], y_data[i]));
+        data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
     }
 
     return result;
 }
 
-template <typename ... Types>
-struct CallPointInPolygonWithGrid;
+template <typename PointInPolygonImpl, typename ... Types>
+struct CallPointInPolygon;
 
-template <typename Type, typename ... Types>
-struct CallPointInPolygonWithGrid<Type, Types ...>
+template <typename PointInPolygonImpl, typename Type, typename ... Types>
+struct CallPointInPolygon<PointInPolygonImpl, Type, Types ...>
 {
+    using Polygon = typename PointInPolygonImpl::Polygon;
+
     template <typename T>
-    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
+    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl & impl)
     {
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&y))
-            return pointInPolygonWithGrid(x, *column, polygon);
-        return CallPointInPolygonWithGrid<Types ...>::template call<T>(x, y, polygon);
+            return pointInPolygon(x, *column, impl);
+        return CallPointInPolygon<PointInPolygonImpl, Types ...>::template call<T>(x, y, impl);
     }
 
-    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
+    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl & impl)
     {
-        using Impl = typename ApplyTypeListForClass<CallPointInPolygonWithGrid, TypeListNumbers>::Type;
+        using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNumbers>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
-            return Impl::template call<Type>(*column, y, polygon);
-        return CallPointInPolygonWithGrid<Types ...>::call(x, y, polygon);
+            return Impl::template call<Type>(*column, y, impl);
+        return CallPointInPolygon<PointInPolygonImpl, Types ...>::call(x, y, impl);
     }
 };
 
-template <>
-struct CallPointInPolygonWithGrid<>
+template <typename PointInPolygonImpl>
+struct CallPointInPolygon<PointInPolygonImpl>
 {
     template <typename T>
-    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
+    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl & impl)
     {
         throw Exception(std::string("Unknown numeric column type: ") + typeid(y).name(), ErrorCodes::LOGICAL_ERROR);
     }
 
-    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
+    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl & impl)
     {
         throw Exception(std::string("Unknown numeric column type: ") + typeid(x).name(), ErrorCodes::LOGICAL_ERROR);
     }
 };
 
-ColumnPtr pointInPolygonWithGrid(const IColumn & x, const IColumn & y, PointInPolygonWithGrid<>::Polygon & polygon)
+template <typename PointInPolygonImpl>
+ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = typename ApplyTypeListForClass<CallPointInPolygonWithGrid, TypeListNumbers>::Type;
-    return Impl::call(x, y, polygon);
+    using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNumbers>::Type;
+    return Impl::call(x, y, impl);
 }
 
 /// Total angle (signed) between neighbor vectors in linestring. Zero if linestring.size() < 2.
@@ -451,20 +479,27 @@ float calcLinestringRotation(const Linestring & points)
     using Point = boost::geometry::model::d2::point_xy<float>;
     float rotation = 0;
 
+    auto sqrLength = [](const Point & point) { return point.x() * point.x() + point.y() * point.y(); };
+    auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
+    auto getVector = [](const Point & from, const Point & to) -> Point
+    {
+        return Point(to.x() - from.x(), to.y() - from.y());
+    };
+
     for (auto it = points.begin(); std::next(it) != points.end(); ++it)
     {
         if (it != points.begin())
         {
             auto prev = std::prev(it);
             auto next = std::next(it);
-            Point from(it->x() - prev->x(), it->y() - prev->y());
-            Point to(next->x() - it->x(), next->y() - it->y());
-            float sqr_from_len = from.x() * from.x() + from.y() * from.y();
-            float sqr_to_len = to.x() * to.x() + to.y() * to.y();
+            Point from = getVector(*prev, *it);
+            Point to = getVector(*it, *next);
+            float sqr_from_len = sqrLength(from);
+            float sqr_to_len = sqrLength(to);
             float sqr_len_product = (sqr_from_len * sqr_to_len);
             if (std::isfinite(sqr_len_product))
             {
-                float vec_prod = from.x() * to.y() - from.y() * to.x();
+                float vec_prod = vecProduct(from, to);
                 float sin_ang = vec_prod * std::fabs(vec_prod) / sqr_len_product;
                 sin_ang = std::max(-1.f, std::min(1.f, sin_ang));
                 rotation += std::asin(sin_ang);
@@ -477,7 +512,7 @@ float calcLinestringRotation(const Linestring & points)
 
 /// Make inner linestring counter-clockwise and outers clockwise oriented.
 template <typename Polygon>
-void normalizePolygon(Polygon & polygon)
+void normalizePolygon(Polygon && polygon)
 {
     auto & outer = polygon.outer();
     if (calcLinestringRotation(outer) < 0)
@@ -488,6 +523,42 @@ void normalizePolygon(Polygon & polygon)
         if (calcLinestringRotation(inner) > 0)
             std::reverse(inner.begin(), inner.end());
 }
+
+
+template <typename Polygon>
+std::string serialize(Polygon && polygon)
+{
+    std::string result;
+
+    {
+        WriteBufferFromString buffer(result);
+
+        using RingType = typename Polygon::ring_type;
+
+        auto serializeFloat = [&buffer](float value) { buffer.write(static_cast<char *>(&value), sizeof(value)); };
+        auto serializeSize = [&buffer](size_t size) { buffer.write(static_cast<char *>(&size), sizeof(size)); };
+
+        auto serializeRing = [& buffer, & serializeFloat, & serializeSize](const RingType & ring)
+        {
+            serializeSize(ring.size());
+            for (const auto & point : ring)
+            {
+                serializeFloat(point.x());
+                serializeFloat(point.y());
+            }
+        };
+
+        serializeRing(polygon.outer());
+
+        const auto & inners = polygon.inners();
+        serializeSize(inners.size());
+        for (auto & inner : inners)
+            serializeRing(inner);
+    }
+
+    return result;
+}
+
 
 } /// GeoUtils
 

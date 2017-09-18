@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsGeo.h>
 #include <Functions/GeoUtils.h>
+#include <Functions/ObjectPool.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -306,7 +307,6 @@ public:
                 container.push_back(container.front());
         }
 
-        GeoUtils::normalizePolygon(polygon);
 
         auto column_x = block.safeGetByPosition(arguments[0]).column;
         auto column_y = block.safeGetByPosition(arguments[1]).column;
@@ -324,9 +324,24 @@ public:
         else if (column_const_y)
             column_y = column_const_y->convertToFullColumn();
 
-
         auto & result_column = block.safeGetByPosition(result).column;
-        result_column = GeoUtils::pointInPolygonWithGrid(*column_x, *column_y, polygon);
+
+
+        using PointInPolygonImpl = GeoUtils::PointInPolygonWithGrid<>;
+        using Pool = ObjectPoolMap<PointInPolygonImpl, std::string>;
+        /// C++11 has thread-safe function-local statics on most modern compilers.
+        static Pool known_polygons;
+
+        auto factory = [& polygon]
+        {
+            GeoUtils::normalizePolygon(polygon);
+            return new PointInPolygonImpl(polygon);
+        };
+
+        std::string serialized_polygon = GeoUtils::serialize(polygon);
+        auto impl = known_polygons.get(serialized_polygon, factory);
+
+        result_column = GeoUtils::pointInPolygon(*column_x, *column_y, *impl);
 
         if (column_const_x && column_const_y)
             result_column = std::make_shared<ColumnConst>(result_column, column_const_x->size());
