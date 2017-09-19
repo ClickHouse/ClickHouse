@@ -65,6 +65,16 @@ UInt64 getPolygonAllocatedSize(Polygon && polygon)
     return size;
 }
 
+template <typename MultiPolygon>
+UInt64 getMultiPolygonAllocatedSize(MultiPolygon && multi_polygon)
+{
+    UInt64 size = multi_polygon.capacity();
+
+    for (const auto & polygon : multi_polygon)
+        size += getPolygonAllocatedSize(polygon);
+
+    return size;
+}
 
 template <typename CoordinateType = Float32, UInt16 gridHeight = 8, UInt16 gridWidth = 8>
 class PointInPolygonWithGrid
@@ -175,7 +185,7 @@ UInt64 PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::getAllocat
 
     size += polygons.capacity();
     for (const auto & polygon : polygons)
-        size += getPolygonAllocatedSize(polygon);
+        size += getMultiPolygonAllocatedSize(polygon);
     size += getPolygonAllocatedSize(polygon);
 
     return size;
