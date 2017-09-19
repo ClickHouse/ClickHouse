@@ -368,7 +368,7 @@ using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::frankl
 using PointInPolygonCrossing = GeoUtils::PointInPolygon<PointInPolygonCrossingStrategy>;
 using PointInPolygonWinding = GeoUtils::PointInPolygon<PointInPolygonWindingStrategy>;
 using PointInPolygonFranklin = GeoUtils::PointInPolygon<PointInPolygonFranklinStrategy>;
-using PointInPolygonWithGrid = GeoUtils::PointInPolygon<GeoUtils::PointInPolygonWithGrid<>>;
+using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<>;
 
 template <>
 const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygon";
