@@ -11,6 +11,7 @@
     - `clickhouse-php-client <https://github.com/8bitov/clickhouse-php-client>`_
     - `PhpClickHouseClient <https://github.com/SevaCode/PhpClickHouseClient>`_
     - `phpClickHouse <https://github.com/smi2/phpClickHouse>`_
+    - `clickhouse-client <https://github.com/bozerkins/clickhouse-client>`_
 * Go
     - `clickhouse <https://github.com/kshvakov/clickhouse/>`_
     - `go-clickhouse <https://github.com/roistat/go-clickhouse>`_
