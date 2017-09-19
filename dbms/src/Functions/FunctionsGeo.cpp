@@ -377,7 +377,9 @@ const char * FunctionPointInPolygon<PointInPolygonWinding>::name = "pointInPolyg
 template <>
 const char * FunctionPointInPolygon<PointInPolygonFranklin>::name = "pointInPolygonFranklin";
 template <>
-const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygonWithGrid";
+const char * FunctionPointInPolygon<PointInPolygonWithGrid, false>::name = "pointInPolygonWithGrid";
+template <>
+const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygonWithGridAndPool";
 
 
 void registerFunctionsGeo(FunctionFactory & factory)
@@ -388,6 +390,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonFranklin>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWinding>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonCrossing>>();
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid>, true>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid, true>>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid, false>>();
 }
 }
