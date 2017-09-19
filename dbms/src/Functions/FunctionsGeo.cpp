@@ -117,7 +117,7 @@ public:
             {
                 if (!elements[j]->isNumeric())
                 {
-                    throw Exception(getMsgPrefix() " must contains numeric tuple at position " + toString(j + 1),
+                    throw Exception(getMsgPrefix() + " must contains numeric tuple at position " + toString(j + 1),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 }
             }
