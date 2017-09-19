@@ -190,7 +190,7 @@ private:
     {
         Polygon<Type> polygon;
 
-        auto getMessagePrefix = [](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
+        auto getMsgPrefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
@@ -199,7 +199,7 @@ private:
             auto tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
 
             if (!tuple_col)
-                throw Exception(getMessagePrefix(i) + " must be constant array of tuples.", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(getMsgPrefix(i) + " must be constant array of tuples.", ErrorCodes::ILLEGAL_COLUMN);
 
             const auto & tuple_block = tuple_col->getData();
             const auto & column_x = tuple_block.safeGetByPosition(0).column;
@@ -213,7 +213,7 @@ private:
             auto size = column_x->size();
 
             if (size == 0)
-                throw Exception(getMessagePrefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(getMsgPrefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
 
             for (auto j : ext::range(0, size))
                 container.push_back(Point<Type>(getCoordinateFromField(column_x), getCoordinateFromField(column_y)));
