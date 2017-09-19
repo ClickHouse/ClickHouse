@@ -216,7 +216,11 @@ private:
                 throw Exception(getMsgPrefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
 
             for (auto j : ext::range(0, size))
-                container.push_back(Point<Type>(getCoordinateFromField(column_x), getCoordinateFromField(column_y)));
+            {
+                Type x_coord = getCoordinateFromField(*column_x[j]);
+                Type y_coord = getCoordinateFromField(*column_y[j]);
+                container.push_back(Point<Type>(x_coord, y_coord));
+            }
 
             /// Polygon assumed to be closed. Allow user to escape repeating of first point.
             if (!boost::geometry::equals(container.front(), container.back()))
