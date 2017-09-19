@@ -217,8 +217,8 @@ private:
 
             for (auto j : ext::range(0, size))
             {
-                Type x_coord = getCoordinateFromField(*column_x[j]);
-                Type y_coord = getCoordinateFromField(*column_y[j]);
+                Type x_coord = getCoordinateFromField((*column_x)[j]);
+                Type y_coord = getCoordinateFromField((*column_y)[j]);
                 container.push_back(Point<Type>(x_coord, y_coord));
             }
 
