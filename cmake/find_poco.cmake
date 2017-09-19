@@ -75,9 +75,9 @@ endif ()
 message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${Poco_Util_LIBRARY},${Poco_Net_LIBRARY},${Poco_NetSSL_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_MongoDB_LIBRARY}; MongoDB=${Poco_MongoDB_FOUND}, DataODBC=${Poco_DataODBC_FOUND}, NetSSL=${Poco_NetSSL_FOUND}")
 
 # How to make sutable poco:
-#  develop
-#   OR
-#  poco-1.7.9-release + 6a49c94d18c654d7a20b8c8ea47071b1fdd4813b
+# use branch:
+#  develop  OR  poco-1.7.9-release + 6a49c94d18c654d7a20b8c8ea47071b1fdd4813b
+# and merge:
 # ClickHouse-Extras/clickhouse_unbundled
 # ClickHouse-Extras/clickhouse_task   # uses c++11, can't push to poco
 # ClickHouse-Extras/clickhouse_misc
