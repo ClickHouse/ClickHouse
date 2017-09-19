@@ -1,15 +1,15 @@
-SELECT pointInPolygonFranklin(tuple(2.0,1.0), tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0));
-SELECT pointInPolygonFranklin(tuple(1.0,2.0), tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0));
-SELECT pointInPolygonFranklin(tuple(4.0,1.0), tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0));
-SELECT pointInPolygon(tuple(2.0,1.0), tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0));
-SELECT pointInPolygon(tuple(1.0,2.0), tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0));
-SELECT pointInPolygon(tuple(4.0,1.0), tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0));
-SELECT pointInPolygonWinding(tuple(2.0,1.0), tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0));
-SELECT pointInPolygonWinding(tuple(1.0,2.0), tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0));
-SELECT pointInPolygonWinding(tuple(4.0,1.0), tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0));
+SELECT pointInPolygonFranklin(tuple(2.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
+SELECT pointInPolygonFranklin(tuple(1.0,2.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
+SELECT pointInPolygonFranklin(tuple(4.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
+SELECT pointInPolygon(tuple(2.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
+SELECT pointInPolygon(tuple(1.0,2.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
+SELECT pointInPolygon(tuple(4.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
+SELECT pointInPolygonWinding(tuple(2.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
+SELECT pointInPolygonWinding(tuple(1.0,2.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
+SELECT pointInPolygonWinding(tuple(4.0,1.0), [tuple(0.0,0.0), tuple(3.0,3.0), tuple(3.0,0.0), tuple(0.0,0.0)]);
 
 SELECT 'inner';
-SELECT pointInPolygonWithGrid((3., 3.), [(6., 0.), (8., 4.), (5., 8.), (0., 2.), (6., 0.)]);
+SELECT pointInPolygonWithGrid((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2), (6, 0)]);
 SELECT 'outer';
 SELECT pointInPolygonWithGrid((0.1, 0.1), [(6., 0.), (8., 4.), (5., 8.), (0., 2.), (6., 0.)]);
 SELECT 'single line';

@@ -96,35 +96,28 @@ public:
             throw Exception("Too few arguments", ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION);
         }
 
+        auto getMsgPrefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
+
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
             if (array == nullptr && i != 1)
-            {
-                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be array of tuples.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
+                throw Exception(getMsgPrefix(i) + " must be array of tuples.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto * tuple = checkAndGetDataType<DataTypeTuple>(array ? array->getNestedType().get() : arguments[i].get());
             if (tuple == nullptr)
-            {
-                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must contains tuple.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
+                throw Exception(getMsgPrefix(i) + " must contains tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             const DataTypes & elements = tuple->getElements();
 
             if (elements.size() != 2)
-            {
-                throw Exception("Tuples in argument " + toString(i + 1) + " must have exactly two elements.",
-                                ErrorCodes::BAD_ARGUMENTS);
-            }
+                throw Exception(getMsgPrefix(i) + " must have exactly two elements.", ErrorCodes::BAD_ARGUMENTS);
 
             for (auto j : ext::range(0, elements.size()))
             {
-                if (!checkDataType<DataTypeFloat32>(elements[j].get()) && !checkDataType<DataTypeFloat64>(elements[j].get()))
+                if (!elements[j]->isNumeric())
                 {
-                    throw Exception("Tuple element " + toString(j + 1) + " in argument " + toString(i + 1) + " must be float.",
+                    throw Exception(getMsgPrefix() " must contains numeric tuple at position " + toString(j + 1),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 }
             }
