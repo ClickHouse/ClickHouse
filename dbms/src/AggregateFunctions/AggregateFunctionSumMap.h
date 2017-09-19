@@ -4,10 +4,10 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnTuple.h>
 
 #include <Core/FieldVisitors.h>
 #include <AggregateFunctions/IBinaryAggregateFunction.h>
@@ -43,12 +43,11 @@ struct AggregateFunctionSumMapData
   *  [7,5,3]     [5,15,25]
   *  [8,9,10]    [20,20,20]
   * will return:
-  *  [[1,2,3,4,5,6,7,8,9,10],[10,10,45,20,35,20,15,30,20,20]]
+  *  ([1,2,3,4,5,6,7,8,9,10],[10,10,45,20,35,20,15,30,20,20])
   */
 class AggregateFunctionSumMap final : public IBinaryAggregateFunction<struct AggregateFunctionSumMapData, AggregateFunctionSumMap>
 {
 private:
-    DataTypePtr type;
     DataTypePtr keys_type;
     DataTypePtr values_type;
 
@@ -57,7 +56,11 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeArray>(type);
+        DataTypes types;
+        types.emplace_back(std::make_shared<DataTypeArray>(keys_type));
+        types.emplace_back(std::make_shared<DataTypeArray>(values_type));
+
+        return std::make_shared<DataTypeTuple>(types);
     }
 
     void setArgumentsImpl(const DataTypes & arguments)
@@ -77,8 +80,6 @@ public:
             throw Exception("Second argument for function " + getName() + " must be an array.",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         values_type = array_type->getNestedType();
-
-        type = arguments.front();
     }
 
     void setParameters(const Array & params) override
@@ -159,25 +160,30 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto & to_array = static_cast<ColumnArray &>(to);
-        auto & to_data = to_array.getData();
-        auto & to_offsets = to_array.getOffsets();
+        auto & to_cols = static_cast<ColumnTuple &>(to).getColumns();
+
+        auto & to_keys_arr = static_cast<ColumnArray &>(*to_cols[0]);
+        auto & to_values_arr = static_cast<ColumnArray &>(*to_cols[1]);
+
+        auto & to_keys_col = to_keys_arr.getData();
+        auto & to_keys_offsets = to_keys_arr.getOffsets();
+
+        auto & to_values_col = to_values_arr.getData();
+        auto & to_values_offsets = to_values_arr.getOffsets();
 
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
 
-        Array keys, values;
-        keys.reserve(size);
-        values.reserve(size);
+        to_keys_col.reserve(size);
+        to_values_col.reserve(size);
         for (const auto &v : merged_maps)
         {
-            keys.push_back(v.first);
-            values.push_back(v.second);
+            to_keys_col.insert(v.first);
+            to_values_col.insert(v.second);
         }
 
-        to_data.insert(keys);
-        to_data.insert(values);
-        to_offsets.push_back((to_offsets.empty() ? 0 : to_offsets.back()) + 2);
+        to_keys_offsets.push_back((to_keys_offsets.empty() ? 0 : to_keys_offsets.back()) + size);
+        to_values_offsets.push_back((to_values_offsets.empty() ? 0 : to_values_offsets.back()) + size);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

@@ -7,6 +7,6 @@ SELECT * FROM test.sum_map;
 SELECT sumMap(statusMap.status, statusMap.requests) FROM test.sum_map;
 SELECT sumMapMerge(s) FROM (SELECT sumMapState(statusMap.status, statusMap.requests) AS s FROM test.sum_map);
 SELECT timeslot, sumMap(statusMap.status, statusMap.requests) FROM test.sum_map GROUP BY timeslot;
-SELECT timeslot, sumMap(statusMap.status, statusMap.requests)[1], sumMap(statusMap.status, statusMap.requests)[2] FROM test.sum_map GROUP BY timeslot;
+SELECT timeslot, sumMap(statusMap.status, statusMap.requests).1, sumMap(statusMap.status, statusMap.requests).2 FROM test.sum_map GROUP BY timeslot;
 
 DROP TABLE test.sum_map;
