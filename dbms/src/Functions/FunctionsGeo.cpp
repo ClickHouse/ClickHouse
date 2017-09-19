@@ -60,9 +60,12 @@ class FunctionPointInPolygon : public IFunction
 {
 public:
 
-    using Point = boost::geometry::model::d2::point_xy<Float32>;
-    using Polygon = boost::geometry::model::polygon<Point, false>;
-    using Box = boost::geometry::model::box<Point>;
+    template <typename Type>
+    using Point = boost::geometry::model::d2::point_xy<Type>;
+    template <typename Type>
+    using Polygon = boost::geometry::model::polygon<Point<Type>, false>;
+    template <typename Type>
+    using Box = boost::geometry::model::box<Point<Type>>;
 
     static const char * name;
 
@@ -130,51 +133,8 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        Polygon polygon;
-
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            auto const_array_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
-            auto array_col = const_array_col ? checkAndGetColumn<ColumnArray>(&const_array_col->getDataColumn()) : nullptr;
-            auto tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
-
-            if (!tuple_col)
-            {
-                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " must be constant array of tuples.",
-                                ErrorCodes::ILLEGAL_COLUMN);
-            }
-
-            const auto & tuple_block = tuple_col->getData();
-            const auto & column_x = tuple_block.safeGetByPosition(0).column;
-            const auto & column_y = tuple_block.safeGetByPosition(1).column;
-
-            if (!polygon.outer().empty())
-                polygon.inners().emplace_back();
-
-            auto & container = polygon.outer().empty() ? polygon.outer() : polygon.inners().back();
-
-            auto size = column_x->size();
-
-            if (size == 0)
-            {
-                throw Exception("Argument " + toString(i + 1) + " for function " + getName() + " shouldn't be empty.",
-                                ErrorCodes::ILLEGAL_COLUMN);
-            }
-
-            for (auto j : ext::range(0, size))
-            {
-                auto x = static_cast<Float32>((*column_x)[j].get<Float64>());
-                auto y = static_cast<Float32>((*column_y)[j].get<Float64>());
-                container.push_back(Point(x, y));
-            }
-
-            /// Polygon assumed to be closed. Allow user to escape repeating of first point.
-            if (!boost::geometry::equals(container.front(), container.back()))
-                container.push_back(container.front());
-        }
 
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
         auto const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
@@ -189,35 +149,107 @@ public:
         }
 
         const auto & tuple_block = tuple_col->getData();
-        const auto & column_x = tuple_block.safeGetByPosition(0).column;
-        const auto & column_y = tuple_block.safeGetByPosition(1).column;
+        const auto & x = tuple_block.safeGetByPosition(0);
+        const auto & y = tuple_block.safeGetByPosition(1);
+
+        bool use_float64 = checkDataType<DataTypeFloat64>(x.type.get()) || checkDataType<DataTypeFloat64>(y.type.get());
 
         auto & result_column = block.safeGetByPosition(result).column;
 
-        auto callImpl = useObjectPool
-                        ? FunctionPointInPolygonDetail::callPointInPolygonImplWithPool<Polygon, PointInPolygonImpl>
-                        : FunctionPointInPolygonDetail::callPointInPolygonImpl<Polygon, PointInPolygonImpl>;
-
-        result_column = callImpl(*column_x, *column_y, polygon);
+        if (use_float64)
+            result_column = executeForType<Float64>(*x.column, *y.column, block, arguments);
+        else
+            result_column = executeForType<Float32>(*x.column, *y.column, block, arguments);
 
         if (const_tuple_col)
             result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
     }
 
+private:
+
+    Float64 getCoordinateFromField(const Field & field)
+    {
+        switch (field.getType())
+        {
+            case Field::Types::Float64:
+                return field.get<Float64>();
+            case Field::Types::Int64:
+                return field.get<Int64>();
+            case Field::Types::UInt64:
+                return field.get<UInt64>();
+            default:
+            {
+                std::string msg = "Expected numeric field, but got ";
+                throw Exception(msg + Field::Types::toString(field.getType()), ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+    }
+
+    template <typename Type>
+    ColumnPtr executeForType(const IColumn & x, const IColumn & y, Block & block, const ColumnNumbers & arguments)
+    {
+        Polygon<Type> polygon;
+
+        auto getMessagePrefix = [](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
+
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            auto const_col = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[i]).column.get());
+            auto array_col = const_col ? checkAndGetColumn<ColumnArray>(&const_col->getDataColumn()) : nullptr;
+            auto tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
+
+            if (!tuple_col)
+                throw Exception(getMessagePrefix(i) + " must be constant array of tuples.", ErrorCodes::ILLEGAL_COLUMN);
+
+            const auto & tuple_block = tuple_col->getData();
+            const auto & column_x = tuple_block.safeGetByPosition(0).column;
+            const auto & column_y = tuple_block.safeGetByPosition(1).column;
+
+            if (!polygon.outer().empty())
+                polygon.inners().emplace_back();
+
+            auto & container = polygon.outer().empty() ? polygon.outer() : polygon.inners().back();
+
+            auto size = column_x->size();
+
+            if (size == 0)
+                throw Exception(getMessagePrefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
+
+            for (auto j : ext::range(0, size))
+                container.push_back(Point(getCoordinateFromField(column_x), getCoordinateFromField(column_y)));
+
+            /// Polygon assumed to be closed. Allow user to escape repeating of first point.
+            if (!boost::geometry::equals(container.front(), container.back()))
+                container.push_back(container.front());
+        }
+
+        auto callImpl = useObjectPool
+            ? FunctionPointInPolygonDetail::callPointInPolygonImplWithPool<Polygon<Type>, PointInPolygonImpl<Type>>
+            : FunctionPointInPolygonDetail::callPointInPolygonImpl<Polygon<Type>, PointInPolygonImpl<Type>>;
+
+        return callImpl(x, y, polygon);
+    }
 
 };
 
+template <typename Type>
+using Point = boost::geometry::model::d2::point_xy<Type>;
 
-using Point = boost::geometry::model::d2::point_xy<Float32>;
+template <typename Type>
+using PointInPolygonCrossingStrategy = boost::geometry::strategy::within::crossings_multiply<Point<Type>>;
+template <typename Type>
+using PointInPolygonWindingStrategy = boost::geometry::strategy::within::winding<Point<Type>>;
+template <typename Type>
+using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::franklin<Point<Type>>;
 
-using PointInPolygonCrossingStrategy = boost::geometry::strategy::within::crossings_multiply<Point>;
-using PointInPolygonWindingStrategy = boost::geometry::strategy::within::winding<Point>;
-using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::franklin<Point>;
-
-using PointInPolygonCrossing = GeoUtils::PointInPolygon<PointInPolygonCrossingStrategy>;
-using PointInPolygonWinding = GeoUtils::PointInPolygon<PointInPolygonWindingStrategy>;
-using PointInPolygonFranklin = GeoUtils::PointInPolygon<PointInPolygonFranklinStrategy>;
-using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<>;
+template <typename Type>
+using PointInPolygonCrossing = GeoUtils::PointInPolygon<PointInPolygonCrossingStrategy<Type>, Type>;
+template <typename Type>
+using PointInPolygonWinding = GeoUtils::PointInPolygon<PointInPolygonWindingStrategy<Type>, Type>;
+template <typename Type>
+using PointInPolygonFranklin = GeoUtils::PointInPolygon<PointInPolygonFranklinStrategy<Type>, Type>;
+template <typename Type>
+using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<Type>;
 
 template <>
 const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygon";
@@ -226,9 +258,7 @@ const char * FunctionPointInPolygon<PointInPolygonWinding>::name = "pointInPolyg
 template <>
 const char * FunctionPointInPolygon<PointInPolygonFranklin>::name = "pointInPolygonFranklin";
 template <>
-const char * FunctionPointInPolygon<PointInPolygonWithGrid, false>::name = "pointInPolygonWithGrid";
-template <>
-const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygonWithGridAndPool";
+const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygonWithGrid";
 
 
 void registerFunctionsGeo(FunctionFactory & factory)
