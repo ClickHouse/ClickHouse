@@ -48,7 +48,7 @@ sumMap(key, value)
 ------
 Performs summation of array 'value' by corresponding keys of array 'key'.
 Number of elements in 'key' and 'value' arrays should be the same for each row, on which summation is being performed.
-Returns array of two arrays - sorted keys and values, summed up by corresponding keys.
+Returns a tuple of two arrays - sorted keys and values, summed up by corresponding keys.
 
 Example:
 
@@ -76,8 +76,8 @@ GROUP BY timeslot
 .. code-block:: text
 
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
-│ 2000-01-01 00:00:00 │ [[1,2,3,4,5],[10,10,20,10,10]]               │
-│ 2000-01-01 00:01:00 │ [[4,5,6,7,8],[10,10,20,10,10]]               │
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
 └─────────────────────┴──────────────────────────────────────────────┘
 
 avg(x)
