@@ -47,7 +47,7 @@ ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, P
 }
 
 template <typename Polygon, typename PointInPolygonImpl>
-ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon)
+ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, Polygon & polygon)
 {
     PointInPolygonImpl impl(polygon);
     return GeoUtils::pointInPolygon(x, y, impl);
