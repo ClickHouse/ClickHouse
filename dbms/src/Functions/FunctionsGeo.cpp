@@ -55,7 +55,7 @@ ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, Polygon &
 
 }
 
-template <typename PointInPolygonImpl, bool useObjectPool = false>
+template <template <typename> typename PointInPolygonImpl, bool useObjectPool = false>
 class FunctionPointInPolygon : public IFunction
 {
 public:
@@ -216,7 +216,7 @@ private:
                 throw Exception(getMessagePrefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
 
             for (auto j : ext::range(0, size))
-                container.push_back(Point(getCoordinateFromField(column_x), getCoordinateFromField(column_y)));
+                container.push_back(Point<Type>(getCoordinateFromField(column_x), getCoordinateFromField(column_y)));
 
             /// Polygon assumed to be closed. Allow user to escape repeating of first point.
             if (!boost::geometry::equals(container.front(), container.back()))
