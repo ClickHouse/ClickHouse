@@ -18,6 +18,7 @@ else ()
     set (ENABLE_DATA_MYSQL 0 CACHE BOOL "")
     set (POCO_UNBUNDLED 1 CACHE BOOL "")
     set (POCO_UNBUNDLED_PCRE 0 CACHE BOOL "")
+    set (POCO_UNBUNDLED_EXPAT 0 CACHE BOOL "")
     set (POCO_STATIC ${MAKE_STATIC_LIBRARIES} CACHE BOOL "")
 
     include (${ClickHouse_SOURCE_DIR}/cmake/find_ltdl.cmake)
