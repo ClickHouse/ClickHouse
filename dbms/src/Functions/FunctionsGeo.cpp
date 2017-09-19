@@ -28,7 +28,7 @@ namespace FunctionPointInPolygonDetail
 {
 
 template <typename Polygon, typename PointInPolygonImpl>
-ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, const Polygon & polygon)
+ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, Polygon & polygon)
 {
     using Pool = ObjectPoolMap<PointInPolygonImpl, std::string>;
     /// C++11 has thread-safe function-local statics on most modern compilers.
