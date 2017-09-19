@@ -46,6 +46,26 @@ namespace GeoUtils
 {
 
 
+template <typename Polygon>
+UInt64 getPolygonAllocatedSize(Polygon && polygon)
+{
+    UInt64 size = 0;
+
+    using RingType = typename std::decay<Polygon>::type::ring_type;
+
+    auto addSizeOfRing = [& size](const RingType & ring) { size += sizeof(ring) + ring.capacity(); };
+
+    addSizeOfRing(polygon.outer());
+
+    const auto & inners = polygon.inners();
+    size += sizeof(inners) + inners.capacity();
+    for (auto & inner : inners)
+        addSizeOfRing(inner);
+
+    return size;
+}
+
+
 template <typename CoordinateType = Float32, UInt16 gridHeight = 8, UInt16 gridWidth = 8>
 class PointInPolygonWithGrid
 {
@@ -62,6 +82,8 @@ public:
     inline void init();
 
     bool hasEmptyBound() const { return has_empty_bound; }
+
+    UInt64 getAllocatedBytes() const;
 
     inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y);
 
@@ -145,6 +167,19 @@ private:
     /// min(distance(point, edge) : edge in polygon)
     inline Distance distance(const Point & point, const Polygon & polygon);
 };
+
+template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
+void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::getAllocatedBytes() const
+{
+    UInt64 size = sizeof(*this);
+
+    size += polygons.capacity();
+    for (const auto & polygon : polygons)
+        size += getPolygonAllocatedSize(polygon);
+    size += getPolygonAllocatedSize(polygon);
+
+    return size;
+}
 
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
 void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::init()
@@ -429,6 +464,8 @@ public:
 
         return boost::geometry::covered_by(point, polygon, strategy);
     }
+
+    UInt64 getAllocatedBytes() const { return sizeof(*this); }
 
 private:
     const Polygon & polygon;

@@ -13,10 +13,17 @@
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Common/ProfileEvents.h>
 
+namespace ProfileEvents
+{
+    extern const Event PolygonsAddedToPool;
+    extern const Event PolygonsInPoolAllocatedBytes;
+}
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
@@ -37,7 +44,12 @@ ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, P
     auto factory = [& polygon]()
     {
         GeoUtils::normalizePolygon(polygon);
-        return new PointInPolygonImpl(polygon);
+        auto ptr = std::make_unique<PointInPolygonImpl>(polygon);
+
+        ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
+        ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
+
+        return ptr.release();
     };
 
     std::string serialized_polygon = GeoUtils::serialize(polygon);
