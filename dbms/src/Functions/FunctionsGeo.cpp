@@ -274,6 +274,5 @@ void registerFunctionsGeo(FunctionFactory & factory)
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWinding>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonCrossing>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid, true>>();
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid, false>>();
 }
 }
