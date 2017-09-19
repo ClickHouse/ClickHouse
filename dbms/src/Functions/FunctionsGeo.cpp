@@ -27,17 +27,14 @@ namespace ErrorCodes
 namespace FunctionPointInPolygonDetail
 {
 
-template <bool>
-struct Flag {};
-
 template <typename Polygon, typename PointInPolygonImpl>
-ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon, Flag<true>)
+ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, const Polygon & polygon)
 {
     using Pool = ObjectPoolMap<PointInPolygonImpl, std::string>;
     /// C++11 has thread-safe function-local statics on most modern compilers.
     static Pool known_polygons;
 
-    auto factory = [& polygon]
+    auto factory = [& polygon]()
     {
         GeoUtils::normalizePolygon(polygon);
         return new PointInPolygonImpl(polygon);
@@ -50,7 +47,7 @@ ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Pol
 }
 
 template <typename Polygon, typename PointInPolygonImpl>
-ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon, Flag<false>)
+ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, const Polygon & polygon)
 {
     PointInPolygonImpl impl(polygon);
     return GeoUtils::pointInPolygon(x, y, impl);
@@ -197,8 +194,11 @@ public:
 
         auto & result_column = block.safeGetByPosition(result).column;
 
-        result_column = FunctionPointInPolygonDetail::callPointInPolygonImpl<Polygon, PointInPolygonImpl>(
-                *column_x, *column_y, polygon, FunctionPointInPolygonDetail::Flag<useObjectPool>());
+        auto callImpl = useObjectPool
+                        ? FunctionPointInPolygonDetail::callPointInPolygonImplWithPool<Polygon, PointInPolygonImpl>
+                        : FunctionPointInPolygonDetail::callPointInPolygonImpl<Polygon, PointInPolygonImpl>;
+
+        result_column = callImpl(*column_x, *column_y, polygon);
 
         if (const_tuple_col)
             result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
