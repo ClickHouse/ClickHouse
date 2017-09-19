@@ -188,10 +188,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
-    size_t index_granularity_,
     const MergeTreeData::MergingParams & merging_params_,
-    bool has_force_restore_data_flag,
-    const MergeTreeSettings & settings_)
+    const MergeTreeSettings & settings_,
+    bool has_force_restore_data_flag)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
     current_zookeeper(context.getZooKeeper()), database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
@@ -201,7 +200,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         full_path, columns_,
         materialized_columns_, alias_columns_, column_defaults_,
         context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
-        sampling_expression_, index_granularity_, merging_params_,
+        sampling_expression_, merging_params_,
         settings_, database_name_ + "." + table_name, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); },
         [this] () { clearOldPartsAndRemoveFromZK(); }),
@@ -311,18 +310,17 @@ StoragePtr StorageReplicatedMergeTree::create(
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
-    size_t index_granularity_,
     const MergeTreeData::MergingParams & merging_params_,
-    bool has_force_restore_data_flag_,
-    const MergeTreeSettings & settings_)
+    const MergeTreeSettings & settings_,
+    bool has_force_restore_data_flag_)
 {
     auto res = make_shared(
         zookeeper_path_, replica_name_, attach,
         path_, database_name_, name_,
         columns_, materialized_columns_, alias_columns_, column_defaults_,
         context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
-        sampling_expression_, index_granularity_,
-        merging_params_, has_force_restore_data_flag_, settings_);
+        sampling_expression_, merging_params_, settings_,
+        has_force_restore_data_flag_);
     StoragePtr res_ptr = res;
 
     auto get_endpoint_holder = [&res](InterserverIOEndpointPtr endpoint)
