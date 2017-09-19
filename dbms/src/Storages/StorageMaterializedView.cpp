@@ -72,9 +72,6 @@ StorageMaterializedView::StorageMaterializedView(
     if (!query.inner_storage)
         throw Exception("ENGINE of MaterializedView should be specified explicitly", ErrorCodes::INCORRECT_QUERY);
 
-    /// If the internal query does not specify a database, retrieve it from the context and write it to the query.
-    query.select->setDatabaseIfNeeded(database_name);
-
     extractDependentTable(*query.select, select_database_name, select_table_name);
 
     if (!select_table_name.empty())
