@@ -83,4 +83,4 @@ message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${
 # ClickHouse-Extras/clickhouse_misc
 # ClickHouse-Extras/clickhouse_anl
 # ClickHouse-Extras/clickhouse_http_header https://github.com/pocoproject/poco/pull/1574
-#
+# ClickHouse-Extras/clickhouse_socket
