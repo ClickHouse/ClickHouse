@@ -517,7 +517,7 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
 template <typename Linestring>
 float calcLinestringRotation(const Linestring & points)
 {
-    using Point = boost::geometry::model::d2::point_xy<float>;
+    using Point = decltype(*points.begin());
     float rotation = 0;
 
     auto sqrLength = [](const Point & point) { return point.x() * point.x() + point.y() * point.y(); };
