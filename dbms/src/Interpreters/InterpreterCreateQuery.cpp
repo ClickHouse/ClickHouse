@@ -488,6 +488,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// For `view` type tables, you may need `sample_block` to get the columns.
     if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
     {
+        create.select->setDatabaseIfNeeded(database_name);
         interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->ptr(), context);
         as_select_sample = interpreter_select->getSampleBlock();
     }
