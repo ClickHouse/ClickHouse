@@ -86,7 +86,6 @@ MergeTreeData::MergeTreeData(
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
-    size_t index_granularity_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     const String & log_name_,
@@ -96,7 +95,7 @@ MergeTreeData::MergeTreeData(
     PartsCleanCallback parts_clean_callback_)
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
     sampling_expression(sampling_expression_),
-    index_granularity(index_granularity_),
+    index_granularity(settings_.index_granularity),
     merging_params(merging_params_),
     settings(settings_),
     primary_expr_ast(primary_expr_ast_),

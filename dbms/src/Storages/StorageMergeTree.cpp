@@ -44,10 +44,9 @@ StorageMergeTree::StorageMergeTree(
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-    size_t index_granularity_,
     const MergeTreeData::MergingParams & merging_params_,
-    bool has_force_restore_data_flag,
-    const MergeTreeSettings & settings_)
+    const MergeTreeSettings & settings_,
+    bool has_force_restore_data_flag)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
     path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
     context(context_), background_pool(context_.getBackgroundPool()),
@@ -55,7 +54,7 @@ StorageMergeTree::StorageMergeTree(
          full_path, columns_,
          materialized_columns_, alias_columns_, column_defaults_,
          context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
-         sampling_expression_, index_granularity_, merging_params_,
+         sampling_expression_, merging_params_,
          settings_, database_name_ + "." + table_name, false, attach),
     reader(data), writer(data), merger(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))

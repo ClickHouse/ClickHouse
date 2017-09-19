@@ -253,7 +253,7 @@ StoragePtr StorageFactory::get(
     const String & database_name,
     Context & local_context,
     Context & context,
-    const ASTCreateQuery & query,
+    ASTCreateQuery & query,
     NamesAndTypesListPtr columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
@@ -270,7 +270,7 @@ StoragePtr StorageFactory::get(
         checkAllTypesAreAllowedInTable(alias_columns);
     }
 
-    const ASTStorage & storage_def = *query.storage;
+    ASTStorage & storage_def = *query.storage;
     const ASTFunction & engine_def = *storage_def.engine;
 
     if (engine_def.parameters)
@@ -979,7 +979,7 @@ For further info please read the documentation: https://clickhouse.yandex/
         ASTPtr partition_expr_list;
         ASTPtr primary_expr_list;
         ASTPtr sampling_expression;
-        UInt64 index_granularity;
+        MergeTreeSettings storage_settings = context.getMergeTreeSettings();
 
         if (is_extended_storage_def)
         {
@@ -992,17 +992,7 @@ For further info please read the documentation: https://clickhouse.yandex/
             if (storage_def.sample_by)
                 sampling_expression = storage_def.sample_by->ptr();
 
-            index_granularity = 8192;
-            if (storage_def.settings)
-            {
-                for (const ASTSetQuery::Change & setting : storage_def.settings->changes)
-                {
-                    if (setting.name == "index_granularity")
-                        index_granularity = setting.value.safeGet<UInt64>();
-                    else
-                        throw Exception("Unknown setting " + setting.name + " for storage " + name, ErrorCodes::BAD_ARGUMENTS);
-                }
-            }
+            storage_settings.loadFromQuery(storage_def);
         }
         else
         {
@@ -1025,7 +1015,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 
             auto ast = typeid_cast<ASTLiteral *>(&*args.back());
             if (ast && ast->value.getType() == Field::Types::UInt64)
-                index_granularity = safeGet<UInt64>(ast->value);
+                storage_settings.index_granularity = safeGet<UInt64>(ast->value);
             else
                 throw Exception(String("Index granularity must be a positive integer") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
         }
@@ -1035,17 +1025,15 @@ For further info please read the documentation: https://clickhouse.yandex/
                 zookeeper_path, replica_name, attach, data_path, database_name, table_name,
                 columns, materialized_columns, alias_columns, column_defaults,
                 context, primary_expr_list, date_column_name, partition_expr_list,
-                sampling_expression, index_granularity, merging_params,
-                has_force_restore_data_flag,
-                context.getMergeTreeSettings());
+                sampling_expression, merging_params, storage_settings,
+                has_force_restore_data_flag);
         else
             return StorageMergeTree::create(
                 data_path, database_name, table_name,
                 columns, materialized_columns, alias_columns, column_defaults, attach,
                 context, primary_expr_list, date_column_name, partition_expr_list,
-                sampling_expression, index_granularity, merging_params,
-                has_force_restore_data_flag,
-                context.getMergeTreeSettings());
+                sampling_expression, merging_params, storage_settings,
+                has_force_restore_data_flag);
     }
     else
         throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);

@@ -24,7 +24,7 @@ public:
         const String & database_name,
         Context & local_context,
         Context & context,
-        const ASTCreateQuery & query,
+        ASTCreateQuery & query,
         NamesAndTypesListPtr columns,
         const NamesAndTypesList & materialized_columns,
         const NamesAndTypesList & alias_columns,
