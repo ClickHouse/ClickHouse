@@ -68,7 +68,7 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl>>();
+        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, useObjectPool>>();
     }
 
     String getName() const override
