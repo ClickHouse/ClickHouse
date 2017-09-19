@@ -517,7 +517,7 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
 template <typename Linestring>
 float calcLinestringRotation(const Linestring & points)
 {
-    using Point = decltype(*points.begin());
+    using Point = typename std::decay<decltype(*points.begin())>::type;
     float rotation = 0;
 
     auto sqrLength = [](const Point & point) { return point.x() * point.x() + point.y() * point.y(); };
