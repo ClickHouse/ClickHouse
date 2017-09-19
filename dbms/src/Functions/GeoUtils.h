@@ -169,7 +169,7 @@ private:
 };
 
 template <typename CoordinateType, UInt16 gridHeight, UInt16 gridWidth>
-void PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::getAllocatedBytes() const
+UInt64 PointInPolygonWithGrid<CoordinateType, gridHeight, gridWidth>::getAllocatedBytes() const
 {
     UInt64 size = sizeof(*this);
 
