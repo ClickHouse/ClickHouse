@@ -67,7 +67,7 @@ ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, Polygon &
 
 }
 
-template <template <typename> typename PointInPolygonImpl, bool useObjectPool = false>
+template <template <typename> typename PointInPolygonImpl, bool use_object_pool = false>
 class FunctionPointInPolygon : public IFunction
 {
 public:
@@ -83,7 +83,7 @@ public:
 
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, useObjectPool>>();
+        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, use_object_pool>>();
     }
 
     String getName() const override
@@ -232,7 +232,7 @@ private:
                 container.push_back(container.front());
         }
 
-        auto callImpl = useObjectPool
+        auto callImpl = use_object_pool
             ? FunctionPointInPolygonDetail::callPointInPolygonImplWithPool<Polygon<Type>, PointInPolygonImpl<Type>>
             : FunctionPointInPolygonDetail::callPointInPolygonImpl<Polygon<Type>, PointInPolygonImpl<Type>>;
 
