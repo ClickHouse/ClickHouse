@@ -51,7 +51,7 @@ UInt64 getPolygonAllocatedBytes(const Polygon & polygon)
 {
     UInt64 size = 0;
 
-    using RingType = typename Polygon::type::ring_type;
+    using RingType = typename Polygon::ring_type;
     using ValueType = typename RingType::value_type;
 
     auto sizeOfRing = [](const RingType & ring) { return sizeof(ring) + ring.capacity() * sizeof(ValueType); };
