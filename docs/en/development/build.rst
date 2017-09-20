@@ -20,6 +20,8 @@ Install Git and CMake
 
     sudo apt-get install git cmake3
 
+Or just cmake on newer systems.
+
 
 Detect number of threads
 ------------------------
