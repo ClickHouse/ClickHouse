@@ -79,6 +79,7 @@ message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${
 #  develop  OR  poco-1.7.9-release + 6a49c94d18c654d7a20b8c8ea47071b1fdd4813b
 # and merge:
 # ClickHouse-Extras/clickhouse_unbundled
+# ClickHouse-Extras/clickhouse_unbundled_zlib
 # ClickHouse-Extras/clickhouse_task   # uses c++11, can't push to poco
 # ClickHouse-Extras/clickhouse_misc
 # ClickHouse-Extras/clickhouse_anl
