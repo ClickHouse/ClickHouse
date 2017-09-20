@@ -287,13 +287,13 @@ private:
         }
     }
 
-    template<typename T>
+    template <typename T>
     inline T & getContainer()
     {
         return *reinterpret_cast<T *>(address & mask);
     }
 
-    template<typename T>
+    template <typename T>
     inline const T & getContainer() const
     {
         return *reinterpret_cast<T *>(address & mask);

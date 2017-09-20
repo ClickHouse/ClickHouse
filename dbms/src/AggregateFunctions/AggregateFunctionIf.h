@@ -121,6 +121,8 @@ public:
     }
 
     IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

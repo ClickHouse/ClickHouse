@@ -185,6 +185,7 @@ public:
         Element * swap_buffer = reinterpret_cast<Element *>(allocator.allocate(size * sizeof(Element)));
 
         /// Transform the array and calculate the histogram.
+        /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
         for (size_t i = 0; i < size; ++i)
         {
             if (!Traits::Transform::transform_is_simple)

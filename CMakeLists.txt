@@ -36,6 +36,7 @@ if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
     message (STATUS "CMAKE_BUILD_TYPE is not set, set to default = RELWITHDEBINFO")
     set (CMAKE_BUILD_TYPE "RELWITHDEBINFO")
 endif ()
+string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 message (STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 
 # ASan - build type with address sanitizer
@@ -70,11 +71,16 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Note that it is not compatible with ASan." OFF)
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64.*|x86_64.*|AMD64.*")
+    option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
+
+    if (CMAKE_SYSTEM MATCHES "Linux")
+        option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
+    endif()
+endif ()
 
 if (GLIBC_COMPATIBILITY)
-    set (GLIBC_COMPATIBILITY_COMPILE_FLAGS   "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/glibc_compatibility.h")
-    set (GLIBC_COMPATIBILITY_LINK_FLAGS      "-Wl,--wrap=memcpy")
+    set (USE_INTERNAL_MEMCPY ON)
 endif ()
 
 if (CXX11_ABI STREQUAL ENABLE)
@@ -105,6 +111,11 @@ if (USE_LIBCXX)
     set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     set (CMAKE_CXX_FLAGS_DEBUG           "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
 endif ()
+
+# Special options for better optimized code with clang
+#if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+#    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
+#endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} -std=gnu++1z ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
@@ -191,7 +202,7 @@ if (UNBUNDLED)
 else ()
     set(NOT_UNBUNDLED 1)
 endif ()
-# Using system libs can cause lot of warnings in includes. 
+# Using system libs can cause lot of warnings in includes.
 if (UNBUNDLED OR NOT (CMAKE_SYSTEM MATCHES "Linux" OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
@@ -234,8 +245,8 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 include (libs/libdaemon/cmake/find_unwind.cmake)
 
 
-set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE}}")
-set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE}}")
+set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
+set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
 message (STATUS "C_FLAGS    = ${FULL_C_FLAGS}")
 message (STATUS "CXX_FLAGS  = ${FULL_CXX_FLAGS}")
 message (STATUS "LINK_FLAGS = ${CMAKE_EXE_LINKER_FLAGS}")
