@@ -13,6 +13,7 @@ int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
+int mainEntryClickHouseCompressor(int argc, char ** argv);
 
 namespace
 {
@@ -29,6 +30,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"server", mainEntryClickHouseServer},
     {"performance-test", mainEntryClickHousePerformanceTest},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
+    {"compressor", mainEntryClickHouseCompressor}
 };
 
 
