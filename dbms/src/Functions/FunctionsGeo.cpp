@@ -264,13 +264,13 @@ template <typename Type>
 using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<Type>;
 
 template <>
-const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygon";
+const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygonCrossing";
 template <>
 const char * FunctionPointInPolygon<PointInPolygonWinding>::name = "pointInPolygonWinding";
 template <>
 const char * FunctionPointInPolygon<PointInPolygonFranklin>::name = "pointInPolygonFranklin";
 template <>
-const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygonWithGrid";
+const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygon";
 
 
 void registerFunctionsGeo(FunctionFactory & factory)
