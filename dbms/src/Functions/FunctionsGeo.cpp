@@ -46,6 +46,9 @@ ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, P
         GeoUtils::normalizePolygon(polygon);
         auto ptr = std::make_unique<PointInPolygonImpl>(polygon);
 
+        /// To allocate memory.
+        ptr->init();
+
         ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
         ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
 

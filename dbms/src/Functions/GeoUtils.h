@@ -90,7 +90,7 @@ public:
     using Segment = boost::geometry::model::segment<Point>;
 
     explicit PointInPolygonWithGrid(const Polygon & polygon, UInt16 grid_size = 8)
-            : polygon(polygon), grid_size(std::max<UInt16>(1, grid_size)) {}
+            : grid_size(std::max<UInt16>(1, grid_size)), polygon(polygon) {}
 
     void init();
 
@@ -192,10 +192,10 @@ UInt64 PointInPolygonWithGrid<CoordinateType>::getAllocatedBytes() const
 
     size += cells.capacity() * sizeof(Cell);
     size += polygons.capacity() * sizeof(MultiPolygon);
+    size += getPolygonAllocatedBytes(polygon);
 
     for (const auto & polygon : polygons)
         size += getMultiPolygonAllocatedBytes(polygon);
-    size += getPolygonAllocatedBytes(polygon);
 
     return size;
 }
