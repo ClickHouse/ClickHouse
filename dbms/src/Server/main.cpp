@@ -14,25 +14,53 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 
-static bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
+namespace
 {
-    std::string arg_mode_app = "--" + app_suffix;
 
-    /// Use app if --app arg is passed (the arg should be quietly removed)
-    auto arg_it = std::find_if(argv.begin(), argv.end(), [&](const char * arg) { return !arg_mode_app.compare(arg); } );
-    if (arg_it != argv.end())
+using MainFunc = int (*)(int, char**);
+
+
+/// Add an item here to register new application
+std::pair<const char *, MainFunc> clickhouse_applications[] =
+{
+    {"local", mainEntryClickHouseLocal},
+    {"client", mainEntryClickHouseClient},
+    {"benchmark", mainEntryClickHouseBenchmark},
+    {"server", mainEntryClickHouseServer},
+    {"performance-test", mainEntryClickHousePerformanceTest},
+    {"extract-from-config", mainEntryClickHouseExtractFromConfig},
+};
+
+
+int printHelp(int argc, char ** argv)
+{
+    std::cerr << "Use one of the following commands:" << std::endl;
+    for (auto & application : clickhouse_applications)
+        std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
+    return -1;
+};
+
+
+bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
+{
+    /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
+    if (argv.size() >= 2)
     {
-        argv.erase(arg_it);
-        return true;
+        auto first_arg = argv.begin() + 1;
+
+        /// 'clickhouse --client ...' and 'clickhouse client ...' are Ok
+        if (*first_arg == "--" + app_suffix || *first_arg == app_suffix)
+        {
+            argv.erase(first_arg);
+            return true;
+        }
     }
 
-    std::string app_name = "clickhouse-" + app_suffix;
-
     /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
-    if (!argv.empty() && (!app_name.compare(argv[0]) || endsWith(argv[0], "/" + app_name)))
-        return true;
+    std::string app_name = "clickhouse-" + app_suffix;
+    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
+}
 
-    return false;
 }
 
 
@@ -44,20 +72,17 @@ int main(int argc_, char ** argv_)
 
     std::vector<char *> argv(argv_, argv_ + argc_);
 
-    auto main_func = mainEntryClickHouseServer;
+    /// Print a basic help if nothing was matched
+    MainFunc main_func = printHelp;
 
-    if (isClickhouseApp("local", argv))
-        main_func = mainEntryClickHouseLocal;
-    else if (isClickhouseApp("client", argv))
-        main_func = mainEntryClickHouseClient;
-    else if (isClickhouseApp("benchmark", argv))
-        main_func = mainEntryClickHouseBenchmark;
-    else if (isClickhouseApp("server", argv)) /// --server arg should be cut
-        main_func = mainEntryClickHouseServer;
-    else if (isClickhouseApp("performance-test", argv))
-        main_func = mainEntryClickHousePerformanceTest;
-    else if (isClickhouseApp("extract-from-config", argv))
-        main_func = mainEntryClickHouseExtractFromConfig;
+    for (auto & application : clickhouse_applications)
+    {
+        if (isClickhouseApp(application.first, argv))
+        {
+            main_func = application.second;
+            break;
+        }
+    }
 
     return main_func(static_cast<int>(argv.size()), argv.data());
 }
