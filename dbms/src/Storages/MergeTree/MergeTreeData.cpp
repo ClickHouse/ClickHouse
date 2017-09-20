@@ -581,7 +581,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
     time_t current_time = time(nullptr);
     ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
         ? current_time - custom_directories_lifetime_seconds
-        : current_time - settings.temporary_directories_lifetime;
+        : current_time - settings.temporary_directories_lifetime.totalSeconds();
 
     /// Delete temporary directories older than a day.
     Poco::DirectoryIterator end;
@@ -626,7 +626,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
         {
             if (it->unique() && /// After this ref_count cannot increase.
                 (*it)->remove_time < now &&
-                now - (*it)->remove_time > settings.old_parts_lifetime)
+                now - (*it)->remove_time > settings.old_parts_lifetime.totalSeconds())
             {
                 res.push_back(*it);
                 all_data_parts.erase(it++);
