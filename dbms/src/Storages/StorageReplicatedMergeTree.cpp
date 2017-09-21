@@ -3534,10 +3534,10 @@ void StorageReplicatedMergeTree::reshardPartitions(
 
         /// Make a list of local partitions that need to be resharded.
         std::set<std::string> unique_partition_list;
-        const MergeTreeData::DataParts & data_parts = data.getDataParts();
-        for (MergeTreeData::DataParts::iterator it = data_parts.cbegin(); it != data_parts.cend(); ++it)
+        auto data_parts = data.getDataParts();
+        for (auto & part : data_parts)
         {
-            const String & current_partition_id = (*it)->info.partition_id;
+            const String & current_partition_id = part->info.partition_id;
             if (include_all || partition_id == current_partition_id)
                 unique_partition_list.insert(current_partition_id);
         }
