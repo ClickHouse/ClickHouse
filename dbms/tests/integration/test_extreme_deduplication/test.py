@@ -102,4 +102,4 @@ done
         except Exception as e:
             pass
             # Uncomment when problem will be fixed
-            # check_timeout_exception(e)
+            check_timeout_exception(e)
