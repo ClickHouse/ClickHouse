@@ -45,7 +45,6 @@ else ()
         list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIB})
         set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/")
         list (APPEND Poco_INCLUDE_DIRS ${Poco_DataODBC_INCLUDE_DIRS})
-        include_directories (${Poco_DataODBC_INCLUDE_DIRS})
     endif ()
 
     if (OPENSSL_FOUND)
