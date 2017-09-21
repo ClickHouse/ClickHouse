@@ -30,17 +30,12 @@ else ()
     list (APPEND Poco_INCLUDE_DIRS
         "${ClickHouse_SOURCE_DIR}/contrib/poco/Foundation/include/"
         "${ClickHouse_SOURCE_DIR}/contrib/poco/Util/include/"
-    #    "${ClickHouse_SOURCE_DIR}/contrib/poco/Net/include/"
-    #    "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include/"
-    #    "${ClickHouse_SOURCE_DIR}/contrib/poco/XML/include/"
     )
 
     if (NOT DEFINED POCO_ENABLE_MONGODB OR POCO_ENABLE_MONGODB)
         set (Poco_MongoDB_FOUND 1)
         set (Poco_MongoDB_LIBRARY PocoMongoDB)
         set (Poco_MongoDB_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/MongoDB/include/")
-        #list (APPEND Poco_INCLUDE_DIRS ${Poco_MongoDB_INCLUDE_DIRS})
-        #include_directories (BEFORE ${Poco_MongoDB_INCLUDE_DIRS})
     endif ()
 
     if (ODBC_FOUND)
@@ -48,8 +43,6 @@ else ()
         set (Poco_DataODBC_LIBRARY PocoDataODBC)
         #list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIB})
         set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/")
-        #list (APPEND Poco_INCLUDE_DIRS ${Poco_DataODBC_INCLUDE_DIRS})
-        #include_directories (BEFORE ${Poco_DataODBC_INCLUDE_DIRS})
     endif ()
 
     if (OPENSSL_FOUND)
@@ -60,8 +53,6 @@ else ()
             "${ClickHouse_SOURCE_DIR}/contrib/poco/NetSSL_OpenSSL/include/"
             "${ClickHouse_SOURCE_DIR}/contrib/poco/Crypto/include/"
         )
-        #list (APPEND Poco_INCLUDE_DIRS ${Poco_NetSSL_INCLUDE_DIRS})
-        #include_directories (BEFORE ${Poco_NetSSL_INCLUDE_DIRS})
     endif ()
 
     if (USE_STATIC_LIBRARIES AND USE_INTERNAL_ZLIB_LIBRARY)
