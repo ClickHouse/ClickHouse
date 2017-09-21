@@ -141,6 +141,9 @@ struct MergeTreeDataPart
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
 
+    /// For resharding.
+    size_t shard_no = 0;
+
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
      * Part state should be modified under data_parts mutex.
@@ -161,6 +164,7 @@ struct MergeTreeDataPart
         Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
     };
 
+    /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     mutable State state{State::Temporary};
 
     /// Returns name of state
@@ -173,7 +177,7 @@ struct MergeTreeDataPart
     }
 
     /// Returns true if state of part is one of affordable_states
-    bool tryCheckState(std::initializer_list<State> affordable_states) const
+    bool checkState(const std::initializer_list<State> & affordable_states) const
     {
         for (auto affordable_state : affordable_states)
         {
@@ -184,9 +188,9 @@ struct MergeTreeDataPart
     }
 
     /// Throws an exception if state of the part is not in affordable_states
-    void checkState(std::initializer_list<State> affordable_states) const
+    void assertState(const std::initializer_list<State> & affordable_states) const
     {
-        if (!tryCheckState(affordable_states))
+        if (!checkState(affordable_states))
         {
             String states_str;
             for (auto state : affordable_states)
@@ -196,16 +200,23 @@ struct MergeTreeDataPart
         }
     }
 
-    /// Returns a lambda that returns true only for part with states from specified list
-    static inline decltype(auto) getStatesFilter(std::initializer_list<State> affordable_states)
+    /// In comparison with lambdas, it is move assignable and could has several overloaded operator()
+    struct StatesFilter
     {
-        return [affordable_states] (const std::shared_ptr<const MergeTreeDataPart> & part) {
-            return part->tryCheckState(affordable_states);
-        };
-    }
+        std::initializer_list<State> affordable_states;
+        StatesFilter(const std::initializer_list<State> & affordable_states) : affordable_states(affordable_states) {}
 
-    /// For resharding.
-    size_t shard_no = 0;
+        bool operator() (const std::shared_ptr<const MergeTreeDataPart> & part) const
+        {
+            return part->checkState(affordable_states);
+        }
+    };
+
+    /// Returns a lambda that returns true only for part with states from specified list
+    static inline StatesFilter getStatesFilter(const std::initializer_list<State> & affordable_states)
+    {
+        return StatesFilter(affordable_states);
+    }
 
     /// Primary key (correspond to primary.idx file).
     /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
