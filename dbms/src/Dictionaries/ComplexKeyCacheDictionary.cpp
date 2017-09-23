@@ -57,7 +57,7 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const std::string & name, c
     : name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
     size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))},
     size_overlap_mask{this->size - 1},
-    rnd_engine{randomSeed()}
+    rnd_engine(randomSeed())
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{
@@ -465,6 +465,17 @@ StringRef ComplexKeyCacheDictionary::placeKeysInPool(
 
     return { place, sum_keys_size };
 }
+
+/// Explicit instantiations.
+
+template StringRef ComplexKeyCacheDictionary::placeKeysInPool<Arena>(
+    const size_t row, const Columns & key_columns, StringRefs & keys,
+    const std::vector<DictionaryAttribute> & key_attributes, Arena & pool);
+
+template StringRef ComplexKeyCacheDictionary::placeKeysInPool<ArenaWithFreeLists>(
+    const size_t row, const Columns & key_columns, StringRefs & keys,
+    const std::vector<DictionaryAttribute> & key_attributes, ArenaWithFreeLists & pool);
+
 
 StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(
     const size_t row, const Columns & key_columns) const

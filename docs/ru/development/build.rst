@@ -20,6 +20,8 @@ Install Git and CMake
 
     sudo apt-get install git cmake3
 
+Or just cmake on newer systems.
+
 
 Detect number of threads
 ------------------------
@@ -122,35 +124,7 @@ Install recent version of clang.
 
 Clang is embedded into ClickHouse package and used at runtime. Minimum version is 3.8.0. It is optional.
 
-
-You can build clang from sources:
-
-.. code-block:: bash
-
-    cd ..
-    sudo apt-get install subversion
-    mkdir llvm
-    cd llvm
-    svn co http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_400/final llvm
-    cd llvm/tools
-    svn co http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_400/final clang
-    cd ..
-    cd projects/
-    svn co http://llvm.org/svn/llvm-project/compiler-rt/tags/RELEASE_400/final compiler-rt
-    cd ../..
-    mkdir build
-    cd build/
-    cmake -D CMAKE_BUILD_TYPE:STRING=Release ../llvm
-    make -j $THREADS
-    sudo make install
-    hash clang
-
-Or install it from packages. On Ubuntu 16.04 or newer:
-
-.. code-block:: bash
-
-    sudo apt-get install clang
-
+To install clang, look at ``utils/prepare-environment/install-clang.sh``
 
 You may also build ClickHouse with clang for development purposes.
 For production releases, GCC is used.

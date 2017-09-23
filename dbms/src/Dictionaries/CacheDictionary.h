@@ -13,7 +13,7 @@
 #include <vector>
 #include <map>
 #include <tuple>
-#include <random>
+#include <pcg_random.hpp>
 #include <shared_mutex>
 
 
@@ -260,7 +260,7 @@ private:
     Attribute * hierarchical_attribute = nullptr;
     std::unique_ptr<ArenaWithFreeLists> string_arena;
 
-    mutable std::mt19937_64 rnd_engine;
+    mutable pcg64 rnd_engine;
 
     mutable size_t bytes_allocated = 0;
     mutable std::atomic<size_t> element_count{0};

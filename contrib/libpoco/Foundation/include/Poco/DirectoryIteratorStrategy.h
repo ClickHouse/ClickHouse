@@ -34,7 +34,7 @@ class Foundation_API TraverseBase
 {
 public:
 	typedef std::stack<DirectoryIterator> Stack;
-	typedef std::pointer_to_unary_function<const Stack&, UInt16> DepthFunPtr;
+	typedef std::function<UInt16(const Stack&)> DepthFunPtr;
 
 	enum
 	{

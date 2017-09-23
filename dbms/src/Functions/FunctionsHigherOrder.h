@@ -331,7 +331,7 @@ struct ArraySumImpl
         throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    template <class Element, class Result>
+    template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets_t & offsets, ColumnPtr & res_ptr)
     {
         const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);

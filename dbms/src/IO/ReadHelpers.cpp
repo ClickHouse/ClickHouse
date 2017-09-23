@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-template <class IteratorSrc, class IteratorDst>
+template <typename IteratorSrc, typename IteratorDst>
 void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
 {
     size_t src_pos = 0;

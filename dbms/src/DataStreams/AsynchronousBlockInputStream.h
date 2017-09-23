@@ -115,7 +115,7 @@ protected:
             return res;
 
         /// Start the next block calculation
-        block = Block();
+        block.clear();
         next();
 
         return res;

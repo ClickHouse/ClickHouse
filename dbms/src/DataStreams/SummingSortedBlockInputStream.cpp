@@ -176,7 +176,7 @@ Block SummingSortedBlockInputStream::readImpl()
 }
 
 
-template <class TSortCursor>
+template <typename TSortCursor>
 void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
@@ -248,28 +248,7 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
     finished = true;
 }
 
-
-/** Implements `+=` operation.
- *  Returns false if the result is zero.
- */
-class FieldVisitorSum : public StaticVisitor<bool>
-{
-private:
-    const Field & rhs;
-public:
-    explicit FieldVisitorSum(const Field & rhs_) : rhs(rhs_) {}
-
-    bool operator() (UInt64 & x) const { x += get<UInt64>(rhs); return x != 0; }
-    bool operator() (Int64 & x) const { x += get<Int64>(rhs); return x != 0; }
-    bool operator() (Float64 & x) const { x += get<Float64>(rhs); return x != 0; }
-
-    bool operator() (Null & x) const { throw Exception("Cannot sum Nulls", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (String & x) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
-    bool operator() (Array & x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
-};
-
-
-template <class TSortCursor>
+template <typename TSortCursor>
 bool SummingSortedBlockInputStream::mergeMaps(Row & row, TSortCursor & cursor)
 {
     bool non_empty_map_present = false;
@@ -283,7 +262,7 @@ bool SummingSortedBlockInputStream::mergeMaps(Row & row, TSortCursor & cursor)
 }
 
 
-template <class TSortCursor>
+template <typename TSortCursor>
 bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, TSortCursor & cursor)
 {
     /// Strongly non-optimal.
@@ -367,7 +346,7 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 }
 
 
-template <class TSortCursor>
+template <typename TSortCursor>
 bool SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
 {
     bool res = mergeMaps(row, cursor);    /// Is there at least one non-zero number or non-empty array

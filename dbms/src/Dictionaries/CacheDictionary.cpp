@@ -68,7 +68,7 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
         size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))},
         size_overlap_mask{this->size - 1},
         cells{this->size},
-        rnd_engine{randomSeed()}
+        rnd_engine(randomSeed())
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{

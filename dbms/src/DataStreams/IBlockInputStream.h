@@ -49,6 +49,8 @@ public:
 
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).
+      * NOTE: Only one thread can read from one instance of IBlockInputStream simultaneously.
+      * This also applies for readPrefix, readSuffix.
       */
     virtual Block read() = 0;
 

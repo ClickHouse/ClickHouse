@@ -56,6 +56,15 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         socket = cfg.has(config_name + ".socket")
             ? cfg.getString(config_name + ".socket")
             : cfg.getString(parent_config_name + ".socket", "");
+        ssl_ca = cfg.has(config_name + ".ssl_ca")
+            ? cfg.getString(config_name + ".ssl_ca")
+            : cfg.getString(parent_config_name + ".ssl_ca", "");
+        ssl_cert = cfg.has(config_name + ".ssl_cert")
+            ? cfg.getString(config_name + ".ssl_cert")
+            : cfg.getString(parent_config_name + ".ssl_cert", "");
+        ssl_key = cfg.has(config_name + ".ssl_key")
+            ? cfg.getString(config_name + ".ssl_key")
+            : cfg.getString(parent_config_name + ".ssl_key", "");
     }
     else
     {
@@ -68,6 +77,9 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         port = cfg.getInt(config_name + ".port", 0);
         socket = cfg.getString(config_name + ".socket", "");
+        ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
+        ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
+        ssl_key = cfg.getString(config_name + ".ssl_key", "");
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -167,13 +179,16 @@ void Pool::Entry::forceConnected() const
         app.logger().information("MYSQL: Reconnecting to " + pool->description);
         data->conn.connect(
             pool->db.c_str(),
-                           pool->server.c_str(),
-                           pool->user.c_str(),
-                           pool->password.c_str(),
-                           pool->port,
-                           pool->socket.c_str(),
-                     pool->connect_timeout,
-                     pool->rw_timeout);
+            pool->server.c_str(),
+            pool->user.c_str(),
+            pool->password.c_str(),
+            pool->port,
+            pool->socket.c_str(),
+            pool->ssl_ca.c_str(),
+            pool->ssl_cert.c_str(),
+            pool->ssl_key.c_str(),
+            pool->connect_timeout,
+            pool->rw_timeout);
     }
     while (!data->conn.ping());
 }
@@ -205,13 +220,16 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 
         conn->conn.connect(
             db.c_str(),
-                           server.c_str(),
-                           user.c_str(),
-                           password.c_str(),
-                           port,
-                           socket.c_str(),
-                     connect_timeout,
-                     rw_timeout);
+            server.c_str(),
+            user.c_str(),
+            password.c_str(),
+            port,
+            socket.c_str(),
+            ssl_ca.c_str(),
+            ssl_cert.c_str(),
+            ssl_key.c_str(),
+            connect_timeout,
+            rw_timeout);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {

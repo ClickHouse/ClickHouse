@@ -153,7 +153,7 @@ protected:
     /// These methods are used in Collapsing/Summing/Aggregating... SortedBlockInputStream-s.
 
     /// Save the row pointed to by cursor in `row`.
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void setRow(Row & row, TSortCursor & cursor)
     {
         for (size_t i = 0; i < num_columns; ++i)
@@ -185,7 +185,7 @@ protected:
         }
     }
 
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void setRowRef(RowRef & row_ref, TSortCursor & cursor)
     {
         row_ref.row_num = cursor.impl->pos;
@@ -195,7 +195,7 @@ protected:
             row_ref.columns[i] = cursor->all_columns[i];
     }
 
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void setPrimaryKeyRef(RowRef & row_ref, TSortCursor & cursor)
     {
         row_ref.row_num = cursor.impl->pos;

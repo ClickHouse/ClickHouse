@@ -223,6 +223,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
     /// List of types of aggregate functions.
     std::stringstream aggregate_functions_typenames_str;
+    std::stringstream aggregate_functions_headers_args;
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         IAggregateFunction & func = *aggregate_functions[i];
@@ -237,7 +238,20 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
                 + ", status: " + toString(status), ErrorCodes::CANNOT_COMPILE_CODE);
 
         aggregate_functions_typenames_str << ((i != 0) ? ", " : "") << type_name;
+
+        std::string header_path = func.getHeaderFilePath();
+        auto pos = header_path.find("/AggregateFunctions/");
+
+        if (pos == std::string::npos)
+            throw Exception("Cannot compile code: unusual path of header file for aggregate function: " + header_path,
+                ErrorCodes::CANNOT_COMPILE_CODE);
+
+        aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src";
+        aggregate_functions_headers_args.write(&header_path[pos], header_path.size() - pos);
+        aggregate_functions_headers_args << "' ";
     }
+
+    aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h'";
 
     std::string aggregate_functions_typenames = aggregate_functions_typenames_str.str();
 
@@ -355,9 +369,9 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
       * If the counter has reached the value min_count_to_compile, then the compilation starts asynchronously (in a separate thread)
       *  at the end of which `on_ready` callback is called.
       */
+    aggregate_functions_headers_args << " -Wno-unused-function";
     SharedLibraryPtr lib = params.compiler->getOrCount(key, params.min_count_to_compile,
-        "-include " INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h "
-        "-Wno-unused-function",
+        aggregate_functions_headers_args.str(),
         get_code, on_ready);
 
     /// If the result is already ready.
@@ -1605,7 +1619,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 
 
 /** Combines aggregation states together, turns them into blocks, and outputs streams.
-  * If the aggregation states are two-level, then it produces blocks strictly in order bucket_num.
+  * If the aggregation states are two-level, then it produces blocks strictly in order of 'bucket_num'.
   * (This is important for distributed processing.)
   * In doing so, it can handle different buckets in parallel, using up to `threads` threads.
   */
@@ -1634,6 +1648,16 @@ public:
         std::stringstream res;
         res << this;
         return res.str();
+    }
+
+    ~MergingAndConvertingBlockInputStream()
+    {
+        LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
+
+        /// We need to wait for threads to finish before destructor of 'parallel_merge_data',
+        ///  because the threads access 'parallel_merge_data'.
+        if (parallel_merge_data)
+            parallel_merge_data->pool.wait();
     }
 
 protected:
@@ -1732,19 +1756,13 @@ private:
 
     struct ParallelMergeData
     {
-        ThreadPool pool;
         std::map<Int32, Block> ready_blocks;
         std::exception_ptr exception;
         std::mutex mutex;
         std::condition_variable condvar;
+        ThreadPool pool;
 
         explicit ParallelMergeData(size_t threads) : pool(threads) {}
-
-        ~ParallelMergeData()
-        {
-            LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
-            pool.wait();
-        }
     };
 
     std::unique_ptr<ParallelMergeData> parallel_merge_data;

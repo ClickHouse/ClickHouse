@@ -215,7 +215,7 @@ void Compiler::compile(
 
     std::stringstream command;
 
-    /// Slightly uncomfortable.
+    /// Slightly unconvenient.
     command <<
         "LD_LIBRARY_PATH=" PATH_SHARE "/clickhouse/bin/"
         " " INTERNAL_COMPILER_EXECUTABLE
@@ -231,6 +231,7 @@ void Compiler::compile(
 #endif
         " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
         " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
+        " -I " INTERNAL_COMPILER_HEADERS "/contrib/libpcg-random/include/"
         " -I " INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
         " -I " INTERNAL_Poco_Foundation_INCLUDE_DIR
         " -I " INTERNAL_Boost_INCLUDE_DIRS

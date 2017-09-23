@@ -60,6 +60,23 @@ protected:
             {
                 std::lock_guard<std::mutex> lock(cancel_mutex);
 
+                /** TODO Data race here. See IProfilingBlockInputStream::collectAndSendTotalRowsApprox.
+                    Assume following pipeline:
+
+                    RemoteBlockInputStream
+                     AsynchronousBlockInputStream
+                      LazyBlockInputStream
+
+                    RemoteBlockInputStream calls AsynchronousBlockInputStream::readPrefix
+                     and AsynchronousBlockInputStream spawns a thread and returns.
+
+                    The separate thread will call LazyBlockInputStream::read
+                     LazyBlockInputStream::read will add more children to itself
+
+                    In the same moment, in main thread, RemoteBlockInputStream::read is called,
+                     then IProfilingBlockInputStream::collectAndSendTotalRowsApprox is called
+                     and iterates over set of children.
+                  */
                 children.push_back(input);
 
                 if (isCancelled() && p_input)

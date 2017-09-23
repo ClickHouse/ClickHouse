@@ -31,10 +31,14 @@ install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhous
 
 add_library (clickhouse-benchmark Benchmark.cpp)
 target_link_libraries (clickhouse-benchmark dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_include_directories (clickhouse-benchmark PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
 add_library (clickhouse-performance-test PerformanceTest.cpp)
 target_link_libraries (clickhouse-performance-test dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_include_directories (clickhouse-performance-test PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
+add_library (clickhouse-compressor-lib Compressor.cpp)
+target_link_libraries (clickhouse-compressor-lib dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_executable(clickhouse main.cpp)
 target_include_directories(clickhouse PRIVATE ${COMMON_INCLUDE_DIR})
@@ -44,7 +48,8 @@ target_link_libraries(clickhouse
     clickhouse-local
     clickhouse-benchmark
     clickhouse-performance-test
-    clickhouse-extract-from-config)
+    clickhouse-extract-from-config
+    clickhouse-compressor-lib)
 INSTALL(TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 # make symbolic links to concrete clickhouse applications
 macro(install_symlink_to_clickhouse app)

@@ -218,7 +218,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 }
 
 
-template <class TSortCursor>
+template <typename TSortCursor>
 void GraphiteRollupSortedBlockInputStream::startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern)
 {
     /// Copy unmodified column values.

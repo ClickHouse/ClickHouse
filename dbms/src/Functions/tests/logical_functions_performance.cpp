@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-template<typename B>
+template <typename B>
 struct AndImpl
 {
     static inline UInt8 apply(UInt8 a, B b)
@@ -27,7 +27,7 @@ struct AndImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct OrImpl
 {
     static inline UInt8 apply(UInt8 a, B b)
@@ -36,7 +36,7 @@ struct OrImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct XorImpl
 {
     static inline UInt8 apply(UInt8 a, B b)
