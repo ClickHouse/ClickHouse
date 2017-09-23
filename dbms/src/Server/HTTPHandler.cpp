@@ -246,7 +246,7 @@ void HTTPHandler::processQuery(
             || params.has("password")
             || params.has("quota_key"))
         {
-            throw Exception("Invalid authorization", ErrorCodes::REQUIRED_PASSWORD);
+            throw Exception("Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods simultaneously", ErrorCodes::REQUIRED_PASSWORD);
         }
     }
 
