@@ -229,7 +229,9 @@ void HTTPHandler::processQuery(
 
             user = credentials.getUsername();
             password = credentials.getPassword();
-        } else {
+        }
+        else
+        {
             user = params.get("user", "default");
             password = params.get("password", "");
         }
