@@ -35,6 +35,8 @@
 #include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
 
+#include <Poco/Net/HTTPStream.h>
+
 #include "HTTPHandler.h"
 
 namespace DB
@@ -354,7 +356,14 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
 
-    std::unique_ptr<ReadBuffer> in_post_raw = std::make_unique<ReadBufferFromIStream>(istr);
+    std::unique_ptr<ReadBuffer> in_post_raw;
+    /// A grubby workaround for CLICKHOUSE-3333 problem. This if should detect POST query with empty body.
+    /// In that case Poco doesn't work properly and returns HTTPInputStream which just listen TCP connection.
+    /// NOTE: if Poco are updated, this heuristic might not work properly.
+    if (dynamic_cast<Poco::Net::HTTPInputStream *>(&istr) == nullptr)
+        in_post_raw = std::make_unique<ReadBufferFromIStream>(istr);
+    else
+        in_post_raw = std::make_unique<ReadBufferFromString>(String()); // will read empty body.
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     std::unique_ptr<ReadBuffer> in_post;
