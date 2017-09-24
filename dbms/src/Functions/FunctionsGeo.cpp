@@ -46,6 +46,9 @@ ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, P
         GeoUtils::normalizePolygon(polygon);
         auto ptr = std::make_unique<PointInPolygonImpl>(polygon);
 
+        /// To allocate memory.
+        ptr->init();
+
         ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
         ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
 
@@ -261,13 +264,13 @@ template <typename Type>
 using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<Type>;
 
 template <>
-const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygon";
+const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygonCrossing";
 template <>
 const char * FunctionPointInPolygon<PointInPolygonWinding>::name = "pointInPolygonWinding";
 template <>
 const char * FunctionPointInPolygon<PointInPolygonFranklin>::name = "pointInPolygonFranklin";
 template <>
-const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygonWithGrid";
+const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygon";
 
 
 void registerFunctionsGeo(FunctionFactory & factory)

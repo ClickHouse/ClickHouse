@@ -35,6 +35,8 @@
 #include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
 
+#include <Poco/Net/HTTPStream.h>
+
 #include "HTTPHandler.h"
 
 namespace DB
@@ -213,20 +215,43 @@ void HTTPHandler::processQuery(
     if (!query_param.empty())
         query_param += '\n';
 
-    /// User name and password can be passed using query parameters or using HTTP Basic auth (both methods are insecure).
-    /// The user and password can be passed by headers (similar to X-Auth-*), which is used by load balancers to pass authentication information
-    std::string user = request.get("X-ClickHouse-User", params.get("user", "default"));
-    std::string password = request.get("X-ClickHouse-Key", params.get("password", ""));
+    /// The user and password can be passed by headers (similar to X-Auth-*),
+    /// which is used by load balancers to pass authentication information.
+    std::string user = request.get("X-ClickHouse-User", "");
+    std::string password = request.get("X-ClickHouse-Key", "");
+    std::string quota_key = request.get("X-ClickHouse-Quota", "");
 
-    if (request.hasCredentials())
+    if (user.empty() && password.empty() && quota_key.empty())
     {
-        Poco::Net::HTTPBasicCredentials credentials(request);
+        /// User name and password can be passed using query parameters
+        /// or using HTTP Basic auth (both methods are insecure).
+        if (request.hasCredentials())
+        {
+            Poco::Net::HTTPBasicCredentials credentials(request);
 
-        user = credentials.getUsername();
-        password = credentials.getPassword();
+            user = credentials.getUsername();
+            password = credentials.getPassword();
+        }
+        else
+        {
+            user = params.get("user", "default");
+            password = params.get("password", "");
+        }
+
+        quota_key = params.get("quota_key", "");
+    }
+    else
+    {
+        /// It is prohibited to mix different authorization schemes.
+        if (request.hasCredentials()
+            || params.has("user")
+            || params.has("password")
+            || params.has("quota_key"))
+        {
+            throw Exception("Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods simultaneously", ErrorCodes::REQUIRED_PASSWORD);
+        }
     }
 
-    std::string quota_key = request.get("X-ClickHouse-Quota", params.get("quota_key", ""));
     std::string query_id = params.get("query_id", "");
 
     const auto & config = server.config();
@@ -354,7 +379,14 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query_param);
 
-    std::unique_ptr<ReadBuffer> in_post_raw = std::make_unique<ReadBufferFromIStream>(istr);
+    std::unique_ptr<ReadBuffer> in_post_raw;
+    /// A grubby workaround for CLICKHOUSE-3333 problem. This condition should detect POST query with empty body.
+    /// In that case Poco doesn't work properly and returns HTTPInputStream which just listen TCP connection.
+    /// NOTE: if Poco are updated, this heuristic might not work properly.
+    if (typeid_cast<Poco::Net::HTTPInputStream *>(&istr) == nullptr)
+        in_post_raw = std::make_unique<ReadBufferFromIStream>(istr);
+    else
+        in_post_raw = std::make_unique<ReadBufferFromString>(String()); // will read empty body.
 
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     std::unique_ptr<ReadBuffer> in_post;
