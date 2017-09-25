@@ -127,9 +127,11 @@ void ColumnGathererStream::readSuffixImpl()
     LOG_TRACE(log, std::fixed << std::setprecision(2)
         << "Gathered column " << name
         << " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
-        << " in " << seconds << " sec., "
+        << " in " << seconds << " sec."
+        << ( !seconds ? ( "" ) : (
+        << ", "
         << profile_info.rows / seconds << " rows/sec., "
-        << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.");
+        << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.")));
 }
 
 }
