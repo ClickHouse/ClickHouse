@@ -39,8 +39,13 @@ int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 
 #include <sys/select.h>
 #include <stdlib.h>
+#include <features.h>
 
+#if __GLIBC__ > 2 || (__GLIBC__ == 2  && __GLIBC_MINOR__ >= 16)
 long int __fdelt_chk(long int d)
+#else
+unsigned long int __fdelt_chk(unsigned long int d)
+#endif
 {
     if (d < 0 || d >= FD_SETSIZE)
         abort();

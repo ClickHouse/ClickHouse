@@ -1,6 +1,10 @@
 include (CMakePushCheckState)
 cmake_push_check_state ()
 
+option (ENABLE_UNWIND "Enable libunwind (better stacktraces)" ON)
+
+if (ENABLE_UNWIND)
+
 if (CMAKE_SYSTEM MATCHES "Linux" AND NOT ARCH_ARM AND NOT ARCH_32)
     option (USE_INTERNAL_UNWIND_LIBRARY "Set to FALSE to use system unwind library instead of bundled" ${NOT_UNBUNDLED})
 else ()
@@ -39,6 +43,8 @@ elseif (CMAKE_SYSTEM MATCHES "Linux" AND NOT ARCH_ARM AND NOT ARCH_32)
     set (UNWIND_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libunwind/include")
     set (UNWIND_LIBRARY unwind)
     set (USE_UNWIND 1)
+endif ()
+
 endif ()
 
 message (STATUS "Using unwind=${USE_UNWIND}: ${UNWIND_INCLUDE_DIR} : ${UNWIND_LIBRARY}")
