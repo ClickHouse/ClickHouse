@@ -26,6 +26,7 @@ inc="-I. \
 -I./contrib/libpoco/Foundation/include \
 -I./contrib/libboost/boost_1_62_0 \
 -I./contrib/libbtrie/include \
+-I./contrib/libpcg-random/include \
 -I./libs/libmysqlxx/include \
 -I./libs/libcommon/include \
 -I./build/libs/libcommon/include \
@@ -41,5 +42,5 @@ if [ -z $1 ]; then
 else
     echo -n "$1    "
     echo -n `grep "#include" $1| wc -l` "    "
-    echo -e "#include <$1> \n int main() {return 0;}" | time --format "%e %M" g++-6 -c -std=gnu++1z $inc -x c++ -
+    echo -e "#include <$1> \n int main() {return 0;}" | time --format "%e %M" g++-7 -c -std=gnu++1z $inc -x c++ -
 fi
