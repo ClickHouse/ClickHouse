@@ -285,7 +285,7 @@ BTW, you could run OPTIMIZE for MergeTree table. But this is not necessary, ever
 
 
 Results on single server
-========================
+------------------------
 
 Q1:
 
@@ -377,7 +377,7 @@ In that case, query execution speed is dominated by latency.
 We do queries from client located in Yandex datacenter in Mäntsälä (Finland) to cluster somewhere in Russia, that adds at least 20 ms of latency.
 
 Summary
-=======
+-------
 
 .. code-block:: text
 
