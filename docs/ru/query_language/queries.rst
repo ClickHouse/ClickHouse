@@ -1193,7 +1193,7 @@ LIMIT N BY COLUMNS выбирает топ N строк для каждой гр
     LIMIT 5 BY domain, device_type
     LIMIT 100
 
-Запрос выберет топ 5 рефереров для каждой пары ``domain - device type``, но не более 100 строк (``LIMIT n BY + LIMIT``).
+Запрос выберет топ 5 рефереров для каждой пары ``domain, device_type``, но не более 100 строк (``LIMIT n BY + LIMIT``).
 
 
 
