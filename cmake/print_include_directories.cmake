@@ -13,12 +13,8 @@ if (USE_INTERNAL_BOOST_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_POCO_LIBRARY)
-    #get_property (dirs1 TARGET ${Poco_Foundation_LIBRARY} PROPERTY INCLUDE_DIRECTORIES)
-    #get_property (dirs1 TARGET ${Poco_Foundation_LIBRARY} PROPERTY INTERFACE_INCLUDE_DIRECTORIES)
-    #list(APPEND dirs ${dirs1})
     list(APPEND dirs "./contrib/poco/Foundation/include")
 endif ()
-
 
 list(REMOVE_DUPLICATES dirs)
 file (WRITE ${CMAKE_CURRENT_BINARY_DIR}/include_directories.txt "")
