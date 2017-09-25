@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_CONVERT_TYPE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -297,6 +298,25 @@ public:
     bool operator() (const Tuple & l, const String & r)     const { return false; }
     bool operator() (const Tuple & l, const Array & r)      const { return false; }
     bool operator() (const Tuple & l, const Tuple & r)      const { return l < r; }
+};
+
+/** Implements `+=` operation.
+ *  Returns false if the result is zero.
+ */
+class FieldVisitorSum : public StaticVisitor<bool>
+{
+private:
+    const Field & rhs;
+public:
+    explicit FieldVisitorSum(const Field & rhs_) : rhs(rhs_) {}
+
+    bool operator() (UInt64 & x) const { x += get<UInt64>(rhs); return x != 0; }
+    bool operator() (Int64 & x) const { x += get<Int64>(rhs); return x != 0; }
+    bool operator() (Float64 & x) const { x += get<Float64>(rhs); return x != 0; }
+
+    bool operator() (Null & x) const { throw Exception("Cannot sum Nulls", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (String & x) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (Array & x) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
 };
 
 }
