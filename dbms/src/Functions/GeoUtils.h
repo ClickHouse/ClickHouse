@@ -643,7 +643,7 @@ std::string serialize(Polygon && polygon)
         auto serializeFloat = [&buffer](float value) { buffer.write(reinterpret_cast<char *>(&value), sizeof(value)); };
         auto serializeSize = [&buffer](size_t size) { buffer.write(reinterpret_cast<char *>(&size), sizeof(size)); };
 
-        auto serializeRing = [& buffer, & serializeFloat, & serializeSize](const RingType & ring)
+        auto serializeRing = [& serializeFloat, & serializeSize](const RingType & ring)
         {
             serializeSize(ring.size());
             for (const auto & point : ring)
