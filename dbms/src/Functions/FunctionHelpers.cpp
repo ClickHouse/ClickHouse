@@ -102,7 +102,7 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size
                 bool is_const = col.column->isConst();
                 auto const_col = static_cast<const ColumnConst *>(col.column.get());
 
-                if (is_const && !const_col->isNullable())
+                if (is_const && !const_col->getDataColumn().isNullable())
                     throw Exception("Column at position " + toString(i + 1) + " with type " + col.type->getName() +
                                     " should be nullable, but got " + const_col->getName(), ErrorCodes::LOGICAL_ERROR);
 
