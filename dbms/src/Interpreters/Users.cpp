@@ -308,13 +308,15 @@ User::User(const String & name_, const String & config_elem, Poco::Util::Abstrac
 
 void Users::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 {
-    cont.clear();
+    Container new_cont;
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys("users", config_keys);
 
     for (const std::string & key : config_keys)
-        cont.emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple(key, "users." + key, config));
+        new_cont.emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple(key, "users." + key, config));
+
+    cont = std::move(new_cont);
 }
 
 const User & Users::get(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const
