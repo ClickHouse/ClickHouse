@@ -44,12 +44,12 @@ struct Memory : boost::noncopyable, Allocator<false>
         dealloc();
     }
 
-    Memory(Memory && rhs)
+    Memory(Memory && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    Memory & operator=(Memory && rhs)
+    Memory & operator=(Memory && rhs) noexcept
     {
         std::swap(m_capacity, rhs.m_capacity);
         std::swap(m_size, rhs.m_size);

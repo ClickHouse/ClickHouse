@@ -46,10 +46,10 @@ namespace ErrorCodes
 /// The date column is specified. For each part min and max dates are remembered.
 /// Essentially it is an index too.
 ///
-/// Data is partitioned by month. Parts belonging to different months are not merged - for the ease of
-/// administration (data sync and backup).
+/// Data is partitioned by the value of the partitioning expression.
+/// Parts belonging to different partitions are not merged - for the ease of administration (data sync and backup).
 ///
-/// File structure:
+/// File structure of old-style month-partitioned tables (format_version = 0):
 /// Part directory - / min-date _ max-date _ min-id _ max-id _ level /
 /// Inside the part directory:
 /// checksums.txt - contains the list of all files along with their sizes and checksums.
@@ -57,6 +57,13 @@ namespace ErrorCodes
 /// primary.idx - contains the primary index.
 /// [Column].bin - contains compressed column data.
 /// [Column].mrk - marks, pointing to seek positions allowing to skip n * k rows.
+///
+/// File structure of tables with custom partitioning (format_version >= 1):
+/// Part directory - / partiiton-id _ min-id _ max-id _ level /
+/// Inside the part directory:
+/// The same files as for month-partitioned tables, plus
+/// partition.dat - contains the value of the partitioning expression
+/// minmax_[Column].idx - MinMax indexes (see MergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
 ///
 /// Several modes are implemented. Modes determine additional actions during merge:
 /// - Ordinary - don't do anything special
@@ -227,6 +234,8 @@ public:
     /// Correctness of names and paths is not checked.
     ///
     /// primary_expr_ast - expression used for sorting; empty for UnsortedMergeTree.
+    /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
+    ///     Otherwise, partition_expr_ast is used for partitioning.
     /// index_granularity - how many rows correspond to one primary key value.
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
@@ -236,8 +245,9 @@ public:
                     const NamesAndTypesList & alias_columns_,
                     const ColumnDefaults & column_defaults_,
                     Context & context_,
-                    ASTPtr & primary_expr_ast_,
-                    const String & date_column_name_,
+                    const ASTPtr & primary_expr_ast_,
+                    const String & date_column_name,
+                    const ASTPtr & partition_expr_ast_,
                     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
                     size_t index_granularity_,
                     const MergingParams & merging_params_,
@@ -334,9 +344,6 @@ public:
     /// clearOldParts (ignoring old_parts_lifetime).
     void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
 
-    /// Adds new part to the list of known parts and to the working set.
-    void attachPart(const DataPartPtr & part);
-
     /// Renames the part to detached/<prefix>_<part> and forgets about it. The data won't be deleted in
     /// clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
@@ -410,7 +417,7 @@ public:
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
-    void freezePartition(const std::string & prefix, const String & with_name);
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
     /// Returns the size of partition in bytes.
     size_t getPartitionSize(const std::string & partition_id) const;
@@ -461,13 +468,11 @@ public:
     }
 
     /// For ATTACH/DETACH/DROP/RESHARD PARTITION.
-    String getPartitionIDFromQuery(const Field & partition);
+    String getPartitionIDFromQuery(const ASTPtr & partition, const Context & context);
 
-    /// For determining the partition id of inserted blocks.
-    String getPartitionIDFromData(const Row & partition);
+    MergeTreeDataFormatVersion format_version;
 
     Context & context;
-    const String date_column_name;
     const ASTPtr sampling_expression;
     const size_t index_granularity;
 
@@ -483,6 +488,7 @@ public:
     ASTPtr partition_expr_ast;
     ExpressionActionsPtr partition_expr;
     Names partition_expr_columns;
+    DataTypes partition_expr_column_types;
 
     ExpressionActionsPtr minmax_idx_expr;
     Names minmax_idx_columns;
@@ -566,6 +572,9 @@ private:
     /// Adds or subtracts the contribution of the part to compressed column sizes.
     void addPartContributionToColumnSizes(const DataPartPtr & part);
     void removePartContributionToColumnSizes(const DataPartPtr & part);
+
+    /// If there is no part in the partition with ID `partition_id`, returns empty ptr.
+    DataPartPtr getAnyPartInPartition(const String & partition_id, std::lock_guard<std::mutex> & data_parts_lock);
 };
 
 }

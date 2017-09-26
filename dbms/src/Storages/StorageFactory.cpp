@@ -59,18 +59,18 @@ namespace ErrorCodes
 }
 
 
-/** For StorageMergeTree: get the primary key as an ASTExpressionList.
+/** For StorageMergeTree: get the key expression AST as an ASTExpressionList.
   * It can be specified in the tuple: (CounterID, Date),
   *  or as one column: CounterID.
   */
-static ASTPtr extractPrimaryKey(const ASTPtr & node)
+static ASTPtr extractKeyExpressionList(const ASTPtr & node)
 {
-    const ASTFunction * primary_expr_func = typeid_cast<const ASTFunction *>(&*node);
+    const ASTFunction * expr_func = typeid_cast<const ASTFunction *>(&*node);
 
-    if (primary_expr_func && primary_expr_func->name == "tuple")
+    if (expr_func && expr_func->name == "tuple")
     {
         /// Primary key is specified in tuple.
-        return primary_expr_func->children.at(0);
+        return expr_func->children.at(0);
     }
     else
     {
@@ -822,6 +822,7 @@ For further info please read the documentation: https://clickhouse.yandex/
 
         /// For all.
         String date_column_name;
+        ASTPtr partition_expr_ast;
         ASTPtr primary_expr_list;
         ASTPtr sampling_expression;
         UInt64 index_granularity;
@@ -904,15 +905,17 @@ For further info please read the documentation: https://clickhouse.yandex/
             args.erase(args.begin() + 1);
         }
 
-        /// Now only three parameters remain - date, primary_key, index_granularity.
+        /// Now only three parameters remain - date (or partitioning expression), primary_key, index_granularity.
 
-        if (auto ast = typeid_cast<ASTIdentifier *>(&*args[0]))
+        if (auto ast = typeid_cast<ASTIdentifier *>(args[0].get()))
             date_column_name = ast->name;
+        else if (local_context.getSettingsRef().experimental_merge_tree_allow_custom_partitions)
+            partition_expr_ast = extractKeyExpressionList(args[0]);
         else
             throw Exception(String("Date column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
 
         if (merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-            primary_expr_list = extractPrimaryKey(args[1]);
+            primary_expr_list = extractKeyExpressionList(args[1]);
 
         auto ast = typeid_cast<ASTLiteral *>(&*args.back());
         if (ast && ast->value.getType() == Field::Types::UInt64)
@@ -924,7 +927,7 @@ For further info please read the documentation: https://clickhouse.yandex/
             return StorageReplicatedMergeTree::create(
                 zookeeper_path, replica_name, attach, data_path, database_name, table_name,
                 columns, materialized_columns, alias_columns, column_defaults,
-                context, primary_expr_list, date_column_name,
+                context, primary_expr_list, date_column_name, partition_expr_ast,
                 sampling_expression, index_granularity, merging_params,
                 has_force_restore_data_flag,
                 context.getMergeTreeSettings());
@@ -932,7 +935,7 @@ For further info please read the documentation: https://clickhouse.yandex/
             return StorageMergeTree::create(
                 data_path, database_name, table_name,
                 columns, materialized_columns, alias_columns, column_defaults, attach,
-                context, primary_expr_list, date_column_name,
+                context, primary_expr_list, date_column_name, partition_expr_ast,
                 sampling_expression, index_granularity, merging_params,
                 has_force_restore_data_flag,
                 context.getMergeTreeSettings());
