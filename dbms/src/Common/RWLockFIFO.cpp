@@ -1,7 +1,27 @@
 #include "RWLockFIFO.h"
+#include <Common/Stopwatch.h>
 #include <Common/Exception.h>
-#include <iostream>
 #include <Poco/Ext/ThreadNumber.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event RWLockAcquiredReadLocks;
+    extern const Event RWLockAcquiredWriteLocks;
+    extern const Event RWLockReadersWaitMilliseconds;
+    extern const Event RWLockWritersWaitMilliseconds;
+}
+
+
+namespace CurrentMetrics
+{
+    extern const Metric RWLockWaitingReaders;
+    extern const Metric RWLockWaitingWriters;
+    extern const Metric RWLockActiveReaders;
+    extern const Metric RWLockActiveWriters;
+}
 
 
 namespace DB
@@ -13,12 +33,42 @@ namespace ErrorCodes
 }
 
 
-RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::Client client)
+class RWLockFIFO::LockHandlerImpl
 {
+    RWLockFIFOPtr parent;
     GroupsContainer::iterator it_group;
     ClientsContainer::iterator it_client;
+    ThreadToHandler::iterator it_handler;
+    CurrentMetrics::Increment active_client_increment;
+
+    LockHandlerImpl(RWLockFIFOPtr && parent, GroupsContainer::iterator it_group, ClientsContainer::iterator it_client);
+
+public:
+
+    LockHandlerImpl(const LockHandlerImpl & other) = delete;
+
+    ~LockHandlerImpl();
+
+    friend class RWLockFIFO;
+};
+
+
+RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::Client client)
+{
+    Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+    CurrentMetrics::Increment waiting_client_increment((type == Read) ? CurrentMetrics::RWLockWaitingReaders
+                                                                      : CurrentMetrics::RWLockWaitingWriters);
+    auto finalize_metrics = [type, &watch] ()
+    {
+        ProfileEvents::increment((type == Read) ? ProfileEvents::RWLockAcquiredReadLocks
+                                                : ProfileEvents::RWLockAcquiredWriteLocks);
+        ProfileEvents::increment((type == Read) ? ProfileEvents::RWLockReadersWaitMilliseconds
+                                                : ProfileEvents::RWLockWritersWaitMilliseconds, watch.elapsedMilliseconds());
+    };
 
     auto this_thread_id = std::this_thread::get_id();
+    GroupsContainer::iterator it_group;
+    ClientsContainer::iterator it_client;
 
     std::unique_lock<std::mutex> lock(mutex);
 
@@ -79,6 +129,7 @@ RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::C
     if (it_group == queue.begin())
     {
         it_client->start_time = it_client->enqueue_time;
+        finalize_metrics();
         return res;
     }
 
@@ -86,6 +137,7 @@ RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::C
     it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); } );
 
     it_client->start_time = time(nullptr);
+    finalize_metrics();
     return res;
 }
 
@@ -133,6 +185,9 @@ RWLockFIFO::LockHandlerImpl::~LockHandlerImpl()
 
 RWLockFIFO::LockHandlerImpl::LockHandlerImpl(RWLockFIFOPtr && parent, RWLockFIFO::GroupsContainer::iterator it_group,
                                              RWLockFIFO::ClientsContainer::iterator it_client)
-    : parent{std::move(parent)}, it_group{it_group}, it_client{it_client} {}
+    : parent{std::move(parent)}, it_group{it_group}, it_client{it_client},
+      active_client_increment{(it_client->type == RWLockFIFO::Read) ? CurrentMetrics::RWLockActiveReaders
+                                                                    : CurrentMetrics::RWLockActiveWriters}
+{}
 
 }
