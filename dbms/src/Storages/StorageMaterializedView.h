@@ -35,7 +35,7 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
     void drop() override;
-    bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     BlockInputStreams read(
         const Names & column_names,

@@ -18,8 +18,8 @@ namespace DB
 class ActiveDataPartSet
 {
 public:
-    ActiveDataPartSet() {}
-    ActiveDataPartSet(const Strings & names);
+    ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
+    ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
     void add(const String & name);
 
@@ -31,6 +31,8 @@ public:
     size_t size() const;
 
 private:
+    MergeTreeDataFormatVersion format_version;
+
     mutable std::mutex mutex;
     std::map<MergeTreePartInfo, String> part_info_to_name;
 

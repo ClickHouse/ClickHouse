@@ -301,8 +301,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 
         if (x < cur_min)
             cur_min = x;
-
-        if (x > cur_max)
+        else if (x > cur_max)
             cur_max = x;
     }
 

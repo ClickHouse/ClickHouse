@@ -253,7 +253,7 @@ namespace ErrorCodes
     extern const int INVALID_NESTED_NAME = 245;
     extern const int CORRUPTED_DATA = 246;
     extern const int INCORRECT_MARK = 247;
-    extern const int INVALID_PARTITION_NAME = 248;
+    extern const int INVALID_PARTITION_VALUE = 248;
     extern const int NOT_ENOUGH_BLOCK_NUMBERS = 250;
     extern const int NO_SUCH_REPLICA = 251;
     extern const int TOO_MUCH_PARTS = 252;

@@ -61,15 +61,12 @@ public:
 
     /** Perform the next step in combining the parts.
       */
-    bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings) override
-    {
-        return merge(settings.min_bytes_to_use_direct_io, true, partition_id, final, deduplicate);
-    }
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
-    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
-    void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
-    void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void drop() override;
 
@@ -120,7 +117,8 @@ private:
       *  consisting of the specified columns.
       *
       * primary_expr_ast      - expression for sorting;
-      * date_column_name      - the name of the column with the date;
+      * date_column_name      - if not empty, the name of the column with the date used for partitioning by month;
+          otherwise, partition_expr_ast is used as the partitioning expression;
       * index_granularity     - fow how many rows one index value is written.
       */
     StorageMergeTree(
@@ -133,8 +131,9 @@ private:
         const ColumnDefaults & column_defaults_,
         bool attach,
         Context & context_,
-        ASTPtr & primary_expr_ast_,
-        const String & date_column_name_,
+        const ASTPtr & primary_expr_ast_,
+        const String & date_column_name,
+        const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
         size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
