@@ -161,7 +161,7 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
-static bool already_signal_handled = false;
+thread_local bool already_signal_handled = false;
 
 /** Обработчик некоторых сигналов. Выводит информацию в лог (если получится).
   */
