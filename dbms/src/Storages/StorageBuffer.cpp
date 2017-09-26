@@ -346,7 +346,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize(nullptr /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context.getSettings());
+        optimize(nullptr /*query*/, {} /*partition*/, false /*final*/, false /*deduplicate*/, context);
     }
     catch (...)
     {
@@ -365,9 +365,9 @@ void StorageBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageBuffer::optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings)
+bool StorageBuffer::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
-    if (!partition_id.empty())
+    if (partition)
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
     if (final)
@@ -593,7 +593,7 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
     /// So that no blocks of the old structure remain.
-    optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context.getSettings());
+    optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 
