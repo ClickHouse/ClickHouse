@@ -17,6 +17,7 @@ There exist third-party client libraries for ClickHouse:
     - `go-clickhouse <https://github.com/roistat/go-clickhouse>`_
     - `mailru\go-clickhouse <https://github.com/mailru/go-clickhouse>`_
     - `golang-clickhouse <https://github.com/leprosus/golang-clickhouse>`_
+    - `ch-insert <https://github.com/sirkon/ch-insert>`_ + `ch-encode <https://github.com/sirkon/ch-encode>`_ for data insertion
 * NodeJs
     - `clickhouse (NodeJs) <https://github.com/TimonKK/clickhouse>`_
     - `node-clickhouse <https://github.com/apla/node-clickhouse>`_
