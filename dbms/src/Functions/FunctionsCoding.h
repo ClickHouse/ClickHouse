@@ -333,7 +333,7 @@ public:
         {
             const auto num = unhex(ch);
 
-            if (num != 0xff)
+            if (num != '\xff')
             {
                 val <<= 4;
                 val |= num;
