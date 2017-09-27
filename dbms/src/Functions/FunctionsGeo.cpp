@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
+#if USE_POINT_IN_POLYGON
 namespace FunctionPointInPolygonDetail
 {
 
@@ -271,16 +272,18 @@ template <>
 const char * FunctionPointInPolygon<PointInPolygonFranklin>::name = "pointInPolygonFranklin";
 template <>
 const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygon";
-
+#endif
 
 void registerFunctionsGeo(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionGreatCircleDistance>();
     factory.registerFunction<FunctionPointInEllipses>();
 
+#if USE_POINT_IN_POLYGON
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonFranklin>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWinding>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonCrossing>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid, true>>();
+#endif
 }
 }
