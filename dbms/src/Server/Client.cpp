@@ -385,6 +385,9 @@ private:
             ? Protocol::Compression::Enable
             : Protocol::Compression::Disable;
 
+        Protocol::Encryption::Enum encryption = config().getBool("secure", true)
+            ? Protocol::Encryption::Enable
+            : Protocol::Encryption::Disable;
         if (is_interactive)
             std::cout << "Connecting to "
                 << (!default_database.empty() ? "database " + default_database + " at " : "")
@@ -393,6 +396,7 @@ private:
                 << "." << std::endl;
 
         connection = std::make_unique<Connection>(host, port, default_database, user, password, "client", compression,
+            encryption,
             Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
@@ -1246,13 +1250,14 @@ public:
             ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
             ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
             ("port", boost::program_options::value<int>()->default_value(9000), "server port")
+            ("secure,s", "secure")
             ("user,u", boost::program_options::value<std::string>(), "user")
             ("password", boost::program_options::value<std::string>(), "password")
             ("query,q", boost::program_options::value<std::string>(), "query")
             ("database,d", boost::program_options::value<std::string>(), "database")
             ("pager", boost::program_options::value<std::string>(), "pager")
             ("multiline,m", "multiline")
-            ("multiquery,n", "multiquery")
+            ("multiquerymultiquery,n", "multiquery")
             ("format,f", boost::program_options::value<std::string>(), "default output format")
             ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
             ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -1346,6 +1351,8 @@ public:
 
         if (options.count("port") && !options["port"].defaulted())
             config().setInt("port", options["port"].as<int>());
+        if (options.count("secure"))
+            config().setBool("secure", true);
         if (options.count("user"))
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))
