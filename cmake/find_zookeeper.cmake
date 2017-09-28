@@ -14,3 +14,8 @@ else ()
 endif ()
 
 message (STATUS "Using zookeeper: ${ZOOKEEPER_INCLUDE_DIR} : ${ZOOKEEPER_LIBRARY}")
+
+
+# how to make cickhouse branch of https://github.com/ClickHouse-Extras/zookeeper.git :
+# clickhouse_misc
+# clickhouse_706
