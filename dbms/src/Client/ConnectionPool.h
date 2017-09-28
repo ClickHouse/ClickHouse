@@ -50,13 +50,14 @@ public:
             const String & user_, const String & password_,
             const String & client_name_ = "client",
             Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
+            Protocol::Encryption::Enum encryption_ = Protocol::Encryption::Disable,
             Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
             Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
             Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
        : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_), resolved_address(host_, port_),
-        client_name(client_name_), compression(compression_),
+        client_name(client_name_), compression(compression_), encryption(encryption_),
         connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_)
     {
     }
@@ -67,13 +68,14 @@ public:
             const String & user_, const String & password_,
             const String & client_name_ = "client",
             Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
+            Protocol::Encryption::Enum encryption_ = Protocol::Encryption::Disable,
             Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
             Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
             Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
         : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
         host(host_), port(port_), default_database(default_database_),
         user(user_), password(password_), resolved_address(resolved_address_),
-        client_name(client_name_), compression(compression_),
+        client_name(client_name_), compression(compression_), encryption(encryption_),
         connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_)
     {
     }
@@ -104,7 +106,7 @@ protected:
         return std::make_shared<Connection>(
             host, port, resolved_address,
             default_database, user, password,
-            client_name, compression,
+            client_name, compression, encryption,
             connect_timeout, receive_timeout, send_timeout);
     }
 
@@ -122,6 +124,7 @@ private:
 
     String client_name;
     Protocol::Compression::Enum compression;        /// Whether to compress data when interacting with the server.
+    Protocol::Encryption::Enum encryption;          /// Whether to encrypt data when interacting with the server.
 
     Poco::Timespan connect_timeout;
     Poco::Timespan receive_timeout;
