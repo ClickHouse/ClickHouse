@@ -9,6 +9,7 @@ if (ZOOKEEPER_LIBRARY AND ZOOKEEPER_INCLUDE_DIR)
     include_directories (${ZOOKEEPER_INCLUDE_DIR})
 else ()
     set (USE_INTERNAL_ZOOKEEPER_LIBRARY 1)
+    set(WANT_CPPUNIT 0 CACHE BOOL "")
     set (ZOOKEEPER_LIBRARY zookeeper)
 endif ()
 
