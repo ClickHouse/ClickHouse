@@ -195,7 +195,9 @@ public:
     {
         auto & set = this->data(place).value;
         set.resize(reserved);
+        set.clear();
 
+        // Specialised here because there's no deserialiser for StringRef
         size_t count = 0;
         readVarUInt(count, buf);
         for (size_t i = 0; i < count; ++i) {
@@ -206,6 +208,8 @@ public:
             set.insert(ref, count, error);
             arena->rollback(ref.size);
         }
+
+        set.readAlphaMap(buf);
     }
 
     void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
