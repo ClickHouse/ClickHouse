@@ -72,10 +72,57 @@ get_dyn_info_list_addr (unw_addr_space_t as, unw_word_t *dyn_info_list_addr,
 #define PAGE_SIZE 4096
 #define PAGE_START(a)   ((a) & ~(PAGE_SIZE-1))
 
+static int mem_validate_pipe[2] = {-1, -1};
+
+static inline void
+open_pipe (void)
+{
+  /* ignore errors for closing invalid fd's */
+  close (mem_validate_pipe[0]);
+  close (mem_validate_pipe[1]);
+
+  pipe2 (mem_validate_pipe, O_CLOEXEC | O_NONBLOCK);
+}
+
+ALWAYS_INLINE
+static int
+write_validate (void *addr)
+{
+  int ret = -1;
+  ssize_t bytes = 0;
+
+  do
+    {
+      char buf;
+      bytes = read (mem_validate_pipe[0], &buf, 1);
+    }
+  while ( errno == EINTR );
+
+  int valid_read = (bytes > 0 || errno == EAGAIN || errno == EWOULDBLOCK);
+  if (!valid_read)
+    {
+      // re-open closed pipe
+      open_pipe ();
+    }
+
+  do
+    {
+      ret = write (mem_validate_pipe[1], addr, 1);
+    }
+  while ( errno == EINTR );
+
+  return ret;
+}
+
 static int (*mem_validate_func) (void *addr, size_t len);
 static int msync_validate (void *addr, size_t len)
 {
-  return msync (addr, len, MS_ASYNC);
+  if (msync (addr, len, MS_ASYNC) != 0)
+    {
+      return -1;
+    }
+
+  return write_validate (addr);
 }
 
 #ifdef HAVE_MINCORE
@@ -96,7 +143,7 @@ static int mincore_validate (void *addr, size_t len)
       if (!(mvec[i] & 1)) return -1;
     }
 
-  return 0;
+  return write_validate (addr);
 }
 #endif
 
@@ -107,6 +154,8 @@ static int mincore_validate (void *addr, size_t len)
 HIDDEN void
 tdep_init_mem_validate (void)
 {
+  open_pipe ();
+
 #ifdef HAVE_MINCORE
   unsigned char present = 1;
   unw_word_t addr = PAGE_START((unw_word_t)&present);
@@ -273,7 +322,7 @@ HIDDEN void
 x86_64_local_addr_space_init (void)
 {
   memset (&local_addr_space, 0, sizeof (local_addr_space));
-  local_addr_space.caching_policy = UNW_CACHE_GLOBAL;
+  local_addr_space.caching_policy = UNWI_DEFAULT_CACHING_POLICY;
   local_addr_space.acc.find_proc_info = dwarf_find_proc_info;
   local_addr_space.acc.put_unwind_info = put_unwind_info;
   local_addr_space.acc.get_dyn_info_list_addr = get_dyn_info_list_addr;

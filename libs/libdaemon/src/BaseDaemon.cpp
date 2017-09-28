@@ -192,7 +192,7 @@ size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & co
 
     unw_cursor_t cursor;
 
-    if (unw_init_local_signal(&cursor, &context) < 0)
+    if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) < 0)
         return 0;
 
     size_t i = 0;

@@ -37,13 +37,6 @@ struct elf_dyn_info;
 # include "config.h"
 #endif
 
-#ifdef HAVE___THREAD
-  /* For now, turn off per-thread caching.  It uses up too much TLS
-     memory per thread even when the thread never uses libunwind at
-     all.  */
-# undef HAVE___THREAD
-#endif
-
 #ifndef UNW_REMOTE_ONLY
   #if defined(HAVE_LINK_H)
     #include <link.h>

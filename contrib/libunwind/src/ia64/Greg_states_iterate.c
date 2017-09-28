@@ -33,5 +33,7 @@ unw_reg_states_iterate (unw_cursor_t *cursor,
 {
   struct cursor *c = (struct cursor *) cursor;
 
-  return dwarf_reg_states_iterate (&c->dwarf, cb, token);
+  // Needs dwarf support on ia64
+  // return dwarf_reg_states_iterate (&c->dwarf, cb, token);
+  return -UNW_EINVAL;
 }
