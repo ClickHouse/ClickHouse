@@ -386,6 +386,8 @@ elf_w (load_debuglink) (const char* file, struct elf_image *ei, int is_local)
 {
   int ret;
   Elf_W (Shdr) *shdr;
+  Elf_W (Ehdr) *prev_image = ei->image;
+  off_t prev_size = ei->size;
 
   if (!ei->image)
     {
@@ -420,7 +422,6 @@ elf_w (load_debuglink) (const char* file, struct elf_image *ei, int is_local)
       if (memchr (linkbuf, 0, shdr->sh_size) == NULL)
 	return 0;
 
-      munmap (ei->image, ei->size);
       ei->image = NULL;
 
       Debug(1, "Found debuglink section, following %s\n", linkbuf);
@@ -455,6 +456,19 @@ elf_w (load_debuglink) (const char* file, struct elf_image *ei, int is_local)
 	  strcat (newname, linkbuf);
 	  ret = elf_w (load_debuglink) (newname, ei, -1);
 	}
+
+      if (ret == -1)
+        {
+          /* No debuglink file found even though .gnu_debuglink existed */
+          ei->image = prev_image;
+          ei->size = prev_size;
+
+          return 0;
+        }
+      else
+        {
+          munmap (prev_image, prev_size);
+        }
 
       return ret;
     }

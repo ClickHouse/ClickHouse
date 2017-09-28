@@ -59,4 +59,6 @@ extern int aarch64_local_resume (unw_addr_space_t as, unw_cursor_t *cursor,
   } while (0)
 #endif
 
+#define GET_FPCTX(uc) ((struct fpsimd_context *)(&uc->uc_mcontext.__reserved))
+
 #endif /* unwind_i_h */

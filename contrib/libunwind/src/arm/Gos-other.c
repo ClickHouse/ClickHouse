@@ -1,8 +1,7 @@
 /* libunwind - a platform-independent unwind library
-   Copyright (C) 2006-2007 IBM
-   Contributed by
-     Corey Ashford <cjashfor@us.ibm.com>
-     Jose Flavio Aguilar Paulino <jflavio@br.ibm.com> <joseflavio@gmail.com>
+   Copyright (C) 2008 CodeSourcery
+   Copyright 2011 Linaro Limited
+   Copyright (C) 2012 Tommi Rantala <tt.rantala@gmail.com>
 
 This file is part of libunwind.
 
@@ -25,30 +24,25 @@ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 
-#include <stdlib.h>
+#include <stdio.h>
+#include <signal.h>
+#include "unwind_i.h"
+#include "offsets.h"
 
-#include <libunwind_i.h>
-
-PROTECTED unw_addr_space_t
-unw_create_addr_space (unw_accessors_t *a, int byte_order)
+PROTECTED int
+unw_handle_signal_frame (unw_cursor_t *cursor)
 {
-#ifdef UNW_LOCAL_ONLY
-  return NULL;
+  return -UNW_EUNSPEC;
+}
+
+PROTECTED int
+unw_is_signal_frame (unw_cursor_t *cursor)
+{
+#if defined(__QNX__)
+  /* Not supported yet */
+  return 0;
 #else
-  unw_addr_space_t as = malloc (sizeof (*as));
-
-  if (!as)
-    return NULL;
-
-  memset (as, 0, sizeof (*as));
-
-  as->acc = *a;
-
-  /*
-   * Linux ppc64 supports only big-endian.
-   */
-  if (byte_order != 0 && byte_order != __BIG_ENDIAN)
-    return NULL;
-  return as;
+  printf ("%s: implement me\n", __FUNCTION__);
+  return -UNW_ENOINFO;
 #endif
 }

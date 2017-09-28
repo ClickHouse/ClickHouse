@@ -56,7 +56,7 @@ get_pid_by_tid(int tid)
   size_t len, len1;
   char *buf;
   struct kinfo_proc *kv;
-  int i, pid;
+  unsigned i, pid;
 
   len = 0;
   mib[0] = CTL_KERN;
