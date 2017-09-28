@@ -1,6 +1,7 @@
 #include <iomanip>
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SecureStreamSocket.h>
 
 #include <Common/ClickHouseRevision.h>
 
@@ -53,13 +54,14 @@ void Connection::connect()
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user);
 
-        socket.connect(resolved_address, connect_timeout);
-        socket.setReceiveTimeout(receive_timeout);
-        socket.setSendTimeout(send_timeout);
-        socket.setNoDelay(true);
+        socket = encryption ? std::make_unique<Poco::Net::SecureStreamSocket>() : std::make_unique<Poco::Net::StreamSocket>();
+        socket->connect(resolved_address, connect_timeout);
+        socket->setReceiveTimeout(receive_timeout);
+        socket->setSendTimeout(send_timeout);
+        socket->setNoDelay(true);
 
-        in = std::make_shared<ReadBufferFromPocoSocket>(socket);
-        out = std::make_shared<WriteBufferFromPocoSocket>(socket);
+        in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
 
@@ -93,7 +95,8 @@ void Connection::disconnect()
 {
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
-    socket.close();
+    socket->close();
+    socket = nullptr;
     in = nullptr;
     out = nullptr;
     connected = false;
@@ -233,7 +236,7 @@ bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
 
-    TimeoutSetter timeout_setter(socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
     try
     {
         UInt64 pong = 0;
@@ -273,7 +276,7 @@ TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & req
     if (!connected)
         connect();
 
-    TimeoutSetter timeout_setter(socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);

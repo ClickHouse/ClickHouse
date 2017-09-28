@@ -117,6 +117,16 @@ namespace Protocol
             Enable = 1,
         };
     }
+
+    /// Whether the ssl must be used.
+    namespace Encryption
+    {
+        enum Enum
+        {
+            Disable = 0,
+            Enable = 1,
+        };
+    }
 }
 
 }
