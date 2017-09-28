@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 SELECT '**** constant-constant comparisons ****';
 
 SELECT 'ab\0c' < 'ab\0d', 'ab\0c' > 'ab\0d';

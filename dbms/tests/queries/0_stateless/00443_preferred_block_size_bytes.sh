@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+clickhouse-client -q "CREATE DATABASE IF NOT EXISTS test"
 clickhouse-client -q "DROP TABLE IF EXISTS test.preferred_block_size_bytes"
 clickhouse-client -q "CREATE TABLE test.preferred_block_size_bytes (p Date, s String) ENGINE = MergeTree(p, p, 1)"
 clickhouse-client -q "INSERT INTO test.preferred_block_size_bytes (s) SELECT '16_bytes_-_-_-_' AS s FROM system.numbers LIMIT 10, 90"

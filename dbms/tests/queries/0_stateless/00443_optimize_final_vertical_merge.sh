@@ -10,6 +10,7 @@ function get_num_parts {
     clickhouse-client -q "SELECT count() FROM system.parts WHERE active AND database='$db' AND table='$table'"
 }
 
+clickhouse-client -q "CREATE DATABASE IF NOT EXISTS $db"
 clickhouse-client -q "DROP TABLE IF EXISTS $name"
 
 clickhouse-client -q "CREATE TABLE $name (

@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.nested;
 CREATE TABLE test.nested (nest Nested(x UInt8, y UInt8)) ENGINE = Memory;
 INSERT INTO test.nested VALUES ([1, 2, 3], [4, 5, 6]);

@@ -4,6 +4,7 @@ SELECT '';
 SELECT length(toString(groupArrayState(toDate(number)))) FROM (SELECT * FROM system.numbers LIMIT 10);
 SELECT length(toString(groupArrayState(toDateTime(number)))) FROM (SELECT * FROM system.numbers LIMIT 10);
 
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.numbers_mt;
 CREATE TABLE test.numbers_mt (number UInt64) ENGINE = Log;
 INSERT INTO test.numbers_mt SELECT * FROM system.numbers LIMIT 1, 1000000;

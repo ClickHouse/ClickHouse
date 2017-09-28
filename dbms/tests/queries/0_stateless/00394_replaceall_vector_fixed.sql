@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.replaceall;
 CREATE TABLE test.replaceall (str FixedString(3)) ENGINE = Memory;
 

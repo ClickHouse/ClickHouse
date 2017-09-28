@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.set;
 CREATE TABLE test.set (x String) ENGINE = Memory;
 INSERT INTO test.set VALUES ('hello');

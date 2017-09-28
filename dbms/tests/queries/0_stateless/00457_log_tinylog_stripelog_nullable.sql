@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.nullable;
 
 CREATE TABLE test.nullable (s String, ns Nullable(String), narr Array(Nullable(UInt64))) ENGINE = Log;

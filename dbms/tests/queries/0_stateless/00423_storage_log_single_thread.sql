@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.log;
 CREATE TABLE test.log (s String) ENGINE = Log;
 

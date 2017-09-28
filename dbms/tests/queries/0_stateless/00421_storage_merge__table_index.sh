@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
+clickhouse-client -q "CREATE DATABASE IF NOT EXISTS test"
 for i in `seq -w 0 2 20`; do
     clickhouse-client -q "DROP TABLE IF EXISTS test.merge_item_$i"
     clickhouse-client -q "CREATE TABLE test.merge_item_$i (d Int8) ENGINE = Memory"

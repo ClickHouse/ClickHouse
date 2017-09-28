@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.merge_tree;
 CREATE TABLE test.merge_tree (x UInt64, date Date) ENGINE = MergeTree(date, x, 1);
 
