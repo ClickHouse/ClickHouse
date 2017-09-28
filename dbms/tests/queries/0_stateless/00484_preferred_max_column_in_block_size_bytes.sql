@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 drop table if exists test.tab;
 create table test.tab (date Date, x UInt64, s FixedString(128)) engine = MergeTree(date, (date, x), 8192);
 insert into test.tab select today(), number, toFixedString('', 128) from system.numbers limit 8192;

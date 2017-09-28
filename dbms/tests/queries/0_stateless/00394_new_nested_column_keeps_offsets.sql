@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.alter;
 CREATE TABLE test.alter (d Date, k UInt64, i32 Int32, n Nested(ui8 UInt8, s String)) ENGINE=MergeTree(d, k, 8192);
 

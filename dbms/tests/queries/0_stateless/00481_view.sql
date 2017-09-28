@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.null;
 DROP TABLE IF EXISTS test.null_view;
 

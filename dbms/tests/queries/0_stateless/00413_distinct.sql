@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.distinct;
 CREATE TABLE test.distinct (Num UInt32, Name String) ENGINE = Memory;
 

@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 drop table if exists test.table;
 create table test.table (date Date, `Struct.Key1` Array(UInt64), `Struct.Key2` Array(UInt64), padding FixedString(16)) engine = MergeTree(date, (date), 16);
 insert into test.table select today() as date, [number], [number + 1], toFixedString('', 16) from system.numbers limit 100;

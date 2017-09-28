@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+clickhouse-client --query="CREATE DATABASE IF NOT EXISTS test"
 clickhouse-client --query="DROP TABLE IF EXISTS test.format"
 clickhouse-client --query="CREATE TABLE test.format (s String, x FixedString(3)) ENGINE = Memory"
 

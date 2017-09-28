@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.non_ascii;
 CREATE TABLE test.non_ascii (`привет` String, `мир` String) ENGINE = TinyLog;
 INSERT INTO test.non_ascii VALUES ('hello', 'world');

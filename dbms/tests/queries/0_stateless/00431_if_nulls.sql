@@ -14,6 +14,7 @@
  * Thus we have 5 * 4 * 4 = 80 combinations.
  */
 
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.nullable;
 
 CREATE VIEW test.nullable

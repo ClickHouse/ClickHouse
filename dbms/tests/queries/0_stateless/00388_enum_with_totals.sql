@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.enum_totals;
 CREATE TABLE test.enum_totals (e Enum8('hello' = 1, 'world' = 2)) ENGINE = Memory;
 INSERT INTO test.enum_totals VALUES ('hello'), ('world'), ('world');

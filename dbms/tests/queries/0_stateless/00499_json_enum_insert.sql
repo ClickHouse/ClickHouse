@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.json;
 CREATE TABLE test.json (x Enum8('browser' = 1, 'mobile' = 2), y String) ENGINE = Memory;
 

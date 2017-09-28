@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.arena;
 CREATE TABLE test.arena (k UInt8, d String) ENGINE = Memory;
 INSERT INTO test.arena SELECT number % 10 AS k, hex(intDiv(number, 10) % 1000) AS d FROM system.numbers LIMIT 10000000;

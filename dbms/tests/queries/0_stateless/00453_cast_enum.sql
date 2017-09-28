@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.cast_enums;
 CREATE TABLE test.cast_enums
 (

@@ -1,3 +1,4 @@
+CREATE DATABASE IF NOT EXISTS test;
 SELECT dummy FROM system.one;
 SELECT * FROM system.one;
 SELECT `one`.dummy FROM system.one;
