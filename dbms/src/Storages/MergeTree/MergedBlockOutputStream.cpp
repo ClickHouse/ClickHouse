@@ -174,9 +174,9 @@ void IMergedBlockOutputStream::writeDataImpl(
         {
             next_level_offsets = offsets->clone();
             lengths_column = column_array.getLengthsColumn();
-            auto & array_offsets = column_array.getOffsets();
+            const auto & array_offsets = column_array.getOffsets();
             auto & next_level_offsets_column = typeid_cast<ColumnArray::ColumnOffsets_t &>(next_level_offsets.get());
-            const auto & next_level_offsets_data = next_level_offsets_column.getData();
+            auto & next_level_offsets_data = next_level_offsets_column.getData();
             for (auto & offset : next_level_offsets_data)
                 offset = array_offsets[offset];
         }
