@@ -1258,7 +1258,7 @@ public:
             ("database,d", boost::program_options::value<std::string>(), "database")
             ("pager", boost::program_options::value<std::string>(), "pager")
             ("multiline,m", "multiline")
-            ("multiquerymultiquery,n", "multiquery")
+            ("multiquery,n", "multiquery")
             ("format,f", boost::program_options::value<std::string>(), "default output format")
             ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
             ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
