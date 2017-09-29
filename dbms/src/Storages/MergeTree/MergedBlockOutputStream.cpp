@@ -240,7 +240,7 @@ void IMergedBlockOutputStream::writeColumn(
         }
 
         if (is_offset_column)
-            static_cast<const DataTypeArray *>(&type)->serializeOffsets(*column, stream.compressed, prev_mark, limit);
+            static_cast<DataTypeArray *>(type.get())->serializeOffsets(*column, stream.compressed, prev_mark, limit);
         else if (offsets)
             array_type->serializeBinaryBulk(*array_column, stream.compressed, prev_mark, limit);
         else
