@@ -80,6 +80,8 @@ public:
         return scatterImpl<ColumnArray>(num_columns, selector);
     }
 
+    ColumnPtr getLengthsColumn() const;
+
     void gather(ColumnGathererStream & gatherer_stream) override;
 
 private:
