@@ -168,7 +168,7 @@ void IMergedBlockOutputStream::writeDataImpl(
         ColumnPtr next_level_offsets;
         ColumnPtr lengths_column;
 
-        auto offsets_data_type = std::make_shared<DataTypeNumber<ColumnArray::Offsets_t>>();
+        auto offsets_data_type = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
 
         if (offsets)
         {
