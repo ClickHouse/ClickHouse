@@ -157,7 +157,7 @@ void IMergedBlockOutputStream::writeDataImpl(
         /// Then write data.
         writeDataImpl(name, nested_type, offsets, nested_col, offset_columns, level, write_array_data, false);
     }
-    else if (auto type_arr = typeid_cast<const DataTypeArray *>(&type))
+    else if (auto type_arr = typeid_cast<const DataTypeArray *>(type.get()))
     {
         /// For arrays, you first need to serialize dimensions, and then values.
         String size_name = DataTypeNested::extractNestedTableName(name)
