@@ -43,11 +43,14 @@ int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 
 #if __GLIBC__ > 2 || (__GLIBC__ == 2  && __GLIBC_MINOR__ >= 16)
 long int __fdelt_chk(long int d)
+{
+    if (d < 0)
+        abort();
 #else
 unsigned long int __fdelt_chk(unsigned long int d)
-#endif
 {
-    if (d < 0 || d >= FD_SETSIZE)
+#endif
+    if (d >= FD_SETSIZE)
         abort();
     return d / __NFDBITS;
 }
