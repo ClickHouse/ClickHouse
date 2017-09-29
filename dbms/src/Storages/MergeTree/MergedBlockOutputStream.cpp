@@ -139,8 +139,6 @@ void IMergedBlockOutputStream::writeDataImpl(
     /// serialization of arrays for the MergeTree engine slightly differs from
     /// what the other engines do.
 
-    size_t size = column->size();
-
     if (type->isNullable())
     {
         /// First write to the null map.
@@ -194,7 +192,7 @@ void IMergedBlockOutputStream::writeDataImpl(
                 writeColumn(column, nullptr, stream, nullptr, true);
         }
 
-        writeDataImpl(name, type_arr->getNestedType(), offsets ? next_level_offsets : column_array.getOffsets(),
+        writeDataImpl(name, type_arr->getNestedType(), offsets ? next_level_offsets : column_array.getOffsetsColumn(),
                       column_array.getDataPtr(), offset_columns, level + 1, true, false);
     }
     else
