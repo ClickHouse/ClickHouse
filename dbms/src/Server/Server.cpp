@@ -449,27 +449,6 @@ int Server::main(const std::vector<std::string> & args)
 
                     LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
                 }
-                /// Interserver IO HTTP
-                if (config().has("interserver_https_port"))
-                {
-#if Poco_NetSSL_FOUND
-                    std::call_once(ssl_init_once, SSLInit);
-                    Poco::Net::SocketAddress interserver_address = make_socket_address(listen_host, config().getInt("interserver_https_port"));
-                    Poco::Net::SecureServerSocket interserver_io_http_socket(interserver_address);
-                    interserver_io_http_socket.setReceiveTimeout(settings.receive_timeout);
-                    interserver_io_http_socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
-                        new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
-                                                                   server_pool,
-                                                                   interserver_io_http_socket,
-                                                                   http_params));
-                    
-                    LOG_INFO(log, "Listening interserver https: " + interserver_address.toString());
-#else
-                    throw Exception{"https protocol disabled because poco library built without NetSSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-                }
             }
             catch (const Poco::Net::NetException & e)
             {
