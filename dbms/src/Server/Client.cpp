@@ -375,8 +375,12 @@ private:
 
     void connect()
     {
+        Protocol::Encryption::Enum encryption = config().getBool("secure", false)
+        ? Protocol::Encryption::Enable
+        : Protocol::Encryption::Disable;
+
         String host = config().getString("host", "localhost");
-        UInt16 port = config().getInt("port", DBMS_DEFAULT_PORT);
+        UInt16 port = config().getInt("port", config().getInt(encryption ? "tcps_port" : "tcp_port", encryption ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
         String default_database = config().getString("database", "");
         String user = config().getString("user", "");
         String password = config().getString("password", "");
@@ -385,9 +389,6 @@ private:
             ? Protocol::Compression::Enable
             : Protocol::Compression::Disable;
 
-        Protocol::Encryption::Enum encryption = config().getBool("secure", true)
-            ? Protocol::Encryption::Enable
-            : Protocol::Encryption::Disable;
         if (is_interactive)
             std::cout << "Connecting to "
                 << (!default_database.empty() ? "database " + default_database + " at " : "")
