@@ -16,7 +16,7 @@
     -->
     <!-- Used with https_port and tcps_port. Full ssl options list: https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
-        <server>
+        <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
             <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
@@ -28,7 +28,8 @@
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
         </server>
-        <client>
+
+        <client> <!-- Used for connecting to https dictionary source -->
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
@@ -53,7 +54,6 @@
 
     <!-- Port for communication between replicas. Used for data exchange. -->
     <interserver_http_port>9009</interserver_http_port>
-    <interserver_https_port>9443<interserver_https_port>
 
     <!-- Hostname that is used by other replicas to request this server.
          If not specified, than it is determined analoguous to 'hostname -f' command.

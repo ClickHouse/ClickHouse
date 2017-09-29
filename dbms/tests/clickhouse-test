@@ -271,3 +271,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     main(args)
+
+#
+# TODO:
+# Pass variables to tests. currently used values:
+# /etc/clickhouse-server/config.xml
+# clickhouse           (path to binary)
+# clickhouse-client    (path to binary)
+# http://localhost:8123/
+#
