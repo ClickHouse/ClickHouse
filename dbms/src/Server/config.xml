@@ -49,11 +49,11 @@
     <tcp_port>9000</tcp_port>
 
     <!-- SSL port -->
-    <tcps_port>9443</tcps_port>
+    <tcps_port>9440</tcps_port>
 
     <!-- Port for communication between replicas. Used for data exchange. -->
     <interserver_http_port>9009</interserver_http_port>
-    <interserver_https_port>9449<interserver_https_port>
+    <interserver_https_port>9443<interserver_https_port>
 
     <!-- Hostname that is used by other replicas to request this server.
          If not specified, than it is determined analoguous to 'hostname -f' command.
