@@ -95,7 +95,8 @@ void Connection::disconnect()
 {
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
-    socket->close();
+    if (socket)
+        socket->close();
     socket = nullptr;
     in = nullptr;
     out = nullptr;
