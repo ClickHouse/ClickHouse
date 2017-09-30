@@ -161,10 +161,16 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
+thread_local bool already_signal_handled = false;
+
 /** Обработчик некоторых сигналов. Выводит информацию в лог (если получится).
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (already_signal_handled)
+        return;
+    already_signal_handled = true;
+
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
