@@ -116,8 +116,8 @@ MergeTreeData::MergeTreeData(
             "Date column (" + date_column_name + ") does not exist in table declaration.",
             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    checkNoMultidimensionalArrays(*columns, attach);
-    checkNoMultidimensionalArrays(materialized_columns, attach);
+    // checkNoMultidimensionalArrays(*columns, attach);
+    // checkNoMultidimensionalArrays(materialized_columns, attach);
 
     merging_params.check(*columns);
 
