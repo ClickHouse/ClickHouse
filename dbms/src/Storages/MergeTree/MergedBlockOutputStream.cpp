@@ -192,8 +192,9 @@ void IMergedBlockOutputStream::writeDataImpl(
                 writeColumn(column, nullptr, stream, nullptr, true);
         }
 
-        writeDataImpl(name, type_arr->getNestedType(), offsets ? next_level_offsets : column_array.getOffsetsColumn(),
-                      column_array.getDataPtr(), offset_columns, level + 1, true, false);
+        writeDataImpl(name, type_arr->getNestedType(), column_array.getDataPtr(),
+                      offsets ? next_level_offsets : column_array.getOffsetsColumn(),
+                      offset_columns, level + 1, true, false);
     }
     else
     {
