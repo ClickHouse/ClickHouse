@@ -411,10 +411,10 @@ int Server::main(const std::vector<std::string> & args)
                 }
 
                 /// TCP
-                if (config().has("tcps_port"))
+                if (config().has("tcp_ssl_port"))
                 {
 #if Poco_NetSSL_FOUND
-                    Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcps_port"));
+                    Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_ssl_port"));
                     Poco::Net::SecureServerSocket tcp_socket(tcp_address);
                     tcp_socket.setReceiveTimeout(settings.receive_timeout);
                     tcp_socket.setSendTimeout(settings.send_timeout);

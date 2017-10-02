@@ -220,8 +220,8 @@ private:
     std::shared_ptr<WriteBuffer> out;
 
     String query_id;
-    UInt64 compression;        /// Enable data compression for communication.
-    UInt64 encryption;             /// Enable data encryption for communication.
+    bool compression;        /// Enable data compression for communication.
+    bool encryption;             /// Enable data encryption for communication.
     /// What compression algorithm to use while sending data for INSERT queries and external tables.
     CompressionMethod network_compression_method = CompressionMethod::LZ4;
 
