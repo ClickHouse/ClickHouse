@@ -375,7 +375,7 @@ private:
 
     void connect()
     {
-        Protocol::Encryption::Enum encryption = config().getBool("secure", false)
+        Protocol::Encryption::Enum encryption = config().getBool("ssl", false)
         ? Protocol::Encryption::Enable
         : Protocol::Encryption::Disable;
 
@@ -1251,7 +1251,7 @@ public:
             ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
             ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
             ("port", boost::program_options::value<int>()->default_value(9000), "server port")
-            ("secure,s", "secure")
+            ("ssl,s", "ssl")
             ("user,u", boost::program_options::value<std::string>(), "user")
             ("password", boost::program_options::value<std::string>(), "password")
             ("query,q", boost::program_options::value<std::string>(), "query")
