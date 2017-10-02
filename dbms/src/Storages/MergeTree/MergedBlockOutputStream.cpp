@@ -155,7 +155,7 @@ void IMergedBlockOutputStream::writeDataImpl(
         writeColumn(nullable_col.getNullMapColumn(), null_map_type, stream, offsets, false);
 
         /// Then write data.
-        writeDataImpl(name, nested_type, offsets, nested_col, offset_columns, level, write_array_data, false);
+        writeDataImpl(name, nested_type, nested_col, offsets, offset_columns, level, write_array_data, false);
     }
     else if (auto type_arr = typeid_cast<const DataTypeArray *>(type.get()))
     {
@@ -219,7 +219,7 @@ void IMergedBlockOutputStream::writeColumn(
         array_column =  std::make_shared<ColumnArray>(column, offsets);
     }
 
-    size_t size = column->size();
+    size_t size = offsets ? offsets->size() : column->size();
     size_t prev_mark = 0;
     while (prev_mark < size)
     {
