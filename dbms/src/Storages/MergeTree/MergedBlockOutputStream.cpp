@@ -187,7 +187,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 
             ColumnStream & stream = *column_streams[size_name];
             if (offsets)
-                writeColumn(lengths_column, offsets_data_type, stream, *next_level_offsets, false);
+                writeColumn(lengths_column, offsets_data_type, stream, next_level_offsets, false);
             else
                 writeColumn(column, nullptr, stream, nullptr, true);
         }
