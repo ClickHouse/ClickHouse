@@ -178,7 +178,7 @@ void IMergedBlockOutputStream::writeDataImpl(
             auto & next_level_offsets_column = typeid_cast<ColumnArray::ColumnOffsets_t &>(*next_level_offsets);
             auto & next_level_offsets_data = next_level_offsets_column.getData();
             for (auto & offset : next_level_offsets_data)
-                offset = array_offsets[offset];
+                offset = offset ? array_offsets[offset - 1] : 0;
         }
 
         if (!skip_offsets && offset_columns.count(size_name) == 0)
