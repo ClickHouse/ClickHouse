@@ -241,15 +241,19 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     if (!final && parts.size() == 1)
         return false;
 
-    MergeTreeData::DataPartsVector::const_iterator it = parts.begin();
-    MergeTreeData::DataPartsVector::const_iterator prev_it = it;
+    auto it = parts.begin();
+    auto prev_it = it;
 
     size_t sum_bytes = 0;
     while (it != parts.end())
     {
-        if ((it != parts.begin() || parts.size() == 1)    /// For the case of one part, we check that it can be merged "with itself".
-            && !can_merge(*prev_it, *it))
+        /// For the case of one part, we check that it can be merged "with itself".
+        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it))
+        {
+            LOG_INFO(log, ((it != prev_it) ? "Parts " + (*prev_it)->name + " and " + (*it)->name : "Part " + (*it)->name)
+                << " cannot be used for merge");
             return false;
+        }
 
         sum_bytes += (*it)->size_in_bytes;
 
