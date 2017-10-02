@@ -1887,10 +1887,10 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
         {
             all_in_zk = false;
 
-            if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(0))
+            if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
             {
                 LOG_WARNING(log, "Part " << part->name << " (that was selected for merge)"
-                    << " with age " << (time(0) - part->modification_time)
+                    << " with age " << (time(nullptr) - part->modification_time)
                     << " seconds exists locally but not in ZooKeeper."
                     << " Won't do merge with that part and will check it.");
                 enqueuePartForCheck(part->name);
@@ -1900,7 +1900,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     if (!all_in_zk)
         return false;
 
-    LogEntry entry;
+    ReplicatedMergeTreeLogEntryData entry;
     entry.type = LogEntry::MERGE_PARTS;
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
@@ -2442,7 +2442,10 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         }
 
         if (!selected)
+        {
+            LOG_INFO(log, "Cannot select parts for optimization");
             return false;
+        }
 
         if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
             return false;
