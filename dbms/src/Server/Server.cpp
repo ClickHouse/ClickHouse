@@ -423,9 +423,9 @@ int Server::main(const std::vector<std::string> & args)
                                                                   server_pool,
                                                                   tcp_socket,
                                                                   new Poco::Net::TCPServerParams));
-                    LOG_INFO(log, "Listening tcps: " + tcp_address.toString());
+                    LOG_INFO(log, "Listening tcp_ssl: " + tcp_address.toString());
 #else
-                    throw Exception{"tcps protocol disabled because poco library built without NetSSL support.",
+                    throw Exception{"tcp_ssl protocol disabled because poco library built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
                 }
