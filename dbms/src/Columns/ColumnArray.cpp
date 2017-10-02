@@ -341,6 +341,25 @@ void ColumnArray::getExtremes(Field & min, Field & max) const
 {
     min = Array();
     max = Array();
+
+    size_t col_size = size();
+
+    if (col_size == 0)
+        return;
+
+    size_t min_idx = 0;
+    size_t max_idx = 0;
+
+    for (size_t i = 1; i < col_size; ++i)
+    {
+        if (compareAt(i, min_idx, *this, /* nan_direction_hint = */ 1) < 0)
+            min_idx = i;
+        else if (compareAt(i, max_idx, *this, /* nan_direction_hint = */ -1) > 0)
+            max_idx = i;
+    }
+
+    get(min_idx, min);
+    get(max_idx, max);
 }
 
 

@@ -293,7 +293,15 @@ struct Settings
      */ \
     M(SettingUInt64, insert_distributed_timeout, 0) \
     /* Timeout for DDL query responses from all hosts in cluster. Negative value means infinite. */ \
-    M(SettingInt64, distributed_ddl_task_timeout, 120)
+    M(SettingInt64, distributed_ddl_task_timeout, 120) \
+    \
+    /** If true, and the date parameter of MergeTree engines is an expression (not a column name), \
+      * it will be interpreted as the partitioning expression, allowing custom partitions. \
+      * IMPORTANT: Don't use this setting just yet. \
+      *     It is for testing purposes, the syntax will likely change soon and the server will not be able \
+      *     to load the tables created this way. You have been warned. \
+      */ \
+    M(SettingBool, experimental_merge_tree_allow_custom_partitions, false)
 
 
     /// Possible limits for query execution.
