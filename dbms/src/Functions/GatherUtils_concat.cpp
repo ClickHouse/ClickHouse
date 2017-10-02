@@ -1,122 +1,10 @@
-#include <Functions/GatherUtils.h>
+#include "GatherUtils.h"
+#include "GatherUtils_selectors.h"
 
 namespace DB
 {
-
-/// Base classes which selects template function implementation with concrete ArraySource or ArraySink
-/// Derived classes should implement selectImpl for ArraySourceSelector and ArraySinkSelector
-///  or selectSourceSink for ArraySinkSourceSelector
-/*
-template <typename Base, typename ... Types>
-struct ArraySourceSelector;
-
-template <typename Base, typename Type, typename ... Types>
-struct ArraySourceSelector<Base, Type, Types ...>
-{
-    template <typename ... Args>
-    static void select(IArraySource & source, Args && ... args)
-    {
-        if (auto array = typeid_cast<NumericArraySource<Type> *>(&source))
-            Base::selectImpl(*array, args ...);
-        else if (auto nullable_array = typeid_cast<NullableArraySource<NumericArraySource<Type>> *>(&source))
-            Base::selectImpl(*nullable_array, args ...);
-        else if (auto const_array = typeid_cast<ConstSource<NumericArraySource<Type>> *>(&source))
-            Base::selectImpl(*const_array, args ...);
-        else if (auto const_nullable_array = typeid_cast<ConstSource<NullableArraySource<NumericArraySource<Type>>> *>(&source))
-            Base::selectImpl(*const_nullable_array, args ...);
-        else
-            ArraySourceSelector<Base, Types ...>::select(source, args ...);
-    }
-};
-
-template <typename Base>
-struct ArraySourceSelector<Base>
-{
-    template <typename ... Args>
-    static void select(IArraySource & source, Args && ... args)
-    {
-        if (auto array = typeid_cast<GenericArraySource *>(&source))
-            Base::selectImpl(*array, args ...);
-        else if (auto nullable_array = typeid_cast<NullableArraySource<GenericArraySource> *>(&source))
-            Base::selectImpl(*nullable_array, args ...);
-        else if (auto const_array = typeid_cast<ConstSource<GenericArraySource> *>(&source))
-            Base::selectImpl(*const_array, args ...);
-        else if (auto const_nullable_array = typeid_cast<ConstSource<NullableArraySource<GenericArraySource>> *>(&source))
-            Base::selectImpl(*const_nullable_array, args ...);
-        else
-            throw Exception(std::string("Unknown ArraySource type: ") + typeid(source).name(), ErrorCodes::LOGICAL_ERROR);
-    }
-};
-
-template <typename Base>
-using GetArraySourceSelector = typename ApplyTypeListForClass<ArraySourceSelector,
-        typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
-
-template <typename Base, typename ... Types>
-struct ArraySinkSelector;
-
-template <typename Base, typename Type, typename ... Types>
-struct ArraySinkSelector<Base, Type, Types ...>
-{
-    template <typename ... Args>
-    static void select(IArraySink & sink, Args && ... args)
-    {
-        if (auto nullable_numeric_sink = typeid_cast<NullableArraySink<NumericArraySink<Type>> *>(&sink))
-            Base::selectImpl(*nullable_numeric_sink, args ...);
-        else if (auto numeric_sink = typeid_cast<NumericArraySink<Type> *>(&sink))
-            Base::selectImpl(*numeric_sink, args ...);
-        else
-            ArraySinkSelector<Base, Types ...>::select(sink, args ...);
-    }
-};
-
-template <typename Base>
-struct ArraySinkSelector<Base>
-{
-    template <typename ... Args>
-    static void select(IArraySink & sink, Args && ... args)
-    {
-        if (auto nullable_generic_sink = typeid_cast<NullableArraySink<GenericArraySink> *>(&sink))
-            Base::selectImpl(*nullable_generic_sink, args ...);
-        else if (auto generic_sink = typeid_cast<GenericArraySink *>(&sink))
-            Base::selectImpl(*generic_sink, args ...);
-        else
-            throw Exception(std::string("Unknown ArraySink type: ") + typeid(sink).name(), ErrorCodes::LOGICAL_ERROR);
-    }
-};
-*/
-
-/*
-template <typename Base>
-using GetArraySinkSelector = typename ApplyTypeListForClass<ArraySinkSelector,
-        typename PrependToTypeList<Base, TypeListNumbers>::Type>::Type;
-
-template <typename Base>
-struct ArraySinkSourceSelector
-{
-    template <typename ... Args>
-    static void select(IArraySource & source, IArraySink & sink, Args && ... args)
-    {
-        GetArraySinkSelector<Base>::select(sink, source, args ...);
-    }
-
-    template <typename Sink, typename ... Args>
-    static void selectImpl(Sink && sink, IArraySource & source, Args && ... args)
-    {
-        GetArraySourceSelector<Base>::select(source, sink, args ...);
-    }
-
-    template <typename Source, typename Sink, typename ... Args>
-    static void selectImpl(Source && source, Sink && sink, Args && ... args)
-    {
-        Base::selectSourceSink(source, sink, args ...);
-    }
-};
-*/
-
 /// Algorithms.
 
-/*
 /// Appends slices from source to sink. Offsets for sink should be precalculated as start positions of result arrays.
 /// Only for NumericArraySource, because can't insert values in the middle of arbitary column.
 /// Used for array concat implementation.
@@ -147,10 +35,8 @@ static void append(IArraySource & source, Sink && sink)
 {
     ArrayAppend::select(source, sink);
 }
-*/
 
 /// Concat specialization for GenericArraySource. Because can't use append with arbitrary column type.
-/*
 
 template <typename SourceType, typename SinkType>
 struct ConcatGenericArrayWriteWholeImpl
@@ -196,8 +82,7 @@ static void NO_INLINE concatGenericArray(const std::vector<std::unique_ptr<IArra
         }
         else
             throw Exception(
-                    std::string("GenericArraySource expected for GenericArraySink, got: ") + typeid(source).name(),
-                    ErrorCodes::LOGICAL_ERROR);
+                std::string("GenericArraySource expected for GenericArraySink, got: ") + typeid(source).name(), ErrorCodes::LOGICAL_ERROR);
     }
 
     while (!sink.isEnd())
@@ -223,9 +108,7 @@ static void NO_INLINE concatGenericArray(const std::vector<std::unique_ptr<IArra
         sink.next();
     }
 }
-*/
 
-/*
 /// Concat for array sources. Sources must be either all numeric either all generic.
 template <typename Sink>
 void NO_INLINE concat(const std::vector<std::unique_ptr<IArraySource>> & sources, Sink && sink)
@@ -274,7 +157,40 @@ void NO_INLINE concat(const std::vector<std::unique_ptr<IArraySource>> & sources
         append(*source, sink);
     }
 }
-*/
 
+struct ArrayConcat : public GetArraySinkSelector<ArrayConcat>
+{
+    using Sources = std::vector<std::unique_ptr<IArraySource>>;
 
+    template <typename Sink>
+    static void selectImpl(Sink && sink, Sources & sources)
+    {
+        concat<Sink>(sources, sink);
+    }
+
+    static void selectImpl(GenericArraySink & sink, Sources & sources)
+    {
+        concatGenericArray(sources, sink);
+    }
+
+    static void selectImpl(NullableArraySink<GenericArraySink> & sink, Sources & sources)
+    {
+        concatGenericArray(sources, sink);
+    }
+
+    static void selectImpl(GenericArraySink && sink, Sources && sources)
+    {
+        concatGenericArray(sources, sink);
+    }
+
+    static void selectImpl(NullableArraySink<GenericArraySink> && sink, Sources & sources)
+    {
+        concatGenericArray(sources, sink);
+    }
+};
+
+void concat(std::vector<std::unique_ptr<IArraySource>> & sources, IArraySink & sink)
+{
+    return ArrayConcat::select(sink, sources);
+}
 }
