@@ -20,6 +20,20 @@ namespace DB
 static const size_t max_block_size = 8192;
 
 
+class ShellCommandOwningBlockInputStream : public OwningBlockInputStream<ShellCommand>
+{
+public:
+    ShellCommandOwningBlockInputStream(const BlockInputStreamPtr & stream, std::unique_ptr<ShellCommand> own) : OwningBlockInputStream(std::move(stream), std::move(own))
+    {
+    }
+
+    void readSuffix() override
+    {
+        OwningBlockInputStream<ShellCommand>::readSuffix();
+        own->wait();
+    }
+};
+
 ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
     Block & sample_block, const Context & context)
@@ -47,7 +61,7 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
     LOG_TRACE(log, "loadAll " + toString());
     auto process = ShellCommand::execute(command);
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ShellCommand>>(input_stream, std::move(process));
+    return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));
 }
 
 
@@ -86,6 +100,12 @@ private:
 
     void readSuffix() override
     {
+        IProfilingBlockInputStream::readSuffix();
+        if (!wait_called)
+        {
+            wait_called = true;
+            command->wait();
+        }
         thread.join();
         /// To rethrow an exception, if any.
         task.get_future().get();
@@ -98,6 +118,7 @@ private:
     std::unique_ptr<ShellCommand> command;
     std::packaged_task<void()> task;
     std::thread thread;
+    bool wait_called = false;
 };
 
 
