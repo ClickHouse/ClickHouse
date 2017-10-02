@@ -15,13 +15,16 @@ StackTrace::StackTrace()
     frames_size = backtrace(frames, STACK_TRACE_MAX_DEPTH);
 }
 
+thread_local std::stringstream stack_trace_stream;
+
 std::string StackTrace::toString() const
 {
     char ** symbols = backtrace_symbols(frames, frames_size);
-    std::stringstream res;
 
     if (!symbols)
         return "Cannot get symbols for stack trace.\n";
+
+    stack_trace_stream.str(std::string());
 
     try
     {
@@ -45,17 +48,17 @@ std::string StackTrace::toString() const
 
             try
             {
-                res << i << ". ";
+                stack_trace_stream << i << ". ";
 
                 if (nullptr != demangled_name && 0 == status)
                 {
-                    res.write(symbols[i], name_start - symbols[i]);
-                    res << demangled_name << name_end;
+                    stack_trace_stream.write(symbols[i], name_start - symbols[i]);
+                    stack_trace_stream << demangled_name << name_end;
                 }
                 else
-                    res << symbols[i];
+                    stack_trace_stream << symbols[i];
 
-                res << std::endl;
+                stack_trace_stream << std::endl;
             }
             catch (...)
             {
@@ -72,5 +75,5 @@ std::string StackTrace::toString() const
     }
 
     free(symbols);
-    return res.str();
+    return stack_trace_stream.str();
 }
