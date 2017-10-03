@@ -3851,61 +3851,63 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
     auto zookeeper = getZooKeeper();
 
     MergeTreeData::DataPartsVector parts = data.grabOldParts();
-    MergeTreeData::DataPartsVector parts_deleted_from_filesystem;
-    size_t count = parts.size();
-
-    if (!count)
+    if (parts.empty())
         return;
 
-    /// Part names that were successfully deleted from filesystem and should be deleted from ZooKeeper
-    auto remove_from_zookeeper = [&] ()
-    {
-        LOG_DEBUG(log, "Removed " << parts_deleted_from_filesystem.size() << " old parts from filesystem. Removing them from ZooKeeper.");
-
-        try
-        {
-            Strings part_names;
-            for (auto & part: parts_deleted_from_filesystem)
-                part_names.emplace_back(part->name);
-
-            /// It is important to delete parts from ZooKeeper as reliable as possible
-            removePartsFromZooKeeper(zookeeper, part_names);
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "There is a problem with deleting parts from ZooKeeper: " << getCurrentExceptionMessage(false));
-        }
-    };
-
+    /// Firstly delete parts from ZooKeeper
+    Strings part_names_to_delete_from_zookeeper;
+    NameSet part_names_to_retry_deletion;
     try
     {
-        LOG_DEBUG(log, "Removing " << parts.size() << " old parts from filesystem");
+        for (const auto & part : parts)
+            part_names_to_delete_from_zookeeper.push_back(part->name);
 
-        while (!parts.empty())
-        {
-            MergeTreeData::DataPartPtr & part = parts.back();
-            part->remove();
-            parts_deleted_from_filesystem.emplace_back(part);
-            parts.pop_back();
-        }
+        LOG_DEBUG(log, "Removing " << part_names_to_delete_from_zookeeper.size() << " old parts from ZooKeeper");
+
+        /// It is important to delete parts from ZooKeeper as reliable as possible
+        removePartsFromZooKeeper(zookeeper, part_names_to_delete_from_zookeeper, &part_names_to_retry_deletion);
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-        /// Finalize deletion of parts already deleted from filesystem, rollback remaining parts
-        data.rollbackDeletingParts(parts);
-        remove_from_zookeeper();
-        data.removePartsFinally(parts_deleted_from_filesystem);
-
-        throw;
+        LOG_ERROR(log, "There is a problem with deleting parts from ZooKeeper: " << getCurrentExceptionMessage(false));
     }
 
-    /// Finalize deletion
-    remove_from_zookeeper();
-    data.removePartsFinally(parts_deleted_from_filesystem);
+    /// Part names that were reliably deleted from ZooKeeper should be deleted from filesystem
+    auto num_reliably_deleted_parts = part_names_to_delete_from_zookeeper.size() - part_names_to_retry_deletion.size();
+    LOG_DEBUG(log, "Removed " << num_reliably_deleted_parts << " old parts from ZooKeeper. Removing them from filesystem.");
 
-    LOG_DEBUG(log, "Removed " << count << " old parts");
+    /// Split parts on two sets
+    MergeTreeData::DataPartsVector parts_to_retry_deletion;
+    MergeTreeData::DataPartsVector parts_to_remove_from_filesystem;
+    for (auto & part : parts)
+    {
+        if (part_names_to_retry_deletion.count(part->name) == 0)
+            parts_to_remove_from_filesystem.emplace_back(part);
+        else
+            parts_to_retry_deletion.emplace_back(part);
+    }
+    parts.clear();
+
+    /// Will retry deletion
+    if (!parts_to_retry_deletion.empty())
+        data.rollbackDeletingParts(parts_to_retry_deletion);
+
+    /// Remove parts from filesystem and finally from data_parts
+    for (auto & part : parts_to_remove_from_filesystem)
+    {
+        try
+        {
+            part->remove();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "There is a problem with deleting part " + part->name + " from filesystem");
+            /// Assume that it is not critical case
+        }
+    }
+    data.removePartsFinally(parts_to_remove_from_filesystem);
+
+    LOG_DEBUG(log, "Removed " << parts_to_remove_from_filesystem.size() << " old parts");
 }
 
 
@@ -3925,7 +3927,8 @@ static int32_t tryMultiWithRetries(zkutil::ZooKeeperPtr & zookeeper, zkutil::Ops
 }
 
 
-void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names)
+void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
+                                                          NameSet * parts_should_be_retied)
 {
     zkutil::Ops ops;
     auto it_first_node_in_batch = part_names.cbegin();
@@ -3953,10 +3956,23 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
                     auto cur_code = tryMultiWithRetries(zookeeper, cur_ops);
 
                     if (cur_code == ZNONODE)
+                    {
                         LOG_DEBUG(log, "There is no part " << *it_in_batch << " in ZooKeeper, it was only in filesystem");
+                    }
+                    else if (parts_should_be_retied && zkutil::isHardwareErrorCode(cur_code))
+                    {
+                        parts_should_be_retied->emplace(*it_in_batch);
+                    }
                     else if (cur_code != ZOK)
+                    {
                         LOG_WARNING(log, "Cannot remove part " << *it_in_batch << " from ZooKeeper: " << ::zerror(cur_code));
+                    }
                 }
+            }
+            else if (parts_should_be_retied && zkutil::isHardwareErrorCode(code))
+            {
+                for (auto it_in_batch = it_first_node_in_batch; it_in_batch != it_next; ++it_in_batch)
+                    parts_should_be_retied->emplace(*it_in_batch);
             }
             else if (code != ZOK)
             {
