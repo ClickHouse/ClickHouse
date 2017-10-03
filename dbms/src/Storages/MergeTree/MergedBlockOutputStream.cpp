@@ -131,7 +131,6 @@ void IMergedBlockOutputStream::writeDataImpl(
     const ColumnPtr & offsets,
     OffsetColumns & offset_columns,
     size_t level,
-    bool write_array_data,
     bool skip_offsets)
 {
     /// NOTE: the parameter write_array_data indicates whether we call this method
@@ -152,10 +151,10 @@ void IMergedBlockOutputStream::writeDataImpl(
         ColumnStream & stream = *column_streams[filename];
         auto null_map_type = std::make_shared<DataTypeUInt8>();
 
-        writeColumn(nullable_col.getNullMapColumn(), null_map_type, stream, offsets, false);
+        writeColumn(nullable_col.getNullMapColumn(), null_map_type, stream, offsets);
 
         /// Then write data.
-        writeDataImpl(name, nested_type, nested_col, offsets, offset_columns, level, write_array_data, false);
+        writeDataImpl(name, nested_type, nested_col, offsets, offset_columns, level, false);
     }
     else if (auto type_arr = typeid_cast<const DataTypeArray *>(type.get()))
     {
@@ -172,13 +171,16 @@ void IMergedBlockOutputStream::writeDataImpl(
 
         if (offsets)
         {
+            /// Have offsets from prev level. Calculate offsets for next level.
             next_level_offsets = offsets->clone();
-            lengths_column = column_array.getLengthsColumn();
             const auto & array_offsets = column_array.getOffsets();
             auto & next_level_offsets_column = typeid_cast<ColumnArray::ColumnOffsets_t &>(*next_level_offsets);
             auto & next_level_offsets_data = next_level_offsets_column.getData();
             for (auto & offset : next_level_offsets_data)
                 offset = offset ? array_offsets[offset - 1] : 0;
+
+            /// Calculate lengths of arrays and write them as a new array.
+            lengths_column = column_array.getLengthsColumn();
         }
 
         if (!skip_offsets && offset_columns.count(size_name) == 0)
@@ -187,19 +189,19 @@ void IMergedBlockOutputStream::writeDataImpl(
 
             ColumnStream & stream = *column_streams[size_name];
             if (offsets)
-                writeColumn(lengths_column, offsets_data_type, stream, offsets, false);
+                writeColumn(lengths_column, offsets_data_type, stream, offsets);
             else
-                writeColumn(column, nullptr, stream, nullptr, true);
+                writeColumn(column, type, stream, nullptr);
         }
 
         writeDataImpl(name, type_arr->getNestedType(), column_array.getDataPtr(),
                       offsets ? next_level_offsets : column_array.getOffsetsColumn(),
-                      offset_columns, level + 1, true, false);
+                      offset_columns, level + 1, false);
     }
     else
     {
         ColumnStream & stream = *column_streams[name];
-        writeColumn(column, type, stream, offsets, false);
+        writeColumn(column, type, stream, offsets);
     }
 }
 
@@ -207,17 +209,20 @@ void IMergedBlockOutputStream::writeColumn(
         const ColumnPtr & column,
         const DataTypePtr & type,
         IMergedBlockOutputStream::ColumnStream & stream,
-        ColumnPtr offsets,
-        bool is_offset_column)
+        ColumnPtr offsets)
 {
-    DataTypePtr array_type;
+    std::shared_ptr<DataTypeArray> array_type_holder;
+    DataTypeArray * array_type;
     ColumnPtr array_column;
 
     if (offsets)
     {
-        array_type = std::make_shared<DataTypeArray>(type);
+        array_type_holder = std::make_shared<DataTypeArray>(type);
+        array_type = array_type_holder.get();
         array_column =  std::make_shared<ColumnArray>(column, offsets);
     }
+    else
+        array_type = typeid_cast<DataTypeArray *>(type.get());
 
     size_t size = offsets ? offsets->size() : column->size();
     size_t prev_mark = 0;
@@ -240,10 +245,10 @@ void IMergedBlockOutputStream::writeColumn(
             writeIntBinary(stream.compressed.offset(), stream.marks);
         }
 
-        if (is_offset_column)
-            static_cast<DataTypeArray *>(type.get())->serializeOffsets(*column, stream.compressed, prev_mark, limit);
-        else if (offsets)
+        if (offsets)
             array_type->serializeBinaryBulk(*array_column, stream.compressed, prev_mark, limit);
+        else if (array_type)
+            array_type->serializeOffsets(*column, stream.compressed, prev_mark, limit);
         else
             type->serializeBinaryBulk(*column, stream.compressed, prev_mark, limit);
 

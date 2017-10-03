@@ -86,11 +86,10 @@ protected:
 private:
     /// Internal version of writeData.
     void writeDataImpl(const String & name, const DataTypePtr & type, const ColumnPtr & column,
-                       const ColumnPtr & offsets, OffsetColumns & offset_columns,
-                       size_t level, bool write_array_data, bool skip_offsets);
-
-    void writeColumn(const ColumnPtr & column, const DataTypePtr & type, ColumnStream & stream,
-                     ColumnPtr offsets, bool is_offset_column);
+                       const ColumnPtr & offsets, OffsetColumns & offset_columns, size_t level, bool skip_offsets);
+    /// Writes column data into stream.
+    /// If type is Array, writes offsets only. To write array data, unpack array column and use offsets argument.
+    void writeColumn(const ColumnPtr & column, const DataTypePtr & type, ColumnStream & stream, ColumnPtr offsets);
 };
 
 
