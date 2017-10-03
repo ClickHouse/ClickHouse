@@ -17,7 +17,7 @@ namespace DB
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    PushingToViewsBlockOutputStream(String database, String table, const Context & context_, const ASTPtr & query_ptr_)
+    PushingToViewsBlockOutputStream(String database, String table, const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false)
         : context(context_), query_ptr(query_ptr_)
     {
         storage = context.getTable(database, table);
@@ -34,7 +34,9 @@ public:
                 dynamic_cast<const StorageMaterializedView &>(*context.getTable(database_table.first, database_table.second)).getInnerQuery(),
                 std::make_shared<PushingToViewsBlockOutputStream>(database_table.first, database_table.second, context, ASTPtr()));
 
-        output = storage->write(query_ptr, context.getSettingsRef());
+        /* Do not push to destination table if the flag is set */
+        if (!no_destination)
+            output = storage->write(query_ptr, context.getSettingsRef());
     }
 
     void write(const Block & block) override
