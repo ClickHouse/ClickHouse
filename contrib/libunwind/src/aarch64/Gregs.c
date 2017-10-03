@@ -55,6 +55,9 @@ tdep_access_reg (struct cursor *c, unw_regnum_t reg, unw_word_t *valp,
         loc = c->dwarf.loc[reg];
       break;
 
+    case UNW_AARCH64_X30:
+      if (write)
+        c->dwarf.ip = *valp;            /* update the IP cache */
     case UNW_AARCH64_X4:
     case UNW_AARCH64_X5:
     case UNW_AARCH64_X6:
@@ -81,7 +84,6 @@ tdep_access_reg (struct cursor *c, unw_regnum_t reg, unw_word_t *valp,
     case UNW_AARCH64_X27:
     case UNW_AARCH64_X28:
     case UNW_AARCH64_X29:
-    case UNW_AARCH64_X30:
     case UNW_AARCH64_PC:
     case UNW_AARCH64_PSTATE:
       loc = c->dwarf.loc[reg];
@@ -108,6 +110,9 @@ HIDDEN int
 tdep_access_fpreg (struct cursor *c, unw_regnum_t reg, unw_fpreg_t *valp,
                    int write)
 {
-  Debug (1, "bad register number %u\n", reg);
-  return -UNW_EBADREG;
+  dwarf_loc_t loc = c->dwarf.loc[reg];
+  if (write)
+    return dwarf_putfp (&c->dwarf, loc, *valp);
+  else
+    return dwarf_getfp (&c->dwarf, loc, valp);
 }
