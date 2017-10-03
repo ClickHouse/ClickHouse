@@ -38,6 +38,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 
 typedef enum
   {
+    UNW_ARM_FRAME_SYSCALL = -3,      /* r7 saved in r12, sp offset zero */
     UNW_ARM_FRAME_STANDARD = -2,     /* regular r7, sp +/- offset */
     UNW_ARM_FRAME_SIGRETURN = -1,    /* special sigreturn frame */
     UNW_ARM_FRAME_OTHER = 0,         /* not cacheable (special or unrecognised) */
@@ -48,7 +49,7 @@ unw_tdep_frame_type_t;
 typedef struct
   {
     uint32_t virtual_address;
-    int32_t frame_type     : 2;  /* unw_tdep_frame_type_t classification */
+    int32_t frame_type     : 3;  /* unw_tdep_frame_type_t classification */
     int32_t last_frame     : 1;  /* non-zero if last frame in chain */
     int32_t cfa_reg_sp     : 1;  /* cfa dwarf base register is sp vs. r7 */
     int32_t cfa_reg_offset : 30; /* cfa is at this offset from base register value */
@@ -86,7 +87,9 @@ struct cursor
         ARM_SCF_LINUX_SIGFRAME,         /* non-RT signal frame, kernel >=2.6.18 */
         ARM_SCF_LINUX_RT_SIGFRAME,      /* RT signal frame, kernel >=2.6.18 */
         ARM_SCF_LINUX_OLD_SIGFRAME,     /* non-RT signal frame, kernel < 2.6.18 */
-        ARM_SCF_LINUX_OLD_RT_SIGFRAME   /* RT signal frame, kernel < 2.6.18 */
+        ARM_SCF_LINUX_OLD_RT_SIGFRAME,  /* RT signal frame, kernel < 2.6.18 */
+        ARM_SCF_FREEBSD_SIGFRAME,	/* FreeBSD sigframe */
+	ARM_SCF_FREEBSD_SYSCALL,	/* FreeBSD syscall stub */
       }
     sigcontext_format;
     unw_word_t sigcontext_addr;
