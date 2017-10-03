@@ -53,8 +53,8 @@ public:
     Connection(const String & host_, UInt16 port_, const String & default_database_,
         const String & user_, const String & password_,
         const String & client_name_ = "client",
-        Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
-        Protocol::Encryption::Enum encryption_ = Protocol::Encryption::Disable,
+        Protocol::Compression compression_ = Protocol::Compression::Enable,
+        Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
         Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
         Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
         Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
@@ -81,8 +81,8 @@ public:
         const String & default_database_,
         const String & user_, const String & password_,
         const String & client_name_ = "client",
-        Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
-        Protocol::Encryption::Enum encryption_ = Protocol::Encryption::Disable,
+        Protocol::Compression compression_ = Protocol::Compression::Enable,
+        Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
         Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
         Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
         Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
@@ -220,8 +220,8 @@ private:
     std::shared_ptr<WriteBuffer> out;
 
     String query_id;
-    bool compression;        /// Enable data compression for communication.
-    bool encryption;             /// Enable data encryption for communication.
+    Protocol::Compression compression;        /// Enable data compression for communication.
+    Protocol::Encryption encryption;             /// Enable data encryption for communication.
     /// What compression algorithm to use while sending data for INSERT queries and external tables.
     CompressionMethod network_compression_method = CompressionMethod::LZ4;
 

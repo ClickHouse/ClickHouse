@@ -28,6 +28,7 @@ struct Progress;
 namespace ErrorCodes
 {
     extern const int OUTPUT_IS_NOT_SORTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 

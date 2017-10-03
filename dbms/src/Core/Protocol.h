@@ -109,24 +109,19 @@ namespace Protocol
     }
 
     /// Whether the compression must be used.
-    namespace Compression
+    enum class Compression
     {
-        enum Enum
-        {
-            Disable = 0,
-            Enable = 1,
-        };
-    }
+        Disable = 0,
+        Enable = 1,
+    };
 
     /// Whether the ssl must be used.
-    namespace Encryption
+    enum class Encryption
     {
-        enum Enum
-        {
-            Disable = 0,
-            Enable = 1,
-        };
-    }
+        Disable = 0,
+        Enable = 1,
+    };
+
 }
 
 }
