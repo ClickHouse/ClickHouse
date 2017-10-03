@@ -410,7 +410,7 @@ int Server::main(const std::vector<std::string> & args)
                     LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
                 }
 
-                /// TCP
+                /// TCP with SSL
                 if (config().has("tcp_ssl_port"))
                 {
 #if Poco_NetSSL_FOUND
