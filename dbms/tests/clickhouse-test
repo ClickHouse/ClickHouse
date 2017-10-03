@@ -18,6 +18,7 @@ from datetime import datetime
 from time import sleep
 from errno import ESRCH
 from termcolor import colored
+from random import random
 
 
 OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
@@ -89,6 +90,11 @@ def main(args):
 
     failures_total = 0
 
+    os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
+    os.environ.setdefault("CLICKHOUSE_BINARY", "clickhouse")
+    os.environ.setdefault("CLICKHOUSE_URL", "http://localhost:8123/")
+    os.environ.setdefault("CLICKHOUSE_CONFIG", "/etc/clickhouse-server/config.xml")
+
     for suite in sorted(os.listdir(base_dir)):
         if SERVER_DIED:
             break
@@ -109,6 +115,8 @@ def main(args):
             # Reverse sort order: we want run newest test first.
             # And not reverse subtests
             def key_func(item):
+                if args.random:
+                    return random()
                 prefix, suffix = item.split('_', 1)
                 return -int(prefix), suffix
             for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir)), key=key_func):
@@ -262,7 +270,8 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output', help = 'Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type = int, default = 600, help = 'Timeout for each test case in seconds')
     parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
-    parser.add_argument('--stop', action = 'store_true', default = None, dest = 'stop', help = 'Stop on network errors ')
+    parser.add_argument('--stop', action = 'store_true', default = None, dest = 'stop', help = 'Stop on network errors')
+    parser.add_argument('--random', action = 'store_true', default = None, dest = 'random', help = 'Randomize tests order')
 
     group = parser.add_mutually_exclusive_group(required = False)
     group.add_argument('--zookeeper', action = 'store_true', default = None, dest = 'zookeeper', help = 'Run zookeeper related tests')
