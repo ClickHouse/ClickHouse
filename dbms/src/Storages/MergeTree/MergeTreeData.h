@@ -100,6 +100,7 @@ public:
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
     using DataPartState = MergeTreeDataPart::State;
+    using DataPartStates = std::initializer_list<DataPartState>;
 
     struct DataPartPtrLess
     {
@@ -308,11 +309,11 @@ public:
     String getLogName() const { return log_name; }
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
-    DataParts getDataParts(std::initializer_list<DataPartState> affordable_states) const;
-    DataPartsVector getDataPartsVector(std::initializer_list<DataPartState> affordable_states) const;
+    DataParts getDataParts(const DataPartStates & affordable_states) const;
+    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states) const;
 
     /// Returns a virtual container iteration only through parts with specified states
-    decltype(auto) getDataPartsRange(std::initializer_list<DataPartState> affordable_states)
+    decltype(auto) getDataPartsRange(const DataPartStates & affordable_states) const
     {
         return createRangeFiltered(DataPart::getStatesFilter(affordable_states), data_parts);
     }
@@ -324,6 +325,15 @@ public:
     /// Returns all parts except Temporary and Deleting ones
     DataParts getAllDataParts() const;
 
+    /// Returns an comitted part with the given name or a part containing it. If there is no such part, returns nullptr.
+    DataPartPtr getActiveContainingPart(const String & part_name);
+
+    /// Returns the part with the given name (and state) or nullptr if no such part.
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
+
+    /// Returns committed part with the given name or nullptr if no such part.
+    DataPartPtr getPartIfExists(const String & part_name);
+
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
 
@@ -333,12 +343,6 @@ public:
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     void delayInsertIfNeeded(Poco::Event * until = nullptr);
 
-    /// Returns an active part with the given name or a part containing it. If there is no such part,
-    /// returns nullptr.
-    DataPartPtr getActiveContainingPart(const String & part_name);
-
-    /// Returns the part with the given name or nullptr if no such part.
-    DataPartPtr getPartIfExists(const String & part_name);
     DataPartPtr getShardedPartIfExists(const String & part_name, size_t shard_no);
 
     /// Renames temporary part to a permanent part and adds it to the working set.
@@ -413,12 +417,6 @@ public:
     void reportBrokenPart(const String & name)
     {
         broken_part_callback(name);
-    }
-
-    /// Delete old parts from disk and ZooKeeper (in replicated case)
-    void clearOldPartsAndRemoveFromZK()
-    {
-        parts_clean_callback();
     }
 
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
@@ -538,8 +536,6 @@ private:
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
-    /// Use to delete outdated parts immediately from memory, disk and ZooKeeper
-    PartsCleanCallback parts_clean_callback;
 
     String log_name;
     Logger * log;
