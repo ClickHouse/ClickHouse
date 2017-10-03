@@ -120,7 +120,7 @@ void IMergedBlockOutputStream::writeData(
     size_t level,
     bool skip_offsets)
 {
-    writeDataImpl(name, type, column, nullptr, offset_columns, level, false, skip_offsets);
+    writeDataImpl(name, type, column, nullptr, offset_columns, level, skip_offsets);
 }
 
 
@@ -154,7 +154,7 @@ void IMergedBlockOutputStream::writeDataImpl(
         writeColumn(nullable_col.getNullMapColumn(), null_map_type, stream, offsets);
 
         /// Then write data.
-        writeDataImpl(name, nested_type, nested_col, offsets, offset_columns, level, false);
+        writeDataImpl(name, nested_type, nested_col, offsets, offset_columns, level, skip_offsets);
     }
     else if (auto type_arr = typeid_cast<const DataTypeArray *>(type.get()))
     {
@@ -196,7 +196,7 @@ void IMergedBlockOutputStream::writeDataImpl(
 
         writeDataImpl(name, type_arr->getNestedType(), column_array.getDataPtr(),
                       offsets ? next_level_offsets : column_array.getOffsetsColumn(),
-                      offset_columns, level + 1, false);
+                      offset_columns, level + 1, skip_offsets);
     }
     else
     {
