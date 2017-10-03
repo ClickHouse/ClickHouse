@@ -107,7 +107,6 @@ MergeTreeData::MergeTreeData(
     database_name(database_), table_name(table_),
     full_path(full_path_), columns(columns_),
     broken_part_callback(broken_part_callback_),
-    parts_clean_callback(parts_clean_callback_ ? parts_clean_callback_ : [this](){ clearOldParts(); }),
     log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
     checkNoMultidimensionalArrays(*columns, attach);
@@ -1585,11 +1584,8 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
     std::lock_guard<std::mutex> lock(data_parts_mutex);
 
     size_t res = 0;
-    for (auto & part : data_parts)
-    {
-        if (part->state == DataPartState::Committed)
-            res += part->size_in_bytes;
-    }
+    for (auto & part : getDataPartsRange({DataPartState::Committed}))
+        res += part->size_in_bytes;
 
     return res;
 }
@@ -1603,11 +1599,8 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
     size_t cur_count = 0;
     const String * cur_partition_id = nullptr;
 
-    for (const auto & part : data_parts)
+    for (const auto & part : getDataPartsRange({DataPartState::Committed}))
     {
-        if (part->state != DataPartState::Committed)
-            continue;
-
         if (cur_partition_id && part->info.partition_id == *cur_partition_id)
         {
             ++cur_count;
@@ -1683,16 +1676,24 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     return nullptr;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name)
+
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name, const MergeTreeData::DataPartStates & valid_states)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
     std::lock_guard<std::mutex> lock(data_parts_mutex);
-    auto it = data_parts.lower_bound(part_info);
-    if (it != data_parts.end() && (*it)->name == part_name && (*it)->state == DataPartState::Committed)
+
+    auto filtered_parts = getDataPartsRange(valid_states);
+    auto it = filtered_parts.convert(data_parts.find(part_info));
+    if (it != filtered_parts.end() && (*it)->name == part_name)
         return *it;
 
     return nullptr;
+}
+
+MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name)
+{
+    return getPartIfExists(part_name, {DataPartState::Committed});
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & part_name, size_t shard_no)
@@ -1971,7 +1972,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     return partition_id;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(std::initializer_list<DataPartState> affordable_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartStates & affordable_states) const
 {
     DataPartsVector res;
     {
@@ -1982,7 +1983,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(std::initialize
     return res;
 }
 
-MergeTreeData::DataParts MergeTreeData::getDataParts(std::initializer_list<DataPartState> affordable_states) const
+MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
 {
     DataParts res;
     {
@@ -2021,7 +2022,6 @@ MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
         return *it;
     return {};
 }
-
 
 void MergeTreeData::Transaction::rollback()
 {

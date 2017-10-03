@@ -10,7 +10,7 @@ struct RangeFiltered
     class Iterator;
 
     /// Will iterate over elements for which filter(*it) == true
-    RangeFiltered(F && filter, C & container)
+    RangeFiltered(F && filter, const C & container)
             : filter(std::move(filter)), container(container) {}
 
     Iterator begin() const
@@ -114,7 +114,7 @@ struct RangeFiltered
 
 protected:
     F filter;
-    C & container;
+    const C & container;
 };
 
 

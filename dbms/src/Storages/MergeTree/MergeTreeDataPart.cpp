@@ -536,8 +536,8 @@ size_t MergeTreeDataPart::calcTotalSize(const String & from)
     std::vector<std::string> files;
     cur.list(files);
     size_t res = 0;
-    for (size_t i = 0; i < files.size(); ++i)
-        res += calcTotalSize(from + files[i]);
+    for (const auto & file : files)
+        res += calcTotalSize(from + file);
     return res;
 }
 
