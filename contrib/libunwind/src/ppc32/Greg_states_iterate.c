@@ -1,6 +1,8 @@
 /* libunwind - a platform-independent unwind library
-   Copyright (c) 2003-2005 Hewlett-Packard Development Company, L.P.
-	Contributed by David Mosberger-Tang <davidm@hpl.hp.com>
+   Copyright (c) 2002-2003 Hewlett-Packard Development Company, L.P.
+        Contributed by David Mosberger-Tang <davidm@hpl.hp.com>
+
+   Modified for x86_64 by Max Asbock <masbock@us.ibm.com>
 
 This file is part of libunwind.
 
@@ -23,19 +25,13 @@ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 
-#include "dwarf.h"
-#include "libunwind_i.h"
+#include "unwind_i.h"
 
-HIDDEN int
-dwarf_step (struct dwarf_cursor *c)
+PROTECTED int
+unw_reg_states_iterate (unw_cursor_t *cursor,
+			unw_reg_states_callback cb, void *token)
 {
-  int ret;
+  struct cursor *c = (struct cursor *) cursor;
 
-  if ((ret = dwarf_find_save_locs (c)) >= 0) {
-    c->pi_valid = 0;
-    ret = (c->ip == 0) ? 0 : 1;
-  }
-
-  Debug (15, "returning %d\n", ret);
-  return ret;
+  return dwarf_reg_states_iterate (&c->dwarf, cb, token);
 }

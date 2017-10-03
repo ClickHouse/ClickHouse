@@ -32,7 +32,7 @@ is_cie_id (unw_word_t val, int is_debug_frame)
      0xffffffffffffffff (for 64-bit ELF).  However, .eh_frame
      uses 0.  */
   if (is_debug_frame)
-    return (val == - (uint32_t) 1 || val == - (uint64_t) 1);
+      return (val == (uint32_t)(-1) || val == (uint64_t)(-1));
   else
     return (val == 0);
 }

@@ -49,6 +49,7 @@ unwi_extract_dynamic_proc_info (unw_addr_space_t as, unw_word_t ip,
 
     case UNW_INFO_FORMAT_TABLE:
     case UNW_INFO_FORMAT_REMOTE_TABLE:
+    case UNW_INFO_FORMAT_ARM_EXIDX:
     case UNW_INFO_FORMAT_IP_OFFSET:
 #ifdef tdep_search_unwind_table
       /* call platform-specific search routine: */
