@@ -76,7 +76,7 @@ _UCD_access_reg (unw_addr_space_t as,
   default:
       Debug(0, "bad regnum:%d\n", regnum);
       return -UNW_EINVAL;
-  };
+  }
 #elif defined(UNW_TARGET_X86_64)
   switch (regnum) {
   case UNW_X86_64_RAX:
@@ -109,7 +109,26 @@ _UCD_access_reg (unw_addr_space_t as,
   default:
       Debug(0, "bad regnum:%d\n", regnum);
       return -UNW_EINVAL;
-  };
+  }
+#elif defined(UNW_TARGET_ARM)
+  if (regnum >= UNW_ARM_R0 && regnum <= UNW_ARM_R12) {
+     *valp = ui->prstatus->pr_reg.r[regnum];
+  } else {
+     switch (regnum) {
+     case UNW_ARM_R13:
+       *valp = ui->prstatus->pr_reg.r_sp;
+       break;
+     case UNW_ARM_R14:
+       *valp = ui->prstatus->pr_reg.r_lr;
+       break;
+     case UNW_ARM_R15:
+       *valp = ui->prstatus->pr_reg.r_pc;
+       break;
+     default:
+       Debug(0, "bad regnum:%d\n", regnum);
+       return -UNW_EINVAL;
+     }
+  }
 #else
 #error Port me
 #endif

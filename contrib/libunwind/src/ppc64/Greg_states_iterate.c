@@ -1,6 +1,8 @@
 /* libunwind - a platform-independent unwind library
-   Copyright (C) 2008 CodeSourcery
-   Copyright 2011 Linaro Limited
+   Copyright (c) 2002-2003 Hewlett-Packard Development Company, L.P.
+        Contributed by David Mosberger-Tang <davidm@hpl.hp.com>
+
+   Modified for x86_64 by Max Asbock <masbock@us.ibm.com>
 
 This file is part of libunwind.
 
@@ -24,55 +26,12 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 
 #include "unwind_i.h"
-#include "init.h"
-
-#ifdef UNW_REMOTE_ONLY
 
 PROTECTED int
-unw_init_local (unw_cursor_t *cursor, unw_context_t *uc)
-{
-  return -UNW_EINVAL;
-}
-
-#else /* !UNW_REMOTE_ONLY */
-
-static int
-unw_init_local (unw_cursor_t *cursor, unw_context_t *uc, unsigned use_prev_instr)
+unw_reg_states_iterate (unw_cursor_t *cursor,
+			unw_reg_states_callback cb, void *token)
 {
   struct cursor *c = (struct cursor *) cursor;
 
-  if (!tdep_init_done)
-    tdep_init ();
-
-  Debug (1, "(cursor=%p)\n", c);
-
-  c->dwarf.as = unw_local_addr_space;
-  c->dwarf.as_arg = uc;
-
-  return common_init (c, use_prev_instr);
+  return dwarf_reg_states_iterate (&c->dwarf, cb, token);
 }
-
-PROTECTED int
-unw_init_local (unw_cursor_t *cursor, unw_context_t *uc)
-{
-  return unw_init_local_common(cursor, uc, 1);
-}
-
-PROTECTED int
-unw_init_local2 (unw_cursor_t *cursor, ucontext_t *uc, int flag)
-{
-  if (!flag)
-    {
-      return unw_init_local_common(cursor, uc, 1);
-    }
-  else if (flag == UNW_INIT_SIGNAL_FRAME)
-    {
-      return unw_init_local_common(cursor, uc, 0);
-    }
-  else
-    {
-      return -UNW_EINVAL;
-    }
-}
-
-#endif /* !UNW_REMOTE_ONLY */
