@@ -49,8 +49,8 @@ public:
             const String & default_database_,
             const String & user_, const String & password_,
             const String & client_name_ = "client",
-            Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
-            Protocol::Encryption::Enum encryption_ = Protocol::Encryption::Disable,
+            Protocol::Compression compression_ = Protocol::Compression::Enable,
+            Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
             Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
             Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
             Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
@@ -67,8 +67,8 @@ public:
             const String & default_database_,
             const String & user_, const String & password_,
             const String & client_name_ = "client",
-            Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
-            Protocol::Encryption::Enum encryption_ = Protocol::Encryption::Disable,
+            Protocol::Compression compression_ = Protocol::Compression::Enable,
+            Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
             Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
             Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
             Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0))
@@ -123,8 +123,8 @@ private:
     Poco::Net::SocketAddress resolved_address;
 
     String client_name;
-    Protocol::Compression::Enum compression;        /// Whether to compress data when interacting with the server.
-    Protocol::Encryption::Enum encryption;          /// Whether to encrypt data when interacting with the server.
+    Protocol::Compression compression;        /// Whether to compress data when interacting with the server.
+    Protocol::Encryption encryption;          /// Whether to encrypt data when interacting with the server.
 
     Poco::Timespan connect_timeout;
     Poco::Timespan receive_timeout;

@@ -54,7 +54,7 @@ void Connection::connect()
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user);
 
-        socket = encryption ? std::make_unique<Poco::Net::SecureStreamSocket>() : std::make_unique<Poco::Net::StreamSocket>();
+        socket = static_cast<bool>(encryption) ? std::make_unique<Poco::Net::SecureStreamSocket>() : std::make_unique<Poco::Net::StreamSocket>();
         socket->connect(resolved_address, connect_timeout);
         socket->setReceiveTimeout(receive_timeout);
         socket->setSendTimeout(send_timeout);
@@ -346,7 +346,7 @@ void Connection::sendQuery(
         writeStringBinary("", *out);
 
     writeVarUInt(stage, *out);
-    writeVarUInt(compression, *out);
+    writeVarUInt(static_cast<bool>(compression), *out);
 
     writeStringBinary(query, *out);
 
