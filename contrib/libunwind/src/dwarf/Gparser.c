@@ -278,7 +278,7 @@ run_cfi_program (struct dwarf_cursor *c, dwarf_state_record_t *sr,
               ret = -UNW_ENOMEM;
               break;
 	    }
-          memcpy (&(*rs_stack)->state, &sr->rs_current, sizeof (sr->rs_current))
+          memcpy (&(*rs_stack)->state, &sr->rs_current, sizeof (sr->rs_current));
           Debug (15, "CFA_remember_state\n");
           break;
 
@@ -289,8 +289,10 @@ run_cfi_program (struct dwarf_cursor *c, dwarf_state_record_t *sr,
               ret = -UNW_EINVAL;
               break;
             }
-          memcpy (&sr->rs_current, &(*rs_stack)->state, sizeof (sr->rs_current));
-	  pop_rstate_stack(rs_stack);
+          if (*ip < end_ip) {
+            memcpy (&sr->rs_current, &(*rs_stack)->state, sizeof (sr->rs_current));
+            pop_rstate_stack(rs_stack);
+          }
           Debug (15, "CFA_restore_state\n");
           break;
 
@@ -606,7 +608,17 @@ get_rs_cache (unw_addr_space_t as, intrmask_t *saved_maskp)
   if (caching == UNW_CACHE_NONE)
     return NULL;
 
+#if defined(HAVE___THREAD) && HAVE___THREAD
+  if (likely (caching == UNW_CACHE_PER_THREAD))
+    {
+      static __thread struct dwarf_rs_cache tls_cache __attribute__((tls_model("initial-exec")));
+      Debug (16, "using TLS cache\n");
+      cache = &tls_cache;
+    }
+  else
+#else
   if (likely (caching == UNW_CACHE_GLOBAL))
+#endif
     {
       Debug (16, "acquiring lock\n");
       lock_acquire (&cache->lock, *saved_maskp);
@@ -615,6 +627,8 @@ get_rs_cache (unw_addr_space_t as, intrmask_t *saved_maskp)
   if ((atomic_read (&as->cache_generation) != atomic_read (&cache->generation))
        || !cache->hash)
     {
+      /* cache_size is only set in the global_cache, copy it over before flushing */
+      cache->log_size = as->global_cache.log_size;
       if (dwarf_flush_rs_cache (cache) < 0)
         return NULL;
       cache->generation = as->cache_generation;
@@ -679,7 +693,7 @@ rs_new (struct dwarf_rs_cache *cache, struct dwarf_cursor * c)
   unsigned short head;
 
   head = cache->rr_head;
-  cache->rr_head = (head + 1) & (cache->log_size - 1);
+  cache->rr_head = (head + 1) & (DWARF_UNW_CACHE_SIZE(cache->log_size) - 1);
 
   /* remove the old rs from the hash table (if it's there): */
   if (cache->links[head].ip)
@@ -885,7 +899,7 @@ find_reg_state (struct dwarf_cursor *c, dwarf_state_record_t *sr)
   int ret = 0;
   intrmask_t saved_mask;
 
-  if ((cache = get_rs_cache(c->as, &saved_mask)) && 
+  if ((cache = get_rs_cache(c->as, &saved_mask)) &&
       (rs = rs_lookup(cache, c)))
     {
       /* update hint; no locking needed: single-word writes are atomic */
@@ -951,7 +965,7 @@ dwarf_make_proc_info (struct dwarf_cursor *c)
      needed for unw_resume */
   dwarf_state_record_t sr;
   int ret;
-  
+
   /* Lookup it up the slow way... */
   ret = fetch_proc_info (c, c->ip, 0);
   if (ret >= 0)
@@ -1018,11 +1032,11 @@ dwarf_reg_states_iterate(struct dwarf_cursor *c,
       case UNW_INFO_FORMAT_REMOTE_TABLE:
 	ret = dwarf_reg_states_table_iterate(c, cb, token);
 	break;
-	  
+
       case UNW_INFO_FORMAT_DYNAMIC:
 	ret = dwarf_reg_states_dynamic_iterate (c, cb, token);
 	break;
-	  
+
       default:
 	Debug (1, "Unexpected unwind-info format %d\n", c->pi.format);
 	ret = -UNW_EINVAL;

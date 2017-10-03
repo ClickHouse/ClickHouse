@@ -199,7 +199,7 @@ locate_debug_info (unw_addr_space_t as, unw_word_t addr, const char *dlname,
     name = (char*) dlname;
 
   err = load_debug_frame (name, &buf, &bufsize, as == unw_local_addr_space);
-  
+
   if (!err)
     {
       fdesc = malloc (sizeof (struct unw_debug_frame_list));
@@ -210,10 +210,10 @@ locate_debug_info (unw_addr_space_t as, unw_word_t addr, const char *dlname,
       fdesc->debug_frame_size = bufsize;
       fdesc->index = NULL;
       fdesc->next = as->debug_frames;
-      
+
       as->debug_frames = fdesc;
     }
-  
+
   return fdesc;
 }
 
@@ -235,10 +235,10 @@ debug_frame_tab_append (struct debug_frame_tab *tab,
       tab->size *= 2;
       tab->tab = realloc (tab->tab, sizeof (struct table_entry) * tab->size);
     }
-  
+
   tab->tab[length].fde_offset = fde_offset;
   tab->tab[length].start_ip_offset = start_ip;
-  
+
   tab->length = length + 1;
 }
 
@@ -256,7 +256,7 @@ static int
 debug_frame_tab_compare (const void *a, const void *b)
 {
   const struct table_entry *fa = a, *fb = b;
-  
+
   if (fa->start_ip_offset > fb->start_ip_offset)
     return 1;
   else if (fa->start_ip_offset < fb->start_ip_offset)
@@ -522,7 +522,7 @@ dwarf_callback (struct dl_phdr_info *info, size_t size, void *ptr)
       else if (phdr->p_type == PT_DYNAMIC)
         p_dynamic = phdr;
     }
-  
+
   if (!p_text)
     return 0;
 
@@ -537,14 +537,14 @@ dwarf_callback (struct dl_phdr_info *info, size_t size, void *ptr)
       eh_frame = dwarf_find_eh_frame_section (info);
       if (eh_frame)
         {
-          unsigned char *p = (unsigned char *) &synth_eh_frame_hdr;
           Debug (1, "using synthetic .eh_frame_hdr section for %s\n",
                  info->dlpi_name);
-          /* synth_eh_frame_hdr.version */ p[0] = DW_EH_VERSION;
-          /* synth_eh_frame_hdr.eh_frame_ptr_enc */ p[1] = DW_EH_PE_absptr | ((sizeof(Elf_W (Addr)) == 4) ? DW_EH_PE_udata4 : DW_EH_PE_udata8);
-          /* synth_eh_frame_hdr.fde_count_enc */  p[2] = DW_EH_PE_omit;
-          /* synth_eh_frame_hdr.table_enc */  p[3] = DW_EH_PE_omit;
-          *(Elf_W (Addr) *)(&p[4]) = eh_frame;
+	  synth_eh_frame_hdr.version = DW_EH_VERSION;
+	  synth_eh_frame_hdr.eh_frame_ptr_enc = DW_EH_PE_absptr |
+	    ((sizeof(Elf_W (Addr)) == 4) ? DW_EH_PE_udata4 : DW_EH_PE_udata8);
+          synth_eh_frame_hdr.fde_count_enc = DW_EH_PE_omit;
+          synth_eh_frame_hdr.table_enc = DW_EH_PE_omit;
+	  synth_eh_frame_hdr.eh_frame = eh_frame;
           hdr = &synth_eh_frame_hdr;
         }
     }
@@ -581,7 +581,7 @@ dwarf_callback (struct dl_phdr_info *info, size_t size, void *ptr)
         }
 
       a = unw_get_accessors (unw_local_addr_space);
-      addr = (unw_word_t) (uintptr_t) (hdr + 1);
+      addr = (unw_word_t) (uintptr_t) (&hdr->eh_frame);
 
       /* (Optionally) read eh_frame_ptr: */
       if ((ret = dwarf_read_encoded_pointer (unw_local_addr_space, a,
@@ -618,12 +618,13 @@ dwarf_callback (struct dl_phdr_info *info, size_t size, void *ptr)
 
           /* XXX we know how to build a local binary search table for
              .debug_frame, so we could do that here too.  */
-          cb_data->single_fde = 1;
           found = linear_search (unw_local_addr_space, ip,
                                  eh_frame_start, eh_frame_end, fde_count,
                                  pi, need_unwind_info, NULL);
           if (found != 1)
             found = 0;
+	  else
+	    cb_data->single_fde = 1;
         }
       else
         {

@@ -31,7 +31,7 @@ unw_set_caching_policy (unw_addr_space_t as, unw_caching_policy_t policy)
   if (!tdep_init_done)
     tdep_init ();
 
-#ifndef HAVE___THREAD
+#if !(defined(HAVE___THREAD) && HAVE___THREAD)
   if (policy == UNW_CACHE_PER_THREAD)
     policy = UNW_CACHE_GLOBAL;
 #endif
