@@ -2155,6 +2155,14 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 
 bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum)
 {
+    if (auto part = data.getPartIfExists(part_name, {MergeTreeDataPart::State::Outdated, MergeTreeDataPart::State::Deleting}))
+    {
+        LOG_DEBUG(log, "Part " << part->getNameWithState() << " should be deleted after previous attempt before fetch");
+        /// Force premature parts cleanup
+        cleanup_thread_event.set();
+        return false;
+    }
+
     {
         std::lock_guard<std::mutex> lock(currently_fetching_parts_mutex);
         if (!currently_fetching_parts.insert(part_name).second)
