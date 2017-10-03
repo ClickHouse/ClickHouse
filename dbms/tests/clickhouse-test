@@ -232,6 +232,9 @@ def main(args):
                                             os.remove(stdout_file)
                                         if os.path.exists(stderr_file):
                                             os.remove(stderr_file)
+                    except KeyboardInterrupt as e:
+                        print(colored("Break tests execution", "red"))
+                        raise e
                     except:
                         (exc_type, exc_value) = sys.exc_info()[:2]
                         error = et.Element("error", attrib = {"type": exc_type.__name__, "message": str(exc_value)})
