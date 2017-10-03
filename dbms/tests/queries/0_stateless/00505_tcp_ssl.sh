@@ -9,6 +9,6 @@ if [ -z ${tcp_ssl_port} ]; then
     echo 2
 else
     # Auto port detect
-    clickhouse-client --secure -q "SELECT 1";
-    clickhouse-client --secure --port=9440 -q "SELECT 2";
+    clickhouse-client --ssl -q "SELECT 1";
+    clickhouse-client --ssl --port=9440 -q "SELECT 2";
 fi

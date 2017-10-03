@@ -1352,8 +1352,8 @@ public:
 
         if (options.count("port") && !options["port"].defaulted())
             config().setInt("port", options["port"].as<int>());
-        if (options.count("secure"))
-            config().setBool("secure", true);
+        if (options.count("ssl"))
+            config().setBool("ssl", true);
         if (options.count("user"))
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))
