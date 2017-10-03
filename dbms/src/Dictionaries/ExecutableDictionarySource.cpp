@@ -1,16 +1,12 @@
 #include <thread>
 #include <future>
-
 #include <Dictionaries/ExecutableDictionarySource.h>
-
 #include <Common/ShellCommand.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>
-
 #include <common/logger_useful.h>
 
 
@@ -23,7 +19,8 @@ static const size_t max_block_size = 8192;
 class ShellCommandOwningBlockInputStream : public OwningBlockInputStream<ShellCommand>
 {
 public:
-    ShellCommandOwningBlockInputStream(const BlockInputStreamPtr & stream, std::unique_ptr<ShellCommand> own) : OwningBlockInputStream(std::move(stream), std::move(own))
+    ShellCommandOwningBlockInputStream(const BlockInputStreamPtr & stream, std::unique_ptr<ShellCommand> own)
+    : OwningBlockInputStream(std::move(stream), std::move(own))
     {
     }
 
