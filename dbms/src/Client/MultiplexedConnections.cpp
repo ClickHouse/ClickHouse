@@ -301,10 +301,12 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
     }
 
     auto & socket = read_list[rand() % read_list.size()];
-    if (fd_to_replica_state_idx.empty()) {
+    if (fd_to_replica_state_idx.empty())
+    {
         fd_to_replica_state_idx.reserve(replica_states.size());
-        int replica_state_number = 0;
-        for (auto & replica_state : replica_states) {
+        size_t replica_state_number = 0;
+        for (auto & replica_state : replica_states)
+        {
             fd_to_replica_state_idx.emplace(replica_state.connection->socket->impl()->sockfd(), replica_state_number);
             ++replica_state_number;
         }
