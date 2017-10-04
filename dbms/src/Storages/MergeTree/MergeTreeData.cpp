@@ -1977,8 +1977,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
     DataPartsVector res;
     {
         std::lock_guard<std::mutex> lock(data_parts_mutex);
-        std::copy_if(data_parts.begin(), data_parts.end(), std::back_inserter(res),
-                     DataPart::getStatesFilter({DataPartState::Committed}));
+        std::copy_if(data_parts.begin(), data_parts.end(), std::back_inserter(res), DataPart::getStatesFilter(affordable_states));
     }
     return res;
 }
@@ -1988,8 +1987,7 @@ MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affo
     DataParts res;
     {
         std::lock_guard<std::mutex> lock(data_parts_mutex);
-        std::copy_if(data_parts.begin(), data_parts.end(), std::inserter(res, res.end()),
-                     DataPart::getStatesFilter({DataPartState::Committed}));
+        std::copy_if(data_parts.begin(), data_parts.end(), std::inserter(res, res.end()), DataPart::getStatesFilter(affordable_states));
     }
     return res;
 }
