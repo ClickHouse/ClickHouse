@@ -396,6 +396,7 @@ int Server::main(const std::vector<std::string> & args)
                 /// TCP
                 if (config().has("tcp_port"))
                 {
+                    std::call_once(ssl_init_once, SSLInit);
                     Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_port"));
                     Poco::Net::ServerSocket tcp_socket(tcp_address);
                     tcp_socket.setReceiveTimeout(settings.receive_timeout);
@@ -407,6 +408,26 @@ int Server::main(const std::vector<std::string> & args)
                         new Poco::Net::TCPServerParams));
 
                     LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
+                }
+
+                /// TCP with SSL
+                if (config().has("tcp_ssl_port"))
+                {
+#if Poco_NetSSL_FOUND
+                    Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_ssl_port"));
+                    Poco::Net::SecureServerSocket tcp_socket(tcp_address);
+                    tcp_socket.setReceiveTimeout(settings.receive_timeout);
+                    tcp_socket.setSendTimeout(settings.send_timeout);
+                    servers.emplace_back(new Poco::Net::TCPServer(
+                        new TCPHandlerFactory(*this),
+                                                                  server_pool,
+                                                                  tcp_socket,
+                                                                  new Poco::Net::TCPServerParams));
+                    LOG_INFO(log, "Listening tcp_ssl: " + tcp_address.toString());
+#else
+                    throw Exception{"tcp_ssl protocol disabled because poco library built without NetSSL support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
                 }
 
                 /// At least one of TCP and HTTP servers must be created.
