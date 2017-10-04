@@ -61,6 +61,10 @@ static void skipColonDelimeter(ReadBuffer & istr)
 bool JSONEachRowRowInputStream::read(Block & block)
 {
     skipWhitespaceIfAny(istr);
+    if (!istr.eof() && (*istr.position() == ',' || *istr.position() == ';'))    /// Semicolon is added for convenience as it could be used at end of INSERT query.
+        ++istr.position();
+
+    skipWhitespaceIfAny(istr);
     if (istr.eof())
         return false;
 
@@ -122,10 +126,6 @@ bool JSONEachRowRowInputStream::read(Block & block)
         auto & col = block.getByPosition(index);
         col.type->deserializeTextJSON(*col.column, istr);
     }
-
-    skipWhitespaceIfAny(istr);
-    if (!istr.eof() && (*istr.position() == ',' || *istr.position() == ';'))    /// Semicolon is added for convenience as it could be used at end of INSERT query.
-        ++istr.position();
 
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < columns; ++i)
