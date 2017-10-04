@@ -305,7 +305,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
     {
         fd_to_replica_state_idx.reserve(replica_states.size());
         size_t replica_state_number = 0;
-        for (auto & replica_state : replica_states)
+        for (const auto & replica_state : replica_states)
         {
             fd_to_replica_state_idx.emplace(replica_state.connection->socket->impl()->sockfd(), replica_state_number);
             ++replica_state_number;
