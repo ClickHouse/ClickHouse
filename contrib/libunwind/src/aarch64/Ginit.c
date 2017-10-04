@@ -43,8 +43,10 @@ PROTECTED unw_addr_space_t unw_local_addr_space = &local_addr_space;
 static inline void *
 uc_addr (ucontext_t *uc, int reg)
 {
-  if (reg >= UNW_AARCH64_X0 && reg <= UNW_AARCH64_V31)
+  if (reg >= UNW_AARCH64_X0 && reg < UNW_AARCH64_V0)
     return &uc->uc_mcontext.regs[reg];
+  else if (reg >= UNW_AARCH64_V0 && reg <= UNW_AARCH64_V31)
+    return &GET_FPCTX(uc)->vregs[reg - UNW_AARCH64_V0];
   else
     return NULL;
 }
@@ -172,7 +174,7 @@ HIDDEN void
 aarch64_local_addr_space_init (void)
 {
   memset (&local_addr_space, 0, sizeof (local_addr_space));
-  local_addr_space.caching_policy = UNW_CACHE_GLOBAL;
+  local_addr_space.caching_policy = UNWI_DEFAULT_CACHING_POLICY;
   local_addr_space.acc.find_proc_info = dwarf_find_proc_info;
   local_addr_space.acc.put_unwind_info = put_unwind_info;
   local_addr_space.acc.get_dyn_info_list_addr = get_dyn_info_list_addr;

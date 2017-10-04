@@ -503,7 +503,7 @@ tdep_trace (unw_cursor_t *cursor, void **buffer, int *size)
 
     case UNW_ARM_FRAME_SIGRETURN:
       cfa = cfa + f->cfa_reg_offset; /* cfa now points to ucontext_t.  */
-
+#if defined(__linux__)
       ACCESS_MEM_FAST(ret, c->validate, d, cfa + LINUX_SC_PC_OFF, pc);
       if (likely(ret >= 0))
         ACCESS_MEM_FAST(ret, c->validate, d, cfa + LINUX_SC_R7_OFF, r7);
@@ -513,6 +513,9 @@ tdep_trace (unw_cursor_t *cursor, void **buffer, int *size)
          doesn't save the link register in the prologue, e.g. kill. */
       if (likely(ret >= 0))
         ACCESS_MEM_FAST(ret, c->validate, d, cfa + LINUX_SC_LR_OFF, lr);
+#elif defined(__FreeBSD__)
+      printf("XXX\n");
+#endif
 
       /* Resume stack at signal restoration point. The stack is not
          necessarily continuous here, especially with sigaltstack(). */
@@ -520,6 +523,10 @@ tdep_trace (unw_cursor_t *cursor, void **buffer, int *size)
 
       /* Next frame should not back up. */
       d->use_prev_instr = 0;
+      break;
+
+    case UNW_ARM_FRAME_SYSCALL:
+      printf("XXX1\n");
       break;
 
     default:
