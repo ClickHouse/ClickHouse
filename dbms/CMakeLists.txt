@@ -182,6 +182,10 @@ if (USE_ICU)
     target_link_libraries (dbms ${ICU_LIBS})
 endif ()
 
+if (USE_CAPNP)
+    target_link_libraries (dbms ${CAPNP_LIBS})
+endif ()
+
 target_link_libraries (dbms
     ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
