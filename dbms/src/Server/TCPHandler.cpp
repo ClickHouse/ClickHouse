@@ -597,7 +597,7 @@ void TCPHandler::receiveQuery()
     state.stage = QueryProcessingStage::Enum(stage);
 
     readVarUInt(compression, *in);
-    state.compression = Protocol::Compression::Enum(compression);
+    state.compression = static_cast<Protocol::Compression>(compression);
 
     readStringBinary(state.query, *in);
 }
