@@ -375,13 +375,17 @@ private:
 
     void connect()
     {
+        auto encryption = config().getBool("ssl", false)
+        ? Protocol::Encryption::Enable
+        : Protocol::Encryption::Disable;
+
         String host = config().getString("host", "localhost");
-        UInt16 port = config().getInt("port", DBMS_DEFAULT_PORT);
+        UInt16 port = config().getInt("port", config().getInt(static_cast<bool>(encryption) ? "tcp_ssl_port" : "tcp_port", static_cast<bool>(encryption) ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
         String default_database = config().getString("database", "");
         String user = config().getString("user", "");
         String password = config().getString("password", "");
 
-        Protocol::Compression::Enum compression = config().getBool("compression", true)
+        auto compression = config().getBool("compression", true)
             ? Protocol::Compression::Enable
             : Protocol::Compression::Disable;
 
@@ -393,6 +397,7 @@ private:
                 << "." << std::endl;
 
         connection = std::make_unique<Connection>(host, port, default_database, user, password, "client", compression,
+            encryption,
             Poco::Timespan(config().getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
@@ -1246,6 +1251,7 @@ public:
             ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
             ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
             ("port", boost::program_options::value<int>()->default_value(9000), "server port")
+            ("ssl,s", "ssl")
             ("user,u", boost::program_options::value<std::string>(), "user")
             ("password", boost::program_options::value<std::string>(), "password")
             ("query,q", boost::program_options::value<std::string>(), "query")
@@ -1346,6 +1352,8 @@ public:
 
         if (options.count("port") && !options["port"].defaulted())
             config().setInt("port", options["port"].as<int>());
+        if (options.count("ssl"))
+            config().setBool("ssl", true);
         if (options.count("user"))
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))
