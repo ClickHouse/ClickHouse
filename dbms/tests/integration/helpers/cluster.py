@@ -176,6 +176,7 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
         entrypoint:
             -  /usr/bin/clickhouse
+            -  server
             -  --config-file=/etc/clickhouse-server/config.xml
             -  --log-file=/var/log/clickhouse-server/clickhouse-server.log
         depends_on: {depends_on}
