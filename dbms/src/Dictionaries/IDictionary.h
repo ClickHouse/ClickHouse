@@ -57,9 +57,9 @@ struct IDictionaryBase : public IExternalLoadable
 
     bool supportUpdates() const override { return !isCached(); }
 
-    virtual std::shared_ptr<IExternalLoadable> cloneObject() const override
+    virtual std::unique_ptr<IExternalLoadable> cloneObject() const override
     {
-        return std::static_pointer_cast<IDictionaryBase>(clone());
+        return clone();
     };
 
     std::shared_ptr<IDictionaryBase> shared_from_this()

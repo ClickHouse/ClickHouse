@@ -33,7 +33,7 @@ public:
 
     virtual bool isModified() const = 0;
 
-    virtual std::shared_ptr<IExternalLoadable> cloneObject() const = 0;
+    virtual std::unique_ptr<IExternalLoadable> cloneObject() const = 0;
 
     virtual std::exception_ptr getCreationException() const = 0;
 };
