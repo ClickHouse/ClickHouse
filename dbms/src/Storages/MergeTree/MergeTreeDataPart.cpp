@@ -536,8 +536,8 @@ size_t MergeTreeDataPart::calcTotalSize(const String & from)
     std::vector<std::string> files;
     cur.list(files);
     size_t res = 0;
-    for (size_t i = 0; i < files.size(); ++i)
-        res += calcTotalSize(from + files[i]);
+    for (const auto & file : files)
+        res += calcTotalSize(from + file);
     return res;
 }
 
@@ -577,6 +577,7 @@ void MergeTreeDataPart::remove() const
         LOG_WARNING(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
             " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
 
+        std::terminate();
         return;
     }
 
@@ -612,7 +613,7 @@ void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_n
         }
     }
 
-    from_file.setLastModified(Poco::Timestamp::fromEpochTime(time(0)));
+    from_file.setLastModified(Poco::Timestamp::fromEpochTime(time(nullptr)));
     from_file.renameTo(to);
     relative_path = new_relative_path;
 }
@@ -891,6 +892,30 @@ size_t MergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     for (const ColumnPtr & column : index)
         res += column->allocatedBytes();
     return res;
+}
+
+String MergeTreeDataPart::stateToString(MergeTreeDataPart::State state)
+{
+    switch (state)
+    {
+        case State::Temporary:
+            return "Temporary";
+        case State::PreCommitted:
+            return "PreCommitted";
+        case State::Committed:
+            return "Committed";
+        case State::Outdated:
+            return "Outdated";
+        case State::Deleting:
+            return "Deleting";
+        default:
+            throw Exception("Unknown part state " + std::to_string(static_cast<int>(state)), ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+String MergeTreeDataPart::stateString() const
+{
+    return stateToString(state);
 }
 
 }

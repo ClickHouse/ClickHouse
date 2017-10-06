@@ -157,10 +157,13 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
-    MergeTreeData::DataPartPtr part = data.getPartIfExists(name);
+    /// It is important to include PreCommitted parts here
+    /// Because part could be actually committed into ZooKeeper, but response from ZooKeeper to the server could be delayed
+    auto part = data.getPartIfExists(name, {MergeTreeDataPart::State::PreCommitted, MergeTreeDataPart::State::Committed});
     if (part)
         return part;
-    throw Exception("No part " + name + " in table");
+
+    throw Exception("No part " + name + " in table", ErrorCodes::NO_SUCH_DATA_PART);
 }
 
 MergeTreeData::DataPartPtr Service::findShardedPart(const String & name, size_t shard_no)
