@@ -91,7 +91,7 @@ void StorageMergeTree::shutdown()
     if (shutdown_called)
         return;
     shutdown_called = true;
-    merger.cancelForever();
+    merger.merges_blocker.cancelForever();
     if (merge_task_handle)
         background_pool.removeTask(merge_task_handle);
 }
@@ -151,7 +151,7 @@ void StorageMergeTree::alter(
     const Context & context)
 {
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
-    auto merge_blocker = merger.cancel();
+    auto merge_blocker = merger.merges_blocker.cancel();
 
     auto table_soft_lock = lockDataForAlter(__PRETTY_FUNCTION__);
 
@@ -402,7 +402,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger.cancel();
+    auto merge_blocker = merger.merges_blocker.cancel();
 
     /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
     auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
@@ -462,7 +462,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partit
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger.cancel();
+    auto merge_blocker = merger.merges_blocker.cancel();
     /// Waits for completion of merge and does not start new ones.
     auto lock = lockForAlter(__PRETTY_FUNCTION__);
 
