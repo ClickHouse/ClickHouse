@@ -17,7 +17,6 @@ class IDictionarySource;
 struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
-struct DictionaryLifetime;
 struct DictionaryStructure;
 class ColumnString;
 
@@ -57,7 +56,7 @@ struct IDictionaryBase : public IExternalLoadable
 
     bool supportUpdates() const override { return !isCached(); }
 
-    virtual std::unique_ptr<IExternalLoadable> cloneObject() const override
+    std::unique_ptr<IExternalLoadable> cloneObject() const override
     {
         return clone();
     };
