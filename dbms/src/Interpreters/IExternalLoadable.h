@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <memory>
+#include <Core/Types.h>
 
 
 namespace Poco::Util
