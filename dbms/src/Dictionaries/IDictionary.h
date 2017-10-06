@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Interpreters/IExternalLoadable.h>
 #include <common/StringRef.h>
 #include <Core/Names.h>
 #include <Poco/Util/XMLConfiguration.h>
@@ -24,13 +25,9 @@ class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 
-struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
+struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
-
-    virtual std::exception_ptr getCreationException() const = 0;
-
-    virtual std::string getName() const = 0;
 
     virtual std::string getTypeName() const = 0;
 
@@ -45,11 +42,10 @@ struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
     virtual double getLoadFactor() const = 0;
 
     virtual bool isCached() const = 0;
+
     virtual DictionaryPtr clone() const = 0;
 
     virtual const IDictionarySource * getSource() const = 0;
-
-    virtual const DictionaryLifetime & getLifetime() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
 
@@ -59,7 +55,21 @@ struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
 
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
-    virtual ~IDictionaryBase() = default;
+    bool supportUpdates() const override { return !isCached(); }
+
+    virtual std::shared_ptr<IExternalLoadable> cloneObject() const override
+    {
+        return std::static_pointer_cast<IDictionaryBase>(clone());
+    };
+
+    std::shared_ptr<IDictionaryBase> shared_from_this()
+    {
+        return std::static_pointer_cast<IDictionaryBase>(IExternalLoadable::shared_from_this());
+    }
+    std::shared_ptr<const IDictionaryBase> shared_from_this() const
+    {
+        return std::static_pointer_cast<const IDictionaryBase>(IExternalLoadable::shared_from_this());
+    }
 };
 
 
