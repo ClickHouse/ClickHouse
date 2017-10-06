@@ -479,7 +479,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
-    if (isCancelled())
+    if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
@@ -633,7 +633,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
     Block block;
-    while (!isCancelled() && (block = merged_stream->read()))
+    while (!merges_blocker.isCancelled() && (block = merged_stream->read()))
     {
         rows_written += block.rows();
         to.write(block);
@@ -656,7 +656,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     merged_stream->readSuffix();
     merged_stream.reset();
 
-    if (isCancelled())
+    if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     MergeTreeData::DataPart::Checksums checksums_gathered_columns;
@@ -727,7 +727,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
             merge_entry->progress = progress_before + column_sizes.columnProgress(column_name, sum_input_rows_exact, sum_input_rows_exact);
 
-            if (isCancelled())
+            if (merges_blocker.isCancelled())
                 throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
         }
 
@@ -1097,7 +1097,7 @@ size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataP
 
 void MergeTreeDataMerger::abortReshardPartitionIfRequested()
 {
-    if (isCancelled())
+    if (merges_blocker.isCancelled())
         throw Exception("Cancelled partition resharding", ErrorCodes::ABORTED);
 
     if (cancellation_hook)
