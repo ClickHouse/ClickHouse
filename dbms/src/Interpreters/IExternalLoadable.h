@@ -4,9 +4,12 @@
 namespace DB
 {
 
-namespace Poco::Util
+namespace Poco
 {
-class AbstractConfiguration;
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
 }
 
 /// Min and max lifetimes for a loadable object or it's entry
