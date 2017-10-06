@@ -1,20 +1,16 @@
 #pragma once
 
-#include <Common/Exception.h>
-#include <Common/setThreadName.h>
-#include <Common/randomSeed.h>
-#include <common/MultiVersion.h>
 #include <common/logger_useful.h>
 #include <Poco/Event.h>
-#include <unistd.h>
-#include <ctime>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <chrono>
-#include <pcg_random.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
+#include <tuple>
 #include <Interpreters/IExternalLoadable.h>
+#include <Core/Types.h>
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -65,43 +61,9 @@ struct ExternalLoaderConfigSettings
 class ExternalLoader
 {
 public:
-    using Configuration = Poco::Util::AbstractConfiguration;
-    using ObjectsMap = std::unordered_map<std::string, LoadableInfo>;
-
-    /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalLoader(const Configuration & config,
-                   const ExternalLoaderUpdateSettings & update_settings,
-                   const ExternalLoaderConfigSettings & config_settings,
-                   Logger * log, const std::string & loadable_object_name, bool throw_on_error);
-    ~ExternalLoader();
-
-    /// Forcibly reloads all loadable objects.
-    void reload();
-
-    /// Forcibly reloads specified loadable object.
-    void reload(const std::string & name);
-
-    LoadablePtr getLoadable(const std::string & name) const;
-
-protected:
-    virtual LoadablePtr create(const std::string & name, const Configuration & config,
-                               const std::string & config_prefix) = 0;
-
-    /// Direct access to objects.
-    std::tuple<std::lock_guard<std::mutex>, const ObjectsMap &> getObjectsMap()
-    {
-        return std::make_tuple(std::lock_guard<std::mutex>(map_mutex), std::cref(loadable_objects));
-    }
+    using LoadablePtr = std::shared_ptr<IExternalLoadable>;
 
 private:
-
-    /// Protects only dictionaries map.
-    mutable std::mutex map_mutex;
-
-    /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
-    mutable std::mutex all_mutex;
-
-    using LoadablePtr = std::shared_ptr<IExternalLoadable>;
     struct LoadableInfo final
     {
         LoadablePtr loadable;
@@ -116,16 +78,53 @@ private:
         UInt64 error_count;
     };
 
+public:
+    using Configuration = Poco::Util::AbstractConfiguration;
+    using ObjectsMap = std::unordered_map<std::string, LoadableInfo>;
+
+    /// Objects will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
+    ExternalLoader(const Configuration & config,
+                   const ExternalLoaderUpdateSettings & update_settings,
+                   const ExternalLoaderConfigSettings & config_settings,
+                   Logger * log, const std::string & loadable_object_name);
+    virtual ~ExternalLoader();
+
+    /// Forcibly reloads all loadable objects.
+    void reload();
+
+    /// Forcibly reloads specified loadable object.
+    void reload(const std::string & name);
+
+    LoadablePtr getLoadable(const std::string & name) const;
+
+protected:
+    virtual std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
+                                                      const std::string & config_prefix) = 0;
+
+    /// Direct access to objects.
+    std::tuple<std::unique_lock<std::mutex>, const ObjectsMap &> getObjectsMap() const;
+
+    /// Should be called in derived constructor (to avoid pure virtual call).
+    void init(bool throw_on_error);
+
+private:
+
+    bool is_initialized = false;
+
+    /// Protects only objects map.
+    mutable std::mutex map_mutex;
+
+    /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
+    mutable std::mutex all_mutex;
+
     /// name -> loadable.
     ObjectsMap loadable_objects;
 
-    /** Here are loadable objects, that has been never loaded successfully.
-      * They are also in 'loadable_objects', but with nullptr as 'loadable'.
-      */
+    /// Here are loadable objects, that has been never loaded successfully.
+    /// They are also in 'loadable_objects', but with nullptr as 'loadable'.
     std::unordered_map<std::string, FailedLoadableInfo> failed_loadable_objects;
 
-    /** Both for dictionaries and failed_dictionaries.
-      */
+    /// Both for loadable_objects and failed_loadable_objects.
     std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 
     pcg64 rnd_engine{randomSeed()};
@@ -143,7 +142,7 @@ private:
 
     std::unordered_map<std::string, Poco::Timestamp> last_modification_times;
 
-    /// Check dictionaries definitions in config files and reload or/and add new ones if the definition is changed
+    /// Check objects definitions in config files and reload or/and add new ones if the definition is changed
     /// If loadable_name is not empty, load only loadable object with name loadable_name
     void reloadFromConfigFiles(bool throw_on_error, bool force_reload = false, const std::string & loadable_name = "");
     void reloadFromConfigFile(const std::string & config_path, bool throw_on_error, bool force_reload,

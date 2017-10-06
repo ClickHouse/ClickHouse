@@ -8,16 +8,14 @@
 #include <Common/PODArray.h>
 #include <memory>
 #include <chrono>
+#include <Dictionaries/IDictionarySource.h>
 
 namespace DB
 {
 
-class IDictionarySource;
-
 struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
-struct DictionaryLifetime;
 struct DictionaryStructure;
 class ColumnString;
 
@@ -57,9 +55,14 @@ struct IDictionaryBase : public IExternalLoadable
 
     bool supportUpdates() const override { return !isCached(); }
 
-    virtual std::shared_ptr<IExternalLoadable> cloneObject() const override
+    bool isModified() const override
+    {   auto source = getSource();
+        return source && source->isModified();
+    }
+
+    std::unique_ptr<IExternalLoadable> cloneObject() const override
     {
-        return std::static_pointer_cast<IDictionaryBase>(clone());
+        return clone();
     };
 
     std::shared_ptr<IDictionaryBase> shared_from_this()

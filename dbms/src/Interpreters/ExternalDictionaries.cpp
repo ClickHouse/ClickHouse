@@ -44,13 +44,13 @@ ExternalDictionaries::ExternalDictionaries(Context & context, bool throw_on_erro
                          getExternalDictionariesUpdateSettings(),
                          getExternalDictionariesConfigSettings(),
                          &Logger::get("ExternalDictionaries"),
-                         "external dictionary", throw_on_error),
+                         "external dictionary"),
           context(context)
 {
-
+    init(throw_on_error);
 }
 
-ExternalDictionaries::LoadablePtr ExternalDictionaries::create(
+std::unique_ptr<IExternalLoadable> ExternalDictionaries::create(
         const std::string & name, const Configuration & config, const std::string & config_prefix)
 {
     return DictionaryFactory::instance().create(name, config, config_prefix, context);

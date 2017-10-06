@@ -30,8 +30,8 @@ public:
 
 protected:
 
-    LoadablePtr create(const std::string & name, const Configuration & config,
-                       const std::string & config_prefix) override;
+    std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
+                                              const std::string & config_prefix) override;
 
     using ExternalLoader::getObjectsMap;
 
