@@ -1,13 +1,17 @@
+#pragma once
 #include <string>
 #include <memory>
+#include <Core/Types.h>
 
-namespace DB
-{
 
 namespace Poco::Util
 {
-class AbstractConfiguration;
+    class AbstractConfiguration;
 }
+
+
+namespace DB
+{
 
 /// Min and max lifetimes for a loadable object or it's entry
 struct ExternalLoadableLifetime final
@@ -31,7 +35,7 @@ public:
 
     virtual bool isModified() const = 0;
 
-    virtual std::shared_ptr<IExternalLoadable> cloneObject() const = 0;
+    virtual std::unique_ptr<IExternalLoadable> cloneObject() const = 0;
 
     virtual std::exception_ptr getCreationException() const = 0;
 };
