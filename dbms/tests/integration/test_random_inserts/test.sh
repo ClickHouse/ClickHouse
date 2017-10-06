@@ -40,5 +40,6 @@ for i in $timestamps; do
         cur_timestamp=$(date +%s)
     done
 
+    #echo $i >> $host".txt"
     reliable_insert "$i"
 done
