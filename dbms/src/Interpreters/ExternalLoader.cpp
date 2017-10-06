@@ -1,13 +1,16 @@
 #include <Interpreters/ExternalLoader.h>
 #include <Common/StringUtils.h>
 #include <Common/MemoryTracker.h>
+#include <Common/Exception.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/setThreadName.h>
 #include <ext/scope_guard.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Glob.h>
 #include <Poco/File.h>
 #include <cmath>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -116,7 +119,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
         try
         {
-            auto loadable_ptr = failed_loadable_object.second.loadable->clone();
+            auto loadable_ptr = failed_loadable_object.second.loadable->cloneObject();
             if (const auto exception_ptr = loadable_ptr->getCreationException())
             {
                 /// recalculate next attempt time
@@ -143,7 +146,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
                 const auto dict_it = loadable_objects.find(name);
 
                 dict_it->second.loadable.reset();
-                dict_it->second.loadable = loadable_ptr;
+                dict_it->second.loadable = std::move(loadable_ptr);
 
                 /// clear stored exception on success
                 dict_it->second.exception = std::exception_ptr{};
@@ -200,13 +203,13 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
                 if (current->isModified())
                 {
                     /// create new version of loadable object
-                    auto new_version = current->clone();
+                    auto new_version = current->cloneObject();
 
                     if (const auto exception_ptr = new_version->getCreationException())
                         std::rethrow_exception(exception_ptr);
 
                     loadable_object.second.loadable.reset();
-                    loadable_object.second.loadable = new_version;
+                    loadable_object.second.loadable = std::move(new_version);
                 }
             }
 
@@ -412,6 +415,11 @@ ExternalLoader::LoadablePtr ExternalLoader::getLoadable(const std::string & name
         throw Exception{object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR};
 
     return it->second.loadable;
+}
+
+std::tuple<std::lock_guard<std::mutex>, const ExternalLoader::ObjectsMap &> ExternalLoader::getObjectsMap();
+{
+    return std::make_tuple(std::lock_guard<std::mutex>(map_mutex), std::cref(loadable_objects));
 }
 
 }

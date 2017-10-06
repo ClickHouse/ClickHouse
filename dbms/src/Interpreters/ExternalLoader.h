@@ -1,20 +1,16 @@
 #pragma once
 
-#include <Common/Exception.h>
-#include <Common/setThreadName.h>
-#include <Common/randomSeed.h>
-#include <common/MultiVersion.h>
 #include <common/logger_useful.h>
 #include <Poco/Event.h>
-#include <unistd.h>
-#include <ctime>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <chrono>
-#include <pcg_random.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
+#include <tuple>
 #include <Interpreters/IExternalLoadable.h>
+#include <Core/Types.h>
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
 
 
 namespace DB
@@ -65,6 +61,24 @@ struct ExternalLoaderConfigSettings
 class ExternalLoader
 {
 public:
+    using LoadablePtr = std::shared_ptr<IExternalLoadable>;
+
+private:
+    struct LoadableInfo final
+    {
+        LoadablePtr loadable;
+        std::string origin;
+        std::exception_ptr exception;
+    };
+
+    struct FailedLoadableInfo final
+    {
+        std::unique_ptr<IExternalLoadable> loadable;
+        std::chrono::system_clock::time_point next_attempt_time;
+        UInt64 error_count;
+    };
+
+public:
     using Configuration = Poco::Util::AbstractConfiguration;
     using ObjectsMap = std::unordered_map<std::string, LoadableInfo>;
 
@@ -88,10 +102,7 @@ protected:
                                const std::string & config_prefix) = 0;
 
     /// Direct access to objects.
-    std::tuple<std::lock_guard<std::mutex>, const ObjectsMap &> getObjectsMap()
-    {
-        return std::make_tuple(std::lock_guard<std::mutex>(map_mutex), std::cref(loadable_objects));
-    }
+    std::tuple<std::lock_guard<std::mutex>, const ObjectsMap &> getObjectsMap();
 
 private:
 
@@ -100,21 +111,6 @@ private:
 
     /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
     mutable std::mutex all_mutex;
-
-    using LoadablePtr = std::shared_ptr<IExternalLoadable>;
-    struct LoadableInfo final
-    {
-        LoadablePtr loadable;
-        std::string origin;
-        std::exception_ptr exception;
-    };
-
-    struct FailedLoadableInfo final
-    {
-        std::unique_ptr<IExternalLoadable> loadable;
-        std::chrono::system_clock::time_point next_attempt_time;
-        UInt64 error_count;
-    };
 
     /// name -> loadable.
     ObjectsMap loadable_objects;
