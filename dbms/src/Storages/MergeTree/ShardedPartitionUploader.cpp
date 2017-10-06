@@ -82,9 +82,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
         WriteBufferFromFile file_out{absolute_part_path + file_name};
         HashingWriteBuffer hashing_out{file_out};
-        copyData(body, hashing_out, file_size, is_cancelled);
+        copyData(body, hashing_out, file_size, blocker.counter);
 
-        if (is_cancelled)
+        if (blocker.isCancelled())
         {
             part_file.remove(true);
             throw Exception{"Fetching of part was cancelled", ErrorCodes::ABORTED};
@@ -96,8 +96,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
         if (expected_hash != hashing_out.getHash())
             throw Exception{"Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path};
 
-        if (file_name != "checksums.txt" &&
-            file_name != "columns.txt")
+        if (file_name != "checksums.txt" && file_name != "columns.txt")
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
