@@ -324,9 +324,9 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                         const auto failed_dict_it = failed_loadable_objects.find(name);
                         FailedLoadableInfo info{std::move(object_ptr), std::chrono::system_clock::now() + delay, 0};
                         if (failed_dict_it != std::end(failed_loadable_objects))
-                            failed_dict_it->second = info;
+                            failed_dict_it->second = std::move(info);
                         else
-                            failed_loadable_objects.emplace(name, info);
+                            failed_loadable_objects.emplace(name, std::move(info));
 
                         std::rethrow_exception(exception_ptr);
                     }
@@ -346,12 +346,12 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
                     /// add new loadable object or update an existing version
                     if (object_it == std::end(loadable_objects))
-                        loadable_objects.emplace(name, LoadableInfo{object_ptr, config_path});
+                        loadable_objects.emplace(name, LoadableInfo{std::move(object_ptr), config_path});
                     else
                     {
                         if (object_it->second.loadable)
                             object_it->second.loadable.reset();
-                        object_it->second.loadable = object_ptr;
+                        object_it->second.loadable = std::move(object_ptr);
 
                         /// erase stored exception on success
                         object_it->second.exception = std::exception_ptr{};

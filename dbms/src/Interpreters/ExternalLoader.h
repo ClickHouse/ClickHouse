@@ -98,8 +98,8 @@ public:
     LoadablePtr getLoadable(const std::string & name) const;
 
 protected:
-    virtual LoadablePtr create(const std::string & name, const Configuration & config,
-                               const std::string & config_prefix) = 0;
+    virtual std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
+                                                      const std::string & config_prefix) = 0;
 
     /// Direct access to objects.
     std::tuple<std::unique_lock<std::mutex>, const ObjectsMap &> getObjectsMap() const;

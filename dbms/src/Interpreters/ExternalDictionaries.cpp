@@ -50,7 +50,7 @@ ExternalDictionaries::ExternalDictionaries(Context & context, bool throw_on_erro
 
 }
 
-ExternalDictionaries::LoadablePtr ExternalDictionaries::create(
+std::unique_ptr<IExternalLoadable> ExternalDictionaries::create(
         const std::string & name, const Configuration & config, const std::string & config_prefix)
 {
     return DictionaryFactory::instance().create(name, config, config_prefix, context);
