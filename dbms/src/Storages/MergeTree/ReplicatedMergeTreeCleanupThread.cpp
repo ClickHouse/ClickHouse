@@ -46,7 +46,7 @@ void ReplicatedMergeTreeCleanupThread::run()
 
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
-    storage.clearOldPartsAndRemoveFromZK(log);
+    storage.clearOldPartsAndRemoveFromZK();
     storage.data.clearOldTemporaryDirectories();
 
     if (storage.is_leader_node)

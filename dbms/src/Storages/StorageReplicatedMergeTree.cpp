@@ -3849,11 +3849,9 @@ bool StorageReplicatedMergeTree::checkSpaceForResharding(const ReplicaToSpaceInf
 }
 
 
-void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
+void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
     /// Critical section is not required (since grabOldParts() returns unique part set on each call)
-
-    Logger * log = log_ ? log_ : this->log;
 
     auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
     auto zookeeper = getZooKeeper();
@@ -3862,18 +3860,54 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
     if (parts.empty())
         return;
 
-    /// Firstly delete parts from ZooKeeper
-    Strings part_names_to_delete_from_zookeeper;
+    MergeTreeData::DataPartsVector parts_to_delete_only_from_filesystem;    // Only duplicates
+    MergeTreeData::DataPartsVector parts_to_delete_completely;              // All parts except duplicates
+    MergeTreeData::DataPartsVector parts_to_retry_deletion;                 // Parts that should be retried due to network problems
+    MergeTreeData::DataPartsVector parts_to_remove_from_filesystem;         // Parts removed from ZK
+
+    for (const auto & part : parts)
+    {
+        if (!part->is_duplicate)
+            parts_to_delete_completely.emplace_back(part);
+        else
+            parts_to_delete_only_from_filesystem.emplace_back(part);
+    }
+    parts.clear();
+
+    auto remove_parts_from_filesystem = [log=log] (const MergeTreeData::DataPartsVector & parts_to_remove)
+    {
+        for (auto & part : parts_to_remove)
+        {
+            try
+            {
+                part->remove();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "There is a problem with deleting part " + part->name + " from filesystem");
+            }
+        }
+    };
+
+    /// Delete duplicate parts from filesystem
+    if (!parts_to_delete_only_from_filesystem.empty())
+    {
+        remove_parts_from_filesystem(parts_to_delete_only_from_filesystem);
+        data.removePartsFinally(parts_to_delete_only_from_filesystem);
+
+        LOG_DEBUG(log, "Removed " << parts_to_delete_only_from_filesystem.size() << " old duplicate parts");
+    }
+
+    /// Delete normal parts from ZooKeeper
     NameSet part_names_to_retry_deletion;
     try
     {
-        for (const auto & part : parts)
-            part_names_to_delete_from_zookeeper.push_back(part->name);
+        Strings part_names_to_delete_completely;
+        for (const auto & part : parts_to_delete_completely)
+            part_names_to_delete_completely.emplace_back(part->name);
 
-        LOG_DEBUG(log, "Removing " << part_names_to_delete_from_zookeeper.size() << " old parts from ZooKeeper");
-
-        /// It is important to delete parts from ZooKeeper as reliable as possible
-        removePartsFromZooKeeper(zookeeper, part_names_to_delete_from_zookeeper, &part_names_to_retry_deletion);
+        LOG_DEBUG(log, "Removing " << parts_to_delete_completely.size() << " old parts from ZooKeeper");
+        removePartsFromZooKeeper(zookeeper, part_names_to_delete_completely, &part_names_to_retry_deletion);
     }
     catch (...)
     {
@@ -3881,41 +3915,33 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK(Logger * log_)
     }
 
     /// Part names that were reliably deleted from ZooKeeper should be deleted from filesystem
-    auto num_reliably_deleted_parts = part_names_to_delete_from_zookeeper.size() - part_names_to_retry_deletion.size();
+    auto num_reliably_deleted_parts = parts_to_delete_completely.size() - part_names_to_retry_deletion.size();
     LOG_DEBUG(log, "Removed " << num_reliably_deleted_parts << " old parts from ZooKeeper. Removing them from filesystem.");
 
-    /// Split parts on two sets
-    MergeTreeData::DataPartsVector parts_to_retry_deletion;
-    MergeTreeData::DataPartsVector parts_to_remove_from_filesystem;
-    for (auto & part : parts)
+    /// Delete normal parts on two sets
+    for (auto & part : parts_to_delete_completely)
     {
         if (part_names_to_retry_deletion.count(part->name) == 0)
             parts_to_remove_from_filesystem.emplace_back(part);
         else
             parts_to_retry_deletion.emplace_back(part);
     }
-    parts.clear();
 
     /// Will retry deletion
     if (!parts_to_retry_deletion.empty())
+    {
         data.rollbackDeletingParts(parts_to_retry_deletion);
+        LOG_DEBUG(log, "Will retry deletion of " << parts_to_retry_deletion.size() << " parts in the next time");
+    }
 
     /// Remove parts from filesystem and finally from data_parts
-    for (auto & part : parts_to_remove_from_filesystem)
+    if (!parts_to_remove_from_filesystem.empty())
     {
-        try
-        {
-            part->remove();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "There is a problem with deleting part " + part->name + " from filesystem");
-            /// Assume that it is not critical case
-        }
-    }
-    data.removePartsFinally(parts_to_remove_from_filesystem);
+        remove_parts_from_filesystem(parts_to_remove_from_filesystem);
+        data.removePartsFinally(parts_to_remove_from_filesystem);
 
-    LOG_DEBUG(log, "Removed " << parts_to_remove_from_filesystem.size() << " old parts");
+        LOG_DEBUG(log, "Removed " << parts_to_remove_from_filesystem.size() << " old parts");
+    }
 }
 
 

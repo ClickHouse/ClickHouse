@@ -294,6 +294,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             {
                 LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
 
+                part->is_duplicate = true;
                 transaction.rollback();
             }
             else if (zookeeper->exists(quorum_info.status_path))

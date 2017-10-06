@@ -141,6 +141,9 @@ struct MergeTreeDataPart
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
 
+    /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
+    bool is_duplicate = false;
+
     /// For resharding.
     size_t shard_no = 0;
 
@@ -154,6 +157,7 @@ struct MergeTreeDataPart
      * Precommitted -> Commited:  we successfully committed a part to active dataset
      * Precommitted -> Outdated:  a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:      a cleaner selected this part for deletion
+     * Deleting -> Outdated:      if an ZooKeeper error occurred during the deletion, we will retry deletion
      */
     enum class State
     {
