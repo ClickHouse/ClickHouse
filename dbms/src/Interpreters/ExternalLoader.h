@@ -86,7 +86,7 @@ public:
     ExternalLoader(const Configuration & config,
                    const ExternalLoaderUpdateSettings & update_settings,
                    const ExternalLoaderConfigSettings & config_settings,
-                   Logger * log, const std::string & loadable_object_name, bool throw_on_error);
+                   Logger * log, const std::string & loadable_object_name);
     virtual ~ExternalLoader();
 
     /// Forcibly reloads all loadable objects.
@@ -104,7 +104,12 @@ protected:
     /// Direct access to objects.
     std::tuple<std::unique_lock<std::mutex>, const ObjectsMap &> getObjectsMap() const;
 
+    /// Should be called in derived constructor (to avoid pure virtual call).
+    void init(bool throw_on_error);
+
 private:
+
+    bool is_initialized = false;
 
     /// Protects only objects map.
     mutable std::mutex map_mutex;

@@ -44,10 +44,10 @@ ExternalDictionaries::ExternalDictionaries(Context & context, bool throw_on_erro
                          getExternalDictionariesUpdateSettings(),
                          getExternalDictionariesConfigSettings(),
                          &Logger::get("ExternalDictionaries"),
-                         "external dictionary", throw_on_error),
+                         "external dictionary"),
           context(context)
 {
-
+    init(throw_on_error);
 }
 
 std::unique_ptr<IExternalLoadable> ExternalDictionaries::create(

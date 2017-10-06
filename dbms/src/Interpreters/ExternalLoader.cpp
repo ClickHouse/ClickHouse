@@ -48,10 +48,19 @@ void ExternalLoader::reloadPeriodically()
 ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config,
                                const ExternalLoaderUpdateSettings & update_settings,
                                const ExternalLoaderConfigSettings & config_settings,
-                               Logger * log, const std::string & loadable_object_name, bool throw_on_error)
+                               Logger * log, const std::string & loadable_object_name)
         : config(config), update_settings(update_settings), config_settings(config_settings),
           log(log), object_name(loadable_object_name)
 {
+}
+
+void ExternalLoader::init(bool throw_on_error)
+{
+    if (is_initialized)
+        return;
+
+    is_initialized = true;
+
     {
         /// During synchronous loading of external dictionaries at moment of query execution,
         /// we should not use per query memory limit.
