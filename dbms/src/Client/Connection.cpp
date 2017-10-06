@@ -95,11 +95,11 @@ void Connection::disconnect()
 {
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
+    in = nullptr;
+    out = nullptr; // can write to socket
     if (socket)
         socket->close();
     socket = nullptr;
-    in = nullptr;
-    out = nullptr;
     connected = false;
 }
 
