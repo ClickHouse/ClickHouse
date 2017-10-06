@@ -76,16 +76,17 @@ BlockInputStreams StorageSystemDictionaries::read(
     ColumnWithTypeAndName col_source{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "source"};
 
     const auto & external_dictionaries = context.getExternalDictionaries();
-    const std::lock_guard<std::mutex> lock{external_dictionaries.dictionaries_mutex};
+    auto objects_map = external_dictionaries.getObjectsMap();
+    const auto & dictionaries = std::get<1>(objects_map);
 
-    for (const auto & dict_info : external_dictionaries.dictionaries)
+    for (const auto & dict_info : dictionaries)
     {
         col_name.column->insert(dict_info.first);
         col_origin.column->insert(dict_info.second.origin);
 
-        if (dict_info.second.dict)
+        if (dict_info.second.loadable)
         {
-            const auto dict_ptr = dict_info.second.dict->get();
+            const auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(dict_info.second.loadable);
 
             col_type.column->insert(dict_ptr->getTypeName());
 

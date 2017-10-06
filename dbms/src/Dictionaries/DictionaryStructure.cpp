@@ -105,16 +105,6 @@ std::string toString(const AttributeUnderlyingType type)
 }
 
 
-DictionaryLifetime::DictionaryLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-{
-    const auto & lifetime_min_key = config_prefix + ".min";
-    const auto has_min = config.has(lifetime_min_key);
-
-    this->min_sec = has_min ? config.getInt(lifetime_min_key) : config.getInt(config_prefix);
-    this->max_sec = has_min ? config.getInt(config_prefix + ".max") : this->min_sec;
-}
-
-
 DictionarySpecialAttribute::DictionarySpecialAttribute(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
     : name{config.getString(config_prefix + ".name", "")},
       expression{config.getString(config_prefix + ".expression", "")}
