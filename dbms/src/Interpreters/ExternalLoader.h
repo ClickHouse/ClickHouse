@@ -87,7 +87,7 @@ public:
                    const ExternalLoaderUpdateSettings & update_settings,
                    const ExternalLoaderConfigSettings & config_settings,
                    Logger * log, const std::string & loadable_object_name, bool throw_on_error);
-    virtual ~ExternalLoader() = default;
+    virtual ~ExternalLoader();
 
     /// Forcibly reloads all loadable objects.
     void reload();
