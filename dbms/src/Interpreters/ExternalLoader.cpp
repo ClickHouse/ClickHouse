@@ -10,7 +10,6 @@
 #include <Poco/File.h>
 #include <cmath>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -324,7 +323,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                         const auto failed_dict_it = failed_loadable_objects.find(name);
                         FailedLoadableInfo info{std::move(object_ptr), std::chrono::system_clock::now() + delay, 0};
                         if (failed_dict_it != std::end(failed_loadable_objects))
-                            failed_dict_it->second = std::move(info);
+                            (*failed_dict_it).second = std::move(info);
                         else
                             failed_loadable_objects.emplace(name, std::move(info));
 
@@ -417,7 +416,7 @@ ExternalLoader::LoadablePtr ExternalLoader::getLoadable(const std::string & name
     return it->second.loadable;
 }
 
-std::tuple<std::unique_lock<std::mutex>, const ExternalLoader::ObjectsMap &> ExternalLoader::getObjectsMap() const;
+std::tuple<std::unique_lock<std::mutex>, const ExternalLoader::ObjectsMap &> ExternalLoader::getObjectsMap() const
 {
     return std::make_tuple(std::unique_lock<std::mutex>(map_mutex), std::cref(loadable_objects));
 }
