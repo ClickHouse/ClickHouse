@@ -1,16 +1,15 @@
 #include <string>
 #include <memory>
 
+
+namespace Poco::Util
+{
+    class AbstractConfiguration;
+}
+
+
 namespace DB
 {
-
-namespace Poco
-{
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
-}
 
 /// Min and max lifetimes for a loadable object or it's entry
 struct ExternalLoadableLifetime final
