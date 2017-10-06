@@ -12,6 +12,7 @@
             static constexpr bool is_integer = true;
             static constexpr int radix = 2;
             static constexpr int digits = 8 * sizeof(char) * 2;
+            static constexpr __uint128_t min () { return 0; } // used in boost 1.65.1+
         };
     }
 #endif
