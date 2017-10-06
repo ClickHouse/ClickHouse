@@ -8,11 +8,10 @@
 #include <Common/PODArray.h>
 #include <memory>
 #include <chrono>
+#include <Dictionaries/IDictionarySource.h>
 
 namespace DB
 {
-
-class IDictionarySource;
 
 struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
@@ -55,6 +54,11 @@ struct IDictionaryBase : public IExternalLoadable
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
     bool supportUpdates() const override { return !isCached(); }
+
+    bool isModified() const override
+    {   auto source = getSource();
+        return source && source->isModified();
+    }
 
     std::unique_ptr<IExternalLoadable> cloneObject() const override
     {

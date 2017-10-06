@@ -102,7 +102,7 @@ protected:
                                const std::string & config_prefix) = 0;
 
     /// Direct access to objects.
-    std::tuple<std::lock_guard<std::mutex>, const ObjectsMap &> getObjectsMap() const;
+    std::tuple<std::unique_lock<std::mutex>, const ObjectsMap &> getObjectsMap() const;
 
 private:
 
