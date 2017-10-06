@@ -594,7 +594,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 sum_parts_size_in_bytes += part->size_in_bytes;
         }
 
-        if (merger.isCancelled())
+        if (merger.merges_blocker.isCancelled())
         {
             String reason = "Not executing log entry for part " + entry.new_part_name + " because merges are cancelled now.";
             LOG_DEBUG(log, reason);

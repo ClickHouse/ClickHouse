@@ -335,7 +335,7 @@ StoragePtr StorageReplicatedMergeTree::create(
     {
         {
             InterserverIOEndpointPtr endpoint = std::make_shared<DataPartsExchange::Service>(res->data, res_ptr);
-            res->endpoint_holder = get_endpoint_holder(endpoint);
+            res->data_parts_exchange_endpoint_holder = get_endpoint_holder(endpoint);
         }
 
         /// Services for resharding.
@@ -2275,7 +2275,7 @@ void StorageReplicatedMergeTree::shutdown()
       * Because restarting_thread will wait for finishing of tasks in background pool,
       *  and parts are fetched in that tasks.
       */
-    fetcher.cancel();
+    fetcher.blocker.cancelForever();
 
     if (restarting_thread)
     {
@@ -2283,36 +2283,36 @@ void StorageReplicatedMergeTree::shutdown()
         restarting_thread.reset();
     }
 
-    if (endpoint_holder)
+    if (data_parts_exchange_endpoint_holder)
     {
-        endpoint_holder->cancel();
-        endpoint_holder = nullptr;
+        data_parts_exchange_endpoint_holder->cancelForever();
+        data_parts_exchange_endpoint_holder = nullptr;
     }
 
     if (disk_space_monitor_endpoint_holder)
     {
-        disk_space_monitor_endpoint_holder->cancel();
+        disk_space_monitor_endpoint_holder->cancelForever();
         disk_space_monitor_endpoint_holder = nullptr;
     }
     disk_space_monitor_client.cancel();
 
     if (sharded_partition_uploader_endpoint_holder)
     {
-        sharded_partition_uploader_endpoint_holder->cancel();
+        sharded_partition_uploader_endpoint_holder->cancelForever();
         sharded_partition_uploader_endpoint_holder = nullptr;
     }
     sharded_partition_uploader_client.cancel();
 
     if (remote_query_executor_endpoint_holder)
     {
-        remote_query_executor_endpoint_holder->cancel();
+        remote_query_executor_endpoint_holder->cancelForever();
         remote_query_executor_endpoint_holder = nullptr;
     }
     remote_query_executor_client.cancel();
 
     if (remote_part_checker_endpoint_holder)
     {
-        remote_part_checker_endpoint_holder->cancel();
+        remote_part_checker_endpoint_holder->cancelForever();
         remote_part_checker_endpoint_holder = nullptr;
     }
 }
