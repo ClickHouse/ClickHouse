@@ -1692,11 +1692,6 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
     return nullptr;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_name)
-{
-    return getPartIfExists(part_name, {DataPartState::Committed});
-}
-
 MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & part_name, size_t shard_no)
 {
     const MutableDataPartPtr & part_from_shard = per_shard_data_parts.at(shard_no);
@@ -1979,6 +1974,21 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
     {
         std::lock_guard<std::mutex> lock(data_parts_mutex);
         std::copy_if(data_parts.begin(), data_parts.end(), std::back_inserter(res), DataPart::getStatesFilter(affordable_states));
+    }
+    return res;
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const MergeTreeData::DataPartStates & affordable_states,
+                                                                 MergeTreeData::DataPartStateVector & out_states_snapshot) const
+{
+    DataPartsVector res;
+    {
+        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::copy_if(data_parts.begin(), data_parts.end(), std::back_inserter(res), DataPart::getStatesFilter(affordable_states));
+
+        out_states_snapshot.resize(res.size());
+        for (size_t i = 0; i < res.size(); ++i)
+            out_states_snapshot[i] = res[i]->state;
     }
     return res;
 }

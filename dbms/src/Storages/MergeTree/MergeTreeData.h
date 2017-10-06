@@ -102,6 +102,7 @@ public:
 
     using DataPartState = MergeTreeDataPart::State;
     using DataPartStates = std::initializer_list<DataPartState>;
+    using DataPartStateVector = std::vector<DataPartState>;
 
     struct DataPartPtrLess
     {
@@ -310,6 +311,7 @@ public:
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts(const DataPartStates & affordable_states) const;
     DataPartsVector getDataPartsVector(const DataPartStates & affordable_states) const;
+    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector & out_states_snapshot) const;
 
     /// Returns a virtual container iteration only through parts with specified states
     decltype(auto) getDataPartsRange(const DataPartStates & affordable_states) const
@@ -328,10 +330,7 @@ public:
     DataPartPtr getActiveContainingPart(const String & part_name);
 
     /// Returns the part with the given name (and state) or nullptr if no such part.
-    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
-
-    /// Returns committed part with the given name or nullptr if no such part.
-    DataPartPtr getPartIfExists(const String & part_name);
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states = {DataPartState::Committed});
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
