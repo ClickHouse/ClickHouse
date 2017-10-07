@@ -67,38 +67,13 @@ int __poll_chk(struct pollfd * fds, nfds_t nfds, int timeout, size_t fdslen)
 
 #include <setjmp.h>
 
-
-void __attribute__ ((__noreturn__)) musl_longjmp(jmp_buf env, int val);
-int musl_setjmp(jmp_buf env);
+void musl_glibc_longjmp(jmp_buf env, int val);
 
 /// NOTE This disables some of FORTIFY_SOURCE functionality.
 
 void __longjmp_chk(jmp_buf env, int val)
 {
-    if (env->__mask_was_saved != 0)
-    {
-        sigprocmask(SIG_SETMASK, &env->__saved_mask, NULL);
-    }
-    musl_longjmp(env, val);
-}
-
-int _setjmp(jmp_buf env)
-{
-    return musl_setjmp(env);
-}
-
-int sigsetjmp(sigjmp_buf env, int save_sigmask)
-{
-    if (save_sigmask)
-    {
-        env->__mask_was_saved = 1;
-        sigprocmask(SIG_BLOCK, NULL, &env->__saved_mask);
-    }
-    else
-    {
-        env->__mask_was_saved = 0;
-    }
-    return musl_setjmp(env);
+    musl_glibc_longjmp(env, val);
 }
 
 #include <stdarg.h>
