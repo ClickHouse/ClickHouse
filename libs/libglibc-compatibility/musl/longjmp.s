@@ -1,10 +1,7 @@
 /* Copyright 2011-2012 Nicholas J. Kain, licensed under standard MIT license */
-.global _longjmp
-.global longjmp
-.type _longjmp,@function
-.type longjmp,@function
-_longjmp:
-longjmp:
+.global musl_longjmp
+.type musl_longjmp,@function
+musl_longjmp:
 	mov %rsi,%rax           /* val will be longjmp return */
 	test %rax,%rax
 	jnz 1f
