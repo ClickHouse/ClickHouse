@@ -194,8 +194,8 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
         auto & set = this->data(place).value;
-        set.resize(reserved);
         set.clear();
+        set.resize(reserved);
 
         // Specialized here because there's no deserialiser for StringRef
         size_t count = 0;
