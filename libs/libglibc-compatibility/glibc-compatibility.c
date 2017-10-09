@@ -67,13 +67,13 @@ int __poll_chk(struct pollfd * fds, nfds_t nfds, int timeout, size_t fdslen)
 
 #include <setjmp.h>
 
-void longjmp(jmp_buf env, int val);
+void musl_glibc_longjmp(jmp_buf env, int val);
 
 /// NOTE This disables some of FORTIFY_SOURCE functionality.
 
 void __longjmp_chk(jmp_buf env, int val)
 {
-    return longjmp(env, val);
+    musl_glibc_longjmp(env, val);
 }
 
 #include <stdarg.h>
