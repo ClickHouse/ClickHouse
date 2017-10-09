@@ -15,6 +15,12 @@ public:
     virtual const CatBoostWrapperApi & getApi() const = 0;
 };
 
+class ICatBoostModel
+{
+public:
+    virtual ~ICatBoostModel() = default;
+    virtual ColumnPtr calc(const Columns & columns, size_t float_features_count, size_t cat_features_count) = 0;
+};
 
 class CatBoostModel : public IExternalLoadable
 {
@@ -37,18 +43,27 @@ public:
     size_t getFloatFeaturesCount() const;
     size_t getCatFeaturesCount() const;
 
-    void apply(const Columns & floatColumns, const Columns & catColumns, ColumnFloat64 & result);
+    ColumnPtr apply(const Columns & columns);
 
 private:
     std::string name;
     std::string model_path;
+    std::string lib_path;
     ExternalLoadableLifetime lifetime;
     std::exception_ptr creation_exception;
     std::shared_ptr<CatBoostWrapperApiProvider> api_provider;
     const CatBoostWrapperApi * api;
 
+    std::unique_ptr<ICatBoostModel> model;
+
+    size_t float_features_count;
+    size_t cat_features_count;
+
     CatBoostModel(const std::string & name, const std::string & model_path,
-                  const std::string & lib_path, const ExternalLoadableLifetime & lifetime);
+                  const std::string & lib_path, const ExternalLoadableLifetime & lifetime,
+                  size_t float_features_count, size_t cat_features_count);
+
+    void init(const std::string & lib_path);
 };
 
 }
