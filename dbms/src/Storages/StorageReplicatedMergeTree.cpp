@@ -1975,6 +1975,13 @@ void StorageReplicatedMergeTree::becomeLeader()
     if (shutdown_called)
         return;
 
+    if (merge_selecting_thread.joinable())
+    {
+        LOG_INFO(log, "Deleting old leader");
+        is_leader_node = false; // exit trigger inside thread
+        merge_selecting_thread.join();
+    }
+
     LOG_INFO(log, "Became leader");
     is_leader_node = true;
     merge_selecting_thread = std::thread(&StorageReplicatedMergeTree::mergeSelectingThread, this);
