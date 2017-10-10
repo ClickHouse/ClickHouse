@@ -33,5 +33,7 @@ unw_apply_reg_state (unw_cursor_t *cursor,
 {
   struct cursor *c = (struct cursor *) cursor;
 
-  return dwarf_apply_reg_state (&c->dwarf, (dwarf_reg_state_t *)reg_states_data);
+  // Needs dwarf support on ia64
+  // return dwarf_apply_reg_state (&c->dwarf, (dwarf_reg_state_t *)reg_states_data);
+  return -UNW_EINVAL;
 }

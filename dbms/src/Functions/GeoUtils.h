@@ -19,6 +19,11 @@
 #pragma GCC diagnostic pop
 #endif
 
+#if __clang__ && __clang_major__ <= 4
+#else
+#define USE_POINT_IN_POLYGON 1
+#endif
+
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
@@ -78,6 +83,7 @@ UInt64 getMultiPolygonAllocatedBytes(const MultiPolygon & multi_polygon)
     return size;
 }
 
+#if USE_POINT_IN_POLYGON
 template <typename CoordinateType = Float32>
 class PointInPolygonWithGrid
 {
@@ -577,6 +583,8 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
     return Impl::call(x, y, impl);
 }
 
+#endif
+
 /// Total angle (signed) between neighbor vectors in linestring. Zero if linestring.size() < 2.
 template <typename Linestring>
 float calcLinestringRotation(const Linestring & points)
@@ -643,7 +651,7 @@ std::string serialize(Polygon && polygon)
         auto serializeFloat = [&buffer](float value) { buffer.write(reinterpret_cast<char *>(&value), sizeof(value)); };
         auto serializeSize = [&buffer](size_t size) { buffer.write(reinterpret_cast<char *>(&size), sizeof(size)); };
 
-        auto serializeRing = [& buffer, & serializeFloat, & serializeSize](const RingType & ring)
+        auto serializeRing = [& serializeFloat, & serializeSize](const RingType & ring)
         {
             serializeSize(ring.size());
             for (const auto & point : ring)

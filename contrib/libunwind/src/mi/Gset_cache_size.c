@@ -38,6 +38,12 @@ unw_set_cache_size (unw_addr_space_t as, size_t size, int flag)
   if (flag != 0)
     return -1;
 
+  /* Currently not supported for per-thread cache due to memory leak */
+  /* A pthread-key destructor would work, but is not signal safe */
+#if defined(HAVE___THREAD) && HAVE___THREAD
+  return -1;
+#endif
+
   /* Round up to next power of two, slowly but portably */
   while(power < size)
     {
@@ -48,10 +54,12 @@ unw_set_cache_size (unw_addr_space_t as, size_t size, int flag)
         break;
     }
 
+#if !defined(__ia64__)
   if (log_size == as->global_cache.log_size)
     return 0;   /* no change */
 
   as->global_cache.log_size = log_size;
+#endif
 
   /* Ensure caches are empty (and initialized).  */
   unw_flush_cache (as, 0, 0);
