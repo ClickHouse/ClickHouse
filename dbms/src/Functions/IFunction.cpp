@@ -204,12 +204,17 @@ bool defaultImplementationForNulls(
         const ColumnWithTypeAndName & source_col = temporary_block.getByPosition(result);
         ColumnWithTypeAndName & dest_col = block.getByPosition(result);
 
-        /// Initialize the result column.
-        ColumnPtr null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);
-        dest_col.column = std::make_shared<ColumnNullable>(source_col.column, null_map);
+        if (source_col.column->isConst())
+            dest_col.column = source_col.column;
+        else
+        {
+            /// Initialize the result column.
+            ColumnPtr null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);
+            dest_col.column = std::make_shared<ColumnNullable>(source_col.column, null_map);
 
-        /// Deduce the null map of the result from the null maps of the nullable columns.
-        createNullMap(block, args, result);
+            /// Deduce the null map of the result from the null maps of the nullable columns.
+            createNullMap(block, args, result);
+        }
 
         return true;
     }

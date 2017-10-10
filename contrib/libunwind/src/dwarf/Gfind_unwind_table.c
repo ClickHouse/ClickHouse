@@ -139,7 +139,7 @@ dwarf_find_unwind_table (struct elf_dyn_info *edi, unw_addr_space_t as,
         }
 
       a = unw_get_accessors (unw_local_addr_space);
-      addr = to_unw_word (hdr + 1);
+      addr = to_unw_word (&hdr->eh_frame);
 
       /* Fill in a dummy proc_info structure.  We just need to fill in
          enough to ensure that dwarf_read_encoded_pointer() can do it's

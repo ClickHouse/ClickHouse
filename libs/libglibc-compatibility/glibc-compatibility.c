@@ -43,11 +43,14 @@ int __gai_sigqueue(int sig, const union sigval val, pid_t caller_pid)
 
 #if __GLIBC__ > 2 || (__GLIBC__ == 2  && __GLIBC_MINOR__ >= 16)
 long int __fdelt_chk(long int d)
+{
+    if (d < 0)
+        abort();
 #else
 unsigned long int __fdelt_chk(unsigned long int d)
-#endif
 {
-    if (d < 0 || d >= FD_SETSIZE)
+#endif
+    if (d >= FD_SETSIZE)
         abort();
     return d / __NFDBITS;
 }
@@ -64,13 +67,13 @@ int __poll_chk(struct pollfd * fds, nfds_t nfds, int timeout, size_t fdslen)
 
 #include <setjmp.h>
 
-void longjmp(jmp_buf env, int val);
+void musl_glibc_longjmp(jmp_buf env, int val);
 
 /// NOTE This disables some of FORTIFY_SOURCE functionality.
 
 void __longjmp_chk(jmp_buf env, int val)
 {
-    return longjmp(env, val);
+    musl_glibc_longjmp(env, val);
 }
 
 #include <stdarg.h>

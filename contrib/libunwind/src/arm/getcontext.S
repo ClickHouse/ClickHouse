@@ -35,8 +35,15 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 _Uarm_getcontext:
 	stmfd sp!, {r0, r1}
 	@ store r0
+#if defined(__linux__)
 	str r0, [r0, #LINUX_UC_MCONTEXT_OFF + LINUX_SC_R0_OFF]
 	add r0, r0, #LINUX_UC_MCONTEXT_OFF + LINUX_SC_R0_OFF
+#elif defined(__FreeBSD__)
+	str r0, [r0, #FREEBSD_UC_MCONTEXT_OFF + FREEBSD_MC_R0_OFF]
+	add r0, r0, #FREEBSD_UC_MCONTEXT_OFF + FREEBSD_MC_R0_OFF
+#else
+#error Fix me
+#endif
 	@ store r1 to r12
 	stmib r0, {r1-r12}
 	@ reconstruct r13 at call site, then store
@@ -50,7 +57,7 @@ _Uarm_getcontext:
 	str r1, [r0, #15 * 4]
 	ldmfd sp!, {r0, r1}
 	bx lr
-#ifdef __linux__
+#if defined(__linux__) || defined(__FreeBSD__)
  /* We do not need executable stack.  */
  .section  .note.GNU-stack,"",%progbits
 #endif

@@ -161,10 +161,16 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
+thread_local bool already_signal_handled = false;
+
 /** Обработчик некоторых сигналов. Выводит информацию в лог (если получится).
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (already_signal_handled)
+        return;
+    already_signal_handled = true;
+
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
@@ -192,7 +198,7 @@ size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & co
 
     unw_cursor_t cursor;
 
-    if (unw_init_local_signal(&cursor, &context) < 0)
+    if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) < 0)
         return 0;
 
     size_t i = 0;

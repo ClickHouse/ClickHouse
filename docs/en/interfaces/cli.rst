@@ -48,6 +48,15 @@ By default, files are searched for in this order:
 
 Settings are only taken from the first file found.
 
+Example of config file:
+
+.. code-block:: xml
+
+   <config>
+       <user>username</user>
+       <password>password</password>
+   </config>
+   
 You can also specify any settings that will be used for processing queries. For example, ``clickhouse-client --max_threads=1``. For more information, see the section "Settings".
 
 The client can be used in interactive and non-interactive (batch) mode.

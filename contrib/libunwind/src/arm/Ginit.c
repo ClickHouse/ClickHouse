@@ -126,6 +126,11 @@ static int
 access_mem (unw_addr_space_t as, unw_word_t addr, unw_word_t *val, int write,
             void *arg)
 {
+  /* validate address */
+    const struct cursor *c = (const struct cursor *) arg;
+    if (c && validate_mem(addr))
+      return -1;
+
   if (write)
     {
       Debug (16, "mem[%x] <- %x\n", addr, *val);
@@ -133,11 +138,6 @@ access_mem (unw_addr_space_t as, unw_word_t addr, unw_word_t *val, int write,
     }
   else
     {
-      /* validate address */
-      const struct cursor *c = (const struct cursor *) arg;
-      if (c && validate_mem(addr))
-        return -1;
-
       *val = *(unw_word_t *) addr;
       Debug (16, "mem[%x] -> %x\n", addr, *val);
     }
@@ -220,7 +220,7 @@ HIDDEN void
 arm_local_addr_space_init (void)
 {
   memset (&local_addr_space, 0, sizeof (local_addr_space));
-  local_addr_space.caching_policy = UNW_CACHE_GLOBAL;
+  local_addr_space.caching_policy = UNWI_DEFAULT_CACHING_POLICY;
   local_addr_space.acc.find_proc_info = arm_find_proc_info;
   local_addr_space.acc.put_unwind_info = arm_put_unwind_info;
   local_addr_space.acc.get_dyn_info_list_addr = get_dyn_info_list_addr;
