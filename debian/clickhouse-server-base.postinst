@@ -4,7 +4,6 @@ set -e
 CLICKHOUSE_USER=clickhouse
 CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
 CLICKHOUSE_DATADIR=/var/lib/clickhouse
-CLICKHOUSE_DATADIR_OLD=/opt/clickhouse  # remove after 2017-06-01
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_SERVER_ETCDIR=/etc/clickhouse-server
 
@@ -45,15 +44,9 @@ Please fix this and reinstall this package." >&2
     fi
 
     if [ ! -d ${CLICKHOUSE_DATADIR} ]; then
-        # only for compatibility for old /opt/clickhouse, remove after 2017-06-01
-        if [ -d ${CLICKHOUSE_DATADIR_OLD} ]; then
-            ln -s ${CLICKHOUSE_DATADIR_OLD} ${CLICKHOUSE_DATADIR}
-        else
-            # DONT remove after 2017-06-01 :
-            mkdir -p ${CLICKHOUSE_DATADIR}
-            chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
-            chmod 700 ${CLICKHOUSE_DATADIR}
-        fi
+        mkdir -p ${CLICKHOUSE_DATADIR}
+        chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
+        chmod 700 ${CLICKHOUSE_DATADIR}
     fi
 
     if [ ! -d ${CLICKHOUSE_LOGDIR} ]; then
@@ -65,7 +58,7 @@ Please fix this and reinstall this package." >&2
 
 
     if [ -d ${CLICKHOUSE_LOGDIR} ]; then
-        # only for compatibility for old metrika user, remove string after 2017-06-01 :
+        # only for compatibility for old metrika user, remove string after 2017-06-01
         su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}" || chown -R root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}; chmod -R ug+rw ${CLICKHOUSE_LOGDIR}
     fi
 
