@@ -100,6 +100,7 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
         }
     }
 
+/*
     if (is_first_select_inside_union_all && (hasAsterisk() || hasAggregation(query)))
     {
         basicInit(input);
@@ -117,6 +118,7 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
         }
     }
     else
+*/
     {
         renameColumns();
         if (!required_column_names.empty())
