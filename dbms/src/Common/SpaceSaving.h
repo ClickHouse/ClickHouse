@@ -130,6 +130,11 @@ public:
         return m_capacity;
     }
 
+    void clear()
+    {
+        return destroyElements();
+    }
+
     void resize(size_t new_capacity)
     {
         counter_list.reserve(new_capacity);
@@ -255,6 +260,8 @@ public:
         writeVarUInt(size(), wb);
         for (auto counter : counter_list)
             counter->write(wb);
+
+        writeVarUInt(alpha_map.size(), wb);
         for (auto alpha : alpha_map)
             writeVarUInt(alpha, wb);
     }
@@ -273,7 +280,14 @@ public:
             push(counter);
         }
 
-        for (size_t i = 0; i < nextAlphaSize(m_capacity); ++i)
+        readAlphaMap(rb);
+    }
+
+    void readAlphaMap(ReadBuffer & rb)
+    {
+        size_t alpha_size = 0;
+        readVarUInt(alpha_size, rb);
+        for (size_t i = 0; i < alpha_size; ++i)
         {
             UInt64 alpha = 0;
             readVarUInt(alpha, rb);
