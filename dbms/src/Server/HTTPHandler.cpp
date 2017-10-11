@@ -35,6 +35,8 @@
 #include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
 
+#include <Poco/Net/HTTPStream.h>
+
 #include "HTTPHandler.h"
 
 namespace DB
@@ -82,6 +84,7 @@ namespace ErrorCodes
     extern const int REQUIRED_PASSWORD;
 
     extern const int INVALID_SESSION_TIMEOUT;
+    extern const int HTTP_LENGTH_REQUIRED;
 }
 
 
@@ -125,6 +128,8 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     else if (exception_code == ErrorCodes::SOCKET_TIMEOUT ||
              exception_code == ErrorCodes::CANNOT_OPEN_FILE)
         return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+    else if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
+        return HTTPResponse::HTTP_LENGTH_REQUIRED;
 
     return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
 }
@@ -558,7 +563,8 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
             && response.getKeepAlive()
-            && !request.stream().eof())
+            && !request.stream().eof()
+            && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
         {
             request.stream().ignore(std::numeric_limits<std::streamsize>::max());
         }
@@ -632,6 +638,13 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
         HTMLForm params(request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
+
+        /// Workaround. Poco does not detect 411 Length Required case.
+        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() &&
+            !request.hasContentLength())
+        {
+            throw Exception("There is neither Transfer-Encoding header nor Content-Length header", ErrorCodes::HTTP_LENGTH_REQUIRED);
+        }
 
         processQuery(request, params, response, used_output);
         LOG_INFO(log, "Done processing query");

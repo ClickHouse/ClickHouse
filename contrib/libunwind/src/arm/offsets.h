@@ -34,3 +34,9 @@
 #define LINUX_SC_PC_OFF         0x48
 #define LINUX_SC_CPSR_OFF       0x4C
 #define LINUX_SC_FAULTADDR_OFF  0x50
+
+/* FreeBSD-specific definitions: */
+
+#define FREEBSD_SC_UCONTEXT_OFF		0x40
+#define	FREEBSD_UC_MCONTEXT_OFF		0x10
+#define FREEBSD_MC_R0_OFF		0

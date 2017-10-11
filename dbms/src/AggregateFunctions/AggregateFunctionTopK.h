@@ -194,11 +194,14 @@ public:
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
         auto & set = this->data(place).value;
+        set.clear();
         set.resize(reserved);
 
+        // Specialized here because there's no deserialiser for StringRef
         size_t count = 0;
         readVarUInt(count, buf);
-        for (size_t i = 0; i < count; ++i) {
+        for (size_t i = 0; i < count; ++i)
+        {
             auto ref = readStringBinaryInto(*arena, buf);
             UInt64 count, error;
             readVarUInt(count, buf);
@@ -206,12 +209,15 @@ public:
             set.insert(ref, count, error);
             arena->rollback(ref.size);
         }
+
+        set.readAlphaMap(buf);
     }
 
     void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
     {
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved) {
+        if (set.capacity() != reserved)
+        {
             set.resize(reserved);
         }
 

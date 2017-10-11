@@ -125,7 +125,6 @@ html_theme_options = {
     'link': '#08f',
     'link_hover': 'red',
     'extra_nav_links': collections.OrderedDict([
-        ('ClickHouse Meetup Berlin', 'https://events.yandex.com/events/meetings/05-10-2017/'),
         ('Switch to Russian <img id="svg-flag" src="/docs/en/_static/ru.svg" width="20" height="12" />', '#ru'),
         ('Single page documentation', '/docs/en/single/'),
         ('Website home', '/'),

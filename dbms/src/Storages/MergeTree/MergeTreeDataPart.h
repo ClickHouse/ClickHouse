@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeTreePartition.h>
 #include <Columns/IColumn.h>
 #include <shared_mutex>
 
@@ -80,21 +81,6 @@ struct MergeTreeDataPartChecksums
 };
 
 
-/// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
-/// parts based on conditions on these columns imposed by a query.
-/// Currently this index is built using only columns required by partition expression, but in principle it
-/// can be built using any set of columns.
-struct MinMaxIndex
-{
-    void update(const Block & block, const Names & column_names);
-    void merge(const MinMaxIndex & other);
-
-    bool initialized = false;
-    Row min_column_values;
-    Row max_column_values;
-};
-
-
 class MergeTreeData;
 
 
@@ -104,15 +90,12 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(MergeTreeData & storage_, const String & name_)
-        : storage(storage_), name(name_), info(MergeTreePartInfo::fromPartName(name_))
-    {
-    }
-
     MergeTreeDataPart(MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
         : storage(storage_), name(name_), info(info_)
     {
     }
+
+    MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
 
     /// Returns checksum of column's binary file.
     const Checksum * tryGetBinChecksum(const String & name) const;
@@ -145,8 +128,6 @@ struct MergeTreeDataPart
     String name;
     MergeTreePartInfo info;
 
-    Row partition;
-
     /// A directory path (realative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     mutable String relative_path;
@@ -161,7 +142,6 @@ struct MergeTreeDataPart
     bool is_temp = false;
 
     /// For resharding.
-    bool is_sharded = false;
     size_t shard_no = 0;
 
     /// Primary key (correspond to primary.idx file).
@@ -169,6 +149,36 @@ struct MergeTreeDataPart
     /// Note that marks (also correspond to primary key) is not always in RAM, but cached. See MarkCache.h.
     using Index = Columns;
     Index index;
+
+    MergeTreePartition partition;
+
+    /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
+    /// parts based on conditions on these columns imposed by a query.
+    /// Currently this index is built using only columns required by partition expression, but in principle it
+    /// can be built using any set of columns.
+    struct MinMaxIndex
+    {
+        Row min_values;
+        Row max_values;
+        bool initialized = false;
+
+    public:
+        MinMaxIndex() = default;
+
+        /// For month-based partitioning.
+        MinMaxIndex(DayNum_t min_date, DayNum_t max_date)
+            : min_values(1, static_cast<UInt64>(min_date))
+            , max_values(1, static_cast<UInt64>(max_date))
+            , initialized(true)
+        {
+        }
+
+        void load(const MergeTreeData & storage, const String & part_path);
+        void store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const;
+
+        void update(const Block & block, const Names & column_names);
+        void merge(const MinMaxIndex & other);
+    };
 
     MinMaxIndex minmax_idx;
 

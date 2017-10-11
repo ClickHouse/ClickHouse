@@ -106,16 +106,16 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 
 #define DW_EH_VERSION           1       /* The version we're implementing */
 
-struct dwarf_eh_frame_hdr
+struct __attribute__((packed)) dwarf_eh_frame_hdr
   {
     unsigned char version;
     unsigned char eh_frame_ptr_enc;
     unsigned char fde_count_enc;
     unsigned char table_enc;
+    Elf_W (Addr) eh_frame;
     /* The rest of the header is variable-length and consists of the
        following members:
 
-        encoded_t eh_frame_ptr;
         encoded_t fde_count;
         struct
           {

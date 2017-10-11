@@ -152,7 +152,7 @@ tilegx_local_addr_space_init (void)
 
   local_addr_space.abi = UNW_TILEGX_ABI_N64;
   local_addr_space.addr_size = sizeof (void *);
-  local_addr_space.caching_policy = UNW_CACHE_GLOBAL;
+  local_addr_space.caching_policy = UNWI_DEFAULT_CACHING_POLICY;
   local_addr_space.acc.find_proc_info = dwarf_find_proc_info;
   local_addr_space.acc.put_unwind_info = put_unwind_info;
   local_addr_space.acc.get_dyn_info_list_addr = get_dyn_info_list_addr;

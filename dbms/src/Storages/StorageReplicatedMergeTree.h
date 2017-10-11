@@ -87,8 +87,9 @@ public:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_,
-        ASTPtr & primary_expr_ast_,
-        const String & date_column_name_,
+        const ASTPtr & primary_expr_ast_,
+        const String & date_column_name,
+        const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
         size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
@@ -133,19 +134,19 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
-    void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
-    void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
-    void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
-    void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void reshardPartitions(
         const ASTPtr & query, const String & database_name,
-        const Field & partition,
+        const ASTPtr & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
         const Context & context) override;
@@ -243,13 +244,6 @@ private:
     String replica_name;
     String replica_path;
 
-    /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
-      * In ZK entries in chronological order. Here it is not necessary.
-      */
-    ReplicatedMergeTreeQueue queue;
-    std::atomic<time_t> last_queue_update_start_time{0};
-    std::atomic<time_t> last_queue_update_finish_time{0};
-
     /** /replicas/me/is_active.
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
@@ -274,6 +268,14 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMerger merger;
+
+    /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
+     * In ZK entries in chronological order. Here it is not necessary.
+     */
+    ReplicatedMergeTreeQueue queue;
+    std::atomic<time_t> last_queue_update_start_time{0};
+    std::atomic<time_t> last_queue_update_finish_time{0};
+
 
     DataPartsExchange::Fetcher fetcher;
     RemoteDiskSpaceMonitor::Client disk_space_monitor_client;
@@ -333,8 +335,9 @@ private:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_,
-        ASTPtr & primary_expr_ast_,
-        const String & date_column_name_,
+        const ASTPtr & primary_expr_ast_,
+        const String & date_column_name,
+        const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_,
         size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,

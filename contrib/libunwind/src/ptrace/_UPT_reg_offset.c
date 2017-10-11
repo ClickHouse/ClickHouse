@@ -484,6 +484,7 @@ const int _UPT_reg_offset[UNW_REG_LAST + 1] =
 #endif
 
 #elif defined(UNW_TARGET_ARM)
+#if defined(__linux__) || defined(__FreeBSD__)
     [UNW_ARM_R0]       = 0x00,
     [UNW_ARM_R1]       = 0x04,
     [UNW_ARM_R2]       = 0x08,
@@ -500,6 +501,9 @@ const int _UPT_reg_offset[UNW_REG_LAST + 1] =
     [UNW_ARM_R13]      = 0x34,
     [UNW_ARM_R14]      = 0x38,
     [UNW_ARM_R15]      = 0x3c,
+#else
+#error Fix me
+#endif
 #elif defined(UNW_TARGET_MIPS)
     [UNW_MIPS_R0]  =  0,
     [UNW_MIPS_R1]  =  1,

@@ -75,6 +75,18 @@ _UPT_access_fpreg (unw_addr_space_t as, unw_regnum_t reg, unw_fpreg_t *val,
   pid_t pid = ui->pid;
   fpregset_t fpreg;
 
+#if defined(__amd64__)
+  if (1) /* XXXKIB */
+    return -UNW_EBADREG;
+#elif defined(__i386__)
+  if ((unsigned) reg < UNW_X86_ST0 || (unsigned) reg > UNW_X86_ST7)
+    return -UNW_EBADREG;
+#elif defined(__arm__)
+  if ((unsigned) reg < UNW_ARM_F0 || (unsigned) reg > UNW_ARM_F7)
+    return -UNW_EBADREG;
+#else
+#error Fix me
+#endif
   if ((unsigned) reg >= ARRAY_SIZE (_UPT_reg_offset))
     return -UNW_EBADREG;
 
@@ -85,6 +97,8 @@ _UPT_access_fpreg (unw_addr_space_t as, unw_regnum_t reg, unw_fpreg_t *val,
           memcpy(&fpreg.fpr_xacc[reg], val, sizeof(unw_fpreg_t));
 #elif defined(__i386__)
           memcpy(&fpreg.fpr_acc[reg], val, sizeof(unw_fpreg_t));
+#elif defined(__arm__)
+          memcpy(&fpreg.fpr[reg], val, sizeof(unw_fpreg_t));
 #else
 #error Fix me
 #endif
@@ -95,6 +109,8 @@ _UPT_access_fpreg (unw_addr_space_t as, unw_regnum_t reg, unw_fpreg_t *val,
           memcpy(val, &fpreg.fpr_xacc[reg], sizeof(unw_fpreg_t));
 #elif defined(__i386__)
           memcpy(val, &fpreg.fpr_acc[reg], sizeof(unw_fpreg_t));
+#elif defined(__arm__)
+          memcpy(val, &fpreg.fpr[reg], sizeof(unw_fpreg_t));
 #else
 #error Fix me
 #endif

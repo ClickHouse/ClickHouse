@@ -71,7 +71,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     data.check(block, true);
     block.checkNumberOfRows();
 
-    if (data.partition_expr_columns.empty()) /// Table is not partitioned.
+    if (!data.partition_expr) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row());
         return result;
@@ -124,33 +124,38 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 {
     Block & block = block_with_partition.block;
 
-    size_t part_size = (block.rows() + data.index_granularity - 1) / data.index_granularity;
-
     static const String TMP_PREFIX = "tmp_insert_";
 
     /// This will generate unique name in scope of current server process.
     Int64 temp_index = data.insert_increment.get();
 
-    MinMaxIndex minmax_idx;
+    MergeTreeDataPart::MinMaxIndex minmax_idx;
     minmax_idx.update(block, data.minmax_idx_columns);
 
-    DayNum_t min_date(minmax_idx.min_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
-    DayNum_t max_date(minmax_idx.max_column_values[data.minmax_idx_date_column_pos].get<UInt64>());
+    MergeTreePartition partition(std::move(block_with_partition.partition));
 
-    const auto & date_lut = DateLUT::instance();
+    MergeTreePartInfo new_part_info(partition.getID(data), temp_index, temp_index, 0);
+    String part_name;
+    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        DayNum_t min_date(minmax_idx.min_values[data.minmax_idx_date_column_pos].get<UInt64>());
+        DayNum_t max_date(minmax_idx.max_values[data.minmax_idx_date_column_pos].get<UInt64>());
 
-    DayNum_t min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
-    DayNum_t max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
+        const auto & date_lut = DateLUT::instance();
 
-    if (min_month != max_month)
-        throw Exception("Logical error: part spans more than one month.");
+        DayNum_t min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
+        DayNum_t max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
 
-    String part_name = MergeTreePartInfo::getPartName(min_date, max_date, temp_index, temp_index, 0);
+        if (min_month != max_month)
+            throw Exception("Logical error: part spans more than one month.");
 
-    String new_partition_id = data.getPartitionIDFromData(block_with_partition.partition);
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-            data, part_name, MergeTreePartInfo(new_partition_id, temp_index, temp_index, 0));
-    new_data_part->partition = std::move(block_with_partition.partition);
+        part_name = new_part_info.getPartNameV0(min_date, max_date);
+    }
+    else
+        part_name = new_part_info.getPartName();
+
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name, new_part_info);
+    new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->relative_path = TMP_PREFIX + part_name;
     new_data_part->is_temp = true;
@@ -198,14 +203,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
-    MergeTreeData::DataPart::Checksums checksums = out.writeSuffixAndGetChecksums();
-
-    new_data_part->size = part_size;
-    new_data_part->modification_time = time(nullptr);
-    new_data_part->columns = columns;
-    new_data_part->checksums = checksums;
-    new_data_part->index.swap(out.getIndex());
-    new_data_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_data_part->getFullPath());
+    out.writeSuffixAndFinalizePart(new_data_part);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());

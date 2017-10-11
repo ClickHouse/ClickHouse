@@ -105,7 +105,6 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
     data_part->modification_time = time(nullptr);
     data_part->loadColumnsChecksumsIndexes(true, false);
-    data_part->is_sharded = false;
     data_part->checksums.checkEqual(checksums, false);
 
     /// Now store permanently the received part.
