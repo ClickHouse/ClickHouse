@@ -1,22 +1,22 @@
 /* Copyright 2011-2012 Nicholas J. Kain, licensed under standard MIT license */
-.global _longjmp
-.global longjmp
-.type _longjmp,@function
-.type longjmp,@function
-_longjmp:
-longjmp:
-	mov %rsi,%rax           /* val will be longjmp return */
-	test %rax,%rax
-	jnz 1f
-	inc %rax                /* if val==0, val=1 per longjmp semantics */
-1:
-	mov (%rdi),%rbx         /* rdi is the jmp_buf, restore regs from it */
-	mov 8(%rdi),%rbp
-	mov 16(%rdi),%r12
-	mov 24(%rdi),%r13
-	mov 32(%rdi),%r14
-	mov 40(%rdi),%r15
-	mov 48(%rdi),%rdx       /* this ends up being the stack pointer */
-	mov %rdx,%rsp
-	mov 56(%rdi),%rdx       /* this is the instruction pointer */
-	jmp *%rdx               /* goto saved address without altering rsp */
+.global musl_glibc_longjmp
+.type musl_glibc_longjmp,@function
+musl_glibc_longjmp:
+    mov    0x30(%rdi),%r8
+    mov    0x8(%rdi),%r9
+    mov    0x38(%rdi),%rdx
+    ror    $0x11,%r8
+    xor    %fs:0x30,%r8     /* this ends up being the stack pointer */
+    ror    $0x11,%r9
+    xor    %fs:0x30,%r9
+    ror    $0x11,%rdx
+    xor    %fs:0x30,%rdx    /* this is the instruction pointer */
+    mov    (%rdi),%rbx      /* rdi is the jmp_buf, restore regs from it */
+    mov    0x10(%rdi),%r12
+    mov    0x18(%rdi),%r13
+    mov    0x20(%rdi),%r14
+    mov    0x28(%rdi),%r15
+    mov    %esi,%eax
+    mov    %r8,%rsp
+    mov    %r9,%rbp
+    jmpq   *%rdx            /* goto saved address without altering rsp */
