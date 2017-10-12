@@ -108,9 +108,6 @@ MergeTreeData::MergeTreeData(
     parts_clean_callback(parts_clean_callback_ ? parts_clean_callback_ : [this](){ clearOldParts(); }),
     log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
-    checkNoMultidimensionalArrays(*columns, attach);
-    checkNoMultidimensionalArrays(materialized_columns, attach);
-
     merging_params.check(*columns);
 
     if (!primary_expr_ast && merging_params.mode != MergingParams::Unsorted)
