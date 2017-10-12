@@ -90,18 +90,18 @@ def main(args):
 
     failures_total = 0
 
-    # Keep same default values as in queries/0_stateless/99999_sh_lib.sh
+    # Keep same default values as in queries/0_stateless/00000_sh_lib.sh
+    os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
-    os.environ.setdefault("CLICKHOUSE_BINARY", "clickhouse")
     os.environ.setdefault("CLICKHOUSE_HOST", "localhost")
     os.environ.setdefault("CLICKHOUSE_PORT_TCP", "9000")
     os.environ.setdefault("CLICKHOUSE_PORT_HTTP", "8123")
     os.environ.setdefault("CLICKHOUSE_PORT_HTTPS", "8443")
     os.environ.setdefault("CLICKHOUSE_PORT_HTTP_PROTO", "http") # or https
-    os.environ.setdefault("CLICKHOUSE_URL", "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/".format(**os.environ))
+    os.environ.setdefault("CLICKHOUSE_URL", "{CLICKHOUSE_PORT_HTTP_PROTO}://{CLICKHOUSE_HOST}:{CLICKHOUSE_PORT_HTTP}/".format(**os.environ))
     os.environ.setdefault("CLICKHOUSE_CONFIG", "/etc/clickhouse-server/config.xml")
-    os.environ.setdefault("CLICKHOUSE_EXTRACT_CONFIG", "${CLICKHOUSE_BINARY} extract-from-config -c ${CLICKHOUSE_CONFIG}".format(**os.environ))
-    os.environ.setdefault("CLICKHOUSE_CURL", "curl -m 5")
+    os.environ.setdefault("CLICKHOUSE_EXTRACT_CONFIG", "{CLICKHOUSE_BINARY} extract-from-config -c {CLICKHOUSE_CONFIG}".format(**os.environ))
+    os.environ.setdefault("CLICKHOUSE_CURL", "curl --max-time 5")
 
     for suite in sorted(os.listdir(base_dir)):
         if SERVER_DIED:
@@ -274,7 +274,8 @@ def main(args):
 if __name__ == '__main__':
     parser = ArgumentParser(description = 'ClickHouse functional tests')
     parser.add_argument('-q', '--queries', default = 'queries', help = 'Path to queries dir')
-    parser.add_argument('-c', '--client', default = 'clickhouse-client', help = 'Client program')
+    parser.add_argument('-b', '--binary', default = 'clickhouse', help = 'Main clickhouse binary')
+    parser.add_argument('-c', '--client', help = 'Client program')
     parser.add_argument('-o', '--output', help = 'Output xUnit compliant test report directory')
     parser.add_argument('-t', '--timeout', type = int, default = 600, help = 'Timeout for each test case in seconds')
     parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
@@ -289,7 +290,8 @@ if __name__ == '__main__':
     group.add_argument('--no-shard', action = 'store_false', default = None, dest = 'shard', help = 'Do not run shard related tests')
 
     args = parser.parse_args()
-
+    if args.client is None:
+        args.client = args.binary + ' client'
     main(args)
 
 #
