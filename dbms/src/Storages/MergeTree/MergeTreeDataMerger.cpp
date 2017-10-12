@@ -250,8 +250,6 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
         /// For the case of one part, we check that it can be merged "with itself".
         if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it))
         {
-            LOG_INFO(log, ((it != prev_it) ? "Parts " + (*prev_it)->name + " and " + (*it)->name : "Part " + (*it)->name)
-                << " cannot be used for merge");
             return false;
         }
 
