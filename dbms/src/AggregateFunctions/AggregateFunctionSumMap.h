@@ -31,7 +31,7 @@ struct AggregateFunctionSumMapData
     std::map<T, Array> merged_maps;
 };
 
-/** Aggregate function, that takes at keast two arguments: keys and values, and as a result, builds a tuple of of at least 2 arrays -
+/** Aggregate function, that takes at least two arguments: keys and values, and as a result, builds a tuple of of at least 2 arrays -
   * ordered keys and variable number of argument values summed up  by corresponding keys.
   *
   * This function is the most useful when using SummingMergeTree to sum Nested columns, which name ends in "Map".
