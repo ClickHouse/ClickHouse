@@ -1978,7 +1978,7 @@ void StorageReplicatedMergeTree::becomeLeader()
     if (merge_selecting_thread.joinable())
     {
         LOG_INFO(log, "Deleting old leader");
-        is_leader_node = false; // exit trigger inside thread
+        is_leader_node = false; /// exit trigger inside thread
         merge_selecting_thread.join();
     }
 
