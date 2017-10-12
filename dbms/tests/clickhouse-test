@@ -90,10 +90,18 @@ def main(args):
 
     failures_total = 0
 
+    # Keep same default values as in queries/0_stateless/99999_sh_lib.sh
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
     os.environ.setdefault("CLICKHOUSE_BINARY", "clickhouse")
-    os.environ.setdefault("CLICKHOUSE_URL", "http://localhost:8123/")
+    os.environ.setdefault("CLICKHOUSE_HOST", "localhost")
+    os.environ.setdefault("CLICKHOUSE_PORT_TCP", "9000")
+    os.environ.setdefault("CLICKHOUSE_PORT_HTTP", "8123")
+    os.environ.setdefault("CLICKHOUSE_PORT_HTTPS", "8443")
+    os.environ.setdefault("CLICKHOUSE_PORT_HTTP_PROTO", "http") # or https
+    os.environ.setdefault("CLICKHOUSE_URL", "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/".format(**os.environ))
     os.environ.setdefault("CLICKHOUSE_CONFIG", "/etc/clickhouse-server/config.xml")
+    os.environ.setdefault("CLICKHOUSE_EXTRACT_CONFIG", "${CLICKHOUSE_BINARY} extract-from-config -c ${CLICKHOUSE_CONFIG}".format(**os.environ))
+    os.environ.setdefault("CLICKHOUSE_CURL", "curl -m 5")
 
     for suite in sorted(os.listdir(base_dir)):
         if SERVER_DIED:
