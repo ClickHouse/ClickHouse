@@ -128,6 +128,7 @@
          https://clickhouse.yandex/reference_en.html#Distributed
       -->
     <remote_servers incl="clickhouse_remote_servers" >
+        <!-- Test only shard config for testing distributed storage -->
         <test_shard_localhost>
             <shard>
                 <replica>
