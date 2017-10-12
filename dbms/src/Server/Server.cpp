@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <sys/resource.h>
-#include <signal.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
@@ -64,7 +63,6 @@ namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int CANNOT_BLOCK_SIGNAL;
 }
 
 
@@ -92,12 +90,6 @@ int Server::main(const std::vector<std::string> & args)
     registerTableFunctions();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
-
-    {
-        sigset_t sig_set;
-        if (sigemptyset(&sig_set) || sigaddset(&sig_set, SIGPIPE) || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
-            throwFromErrno("Cannot block signal.", ErrorCodes::CANNOT_BLOCK_SIGNAL);
-    }
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...

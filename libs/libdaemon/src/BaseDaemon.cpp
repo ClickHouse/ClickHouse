@@ -149,6 +149,11 @@ static void writeSignalIDtoSignalPipe(int sig)
     out.next();
 }
 
+/* SIGPIPE (sometimes caused by sockets) */
+static void ignoreSignalHandler(int sig, siginfo_t * info, void * context)
+{
+}
+
 /** Обработчик сигналов HUP / USR1 */
 static void closeLogsSignalHandler(int sig, siginfo_t * info, void * context)
 {
@@ -835,6 +840,7 @@ void BaseDaemon::initialize(Application & self)
             }
         };
 
+    add_signal_handler({SIGPIPE}, ignoreSignalHandler);
     add_signal_handler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE}, faultSignalHandler);
     add_signal_handler({SIGHUP, SIGUSR1}, closeLogsSignalHandler);
     add_signal_handler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler);
