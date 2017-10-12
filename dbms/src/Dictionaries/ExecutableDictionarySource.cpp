@@ -16,6 +16,7 @@ namespace DB
 static const size_t max_block_size = 8192;
 
 
+/// Owns ShellCommand and call wait for it.
 class ShellCommandOwningBlockInputStream : public OwningBlockInputStream<ShellCommand>
 {
 public:
@@ -30,6 +31,7 @@ public:
         own->wait();
     }
 };
+
 
 ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
