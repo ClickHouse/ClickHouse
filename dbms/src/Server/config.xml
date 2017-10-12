@@ -127,7 +127,16 @@
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.yandex/reference_en.html#Distributed
       -->
-    <remote_servers incl="clickhouse_remote_servers" />
+    <remote_servers incl="clickhouse_remote_servers" >
+        <test_shard_localhost>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_shard_localhost>
+    </remote_servers>
 
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.

@@ -3,7 +3,7 @@
 # Not default server config needed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/00000_sh_lib.sh
+. $CURDIR/../shell_config.sh
 
 tcp_ssl_port=`${CLICKHOUSE_EXTRACT_CONFIG} -k tcp_ssl_port 2>/dev/null`
 if [ -z ${tcp_ssl_port} ]; then

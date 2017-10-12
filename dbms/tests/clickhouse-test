@@ -93,15 +93,6 @@ def main(args):
     # Keep same default values as in queries/0_stateless/00000_sh_lib.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
-    os.environ.setdefault("CLICKHOUSE_HOST", "localhost")
-    os.environ.setdefault("CLICKHOUSE_PORT_TCP", "9000")
-    os.environ.setdefault("CLICKHOUSE_PORT_HTTP", "8123")
-    os.environ.setdefault("CLICKHOUSE_PORT_HTTPS", "8443")
-    os.environ.setdefault("CLICKHOUSE_PORT_HTTP_PROTO", "http") # or https
-    os.environ.setdefault("CLICKHOUSE_URL", "{CLICKHOUSE_PORT_HTTP_PROTO}://{CLICKHOUSE_HOST}:{CLICKHOUSE_PORT_HTTP}/".format(**os.environ))
-    os.environ.setdefault("CLICKHOUSE_CONFIG", "/etc/clickhouse-server/config.xml")
-    os.environ.setdefault("CLICKHOUSE_EXTRACT_CONFIG", "{CLICKHOUSE_BINARY} extract-from-config -c {CLICKHOUSE_CONFIG}".format(**os.environ))
-    os.environ.setdefault("CLICKHOUSE_CURL", "curl --max-time 5")
 
     for suite in sorted(os.listdir(base_dir)):
         if SERVER_DIED:
@@ -293,12 +284,3 @@ if __name__ == '__main__':
     if args.client is None:
         args.client = args.binary + ' client'
     main(args)
-
-#
-# TODO:
-# Pass variables to tests. currently used values:
-# /etc/clickhouse-server/config.xml
-# clickhouse           (path to binary)
-# clickhouse-client    (path to binary)
-# http://localhost:8123/
-#

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/00000_sh_lib.sh
+. $CURDIR/../shell_config.sh
 
 have_test_shard_localhost=`$CLICKHOUSE_EXTRACT_CONFIG -k remote_servers | grep have_test_shard_localhost`
 

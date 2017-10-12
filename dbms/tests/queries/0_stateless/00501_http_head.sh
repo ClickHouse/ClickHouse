@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-. $CURDIR/00000_sh_lib.sh
+. $CURDIR/../shell_config.sh
 
 ( ${CLICKHOUSE_CURL} -s --head "${CLICKHOUSE_URL}?query=SELECT%201";
   ${CLICKHOUSE_CURL} -s --head "${CLICKHOUSE_URL}?query=select+*+from+system.numbers+limit+1000000" ) | grep -v "Date:"
