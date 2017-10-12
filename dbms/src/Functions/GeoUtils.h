@@ -19,11 +19,6 @@
 #pragma GCC diagnostic pop
 #endif
 
-#if __clang__ && __clang_major__ <= 4
-#else
-#define USE_POINT_IN_POLYGON 1
-#endif
-
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
@@ -83,7 +78,6 @@ UInt64 getMultiPolygonAllocatedBytes(const MultiPolygon & multi_polygon)
     return size;
 }
 
-#if USE_POINT_IN_POLYGON
 template <typename CoordinateType = Float32>
 class PointInPolygonWithGrid
 {
@@ -553,7 +547,7 @@ struct CallPointInPolygon<Type, Types ...>
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNumbers>::Type;
+        using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNumbers>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<Types ...>::call(x, y, impl);
@@ -579,11 +573,9 @@ struct CallPointInPolygon<>
 template <typename PointInPolygonImpl>
 ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNumbers>::Type;
+    using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNumbers>::Type;
     return Impl::call(x, y, impl);
 }
-
-#endif
 
 /// Total angle (signed) between neighbor vectors in linestring. Zero if linestring.size() < 2.
 template <typename Linestring>
