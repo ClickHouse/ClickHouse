@@ -12,7 +12,7 @@
 #include <Core/FieldVisitors.h>
 #include <AggregateFunctions/IBinaryAggregateFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/HashTable/HashMap.h>
+#include <map>
 
 namespace DB
 {
