@@ -429,8 +429,7 @@ bool SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
             else
             {
                 // Gather all source columns into a vector
-                std::vector<const IColumn *> columns;
-                columns.resize(desc.column_numbers.size());
+                ConstColumnPlainPtrs columns(desc.column_numbers.size());
                 for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                     columns[i] = cursor->all_columns[desc.column_numbers[i]];
 
