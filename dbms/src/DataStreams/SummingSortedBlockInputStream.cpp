@@ -180,6 +180,7 @@ Block SummingSortedBlockInputStream::readImpl()
             auto tuple = std::make_shared<ColumnTuple>();
             auto & tuple_columns = tuple->getColumns();
             auto desc = AggregateDescription{};
+            auto map_desc = MapDescription{};
 
             column_num_it = map.second.begin();
             for (; column_num_it != map.second.end(); ++column_num_it)
@@ -198,14 +199,14 @@ Block SummingSortedBlockInputStream::readImpl()
                         || nested_type.getName() == "Float64")
                         break;
 
-                    desc.key_col_nums.push_back(*column_num_it);
+                    map_desc.key_col_nums.push_back(*column_num_it);
                 }
                 else
                 {
                     if (!nested_type.behavesAsNumber())
                         break;
 
-                    desc.val_col_nums.push_back(*column_num_it);
+                    map_desc.val_col_nums.push_back(*column_num_it);
                 }
 
                 // Add column to function arguments
@@ -217,7 +218,7 @@ Block SummingSortedBlockInputStream::readImpl()
             if (column_num_it != map.second.end())
                 continue;
 
-            if (desc.key_col_nums.size() == 1)
+            if (map_desc.key_col_nums.size() == 1)
             {
                 // Create summation for all value columns in the map
                 desc.merged_column = static_cast<ColumnPtr>(tuple);
@@ -229,11 +230,11 @@ Block SummingSortedBlockInputStream::readImpl()
             else
             {
                 // Fall back to legacy mergeMaps for composite keys
-                for (auto i : desc.key_col_nums)
+                for (auto i : map_desc.key_col_nums)
                     column_numbers_not_to_aggregate.push_back(i);
-                for (auto i : desc.val_col_nums)
+                for (auto i : map_desc.val_col_nums)
                     column_numbers_not_to_aggregate.push_back(i);
-                maps_to_sum.emplace_back(std::move(desc));
+                maps_to_sum.emplace_back(std::move(map_desc));
             }
         }
     }
@@ -335,7 +336,7 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 }
 
 template <typename TSortCursor>
-bool SummingSortedBlockInputStream::mergeMap(const AggregateDescription & desc, Row & row, TSortCursor & cursor)
+bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, TSortCursor & cursor)
 {
     /// Strongly non-optimal.
 
