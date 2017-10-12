@@ -294,7 +294,7 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
             // Merge maps only for same rows
             for (auto & desc : maps_to_sum)
             {
-                if(mergeMap(desc, current_row, current))
+                if (mergeMap(desc, current_row, current))
                     current_row_is_zero = false;
             }
         }
