@@ -12,7 +12,7 @@
 #include <Core/FieldVisitors.h>
 #include <AggregateFunctions/IBinaryAggregateFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <map>
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -24,17 +24,19 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+template <typename T>
 struct AggregateFunctionSumMapData
 {
-    std::map<Field, Field> merged_maps;
+    // Map needs to be ordered to maintain function properties
+    std::map<T, Array> merged_maps;
 };
 
-/** Aggregate function, that takes two arguments: keys and values, and as a result, builds an array of 2 arrays -
-  * ordered keys and values summed up  by corresponding keys.
+/** Aggregate function, that takes at keast two arguments: keys and values, and as a result, builds a tuple of of at least 2 arrays -
+  * ordered keys and variable number of argument values summed up  by corresponding keys.
   *
   * This function is the most useful when using SummingMergeTree to sum Nested columns, which name ends in "Map".
   *
-  * Example: sumMap(k, v) of:
+  * Example: sumMap(k, v...) of:
   *  k           v
   *  [1,2,3]     [10,10,10]
   *  [3,4,5]     [10,10,10]
@@ -45,11 +47,13 @@ struct AggregateFunctionSumMapData
   * will return:
   *  ([1,2,3,4,5,6,7,8,9,10],[10,10,45,20,35,20,15,30,20,20])
   */
-class AggregateFunctionSumMap final : public IBinaryAggregateFunction<struct AggregateFunctionSumMapData, AggregateFunctionSumMap>
+
+template <typename T>
+class AggregateFunctionSumMap final : public IAggregateFunctionHelper<AggregateFunctionSumMapData<typename NearestFieldType<T>::Type>>
 {
 private:
     DataTypePtr keys_type;
-    DataTypePtr values_type;
+    std::vector<DataTypePtr> values_types;
 
 public:
     String getName() const override { return "sumMap"; }
@@ -58,15 +62,17 @@ public:
     {
         DataTypes types;
         types.emplace_back(std::make_shared<DataTypeArray>(keys_type));
-        types.emplace_back(std::make_shared<DataTypeArray>(values_type));
+
+        for (const auto & value_type : values_types)
+            types.emplace_back(std::make_shared<DataTypeArray>(value_type));
 
         return std::make_shared<DataTypeTuple>(types);
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
+    void setArguments(const DataTypes & arguments) override
     {
-        if (2 != arguments.size())
-            throw Exception("Aggregate function " + getName() + "require exactly two arguments of array type.",
+        if (arguments.size() < 2)
+            throw Exception("Aggregate function " + getName() + "require at leasat two arguments of array type.",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
@@ -75,11 +81,14 @@ public:
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         keys_type = array_type->getNestedType();
 
-        array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-        if (!array_type)
-            throw Exception("Second argument for function " + getName() + " must be an array.",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        values_type = array_type->getNestedType();
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
+            if (!array_type)
+                throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            values_types.push_back(array_type->getNestedType());
+        }
     }
 
     void setParameters(const Array & params) override
@@ -89,29 +98,49 @@ public:
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column_keys, const IColumn & column_values, size_t row_num, Arena *) const
+    void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena * arena) const override final
     {
-        Field field_keys;
-        column_keys.get(row_num, field_keys);
-        const auto & keys = field_keys.get<Array &>();
+        // Column 0 contains array of keys of known type
+        const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[0]);
+        const IColumn::Offsets_t & offsets = array_column.getOffsets();
+        const auto & keys_vec = static_cast<const ColumnVector<T> &>(array_column.getData());
+        const size_t keys_vec_offset = row_num == 0 ? 0 : offsets[row_num - 1];
+        const size_t keys_vec_size = (offsets[row_num] - keys_vec_offset);
 
-        Field field_values;
-        column_values.get(row_num, field_values);
-        const auto & values = field_values.get<Array &>();
-
+        // Columns 1..n contain arrays of numeric values to sum
         auto & merged_maps = this->data(place).merged_maps;
-
-        if (keys.size() != values.size())
-            throw Exception("Sizes of keys and values arrays do not match", ErrorCodes::LOGICAL_ERROR);
-
-        size_t size = keys.size();
-
-        for (size_t i = 0; i < size; ++i)
+        for (size_t col = 0; col < values_types.size(); ++col)
         {
-            if (merged_maps.find(keys[i]) != merged_maps.end())
-                applyVisitor(FieldVisitorSum(values[i]), merged_maps[keys[i]]);
-            else
-                merged_maps[keys[i]] = values[i];
+            Field value;
+            const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[col + 1]);
+            const IColumn::Offsets_t & offsets = array_column.getOffsets();
+            const size_t values_vec_offset = row_num == 0 ? 0 : offsets[row_num - 1];
+            const size_t values_vec_size = (offsets[row_num] - values_vec_offset);
+
+            // Expect key and value arrays to be of same length
+            if (keys_vec_size != values_vec_size)
+                throw Exception("Sizes of keys and values arrays do not match", ErrorCodes::LOGICAL_ERROR);
+
+            // Insert column values for all keys
+            for (size_t i = 0; i < keys_vec_size; ++i)
+            {
+                array_column.getData().get(values_vec_offset + i, value);
+                const auto & key = keys_vec.getData()[keys_vec_offset + i];
+                const auto & it = merged_maps.find(key);
+
+                if (it != merged_maps.end())
+                    applyVisitor(FieldVisitorSum(value), it->second[col]);
+                else
+                {
+                    // Create a value array for this key
+                    Array new_values;
+                    new_values.resize(values_types.size());
+                    for (size_t k = 0; k < new_values.size(); ++k)
+                        new_values[k] = (k == col) ? value : values_types[k]->getDefault();
+
+                    merged_maps[key] = std::move(new_values);
+                }
+            }
         }
     }
 
@@ -120,12 +149,16 @@ public:
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
 
-        for (const auto &rhs_map : rhs_maps)
+        for (const auto & elem : rhs_maps)
         {
-            if (merged_maps.find(rhs_map.first) != merged_maps.end())
-                applyVisitor(FieldVisitorSum(rhs_map.second), merged_maps[rhs_map.first]);
+            const auto & it = merged_maps.find(elem.first);
+            if (it != merged_maps.end())
+            {
+                for (size_t col = 0; col < values_types.size(); ++col)
+                    applyVisitor(FieldVisitorSum(elem.second[col]), it->second[col]);
+            }
             else
-                merged_maps[rhs_map.first] = rhs_map.second;
+                merged_maps[elem.first] = elem.second;
         }
     }
 
@@ -135,56 +168,77 @@ public:
         size_t size = merged_maps.size();
         writeVarUInt(size, buf);
 
-        for (const auto &v : merged_maps)
+        for (const auto & elem : merged_maps)
         {
-            keys_type->serializeBinary(v.first, buf);
-            values_type->serializeBinary(v.second, buf);
+            keys_type->serializeBinary(elem.first, buf);
+            for (size_t col = 0; col < values_types.size(); ++col)
+                values_types[col]->serializeBinary(elem.second[col], buf);
         }
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
-
         size_t size = 0;
         readVarUInt(size, buf);
 
         for (size_t i = 0; i < size; ++i)
         {
-            Field key, value;
+            Field key;
             keys_type->deserializeBinary(key, buf);
-            values_type->deserializeBinary(value, buf);
-            merged_maps[key] = value;
+
+            Array values;
+            values.resize(values_types.size());
+            for (size_t col = 0; col < values_types.size(); ++col)
+                values_types[col]->deserializeBinary(values[col], buf);
+
+            merged_maps[key.get<T>()] = values;
         }
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto & to_cols = static_cast<ColumnTuple &>(to).getColumns();
-
-        auto & to_keys_arr = static_cast<ColumnArray &>(*to_cols[0]);
-        auto & to_values_arr = static_cast<ColumnArray &>(*to_cols[1]);
-
-        auto & to_keys_col = to_keys_arr.getData();
-        auto & to_keys_offsets = to_keys_arr.getOffsets();
-
-        auto & to_values_col = to_values_arr.getData();
-        auto & to_values_offsets = to_values_arr.getOffsets();
-
         const auto & merged_maps = this->data(place).merged_maps;
         size_t size = merged_maps.size();
 
+        auto & to_cols = static_cast<ColumnTuple &>(to).getColumns();
+        auto & to_keys_arr = static_cast<ColumnArray &>(*to_cols[0]);
+        auto & to_keys_col = to_keys_arr.getData();
+
+        // Advance column offsets
+        auto & to_keys_offsets = to_keys_arr.getOffsets();
+        to_keys_offsets.push_back((to_keys_offsets.empty() ? 0 : to_keys_offsets.back()) + size);
         to_keys_col.reserve(size);
-        to_values_col.reserve(size);
-        for (const auto &v : merged_maps)
+
+        for (size_t col = 0; col < values_types.size(); ++col)
         {
-            to_keys_col.insert(v.first);
-            to_values_col.insert(v.second);
+            auto & to_values_arr = static_cast<ColumnArray &>(*to_cols[col + 1]);
+            auto & to_values_offsets = to_values_arr.getOffsets();
+            to_values_offsets.push_back((to_values_offsets.empty() ? 0 : to_values_offsets.back()) + size);
+            to_values_arr.getData().reserve(size);
         }
 
-        to_keys_offsets.push_back((to_keys_offsets.empty() ? 0 : to_keys_offsets.back()) + size);
-        to_values_offsets.push_back((to_values_offsets.empty() ? 0 : to_values_offsets.back()) + size);
+        // Write arrays of keys and values
+        for (const auto & elem : merged_maps)
+        {
+            // Write array of keys into column
+            to_keys_col.insert(elem.first);
+
+            // Write 0..n arrays of values
+            for (size_t col = 0; col < values_types.size(); ++col)
+            {
+                auto & to_values_col = static_cast<ColumnArray &>(*to_cols[col + 1]).getData();
+                to_values_col.insert(elem.second[col]);
+            }
+        }
     }
+
+    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena)
+    {
+        static_cast<const AggregateFunctionSumMap &>(*that).add(place, columns, row_num, arena);
+    }
+
+    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };
