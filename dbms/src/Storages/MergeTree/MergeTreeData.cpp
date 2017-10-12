@@ -1732,6 +1732,7 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 {
     std::experimental::optional<String> prefix;
     String partition_id;
+
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         const auto & partition = dynamic_cast<const ASTPartition &>(*partition_ast);
@@ -1762,24 +1763,23 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 
     LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
 
+    /// Acquire a snapshot of active data parts to prevent removing while doing backup.
+    const auto data_parts = getDataParts();
+
     size_t parts_processed = 0;
-    Poco::DirectoryIterator end;
-    for (Poco::DirectoryIterator it(full_path); it != end; ++it)
+    for (const auto & part : data_parts)
     {
-        MergeTreePartInfo part_info;
-        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info, format_version))
-            continue;
         if (prefix)
         {
-            if (!startsWith(part_info.partition_id, prefix.value()))
+            if (!startsWith(part->info.partition_id, prefix.value()))
                 continue;
         }
-        else if (part_info.partition_id != partition_id)
+        else if (part->info.partition_id != partition_id)
             continue;
 
-        LOG_DEBUG(log, "Freezing part " << it.name());
+        LOG_DEBUG(log, "Freezing part " << part->name);
 
-        String part_absolute_path = it.path().absolute().toString();
+        String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
         if (!startsWith(part_absolute_path, clickhouse_path))
             throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
 
