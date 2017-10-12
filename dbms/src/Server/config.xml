@@ -8,12 +8,15 @@
         <count>10</count>
     </logger>
 
-
     <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
 
+    <!-- For HTTPS and SSL over native protocol. -->
     <!--
     <https_port>8443</https_port>
+    <tcp_ssl_port>9440</tcp_ssl_port>
     -->
+
     <!-- Used with https_port and tcp_ssl_port. Full ssl options list: https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
@@ -46,11 +49,6 @@
     <!--
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
-
-    <tcp_port>9000</tcp_port>
-
-    <!-- SSL port -->
-    <tcp_ssl_port>9440</tcp_ssl_port>
 
     <!-- Port for communication between replicas. Used for data exchange. -->
     <interserver_http_port>9009</interserver_http_port>
