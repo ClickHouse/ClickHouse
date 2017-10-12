@@ -128,7 +128,7 @@ Block SummingSortedBlockInputStream::readImpl()
                     continue;
                 }
 
-                /// Do they enter the PK?
+                /// Are they inside the PK?
                 if (isInPrimaryKey(description, column.name, i))
                 {
                     column_numbers_not_to_aggregate.push_back(i);
