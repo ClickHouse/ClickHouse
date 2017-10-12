@@ -13,7 +13,7 @@ struct ActionBlocker
 
     bool isCancelled() const { return counter > 0; }
 
-    /// Temporarily blocks merges (while the returned object is alive)
+    /// Temporarily blocks corresponding actions (while the returned object is alive)
     struct BlockHolder;
     BlockHolder cancel() const { return BlockHolder(this); }
 
