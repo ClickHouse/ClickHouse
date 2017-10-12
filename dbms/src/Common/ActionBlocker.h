@@ -31,8 +31,7 @@ struct ActionBlocker
 
         BlockHolder(BlockHolder && other) noexcept
         {
-            var = other.var;
-            other.var = nullptr;
+            *this = std::move(other);
         }
 
         BlockHolder & operator=(BlockHolder && other) noexcept
