@@ -77,9 +77,6 @@ private:
         ColumnPtr merged_column;
         std::vector<char> state;
         bool created = false;
-        /* Compatibility with the mergeMap */
-        std::vector<size_t> key_col_nums;
-        std::vector<size_t> val_col_nums;
 
         /// Explicitly destroy aggregation state if the stream is terminated
         ~AggregateDescription()
@@ -89,8 +86,15 @@ private:
         }
     };
 
+    /// Stores numbers of key-columns and value-columns.
+    struct MapDescription
+    {
+        std::vector<size_t> key_col_nums;
+        std::vector<size_t> val_col_nums;
+    };
+
     std::vector<AggregateDescription> columns_to_aggregate;
-    std::vector<AggregateDescription> maps_to_sum;
+    std::vector<MapDescription> maps_to_sum;
 
     RowRef current_key;        /// The current primary key.
     RowRef next_key;           /// The primary key of the next row.
@@ -110,7 +114,7 @@ private:
     void insertCurrentRow(ColumnPlainPtrs & merged_columns);
 
     template <typename TSortCursor>
-    bool mergeMap(const AggregateDescription & map, Row & row, TSortCursor & cursor);
+    bool mergeMap(const MapDescription & map, Row & row, TSortCursor & cursor);
 
     /** Add the row under the cursor to the `row`.
       * Returns false if the result is zero.
