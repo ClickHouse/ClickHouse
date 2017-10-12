@@ -41,7 +41,16 @@ void SummingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_co
         // Do not insert if the aggregation state hasn't been created
         if (desc.created)
         {
-            desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
+            try
+            {
+                desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
+            }
+            catch (...)
+            {
+                desc.function->destroy(desc.state.data());
+                desc.created = false;
+                throw;
+            }
             desc.function->destroy(desc.state.data());
             desc.created = false;
         }
@@ -422,7 +431,8 @@ bool SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
             {
                 auto & col = cursor->all_columns[desc.column_numbers[0]];
                 desc.function->add(desc.state.data(), &col, cursor->pos, nullptr);
-                // This stream discards rows that are zero across all summed columns
+                // Flag row as non-empty if at least one column number if non-zero
+                // Note: This defers compaction of signed type rows that sum to zero by one merge
                 if (!res)
                     res = col->get64(cursor->pos) != 0;
             }
