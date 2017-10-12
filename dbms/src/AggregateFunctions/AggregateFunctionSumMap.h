@@ -109,7 +109,7 @@ public:
 
         // Columns 1..n contain arrays of numeric values to sum
         auto & merged_maps = this->data(place).merged_maps;
-        for (size_t col = 0; col < values_types.size(); ++col)
+        for (size_t col = 0, size = values_types.size(); col < size; ++col)
         {
             Field value;
             const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[col + 1]);
