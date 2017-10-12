@@ -208,9 +208,9 @@ Block SummingSortedBlockInputStream::readImpl()
             if (column_num_it != map.second.end())
                 continue;
 
-            if (map.second.size() == 2)
+            if (desc.key_col_nums.size() == 1)
             {
-                // Create parametric aggregation for all columns in the map
+                // Create summation for all value columns in the map
                 desc.merged_column = static_cast<ColumnPtr>(tuple);
                 desc.function = factory.get("sumMap", argument_types);
                 desc.function->setArguments(argument_types);
