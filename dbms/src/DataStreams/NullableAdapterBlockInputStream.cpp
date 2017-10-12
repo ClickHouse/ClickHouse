@@ -102,8 +102,8 @@ void NullableAdapterBlockInputStream::buildActions(
 
     for (size_t i = 0; i < in_size; ++i)
     {
-        const auto & in_elem  = in_sample.getByPosition(i);
-        const auto & out_elem = out_sample.getByPosition(i);
+        const auto & in_elem  = in_sample.safeGetByPosition(i);
+        const auto & out_elem = out_sample.safeGetByPosition(i);
 
         if (isConvertableTypes(in_elem.type, out_elem.type))
         {
