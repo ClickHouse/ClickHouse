@@ -16,7 +16,7 @@ namespace DB
 static const size_t max_block_size = 8192;
 
 
-/// Owns ShellCommand and call wait for it.
+/// Owns ShellCommand and calls wait for it.
 class ShellCommandOwningBlockInputStream : public OwningBlockInputStream<ShellCommand>
 {
 public:
