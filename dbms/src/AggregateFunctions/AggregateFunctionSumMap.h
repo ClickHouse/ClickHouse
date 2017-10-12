@@ -72,7 +72,7 @@ public:
     void setArguments(const DataTypes & arguments) override
     {
         if (arguments.size() < 2)
-            throw Exception("Aggregate function " + getName() + "require at leasat two arguments of array type.",
+            throw Exception("Aggregate function " + getName() + " requires at least two arguments of Array type.",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
