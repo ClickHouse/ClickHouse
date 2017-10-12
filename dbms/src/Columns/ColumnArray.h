@@ -80,6 +80,9 @@ public:
         return scatterImpl<ColumnArray>(num_columns, selector);
     }
 
+    /// Creates and returns a column with array sizes.
+    ColumnPtr getLengthsColumn() const;
+
     void gather(ColumnGathererStream & gatherer_stream) override;
 
 private:
