@@ -120,7 +120,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
             ReadBufferFromFile file_in(path);
             HashingWriteBuffer hashing_out(out);
-            copyData(file_in, hashing_out, blocker.counter);
+            copyData(file_in, hashing_out, blocker.getCounter());
 
             if (blocker.isCancelled())
                 throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
@@ -233,7 +233,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
         WriteBufferFromFile file_out(absolute_part_path + file_name);
         HashingWriteBuffer hashing_out(file_out);
-        copyData(in, hashing_out, file_size, blocker.counter);
+        copyData(in, hashing_out, file_size, blocker.getCounter());
 
         if (blocker.isCancelled())
         {

@@ -82,7 +82,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
         WriteBufferFromFile file_out{absolute_part_path + file_name};
         HashingWriteBuffer hashing_out{file_out};
-        copyData(body, hashing_out, file_size, blocker.counter);
+        copyData(body, hashing_out, file_size, blocker.getCounter());
 
         if (blocker.isCancelled())
         {
