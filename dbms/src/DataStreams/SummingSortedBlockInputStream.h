@@ -69,6 +69,7 @@ private:
      *   and can be deleted at any time.
      */
 
+    /// Stores aggregation function, state, and columns to be used as function arguments
     struct AggregateDescription
     {
         AggregateFunctionPtr function;
@@ -79,6 +80,13 @@ private:
         /* Compatibility with the mergeMap */
         std::vector<size_t> key_col_nums;
         std::vector<size_t> val_col_nums;
+
+        /// Explicitly destroy aggregation state if the stream is terminated
+        ~AggregateDescription()
+        {
+            if (created)
+                function->destroy(state.data());
+        }
     };
 
     std::vector<AggregateDescription> columns_to_aggregate;
