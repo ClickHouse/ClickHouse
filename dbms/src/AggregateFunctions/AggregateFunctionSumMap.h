@@ -53,7 +53,7 @@ class AggregateFunctionSumMap final : public IAggregateFunctionHelper<AggregateF
 {
 private:
     DataTypePtr keys_type;
-    std::vector<DataTypePtr> values_types;
+    DataTypes values_types;
 
 public:
     String getName() const override { return "sumMap"; }
