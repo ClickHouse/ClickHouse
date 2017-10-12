@@ -308,7 +308,7 @@ void Connection::sendQuery(
     if (!connected)
         connect();
 
-    network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
+    compression_settings = settings ? CompressionSettings(*settings) : CompressionSettings(CompressionMethod::LZ4);
 
     query_id = query_id_;
 
@@ -380,7 +380,7 @@ void Connection::sendData(const Block & block, const String & name)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
-            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, network_compression_method);
+            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_settings);
         else
             maybe_compressed_out = out;
 
