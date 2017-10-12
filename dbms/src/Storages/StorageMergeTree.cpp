@@ -337,7 +337,7 @@ bool StorageMergeTree::merge(
     Stopwatch stopwatch;
 
     auto new_part = merger.mergePartsToTemporaryPart(
-        future_part, *merge_entry_ptr, aio_threshold, time(0), merging_tagger->reserved_space.get(), deduplicate);
+        future_part, *merge_entry_ptr, aio_threshold, time(nullptr), merging_tagger->reserved_space.get(), deduplicate);
 
     merger.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
