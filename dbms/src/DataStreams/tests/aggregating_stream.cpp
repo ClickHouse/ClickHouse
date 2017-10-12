@@ -37,7 +37,7 @@ int main(int argc, char ** argv)
     try
     {
         size_t n = argc > 1 ? atoi(argv[1]) : 10;
-        bool nested = false, sum = false, composite = false;
+        bool nested = false, sum = false, composite = false, multivalue = false;
         for (size_t i = 2; i < argc; ++i)
         {
             if (strcmp(argv[i], "nested") == 0)
@@ -46,6 +46,8 @@ int main(int argc, char ** argv)
                 composite = true;
             else if (strcmp(argv[i], "sum") == 0)
                 sum = true;
+            else if (strcmp(argv[i], "multivalue") == 0)
+                multivalue = true;
         }
 
         Block block;
@@ -103,6 +105,7 @@ int main(int argc, char ** argv)
             }
 
             block.insert(column_k);
+            key_column_names.emplace_back(column_k.name);
 
             ColumnWithTypeAndName column_v;
             column_v.name = "testMap.v";
@@ -116,9 +119,24 @@ int main(int argc, char ** argv)
             }
 
             block.insert(column_v);
-
-            key_column_names.emplace_back(column_k.name);
             key_column_names.emplace_back(column_v.name);
+
+            if (multivalue)
+            {
+                ColumnWithTypeAndName column_v2;
+                column_v2.name = "testMap.v2";
+                column_v2.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+                column_v2.column = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt64>());
+
+                for (size_t i = 0; i < n; ++i)
+                {
+                    Array values = {(i % 3) * 10, ((i + 1) % 3) * 10, ((i + 2) % 3) * 10};
+                    column_v2.column->insert(values);
+                }
+
+                block.insert(column_v2);
+                key_column_names.emplace_back(column_v2.name);
+            }
 
             if (composite)
             {
