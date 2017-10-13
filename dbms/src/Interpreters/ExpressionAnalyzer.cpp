@@ -2845,7 +2845,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 }
 
 
-Names ExpressionAnalyzer::getRequiredColumns()
+Names ExpressionAnalyzer::getRequiredColumns() const
 {
     if (!unknown_required_columns.empty())
         throw Exception("Unknown identifier: " + *unknown_required_columns.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);

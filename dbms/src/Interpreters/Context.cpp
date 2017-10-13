@@ -588,6 +588,11 @@ void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAnd
     checkDatabaseAccessRights(from.first);
     checkDatabaseAccessRights(where.first);
     shared->view_dependencies[from].insert(where);
+
+    // Notify table of dependencies change
+    auto table = tryGetTable(from.first, from.second);
+    if (table != nullptr)
+        table->updateDependencies();
 }
 
 void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
@@ -596,6 +601,11 @@ void Context::removeDependency(const DatabaseAndTableName & from, const Database
     checkDatabaseAccessRights(from.first);
     checkDatabaseAccessRights(where.first);
     shared->view_dependencies[from].erase(where);
+
+    // Notify table of dependencies change
+    auto table = tryGetTable(from.first, from.second);
+    if (table != nullptr)
+        table->updateDependencies();
 }
 
 Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
@@ -603,7 +613,15 @@ Dependencies Context::getDependencies(const String & database_name, const String
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+
+    if (database_name.empty() && tryGetExternalTable(table_name))
+    {
+        /// Table is temporary. Access granted.
+    }
+    else
+    {
+        checkDatabaseAccessRights(db);
+    }
 
     ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
     if (iter == shared->view_dependencies.end())

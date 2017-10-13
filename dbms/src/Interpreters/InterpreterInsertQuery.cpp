@@ -93,7 +93,7 @@ BlockIO InterpreterInsertQuery::execute()
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
 
-    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, context, query_ptr);
+    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, context, query_ptr, query.no_destination);
 
     out = std::make_shared<MaterializingBlockOutputStream>(out);
 
