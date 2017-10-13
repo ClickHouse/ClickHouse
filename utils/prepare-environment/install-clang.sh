@@ -8,7 +8,7 @@ BRANCH=trunk
 THREADS=$(grep -c ^processor /proc/cpuinfo)
 
 cd ~
-sudo apt-get install -y subversion cmake3
+sudo apt-get install -y subversion cmake
 
 mkdir llvm
 cd llvm

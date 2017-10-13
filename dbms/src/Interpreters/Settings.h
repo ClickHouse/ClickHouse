@@ -196,13 +196,13 @@ struct Settings
     M(SettingUInt64, table_function_remote_max_addresses, 1000) \
     /** Settings to reduce the number of threads in case of slow reads. */ \
     /** Pay attention only to readings that took at least that much time. */ \
-    M(SettingMilliseconds,     read_backoff_min_latency_ms, 1000) \
+    M(SettingMilliseconds, read_backoff_min_latency_ms, 1000) \
     /** Count events when the bandwidth is less than that many bytes per second. */ \
-    M(SettingUInt64,         read_backoff_max_throughput, 1048576) \
+    M(SettingUInt64, read_backoff_max_throughput, 1048576) \
     /** Do not pay attention to the event, if the previous one has passed less than a certain amount of time. */ \
-    M(SettingMilliseconds,     read_backoff_min_interval_between_events_ms, 1000) \
+    M(SettingMilliseconds, read_backoff_min_interval_between_events_ms, 1000) \
     /** The number of events after which the number of threads will be reduced. */ \
-    M(SettingUInt64,         read_backoff_min_events, 2) \
+    M(SettingUInt64, read_backoff_min_events, 2) \
     \
     /** For testing of `exception safety` - throw an exception every time you allocate memory with the specified probability. */ \
     M(SettingFloat, memory_tracker_fault_probability, 0.) \
@@ -301,8 +301,8 @@ struct Settings
     /** If true, and the date parameter of MergeTree engines is an expression (not a column name), \
       * it will be interpreted as the partitioning expression, allowing custom partitions. \
       * IMPORTANT: Don't use this setting just yet. \
-      *     It is for testing purposes, the syntax will likely change soon and the server will not be able \
-      *     to load the tables created this way. You have been warned. \
+      *  It is for testing purposes, the syntax will likely change soon and the server will not be able \
+      *  to load the tables created this way. You have been warned. \
       */ \
     M(SettingBool, experimental_merge_tree_allow_custom_partitions, false) \
     /* Timeout for flushing data from streaming storages. */ \
