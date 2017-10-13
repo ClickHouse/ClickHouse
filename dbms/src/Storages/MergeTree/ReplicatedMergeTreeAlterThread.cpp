@@ -67,10 +67,10 @@ void ReplicatedMergeTreeAlterThread::run()
 
             {
                 /// If you need to lock table structure, then suspend merges.
-                MergeTreeDataMerger::Blocker merge_blocker;
+                ActionBlocker::BlockHolder merge_blocker;
 
                 if (changed_version || force_recheck_parts)
-                    merge_blocker = storage.merger.cancel();
+                    merge_blocker = storage.merger.merges_blocker.cancel();
 
                 MergeTreeData::DataParts parts;
 
@@ -79,6 +79,14 @@ void ReplicatedMergeTreeAlterThread::run()
                 {
                     /// Temporarily cancel part checks to avoid locking for long time.
                     auto temporarily_stop_part_checks = storage.part_check_thread.temporarilyStop();
+
+                    /// Temporarily cancel parts sending
+                    ActionBlocker::BlockHolder data_parts_exchange_blocker;
+                    if (storage.data_parts_exchange_endpoint_holder)
+                        data_parts_exchange_blocker = storage.data_parts_exchange_endpoint_holder->cancel();
+
+                    /// Temporarily cancel part fetches
+                    auto fetches_blocker = storage.fetcher.blocker.cancel();
 
                     LOG_INFO(log, "Changed version of 'columns' node in ZooKeeper. Waiting for structure write lock.");
 
