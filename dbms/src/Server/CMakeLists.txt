@@ -40,6 +40,9 @@ target_include_directories (clickhouse-performance-test PRIVATE ${PCG_RANDOM_INC
 add_library (clickhouse-compressor-lib Compressor.cpp)
 target_link_libraries (clickhouse-compressor-lib dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
+add_library (clickhouse-cluster-copier ClusterCopier.cpp)
+target_link_libraries (clickhouse-cluster-copier dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
+
 add_executable(clickhouse main.cpp)
 target_include_directories(clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 target_link_libraries(clickhouse
@@ -49,7 +52,8 @@ target_link_libraries(clickhouse
     clickhouse-benchmark
     clickhouse-performance-test
     clickhouse-extract-from-config
-    clickhouse-compressor-lib)
+    clickhouse-compressor-lib
+    clickhouse-cluster-copier)
 INSTALL(TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 # make symbolic links to concrete clickhouse applications
 macro(install_symlink_to_clickhouse app)

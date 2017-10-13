@@ -66,14 +66,14 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
     /// Arguments that define first query creating initial table:
     /// (If structure argument is omitted then initial query is not generated)
     _options.addOption(
-        Poco::Util::Option("structure", "S", "Structe of initial table(list columns names with their types)")
+        Poco::Util::Option("structure", "S", "Structure of initial table(list columns names with their types)")
             .required(false)
             .repeatable(false)
             .argument("[name Type]")
             .binding("table-structure"));
 
     _options.addOption(
-        Poco::Util::Option("table", "N", "Name of intial table")
+        Poco::Util::Option("table", "N", "Name of initial table")
             .required(false)
             .repeatable(false)
             .argument("[table]")
@@ -87,7 +87,7 @@ void LocalServer::defineOptions(Poco::Util::OptionSet& _options)
             .binding("table-file"));
 
     _options.addOption(
-        Poco::Util::Option("input-format", "if", "Input format of intial table data")
+        Poco::Util::Option("input-format", "if", "Input format of initial table data")
             .required(false)
             .repeatable(false)
             .argument("[TSV]")
@@ -446,6 +446,19 @@ static const char * minimal_default_user_xml =
 "</yandex>";
 
 
+template <typename T>
+static ConfigurationPtr getConfigurationFromXMLString(T && xml_string)
+{
+    std::stringstream ss;
+    ss << std::forward<T>(xml_string);
+
+    Poco::XML::InputSource input_source(ss);
+    ConfigurationPtr res{new Poco::Util::XMLConfiguration(&input_source)};
+
+    return res;
+}
+
+
 void LocalServer::setupUsers()
 {
     ConfigurationPtr users_config;
@@ -457,11 +470,7 @@ void LocalServer::setupUsers()
     }
     else
     {
-        std::stringstream default_user_stream;
-        default_user_stream << minimal_default_user_xml;
-
-        Poco::XML::InputSource default_user_source(default_user_stream);
-        users_config = ConfigurationPtr(new Poco::Util::XMLConfiguration(&default_user_source));
+        users_config = getConfigurationFromXMLString(minimal_default_user_xml);
     }
 
     if (users_config)

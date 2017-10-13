@@ -318,7 +318,7 @@ public:
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
-    void setClustersConfig(const ConfigurationPtr & config);
+    void setClustersConfig(const ConfigurationPtr & config, const String & config_name = "remote_servers");
 
     Compiler & getCompiler();
     QueryLog & getQueryLog();

@@ -214,7 +214,7 @@ BlockInputStreams StorageDistributed::read(
         external_tables = context.getExternalTables();
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
-        processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
+        processed_stage, QualifiedTableName{remote_database, remote_table}, external_tables);
 
     return ClusterProxy::executeQuery(
             select_stream_factory, cluster, modified_query_ast, context, settings);
@@ -401,24 +401,6 @@ void StorageDistributed::reshardPartitions(
         LOG_ERROR(log, dumped_coordinator_state);
         throw;
     }
-}
-
-
-BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
-{
-    /// Create DESCRIBE TABLE query.
-    auto cluster = getCluster();
-
-    ASTPtr describe_query_ptr = std::make_shared<ASTDescribeQuery>();
-    auto & describe_query = static_cast<ASTDescribeQuery &>(*describe_query_ptr);
-
-    describe_query.database = remote_database;
-    describe_query.table = remote_table;
-
-    ClusterProxy::DescribeStreamFactory describe_stream_factory;
-
-    return ClusterProxy::executeQuery(
-            describe_stream_factory, cluster, describe_query_ptr, context, settings);
 }
 
 

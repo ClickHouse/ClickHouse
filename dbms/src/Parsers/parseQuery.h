@@ -32,6 +32,15 @@ ASTPtr parseQuery(
     const char * end,
     const std::string & description);
 
+ASTPtr parseQuery(
+    IParser & parser,
+    const std::string & query,
+    const std::string & query_description);
+
+ASTPtr parseQuery(
+    IParser & parser,
+    const std::string & query);
+
 
 /** Split queries separated by ; on to list of single queries
   * Returns pointer to the end of last sucessfuly parsed query (first), and true if all queries are sucessfuly parsed (second)
