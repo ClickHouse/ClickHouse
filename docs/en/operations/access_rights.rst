@@ -40,7 +40,9 @@ Users are recorded in the ``users`` section. Let's look at part of the ``users.x
       </web>
 
 Here we can see that two users are declared: ``default`` and ``web``. We added the ``web`` user ourselves.
-The ``default`` user is chosen in cases when the username is not passed, so this user must be present in the config file. The ``default`` user is also used for distributed query processing - the system accesses remote servers under this username. So the ``default`` user must have an empty password and must not have substantial restrictions or quotas - otherwise, distributed queries will fail.
+The ``default`` user is chosen in cases when the username is not passed. The ``default`` user can also be used for distributed query processing - the system accesses remote servers using this username if no ``user`` and ``password`` were configured for that server inside cluster configuration (see also section about "Distributed" table engine).
+
+For connection to the server inside cluster you should use the user without any substantial restrictions or quotas - otherwise, distributed queries will fail.
 
 The password is specified in plain text directly in the config. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from Yandex employees.
 

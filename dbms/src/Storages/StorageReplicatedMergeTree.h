@@ -258,7 +258,7 @@ private:
     bool is_leader_node = false;
     std::mutex leader_node_mutex;
 
-    InterserverIOEndpointHolderPtr endpoint_holder;
+    InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
     InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;
     InterserverIOEndpointHolderPtr sharded_partition_uploader_endpoint_holder;
     InterserverIOEndpointHolderPtr remote_query_executor_endpoint_holder;

@@ -335,7 +335,7 @@ StoragePtr StorageReplicatedMergeTree::create(
     {
         {
             InterserverIOEndpointPtr endpoint = std::make_shared<DataPartsExchange::Service>(res->data, res_ptr);
-            res->endpoint_holder = get_endpoint_holder(endpoint);
+            res->data_parts_exchange_endpoint_holder = get_endpoint_holder(endpoint);
         }
 
         /// Services for resharding.
@@ -1887,10 +1887,10 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
         {
             all_in_zk = false;
 
-            if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(0))
+            if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
             {
                 LOG_WARNING(log, "Part " << part->name << " (that was selected for merge)"
-                    << " with age " << (time(0) - part->modification_time)
+                    << " with age " << (time(nullptr) - part->modification_time)
                     << " seconds exists locally but not in ZooKeeper."
                     << " Won't do merge with that part and will check it.");
                 enqueuePartForCheck(part->name);
@@ -1900,7 +1900,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     if (!all_in_zk)
         return false;
 
-    LogEntry entry;
+    ReplicatedMergeTreeLogEntryData entry;
     entry.type = LogEntry::MERGE_PARTS;
     entry.source_replica = replica_name;
     entry.new_part_name = merged_name;
@@ -1974,6 +1974,13 @@ void StorageReplicatedMergeTree::becomeLeader()
 
     if (shutdown_called)
         return;
+
+    if (merge_selecting_thread.joinable())
+    {
+        LOG_INFO(log, "Deleting old leader");
+        is_leader_node = false; /// exit trigger inside thread
+        merge_selecting_thread.join();
+    }
 
     LOG_INFO(log, "Became leader");
     is_leader_node = true;
@@ -2275,7 +2282,7 @@ void StorageReplicatedMergeTree::shutdown()
       * Because restarting_thread will wait for finishing of tasks in background pool,
       *  and parts are fetched in that tasks.
       */
-    fetcher.cancel();
+    fetcher.blocker.cancelForever();
 
     if (restarting_thread)
     {
@@ -2283,36 +2290,36 @@ void StorageReplicatedMergeTree::shutdown()
         restarting_thread.reset();
     }
 
-    if (endpoint_holder)
+    if (data_parts_exchange_endpoint_holder)
     {
-        endpoint_holder->cancel();
-        endpoint_holder = nullptr;
+        data_parts_exchange_endpoint_holder->cancelForever();
+        data_parts_exchange_endpoint_holder = nullptr;
     }
 
     if (disk_space_monitor_endpoint_holder)
     {
-        disk_space_monitor_endpoint_holder->cancel();
+        disk_space_monitor_endpoint_holder->cancelForever();
         disk_space_monitor_endpoint_holder = nullptr;
     }
     disk_space_monitor_client.cancel();
 
     if (sharded_partition_uploader_endpoint_holder)
     {
-        sharded_partition_uploader_endpoint_holder->cancel();
+        sharded_partition_uploader_endpoint_holder->cancelForever();
         sharded_partition_uploader_endpoint_holder = nullptr;
     }
     sharded_partition_uploader_client.cancel();
 
     if (remote_query_executor_endpoint_holder)
     {
-        remote_query_executor_endpoint_holder->cancel();
+        remote_query_executor_endpoint_holder->cancelForever();
         remote_query_executor_endpoint_holder = nullptr;
     }
     remote_query_executor_client.cancel();
 
     if (remote_part_checker_endpoint_holder)
     {
-        remote_part_checker_endpoint_holder->cancel();
+        remote_part_checker_endpoint_holder->cancelForever();
         remote_part_checker_endpoint_holder = nullptr;
     }
 }
@@ -2442,7 +2449,10 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         }
 
         if (!selected)
+        {
+            LOG_INFO(log, "Cannot select parts for optimization");
             return false;
+        }
 
         if (!createLogEntryToMergeParts(future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
             return false;
