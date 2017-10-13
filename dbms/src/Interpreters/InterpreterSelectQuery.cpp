@@ -100,30 +100,11 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
         }
     }
 
-    if (is_first_select_inside_union_all && (hasAsterisk() || hasAggregation(query)))
-    {
-        basicInit(input);
+    renameColumns();
+    if (!required_column_names.empty())
+        rewriteExpressionList(required_column_names);
 
-        // We execute this code here, because otherwise the following kind of query would not work
-        // SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
-        // because the asterisk is replaced with columns only when query_analyzer objects are created in basicInit().
-        renameColumns();
-
-        if (!required_column_names.empty() && (table_column_names.size() != required_column_names.size()))
-        {
-            rewriteExpressionList(required_column_names);
-            /// Now there is obsolete information to execute the query. We update this information.
-            initQueryAnalyzer();
-        }
-    }
-    else
-    {
-        renameColumns();
-        if (!required_column_names.empty())
-            rewriteExpressionList(required_column_names);
-
-        basicInit(input);
-    }
+    basicInit(input);
 }
 
 bool InterpreterSelectQuery::hasAggregation(const ASTSelectQuery & query_ptr)

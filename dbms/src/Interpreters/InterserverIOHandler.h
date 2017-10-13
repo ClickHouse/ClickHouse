@@ -6,9 +6,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/ActionBlocker.h>
 #include <Core/Types.h>
 #include <map>
 #include <atomic>
+#include <utility>
 #include <Poco/Net/HTMLForm.h>
 
 namespace Poco { namespace Net { class HTTPServerResponse; } }
@@ -67,11 +69,8 @@ public:
     virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) = 0;
     virtual ~InterserverIOEndpoint() {}
 
-    void cancel() { is_cancelled = true; }
-
-protected:
-    /// You need to stop the data transfer.
-    std::atomic<bool> is_cancelled {false};
+    /// You need to stop the data transfer if blocker is activated.
+    ActionBlocker blocker;
 };
 
 using InterserverIOEndpointPtr = std::shared_ptr<InterserverIOEndpoint>;
@@ -88,7 +87,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex);
         if (endpoint_map.count(name))
             throw Exception("Duplicate interserver IO endpoint: " + name, ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT);
-        endpoint_map[name] = endpoint;
+        endpoint_map[name] = std::move(endpoint);
     }
 
     void removeEndpoint(const String & name)
@@ -119,7 +118,7 @@ class InterserverIOEndpointHolder
 {
 public:
     InterserverIOEndpointHolder(const String & name_, InterserverIOEndpointPtr endpoint_, InterserverIOHandler & handler_)
-        : name(name_), endpoint(endpoint_), handler(handler_)
+        : name(name_), endpoint(std::move(endpoint_)), handler(handler_)
     {
         handler.addEndpoint(name, endpoint);
     }
@@ -143,7 +142,9 @@ public:
         }
     }
 
-    void cancel() { endpoint->cancel(); }
+    ActionBlocker & getBlocker() { return endpoint->blocker; }
+    void cancelForever() { getBlocker().cancelForever(); }
+    ActionBlocker::BlockHolder cancel() { return getBlocker().cancel(); }
 
 private:
     String name;

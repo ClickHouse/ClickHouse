@@ -163,6 +163,9 @@ struct Settings
     /** Allows you to select the method of data compression when writing */ \
     M(SettingCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
     \
+    /** Allows you to select the level of ZSTD compression */ \
+    M(SettingInt64, network_zstd_compression_level, 1) \
+    \
     /** Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities. */ \
     M(SettingUInt64, priority, 0) \
     \

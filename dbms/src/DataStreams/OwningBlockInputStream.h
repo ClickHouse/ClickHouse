@@ -27,6 +27,7 @@ private:
 
     String getID() const override {  return "Owning(" + stream->getID() + ")"; }
 
+protected:
     BlockInputStreamPtr stream;
     std::unique_ptr<OwnType> own;
 };
