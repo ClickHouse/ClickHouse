@@ -54,14 +54,8 @@ public:
         int port,
         bool to_detached = false);
 
-    /// Method for resharding. Downloads a sharded part
-    /// from the specified shard to the `to_detached` folder.
-    MergeTreeData::MutableDataPartPtr fetchShardedPart(
-        const InterserverIOEndpointLocation & location,
-        const String & part_name,
-        size_t shard_no);
-
-    void cancel() { is_cancelled = true; }
+    /// You need to stop the data transfer.
+    ActionBlocker blocker;
 
 private:
     MergeTreeData::MutableDataPartPtr fetchPartImpl(
@@ -74,8 +68,6 @@ private:
 
 private:
     MergeTreeData & data;
-    /// You need to stop the data transfer.
-    std::atomic<bool> is_cancelled {false};
     Logger * log;
 };
 
