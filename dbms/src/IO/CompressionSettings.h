@@ -11,12 +11,14 @@ class Settings;
 struct CompressionSettings
 {
     CompressionMethod method = CompressionMethod::LZ4;
-    int zstd_level = 1;
+    int level;
 
     CompressionSettings();
     CompressionSettings(CompressionMethod method);
-    CompressionSettings(CompressionMethod method, int zstd_level);
+    CompressionSettings(CompressionMethod method, int level);
     CompressionSettings(const Settings & settings);
+
+    static int getDefaultLevel(CompressionMethod method);
 };
 
 }

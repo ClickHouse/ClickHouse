@@ -59,7 +59,7 @@ void CompressedWriteBuffer::nextImpl()
                     &compressed_buffer[header_size],
                     uncompressed_size,
                     LZ4_COMPRESSBOUND(uncompressed_size),
-                    0);
+                    compression_settings.level);
 
             UInt32 compressed_size_32 = compressed_size;
             UInt32 uncompressed_size_32 = uncompressed_size;
@@ -83,7 +83,7 @@ void CompressedWriteBuffer::nextImpl()
                 compressed_buffer.size() - header_size,
                 working_buffer.begin(),
                 uncompressed_size,
-                compression_settings.zstd_level);
+                compression_settings.level);
 
             if (ZSTD_isError(res))
                 throw Exception("Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_COMPRESS);

@@ -61,6 +61,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
+        ("level", "compression level")
         ("none", "use no compression instead of LZ4")
         ("stat", "print block statistics of compressed data")
     ;
@@ -93,6 +94,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else if (use_none)
             method = DB::CompressionMethod::NONE;
 
+        DB::CompressionSettings settings(method, options.count("level") > 0 ? options["level"].as<int>() : DB::CompressionSettings::getDefaultLevel(method));
+
         DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
         DB::WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
 
@@ -110,7 +113,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else
         {
             /// Compression
-            DB::CompressedWriteBuffer to(wb, method, block_size);
+            DB::CompressedWriteBuffer to(wb, settings, block_size);
             DB::copyData(rb, to);
         }
     }
