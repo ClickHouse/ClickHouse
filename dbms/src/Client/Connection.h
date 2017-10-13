@@ -16,6 +16,8 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 
+#include <IO/CompressionSettings.h>
+
 #include <Interpreters/Settings.h>
 #include <Interpreters/TablesStatus.h>
 
@@ -222,8 +224,9 @@ private:
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
     Protocol::Encryption encryption;             /// Enable data encryption for communication.
-    /// What compression algorithm to use while sending data for INSERT queries and external tables.
-    CompressionMethod network_compression_method = CompressionMethod::LZ4;
+
+    /// What compression settings to use while sending data for INSERT queries and external tables.
+    CompressionSettings compression_settings;
 
     /** If not nullptr, used to limit network traffic.
       * Only traffic for transferring blocks is accounted. Other packets don't.

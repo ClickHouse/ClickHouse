@@ -1,3 +1,12 @@
 [submodule "contrib/zookeeper"]
 	path = contrib/zookeeper
 	url = https://github.com/ClickHouse-Extras/zookeeper.git
+[submodule "contrib/poco"]
+	path = contrib/poco
+	url = https://github.com/ClickHouse-Extras/poco
+[submodule "contrib/zstd"]
+	path = contrib/zstd
+	url = https://github.com/facebook/zstd.git
+[submodule "contrib/lz4"]
+	path = contrib/lz4
+	url = https://github.com/lz4/lz4.git

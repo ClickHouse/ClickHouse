@@ -48,39 +48,43 @@ def generate_structure(args):
         [ 'file_flat', 0, True ],
         [ 'clickhouse_flat', 0, True ],
         [ 'executable_flat', 0, True ],
-        [ 'http_flat', 0, True ],
 
         [ 'file_hashed', 0, True ],
         [ 'clickhouse_hashed', 0, True ],
         [ 'executable_hashed', 0, True ],
-        [ 'http_hashed', 0, True ],
 
         [ 'clickhouse_cache', 0, True ],
         [ 'executable_cache', 0, True ],
-        [ 'http_cache', 0, True ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
         [ 'file_complex_integers_key_hashed', 1, False ],
         [ 'clickhouse_complex_integers_key_hashed', 1, False ],
         [ 'executable_complex_integers_key_hashed', 1, False ],
-        [ 'http_complex_integers_key_hashed', 1, False ],
 
         [ 'clickhouse_complex_integers_key_cache', 1, False ],
         [ 'executable_complex_integers_key_cache', 1, False ],
-        [ 'http_complex_integers_key_cache', 1, False ],
 
         # Complex key dictionaries with (String, UInt8) key
         [ 'file_complex_mixed_key_hashed', 2, False ],
         [ 'clickhouse_complex_mixed_key_hashed', 2, False ],
         [ 'executable_complex_mixed_key_hashed', 2, False ],
-        [ 'http_complex_mixed_key_hashed', 2, False ],
 
         [ 'clickhouse_complex_mixed_key_cache', 2, False ],
         [ 'executable_complex_mixed_key_hashed', 2, False ],
-        [ 'http_complex_mixed_key_hashed', 2, False ],
     ])
 
-    if args.use_https:
+    if not args.no_http:
+        dictionaries.extend([
+            [ 'http_flat', 0, True ],
+            [ 'http_hashed', 0, True ],
+            [ 'http_cache', 0, True ],
+            [ 'http_complex_integers_key_hashed', 1, False ],
+            [ 'http_complex_integers_key_cache', 1, False ],
+            [ 'http_complex_mixed_key_hashed', 2, False ],
+            [ 'http_complex_mixed_key_hashed', 2, False ],
+        ])
+
+    if not args.no_https:
         dictionaries.extend([
             [ 'https_flat', 0, True ],
             [ 'https_hashed', 0, True ],
@@ -456,39 +460,44 @@ def generate_dictionaries(args):
         [ source_file % (generated_prefix + files[0]), layout_flat],
         [ source_clickhouse, layout_flat ],
         [ source_executable % (generated_prefix + files[0]), layout_flat ],
-        [ source_http % (files[0]), layout_flat ],
 
         [ source_file % (generated_prefix + files[0]), layout_hashed],
         [ source_clickhouse, layout_hashed ],
         [ source_executable % (generated_prefix + files[0]), layout_hashed ],
-        [ source_http % (files[0]), layout_hashed ],
 
         [ source_clickhouse, layout_cache ],
         [ source_executable_cache % (generated_prefix + files[0]), layout_cache ],
-        [ source_http % (files[0]), layout_cache ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
         [ source_file % (generated_prefix + files[1]), layout_complex_key_hashed],
         [ source_clickhouse, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[1]), layout_complex_key_hashed ],
-        [ source_http % (files[1]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
         [ source_executable_cache % (generated_prefix + files[1]), layout_complex_key_cache ],
-        [ source_http % (files[1]), layout_complex_key_cache ],
 
         # Complex key dictionaries with (String, UInt8) key
         [ source_file % (generated_prefix + files[2]), layout_complex_key_hashed],
         [ source_clickhouse, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[2]), layout_complex_key_hashed ],
-        [ source_http % (files[2]), layout_complex_key_hashed ],
 
         [ source_clickhouse, layout_complex_key_cache ],
         [ source_executable_cache % (generated_prefix + files[2]), layout_complex_key_cache ],
-        [ source_http % (files[2]), layout_complex_key_cache ],
     ]
 
-    if args.use_https:
+
+    if not args.no_http:
+        sources_and_layouts.extend([
+        [ source_http % (files[0]), layout_flat ],
+        [ source_http % (files[0]), layout_hashed ],
+        [ source_http % (files[0]), layout_cache ],
+        [ source_http % (files[1]), layout_complex_key_hashed ],
+        [ source_http % (files[1]), layout_complex_key_cache ],
+        [ source_http % (files[2]), layout_complex_key_hashed ],
+        [ source_http % (files[2]), layout_complex_key_cache ],
+    ])
+
+    if not args.no_https:
         sources_and_layouts.extend([
         [ source_https % (files[0]), layout_flat ],
         [ source_https % (files[0]), layout_hashed ],
@@ -549,13 +558,13 @@ def generate_dictionaries(args):
 
 
 def run_tests(args):
-    if args.use_http:
+    if not args.no_http:
         http_server = subprocess.Popen(["python", "http_server.py", "--port", str(args.http_port), "--host", args.http_host]);
         @atexit.register
         def http_killer():
            http_server.kill()
 
-    if args.use_https:
+    if not args.no_https:
         https_server = subprocess.Popen(["python", "http_server.py", "--port", str(args.https_port), "--host", args.https_host, '--https']);
         @atexit.register
         def https_killer():
@@ -731,11 +740,11 @@ if __name__ == '__main__':
     parser.add_argument('--mongo_host', default = 'localhost', help = 'mongo server host')
     parser.add_argument('--use_mongo_user', action='store_true', help = 'Test mongodb with user-pass')
 
-    parser.add_argument('--use_http', default = True, help = 'Use http dictionaries')
+    parser.add_argument('--no_http', action='store_true', help = 'Dont use http dictionaries')
     parser.add_argument('--http_port', default = 58000, help = 'http server port')
     parser.add_argument('--http_host', default = 'localhost', help = 'http server host')
     parser.add_argument('--http_path', default = '/generated/', help = 'http server path')
-    parser.add_argument('--use_https', default = True, help = 'Use https dictionaries')
+    parser.add_argument('--no_https', action='store_true', help = 'Dont use https dictionaries')
     parser.add_argument('--https_port', default = 58443, help = 'https server port')
     parser.add_argument('--https_host', default = 'localhost', help = 'https server host')
     parser.add_argument('--https_path', default = '/generated/', help = 'https server path')

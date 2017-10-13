@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <atomic>
 #include <functional>
+#include <Common/ActionBlocker.h>
+
 
 namespace DB
 {
@@ -110,42 +112,15 @@ private:
       */
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
-    /** Temporarily cancel merges.
-      */
-    class BlockerImpl
-    {
-    public:
-        BlockerImpl(MergeTreeDataMerger * merger_) : merger(merger_)
-        {
-            ++merger->cancelled;
-        }
-
-        ~BlockerImpl()
-        {
-            --merger->cancelled;
-        }
-    private:
-        MergeTreeDataMerger * merger;
-    };
-
 public:
-    /** Cancel all merges. All currently running 'mergeParts' methods will throw exception soon.
-      * All new calls to 'mergeParts' will throw exception till all 'Blocker' objects will be destroyed.
+    /** Is used to cancel all merges. On cancel() call all currently running 'mergeParts' methods will throw exception soon.
+      * All new calls to 'mergeParts' will throw exception till all 'BlockHolder' objects will be destroyed.
       */
-    using Blocker = std::unique_ptr<BlockerImpl>;
-    Blocker cancel() { return std::make_unique<BlockerImpl>(this); }
-
-    /** Cancel all merges forever.
-      */
-    void cancelForever() { ++cancelled; }
-
-    bool isCancelled() const { return cancelled > 0; }
-
-public:
+    ActionBlocker merges_blocker;
 
     enum class MergeAlgorithm
     {
-        Horizontal,    /// per-row merge of all columns
+        Horizontal, /// per-row merge of all columns
         Vertical    /// per-row merge of PK columns, per-column gather for non-PK columns
     };
 
@@ -165,8 +140,6 @@ private:
     time_t disk_space_warning_time = 0;
 
     CancellationHook cancellation_hook;
-
-    std::atomic<int> cancelled {0};
 
     void abortReshardPartitionIfRequested();
 };
