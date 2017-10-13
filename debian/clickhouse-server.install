@@ -1,2 +1,3 @@
+usr/bin/clickhouse-server
 etc/clickhouse-server/config.xml
 etc/clickhouse-server/users.xml

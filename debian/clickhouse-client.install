@@ -1,1 +1,4 @@
+usr/bin/clickhouse-client
+usr/bin/clickhouse-benchmark
+usr/bin/clickhouse-local
 etc/clickhouse-client/config.xml
