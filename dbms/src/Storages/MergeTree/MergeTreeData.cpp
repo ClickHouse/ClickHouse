@@ -1554,7 +1554,7 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
     if (parts_count >= settings.parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too much parts. Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
+        throw Exception("Too much parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
     }
 
     const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
