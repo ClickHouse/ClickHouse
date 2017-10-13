@@ -304,7 +304,11 @@ struct Settings
       *  It is for testing purposes, the syntax will likely change soon and the server will not be able \
       *  to load the tables created this way. You have been warned. \
       */ \
-    M(SettingBool, experimental_merge_tree_allow_custom_partitions, false)
+    M(SettingBool, experimental_merge_tree_allow_custom_partitions, false) \
+    /* Timeout for flushing data from streaming storages. */ \
+    M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS) \
+    /* Schema identifier (used by schema-based formats) */ \
+    M(SettingString, schema, "")
 
 
     /// Possible limits for query execution.

@@ -209,3 +209,17 @@ output_format_json_quote_64bit_integers
 If the parameter is true (default value), UInt64 and Int64 numbers are printed as quoted strings in all JSON output formats.
 Such behavior is compatible with most JavaScript interpreters that stores all numbers as double-precision floating point numbers.
 Otherwise, they are printed as regular numbers.
+
+stream_flush_interval_ms
+------------------------
+This setting only applies in cases when the server forms blocks from streaming table engines.
+Either the timeout happens, or the stream produces ``max_insert_block_size`` rows.
+
+By default, 7500.
+
+Lower value results in stream flushing to table more often, so the data appears in the destination table faster.
+Setting the value too low may result in excessive insertion frequency and lower ingestion efficiency.
+
+schema
+------
+This parameter only applies when used in conjunction with formats requiring a schema definition, for example Cap'n Proto. The parameter value is specific to the format.

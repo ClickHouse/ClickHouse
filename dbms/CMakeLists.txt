@@ -181,6 +181,7 @@ target_link_libraries (dbms
     ${Boost_SYSTEM_LIBRARY}
     ${Poco_Data_LIBRARY}
     ${BTRIE_LIBRARIES}
+    ${RDKAFKA_LIBRARY}
 )
 
 if (Poco_DataODBC_FOUND)
@@ -209,8 +210,17 @@ target_link_libraries (dbms
 
 target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+
+if (NOT USE_INTERNAL_LZ4_LIBRARY)
+    target_include_directories (dbms BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
+endif ()
+if (NOT USE_INTERNAL_ZSTD_LIBRARY)
+    target_include_directories (dbms BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()
+
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (dbms PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+target_include_directories (dbms PUBLIC ${RDKAFKA_INCLUDE_DIR})
 
 # only for copy_headers.sh:
 target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})

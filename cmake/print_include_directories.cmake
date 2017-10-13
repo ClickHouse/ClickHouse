@@ -12,6 +12,10 @@ if (USE_INTERNAL_BOOST_LIBRARY)
     list(APPEND dirs ${dirs1})
 endif ()
 
+if (USE_INTERNAL_POCO_LIBRARY)
+    list(APPEND dirs "./contrib/poco/Foundation/include")
+endif ()
+
 list(REMOVE_DUPLICATES dirs)
 file (WRITE ${CMAKE_CURRENT_BINARY_DIR}/include_directories.txt "")
 foreach (dir ${dirs})

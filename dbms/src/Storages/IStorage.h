@@ -304,6 +304,10 @@ public:
     /// Otherwise - throws an exception with detailed information or returns false
     virtual bool checkTableCanBeDropped() const { return true; }
 
+
+    /** Notify engine about updated dependencies for this storage. */
+    virtual void updateDependencies() {}
+
 protected:
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;

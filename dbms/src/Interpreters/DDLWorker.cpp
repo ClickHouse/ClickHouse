@@ -12,7 +12,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Storages/IStorage.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>

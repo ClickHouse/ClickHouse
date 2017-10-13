@@ -74,3 +74,5 @@ endif ()
 target_include_directories (tcmalloc_minimal_internal PUBLIC include)
 target_include_directories (tcmalloc_minimal_internal PRIVATE src)
 
+find_package (Threads)
+target_link_libraries (tcmalloc_minimal_internal ${CMAKE_THREAD_LIBS_INIT})
