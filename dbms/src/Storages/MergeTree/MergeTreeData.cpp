@@ -108,9 +108,6 @@ MergeTreeData::MergeTreeData(
     parts_clean_callback(parts_clean_callback_ ? parts_clean_callback_ : [this](){ clearOldParts(); }),
     log_name(log_name_), log(&Logger::get(log_name + " (Data)"))
 {
-    checkNoMultidimensionalArrays(*columns, attach);
-    checkNoMultidimensionalArrays(materialized_columns, attach);
-
     merging_params.check(*columns);
 
     if (!primary_expr_ast && merging_params.mode != MergingParams::Unsorted)
@@ -321,7 +318,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
 
         for (const auto & column_to_sum : columns_to_sum)
             if (columns.end() == std::find_if(columns.begin(), columns.end(),
-                [&](const NameAndTypePair & name_and_type) { return column_to_sum == name_and_type.name; }))
+                [&](const NameAndTypePair & name_and_type) { return column_to_sum == DataTypeNested::extractNestedTableName(name_and_type.name); }))
                 throw Exception("Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
     }
 
@@ -1126,7 +1123,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
-        auto compression_method = this->context.chooseCompressionMethod(
+        auto compression_settings = this->context.chooseCompressionSettings(
             part->size_in_bytes,
             static_cast<double>(part->size_in_bytes) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, expression);
@@ -1138,7 +1135,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
           *  will have old name of shared offsets for arrays.
           */
-        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_method, true /* skip_offsets */);
+        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_settings, true /* skip_offsets */);
 
         in.readPrefix();
         out.writePrefix();
@@ -1557,7 +1554,7 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
     if (parts_count >= settings.parts_to_throw_insert)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too much parts. Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
+        throw Exception("Too much parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MUCH_PARTS);
     }
 
     const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
@@ -1732,6 +1729,7 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 {
     std::experimental::optional<String> prefix;
     String partition_id;
+
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         const auto & partition = dynamic_cast<const ASTPartition &>(*partition_ast);
@@ -1762,24 +1760,23 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 
     LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
 
+    /// Acquire a snapshot of active data parts to prevent removing while doing backup.
+    const auto data_parts = getDataParts();
+
     size_t parts_processed = 0;
-    Poco::DirectoryIterator end;
-    for (Poco::DirectoryIterator it(full_path); it != end; ++it)
+    for (const auto & part : data_parts)
     {
-        MergeTreePartInfo part_info;
-        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info, format_version))
-            continue;
         if (prefix)
         {
-            if (!startsWith(part_info.partition_id, prefix.value()))
+            if (!startsWith(part->info.partition_id, prefix.value()))
                 continue;
         }
-        else if (part_info.partition_id != partition_id)
+        else if (part->info.partition_id != partition_id)
             continue;
 
-        LOG_DEBUG(log, "Freezing part " << it.name());
+        LOG_DEBUG(log, "Freezing part " << part->name);
 
-        String part_absolute_path = it.path().absolute().toString();
+        String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
         if (!startsWith(part_absolute_path, clickhouse_path))
             throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
 

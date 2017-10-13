@@ -18,3 +18,5 @@ top -bn1
 tail -n200 /var/log/clickhouse-server/clickhouse-server.err.log
 tail -n200 /var/log/clickhouse-server/clickhouse-server.log
 tail -n100 /var/log/clickhouse-server/stderr
+cat /etc/lsb-release
+uname -a

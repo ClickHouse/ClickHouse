@@ -95,6 +95,10 @@ check_config()
 
 initdb()
 {
+    if [ -d ${SYSCONFDIR} ]; then
+        su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${SYSCONFDIR}" || chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${SYSCONFDIR}
+    fi
+
     if [ -x "$BINDIR/$GENERIC_PROGRAM" ]; then
         CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$BINDIR/$GENERIC_PROGRAM extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
         if [ "(" "$?" -ne "0" ")" -o "(" -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ")" ]; then
@@ -137,12 +141,6 @@ initdb()
         chown -R ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}/*
         echo "Changing owner of [${CLICKHOUSE_LOGDIR}] to [${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP}]"
         chown ${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
-    fi
-
-    # Temporary fix for old metrika user, remove after 2017-06-01
-    if [ ! -z ${CLICKHOUSE_DATADIR_OLD} ] && [ -d ${CLICKHOUSE_DATADIR_OLD} ] && ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_DATADIR_OLD}") ; then
-        echo "Changing owner of old [${CLICKHOUSE_DATADIR_OLD}] to [${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP}]"
-        chown -RL ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_OLD}
     fi
 }
 

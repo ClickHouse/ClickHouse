@@ -40,6 +40,7 @@ public:
 
         bool isStarted() { return start_time != 0; }
 
+        /// TODO: delete extra info below if there is no need fot it already.
         std::string info;
         int thread_number = 0;
         std::time_t enqueue_time = 0;
@@ -50,6 +51,7 @@ public:
 
     /// Just use LockHandler::reset() to release the lock
     class LockHandlerImpl;
+    friend class LockHandlerImpl;
     using LockHandler = std::shared_ptr<LockHandlerImpl>;
 
 
@@ -86,28 +88,6 @@ private:
 
         explicit Group(Type type) : type{type} {}
     };
-
-public:
-
-    class LockHandlerImpl
-    {
-        RWLockFIFOPtr parent;
-        GroupsContainer::iterator it_group;
-        ClientsContainer::iterator it_client;
-        ThreadToHandler::iterator it_handler;
-
-        LockHandlerImpl(RWLockFIFOPtr && parent, GroupsContainer::iterator it_group, ClientsContainer::iterator it_client);
-
-    public:
-
-        LockHandlerImpl(const LockHandlerImpl & other) = delete;
-
-        ~LockHandlerImpl();
-
-        friend class RWLockFIFO;
-    };
-
-private:
 
     mutable std::mutex mutex;
     GroupsContainer queue;
