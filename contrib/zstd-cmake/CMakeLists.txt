@@ -39,7 +39,7 @@ function(GetLibraryVersion _content _outputVar1 _outputVar2 _outputVar3)
 endfunction()
 
 # Define library directory, where sources and header files are located
-SET(LIBRARY_DIR include/zstd)
+SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/zstd/lib)
 INCLUDE_DIRECTORIES(BEFORE ${LIBRARY_DIR} ${LIBRARY_DIR}/common)
 
 # Read file content
@@ -117,4 +117,4 @@ ENDIF (ZSTD_LEGACY_SUPPORT)
 
 ADD_LIBRARY(zstd ${Sources} ${Headers})
 
-target_include_directories (zstd PUBLIC include/zstd) 
+target_include_directories (zstd PUBLIC ${LIBRARY_DIR})

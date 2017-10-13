@@ -1,0 +1,6 @@
+[submodule "contrib/zstd"]
+	path = contrib/zstd
+	url = https://github.com/facebook/zstd.git
+[submodule "contrib/lz4"]
+	path = contrib/lz4
+	url = https://github.com/lz4/lz4.git
