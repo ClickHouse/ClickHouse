@@ -6,11 +6,11 @@ endif ()
 
 
 if (USE_INTERNAL_LZ4_LIBRARY)
-    add_subdirectory (liblz4)
+    add_subdirectory (lz4-cmake)
 endif ()
 
 if (USE_INTERNAL_ZSTD_LIBRARY)
-    add_subdirectory (libzstd)
+    add_subdirectory (zstd-cmake)
 endif ()
 
 if (USE_INTERNAL_RE2_LIBRARY)
