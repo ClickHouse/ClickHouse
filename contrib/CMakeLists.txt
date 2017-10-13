@@ -4,9 +4,6 @@ if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (libboost)
 endif ()
 
-if (USE_INTERNAL_POCO_LIBRARY)
-    add_subdirectory (libpoco)
-endif ()
 
 if (USE_INTERNAL_LZ4_LIBRARY)
     add_subdirectory (lz4-cmake)
@@ -62,4 +59,13 @@ endif ()
 
 if (NOT ARCH_ARM)
     add_subdirectory (libcpuid)
+endif ()
+
+if (USE_INTERNAL_POCO_LIBRARY)
+    set (_save ${ENABLE_TESTS})
+    set (ENABLE_TESTS 0)
+    set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
+    add_subdirectory (poco)
+    unset (CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
+    set (ENABLE_TESTS ${_save})
 endif ()
