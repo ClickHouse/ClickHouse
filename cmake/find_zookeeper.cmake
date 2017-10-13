@@ -17,9 +17,9 @@ message (STATUS "Using zookeeper: ${ZOOKEEPER_INCLUDE_DIR} : ${ZOOKEEPER_LIBRARY
 
 
 # how to make clickhouse branch of https://github.com/ClickHouse-Extras/zookeeper.git :
-git remote add upstream https://github.com/apache/zookeeper.git
-git checkhout upstream/master
-git branch -D clickhouse
-git checkout -b clickhouse
-git merge clickhouse_misc
-git merge clickhouse_706
+# git remote add upstream https://github.com/apache/zookeeper.git
+# git checkhout upstream/master
+# git branch -D clickhouse
+# git checkout -b clickhouse
+# git merge clickhouse_misc
+# git merge clickhouse_706
