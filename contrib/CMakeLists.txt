@@ -61,6 +61,13 @@ if (NOT ARCH_ARM)
     add_subdirectory (libcpuid)
 endif ()
 
+if (USE_INTERNAL_RDKAFKA_LIBRARY)
+    set(RDKAFKA_BUILD_EXAMPLES OFF)
+    set(RDKAFKA_BUILD_TESTS OFF)
+    mark_as_advanced(ZLIB_INCLUDE_DIR)
+    add_subdirectory (librdkafka)
+endif ()
+
 if (USE_INTERNAL_POCO_LIBRARY)
     set (_save ${ENABLE_TESTS})
     set (ENABLE_TESTS 0)
