@@ -878,7 +878,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
+    assertTableExists(db, table_name);
 
     return shared->databases[db]->getCreateQuery(*this, table_name);
 }
@@ -1346,13 +1346,16 @@ Clusters & Context::getClusters() const
 
 
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
-void Context::setClustersConfig(const ConfigurationPtr & config)
+void Context::setClustersConfig(const ConfigurationPtr & config, const String & config_name)
 {
     std::lock_guard<std::mutex> lock(shared->clusters_mutex);
 
     shared->clusters_config = config;
-    if (shared->clusters)
-        shared->clusters->updateClusters(*shared->clusters_config, settings);
+
+    if (!shared->clusters)
+        shared->clusters = std::make_unique<Clusters>(*shared->clusters_config, settings, config_name);
+    else
+        shared->clusters->updateClusters(*shared->clusters_config, settings, config_name);
 }
 
 

@@ -1,10 +1,10 @@
+#include <iostream>
+#include <vector>
 #include <common/config_common.h>
+#include <Common/StringUtils.h>
 #if USE_TCMALLOC
 #include <gperftools/malloc_extension.h>
 #endif
-#include "Server.h"
-#include "LocalServer.h"
-#include <Common/StringUtils.h>
 
 /// Universal executable for various clickhouse applications
 int mainEntryClickHouseServer(int argc, char ** argv);
@@ -14,6 +14,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
+int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 
 namespace
 {
@@ -30,7 +31,8 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"server", mainEntryClickHouseServer},
     {"performance-test", mainEntryClickHousePerformanceTest},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
-    {"compressor", mainEntryClickHouseCompressor}
+    {"compressor", mainEntryClickHouseCompressor},
+    {"copier", mainEntryClickHouseClusterCopier}
 };
 
 

@@ -23,4 +23,6 @@ namespace DB
      */
     bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port);
 
+    bool isLocalAddress(const Poco::Net::SocketAddress & address);
+
 }
