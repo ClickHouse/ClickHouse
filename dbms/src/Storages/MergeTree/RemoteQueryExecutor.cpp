@@ -39,7 +39,7 @@ std::string Service::getId(const std::string & node_id) const
 
 void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
 {
-    if (is_cancelled)
+    if (blocker.isCancelled())
         throw Exception{"RemoteQueryExecutor service terminated", ErrorCodes::ABORTED};
 
     std::string query = params.get("query");

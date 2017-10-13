@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 
-/** Allows you to select the compression method for the conditions specified in the configuration file.
+/** Allows you to select the compression settings for the conditions specified in the configuration file.
   * The config looks like this
 
     <compression>
@@ -29,6 +29,7 @@ namespace ErrorCodes
 
             <! - Which compression method to choose. ->
             <method>zstd</method>
+            <level>2</level>
         </case>
 
         <case>
@@ -36,23 +37,23 @@ namespace ErrorCodes
         </case>
     </compression>
   */
-class CompressionMethodSelector
+class CompressionSettingsSelector
 {
 private:
     struct Element
     {
         size_t min_part_size = 0;
         double min_part_size_ratio = 0;
-        CompressionMethod method = CompressionMethod::LZ4;
+        CompressionSettings settings = CompressionSettings(CompressionMethod::LZ4);
 
-        void setMethod(const std::string & name)
+        static CompressionMethod compressionMethodFromString(const std::string & name)
         {
             if (name == "lz4")
-                method = CompressionMethod::LZ4;
+                return CompressionMethod::LZ4;
             else if (name == "zstd")
-                method = CompressionMethod::ZSTD;
+                return CompressionMethod::ZSTD;
             else if (name == "none")
-              method = CompressionMethod::NONE;
+                return CompressionMethod::NONE;
             else
                 throw Exception("Unknown compression method " + name, ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
         }
@@ -62,7 +63,9 @@ private:
             min_part_size = config.getUInt64(config_prefix + ".min_part_size", 0);
             min_part_size_ratio = config.getDouble(config_prefix + ".min_part_size_ratio", 0);
 
-            setMethod(config.getString(config_prefix + ".method"));
+            CompressionMethod method = compressionMethodFromString(config.getString(config_prefix + ".method"));
+            int level = config.getInt64(config_prefix + ".level", CompressionSettings::getDefaultLevel(method));
+            settings = CompressionSettings(method, level);
         }
 
         bool check(size_t part_size, double part_size_ratio) const
@@ -75,9 +78,9 @@ private:
     std::vector<Element> elements;
 
 public:
-    CompressionMethodSelector() {}    /// Always returns the default method.
+    CompressionSettingsSelector() {}    /// Always returns the default method.
 
-    CompressionMethodSelector(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+    CompressionSettingsSelector(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
     {
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_prefix, keys);
@@ -91,13 +94,13 @@ public:
         }
     }
 
-    CompressionMethod choose(size_t part_size, double part_size_ratio) const
+    CompressionSettings choose(size_t part_size, double part_size_ratio) const
     {
-        CompressionMethod res = CompressionMethod::LZ4;
+        CompressionSettings res = CompressionSettings(CompressionMethod::LZ4);
 
         for (const auto & element : elements)
             if (element.check(part_size, part_size_ratio))
-                res = element.method;
+                res = element.settings;
 
         return res;
     }
