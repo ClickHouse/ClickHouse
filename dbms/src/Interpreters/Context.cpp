@@ -603,7 +603,15 @@ Dependencies Context::getDependencies(const String & database_name, const String
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+
+    if (database_name.empty() && tryGetExternalTable( table_name ))
+    {
+        /// Table is temporary. Access granted.
+    }
+    else
+    {
+        checkDatabaseAccessRights(db);
+    }
 
     ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
     if (iter == shared->view_dependencies.end())
