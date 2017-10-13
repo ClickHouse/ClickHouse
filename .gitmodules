@@ -1,3 +1,6 @@
+[submodule "contrib/librdkafka"]
+	path = contrib/librdkafka
+	url = https://github.com/edenhill/librdkafka.git
 [submodule "contrib/zookeeper"]
 	path = contrib/zookeeper
 	url = https://github.com/ClickHouse-Extras/zookeeper.git

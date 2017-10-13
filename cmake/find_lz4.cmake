@@ -12,6 +12,7 @@ endif ()
 
 if (LZ4_LIBRARY AND LZ4_INCLUDE_DIR)
 else ()
+    set (LZ4_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/lz4/lib)
     set (USE_INTERNAL_LZ4_LIBRARY 1)
     set (LZ4_LIBRARY lz4)
 endif ()
