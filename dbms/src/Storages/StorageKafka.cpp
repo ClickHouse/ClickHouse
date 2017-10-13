@@ -200,12 +200,12 @@ StorageKafka::StorageKafka(
         throw Exception(String(errstr), ErrorCodes::INCORRECT_DATA);
 
     // Don't store offsets of messages before they're processed
-    rd_kafka_conf_set(conf, "enable.auto.offset.store", "false", NULL, 0);
+    rd_kafka_conf_set(conf, "enable.auto.offset.store", "false", nullptr, 0);
 
     // Try to fetch preferred number of bytes before timeout
     const Settings & settings = context.getSettingsRef();
     auto min_bytes = settings.preferred_block_size_bytes.toString();
-    rd_kafka_conf_set(conf, "fetch.min.bytes", min_bytes.c_str(), NULL, 0);
+    rd_kafka_conf_set(conf, "fetch.min.bytes", min_bytes.c_str(), nullptr, 0);
 }
 
 
