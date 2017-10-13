@@ -456,7 +456,7 @@ JSON JSON::operator[] (size_t n) const
         ++it, ++i;
 
     if (i != n)
-        throw JSONException("JSON: array index " + Poco::NumberFormatter::format(n) + " out of bounds.");
+        throw JSONException("JSON: array index " + Poco::NumberFormatter::format(Poco::UInt64(n)) + " out of bounds.");
 
     return *it;
 }
