@@ -390,7 +390,7 @@ struct Stats
             avg_speed_first = avg_speed_value;
         }
 
-        if (abs(avg_speed_value - avg_speed_first) >= precision)
+        if (std::abs(avg_speed_value - avg_speed_first) >= precision)
         {
             avg_speed_first = avg_speed_value;
             avg_speed_watch.restart();

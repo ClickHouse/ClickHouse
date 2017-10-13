@@ -5,6 +5,8 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 
+#include <DataTypes/DataTypeTuple.h>
+
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -33,6 +35,7 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageDictionary.h>
+#include <Storages/StorageKafka.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
@@ -622,6 +625,65 @@ StoragePtr StorageFactory::get(
             StorageTrivialBuffer::Thresholds{min_time, min_rows, min_bytes},
             StorageTrivialBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_database, destination_table);
+    }
+    else if (name == "Kafka")
+    {
+        /** Arguments of engine is following:
+          * - Kafka broker list
+          * - List of topics
+          * - Group ID (may be a constaint expression with a string result)
+          * - Message format (string)
+          * - Schema (optional, if the format supports it)
+          */
+        ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
+
+        const auto params_error_message = "Storage Kafka requires 4 parameters"
+            " - Kafka broker list, list of topics to consume, consumer group ID, message format";
+
+        if (args_func.size() != 1)
+            throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+
+        if (args.size() != 4 && args.size() != 5)
+            throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        String brokers;
+        auto ast = typeid_cast<ASTLiteral *>(&*args[0]);
+        if (ast && ast->value.getType() == Field::Types::String)
+            brokers = safeGet<String>(ast->value);
+        else
+            throw Exception(String("Kafka broker list must be a string"), ErrorCodes::BAD_ARGUMENTS);
+
+        args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
+        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], local_context);
+        args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(args[3], local_context);
+
+        // Additionally parse schema if supported
+        String schema;
+        if (args.size() == 5)
+        {
+            args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(args[4], local_context);
+            schema = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
+        }
+
+        // Parse topic list and consumer group
+        Names topics;
+        topics.push_back(static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>());
+        String group = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
+
+        // Parse format from string
+        String format;
+        ast = typeid_cast<ASTLiteral *>(&*args[3]);
+        if (ast && ast->value.getType() == Field::Types::String)
+            format = safeGet<String>(ast->value);
+        else
+            throw Exception(String("Format must be a string"), ErrorCodes::BAD_ARGUMENTS);
+
+        return StorageKafka::create(
+            table_name, database_name, context, columns,
+            materialized_columns, alias_columns, column_defaults,
+            brokers, group, topics, format, schema);
     }
     else if (endsWith(name, "MergeTree"))
     {
