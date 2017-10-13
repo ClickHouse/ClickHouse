@@ -1,3 +1,6 @@
+[submodule "contrib/zookeeper"]
+	path = contrib/zookeeper
+	url = https://github.com/ClickHouse-Extras/zookeeper.git
 [submodule "contrib/poco"]
 	path = contrib/poco
 	url = https://github.com/ClickHouse-Extras/poco
