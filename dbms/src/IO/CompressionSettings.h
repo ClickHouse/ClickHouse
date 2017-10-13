@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class Settings;
+struct Settings;
 
 struct CompressionSettings
 {
