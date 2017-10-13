@@ -79,7 +79,7 @@ This is a bugfix release. The following bugs were fixed:
 
 ## Major changes:
 
-* Improved security: all server files are created with 0640 permissions.
+* Improved security: all server files are created with 0640 permissions (can be changed via <umask> config parameter). 
 * Improved error messages for queries with invalid syntax.
 * Significantly reduced memory consumption and improved performance when merging large sections of MergeTree data.
 * Significantly increased the performance of data merges for the ReplacingMergeTree engine.

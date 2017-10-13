@@ -221,8 +221,11 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeperPt
     }
 
     auto not_cached_blocks = stat.numChildren - cached_block_stats->size();
-    LOG_TRACE(log, "Checking " << stat.numChildren << " blocks (" << not_cached_blocks << " are not cached)"
-            << " to clear old ones from ZooKeeper. This might take several minutes.");
+    if (not_cached_blocks)
+    {
+        LOG_TRACE(log, "Checking " << stat.numChildren << " blocks (" << not_cached_blocks << " are not cached)"
+                                   << " to clear old ones from ZooKeeper. This might take several minutes.");
+    }
 
     std::vector<std::pair<String, zkutil::ZooKeeper::ExistsFuture>> exists_futures;
     for (const String & block : blocks)

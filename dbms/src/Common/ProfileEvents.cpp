@@ -127,6 +127,10 @@
     M(DataAfterMergeDiffersFromReplica) \
     M(PolygonsAddedToPool) \
     M(PolygonsInPoolAllocatedBytes) \
+    M(RWLockAcquiredReadLocks) \
+    M(RWLockAcquiredWriteLocks) \
+    M(RWLockReadersWaitMilliseconds) \
+    M(RWLockWritersWaitMilliseconds)
 
 namespace ProfileEvents
 {

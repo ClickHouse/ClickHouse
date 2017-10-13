@@ -10,7 +10,7 @@ namespace DB
 namespace
 {
 
-void copyDataImpl(ReadBuffer & from, WriteBuffer & to, bool check_bytes, size_t bytes, std::atomic<bool> * is_cancelled)
+void copyDataImpl(ReadBuffer & from, WriteBuffer & to, bool check_bytes, size_t bytes, std::atomic<int> * is_cancelled)
 {
     /// If read to the end of the buffer, eof() either fills the buffer with new data and moves the cursor to the beginning, or returns false.
     while (bytes > 0 && !from.eof())
@@ -55,7 +55,7 @@ void copyData(ReadBuffer & from, WriteBuffer & to)
     copyDataImpl(from, to, false, std::numeric_limits<size_t>::max(), nullptr);
 }
 
-void copyData(ReadBuffer & from, WriteBuffer & to, std::atomic<bool> & is_cancelled)
+void copyData(ReadBuffer & from, WriteBuffer & to, std::atomic<int> & is_cancelled)
 {
     copyDataImpl(from, to, false, std::numeric_limits<size_t>::max(), &is_cancelled);
 }
@@ -70,7 +70,7 @@ void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes)
     copyDataImpl(from, to, true, bytes, nullptr);
 }
 
-void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, std::atomic<bool> & is_cancelled)
+void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, std::atomic<int> & is_cancelled)
 {
     copyDataImpl(from, to, true, bytes, &is_cancelled);
 }
