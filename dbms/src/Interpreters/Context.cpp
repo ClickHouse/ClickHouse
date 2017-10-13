@@ -604,7 +604,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
 
     String db = resolveDatabase(database_name, current_database);
 
-    if (database_name.empty() && tryGetExternalTable( table_name ))
+    if (database_name.empty() && tryGetExternalTable(table_name))
     {
         /// Table is temporary. Access granted.
     }
