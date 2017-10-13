@@ -20,7 +20,7 @@ public:
         MergeTreeData & storage_,
         size_t min_compress_block_size_,
         size_t max_compress_block_size_,
-        CompressionMethod compression_method_,
+        CompressionSettings compression_settings_,
         size_t aio_threshold_);
 
 protected:
@@ -35,7 +35,7 @@ protected:
             const std::string & marks_path,
             const std::string & marks_file_extension_,
             size_t max_compress_block_size,
-            CompressionMethod compression_method,
+            CompressionSettings compression_settings,
             size_t estimated_size,
             size_t aio_threshold);
 
@@ -81,7 +81,7 @@ protected:
 
     size_t aio_threshold;
 
-    CompressionMethod compression_method;
+    CompressionSettings compression_settings;
 
 private:
     /// Internal version of writeData.
@@ -103,13 +103,13 @@ public:
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionMethod compression_method);
+        CompressionSettings compression_settings);
 
     MergedBlockOutputStream(
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionMethod compression_method,
+        CompressionSettings compression_settings,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
         size_t aio_threshold_);
 
@@ -158,7 +158,7 @@ class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
     MergedColumnOnlyOutputStream(
-        MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method, bool skip_offsets_);
+        MergeTreeData & storage_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
 
     void write(const Block & block) override;
     void writeSuffix() override;

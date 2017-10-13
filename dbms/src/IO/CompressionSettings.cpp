@@ -10,20 +10,43 @@ CompressionSettings::CompressionSettings()
 {
 }
 
-CompressionSettings::CompressionSettings(CompressionMethod method):
-    method(method)
-{
-}
-
-CompressionSettings::CompressionSettings(CompressionMethod method, int zstd_level):
+CompressionSettings::CompressionSettings(CompressionMethod method, int level):
     method(method),
-    zstd_level(zstd_level)
+    level(level)
 {
 }
 
-CompressionSettings::CompressionSettings(const Settings & settings):
-    CompressionSettings(settings.network_compression_method, settings.network_zstd_compression_level)
+CompressionSettings::CompressionSettings(CompressionMethod method):
+    CompressionSettings(method, getDefaultLevel(method))
 {
+}
+
+CompressionSettings::CompressionSettings(const Settings & settings)
+{
+    method = settings.network_compression_method;
+    switch (method)
+    {
+        case CompressionMethod::ZSTD:
+            level = settings.network_zstd_compression_level;
+            break;
+        default:
+            level = getDefaultLevel(method);
+    }
+}
+
+int CompressionSettings::getDefaultLevel(CompressionMethod method)
+{
+    switch (method)
+    {
+        case CompressionMethod::LZ4:
+            return -1;
+        case CompressionMethod::LZ4HC:
+            return 0;
+        case CompressionMethod::ZSTD:
+            return 1;
+        default:
+            return -1;
+    }
 }
 
 }

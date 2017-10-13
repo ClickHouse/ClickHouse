@@ -1123,7 +1123,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
-        auto compression_method = this->context.chooseCompressionMethod(
+        auto compression_settings = this->context.chooseCompressionSettings(
             part->size_in_bytes,
             static_cast<double>(part->size_in_bytes) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, expression);
@@ -1135,7 +1135,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
           *  will have old name of shared offsets for arrays.
           */
-        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_method, true /* skip_offsets */);
+        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_settings, true /* skip_offsets */);
 
         in.readPrefix();
         out.writePrefix();
