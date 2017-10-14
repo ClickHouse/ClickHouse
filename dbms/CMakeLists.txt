@@ -225,7 +225,7 @@ if (USE_RDKAFKA)
 endif ()
 
 # only for copy_headers.sh:
-target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 

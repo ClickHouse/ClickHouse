@@ -54,35 +54,35 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 
     if (dict_struct.id)
     {
-        if (!dict_struct.id.value().expression.empty())
+        if (!dict_struct.id->expression.empty())
         {
-            writeParenthesisedString(dict_struct.id.value().expression, out);
+            writeParenthesisedString(dict_struct.id->expression, out);
             writeString(" AS ", out);
         }
 
-        writeQuoted(dict_struct.id.value().name, out);
+        writeQuoted(dict_struct.id->name, out);
 
         if (dict_struct.range_min && dict_struct.range_max)
         {
             writeString(", ", out);
 
-            if (!dict_struct.range_min.value().expression.empty())
+            if (!dict_struct.range_min->expression.empty())
             {
-                writeParenthesisedString(dict_struct.range_min.value().expression, out);
+                writeParenthesisedString(dict_struct.range_min->expression, out);
                 writeString(" AS ", out);
             }
 
-            writeQuoted(dict_struct.range_min.value().name, out);
+            writeQuoted(dict_struct.range_min->name, out);
 
             writeString(", ", out);
 
-            if (!dict_struct.range_max.value().expression.empty())
+            if (!dict_struct.range_max->expression.empty())
             {
-                writeParenthesisedString(dict_struct.range_max.value().expression, out);
+                writeParenthesisedString(dict_struct.range_max->expression, out);
                 writeString(" AS ", out);
             }
 
-            writeQuoted(dict_struct.range_max.value().name, out);
+            writeQuoted(dict_struct.range_max->name, out);
         }
     }
     else if (dict_struct.key)
@@ -146,13 +146,13 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
     WriteBufferFromOwnString out;
     writeString("SELECT ", out);
 
-    if (!dict_struct.id.value().expression.empty())
+    if (!dict_struct.id->expression.empty())
     {
-        writeParenthesisedString(dict_struct.id.value().expression, out);
+        writeParenthesisedString(dict_struct.id->expression, out);
         writeString(" AS ", out);
     }
 
-    writeQuoted(dict_struct.id.value().name, out);
+    writeQuoted(dict_struct.id->name, out);
 
     for (const auto & attr : dict_struct.attributes)
     {
@@ -183,7 +183,7 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
         writeString(" AND ", out);
     }
 
-    writeQuoted(dict_struct.id.value().name, out);
+    writeQuoted(dict_struct.id->name, out);
     writeString(" IN (", out);
 
     auto first = true;

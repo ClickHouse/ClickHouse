@@ -425,7 +425,7 @@ void executeQuery(
 
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
                 out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                out_buf = &out_file_buf.value();
+                out_buf = &*out_file_buf;
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)

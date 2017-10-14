@@ -79,7 +79,7 @@ Block NullableAdapterBlockInputStream::readImpl()
             case NONE:
             {
                 if (rename[i])
-                    res.insert({elem.column, elem.type, rename[i].value()});
+                    res.insert({elem.column, elem.type, *rename[i]});
                 else
                     res.insert(elem);
                 break;
