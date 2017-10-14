@@ -98,7 +98,7 @@ int main(int argc, char ** argv)
             column_k.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt16>());
             column_k.column = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt16>());
 
-            for (size_t i = 0; i < n; ++i)
+            for (UInt64 i = 0; i < n; ++i)
             {
                 Array values = {i % 5, (i + 1) % 5, (i + 2) % 5};
                 column_k.column->insert(values);
@@ -112,7 +112,7 @@ int main(int argc, char ** argv)
             column_v.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
             column_v.column = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt64>());
 
-            for (size_t i = 0; i < n; ++i)
+            for (UInt64 i = 0; i < n; ++i)
             {
                 Array values = {i % 3, (i + 1) % 3, (i + 2) % 3};
                 column_v.column->insert(values);
@@ -128,7 +128,7 @@ int main(int argc, char ** argv)
                 column_v2.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
                 column_v2.column = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt64>());
 
-                for (size_t i = 0; i < n; ++i)
+                for (UInt64 i = 0; i < n; ++i)
                 {
                     Array values = {(i % 3) * 10, ((i + 1) % 3) * 10, ((i + 2) % 3) * 10};
                     column_v2.column->insert(values);
@@ -145,9 +145,9 @@ int main(int argc, char ** argv)
                 column_kid.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
                 column_kid.column = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt8>());
 
-                for (size_t i = 0; i < n; ++i)
+                for (UInt64 i = 0; i < n; ++i)
                 {
-                    Array values = {(i % 2) * 10, ((i + 1) % 2) * 10, 0UL};
+                    Array values = {(i % 2) * 10, ((i + 1) % 2) * 10, UInt64(0)};
                     column_kid.column->insert(values);
                 }
 

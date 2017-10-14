@@ -46,8 +46,8 @@ class AggregateFunctionTopK
 {
 private:
     using State = AggregateFunctionTopKData<T>;
-    size_t threshold = TOP_K_DEFAULT;
-    size_t reserved = TOP_K_LOAD_FACTOR * threshold;
+    UInt64 threshold = TOP_K_DEFAULT;
+    UInt64 reserved = TOP_K_LOAD_FACTOR * threshold;
 
 public:
     String getName() const override { return "topK"; }
@@ -66,7 +66,7 @@ public:
         if (params.size() != 1)
             throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        size_t k = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[0]);
+        UInt64 k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
         if (k > TOP_K_MAX_SIZE)
             throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
@@ -148,8 +148,8 @@ class AggregateFunctionTopKGeneric : public IUnaryAggregateFunction<AggregateFun
 private:
     using State = AggregateFunctionTopKGenericData;
     DataTypePtr input_data_type;
-    size_t threshold = TOP_K_DEFAULT;
-    size_t reserved = TOP_K_LOAD_FACTOR * threshold;
+    UInt64 threshold = TOP_K_DEFAULT;
+    UInt64 reserved = TOP_K_LOAD_FACTOR * threshold;
 
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
 
@@ -166,7 +166,7 @@ public:
         if (params.size() != 1)
             throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        size_t k = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[0]);
+        UInt64 k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
         if (k > TOP_K_MAX_SIZE)
             throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
