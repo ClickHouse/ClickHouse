@@ -66,7 +66,7 @@ public:
         if (params.size() != 1)
             throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        size_t k = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[0]);
+        size_t k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
         if (k > TOP_K_MAX_SIZE)
             throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
@@ -166,7 +166,7 @@ public:
         if (params.size() != 1)
             throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        size_t k = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[0]);
+        size_t k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
         if (k > TOP_K_MAX_SIZE)
             throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
