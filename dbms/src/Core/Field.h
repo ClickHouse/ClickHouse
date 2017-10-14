@@ -509,6 +509,16 @@ template <> struct NearestFieldType<Tuple>   { using Type = Tuple; };
 template <> struct NearestFieldType<bool>    { using Type = UInt64; };
 template <> struct NearestFieldType<Null>    { using Type = Null; };
 
+#if POCO_LONG_IS_64_BIT
+
+template <> struct Field::TypeToEnum<unsigned long> { static const Types::Which value = Types::UInt64; };
+template <> struct Field::TypeToEnum<long>          { static const Types::Which value = Types::Int64; };
+
+template <> struct NearestFieldType<unsigned long>  { using Type = UInt64; };
+template <> struct NearestFieldType<long>           { using Type = Int64; };
+
+#endif
+
 
 template <typename T>
 typename NearestFieldType<T>::Type nearestFieldType(const T & x)

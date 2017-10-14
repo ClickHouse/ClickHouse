@@ -97,7 +97,7 @@ public:
 
         if (params.size() == 2)
         {
-            length_to_resize = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
+            length_to_resize = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[1]);
         }
     }
 
