@@ -103,7 +103,9 @@ inline void readVarInt(Int16 & x, ReadBuffer & istr)
     x = tmp;
 }
 
-inline void readVarUInt(size_t & x, ReadBuffer & istr)
+template <typename T>
+inline typename std::enable_if<!std::is_same<T, UInt64>::value, void>::type
+readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);

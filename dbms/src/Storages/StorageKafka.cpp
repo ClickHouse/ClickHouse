@@ -121,7 +121,7 @@ public:
     {
         // Always skip unknown fields regardless of the context (JSON or TSKV)
         Context context = context_;
-        context.setSetting("input_format_skip_unknown_fields", UInt64(1));
+        context.setSetting("input_format_skip_unknown_fields", 1UL);
         if (schema.size() > 0)
             context.setSetting("schema", schema);
         // Create a formatted reader on Kafka messages
