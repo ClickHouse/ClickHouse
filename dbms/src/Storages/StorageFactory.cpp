@@ -626,6 +626,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "Kafka")
     {
+#if USE_RDKAFKA
         /** Arguments of engine is following:
           * - Kafka broker list
           * - List of topics
@@ -682,6 +683,9 @@ StoragePtr StorageFactory::get(
             table_name, database_name, context, columns,
             materialized_columns, alias_columns, column_defaults,
             brokers, group, topics, format, schema);
+#else
+            throw Exception{"Storage `Kafka` disabled because ClickHouse built without kafka support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
     }
     else if (endsWith(name, "MergeTree"))
     {
