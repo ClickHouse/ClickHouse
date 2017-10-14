@@ -33,7 +33,7 @@ static const auto READ_POLL_MS       = 1 * 1000;
 static const auto CLEANUP_TIMEOUT_MS = 2 * 1000;
 
 /// How many messages to pull out of internal queue at once
-static const auto BATCH_SIZE_MAX     = 16UL;
+static const UInt64 BATCH_SIZE_MAX   = 16;
 
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
@@ -121,7 +121,7 @@ public:
     {
         // Always skip unknown fields regardless of the context (JSON or TSKV)
         Context context = context_;
-        context.setSetting("input_format_skip_unknown_fields", 1UL);
+        context.setSetting("input_format_skip_unknown_fields", UInt64(1));
         if (schema.size() > 0)
             context.setSetting("schema", schema);
         // Create a formatted reader on Kafka messages
@@ -353,7 +353,7 @@ void StorageKafka::streamToViews()
     // Execute the query
     InterpreterInsertQuery interpreter{insert, context};
     auto block_io = interpreter.execute();
-    copyData(*in, *block_io.out);
+    copyData(*in, *block_io.out, &is_cancelled);
 }
 
 
