@@ -1,3 +1,7 @@
+#include <Common/config.h>
+#if USE_RDKAFKA
+
+#include <thread>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <DataStreams/FormatFactory.h>
@@ -13,8 +17,6 @@
 #include <common/logger_useful.h>
 
 #include <rdkafka.h>
-
-#include <thread>
 
 namespace DB
 {
@@ -356,3 +358,5 @@ void StorageKafka::streamToViews()
 
 
 }
+
+#endif

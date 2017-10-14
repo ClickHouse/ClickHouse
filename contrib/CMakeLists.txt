@@ -4,7 +4,6 @@ if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (libboost)
 endif ()
 
-
 if (USE_INTERNAL_LZ4_LIBRARY)
     add_subdirectory (lz4-cmake)
 endif ()
@@ -62,8 +61,8 @@ if (NOT ARCH_ARM)
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
-    set(RDKAFKA_BUILD_EXAMPLES OFF)
-    set(RDKAFKA_BUILD_TESTS OFF)
+    set(RDKAFKA_BUILD_EXAMPLES OFF CACHE BOOL "")
+    set(RDKAFKA_BUILD_TESTS OFF CACHE BOOL "")
     mark_as_advanced(ZLIB_INCLUDE_DIR)
     add_subdirectory (librdkafka)
 endif ()

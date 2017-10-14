@@ -1,3 +1,7 @@
+option (ENABLE_RDKAFKA "Enable kafka" ON)
+
+if (ENABLE_RDKAFKA)
+
 option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -11,7 +15,10 @@ else ()
     set (USE_INTERNAL_RDKAFKA_LIBRARY 1)
     set (RDKAFKA_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/src")
     set (RDKAFKA_LIBRARY rdkafka)
-    set (USE_RDKAFKA 1)
 endif ()
 
-message (STATUS "Using librdkafka: ${RDKAFKA_INCLUDE_DIR} : ${RDKAFKA_LIBRARY}")
+set (USE_RDKAFKA 1)
+
+endif ()
+
+message (STATUS "Using librdkafka=${USE_RDKAFKA}: ${RDKAFKA_INCLUDE_DIR} : ${RDKAFKA_LIBRARY}")
