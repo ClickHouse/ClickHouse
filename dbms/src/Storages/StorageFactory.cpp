@@ -1,22 +1,18 @@
+#include <unistd.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include <Core/FieldVisitors.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
-
 #include <DataTypes/DataTypeTuple.h>
-
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getClusterName.h>
-
 #include <Storages/StorageLog.h>
 #include <Storages/StorageTinyLog.h>
 #include <Storages/StorageStripeLog.h>
@@ -35,11 +31,13 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageDictionary.h>
-#include <Storages/StorageKafka.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
-#include <unistd.h>
+#include <Common/config.h>
+#if USE_RDKAFKA
+#include <Storages/StorageKafka.h>
+#endif
 
 
 namespace DB

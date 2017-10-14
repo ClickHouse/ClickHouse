@@ -220,7 +220,11 @@ endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (dbms PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
-target_include_directories (dbms PUBLIC ${RDKAFKA_INCLUDE_DIR})
+
+if (USE_RDKAFKA)
+    target_link_libraries (dbms ${RDKAFKA_LIBRARY})
+    #target_include_directories (dbms PUBLIC ${RDKAFKA_INCLUDE_DIR})
+endif ()
 
 # only for copy_headers.sh:
 target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
