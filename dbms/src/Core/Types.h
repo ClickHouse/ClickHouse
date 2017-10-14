@@ -74,15 +74,5 @@ template <> struct TypeName<Float32> { static const char * get() { return "Float
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
 
-/// When UInt64 is defined as std::uint64_t, but unsigned long is equivalent, alias it
-#if POCO_LONG_IS_64_BIT
-
-template <> struct IsNumber<unsigned long>  { static constexpr bool value = true; };
-template <> struct IsNumber<long>           { static constexpr bool value = true; };
-
-template <> struct TypeName<unsigned long>  { static const char * get() { return "UInt64";  } };
-template <> struct TypeName<long>           { static const char * get() { return "Int64";  } };
-
-#endif
 
 }
