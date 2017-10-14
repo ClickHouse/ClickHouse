@@ -1,22 +1,18 @@
+#include <unistd.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include <Core/FieldVisitors.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
-
 #include <DataTypes/DataTypeTuple.h>
-
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getClusterName.h>
-
 #include <Storages/StorageLog.h>
 #include <Storages/StorageTinyLog.h>
 #include <Storages/StorageStripeLog.h>
@@ -35,11 +31,13 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFile.h>
 #include <Storages/StorageDictionary.h>
-#include <Storages/StorageKafka.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
-#include <unistd.h>
+#include <Common/config.h>
+#if USE_RDKAFKA
+#include <Storages/StorageKafka.h>
+#endif
 
 
 namespace DB
@@ -59,6 +57,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -628,6 +627,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "Kafka")
     {
+#if USE_RDKAFKA
         /** Arguments of engine is following:
           * - Kafka broker list
           * - List of topics
@@ -684,6 +684,9 @@ StoragePtr StorageFactory::get(
             table_name, database_name, context, columns,
             materialized_columns, alias_columns, column_defaults,
             brokers, group, topics, format, schema);
+#else
+            throw Exception{"Storage `Kafka` disabled because ClickHouse built without kafka support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
     }
     else if (endsWith(name, "MergeTree"))
     {

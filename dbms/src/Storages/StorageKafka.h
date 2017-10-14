@@ -1,4 +1,6 @@
 #pragma once
+#include <Common/config.h>
+#if USE_RDKAFKA
 
 #include <mutex>
 
@@ -85,3 +87,5 @@ private:
 };
 
 }
+
+#endif

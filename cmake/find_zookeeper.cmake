@@ -3,6 +3,7 @@ option (USE_INTERNAL_ZOOKEEPER_LIBRARY "Set to FALSE to use system zookeeper lib
 if (NOT USE_INTERNAL_ZOOKEEPER_LIBRARY)
     find_library (ZOOKEEPER_LIBRARY zookeeper_mt)
     find_path (ZOOKEEPER_INCLUDE_DIR NAMES zookeeper/zookeeper.h PATHS ${ZOOKEEPER_INCLUDE_PATHS})
+    set(ZOOKEEPER_INCLUDE_DIR "${ZOOKEEPER_INCLUDE_DIR}/zookeeper")
 endif ()
 
 if (ZOOKEEPER_LIBRARY AND ZOOKEEPER_INCLUDE_DIR)
