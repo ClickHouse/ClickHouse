@@ -589,7 +589,7 @@ public:
         if (arguments.empty())
         {
             /// Constant random number from /dev/urandom is used as a hash value of empty list of arguments.
-            vec_to.assign(rows, 0xe28dbde7fe22e41c);
+            vec_to.assign(rows, static_cast<UInt64>(0xe28dbde7fe22e41c));
         }
 
         /// The function supports arbitary number of arguments of arbitary types.

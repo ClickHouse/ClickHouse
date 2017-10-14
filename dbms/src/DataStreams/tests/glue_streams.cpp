@@ -43,7 +43,7 @@ try
     loadMetadata(context);
 
     context.setCurrentDatabase("default");
-    context.setSetting("max_threads", 1UL);
+    context.setSetting("max_threads", UInt64(1));
 
     BlockIO io1 = executeQuery(
         "SELECT SearchPhrase, count()"
