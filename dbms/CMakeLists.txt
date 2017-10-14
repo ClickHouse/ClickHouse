@@ -181,7 +181,6 @@ target_link_libraries (dbms
     ${Boost_SYSTEM_LIBRARY}
     ${Poco_Data_LIBRARY}
     ${BTRIE_LIBRARIES}
-    ${RDKAFKA_LIBRARY}
 )
 
 if (Poco_DataODBC_FOUND)
@@ -223,7 +222,6 @@ target_include_directories (dbms PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 
 if (USE_RDKAFKA)
     target_link_libraries (dbms ${RDKAFKA_LIBRARY})
-    #target_include_directories (dbms PUBLIC ${RDKAFKA_INCLUDE_DIR})
 endif ()
 
 # only for copy_headers.sh:
