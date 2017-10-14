@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
