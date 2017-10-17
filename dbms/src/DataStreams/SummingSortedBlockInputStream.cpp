@@ -157,6 +157,11 @@ Block SummingSortedBlockInputStream::readImpl()
                     desc.state.resize(desc.function->sizeOfData());
                     columns_to_aggregate.emplace_back(std::move(desc));
                 }
+                else
+                {
+                    // Column is not going to be summed, use last value
+                    column_numbers_not_to_aggregate.push_back(i);
+                }
             }
         }
 
@@ -165,7 +170,11 @@ Block SummingSortedBlockInputStream::readImpl()
         {
             /// map should contain at least two elements (key -> value)
             if (map.second.size() < 2)
+            {
+                for (auto col : map.second)
+                    column_numbers_not_to_aggregate.push_back(col);
                 continue;
+            }
 
             /// no elements of map could be in primary key
             auto column_num_it = map.second.begin();
@@ -173,7 +182,11 @@ Block SummingSortedBlockInputStream::readImpl()
                 if (isInPrimaryKey(description, merged_block.safeGetByPosition(*column_num_it).name, *column_num_it))
                     break;
             if (column_num_it != map.second.end())
+            {
+                for (auto col : map.second)
+                    column_numbers_not_to_aggregate.push_back(col);
                 continue;
+            }
 
             // Wrap aggregated columns in a tuple to match function signature
             DataTypes argument_types = {};
@@ -216,7 +229,11 @@ Block SummingSortedBlockInputStream::readImpl()
             }
 
             if (column_num_it != map.second.end())
+            {
+                for (auto col : map.second)
+                    column_numbers_not_to_aggregate.push_back(col);
                 continue;
+            }
 
             if (map_desc.key_col_nums.size() == 1)
             {
@@ -230,10 +247,8 @@ Block SummingSortedBlockInputStream::readImpl()
             else
             {
                 // Fall back to legacy mergeMaps for composite keys
-                for (auto i : map_desc.key_col_nums)
-                    column_numbers_not_to_aggregate.push_back(i);
-                for (auto i : map_desc.val_col_nums)
-                    column_numbers_not_to_aggregate.push_back(i);
+                for (auto col : map.second)
+                    column_numbers_not_to_aggregate.push_back(col);
                 maps_to_sum.emplace_back(std::move(map_desc));
             }
         }
@@ -290,7 +305,6 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
             current_key.swap(next_key);
 
             setRow(current_row, current);
-            current_row_is_zero = false;
 
             /// Reset aggregation states for next row
             for (auto & desc : columns_to_aggregate)
@@ -298,9 +312,14 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
                 desc.function->create(desc.state.data());
                 desc.created = true;
             }
+
+            // Start aggregations with current row
+            current_row_is_zero = !addRow(current_row, current);
         }
         else
         {
+            current_row_is_zero = !addRow(current_row, current);
+
             // Merge maps only for same rows
             for (auto & desc : maps_to_sum)
             {
@@ -308,9 +327,6 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
                     current_row_is_zero = false;
             }
         }
-
-        if (addRow(current_row, current))
-            current_row_is_zero = false;
 
         if (!current->isLast())
         {
@@ -445,6 +461,8 @@ bool SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
                     columns[i] = cursor->all_columns[desc.column_numbers[i]];
 
                 desc.function->add(desc.state.data(), columns.data(), cursor->pos, nullptr);
+                // Note: we can't detect whether the aggregation result is non-empty here yet
+                res = true;
             }
         }
     }
