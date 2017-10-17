@@ -1,11 +1,13 @@
+#include <Functions/FunctionsExternalModels.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
+
 #include <Interpreters/Context.h>
+#include <Interpreters/ExternalModels.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
-#include <Functions/FunctionsExternalModels.h>
-#include <Functions/FunctionHelpers.h>
-#include <Interpreters/ExternalModels.h>
 
 namespace DB
 {
@@ -50,6 +52,11 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
         columns[i] = block.getByPosition(arguments[i + 1]).column;
 
     block.getByPosition(result).column = model->evaluate(columns);
+}
+
+void registerFunctionsExternalModels(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionModelEvaluate>();
 }
 
 }

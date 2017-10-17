@@ -6,6 +6,10 @@ namespace  DB
 
 class ExternalModels;
 
+/// Evaluate external model.
+/// First argument - model name, the others - model arguments.
+///   * for CatBoost model - float features first, then categorical
+/// Result - Float64.
 class FunctionModelEvaluate final : public IFunction
 {
 public:
