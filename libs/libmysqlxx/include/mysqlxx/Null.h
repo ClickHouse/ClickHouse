@@ -25,6 +25,7 @@ public:
     bool is_null;
 
     Null() : is_null(true) {}
+    Null(const Null<T> &) = default;
     Null(Null<T> &&) noexcept = default;
     Null(NullType data) : is_null(true) {}
     explicit Null(const T & data_) : data(data_), is_null(false) {}
