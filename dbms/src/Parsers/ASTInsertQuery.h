@@ -17,6 +17,10 @@ public:
     ASTPtr columns;
     String format;
     ASTPtr select;
+
+    // Set to true if the data should only be inserted into attached views
+    bool no_destination = false;
+
     /// Data to insert
     const char * data = nullptr;
     const char * end = nullptr;

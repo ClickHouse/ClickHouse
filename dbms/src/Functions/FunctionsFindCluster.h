@@ -52,13 +52,13 @@ size_t find_centroid(Float64 x, std::vector<Float64>& centroids)
 {
     // Centroids array has to have at least one element, and if it has only one element,
     // it is also the result of this Function.
-    Float64 distance = abs(centroids[0] - x);
+    Float64 distance = std::abs(centroids[0] - x);
     size_t index = 0;
 
     // Check if we have more clusters and if we have, whether some is closer to src[i]
     for (size_t j = 1; j < centroids.size(); ++j)
     {
-        Float64 next_distance = abs(centroids[j] - x);
+        Float64 next_distance = std::abs(centroids[j] - x);
 
         if (next_distance < distance)
         {

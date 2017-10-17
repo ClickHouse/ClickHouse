@@ -46,8 +46,8 @@ class AggregateFunctionTopK
 {
 private:
     using State = AggregateFunctionTopKData<T>;
-    size_t threshold = TOP_K_DEFAULT;
-    size_t reserved = TOP_K_LOAD_FACTOR * threshold;
+    UInt64 threshold = TOP_K_DEFAULT;
+    UInt64 reserved = TOP_K_LOAD_FACTOR * threshold;
 
 public:
     String getName() const override { return "topK"; }
@@ -66,7 +66,7 @@ public:
         if (params.size() != 1)
             throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        size_t k = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[0]);
+        UInt64 k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
         if (k > TOP_K_MAX_SIZE)
             throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
@@ -107,8 +107,8 @@ public:
         ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
 
         const typename State::Set & set = this->data(place).value;
-        auto resultVec = set.topK(threshold);
-        size_t size = resultVec.size();
+        auto result_vec = set.topK(threshold);
+        size_t size = result_vec.size();
 
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
 
@@ -117,7 +117,7 @@ public:
         data_to.resize(old_size + size);
 
         size_t i = 0;
-        for (auto it = resultVec.begin(); it != resultVec.end(); ++it, ++i)
+        for (auto it = result_vec.begin(); it != result_vec.end(); ++it, ++i)
             data_to[old_size + i] = it->key;
     }
 
@@ -148,8 +148,8 @@ class AggregateFunctionTopKGeneric : public IUnaryAggregateFunction<AggregateFun
 private:
     using State = AggregateFunctionTopKGenericData;
     DataTypePtr input_data_type;
-    size_t threshold = TOP_K_DEFAULT;
-    size_t reserved = TOP_K_LOAD_FACTOR * threshold;
+    UInt64 threshold = TOP_K_DEFAULT;
+    UInt64 reserved = TOP_K_LOAD_FACTOR * threshold;
 
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
 
@@ -166,7 +166,7 @@ public:
         if (params.size() != 1)
             throw Exception("Aggregate function " + getName() + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        size_t k = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[0]);
+        UInt64 k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
         if (k > TOP_K_MAX_SIZE)
             throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
@@ -236,10 +236,10 @@ public:
         ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
         IColumn & data_to = arr_to.getData();
 
-        auto resultVec = this->data(place).value.topK(threshold);
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + resultVec.size());
+        auto result_vec = this->data(place).value.topK(threshold);
+        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + result_vec.size());
 
-        for (auto & elem : resultVec)
+        for (auto & elem : result_vec)
         {
             deserializeAndInsert(elem.key, data_to);
         }
