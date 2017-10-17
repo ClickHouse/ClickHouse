@@ -6,7 +6,7 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/CompressedStream.h>
+#include <IO/CompressionSettings.h>
 
 
 namespace DB
@@ -16,7 +16,7 @@ class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     WriteBuffer & out;
-    CompressionMethod method;
+    CompressionSettings compression_settings;
 
     PODArray<char> compressed_buffer;
 
@@ -25,7 +25,7 @@ private:
 public:
     CompressedWriteBuffer(
         WriteBuffer & out_,
-        CompressionMethod method_ = CompressionMethod::LZ4,
+        CompressionSettings compression_settings = CompressionSettings(),
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
     /// The amount of compressed data

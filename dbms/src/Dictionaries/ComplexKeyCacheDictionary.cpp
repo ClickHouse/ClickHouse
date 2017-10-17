@@ -170,7 +170,7 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
 
 
     const auto rows_num = key_columns.front()->size();
-    const auto keys_size = dict_struct.key.value().size();
+    const auto keys_size = dict_struct.key->size();
     StringRefs keys(keys_size);
     Arena temporary_keys_pool;
     PODArray<StringRef> keys_array(rows_num);

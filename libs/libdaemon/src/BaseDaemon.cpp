@@ -812,6 +812,13 @@ void BaseDaemon::initialize(Application & self)
     /// Ставим terminate_handler
     std::set_terminate(terminate_handler);
 
+    /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
+    {
+        sigset_t sig_set;
+        if (sigemptyset(&sig_set) || sigaddset(&sig_set, SIGPIPE) || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
+            throw Poco::Exception("Cannot block signal.");
+    }
+
     /// Ставим обработчики сигналов
     auto add_signal_handler =
         [](const std::vector<int> & signals, signal_function handler)
