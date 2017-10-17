@@ -19,14 +19,22 @@ class ICatBoostModel
 {
 public:
     virtual ~ICatBoostModel() = default;
-    virtual ColumnPtr calc(const Columns & columns, size_t float_features_count, size_t cat_features_count) = 0;
+    virtual ColumnPtr calc(const Columns & columns, size_t float_features_count, size_t cat_features_count) const = 0;
 };
 
-class CatBoostModel : public IExternalLoadable
+class IModel : public IExternalLoadable
 {
 public:
-    CatBoostModel(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-                  const std::string & lib_path);
+    virtual ColumnPtr evaluate(const Columns & columns) const = 0;
+};
+
+class CatBoostModel : public IModel
+{
+public:
+    CatBoostModel(const std::string & name, const std::string & model_path,
+                  const std::string & lib_path, const ExternalLoadableLifetime & lifetime,
+                  size_t float_features_count, size_t cat_features_count);
+
 
     const ExternalLoadableLifetime & getLifetime() const override;
 
@@ -43,7 +51,7 @@ public:
     size_t getFloatFeaturesCount() const;
     size_t getCatFeaturesCount() const;
 
-    ColumnPtr apply(const Columns & columns);
+    ColumnPtr evaluate(const Columns & columns) const override;
 
 private:
     std::string name;
@@ -58,10 +66,6 @@ private:
 
     size_t float_features_count;
     size_t cat_features_count;
-
-    CatBoostModel(const std::string & name, const std::string & model_path,
-                  const std::string & lib_path, const ExternalLoadableLifetime & lifetime,
-                  size_t float_features_count, size_t cat_features_count);
 
     void init(const std::string & lib_path);
 };
