@@ -21,8 +21,6 @@ extern const int CANNOT_LOAD_CATBOOST_MODEL;
 extern const int CANNOT_APPLY_CATBOOST_MODEL;
 }
 
-namespace
-{
 
 struct CatBoostWrapperApi
 {
@@ -55,6 +53,9 @@ struct CatBoostWrapperApi
     int (* GetIntegerCatFeatureHash)(long long val);
 };
 
+
+namespace
+{
 
 class CatBoostModelHolder
 {
@@ -203,7 +204,7 @@ private:
         if (size == 0)
             return nullptr;
         size_t column_size = columns[offset]->size();
-        auto data_column = std::make_shared<typename ColumnVector<T>>(size * column_size);
+        auto data_column = std::make_shared<ColumnVector<T>>(size * column_size);
         T* data = data_column->getData().data();
         for (size_t i = offset; i < offset + size; ++i)
         {
@@ -229,7 +230,6 @@ private:
     {
         if (size == 0)
             return {};
-        size_t column_size = columns[offset]->size();
 
         std::vector<PODArray<char>> data;
         for (size_t i = offset; i < offset + size; ++i)
@@ -279,7 +279,6 @@ private:
         for (size_t i = offset; i < offset + size; ++i)
         {
             const auto & column = columns[i];
-            auto buffer_ptr = buffer;
             if (auto column_string = typeid_cast<const ColumnString *>(column.get()))
                 calcStringHashes(column_string, size, column_size, buffer);
             else if (auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column.get()))
@@ -371,7 +370,7 @@ private:
 class CatBoostLibHolder: public CatBoostWrapperApiProvider
 {
 public:
-    explicit CatBoostLibHolder(const std::string & lib_path) : lib(lib_path), lib_path(lib_path) { initApi(); }
+    explicit CatBoostLibHolder(const std::string & lib_path) : lib_path(lib_path), lib(lib_path) { initApi(); }
 
     const CatBoostWrapperApi & getApi() const override { return api; }
     const std::string & getCurrentPath() const { return lib_path; }
@@ -386,7 +385,7 @@ private:
     template <typename T>
     void load(T& func, const std::string & name)
     {
-        using Type = std::remove_pointer<T>::type;
+        using Type = typename std::remove_pointer<T>::type;
         func = lib.get<Type>(name);
     }
 };

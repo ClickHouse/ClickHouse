@@ -63,11 +63,11 @@ std::unique_ptr<IExternalLoadable> ExternalModels::create(
     /// TODO: add models factory.
     if (type == "catboost")
     {
-        return std::make_unique<CatBoostModel>(
+        return std::make_unique<CatBoqostModel>(
                 name, config.getString(config_prefix + ".path"),
                 context.getConfigRef().getString("catboost_dynamic_library_path"),
-                lifetime, config.getString(config_prefix + ".float_features_count"),
-                config.getString(config_prefix + ".size_t cat_features_count")
+                lifetime, config.getUInt(config_prefix + ".float_features_count"),
+                config.getUInt(config_prefix + ".cat_features_count")
         );
     }
     else
