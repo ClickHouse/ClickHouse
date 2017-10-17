@@ -1,0 +1,8 @@
+//
+// Created by nik-kochetov on 16.10.17.
+//
+
+#ifndef CLICKHOUSE_EXTERNALMODELS_H
+#define CLICKHOUSE_EXTERNALMODELS_H
+
+#endif //CLICKHOUSE_EXTERNALMODELS_H
