@@ -54,8 +54,8 @@ int main(int argc, char ** argv)
 
         ColumnWithTypeAndName column_x;
         column_x.name = "x";
-        column_x.type = std::make_shared<DataTypeUInt64>();
-        auto x = std::make_shared<ColumnUInt64>();
+        column_x.type = std::make_shared<DataTypeUInt32>();
+        auto x = std::make_shared<ColumnUInt32>();
         column_x.column = x;
         auto & vec_x = x->getData();
 

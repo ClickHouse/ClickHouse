@@ -152,7 +152,7 @@ Block SummingSortedBlockInputStream::readImpl()
                     auto desc = AggregateDescription{};
                     desc.column_numbers = {i};
                     desc.merged_column = column.column;
-                    desc.function = factory.get("sum", {column.type});
+                    desc.function = factory.get("sumWithOverflow", {column.type});
                     desc.function->setArguments({column.type});
                     desc.state.resize(desc.function->sizeOfData());
                     columns_to_aggregate.emplace_back(std::move(desc));
