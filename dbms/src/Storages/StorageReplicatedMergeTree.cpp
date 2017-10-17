@@ -1004,29 +1004,36 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
     }
     else if (entry.type == LogEntry::MERGE_PARTS)
     {
-        std::stringstream log_message;
-        log_message << "Executing log entry to merge parts ";
-        for (auto i : ext::range(0, entry.parts_to_merge.size()))
-            log_message << (i != 0 ? ", " : "") << entry.parts_to_merge[i];
-        log_message << " to " << entry.new_part_name;
+        {
+            std::stringstream log_message;
+            log_message << "Executing log entry to merge " << entry.parts_to_merge.size() << " parts ";
+            for (auto i : ext::range(0, entry.parts_to_merge.size()))
+                log_message << (i != 0 ? ", " : "") << entry.parts_to_merge[i];
+            log_message << " to " << entry.new_part_name;
 
-        LOG_TRACE(log, log_message.rdbuf());
+            LOG_TRACE(log, log_message.rdbuf());
+        }
 
         MergeTreeData::DataPartsVector parts;
         bool have_all_parts = true;
+        bool missed_part_has_covered_part = false;
+        String missed_part;
         for (const String & name : entry.parts_to_merge)
         {
             MergeTreeData::DataPartPtr part = data.getActiveContainingPart(name);
             if (!part)
             {
                 have_all_parts = false;
+                missed_part = name;
                 break;
             }
             if (part->name != name)
             {
                 LOG_WARNING(log, "Part " << name << " is covered by " << part->name
-                    << " but should be merged into " << entry.new_part_name << ". This shouldn't happen often.");
+                                         << " but should be merged into " << entry.new_part_name << ". This shouldn't happen often.");
                 have_all_parts = false;
+                missed_part = name;
+                missed_part_has_covered_part = true;
                 break;
             }
             parts.push_back(part);
@@ -1034,9 +1041,23 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
         if (!have_all_parts)
         {
-            /// If you do not have all the necessary parts, try to take some already merged part from someone.
-            do_fetch = true;
-            LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
+            /// If we do not have all the necessary parts, try to take some already merged part from someone, but not immediately.
+            /// The aim of this heuristic is to reduce amount of fetched already merged parts.
+
+            auto fetch_deadline = entry.create_time + data.settings.wait_before_fetch_part_if_there_are_no_source_parts;
+            if (missed_part_has_covered_part || fetch_deadline <= time(nullptr))
+            {
+                LOG_DEBUG(log, "Don't have part " << missed_part << " for merge " << entry.new_part_name
+                                                  << "; try to fetch it instead");
+                do_fetch = true;
+            }
+            else
+            {
+                /// TODO: this check could be done in shouldExecuteLogEntry() in advance
+                LOG_DEBUG(log, "Don't have part " << missed_part << " for merge " << entry.new_part_name
+                                                  << "; wait for appearing source parts for some time");
+                return false;
+            }
         }
         else if (entry.create_time + data.settings.prefer_fetch_merged_part_time_threshold <= time(nullptr))
         {
