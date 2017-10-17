@@ -1034,9 +1034,19 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
         if (!have_all_parts)
         {
-            /// If you do not have all the necessary parts, try to take some already merged part from someone.
-            do_fetch = true;
-            LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
+            /// If we do not have all the necessary parts, try to take some already merged part from someone, but not immediately.
+            if (entry.create_time + data.settings.wait_before_fetch_part_if_there_are_no_source_parts <= time(nullptr))
+            {
+                LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name << "; will try to fetch it instead");
+                do_fetch = true;
+            }
+            else
+            {
+                /// TODO: this check could be done in shouldExecuteLogEntry() in advance
+                LOG_DEBUG(log, "Don't have all parts for merge " << entry.new_part_name
+                                                                 << "; will wait appearing source parts for some time");
+                return false;
+            }
         }
         else if (entry.create_time + data.settings.prefer_fetch_merged_part_time_threshold <= time(nullptr))
         {

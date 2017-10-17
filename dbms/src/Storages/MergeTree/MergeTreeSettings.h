@@ -70,6 +70,9 @@ struct MergeTreeSettings
     time_t prefer_fetch_merged_part_time_threshold = 3600;
     size_t prefer_fetch_merged_part_size_threshold = 10ULL * 1024 * 1024 * 1024;
 
+    /// If we don't find all source parts for merge, than will fetch it only after that timeout
+    time_t wait_before_fetch_part_if_there_are_no_source_parts = 60;
+
     /// Max broken parts, if more - deny automatic deletion.
     size_t max_suspicious_broken_parts = 10;
 
