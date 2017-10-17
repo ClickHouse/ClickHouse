@@ -89,19 +89,8 @@ public:
     {
     }
 
-    LocalDate(const LocalDate & x)
-    {
-        operator=(x);
-    }
-
-    LocalDate & operator= (const LocalDate & x)
-    {
-        m_year = x.m_year;
-        m_month = x.m_month;
-        m_day = x.m_day;
-
-        return *this;
-    }
+    LocalDate(const LocalDate &) noexcept = default;
+    LocalDate & operator= (const LocalDate &) noexcept = default;
 
     LocalDate & operator= (time_t time)
     {
