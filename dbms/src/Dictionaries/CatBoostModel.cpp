@@ -63,7 +63,7 @@ private:
     CatBoostWrapperApi::ModelCalcerHandle * handle;
     const CatBoostWrapperApi * api;
 public:
-    explicit CatBoostModelHolder(CatBoostWrapperApi * api) : api(api) { handle = api->ModelCalcerCreate(); }
+    explicit CatBoostModelHolder(const CatBoostWrapperApi * api) : api(api) { handle = api->ModelCalcerCreate(); }
     ~CatBoostModelHolder() { api->ModelCalcerDelete(handle); }
 
     CatBoostWrapperApi::ModelCalcerHandle * get() { return handle; }
@@ -142,7 +142,7 @@ public:
 
 private:
     std::unique_ptr<CatBoostModelHolder> handle;
-    CatBoostWrapperApi * api;
+    const CatBoostWrapperApi * api;
 
     /// Buffer should be allocated with features_count * column->size() elements.
     /// Place column elements in positions buffer[0], buffer[features_count], ... , buffer[size * features_count]
