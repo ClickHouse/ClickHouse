@@ -61,7 +61,7 @@ class CatBoostModelHolder
 {
 private:
     CatBoostWrapperApi::ModelCalcerHandle * handle;
-    CatBoostWrapperApi * api;
+    const CatBoostWrapperApi * api;
 public:
     explicit CatBoostModelHolder(CatBoostWrapperApi * api) : api(api) { handle = api->ModelCalcerCreate(); }
     ~CatBoostModelHolder() { api->ModelCalcerDelete(handle); }
@@ -74,7 +74,7 @@ public:
 class CatBoostModelImpl : public ICatBoostModel
 {
 public:
-    CatBoostModelImpl(CatBoostWrapperApi * api, const std::string & model_path) : api(api)
+    CatBoostModelImpl(const CatBoostWrapperApi * api, const std::string & model_path) : api(api)
     {
         auto handle_ = std::make_unique<CatBoostModelHolder>(api);
         if (!handle_)
