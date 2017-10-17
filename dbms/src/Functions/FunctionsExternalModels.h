@@ -1,26 +1,34 @@
+#include <Functions/IFunction.h>
 
+namespace  DB
+{
+
+
+class ExternalModles;
 
 class FunctionModelEvaluate final : public IFunction
 {
 public:
     static constexpr auto name = "modelEvaluate";
 
-    static FunctionPtr create(const Context & context)
-    {
-        return std::make_shared<FunctionModelEvaluate>(context.getExternalDictionaries());
-    }
+    static FunctionPtr create(const Context & context);
 
-    FunctionModelEvaluate(const ExternalModles & models) : models(models) {}
+    explicit FunctionModelEvaluate(const ExternalModles & models) : models(models) {}
 
     String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override
+    { return true; }
+
+    size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
 
     const ExternalModles & models;
 };
+
+}

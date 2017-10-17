@@ -89,7 +89,7 @@ public:
         handle = std::move(handle_);
     }
 
-    ColumnPtr calc(const Columns & columns, size_t float_features_count, size_t cat_features_count)
+    ColumnPtr calc(const Columns & columns, size_t float_features_count, size_t cat_features_count) const override
     {
         if (columns.empty())
             throw Exception("Got empty columns list for CatBoost model.", ErrorCodes::BAD_ARGUMENTS);
@@ -146,7 +146,7 @@ private:
     /// Buffer should be allocated with features_count * column->size() elements.
     /// Place column elements in positions buffer[0], buffer[features_count], ... , buffer[size * features_count]
     template <typename T>
-    void placeColumnAsNumber(const ColumnPtr & column, T * buffer, size_t features_count)
+    void placeColumnAsNumber(const ColumnPtr & column, T * buffer, size_t features_count) const
     {
         size_t size = column->size();
         FieldVisitorConvertToNumber<T> visitor;
@@ -162,7 +162,7 @@ private:
 
     /// Buffer should be allocated with features_count * column->size() elements.
     /// Place string pointers in positions buffer[0], buffer[features_count], ... , buffer[size * features_count]
-    void placeStringColumn(const ColumnString & column, const char ** buffer, size_t features_count)
+    void placeStringColumn(const ColumnString & column, const char ** buffer, size_t features_count) const
     {
         size_t size = column.size();
         for (size_t i = 0; i < size; ++i)
@@ -175,7 +175,8 @@ private:
     /// Buffer should be allocated with features_count * column->size() elements.
     /// Place string pointers in positions buffer[0], buffer[features_count], ... , buffer[size * features_count]
     /// Returns PODArray which holds data (because ColumnFixedString doesn't store terminating zero).
-    PODArray<char> placeFixedStringColumn(const ColumnFixedString & column, const char ** buffer, size_t features_count)
+    PODArray<char> placeFixedStringColumn(
+            const ColumnFixedString & column, const char ** buffer, size_t features_count) const
     {
         size_t size = column.size();
         size_t str_size = column.getN();
@@ -197,7 +198,7 @@ private:
 
     /// Place columns into buffer, returns column which holds placed data. Buffer should contains column->size() values.
     template <typename T>
-    ColumnPtr placeNumericColumns(const Columns & columns, size_t offset, size_t size, const T** buffer)
+    ColumnPtr placeNumericColumns(const Columns & columns, size_t offset, size_t size, const T** buffer) const
     {
         if (size == 0)
             return nullptr;
@@ -224,7 +225,7 @@ private:
     /// Place columns into buffer, returns data which was used for fixed string columns.
     /// Buffer should contains column->size() values, each value contains size strings.
     std::vector<PODArray<char>> placeStringColumns(
-            const Columns & columns, size_t offset, size_t size, const char *** buffer)
+            const Columns & columns, size_t offset, size_t size, const char *** buffer) const
     {
         if (size == 0)
             return {};
@@ -247,7 +248,7 @@ private:
 
     /// Calc hash for string cat feature at ps positions.
     template <typename Column>
-    void calcStringHashes(const Column * column, size_t features_count, size_t ps, const int ** buffer)
+    void calcStringHashes(const Column * column, size_t features_count, size_t ps, const int ** buffer) const
     {
         size_t column_size = column->size();
         for (size_t j = 0; j < column_size; ++j)
@@ -259,7 +260,7 @@ private:
     }
 
     /// Calc hash for int cat feature at ps position. Buffer at positions ps should contains unhashed values.
-    void calcIntHashes(size_t column_size, size_t features_count, size_t ps, const int ** buffer)
+    void calcIntHashes(size_t column_size, size_t features_count, size_t ps, const int ** buffer) const
     {
         for (size_t j = 0; j < column_size; ++j)
         {
@@ -268,7 +269,7 @@ private:
         }
     }
 
-    void calcHashes(const Columns & columns, size_t offset, size_t size, const int ** buffer)
+    void calcHashes(const Columns & columns, size_t offset, size_t size, const int ** buffer) const
     {
         if (size == 0)
             return;
@@ -289,7 +290,7 @@ private:
     }
 
     void fillCatFeaturesBuffer(const char *** cat_features, const char ** buffer,
-                               size_t column_size, size_t cat_features_count)
+                               size_t column_size, size_t cat_features_count) const
     {
         for (size_t i = 0; i < column_size; ++i)
         {
@@ -300,7 +301,7 @@ private:
     }
 
     ColumnPtr calcImpl(const Columns & columns, size_t float_features_count, size_t cat_features_count,
-                       bool cat_features_are_strings)
+                       bool cat_features_are_strings) const
     {
         // size_t size = columns.size();
         size_t column_size = columns.front()->size();
@@ -423,12 +424,6 @@ std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & 
 
 }
 
-CatBoostModel::CatBoostModel(const Poco::Util::AbstractConfiguration & config,
-                             const std::string & config_prefix, const std::string & lib_path)
-    : lifetime(config, config_prefix)
-{
-
-}
 
 CatBoostModel::CatBoostModel(const std::string & name, const std::string & model_path, const std::string & lib_path,
                              const ExternalLoadableLifetime & lifetime,
@@ -478,7 +473,7 @@ size_t CatBoostModel::getCatFeaturesCount() const
     return cat_features_count;
 }
 
-ColumnPtr CatBoostModel::apply(const Columns & columns)
+ColumnPtr CatBoostModel::evaluate(const Columns & columns) const
 {
     if (!model)
         throw Exception("CatBoost model was not loaded.", ErrorCodes::LOGICAL_ERROR);
