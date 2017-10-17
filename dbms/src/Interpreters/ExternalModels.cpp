@@ -58,7 +58,7 @@ std::unique_ptr<IExternalLoadable> ExternalModels::create(
         const std::string & name, const Configuration & config, const std::string & config_prefix)
 {
     String type = config.getString(config_prefix + ".type");
-    ExternalLoadableLifetime lifetime(config, config_prefix);
+    ExternalLoadableLifetime lifetime(config, config_prefix + ".lifetime");
 
     /// TODO: add models factory.
     if (type == "catboost")
