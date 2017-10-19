@@ -402,7 +402,7 @@ private:
   */
 static void terminate_handler()
 {
-    static __thread bool terminating = false;
+    static thread_local bool terminating = false;
     if (terminating)
     {
         abort();
