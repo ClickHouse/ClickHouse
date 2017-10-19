@@ -33,9 +33,9 @@ int main(int argc, char ** argv)
 
     auto model = creater();
     std::cout << "created model" << std::endl;
-    loader(model, model_path);
+    loader(model, model_path.c_str());
     std::cout << "loaded model" << std::endl;
-    destroyer(model.c_str());
+    destroyer(model);
     std::cout << "destroyed model" << std::endl;
     return 0;
 }
