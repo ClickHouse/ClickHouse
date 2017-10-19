@@ -14,8 +14,8 @@ if (ENABLE_LIBTCMALLOC)
 
     if (NOT (GPERFTOOLS_FOUND AND GPERFTOOLS_INCLUDE_DIR AND GPERFTOOLS_TCMALLOC_MINIMAL) AND NOT (CMAKE_SYSTEM MATCHES "FreeBSD" OR ARCH_32))
         set (USE_INTERNAL_GPERFTOOLS_LIBRARY 1)
-        set (GPERFTOOLS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libtcmalloc/include")
-        set (GPERFTOOLS_TCMALLOC_MINIMAL tcmalloc_minimal_internal)
+        set (GPERFTOOLS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/gperftools/src")
+        set (GPERFTOOLS_TCMALLOC_MINIMAL ${ClickHouse_BINARY_DIR}/contrib/gperftools/lib/libtcmalloc_minimal.a)
     endif ()
 
     if (GPERFTOOLS_FOUND OR USE_INTERNAL_GPERFTOOLS_LIBRARY)

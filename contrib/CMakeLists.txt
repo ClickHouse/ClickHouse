@@ -53,7 +53,7 @@ if (USE_INTERNAL_CCTZ_LIBRARY)
 endif ()
 
 if (ENABLE_LIBTCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
-    add_subdirectory (libtcmalloc)
+    add_subdirectory (gperftools-cmake)
 endif ()
 
 if (NOT ARCH_ARM)
