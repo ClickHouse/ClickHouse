@@ -123,7 +123,7 @@ public:
         Context context = context_;
         context.setSetting("input_format_skip_unknown_fields", UInt64(1));
         if (schema.size() > 0)
-            context.setSetting("schema", schema);
+            context.setSetting("format_schema", schema);
         // Create a formatted reader on Kafka messages
         LOG_TRACE(storage.log, "Creating formatted reader");
         read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(storage.consumer, max_block_size, storage.log);
