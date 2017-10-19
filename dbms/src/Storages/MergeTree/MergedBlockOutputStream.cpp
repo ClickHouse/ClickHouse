@@ -415,8 +415,11 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         return;
     }
 
-    new_part->partition.store(storage, part_path, checksums);
-    new_part->minmax_idx.store(storage, part_path, checksums);
+    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        new_part->partition.store(storage, part_path, checksums);
+        new_part->minmax_idx.store(storage, part_path, checksums);
+    }
 
     {
         /// Write a file with a description of columns.
