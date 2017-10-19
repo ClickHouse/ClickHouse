@@ -35,7 +35,7 @@ int main(int argc, char ** argv)
     std::cout << "created model" << std::endl;
     loader(model, model_path);
     std::cout << "loaded model" << std::endl;
-    destroyer(model);
+    destroyer(model.c_str());
     std::cout << "destroyed model" << std::endl;
     return 0;
 }
