@@ -16,7 +16,7 @@ namespace DB
 
 FunctionPtr FunctionModelEvaluate::create(const Context & context)
 {
-    return std::make_shared<FunctionModelEvaluate>(reinterpret_cast<const ExternalModels &>((void*)(0)), //context.getExternalModels(),
+    return std::make_shared<FunctionModelEvaluate>( //context.getExternalModels(),
                                                    context.getConfigRef().getString("catboost_dynamic_library_path"));
 }
 
