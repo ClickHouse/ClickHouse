@@ -246,6 +246,117 @@ static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_t
 }
 
 
+static String getMergeTreeVerboseHelp(bool is_extended_syntax)
+{
+    String help = R"(
+
+MergeTree is a family of storage engines.
+
+MergeTrees are different in two ways:
+- they may be replicated and non-replicated;
+- they may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
+
+So we have 14 combinations:
+    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree, GraphiteMergeTree
+    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree, ReplicatedGraphiteMergeTree
+
+In most of cases, you need MergeTree or ReplicatedMergeTree.
+
+For replicated merge trees, you need to supply a path in ZooKeeper and a replica name as the first two parameters.
+Path in ZooKeeper is like '/clickhouse/tables/01/' where /clickhouse/tables/ is a common prefix and 01 is a shard name.
+Replica name is like 'mtstat01-1' - it may be the hostname or any suitable string identifying replica.
+You may use macro substitutions for these parameters. It's like ReplicatedMergeTree('/clickhouse/tables/{shard}/', '{replica}'...
+Look at the <macros> section in server configuration file.
+)";
+
+    if (!is_extended_syntax)
+        help += R"(
+Next parameter (which is the first for unreplicated tables and the third for replicated tables) is the name of date column.
+Date column must exist in the table and have type Date (not DateTime).
+It is used for internal data partitioning and works like some kind of index.
+
+If your source data doesn't have a column of type Date, but has a DateTime column, you may add values for Date column while loading,
+ or you may INSERT your source data to a table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
+If your source data doesn't have any date or time, you may just pass any constant for a date column while loading.
+
+Next parameter is optional sampling expression. Sampling expression is used to implement SAMPLE clause in query for approximate query execution.
+If you don't need approximate query execution, simply omit this parameter.
+Sample expression must be one of the elements of the primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
+
+Next parameter is the primary key tuple. It's like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions in round brackets. If your primary key has just one element, you may omit round brackets.
+
+Careful choice of the primary key is extremely important for processing short-time queries.
+
+Next parameter is index (primary key) granularity. Good value is 8192. You have no reasons to use any other value.
+)";
+
+    help += R"(
+For the Collapsing mode, the last parameter is the name of a sign column - a special column that is used to 'collapse' rows with the same primary key while merging.
+
+For the Summing mode, the optional last parameter is a list of columns to sum while merging. This list is passed in round brackets, like (PageViews, Cost).
+If this parameter is omitted, the storage will sum all numeric columns except columns participating in the primary key.
+
+For the Replacing mode, the optional last parameter is the name of a 'version' column. While merging, for all rows with the same primary key, only one row is selected: the last row, if the version column was not specified, or the last row with the maximum version value, if specified.
+)";
+
+    if (is_extended_syntax)
+        help += R"(
+You can specify a partitioning expression in the PARTITION BY clause. It is optional but highly recommended.
+A common partitioning expression is some function of the event date column e.g. PARTITION BY toYYYYMM(EventDate) will partition the table by month.
+Rows with different partition expression values are never merged together. That allows manipulating partitions with ALTER commands.
+Also it acts as a kind of index.
+
+Primary key is specified in the ORDER BY clause. It is mandatory for all MergeTree types except UnsortedMergeTree.
+It is like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions in round brackets.
+If your primary key has just one element, you may omit round brackets.
+
+Careful choice of the primary key is extremely important for processing short-time queries.
+
+Optional sampling expression can be specified in the SAMPLE BY clause. It is used to implement the SAMPLE clause in a SELECT query for approximate query execution.
+Sampling expression must be one of the elements of the primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
+
+Engine settings can be specified in the SETTINGS clause. Full list is in the source code in the 'dbms/src/Storages/MergeTree/MergeTreeSettings.h' file.
+E.g. you can specify the index (primary key) granularity with SETTINGS index_granularity = 8192.
+
+Examples:
+
+MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity = 8192
+
+MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
+
+CollapsingMergeTree(Sign) PARTITION BY StartDate SAMPLE BY intHash32(UserID) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
+
+SummingMergeTree PARTITION BY toMonday(EventDate) ORDER BY (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo)
+
+SummingMergeTree((Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth)) PARTITION BY toYYYYMM(EventDate) ORDER BY (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo)
+
+ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}') PARTITION BY EventDate ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
+)";
+    else
+        help += R"(
+Examples:
+
+MergeTree(EventDate, (CounterID, EventDate), 8192)
+
+MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+
+CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
+
+SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192)
+
+SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192, (Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth))
+
+ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+)";
+
+    help += R"(
+For further info please read the documentation: https://clickhouse.yandex/
+)";
+
+    return help;
+}
+
+
 StoragePtr StorageFactory::get(
     const String & name,
     const String & data_path,
@@ -688,7 +799,7 @@ StoragePtr StorageFactory::get(
           *  - the name of the column with the date;
           *  - (optional) expression for sampling
           *     (the query with `SAMPLE x` will select rows that have a lower value in this column than `x * UINT32_MAX`);
-          *  - an expression for sorting (either a scalar expression or a tuple from several);
+          *  - an expression for sorting (either a scalar expression or a tuple of several);
           *  - index_granularity;
           *  - (for Collapsing) the name of Int8 column that contains `sign` type with the change of "visit" (taking values 1 and -1).
           * For example: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
@@ -704,71 +815,14 @@ StoragePtr StorageFactory::get(
           * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
           * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
           * UnsortedMergeTree(date, index_granularity)  TODO Add description below.
+          *
+          * Alternatively, if experimental_allow_extended_storage_definition_syntax setting is specified,
+          * you can specify:
+          *  - Partitioning expression in the PARTITION BY clause;
+          *  - Primary key in the ORDER BY clause;
+          *  - Sampling expression in the SAMPLE BY clause;
+          *  - Additional MergeTreeSettings in the SETTINGS clause;
           */
-
-        const char * verbose_help = R"(
-
-MergeTree is family of storage engines.
-
-MergeTrees is different in two ways:
-- it may be replicated and non-replicated;
-- it may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
-
-So we have 14 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree, GraphiteMergeTree
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree, ReplicatedGraphiteMergeTree
-
-In most of cases, you need MergeTree or ReplicatedMergeTree.
-
-For replicated merge trees, you need to supply path in ZooKeeper and replica name as first two parameters.
-Path in ZooKeeper is like '/clickhouse/tables/01/' where /clickhouse/tables/ is common prefix and 01 is shard name.
-Replica name is like 'mtstat01-1' - it may be hostname or any suitable string identifying replica.
-You may use macro substitutions for these parameters. It's like ReplicatedMergeTree('/clickhouse/tables/{shard}/', '{replica}'...
-Look at <macros> section in server configuration file.
-
-Next parameter (which is first for unreplicated tables and third for replicated tables) is name of date column.
-Date column must exist in table and have type Date (not DateTime).
-It is used for internal data partitioning and works like some kind of index.
-
-If your source data doesn't have column of type Date, but have DateTime column, you may add values for Date column while loading,
- or you may INSERT your source data to table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
-If your source data doesn't have any date or time, you may just pass any constant for date column while loading.
-
-Next parameter is optional sampling expression. Sampling expression is used to implement SAMPLE clause in query for approximate query execution.
-If you don't need approximate query execution, simply omit this parameter.
-Sample expression must be one of elements of primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
-
-Next parameter is primary key tuple. It's like (CounterID, EventDate, intHash64(UserID)) - list of column names or functional expressions in round brackets. If your primary key have just one element, you may omit round brackets.
-
-Careful choice of primary key is extremely important for processing short-time queries.
-
-Next parameter is index (primary key) granularity. Good value is 8192. You have no reasons to use any other value.
-
-For Collapsing mode, last parameter is name of sign column - special column that is used to 'collapse' rows with same primary key while merge.
-
-For Summing mode, last parameter is optional list of columns to sum while merge. List is passed in round brackets, like (PageViews, Cost).
-If this parameter is omitted, storage will sum all numeric columns except columns participated in primary key.
-
-For Replacing mode, last parameter is optional name of 'version' column. While merging, for all rows with same primary key, only one row is selected: last row, if version column was not specified, or last row with maximum version value, if specified.
-
-
-Examples:
-
-MergeTree(EventDate, (CounterID, EventDate), 8192)
-
-MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
-
-CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
-
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192)
-
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192, (Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth))
-
-ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
-
-
-For further info please read the documentation: https://clickhouse.yandex/
-)";
 
         String name_part = name.substr(0, name.size() - strlen("MergeTree"));
 
@@ -778,6 +832,9 @@ For further info please read the documentation: https://clickhouse.yandex/
 
         MergeTreeData::MergingParams merging_params;
         merging_params.mode = MergeTreeData::MergingParams::Ordinary;
+
+        const bool allow_extended_storage_def =
+            local_context.getSettingsRef().experimental_allow_extended_storage_definition_syntax;
 
         if (name_part == "Collapsing")
             merging_params.mode = MergeTreeData::MergingParams::Collapsing;
@@ -792,7 +849,9 @@ For further info please read the documentation: https://clickhouse.yandex/
         else if (name_part == "Graphite")
             merging_params.mode = MergeTreeData::MergingParams::Graphite;
         else if (!name_part.empty())
-            throw Exception("Unknown storage " + name + verbose_help, ErrorCodes::UNKNOWN_STORAGE);
+            throw Exception(
+                "Unknown storage " + name + getMergeTreeVerboseHelp(allow_extended_storage_def),
+                ErrorCodes::UNKNOWN_STORAGE);
 
         ASTs args;
         if (engine_def.arguments)
@@ -803,9 +862,6 @@ For further info please read the documentation: https://clickhouse.yandex/
         bool is_extended_storage_def =
             storage_def.partition_by || storage_def.order_by || storage_def.sample_by || storage_def.settings;
 
-        const bool allow_extended_storage_def =
-            local_context.getSettingsRef().experimental_allow_extended_storage_definition_syntax;
-
         if (is_extended_storage_def && !allow_extended_storage_def)
             throw Exception(
                 "Extended storage definition syntax (PARTITION BY, ORDER BY, SAMPLE BY and SETTINGS clauses) "
@@ -815,13 +871,25 @@ For further info please read the documentation: https://clickhouse.yandex/
         size_t max_num_params = 0;
         String needed_params;
 
+        auto add_mandatory_param = [&](const char * desc)
+        {
+            ++min_num_params;
+            ++max_num_params;
+            needed_params += needed_params.empty() ? "\n" : ",\n";
+            needed_params += desc;
+        };
+        auto add_optional_param = [&](const char * desc)
+        {
+            ++max_num_params;
+            needed_params += needed_params.empty() ? "\n" : ",\n[";
+            needed_params += desc;
+            needed_params += "]";
+        };
+
         if (replicated)
         {
-            needed_params +=
-                "\npath in ZooKeeper,"
-                "\nreplica name";
-            min_num_params += 2;
-            max_num_params += 2;
+            add_mandatory_param("path in ZooKeeper");
+            add_mandatory_param("replica name");
         }
 
         if (!is_extended_storage_def)
@@ -832,22 +900,16 @@ For further info please read the documentation: https://clickhouse.yandex/
                     is_extended_storage_def = true;
                 else
                 {
-                    needed_params +=
-                        "\nname of column with date,"
-                        "\nindex granularity";
-                    min_num_params += 2;
-                    max_num_params += 2;
+                    add_mandatory_param("name of column with date");
+                    add_mandatory_param("index granularity");
                 }
             }
             else
             {
-                needed_params +=
-                    ",\nname of column with date"
-                    ",\n[sampling element of primary key]"
-                    ",\nprimary key expression"
-                    ",\nindex granularity";
-                min_num_params += 3;
-                max_num_params += 4;
+                add_mandatory_param("name of column with date");
+                add_optional_param("sampling element of primary key");
+                add_mandatory_param("primary key expression");
+                add_mandatory_param("index granularity");
             }
         }
 
@@ -856,22 +918,16 @@ For further info please read the documentation: https://clickhouse.yandex/
         default:
             break;
         case MergeTreeData::MergingParams::Summing:
-            needed_params += ",\n[list of columns to sum]";
-            max_num_params += 1;
+            add_optional_param("list of columns to sum");
             break;
         case MergeTreeData::MergingParams::Replacing:
-            needed_params += ",\n[version]";
-            max_num_params += 1;
+            add_optional_param("version");
             break;
         case MergeTreeData::MergingParams::Collapsing:
-            needed_params += ",\nsign column";
-            min_num_params += 1;
-            max_num_params += 1;
+            add_mandatory_param("sign column");
             break;
         case MergeTreeData::MergingParams::Graphite:
-            needed_params += ",\n'config_element_for_graphite_schema'";
-            min_num_params += 1;
-            max_num_params += 1;
+            add_mandatory_param("'config_element_for_graphite_schema'");
             break;
         }
 
@@ -894,8 +950,7 @@ For further info please read the documentation: https://clickhouse.yandex/
             else
                 msg += "no parameters";
 
-            if (!is_extended_storage_def)
-                msg += verbose_help;
+            msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
             throw Exception(msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
@@ -910,16 +965,22 @@ For further info please read the documentation: https://clickhouse.yandex/
             if (ast && ast->value.getType() == Field::Types::String)
                 zookeeper_path = safeGet<String>(ast->value);
             else
-                throw Exception(String("Path in ZooKeeper must be a string literal") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
 
             ast = typeid_cast<ASTLiteral *>(&*args[1]);
             if (ast && ast->value.getType() == Field::Types::String)
                 replica_name = safeGet<String>(ast->value);
             else
-                throw Exception(String("Replica name must be a string literal") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
 
             if (replica_name.empty())
-                throw Exception(String("No replica name in config") + verbose_help, ErrorCodes::NO_REPLICA_NAME_GIVEN);
+                throw Exception(
+                    "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::NO_REPLICA_NAME_GIVEN);
 
             args.erase(args.begin(), args.begin() + 2);
         }
@@ -929,7 +990,9 @@ For further info please read the documentation: https://clickhouse.yandex/
             if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
                 merging_params.sign_column = ast->name;
             else
-                throw Exception(String("Sign column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
 
             args.pop_back();
         }
@@ -941,7 +1004,9 @@ For further info please read the documentation: https://clickhouse.yandex/
                 if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
                     merging_params.version_column = ast->name;
                 else
-                    throw Exception(String("Version column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(
+                        "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::BAD_ARGUMENTS);
 
                 args.pop_back();
             }
@@ -959,7 +1024,7 @@ For further info please read the documentation: https://clickhouse.yandex/
         {
             String graphite_config_name;
             String error_msg = "Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options";
-            error_msg += verbose_help;
+            error_msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
             if (auto ast = typeid_cast<ASTLiteral *>(&*args.back()))
             {
@@ -1008,7 +1073,9 @@ For further info please read the documentation: https://clickhouse.yandex/
             if (auto ast = typeid_cast<ASTIdentifier *>(args[0].get()))
                 date_column_name = ast->name;
             else
-                throw Exception(String("Date column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
 
             if (merging_params.mode != MergeTreeData::MergingParams::Unsorted)
                 primary_expr_list = extractKeyExpressionList(*args[1]);
@@ -1017,7 +1084,9 @@ For further info please read the documentation: https://clickhouse.yandex/
             if (ast && ast->value.getType() == Field::Types::UInt64)
                 storage_settings.index_granularity = safeGet<UInt64>(ast->value);
             else
-                throw Exception(String("Index granularity must be a positive integer") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (replicated)
