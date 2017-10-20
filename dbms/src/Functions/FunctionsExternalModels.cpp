@@ -47,9 +47,10 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
 
     auto model = models.getModel(name_col->getValue<String>());
 
-    Columns columns(arguments.size() - 1);
-    for (auto i : ext::range(0, columns.size()))
-        columns[i] = block.getByPosition(arguments[i + 1]).column;
+    Columns columns;
+    columns.reserve(arguments.size());
+    for (auto i : ext::range(1, arguments.size()))
+        columns.push_back(block.getByPosition(arguments[i]).column);
 
     block.getByPosition(result).column = model->evaluate(columns);
 }
