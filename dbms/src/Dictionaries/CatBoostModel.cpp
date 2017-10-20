@@ -82,7 +82,7 @@ public:
             std::string msg = "Cannot create CatBoost model: ";
             throw Exception(msg + api->GetErrorString(), ErrorCodes::CANNOT_LOAD_CATBOOST_MODEL);
         }
-        if (!api->LoadFullModelFromFile(handle_.get(), model_path.c_str()))
+        if (!api->LoadFullModelFromFile(handle_->get(), model_path.c_str()))
         {
             std::string msg = "Cannot load CatBoost model: ";
             throw Exception(msg + api->GetErrorString(), ErrorCodes::CANNOT_LOAD_CATBOOST_MODEL);
@@ -316,7 +316,7 @@ private:
 
         if (cat_features_count == 0)
         {
-            if (!api->CalcModelPredictionFlat(handle.get(), column_size,
+            if (!api->CalcModelPredictionFlat(handle->get(), column_size,
                                               float_features_buf, float_features_count,
                                               result_buf, column_size))
             {
@@ -337,7 +337,7 @@ private:
             auto fixed_strings_data = placeStringColumns(columns, float_features_count,
                                                          cat_features_count, cat_features_buf);
 
-            if (!api->CalcModelPrediction(handle.get(), column_size,
+            if (!api->CalcModelPrediction(handle->get(), column_size,
                                           float_features_buf, float_features_count,
                                           cat_features_buf, cat_features_count,
                                           result_buf, column_size))
@@ -353,7 +353,7 @@ private:
                                                              cat_features_count, cat_features_buf);
             calcHashes(columns, float_features_count, cat_features_count, cat_features_buf);
             if (!api->CalcModelPredictionWithHashedCatFeatures(
-                    handle.get(), column_size,
+                    handle->get(), column_size,
                     float_features_buf, float_features_count,
                     cat_features_buf, cat_features_count,
                     result_buf, column_size))
