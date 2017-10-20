@@ -10,6 +10,13 @@ ExternalProject_Add(
     #BUILD_IN_SOURCE 1
 )
 
-add_library(tcmalloc_minimal SHARED IMPORTED)
-set_target_properties(tcmalloc_minimal PROPERTIES IMPORTED_LOCATION ${ClickHouse_BINARY_DIR}/contrib/gperftools/lib/libtcmalloc_minimal.a)
-set_target_properties(tcmalloc_minimal PROPERTIES INCLUDE_DIRECTORIES ${ClickHouse_BINARY_DIR}/contrib/gperftools/include)
+#add_library(tcmalloc_minimalm INTERFACE IMPORTED)
+add_library(tcmalloc_minimalm UNKNOWN IMPORTED)
+set_target_properties(tcmalloc_minimalm PROPERTIES IMPORTED_LOCATION ${ClickHouse_BINARY_DIR}/contrib/gperftools/lib/libtcmalloc_minimal.a)
+#set_target_properties(tcmalloc_minimalm PROPERTIES INTERFACE_IMPORTED_LOCATION ${ClickHouse_BINARY_DIR}/contrib/gperftools/lib/libtcmalloc_minimal.a)
+#set_target_properties(tcmalloc_minimalm PROPERTIES INCLUDE_DIRECTORIES ${ClickHouse_BINARY_DIR}/contrib/gperftools/include)
+set_target_properties(tcmalloc_minimalm PROPERTIES INCLUDE_DIRECTORIES ${GPERFTOOLS_INCLUDE_DIR})
+#set_target_properties(tcmalloc_minimalm PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${ClickHouse_BINARY_DIR}/contrib/gperftools/include)
+#target_include_directories(tcmalloc_minimalm INTERFACE BEFORE "${ClickHouse_BINARY_DIR}/contrib/gperftools/include")
+#set (GPERFTOOLS_TCMALLOC_MINIMAL tcmalloc_minimalm CACHE INTERNAL "") 
+set (GPERFTOOLS_TCMALLOC_MINIMAL ${ClickHouse_BINARY_DIR}/contrib/gperftools/lib/libtcmalloc_minimal.a  CACHE INTERNAL "")

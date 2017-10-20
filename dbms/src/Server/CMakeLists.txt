@@ -17,6 +17,7 @@ add_library(clickhouse-server
     )
 
 target_link_libraries(clickhouse-server daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+target_include_directories (clickhouse-server BEFORE PRIVATE ${GPERFTOOLS_INCLUDE_DIR})
 target_include_directories (clickhouse-server PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 add_library(clickhouse-local LocalServer.cpp)
