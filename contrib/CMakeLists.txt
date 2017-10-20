@@ -54,6 +54,8 @@ endif ()
 
 if (ENABLE_LIBTCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
     add_subdirectory (gperftools-cmake)
+    #set (GPERFTOOLS_TCMALLOC_MINIMAL tcmalloc_minimalm CACHE INTERNAL "")
+    #set (GPERFTOOLS_TCMALLOC_MINIMAL tcmalloc_minimalm)
 endif ()
 
 if (NOT ARCH_ARM)

@@ -16,8 +16,7 @@ add_library(clickhouse-server
     TCPHandler.cpp
     )
 
-target_link_libraries(clickhouse-server daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
-target_include_directories (clickhouse-server BEFORE PRIVATE ${GPERFTOOLS_INCLUDE_DIR})
+target_link_libraries (clickhouse-server daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
 target_include_directories (clickhouse-server PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 add_library(clickhouse-local LocalServer.cpp)
@@ -41,9 +40,15 @@ target_include_directories (clickhouse-performance-test PRIVATE ${PCG_RANDOM_INC
 add_library (clickhouse-compressor-lib Compressor.cpp)
 target_link_libraries (clickhouse-compressor-lib dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
-add_executable(clickhouse main.cpp)
-target_include_directories(clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
-target_link_libraries(clickhouse
+add_executable (clickhouse main.cpp)
+target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
+
+if (USE_TCMALLOC)
+    add_dependencies (clickhouse gperftools)
+    target_include_directories (clickhouse BEFORE PRIVATE ${GPERFTOOLS_INCLUDE_DIR})
+endif ()
+
+target_link_libraries (clickhouse
     clickhouse-server
     clickhouse-client
     clickhouse-local
