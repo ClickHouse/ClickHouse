@@ -13,8 +13,7 @@ if (ENABLE_LIBTCMALLOC)
         set (MISSING_INTERNAL_GPERFTOOLS_LIBRARY  1)
     endif ()
 
-    #contrib/libtcmalloc doesnt build debug version, try find in system
-    if (DEBUG_LIBTCMALLOC OR NOT USE_INTERNAL_GPERFTOOLS_LIBRARY)
+    if (NOT USE_INTERNAL_GPERFTOOLS_LIBRARY)
         find_package (Gperftools)
     endif ()
 

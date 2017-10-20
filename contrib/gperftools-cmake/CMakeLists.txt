@@ -14,3 +14,4 @@ ExternalProject_Add(
 )
 
 set (GPERFTOOLS_TCMALLOC_MINIMAL ${ClickHouse_BINARY_DIR}/contrib/gperftools/lib/libtcmalloc_minimal.a CACHE INTERNAL "")
+set (GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG ${ClickHouse_BINARY_DIR}/contrib/gperftools/lib/libtcmalloc_minimal_debug.a CACHE INTERNAL "")
