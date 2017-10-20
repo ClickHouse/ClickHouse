@@ -207,11 +207,7 @@ target_link_libraries (dbms
     ${CMAKE_THREAD_LIBS_INIT}
 )
 
-if (USE_TCMALLOC)
-    add_dependencies(dbms gperftools)
-    target_include_directories (dbms BEFORE PRIVATE ${GPERFTOOLS_INCLUDE_DIR})
-endif ()
-
+target_include_gperftools (dbms)
 target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 

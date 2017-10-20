@@ -42,11 +42,7 @@ target_link_libraries (clickhouse-compressor-lib dbms ${Boost_PROGRAM_OPTIONS_LI
 
 add_executable (clickhouse main.cpp)
 target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
-
-if (USE_TCMALLOC)
-    add_dependencies (clickhouse gperftools)
-    target_include_directories (clickhouse BEFORE PRIVATE ${GPERFTOOLS_INCLUDE_DIR})
-endif ()
+target_include_gperftools (clickhouse)
 
 target_link_libraries (clickhouse
     clickhouse-server

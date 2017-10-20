@@ -14,15 +14,19 @@ if (ENABLE_LIBTCMALLOC)
 
     if (NOT (GPERFTOOLS_FOUND AND GPERFTOOLS_INCLUDE_DIR AND GPERFTOOLS_TCMALLOC_MINIMAL) AND NOT (CMAKE_SYSTEM MATCHES "FreeBSD" OR ARCH_32))
         set (USE_INTERNAL_GPERFTOOLS_LIBRARY 1)
-        #set (GPERFTOOLS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/gperftools/src")
         set (GPERFTOOLS_INCLUDE_DIR "${ClickHouse_BINARY_DIR}/contrib/gperftools/include")
-        #set (GPERFTOOLS_TCMALLOC_MINIMAL ${ClickHouse_BINARY_DIR}/contrib/gperftools/lib/libtcmalloc_minimal.a)
-        #set (GPERFTOOLS_TCMALLOC_MINIMAL tcmalloc_minimalm)
     endif ()
 
     if (GPERFTOOLS_FOUND OR USE_INTERNAL_GPERFTOOLS_LIBRARY)
-        set (USE_TCMALLOC 1 CACHE INTERNAL "")
+        set (USE_TCMALLOC 1)
     endif ()
 
     message (STATUS "Using tcmalloc=${USE_TCMALLOC}: ${GPERFTOOLS_INCLUDE_DIR} : ${GPERFTOOLS_TCMALLOC_MINIMAL}")
 endif ()
+
+macro (target_include_gperftools target)
+    if (USE_TCMALLOC)
+       add_dependencies (${target} gperftools)
+       target_include_directories (${target} BEFORE PRIVATE ${GPERFTOOLS_INCLUDE_DIR})
+    endif ()
+endmacro ()
