@@ -102,8 +102,8 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 #endif
 
                 out_raw.emplace(*response_body_ostr);
-                deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-                out = &deflating_buf.value();
+                deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+                out = &*deflating_buf;
             }
             else
             {
@@ -112,7 +112,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 #endif
 
                 out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
-                out = &out_raw.value();
+                out = &*out_raw;
             }
         }
 

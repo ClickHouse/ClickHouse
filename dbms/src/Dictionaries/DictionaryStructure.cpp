@@ -160,7 +160,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 
 void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
 {
-    if (key_types.size() != key.value().size())
+    if (key_types.size() != key->size())
         throw Exception{
             "Key structure does not match, expected " + getKeyDescription(),
             ErrorCodes::TYPE_MISMATCH};

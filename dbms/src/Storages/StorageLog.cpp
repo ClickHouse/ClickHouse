@@ -168,7 +168,7 @@ private:
     {
         Stream(const std::string & data_path, size_t max_compress_block_size) :
             plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, CompressionMethod::LZ4, max_compress_block_size)
+            compressed(plain, CompressionSettings(CompressionMethod::LZ4), max_compress_block_size)
         {
             plain_offset = Poco::File(data_path).getSize();
         }

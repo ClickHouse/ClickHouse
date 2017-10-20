@@ -241,15 +241,17 @@ bool MergeTreeDataMerger::selectAllPartsToMergeWithinPartition(
     if (!final && parts.size() == 1)
         return false;
 
-    MergeTreeData::DataPartsVector::const_iterator it = parts.begin();
-    MergeTreeData::DataPartsVector::const_iterator prev_it = it;
+    auto it = parts.begin();
+    auto prev_it = it;
 
     size_t sum_bytes = 0;
     while (it != parts.end())
     {
-        if ((it != parts.begin() || parts.size() == 1)    /// For the case of one part, we check that it can be merged "with itself".
-            && !can_merge(*prev_it, *it))
+        /// For the case of one part, we check that it can be merged "with itself".
+        if ((it != parts.begin() || parts.size() == 1) && !can_merge(*prev_it, *it))
+        {
             return false;
+        }
 
         sum_bytes += (*it)->size_in_bytes;
 
@@ -477,7 +479,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
-    if (isCancelled())
+    if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     const MergeTreeData::DataPartsVector & parts = future_part.parts;
@@ -617,12 +619,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     if (deduplicate && merged_stream->isGroupedOutput())
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, Limits(), 0 /*limit_hint*/, Names());
 
-    auto compression_method = data.context.chooseCompressionMethod(
+    auto compression_settings = data.context.chooseCompressionSettings(
             merge_entry->total_size_bytes_compressed,
             static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
     MergedBlockOutputStream to{
-        data, new_part_tmp_path, merging_columns, compression_method, merged_column_to_size, aio_threshold};
+        data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, aio_threshold};
 
     merged_stream->readPrefix();
     to.writePrefix();
@@ -631,7 +633,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
     Block block;
-    while (!isCancelled() && (block = merged_stream->read()))
+    while (!merges_blocker.isCancelled() && (block = merged_stream->read()))
     {
         rows_written += block.rows();
         to.write(block);
@@ -654,7 +656,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     merged_stream->readSuffix();
     merged_stream.reset();
 
-    if (isCancelled())
+    if (merges_blocker.isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     MergeTreeData::DataPart::Checksums checksums_gathered_columns;
@@ -700,7 +702,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
-            MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, false, compression_method, offset_written);
+            MergedColumnOnlyOutputStream column_to(data, new_part_tmp_path, false, compression_settings, offset_written);
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
@@ -725,7 +727,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
             merge_entry->progress = progress_before + column_sizes.columnProgress(column_name, sum_input_rows_exact, sum_input_rows_exact);
 
-            if (isCancelled())
+            if (merges_blocker.isCancelled())
                 throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
         }
 
@@ -913,7 +915,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
     /// A very rough estimate for the compressed data size of each sharded partition.
     /// Actually it all depends on the properties of the expression for sharding.
     UInt64 per_shard_size_bytes_compressed = merge_entry->total_size_bytes_compressed / static_cast<double>(job.paths.size());
-    auto compression_method = data.context.chooseCompressionMethod(
+    auto compression_settings = data.context.chooseCompressionSettings(
         per_shard_size_bytes_compressed,
         static_cast<double>(per_shard_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
@@ -947,7 +949,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
         MergedBlockOutputStreamPtr output_stream;
         output_stream = std::make_unique<MergedBlockOutputStream>(
-            data, new_part_tmp_path, column_names_and_types, compression_method, merged_column_to_size, aio_threshold);
+            data, new_part_tmp_path, column_names_and_types, compression_settings, merged_column_to_size, aio_threshold);
 
         per_shard_data_parts.emplace(shard_no, std::move(data_part));
         per_shard_output.emplace(shard_no, std::move(output_stream));
@@ -1095,7 +1097,7 @@ size_t MergeTreeDataMerger::estimateDiskSpaceForMerge(const MergeTreeData::DataP
 
 void MergeTreeDataMerger::abortReshardPartitionIfRequested()
 {
-    if (isCancelled())
+    if (merges_blocker.isCancelled())
         throw Exception("Cancelled partition resharding", ErrorCodes::ABORTED);
 
     if (cancellation_hook)

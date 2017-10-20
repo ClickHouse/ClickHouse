@@ -1014,7 +1014,7 @@ void ExpressionAnalyzer::normalizeTreeImpl(
           * For example, in the table there is a column "domain(URL)", and we requested domain(URL).
           */
         String function_string = func_node->getColumnName();
-        NamesAndTypesList::const_iterator it = findColumn(function_string);
+        auto it = findColumn(function_string);
         if (columns.end() != it)
         {
             ast = std::make_shared<ASTIdentifier>(func_node->range, function_string);
@@ -1051,24 +1051,34 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         if (identifier_node->kind == ASTIdentifier::Column)
         {
             /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
-            Aliases::const_iterator jt = aliases.find(identifier_node->name);
-            if (jt != aliases.end() && current_alias != identifier_node->name)
+            auto it_alias = aliases.find(identifier_node->name);
+            if (it_alias != aliases.end() && current_alias != identifier_node->name)
             {
                 /// Let's replace it with the corresponding tree node.
-                if (current_asts.count(jt->second.get()))
+                if (current_asts.count(it_alias->second.get()))
                     throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
-                if (!my_alias.empty() && my_alias != jt->second->getAliasOrColumnName())
+
+                if (!my_alias.empty() && my_alias != it_alias->second->getAliasOrColumnName())
                 {
-                    /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
-                    ast = jt->second->clone();
-                    ast->setAlias(my_alias);
+                    /// Avoid infinite recursion here
+                    auto replace_to_identifier = typeid_cast<ASTIdentifier *>(it_alias->second.get());
+                    bool is_cycle = replace_to_identifier &&
+                        replace_to_identifier->kind == ASTIdentifier::Column &&
+                        replace_to_identifier->name == identifier_node->name;
+
+                    if (!is_cycle)
+                    {
+                        /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
+                        ast = it_alias->second->clone();
+                        ast->setAlias(my_alias);
+                        replaced = true;
+                    }
                 }
                 else
                 {
-                    ast = jt->second;
+                    ast = it_alias->second;
+                    replaced = true;
                 }
-
-                replaced = true;
             }
         }
     }
@@ -2835,7 +2845,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 }
 
 
-Names ExpressionAnalyzer::getRequiredColumns()
+Names ExpressionAnalyzer::getRequiredColumns() const
 {
     if (!unknown_required_columns.empty())
         throw Exception("Unknown identifier: " + *unknown_required_columns.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);
