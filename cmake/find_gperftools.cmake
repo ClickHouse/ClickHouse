@@ -7,12 +7,18 @@ option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc" ON)
 option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc" OFF)
 
 if (ENABLE_LIBTCMALLOC)
+    if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/gperftools/src/tcmalloc.h")
+        message (WARNING "submodule contrib/gperftools is missing. to fix try run: \n git submodule update --init --recursive")
+        set (USE_INTERNAL_GPERFTOOLS_LIBRARY 0)
+        set (MISSING_INTERNAL_GPERFTOOLS_LIBRARY  1)
+    endif ()
+
     #contrib/libtcmalloc doesnt build debug version, try find in system
     if (DEBUG_LIBTCMALLOC OR NOT USE_INTERNAL_GPERFTOOLS_LIBRARY)
         find_package (Gperftools)
     endif ()
 
-    if (NOT (GPERFTOOLS_FOUND AND GPERFTOOLS_INCLUDE_DIR AND GPERFTOOLS_TCMALLOC_MINIMAL) AND NOT (CMAKE_SYSTEM MATCHES "FreeBSD" OR ARCH_32))
+    if (NOT MISSING_INTERNAL_GPERFTOOLS_LIBRARY AND NOT (GPERFTOOLS_FOUND AND GPERFTOOLS_INCLUDE_DIR AND GPERFTOOLS_TCMALLOC_MINIMAL) AND NOT (CMAKE_SYSTEM MATCHES "FreeBSD" OR ARCH_32))
         set (USE_INTERNAL_GPERFTOOLS_LIBRARY 1)
         set (GPERFTOOLS_INCLUDE_DIR "${ClickHouse_BINARY_DIR}/contrib/gperftools/include")
     endif ()
