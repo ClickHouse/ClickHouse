@@ -7,6 +7,7 @@
 namespace DB
 {
 
+/// CatBoost wrapper interface functions.
 struct CatBoostWrapperApi;
 class CatBoostWrapperApiProvider
 {
@@ -15,13 +16,17 @@ public:
     virtual const CatBoostWrapperApi & getApi() const = 0;
 };
 
+/// CatBoost model interface.
 class ICatBoostModel
 {
 public:
     virtual ~ICatBoostModel() = default;
-    virtual ColumnPtr calc(const Columns & columns, size_t float_features_count, size_t cat_features_count) const = 0;
+    /// Evaluate model. Use first `float_features_count` columns as float features,
+    /// the others `cat_features_count` as categorical features.
+    virtual ColumnPtr eval(const Columns & columns, size_t float_features_count, size_t cat_features_count) const = 0;
 };
 
+/// General ML model evaluator interface.
 class IModel : public IExternalLoadable
 {
 public:
@@ -35,6 +40,12 @@ public:
                   const std::string & lib_path, const ExternalLoadableLifetime & lifetime,
                   size_t float_features_count, size_t cat_features_count);
 
+    ColumnPtr evaluate(const Columns & columns) const override;
+
+    size_t getFloatFeaturesCount() const;
+    size_t getCatFeaturesCount() const;
+
+    /// IExternalLoadable interface.
 
     const ExternalLoadableLifetime & getLifetime() const override;
 
@@ -47,11 +58,6 @@ public:
     std::unique_ptr<IExternalLoadable> cloneObject() const override;
 
     std::exception_ptr getCreationException() const override { return creation_exception; }
-
-    size_t getFloatFeaturesCount() const;
-    size_t getCatFeaturesCount() const;
-
-    ColumnPtr evaluate(const Columns & columns) const override;
 
 private:
     std::string name;

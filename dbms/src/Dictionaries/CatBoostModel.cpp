@@ -22,6 +22,7 @@ extern const int CANNOT_APPLY_CATBOOST_MODEL;
 }
 
 
+/// CatBoost wrapper interface functions.
 struct CatBoostWrapperApi
 {
     typedef void ModelCalcerHandle;
@@ -90,7 +91,7 @@ public:
         handle = std::move(handle_);
     }
 
-    ColumnPtr calc(const Columns & columns, size_t float_features_count, size_t cat_features_count) const override
+    ColumnPtr eval(const Columns & columns, size_t float_features_count, size_t cat_features_count) const override
     {
         if (columns.empty())
             throw Exception("Got empty columns list for CatBoost model.", ErrorCodes::BAD_ARGUMENTS);
@@ -137,7 +138,7 @@ public:
             }
         }
 
-        return calcImpl(columns, float_features_count, cat_features_count, cat_features_are_strings);
+        return evalImpl(columns, float_features_count, cat_features_count, cat_features_are_strings);
     }
 
 private:
@@ -303,20 +304,24 @@ private:
         }
     }
 
-    ColumnPtr calcImpl(const Columns & columns, size_t float_features_count, size_t cat_features_count,
+    /// Convert values to row-oriented format and call evaluation function from CatBoost wrapper api.
+    ///  * CalcModelPredictionFlat if no cat features
+    ///  * CalcModelPrediction if all cat features are strings
+    ///  * CalcModelPredictionWithHashedCatFeatures if has int cat features.
+    ColumnPtr evalImpl(const Columns & columns, size_t float_features_count, size_t cat_features_count,
                        bool cat_features_are_strings) const
     {
-        // size_t size = columns.size();
+        std::string error_msg = "Error occurred while applying CatBoost model: ";
         size_t column_size = columns.front()->size();
-
-        PODArray<const float *> float_features(column_size);
-        auto float_features_buf = float_features.data();
-        auto float_features_col = placeNumericColumns<float>(columns, 0, float_features_count, float_features_buf);
 
         auto result= std::make_shared<ColumnFloat64>(column_size);
         auto result_buf = result->getData().data();
 
-        std::string error_msg = "Error occurred while applying CatBoost model: ";
+        /// Prepare float features.
+        PODArray<const float *> float_features(column_size);
+        auto float_features_buf = float_features.data();
+        /// Store all float data into single column. float_features is a list of pointers to it.
+        auto float_features_col = placeNumericColumns<float>(columns, 0, float_features_count, float_features_buf);
 
         if (cat_features_count == 0)
         {
@@ -330,14 +335,16 @@ private:
             return result;
         }
 
-
+        /// Prepare cat features.
         if (cat_features_are_strings)
         {
+            /// cat_features_holder stores pointers to ColumnString data or fixed_strings_data.
             PODArray<const char *> cat_features_holder(cat_features_count * column_size);
             PODArray<const char **> cat_features(column_size);
             auto cat_features_buf = cat_features.data();
 
             fillCatFeaturesBuffer(cat_features_buf, cat_features_holder.data(), column_size, cat_features_count);
+            /// Fixed strings are stored without termination zero, so have to copy data into fixed_strings_data
             auto fixed_strings_data = placeStringColumns(columns, float_features_count,
                                                          cat_features_count, cat_features_holder.data());
 
@@ -371,6 +378,7 @@ private:
 };
 
 
+/// Holds CatBoost wrapper library and provides wrapper interface.
 class CatBoostLibHolder: public CatBoostWrapperApiProvider
 {
 public:
@@ -480,7 +488,7 @@ ColumnPtr CatBoostModel::evaluate(const Columns & columns) const
 {
     if (!model)
         throw Exception("CatBoost model was not loaded.", ErrorCodes::LOGICAL_ERROR);
-    return model->calc(columns, float_features_count, cat_features_count);
+    return model->eval(columns, float_features_count, cat_features_count);
 }
 
 }
