@@ -16,13 +16,14 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <DataStreams/FormatFactory.h>
+#include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/CompressionMethodSelector.h>
+#include <Storages/CompressionSettingsSelector.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/Users.h>
 #include <Interpreters/Quota.h>
@@ -43,7 +44,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Databases/IDatabase.h>
 
 #include <Common/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -129,8 +129,8 @@ struct ContextShared
     Macros macros;                                          /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
-    /// Rules for selecting the compression method, depending on the size of the part.
-    mutable std::unique_ptr<CompressionMethodSelector> compression_method_selector;
+    /// Rules for selecting the compression settings, depending on the size of the part.
+    mutable std::unique_ptr<CompressionSettingsSelector> compression_settings_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
 
@@ -591,6 +591,11 @@ void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAnd
     checkDatabaseAccessRights(from.first);
     checkDatabaseAccessRights(where.first);
     shared->view_dependencies[from].insert(where);
+
+    // Notify table of dependencies change
+    auto table = tryGetTable(from.first, from.second);
+    if (table != nullptr)
+        table->updateDependencies();
 }
 
 void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
@@ -599,6 +604,11 @@ void Context::removeDependency(const DatabaseAndTableName & from, const Database
     checkDatabaseAccessRights(from.first);
     checkDatabaseAccessRights(where.first);
     shared->view_dependencies[from].erase(where);
+
+    // Notify table of dependencies change
+    auto table = tryGetTable(from.first, from.second);
+    if (table != nullptr)
+        table->updateDependencies();
 }
 
 Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
@@ -606,7 +616,15 @@ Dependencies Context::getDependencies(const String & database_name, const String
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+
+    if (database_name.empty() && tryGetExternalTable(table_name))
+    {
+        /// Table is temporary. Access granted.
+    }
+    else
+    {
+        checkDatabaseAccessRights(db);
+    }
 
     ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
     if (iter == shared->view_dependencies.end())
@@ -1417,22 +1435,22 @@ PartLog * Context::getPartLog(const String & database, const String & table)
 }
 
 
-CompressionMethod Context::chooseCompressionMethod(size_t part_size, double part_size_ratio) const
+CompressionSettings Context::chooseCompressionSettings(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
 
-    if (!shared->compression_method_selector)
+    if (!shared->compression_settings_selector)
     {
         constexpr auto config_name = "compression";
         auto & config = getConfigRef();
 
         if (config.has(config_name))
-            shared->compression_method_selector = std::make_unique<CompressionMethodSelector>(config, "compression");
+            shared->compression_settings_selector = std::make_unique<CompressionSettingsSelector>(config, "compression");
         else
-            shared->compression_method_selector = std::make_unique<CompressionMethodSelector>();
+            shared->compression_settings_selector = std::make_unique<CompressionSettingsSelector>();
     }
 
-    return shared->compression_method_selector->choose(part_size, part_size_ratio);
+    return shared->compression_settings_selector->choose(part_size, part_size_ratio);
 }
 
 

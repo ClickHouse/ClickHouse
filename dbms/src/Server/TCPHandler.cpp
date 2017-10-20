@@ -12,6 +12,7 @@
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/CompressionSettings.h>
 
 #include <IO/copyData.h>
 
@@ -663,7 +664,7 @@ void TCPHandler::initBlockOutput()
     {
         if (state.compression == Protocol::Compression::Enable)
             state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                *out, query_context.getSettingsRef().network_compression_method);
+                *out, CompressionSettings(query_context.getSettingsRef()));
         else
             state.maybe_compressed_out = out;
 

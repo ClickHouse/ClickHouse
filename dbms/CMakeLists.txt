@@ -209,11 +209,23 @@ target_link_libraries (dbms
 
 target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+
+if (NOT USE_INTERNAL_LZ4_LIBRARY)
+    target_include_directories (dbms BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
+endif ()
+if (NOT USE_INTERNAL_ZSTD_LIBRARY)
+    target_include_directories (dbms BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()
+
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (dbms PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 
+if (USE_RDKAFKA)
+    target_link_libraries (dbms ${RDKAFKA_LIBRARY})
+endif ()
+
 # only for copy_headers.sh:
-target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 

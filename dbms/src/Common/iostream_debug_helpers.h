@@ -32,6 +32,17 @@ std::ostream & operator<<(std::ostream & stream, const DB::ColumnWithTypeAndName
 namespace DB { class IColumn; }
 std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what);
 
+
+namespace DB { struct SubqueryForSet; }
+std::ostream & operator<<(std::ostream & stream, const DB::SubqueryForSet & what);
+
+namespace DB { class IAST; }
+std::ostream & operator<<(std::ostream & stream, const DB::IAST & what);
+
+namespace DB { class ExpressionAnalyzer; }
+std::ostream & operator<<(std::ostream & stream, const DB::ExpressionAnalyzer & what);
+
+
 #include <Client/Connection.h>
 std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & what);
 

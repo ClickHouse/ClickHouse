@@ -59,7 +59,7 @@ target_compile_options (tcmalloc_minimal_internal PUBLIC
     -fno-builtin-pvalloc
 )
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 3.9)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 3.9.1)
     target_compile_options(tcmalloc_minimal_internal PUBLIC -Wno-dynamic-exception-spec )
 endif ()
 
@@ -74,3 +74,5 @@ endif ()
 target_include_directories (tcmalloc_minimal_internal PUBLIC include)
 target_include_directories (tcmalloc_minimal_internal PRIVATE src)
 
+find_package (Threads)
+target_link_libraries (tcmalloc_minimal_internal ${CMAKE_THREAD_LIBS_INIT})

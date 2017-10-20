@@ -390,7 +390,7 @@ struct Stats
             avg_speed_first = avg_speed_value;
         }
 
-        if (abs(avg_speed_value - avg_speed_first) >= precision)
+        if (std::abs(avg_speed_value - avg_speed_first) >= precision)
         {
             avg_speed_first = avg_speed_value;
             avg_speed_watch.restart();
@@ -931,7 +931,7 @@ private:
         else
             throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name);
 
-        times_to_run = test_config->getUInt("times_to_run");
+        times_to_run = test_config->getUInt("times_to_run", 1);
 
         stop_conditions_by_run.clear();
         TestStopConditions stop_conditions_template;

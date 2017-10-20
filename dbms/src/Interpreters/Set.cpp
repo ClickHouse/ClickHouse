@@ -8,7 +8,6 @@
 #include <Common/typeid_cast.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTraits.h>
