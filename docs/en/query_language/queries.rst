@@ -155,6 +155,12 @@ The query is exactly the same as CREATE, except
 - The query doesn't create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server.
 After executing an ATTACH query, the server will know about the existence of the table.
 
+If the table has been previously detached and it's structure is known, it's possible to use shorthand form and omit structure definition:
+
+.. code-block:: sql
+
+    ATTACH TABLE [IF NOT EXISTS] [db.]name
+
 This query is used when starting the server. The server stores table metadata as files with ATTACH queries, which it simply runs at launch (with the exception of system tables, which are explicitly created on the server).
 
 DROP

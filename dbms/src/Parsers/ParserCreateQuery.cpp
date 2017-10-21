@@ -214,6 +214,23 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        // Shortcut for ATTACH a previously detached table
+        if (attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
+        {
+            auto query = std::make_shared<ASTCreateQuery>(StringRange(begin, pos));
+            node = query;
+
+            query->attach = attach;
+            query->if_not_exists = if_not_exists;
+
+            if (database)
+                query->database = typeid_cast<ASTIdentifier &>(*database).name;
+            if (table)
+                query->table = typeid_cast<ASTIdentifier &>(*table).name;
+
+            return true;
+        }
+
         /// List of columns.
         if (s_lparen.ignore(pos, expected))
         {
