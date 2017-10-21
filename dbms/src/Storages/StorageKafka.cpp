@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include <Common/config_version.h>
 #if USE_RDKAFKA
 
 #include <thread>
@@ -199,7 +200,7 @@ StorageKafka::StorageKafka(
     if (rd_kafka_conf_set(conf, "group.id", group_.c_str(), errstr.data(), errstr.capacity()) != RD_KAFKA_CONF_OK)
         throw Exception(String(errstr.data()), ErrorCodes::INCORRECT_DATA);
 
-    if (rd_kafka_conf_set(conf, "client.id", "clickhouse", errstr.data(), errstr.capacity()) != RD_KAFKA_CONF_OK)
+    if (rd_kafka_conf_set(conf, "client.id", VERSION_FULL, errstr.data(), errstr.capacity()) != RD_KAFKA_CONF_OK)
         throw Exception(String(errstr.data()), ErrorCodes::INCORRECT_DATA);
 
     // Don't store offsets of messages before they're processed
