@@ -489,6 +489,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String data_path = path + "data/" + database_name_escaped + "/";
     String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
 
+    // If this is a stub ATTACH query, read the query definition from the database
+    if (create.attach && !create.storage && !create.columns)
+    {
+        auto query = context.getCreateQuery(database_name, table_name);
+        auto & as_create = typeid_cast<const ASTCreateQuery &>(*query);
+        create = as_create; // Copy the saved create query, but use ATTACH instead of CREATE
+        create.attach = true;
+    }
+
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;
     Block as_select_sample;
     /// For `view` type tables, you may need `sample_block` to get the columns.
