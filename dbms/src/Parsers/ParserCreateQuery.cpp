@@ -162,6 +162,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool is_materialized_view = false;
     bool is_populate = false;
     bool is_temporary = false;
+    bool to_table = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -304,6 +305,22 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        // TO [db.]table
+        if (ParserKeyword{"TO"}.ignore(pos, expected))
+        {
+            to_table = true;
+
+            if (!name_p.parse(pos, as_table, expected))
+                return false;
+
+            if (s_dot.ignore(pos, expected))
+            {
+                as_database = as_table;
+                if (!name_p.parse(pos, as_table, expected))
+                    return false;
+            }
+        }
+
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
@@ -315,7 +332,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         /// Optional - internal ENGINE for MATERIALIZED VIEW can be specified
-        engine_p.parse(pos, inner_storage, expected);
+        if (!to_table)
+            engine_p.parse(pos, inner_storage, expected);
 
         if (s_populate.ignore(pos, expected))
             is_populate = true;

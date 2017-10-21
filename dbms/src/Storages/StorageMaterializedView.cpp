@@ -71,7 +71,7 @@ StorageMaterializedView::StorageMaterializedView(
     if (!create.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    if (!create.inner_storage)
+    if (!create.inner_storage && create.as_table.empty())
         throw Exception("ENGINE of MaterializedView should be specified explicitly", ErrorCodes::INCORRECT_QUERY);
 
     ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*create.select);
@@ -86,16 +86,28 @@ StorageMaterializedView::StorageMaterializedView(
             DatabaseAndTableName(select_database_name, select_table_name),
             DatabaseAndTableName(database_name, table_name));
 
-    String inner_table_name = getInnerTableName();
+    // If the destination table is not set, use inner table
+    if (!create.inner_storage)
+    {
+        target_database_name = create.as_database;
+        target_table_name = create.as_table;
+    }
+    else
+    {
+        target_database_name = database_name;
+        target_table_name = ".inner." + table_name;
+        has_inner_table = true;
+    }
+
     inner_query = create.select;
 
     /// If there is an ATTACH request, then the internal table must already be connected.
-    if (!attach_)
+    if (!attach_ && has_inner_table)
     {
         /// We will create a query to create an internal table.
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
-        manual_create_query->database = database_name;
-        manual_create_query->table = inner_table_name;
+        manual_create_query->database = target_database_name;
+        manual_create_query->table = target_table_name;
         manual_create_query->columns = create.columns;
         manual_create_query->children.push_back(manual_create_query->columns);
         manual_create_query->storage = create.inner_storage;
@@ -122,12 +134,12 @@ StorageMaterializedView::StorageMaterializedView(
 
 NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
 {
-    return getInnerTable()->getColumn(column_name);
+    return getTargetTable()->getColumn(column_name);
 }
 
 bool StorageMaterializedView::hasColumn(const String & column_name) const
 {
-    return getInnerTable()->hasColumn(column_name);
+    return getTargetTable()->hasColumn(column_name);
 }
 
 BlockInputStreams StorageMaterializedView::read(
@@ -138,12 +150,12 @@ BlockInputStreams StorageMaterializedView::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return getInnerTable()->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    return getTargetTable()->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
 {
-    return getInnerTable()->write(query, settings);
+    return getTargetTable()->write(query, settings);
 }
 
 void StorageMaterializedView::drop()
@@ -152,14 +164,12 @@ void StorageMaterializedView::drop()
         DatabaseAndTableName(select_database_name, select_table_name),
         DatabaseAndTableName(database_name, table_name));
 
-    auto inner_table_name = getInnerTableName();
-
-    if (context.tryGetTable(database_name, inner_table_name))
+    if (has_inner_table && context.tryGetTable(target_database_name, target_table_name))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
-        drop_query->database = database_name;
-        drop_query->table = inner_table_name;
+        drop_query->database = target_database_name;
+        drop_query->table = target_table_name;
         ASTPtr ast_drop_query = drop_query;
         InterpreterDropQuery drop_interpreter(ast_drop_query, context);
         drop_interpreter.execute();
@@ -168,12 +178,12 @@ void StorageMaterializedView::drop()
 
 bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
-    return getInnerTable()->optimize(query, partition, final, deduplicate, context);
+    return getTargetTable()->optimize(query, partition, final, deduplicate, context);
 }
 
-StoragePtr StorageMaterializedView::getInnerTable() const
+StoragePtr StorageMaterializedView::getTargetTable() const
 {
-    return context.getTable(database_name, getInnerTableName());
+    return context.getTable(target_database_name, target_table_name);
 }
 
 
