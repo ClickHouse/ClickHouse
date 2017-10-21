@@ -107,7 +107,7 @@ At the moment, ``ALTER`` queries for replicated tables are not supported yet.
 
 CREATE VIEW
 ~~~~~~~~~~~
-``CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [ENGINE = engine] [POPULATE] AS SELECT ...``
+``CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...``
 
 Creates a view. There are two types of views: normal and MATERIALIZED.
 
@@ -133,7 +133,7 @@ This query is fully equivalent to using the subquery:
 
 Materialized views store data transformed by the corresponding SELECT query.
 
-When creating a materialized view, you can specify ENGINE - the table engine for storing data. By default, it uses the same engine as for the table that the SELECT query is made from.
+When creating a materialized view, you can either specify ENGINE - the table engine for storing data, or target table for materialized results. By default, it uses the same engine as for the table that the SELECT query is made from.
 
 A materialized view is arranged as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
 
@@ -142,6 +142,7 @@ If you specify POPULATE, the existing table data is inserted in the view when cr
 The SELECT query can contain DISTINCT, GROUP BY, ORDER BY, LIMIT ... Note that the corresponding conversions are performed independently on each block of inserted data. For example, if GROUP BY is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an ENGINE that independently performs data aggregation, such as SummingMergeTree.
 
 The execution of ALTER queries on materialized views has not been fully developed, so they might be inconvenient.
+If the materialized view uses a ``TO [db.]name`` to specify a target table, it is possible to DETACH the view, ALTER the target table, and ATTACH the view again.
 
 Views look the same as normal tables. For example, they are listed in the result of the SHOW TABLES query.
 

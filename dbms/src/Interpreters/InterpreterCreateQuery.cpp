@@ -438,6 +438,12 @@ String InterpreterCreateQuery::setEngine(
     {
         storage_name = typeid_cast<ASTFunction &>(*create.storage).name;
     }
+    else if (create.is_temporary)
+        set_engine("Memory");
+    else if (create.is_view)
+        set_engine("View");
+    else if (create.is_materialized_view)
+        set_engine("MaterializedView");
     else if (!create.as_table.empty())
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
@@ -460,12 +466,6 @@ String InterpreterCreateQuery::setEngine(
         else
             storage_name = as_storage->getName();
     }
-    else if (create.is_temporary)
-        set_engine("Memory");
-    else if (create.is_view)
-        set_engine("View");
-    else if (create.is_materialized_view)
-        set_engine("MaterializedView");
     else
         throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
 
