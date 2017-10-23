@@ -85,6 +85,15 @@ int main()
         printf("test case 4 error\n");
     }
 
+    // insert 4m ips
+    for (size_t ip = 1; ip < 1024 * 1024 * 4; ++ip) {
+        ret = btrie_insert(it, ip, 0xffffffff, 1);
+        if (ret != 0) {
+            printf("insert 5 error (%d) (%zu) .\n", ret, ip);
+            goto error;
+        }
+    }
+
     return 0;
     
  error:
