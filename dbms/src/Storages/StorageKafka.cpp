@@ -188,8 +188,7 @@ StorageKafka::StorageKafka(
     columns(columns_), topics(topics_), format_name(format_name_), schema_name(schema_name_),
     conf(rd_kafka_conf_new()), log(&Logger::get("StorageKafka (" + table_name_ + ")"))
 {
-    std::vector<char> errstr;
-    errstr.reserve(512);
+    std::vector<char> errstr(512);
 
     LOG_TRACE(log, "Setting brokers: " << brokers_);
     if (rd_kafka_conf_set(conf, "metadata.broker.list", brokers_.c_str(), errstr.data(), errstr.capacity()) != RD_KAFKA_CONF_OK)
@@ -241,8 +240,7 @@ BlockInputStreams StorageKafka::read(
 
 void StorageKafka::startup()
 {
-    std::vector<char> errstr;
-    errstr.reserve(512);
+    std::vector<char> errstr(512);
 
     // Create a consumer from saved configuration
     consumer = rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr.data(), errstr.capacity());
