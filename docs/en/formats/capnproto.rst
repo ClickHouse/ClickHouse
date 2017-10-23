@@ -16,6 +16,6 @@ When the schema file looks like:
     c @1 :Uint64;
   }
 
-Deserialisation is almost as efficient as the binary rows format, with typically zero allocation overhead per message.
+Deserialization is almost as efficient as the binary rows format, with typically zero allocation overhead per message.
 
 You can use this format as an efficient exchange message format in your data processing pipeline.
