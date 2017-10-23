@@ -454,14 +454,16 @@ bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchC
 
 int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, WatchCallback watch_callback)
 {
-    char buffer[MAX_NODE_SIZE];
+    std::vector<char> buffer;
+    buffer.resize(MAX_NODE_SIZE);
     int buffer_len = MAX_NODE_SIZE;
+
     int32_t code;
     Stat stat;
     watcher_fn watcher = watch_callback ? processCallback : nullptr;
     WatchContext * context = createContext(std::move(watch_callback));
 
-    code = zoo_wget(impl, path.c_str(), watcher, context, buffer, &buffer_len, &stat);
+    code = zoo_wget(impl, path.c_str(), watcher, context, buffer.data(), &buffer_len, &stat);
     ProfileEvents::increment(ProfileEvents::ZooKeeperGet);
     ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
 
@@ -473,7 +475,7 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
         if (buffer_len < 0)        /// This can happen if the node contains NULL. Do not distinguish it from the empty string.
             res.clear();
         else
-            res.assign(buffer, buffer_len);
+            res.assign(buffer.data(), buffer_len);
     }
     else
     {
