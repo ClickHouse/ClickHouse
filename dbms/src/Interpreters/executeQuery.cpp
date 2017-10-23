@@ -68,7 +68,7 @@ static void logQuery(const String & query, const Context & context)
     LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
     << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
     << ", query_id: " << current_query_id
-    << ( !initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
+    << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
     << ") "
     << joinLines(query)
     );
