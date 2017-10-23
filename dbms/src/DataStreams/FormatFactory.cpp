@@ -32,7 +32,7 @@
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataTypes/FormatSettingsJSON.h>
 #if USE_CAPNP
-#include <DataStreams/CapnProtoInputStream.h>
+#include <DataStreams/CapnProtoRowInputStream.h>
 #endif
 
 #include <boost/algorithm/string.hpp>
@@ -107,7 +107,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
         if (tokens.size() != 2)
             throw Exception("Format CapnProto requires 'format_schema' setting to have schema_file:root_object format, e.g. 'schema.capnp:Message'");
 
-        return wrap_row_stream(std::make_shared<CapnProtoInputStream>(buf, sample, tokens[0], tokens[1]));
+        return wrap_row_stream(std::make_shared<CapnProtoRowInputStream>(buf, sample, tokens[0], tokens[1]));
     }
 #endif
     else if (name == "TabSeparatedRaw"

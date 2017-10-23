@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <IO/ReadBuffer.h>
-#include <DataStreams/CapnProtoInputStream.h>
+#include <DataStreams/CapnProtoRowInputStream.h>
 
 #include <capnp/serialize.h>
 #include <capnp/dynamic.h>
@@ -15,9 +15,9 @@ namespace DB
 {
 
 
-CapnProtoInputStream::NestedField split(const Block & sample, size_t i)
+CapnProtoRowInputStream::NestedField split(const Block & sample, size_t i)
 {
-    CapnProtoInputStream::NestedField field = {{}, i};
+    CapnProtoRowInputStream::NestedField field = {{}, i};
 
     // Remove leading dot in field definition, e.g. ".msg" -> "msg"
     String name(sample.safeGetByPosition(i).name);
@@ -81,7 +81,7 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
         throw Exception("Field " + field + " doesn't exist in schema.");
 }
 
-void CapnProtoInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
+void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
 {
     String last;
     size_t level = 0;
@@ -110,7 +110,7 @@ void CapnProtoInputStream::createActions(const NestedFieldList & sortedFields, c
     }
 }
 
-CapnProtoInputStream::CapnProtoInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_file, const String & root_object)
+CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_file, const String & root_object)
     : istr(istr_), sample(sample_), parser(std::make_shared<SchemaParser>())
 {
     // Parse the schema and fetch the root object
@@ -139,7 +139,7 @@ CapnProtoInputStream::CapnProtoInputStream(ReadBuffer & istr_, const Block & sam
 }
 
 
-bool CapnProtoInputStream::read(Block & block)
+bool CapnProtoRowInputStream::read(Block & block)
 {
     if (istr.eof())
         return false;
