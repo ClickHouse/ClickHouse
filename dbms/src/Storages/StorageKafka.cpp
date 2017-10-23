@@ -191,15 +191,15 @@ StorageKafka::StorageKafka(
     std::vector<char> errstr(512);
 
     LOG_TRACE(log, "Setting brokers: " << brokers_);
-    if (rd_kafka_conf_set(conf, "metadata.broker.list", brokers_.c_str(), errstr.data(), errstr.capacity()) != RD_KAFKA_CONF_OK)
+    if (rd_kafka_conf_set(conf, "metadata.broker.list", brokers_.c_str(), errstr.data(), errstr.size()) != RD_KAFKA_CONF_OK)
         throw Exception(String(errstr.data()), ErrorCodes::INCORRECT_DATA);
 
     LOG_TRACE(log, "Setting Group ID: " << group_ << " Client ID: clickhouse");
 
-    if (rd_kafka_conf_set(conf, "group.id", group_.c_str(), errstr.data(), errstr.capacity()) != RD_KAFKA_CONF_OK)
+    if (rd_kafka_conf_set(conf, "group.id", group_.c_str(), errstr.data(), errstr.size()) != RD_KAFKA_CONF_OK)
         throw Exception(String(errstr.data()), ErrorCodes::INCORRECT_DATA);
 
-    if (rd_kafka_conf_set(conf, "client.id", VERSION_FULL, errstr.data(), errstr.capacity()) != RD_KAFKA_CONF_OK)
+    if (rd_kafka_conf_set(conf, "client.id", VERSION_FULL, errstr.data(), errstr.size()) != RD_KAFKA_CONF_OK)
         throw Exception(String(errstr.data()), ErrorCodes::INCORRECT_DATA);
 
     // Don't store offsets of messages before they're processed
@@ -243,7 +243,7 @@ void StorageKafka::startup()
     std::vector<char> errstr(512);
 
     // Create a consumer from saved configuration
-    consumer = rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr.data(), errstr.capacity());
+    consumer = rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr.data(), errstr.size());
     if (consumer == nullptr)
         throw Exception("Failed to create consumer handle: " + String(errstr.data()), ErrorCodes::UNKNOWN_EXCEPTION);
 
