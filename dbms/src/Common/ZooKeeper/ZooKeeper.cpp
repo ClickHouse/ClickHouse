@@ -455,7 +455,7 @@ bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchC
 int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, WatchCallback watch_callback)
 {
     std::vector<char> buffer;
-    buffer.reserve(MAX_NODE_SIZE);
+    buffer.resize(MAX_NODE_SIZE);
     int buffer_len = MAX_NODE_SIZE;
 
     int32_t code;
