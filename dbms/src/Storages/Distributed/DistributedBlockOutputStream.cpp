@@ -25,6 +25,7 @@
 #include <Common/escapeForFileName.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
+#include <ext/scope_guard.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -90,35 +91,30 @@ ThreadPool::Job DistributedBlockOutputStream::createWritingJob(
     auto memory_tracker = current_memory_tracker;
     return [this, memory_tracker, & context, & block, & address, shard_id, job_id]()
     {
+        SCOPE_EXIT({
+            std::lock_guard<std::mutex> lock(context.mutex);
+            ++context.finished_jobs_count;
+            context.cond_var.notify_one();
+        });
+
         if (!current_memory_tracker)
         {
             current_memory_tracker = memory_tracker;
             setThreadName("DistrOutStrProc");
         }
-        try
-        {
-            const auto & shard_info = cluster->getShardsInfo()[shard_id];
-            if (address.is_local)
-            {
-                writeToLocal(block, shard_info.getLocalNodeCount());
-                context.done_local_jobs[job_id] = true;
-            }
-            else
-            {
-                writeToShardSync(block, shard_info.hasInternalReplication()
-                                        ? shard_info.dir_name_for_internal_replication
-                                        : address.toStringFull());
-                context.done_remote_jobs[job_id] = true;
-            }
 
-            ++context.finished_jobs_count;
-            context.cond_var.notify_one();
-        }
-        catch (...)
+        const auto & shard_info = cluster->getShardsInfo()[shard_id];
+        if (address.is_local)
         {
-            ++context.finished_jobs_count;
-            context.cond_var.notify_one();
-            throw;
+            writeToLocal(block, shard_info.getLocalNodeCount());
+            context.done_local_jobs[job_id] = true;
+        }
+        else
+        {
+            writeToShardSync(block, shard_info.hasInternalReplication()
+                                    ? shard_info.dir_name_for_internal_replication
+                                    : address.toStringFull());
+            context.done_remote_jobs[job_id] = true;
         }
     };
 }
