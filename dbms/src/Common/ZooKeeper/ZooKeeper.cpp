@@ -5,6 +5,7 @@
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
+#include <Common/PODArray.h>
 #include <Common/randomSeed.h>
 
 
@@ -257,8 +258,7 @@ int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
 {
     int32_t code = retry(std::bind(&ZooKeeper::getChildrenImpl, this, std::ref(path), std::ref(res), stat_, callbackForEvent(watch)));
 
-    if (!(    code == ZOK ||
-            code == ZNONODE))
+    if (!(code == ZOK || code == ZNONODE))
         throw KeeperException(code, path);
 
     return code;
@@ -296,10 +296,10 @@ int32_t ZooKeeper::tryCreate(const std::string & path, const std::string & data,
 {
     int code = createImpl(path, data, mode, path_created);
 
-    if (!(    code == ZOK ||
-            code == ZNONODE ||
-            code == ZNODEEXISTS ||
-            code == ZNOCHILDRENFOREPHEMERALS))
+    if (!(code == ZOK ||
+        code == ZNONODE ||
+        code == ZNODEEXISTS ||
+        code == ZNOCHILDRENFOREPHEMERALS))
         throw KeeperException(code, path);
 
     return code;
@@ -366,10 +366,10 @@ void ZooKeeper::removeWithRetries(const std::string & path, int32_t version)
 int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 {
     int32_t code = removeImpl(path, version);
-    if (!(    code == ZOK ||
-            code == ZNONODE ||
-            code == ZBADVERSION ||
-            code == ZNOTEMPTY))
+    if (!(code == ZOK ||
+        code == ZNONODE ||
+        code == ZBADVERSION ||
+        code == ZNOTEMPTY))
         throw KeeperException(code, path);
     return code;
 }
@@ -377,10 +377,10 @@ int32_t ZooKeeper::tryRemove(const std::string & path, int32_t version)
 int32_t ZooKeeper::tryRemoveWithRetries(const std::string & path, int32_t version, size_t * attempt)
 {
     int32_t code = retry(std::bind(&ZooKeeper::removeImpl, this, std::ref(path), version), attempt);
-    if (!(    code == ZOK ||
-            code == ZNONODE ||
-            code == ZBADVERSION ||
-            code == ZNOTEMPTY))
+    if (!(code == ZOK ||
+        code == ZNONODE ||
+        code == ZBADVERSION ||
+        code == ZNOTEMPTY))
     {
         throw KeeperException(code, path);
     }
@@ -432,8 +432,7 @@ bool ZooKeeper::exists(const std::string & path, Stat * stat_, const EventPtr & 
 {
     int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, callbackForEvent(watch)));
 
-    if (!(    code == ZOK ||
-            code == ZNONODE))
+    if (!(code == ZOK || code == ZNONODE))
         throw KeeperException(code, path);
     if (code == ZNONODE)
         return false;
@@ -444,8 +443,7 @@ bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchC
 {
     int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, watch_callback));
 
-    if (!(    code == ZOK ||
-            code == ZNONODE))
+    if (!(code == ZOK || code == ZNONODE))
         throw KeeperException(code, path);
     if (code == ZNONODE)
         return false;
@@ -454,7 +452,7 @@ bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchC
 
 int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * stat_, WatchCallback watch_callback)
 {
-    std::vector<char> buffer;
+    DB::PODArray<char> buffer;
     buffer.resize(MAX_NODE_SIZE);
     int buffer_len = MAX_NODE_SIZE;
 
@@ -485,6 +483,7 @@ int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Stat * s
     return code;
 }
 
+
 std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr & watch)
 {
     int code;
@@ -499,8 +498,7 @@ bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_
 {
     int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, callbackForEvent(watch)));
 
-    if (!(code == ZOK ||
-            code == ZNONODE))
+    if (!(code == ZOK || code == ZNONODE))
         throw KeeperException(code, path);
 
     if (return_code)
@@ -513,8 +511,7 @@ bool ZooKeeper::tryGetWatch(const std::string & path, std::string & res, Stat * 
 {
     int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, watch_callback));
 
-    if (!(code == ZOK ||
-            code == ZNONODE))
+    if (!(code == ZOK || code == ZNONODE))
         throw KeeperException(code, path);
 
     if (return_code)
@@ -560,9 +557,9 @@ int32_t ZooKeeper::trySet(const std::string & path, const std::string & data,
 {
     int32_t code = setImpl(path, data, version, stat_);
 
-    if (!(    code == ZOK ||
-            code == ZNONODE ||
-            code == ZBADVERSION))
+    if (!(code == ZOK ||
+        code == ZNONODE ||
+        code == ZBADVERSION))
         throw KeeperException(code, path);
     return code;
 }
@@ -629,7 +626,7 @@ int32_t ZooKeeper::tryMulti(const Ops & ops_, OpResultsPtr * out_results_)
         code == ZNOCHILDRENFOREPHEMERALS ||
         code == ZBADVERSION ||
         code == ZNOTEMPTY))
-            throw KeeperException(code);
+        throw KeeperException(code);
     return code;
 }
 
@@ -642,7 +639,7 @@ int32_t ZooKeeper::tryMultiWithRetries(const Ops & ops, OpResultsPtr * out_resul
         code == ZNOCHILDRENFOREPHEMERALS ||
         code == ZBADVERSION ||
         code == ZNOTEMPTY))
-            throw KeeperException(code);
+        throw KeeperException(code);
     return code;
 }
 
