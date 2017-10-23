@@ -105,7 +105,6 @@ elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
        "trusty" | "xenial" )
            OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/$OSNAME $DIST main"
            #OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/ppa/$OSNAME $DIST main"
-           OTHERMIRROR+=" | deb http://ppa.launchpad.net/george-edison55/cmake-3.x/$OSNAME $DIST main"
            ALLOWUNTRUSTED=yes
            ;;
     esac
