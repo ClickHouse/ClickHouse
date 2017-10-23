@@ -229,13 +229,17 @@ void DistributedBlockOutputStream::calculateJobsCount()
 
 void DistributedBlockOutputStream::waitForUnfinishedJobs(WritingJobContext & context)
 {
-    std::unique_lock<std::mutex> lock(context.mutex);
     size_t jobs_count = remote_jobs_count + local_jobs_count;
     auto cond = [& context, jobs_count] { return context.finished_jobs_count == jobs_count; };
 
     if (insert_timeout)
     {
-        if (!context.cond_var.wait_until(lock, deadline, cond))
+        bool were_jobs_finished;
+        {
+            std::unique_lock<std::mutex> lock(context.mutex);
+            were_jobs_finished = context.cond_var.wait_until(lock, deadline, cond);
+        }
+        if (!were_jobs_finished)
         {
             pool->wait();
             ProfileEvents::increment(ProfileEvents::DistributedSyncInsertionTimeoutExceeded);
@@ -243,7 +247,10 @@ void DistributedBlockOutputStream::waitForUnfinishedJobs(WritingJobContext & con
         }
     }
     else
+    {
+        std::unique_lock<std::mutex> lock(context.mutex);
         context.cond_var.wait(lock, cond);
+    }
     pool->wait();
 }
 
