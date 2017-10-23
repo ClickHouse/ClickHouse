@@ -16,7 +16,7 @@ class ReadBuffer;
   * The schema in this case cannot be compiled in, so it uses a runtime schema parser.
   * See https://capnproto.org/cxx.html
   */
-class CapnProtoInputStream : public IRowInputStream
+class CapnProtoRowInputStream : public IRowInputStream
 {
 public:
     struct NestedField
@@ -29,7 +29,7 @@ public:
     /** schema_file - location of the capnproto schema, e.g. "schema.canpn"
       * root_object - name to the root object, e.g. "Message"
       */
-    CapnProtoInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_file, const String & root_object);
+    CapnProtoRowInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_file, const String & root_object);
 
     bool read(Block & block) override;
 
