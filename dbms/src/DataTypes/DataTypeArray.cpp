@@ -403,7 +403,7 @@ Field DataTypeArray::getDefault() const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.size() != 1)
+    if (!arguments || arguments->children.size() != 1)
         throw Exception("Array data type family must have exactly one argument - type of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
