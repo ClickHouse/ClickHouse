@@ -50,7 +50,7 @@ void ReplicatedMergeTreeRestartingThread::run()
     constexpr auto retry_period_ms = 10 * 1000;
 
     /// The frequency of checking expiration of session in ZK.
-    Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period * 1000;
+    Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
     /// Periodicity of checking lag of replica.
     if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)

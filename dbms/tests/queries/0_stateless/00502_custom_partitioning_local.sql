@@ -1,12 +1,9 @@
--- IMPORTANT: Don't use this setting just yet.
--- It is for testing purposes, the syntax will likely change soon and the server will not be able
--- to load the tables created this way. You have been warned.
-SET experimental_merge_tree_allow_custom_partitions = 1;
+SET experimental_allow_extended_storage_definition_syntax = 1;
 
 SELECT '*** Not partitioned ***';
 
 DROP TABLE IF EXISTS test.not_partitioned;
-CREATE TABLE test.not_partitioned(x UInt8) ENGINE = MergeTree(tuple(), x, 8192);
+CREATE TABLE test.not_partitioned(x UInt8) ENGINE MergeTree ORDER BY x;
 
 INSERT INTO test.not_partitioned VALUES (1), (2), (3);
 INSERT INTO test.not_partitioned VALUES (4), (5);
@@ -28,7 +25,7 @@ DROP TABLE test.not_partitioned;
 SELECT '*** Partitioned by week ***';
 
 DROP TABLE IF EXISTS test.partitioned_by_week;
-CREATE TABLE test.partitioned_by_week(d Date, x UInt8) ENGINE = MergeTree(toMonday(d), x, 8192);
+CREATE TABLE test.partitioned_by_week(d Date, x UInt8) ENGINE = MergeTree PARTITION BY toMonday(d) ORDER BY x;
 
 -- 2000-01-03 belongs to a different week than 2000-01-01 and 2000-01-02
 INSERT INTO test.partitioned_by_week VALUES ('2000-01-01', 1), ('2000-01-02', 2), ('2000-01-03', 3);
@@ -51,7 +48,7 @@ DROP TABLE test.partitioned_by_week;
 SELECT '*** Partitioned by a (Date, UInt8) tuple ***';
 
 DROP TABLE IF EXISTS test.partitioned_by_tuple;
-CREATE TABLE test.partitioned_by_tuple(d Date, x UInt8, y UInt8) ENGINE = MergeTree((d, x), x, 8192);
+CREATE TABLE test.partitioned_by_tuple(d Date, x UInt8, y UInt8) ENGINE MergeTree ORDER BY x PARTITION BY (d, x);
 
 INSERT INTO test.partitioned_by_tuple VALUES ('2000-01-01', 1, 1), ('2000-01-01', 2, 2), ('2000-01-02', 1, 3);
 INSERT INTO test.partitioned_by_tuple VALUES ('2000-01-02', 1, 4), ('2000-01-01', 1, 5);
@@ -74,7 +71,7 @@ DROP TABLE test.partitioned_by_tuple;
 SELECT '*** Partitioned by String ***';
 
 DROP TABLE IF EXISTS test.partitioned_by_string;
-CREATE TABLE test.partitioned_by_string(s String, x UInt8) ENGINE = MergeTree(tuple(s), x, 8192);
+CREATE TABLE test.partitioned_by_string(s String, x UInt8) ENGINE = MergeTree PARTITION BY s ORDER BY x;
 
 INSERT INTO test.partitioned_by_string VALUES ('aaa', 1), ('aaa', 2), ('bbb', 3);
 INSERT INTO test.partitioned_by_string VALUES ('bbb', 4), ('aaa', 5);
@@ -92,3 +89,21 @@ SELECT 'Sum after DROP PARTITION:';
 SELECT sum(x) FROM test.partitioned_by_string;
 
 DROP TABLE test.partitioned_by_string;
+
+SELECT '*** Table without columns with fixed size ***';
+
+DROP TABLE IF EXISTS test.without_fixed_size_columns;
+CREATE TABLE test.without_fixed_size_columns(s String) ENGINE MergeTree PARTITION BY length(s) ORDER BY s;
+
+INSERT INTO test.without_fixed_size_columns VALUES ('a'), ('aa'), ('b'), ('cc');
+
+SELECT 'Parts:';
+SELECT partition, name, rows FROM system.parts WHERE database = 'test' AND table = 'without_fixed_size_columns' AND active ORDER BY name;
+
+SELECT 'Before DROP PARTITION:';
+SELECT * FROM test.without_fixed_size_columns ORDER BY s;
+ALTER TABLE test.without_fixed_size_columns DROP PARTITION 1;
+SELECT 'After DROP PARTITION:';
+SELECT * FROM test.without_fixed_size_columns ORDER BY s;
+
+DROP TABLE test.without_fixed_size_columns;

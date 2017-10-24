@@ -450,7 +450,7 @@ void DatabaseOrdinary::alterTable(
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults,
-    const ASTModifier & engine_modifier)
+    const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
 
@@ -471,14 +471,10 @@ void DatabaseOrdinary::alterTable(
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns, materialized_columns, alias_columns, column_defaults);
-    auto it = std::find(ast_create_query.children.begin(), ast_create_query.children.end(), ast_create_query.columns);
-    if (it == ast_create_query.children.end())
-        throw Exception("Logical error: cannot find columns child in ASTCreateQuery", ErrorCodes::LOGICAL_ERROR);
-    *it = new_columns;
-    ast_create_query.columns = new_columns;
+    ast_create_query.replace(ast_create_query.columns, new_columns);
 
-    if (engine_modifier)
-        engine_modifier(ast_create_query.storage);
+    if (storage_modifier)
+        storage_modifier(*ast_create_query.storage);
 
     statement = getTableDefinitionFromCreateQuery(ast);
 

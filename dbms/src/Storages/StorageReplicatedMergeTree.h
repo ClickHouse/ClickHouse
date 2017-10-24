@@ -91,10 +91,9 @@ public:
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 
     void startup() override;
     void shutdown() override;
@@ -339,10 +338,9 @@ private:
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_,
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 
     /// Initialization.
 
