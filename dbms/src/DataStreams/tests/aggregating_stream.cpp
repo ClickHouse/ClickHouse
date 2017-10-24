@@ -38,7 +38,7 @@ int main(int argc, char ** argv)
     {
         size_t n = argc > 1 ? atoi(argv[1]) : 10;
         bool nested = false, sum = false, composite = false, multivalue = false;
-        for (int i = 2; i < argc; ++i)
+        for (size_t i = 2; i < argc; ++i)
         {
             if (strcmp(argv[i], "nested") == 0)
                 nested = true;
