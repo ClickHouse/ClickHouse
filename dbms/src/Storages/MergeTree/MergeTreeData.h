@@ -62,7 +62,8 @@ namespace ErrorCodes
 /// Part directory - / partiiton-id _ min-id _ max-id _ level /
 /// Inside the part directory:
 /// The same files as for month-partitioned tables, plus
-/// partition.dat - contains the value of the partitioning expression
+/// count.txt - contains total number of rows in this part.
+/// partition.dat - contains the value of the partitioning expression.
 /// minmax_[Column].idx - MinMax indexes (see MergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
 ///
 /// Several modes are implemented. Modes determine additional actions during merge:
@@ -236,7 +237,6 @@ public:
     /// primary_expr_ast - expression used for sorting; empty for UnsortedMergeTree.
     /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
     ///     Otherwise, partition_expr_ast is used for partitioning.
-    /// index_granularity - how many rows correspond to one primary key value.
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(  const String & database_, const String & table_,
@@ -249,7 +249,6 @@ public:
                     const String & date_column_name,
                     const ASTPtr & partition_expr_ast_,
                     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-                    size_t index_granularity_,
                     const MergingParams & merging_params_,
                     const MergeTreeSettings & settings_,
                     const String & log_name_,

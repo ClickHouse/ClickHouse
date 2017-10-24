@@ -526,7 +526,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
             ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
         else
-            ranges.ranges = MarkRanges{MarkRange{0, part->size}};
+            ranges.ranges = MarkRanges{MarkRange{0, part->marks_count}};
 
         if (!ranges.ranges.empty())
         {
