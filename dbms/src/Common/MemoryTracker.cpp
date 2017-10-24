@@ -141,7 +141,7 @@ void MemoryTracker::setOrRaiseLimit(Int64 value)
 }
 
 
-__thread MemoryTracker * current_memory_tracker = nullptr;
+thread_local MemoryTracker * current_memory_tracker = nullptr;
 
 namespace CurrentMemoryTracker
 {

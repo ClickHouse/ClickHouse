@@ -2,7 +2,7 @@ Source: clickhouse
 Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
-               cmake,
+               cmake3 | cmake,
                gcc-7 | gcc-6, g++-7 | g++-6,
                libmariadbclient-dev | default-libmysqlclient-dev | libmysqlclient-dev,
                libicu-dev,
