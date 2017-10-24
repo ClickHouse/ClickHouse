@@ -43,8 +43,8 @@ add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
 add_headers_and_sources(dbms src/DataBases/Distributed)
-add_headers_and_sources(dbms src/Dictionaries)
-add_headers_and_sources(dbms src/Dictionaries/Embedded)
+#add_headers_and_sources(dbms src/Dictionaries)
+#add_headers_and_sources(dbms src/Dictionaries/Embedded)
 add_headers_and_sources(dbms src/Interpreters)
 add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Common)
@@ -64,6 +64,9 @@ list (APPEND dbms_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
 list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
+
+list (APPEND dbms_sources src/Dictionaries/DictionarySourceFactory.cpp)
+list (APPEND dbms_headers src/Dictionaries/DictionarySourceFactory.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
