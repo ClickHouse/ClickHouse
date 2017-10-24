@@ -11,6 +11,7 @@
 #include <Storages/VirtualColumnFactory.h>
 
 #include <Common/typeid_cast.h>
+#include "StorageReplicatedMergeTree.h"
 
 
 namespace DB
