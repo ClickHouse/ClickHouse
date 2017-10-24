@@ -79,23 +79,26 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     if (!create.storage)
     {
         database_engine_name = "Ordinary";    /// Default database engine.
-        auto func = std::make_shared<ASTFunction>();
-        func->name = database_engine_name;
-        create.storage = func;
+        auto engine = std::make_shared<ASTFunction>();
+        engine->name = database_engine_name;
+        auto storage = std::make_shared<ASTStorage>();
+        storage->set(storage->engine, engine);
+        create.set(create.storage, storage);
     }
     else
     {
-        const ASTFunction & engine_id = typeid_cast<const ASTFunction &>(*create.storage);
-
+        const ASTStorage & storage = *create.storage;
+        const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
-        if (engine_id.arguments || engine_id.parameters)
+        if (engine.arguments || engine.parameters
+            || storage.partition_by || storage.order_by || storage.sample_by || storage.settings)
         {
             std::stringstream ostr;
-            formatAST(*create.storage, ostr, 0, false, false);
+            formatAST(storage, ostr, 0, false, false);
             throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
         }
 
-        database_engine_name = engine_id.name;
+        database_engine_name = engine.name;
     }
 
     String database_name_escaped = escapeForFileName(database_name);
@@ -160,11 +163,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
 
 /// AST to the list of columns with types. Columns of Nested type are expanded into a list of real columns.
-static ColumnsAndDefaults parseColumns(
-    ASTPtr expression_list, const Context & context)
+static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast, const Context & context)
 {
-    auto & column_list_ast = typeid_cast<ASTExpressionList &>(*expression_list);
-
     /// list of table columns in correct order
     NamesAndTypesList columns{};
     ColumnDefaults defaults{};
@@ -177,7 +177,7 @@ static ColumnsAndDefaults parseColumns(
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     default_expr_list->children.reserve(column_list_ast.children.size());
 
-    for (auto & ast : column_list_ast.children)
+    for (const auto & ast : column_list_ast.children)
     {
         auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
 
@@ -346,7 +346,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(NamesAndTypesList columns,
 
 
 InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::getColumnsInfo(
-    const ASTPtr & columns, const Context & context)
+    const ASTExpressionList & columns, const Context & context)
 {
     ColumnsInfo res;
 
@@ -370,7 +370,7 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 
     if (create.columns)
     {
-        res = getColumnsInfo(create.columns, context);
+        res = getColumnsInfo(*create.columns, context);
     }
     else if (!create.as_table.empty())
     {
@@ -391,16 +391,9 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(*res.columns, res.materialized_columns, res.alias_columns, res.column_defaults);
     if (create.columns)
-    {
-        auto it = std::find(create.children.begin(), create.children.end(), create.columns);
-        if (it != create.children.end())
-            *it = new_columns;
-        else
-            create.children.push_back(new_columns);
-    }
+        create.replace(create.columns, new_columns);
     else
-        create.children.push_back(new_columns);
-    create.columns = new_columns;
+        create.set(create.columns, new_columns);
 
     /// Check for duplicates
     std::set<String> all_columns;
@@ -421,22 +414,23 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 }
 
 
-String InterpreterCreateQuery::setEngine(
-    ASTCreateQuery & create, const StoragePtr & as_storage) const
+String InterpreterCreateQuery::setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const
 {
     String storage_name;
 
     auto set_engine = [&](const char * engine)
     {
         storage_name = engine;
-        auto func = std::make_shared<ASTFunction>();
-        func->name = engine;
-        create.storage = func;
+        auto engine_ast = std::make_shared<ASTFunction>();
+        engine_ast->name = engine;
+        auto storage_ast = std::make_shared<ASTStorage>();
+        storage_ast->set(storage_ast->engine, engine_ast);
+        create.set(create.storage, storage_ast);
     };
 
     if (create.storage)
     {
-        storage_name = typeid_cast<ASTFunction &>(*create.storage).name;
+        storage_name = create.storage->engine->name;
     }
     else if (!create.as_table.empty())
     {
@@ -445,17 +439,17 @@ String InterpreterCreateQuery::setEngine(
         String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
         String as_table_name = create.as_table;
 
-        auto as_create_ptr = context.getCreateQuery(as_database_name, as_table_name);
-        auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
+        ASTPtr as_create_ptr = context.getCreateQuery(as_database_name, as_table_name);
+        const auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
 
         if (!create.storage)
         {
             if (as_create.is_view || as_create.is_materialized_view)
-                create.storage = as_create.inner_storage;
+                create.set(create.storage, as_create.inner_storage->ptr());
             else
-                create.storage = as_create.storage;
+                create.set(create.storage, as_create.storage->ptr());
 
-            storage_name = typeid_cast<const ASTFunction &>(*create.storage).name;
+            storage_name = create.storage->engine->name;
         }
         else
             storage_name = as_storage->getName();
@@ -494,7 +488,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// For `view` type tables, you may need `sample_block` to get the columns.
     if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
     {
-        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select, context);
+        create.select->setDatabaseIfNeeded(database_name);
+        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->ptr(), context);
         as_select_sample = interpreter_select->getSampleBlock();
     }
 
@@ -543,7 +538,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         res = StorageFactory::instance().get(
             storage_name, data_path, table_name, database_name, context,
-            context.getGlobalContext(), query_ptr, columns.columns,
+            context.getGlobalContext(), create, columns.columns,
             columns.materialized_columns, columns.alias_columns, columns.column_defaults, create.attach, false);
 
         if (create.is_temporary)

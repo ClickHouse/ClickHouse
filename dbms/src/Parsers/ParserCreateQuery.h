@@ -187,11 +187,11 @@ protected:
 };
 
 
-/** ENGINE = name. */
-class ParserEngine : public IParserBase
+/** ENGINE = name [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTINGS name = value, ...] */
+class ParserStorage : public IParserBase
 {
 protected:
-    const char * getName() const { return "ENGINE"; }
+    const char * getName() const { return "storage definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
