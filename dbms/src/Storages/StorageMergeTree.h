@@ -119,7 +119,6 @@ private:
       * primary_expr_ast      - expression for sorting;
       * date_column_name      - if not empty, the name of the column with the date used for partitioning by month;
           otherwise, partition_expr_ast is used as the partitioning expression;
-      * index_granularity     - fow how many rows one index value is written.
       */
     StorageMergeTree(
         const String & path_,
@@ -135,10 +134,9 @@ private:
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).

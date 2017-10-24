@@ -408,7 +408,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     column_streams.clear();
 
-    if (marks_count == 0)
+    if (rows_count == 0)
     {
         /// A part is empty - all records are deleted.
         Poco::File(part_path).remove(true);
@@ -419,6 +419,13 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     {
         new_part->partition.store(storage, part_path, checksums);
         new_part->minmax_idx.store(storage, part_path, checksums);
+
+        WriteBufferFromFile count_out(part_path + "count.txt", 4096);
+        HashingWriteBuffer count_out_hashing(count_out);
+        writeIntText(rows_count, count_out_hashing);
+        count_out_hashing.next();
+        checksums.files["count.txt"].file_size = count_out_hashing.count();
+        checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
     }
 
     {
@@ -433,17 +440,13 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums.write(out);
     }
 
-    new_part->size = marks_count;
+    new_part->rows_count = rows_count;
+    new_part->marks_count = marks_count;
     new_part->modification_time = time(nullptr);
     new_part->columns = *total_column_list;
     new_part->index.swap(index_columns);
     new_part->checksums = checksums;
     new_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part->getFullPath());
-}
-
-size_t MergedBlockOutputStream::marksCount()
-{
-    return marks_count;
 }
 
 void MergedBlockOutputStream::init()
@@ -524,6 +527,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             writeData(column.name, column.type, column.column, offset_columns, 0, false);
         }
     }
+
+    rows_count += rows;
 
     {
         /** While filling index (index_columns), disable memory tracker.
