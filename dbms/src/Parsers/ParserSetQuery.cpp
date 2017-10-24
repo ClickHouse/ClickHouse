@@ -47,7 +47,6 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parse_only_internals)
     {
         ParserKeyword s_set("SET");
-        ParserKeyword s_global("GLOBAL");
 
         if (!s_set.ignore(pos, expected))
             return false;
@@ -69,6 +68,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto query = std::make_shared<ASTSetQuery>(StringRange(begin, pos));
     node = query;
 
+    query->is_standalone = !parse_only_internals;
     query->changes = changes;
 
     return true;

@@ -130,8 +130,8 @@ public:
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
-    /// How many marks are already written.
-    size_t marksCount();
+    /// How many rows are already written.
+    size_t getRowsCount() const { return rows_count; }
 
 private:
     void init();
@@ -145,6 +145,7 @@ private:
     NamesAndTypesList columns_list;
     String part_path;
 
+    size_t rows_count = 0;
     size_t marks_count = 0;
 
     std::unique_ptr<WriteBufferFromFile> index_file_stream;

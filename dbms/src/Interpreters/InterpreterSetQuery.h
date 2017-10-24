@@ -12,7 +12,7 @@ class ASTSetQuery;
 using ASTPtr = std::shared_ptr<IAST>;
 
 
-/** Change one or several settings, for session or globally, or just for current context.
+/** Change one or several settings for the session or just for the current context.
   */
 class InterpreterSetQuery : public IInterpreter
 {
@@ -20,7 +20,7 @@ public:
     InterpreterSetQuery(const ASTPtr & query_ptr_, Context & context_)
         : query_ptr(query_ptr_), context(context_) {}
 
-    /** Usual SET query. Set setting for session or globally (if GLOBAL was specified).
+    /** Usual SET query. Set setting for the session.
       */
     BlockIO execute() override;
 
@@ -34,8 +34,6 @@ public:
 private:
     ASTPtr query_ptr;
     Context & context;
-
-    void executeImpl(const ASTSetQuery & ast, Context & target);
 };
 
 

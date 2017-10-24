@@ -209,7 +209,7 @@ BlockInputStreams StorageSystemParts::read(
             }
             block.getByPosition(i++).column->insert(part->name);
             block.getByPosition(i++).column->insert(static_cast<UInt64>(active_parts.count(part)));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->size));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->marks_count));
 
             size_t marks_size = 0;
             for (const NameAndTypePair & it : part->columns)
@@ -221,7 +221,7 @@ BlockInputStreams StorageSystemParts::read(
             }
             block.getByPosition(i++).column->insert(static_cast<UInt64>(marks_size));
 
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getExactSizeRows()));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->rows_count));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->size_in_bytes));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->modification_time));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->remove_time));

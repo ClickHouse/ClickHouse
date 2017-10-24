@@ -11,6 +11,7 @@ namespace DB
 
 class Context;
 class ASTCreateQuery;
+class ASTExpressionList;
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
@@ -52,7 +53,7 @@ public:
     };
 
     /// Obtain information about columns, their types and default values, for case when columns in CREATE query is specified explicitly.
-    static ColumnsInfo getColumnsInfo(const ASTPtr & columns, const Context & context);
+    static ColumnsInfo getColumnsInfo(const ASTExpressionList & columns, const Context & context);
 
 private:
     BlockIO createDatabase(ASTCreateQuery & create);

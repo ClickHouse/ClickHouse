@@ -57,7 +57,7 @@ StorageMaterializedView::StorageMaterializedView(
     const String & table_name_,
     const String & database_name_,
     Context & context_,
-    ASTPtr & query_,
+    const ASTCreateQuery & query,
     NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
@@ -66,20 +66,13 @@ StorageMaterializedView::StorageMaterializedView(
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
     database_name(database_name_), context(context_), columns(columns_)
 {
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
-
-    if (!create.select)
+    if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    if (!create.inner_storage && create.as_table.empty())
+    if (!query.inner_storage && query.as_table.empty())
         throw Exception("ENGINE of MaterializedView should be specified explicitly", ErrorCodes::INCORRECT_QUERY);
 
-    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*create.select);
-
-    /// If the internal query does not specify a database, retrieve it from the context and write it to the query.
-    select.setDatabaseIfNeeded(database_name);
-
-    extractDependentTable(select, select_database_name, select_table_name);
+    extractDependentTable(*query.select, select_database_name, select_table_name);
 
     if (!select_table_name.empty())
         context.getGlobalContext().addDependency(
@@ -99,7 +92,7 @@ StorageMaterializedView::StorageMaterializedView(
         has_inner_table = true;
     }
 
-    inner_query = create.select;
+    inner_query = query.select->ptr();
 
     /// If there is an ATTACH request, then the internal table must already be connected.
     if (!attach_ && has_inner_table)
@@ -108,10 +101,8 @@ StorageMaterializedView::StorageMaterializedView(
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = target_database_name;
         manual_create_query->table = target_table_name;
-        manual_create_query->columns = create.columns;
-        manual_create_query->children.push_back(manual_create_query->columns);
-        manual_create_query->storage = create.inner_storage;
-        manual_create_query->children.push_back(manual_create_query->storage);
+        manual_create_query->set(manual_create_query->columns, query.columns->ptr());
+        manual_create_query->set(manual_create_query->storage, query.inner_storage->ptr());
 
         /// Execute the query.
         try
@@ -185,6 +176,5 @@ StoragePtr StorageMaterializedView::getTargetTable() const
 {
     return context.getTable(target_database_name, target_table_name);
 }
-
 
 }
