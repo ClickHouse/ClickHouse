@@ -62,7 +62,8 @@ namespace ErrorCodes
 /// Part directory - / partiiton-id _ min-id _ max-id _ level /
 /// Inside the part directory:
 /// The same files as for month-partitioned tables, plus
-/// partition.dat - contains the value of the partitioning expression
+/// count.txt - contains total number of rows in this part.
+/// partition.dat - contains the value of the partitioning expression.
 /// minmax_[Column].idx - MinMax indexes (see MergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
 ///
 /// Several modes are implemented. Modes determine additional actions during merge:

@@ -103,3 +103,26 @@ SELECT sum(x) FROM test.partitioned_by_string_replica2;
 
 DROP TABLE test.partitioned_by_string_replica1;
 DROP TABLE test.partitioned_by_string_replica2;
+
+SELECT '*** Table without columns with fixed size ***';
+
+DROP TABLE IF EXISTS test.without_fixed_size_columns_replica1;
+DROP TABLE IF EXISTS test.without_fixed_size_columns_replica2;
+CREATE TABLE test.without_fixed_size_columns_replica1(s String) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/without_fixed_size_columns', '1') PARTITION BY length(s) ORDER BY s;
+CREATE TABLE test.without_fixed_size_columns_replica2(s String) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/without_fixed_size_columns', '2') PARTITION BY length(s) ORDER BY s;
+
+INSERT INTO test.without_fixed_size_columns_replica1 VALUES ('a'), ('aa'), ('b'), ('cc');
+
+OPTIMIZE TABLE test.without_fixed_size_columns_replica2 PARTITION 1 FINAL; -- Wait for replication.
+
+SELECT 'Parts:';
+SELECT partition, name, rows FROM system.parts WHERE database = 'test' AND table = 'without_fixed_size_columns_replica2' AND active ORDER BY name;
+
+SELECT 'Before DROP PARTITION:';
+SELECT * FROM test.without_fixed_size_columns_replica2 ORDER BY s;
+ALTER TABLE test.without_fixed_size_columns_replica1 DROP PARTITION 1;
+SELECT 'After DROP PARTITION:';
+SELECT * FROM test.without_fixed_size_columns_replica2 ORDER BY s;
+
+DROP TABLE test.without_fixed_size_columns_replica1;
+DROP TABLE test.without_fixed_size_columns_replica2;

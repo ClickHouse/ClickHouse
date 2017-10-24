@@ -48,3 +48,15 @@ Sum before DROP PARTITION:
 15
 Sum after DROP PARTITION:
 8
+*** Table without columns with fixed size ***
+Parts:
+1	1_0_0_1	2
+2	2_0_0_0	2
+Before DROP PARTITION:
+a
+aa
+b
+cc
+After DROP PARTITION:
+aa
+cc
