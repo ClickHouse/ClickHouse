@@ -239,7 +239,7 @@ find_contrib_lib(btrie)
 find_contrib_lib(double-conversion)
 
 # Need to process before "contrib" dir:
-include (libs/libcommon/cmake/find_gperftools.cmake)
+include (cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
