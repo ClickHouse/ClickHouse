@@ -212,7 +212,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadIds(const std::vector<UInt64> &
     for (const UInt64 id : ids)
         ids_array->add(DB::toString(id), Int32(id));
 
-    cursor->query().selector().addNewDocument(dict_struct.id.value().name)
+    cursor->query().selector().addNewDocument(dict_struct.id->name)
         .add("$in", ids_array);
 
     return std::make_shared<MongoDBBlockInputStream>(

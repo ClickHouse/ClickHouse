@@ -304,7 +304,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         const auto & range = ranges_to_read[next_range_idx++];
                         task->current_range_reader = reader->readRange(range.begin, range.end);
                     }
-                    MergeTreeRangeReader & range_reader = task->current_range_reader.value();
+                    MergeTreeRangeReader & range_reader = *task->current_range_reader;
                     size_t current_range_rows_read = 0;
                     auto pre_filter_begin_pos = pre_filter_pos;
 

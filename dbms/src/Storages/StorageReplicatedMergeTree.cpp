@@ -101,6 +101,8 @@ namespace ErrorCodes
     extern const int NO_SUCH_BARRIER;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
+    extern const int UNEXPECTED_FILE_IN_DATA_PART;
+    extern const int NO_FILE_IN_DATA_PART;
     extern const int UNFINISHED;
     extern const int METADATA_MISMATCH;
     extern const int RESHARDING_NULLABLE_SHARDING_KEY;
@@ -1150,7 +1152,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::CHECKSUM_DOESNT_MATCH
-                    || e.code() == ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART)
+                    || e.code() == ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART
+                    || e.code() == ErrorCodes::NO_FILE_IN_DATA_PART
+                    || e.code() == ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART)
                 {
                     do_fetch = true;
                     part->remove();

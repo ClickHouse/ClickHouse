@@ -325,7 +325,7 @@ void ConfigProcessor::doIncludesRecursive(
                     return nullptr;
 
                 /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                zk_document = dom_parser.parseString("<from_zk>" + contents.value() + "</from_zk>");
+                zk_document = dom_parser.parseString("<from_zk>" + *contents + "</from_zk>");
                 return getRootNode(zk_document.get());
             };
 

@@ -30,7 +30,8 @@ namespace DB
  * Arena interface to allow specialized storage of keys.
  * POD keys do not require additional storage, so this interface is empty.
  */
-template <typename TKey> struct SpaceSavingArena
+template <typename TKey>
+struct SpaceSavingArena
 {
     SpaceSavingArena() {}
     const TKey emplace(const TKey & key) { return key; }
@@ -42,7 +43,8 @@ template <typename TKey> struct SpaceSavingArena
  * Keys of this type that are retained on insertion must be serialised into local storage,
  * otherwise the reference would be invalid after the processed block is released.
  */
-template <> struct SpaceSavingArena<StringRef>
+template <>
+struct SpaceSavingArena<StringRef>
 {
     const StringRef emplace(const StringRef & key)
     {

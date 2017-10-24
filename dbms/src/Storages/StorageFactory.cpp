@@ -1,26 +1,23 @@
+#include <unistd.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include <Core/FieldVisitors.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
-
+#include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getClusterName.h>
-
 #include <Storages/StorageLog.h>
 #include <Storages/StorageTinyLog.h>
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageBuffer.h>
-#include <Storages/StorageTrivialBuffer.h>
 #include <Storages/StorageNull.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageMergeTree.h>
@@ -36,7 +33,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
-#include <unistd.h>
+#include <Common/config.h>
+#if USE_RDKAFKA
+#include <Storages/StorageKafka.h>
+#endif
 
 
 namespace DB
@@ -56,6 +56,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -556,14 +557,14 @@ StoragePtr StorageFactory::get(
         String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
         String destination_table     = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
-        size_t num_buckets = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
+        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[2]).value);
 
-        time_t min_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[3]).value);
-        time_t max_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[4]).value);
-        size_t min_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[5]).value);
-        size_t max_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[6]).value);
-        size_t min_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[7]).value);
-        size_t max_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[8]).value);
+        Int64 min_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*args[3]).value);
+        Int64 max_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*args[4]).value);
+        UInt64 min_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[5]).value);
+        UInt64 max_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[6]).value);
+        UInt64 min_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[7]).value);
+        UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[8]).value);
 
         return StorageBuffer::create(
             table_name, columns,
@@ -574,54 +575,68 @@ StoragePtr StorageFactory::get(
             StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_database, destination_table);
     }
-    else if (name == "TrivialBuffer")
+    else if (name == "Kafka")
     {
-        /** TrivialBuffer(db, table, num_blocks_to_deduplicate, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes, path_in_zookeeper)
-          *
-          * db, table - in which table to put data from buffer.
-          * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for pushing out from the buffer.
-          * num_blocks_to_deduplicate - level of parallelism.
+#if USE_RDKAFKA
+        /** Arguments of engine is following:
+          * - Kafka broker list
+          * - List of topics
+          * - Group ID (may be a constaint expression with a string result)
+          * - Message format (string)
+          * - Schema (optional, if the format supports it)
           */
-
-        const std::string error_message_argument_number_mismatch = "Storage TrivialBuffer requires 10 parameters: "
-                " destination database, destination table, num_blocks_to_deduplicate, min_time, max_time, min_rows,"
-                " max_rows, min_bytes, max_bytes, path_in_zookeeper.";
         ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
+        const auto params_error_message = "Storage Kafka requires 4 parameters"
+            " - Kafka broker list, list of topics to consume, consumer group ID, message format";
+
         if (args_func.size() != 1)
-            throw Exception(error_message_argument_number_mismatch,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-        if (args.size() != 10)
-            throw Exception(error_message_argument_number_mismatch,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (args.size() != 4 && args.size() != 5)
+            throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
-        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
+        String brokers;
+        auto ast = typeid_cast<ASTLiteral *>(&*args[0]);
+        if (ast && ast->value.getType() == Field::Types::String)
+            brokers = safeGet<String>(ast->value);
+        else
+            throw Exception(String("Kafka broker list must be a string"), ErrorCodes::BAD_ARGUMENTS);
 
-        String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
-        String destination_table    = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+        args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
+        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], local_context);
+        args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(args[3], local_context);
 
-        size_t num_blocks_to_deduplicate = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
+        // Additionally parse schema if supported
+        String schema;
+        if (args.size() == 5)
+        {
+            args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(args[4], local_context);
+            schema = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
+        }
 
-        time_t min_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[3]).value);
-        time_t max_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[4]).value);
-        size_t min_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[5]).value);
-        size_t max_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[6]).value);
-        size_t min_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[7]).value);
-        size_t max_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[8]).value);
+        // Parse topic list and consumer group
+        Names topics;
+        topics.push_back(static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>());
+        String group = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
-        String path_in_zk_for_deduplication = static_cast<const ASTLiteral &>(*args[9]).value.safeGet<String>();
+        // Parse format from string
+        String format;
+        ast = typeid_cast<ASTLiteral *>(&*args[3]);
+        if (ast && ast->value.getType() == Field::Types::String)
+            format = safeGet<String>(ast->value);
+        else
+            throw Exception(String("Format must be a string"), ErrorCodes::BAD_ARGUMENTS);
 
-        return StorageTrivialBuffer::create(
-            table_name, columns,
+        return StorageKafka::create(
+            table_name, database_name, context, columns,
             materialized_columns, alias_columns, column_defaults,
-            context, num_blocks_to_deduplicate, path_in_zk_for_deduplication,
-            StorageTrivialBuffer::Thresholds{min_time, min_rows, min_bytes},
-            StorageTrivialBuffer::Thresholds{max_time, max_rows, max_bytes},
-            destination_database, destination_table);
+            brokers, group, topics, format, schema);
+#else
+            throw Exception{"Storage `Kafka` disabled because ClickHouse built without kafka support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
     }
     else if (endsWith(name, "MergeTree"))
     {

@@ -19,7 +19,6 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserQueryWithOutput query_with_output_p;
     ParserInsertQuery insert_p(end);
-    ParserDropQuery drop_p;
     ParserUseQuery use_p;
     ParserSetQuery set_p;
     ParserOptimizeQuery optimize_p;
