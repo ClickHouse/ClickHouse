@@ -108,9 +108,6 @@ struct MergeTreeDataPart
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
 
-    /// If part has column with fixed size, will return exact size of part (in rows)
-    size_t getExactSizeRows() const;
-
     /// Returns full path to part dir
     String getFullPath() const;
 
@@ -132,7 +129,8 @@ struct MergeTreeDataPart
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     mutable String relative_path;
 
-    size_t size = 0;                        /// in number of marks.
+    size_t rows_count = 0;
+    size_t marks_count = 0;
     std::atomic<size_t> size_in_bytes {0};  /// size in bytes, 0 - if not counted;
                                             ///  is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
@@ -239,8 +237,12 @@ private:
     /// If checksums.txt exists, reads files' checksums (and sizes) from it
     void loadChecksums(bool require);
 
-    /// Loads index file. Also calculates this->size if size=0
+    /// Loads index file. Also calculates this->marks_count if marks_count = 0
     void loadIndex();
+
+    /// Load rows count for this part from disk (for the newer storage format version).
+    /// For the older format version calculates rows count from the size of a column with a fixed size.
+    void loadRowsCount();
 
     void loadPartitionAndMinMaxIndex();
 

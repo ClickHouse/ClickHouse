@@ -86,7 +86,6 @@ MergeTreeData::MergeTreeData(
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
-    size_t index_granularity_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     const String & log_name_,
@@ -96,7 +95,7 @@ MergeTreeData::MergeTreeData(
     PartsCleanCallback parts_clean_callback_)
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
     sampling_expression(sampling_expression_),
-    index_granularity(index_granularity_),
+    index_granularity(settings_.index_granularity),
     merging_params(merging_params_),
     settings(settings_),
     primary_expr_ast(primary_expr_ast_),
@@ -110,10 +109,15 @@ MergeTreeData::MergeTreeData(
 {
     merging_params.check(*columns);
 
+    if (primary_expr_ast && merging_params.mode == MergingParams::Unsorted)
+        throw Exception("Primary key cannot be set for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
     if (!primary_expr_ast && merging_params.mode != MergingParams::Unsorted)
-        throw Exception("Primary key could be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Primary key can be empty only for UnsortedMergeTree", ErrorCodes::BAD_ARGUMENTS);
 
     initPrimaryKey();
+
+    if (sampling_expression && (!primary_expr_ast || !primary_key_sample.has(sampling_expression->getColumnName())))
+        throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
@@ -577,7 +581,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
     time_t current_time = time(nullptr);
     ssize_t deadline = (custom_directories_lifetime_seconds >= 0)
         ? current_time - custom_directories_lifetime_seconds
-        : current_time - settings.temporary_directories_lifetime;
+        : current_time - settings.temporary_directories_lifetime.totalSeconds();
 
     /// Delete temporary directories older than a day.
     Poco::DirectoryIterator end;
@@ -622,7 +626,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
         {
             if (it->unique() && /// After this ref_count cannot increase.
                 (*it)->remove_time < now &&
-                now - (*it)->remove_time > settings.old_parts_lifetime)
+                now - (*it)->remove_time > settings.old_parts_lifetime.totalSeconds())
             {
                 res.push_back(*it);
                 all_data_parts.erase(it++);
@@ -1087,7 +1091,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             else
             {
                 const IDataType & type = *new_primary_key_sample.safeGetByPosition(i).type;
-                new_index[i] = type.createConstColumn(part->size, type.getDefault())->convertToFullColumnIfConst();
+                new_index[i] = type.createConstColumn(part->marks_count, type.getDefault())->convertToFullColumnIfConst();
             }
         }
 
@@ -1098,7 +1102,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         WriteBufferFromFile index_file(index_tmp_path);
         HashingWriteBuffer index_stream(index_file);
 
-        for (size_t i = 0, size = part->size; i < size; ++i)
+        for (size_t i = 0, marks_count = part->marks_count; i < marks_count; ++i)
             for (size_t j = 0; j < new_key_size; ++j)
                 new_primary_key_sample.getByPosition(j).type->serializeBinary(*new_index[j].get(), i, index_stream);
 
@@ -1118,7 +1122,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     /// Apply the expression and write the result to temporary files.
     if (expression)
     {
-        MarkRanges ranges{MarkRange(0, part->size)};
+        MarkRanges ranges{MarkRange(0, part->marks_count)};
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
             *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
