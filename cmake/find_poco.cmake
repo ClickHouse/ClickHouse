@@ -1,5 +1,10 @@
 option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
 
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/CMakeLists.txt")
+   message (WARNING "submodule contrib/poco is missing. to fix try run: \n git submodule update --init --recursive")
+   set (USE_INTERNAL_POCO_LIBRARY 0)
+endif ()
+
 if (NOT USE_INTERNAL_POCO_LIBRARY)
     find_package (Poco COMPONENTS Net NetSSL XML Data Crypto DataODBC MongoDB)
 endif ()
