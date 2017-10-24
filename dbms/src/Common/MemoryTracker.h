@@ -81,7 +81,7 @@ public:
     /// next should be changed only once: from nullptr to some value.
     void setNext(MemoryTracker * elem)
     {
-        next.store(elem, std::memory_order_relaxed);
+        next.store(elem);
     }
 
     /// The memory consumption could be shown in realtime via CurrentMetrics counter
