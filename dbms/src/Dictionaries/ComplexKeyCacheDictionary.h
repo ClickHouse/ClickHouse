@@ -296,7 +296,7 @@ private:
         auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
 
         const auto rows_num = key_columns.front()->size();
-        const auto keys_size = dict_struct.key.value().size();
+        const auto keys_size = dict_struct.key->size();
         StringRefs keys(keys_size);
         Arena temporary_keys_pool;
         PODArray<StringRef> keys_array(rows_num);
@@ -371,7 +371,7 @@ private:
         /// save on some allocations
         out->getOffsets().reserve(rows_num);
 
-        const auto keys_size = dict_struct.key.value().size();
+        const auto keys_size = dict_struct.key->size();
         StringRefs keys(keys_size);
         Arena temporary_keys_pool;
 
@@ -523,7 +523,7 @@ private:
             auto stream = source_ptr->loadKeys(in_key_columns, in_requested_rows);
             stream->readPrefix();
 
-            const auto keys_size = dict_struct.key.value().size();
+            const auto keys_size = dict_struct.key->size();
             StringRefs keys(keys_size);
 
             const auto attributes_size = attributes.size();

@@ -108,7 +108,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
             }
         }
 
-        app.logger().error("Connection to all replicas failed " + Poco::NumberFormatter::format(try_no + 1) + " times");
+        app.logger().error("Connection to all replicas failed " + Poco::NumberFormatter::format(Poco::UInt64(try_no + 1)) + " times");
     }
 
     if (full_pool)

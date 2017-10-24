@@ -967,7 +967,7 @@ private:
                     const auto & out_file_node = typeid_cast<const ASTLiteral &>(*query_with_output->out_file);
                     const auto & out_file = out_file_node.value.safeGet<std::string>();
                     out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                    out_buf = &out_file_buf.value();
+                    out_buf = &*out_file_buf;
 
                     // We are writing to file, so default format is the same as in non-interactive mode.
                     if (is_interactive && is_default_format)

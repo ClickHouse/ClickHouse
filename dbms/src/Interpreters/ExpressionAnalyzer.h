@@ -83,7 +83,7 @@ public:
     /** Get a set of columns that are enough to read from the table to evaluate the expression.
       * Columns added from another table by JOIN are not counted.
       */
-    Names getRequiredColumns();
+    Names getRequiredColumns() const;
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -127,7 +127,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets getSubqueriesForSets() { return subqueries_for_sets; }
+    SubqueriesForSets getSubqueriesForSets() const { return subqueries_for_sets; }
 
     PreparedSets getPreparedSets() { return prepared_sets; }
 

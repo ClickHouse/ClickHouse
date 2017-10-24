@@ -49,9 +49,9 @@ private:
     struct WritingJobContext
     {
         /// Remote job per replica.
-        std::vector<bool> done_remote_jobs;
+        std::vector<char> done_remote_jobs;
         /// Local job per shard.
-        std::vector<bool> done_local_jobs;
+        std::vector<char> done_local_jobs;
         std::atomic<unsigned> finished_jobs_count;
         std::mutex mutex;
         std::condition_variable cond_var;

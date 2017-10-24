@@ -1,16 +1,12 @@
 #include <thread>
 #include <future>
-
 #include <Dictionaries/ExecutableDictionarySource.h>
-
 #include <Common/ShellCommand.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>
-
 #include <common/logger_useful.h>
 
 
@@ -18,6 +14,28 @@ namespace DB
 {
 
 static const size_t max_block_size = 8192;
+
+
+namespace
+{
+
+/// Owns ShellCommand and calls wait for it.
+class ShellCommandOwningBlockInputStream : public OwningBlockInputStream<ShellCommand>
+{
+public:
+    ShellCommandOwningBlockInputStream(const BlockInputStreamPtr & stream, std::unique_ptr<ShellCommand> own)
+    : OwningBlockInputStream(std::move(stream), std::move(own))
+    {
+    }
+
+    void readSuffix() override
+    {
+        OwningBlockInputStream<ShellCommand>::readSuffix();
+        own->wait();
+    }
+};
+
+}
 
 
 ExecutableDictionarySource::ExecutableDictionarySource(const DictionaryStructure & dict_struct_,
@@ -47,9 +65,12 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
     LOG_TRACE(log, "loadAll " + toString());
     auto process = ShellCommand::execute(command);
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
-    return std::make_shared<OwningBlockInputStream<ShellCommand>>(input_stream, std::move(process));
+    return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));
 }
 
+
+namespace
+{
 
 /** A stream, that also runs and waits for background thread
   * (that will feed data into pipe to be read from the other side of the pipe).
@@ -86,19 +107,28 @@ private:
 
     void readSuffix() override
     {
+        IProfilingBlockInputStream::readSuffix();
+        if (!wait_called)
+        {
+            wait_called = true;
+            command->wait();
+        }
         thread.join();
         /// To rethrow an exception, if any.
         task.get_future().get();
     }
 
     String getName() const override { return "WithBackgroundThread"; }
-    String getID() const override {  return "WithBackgroundThread(" + stream->getID() + ")"; }
+    String getID() const override { return "WithBackgroundThread(" + stream->getID() + ")"; }
 
     BlockInputStreamPtr stream;
     std::unique_ptr<ShellCommand> command;
     std::packaged_task<void()> task;
     std::thread thread;
+    bool wait_called = false;
 };
+
+}
 
 
 BlockInputStreamPtr ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)

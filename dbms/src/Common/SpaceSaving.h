@@ -30,7 +30,8 @@ namespace DB
  * Arena interface to allow specialized storage of keys.
  * POD keys do not require additional storage, so this interface is empty.
  */
-template <typename TKey> struct SpaceSavingArena
+template <typename TKey>
+struct SpaceSavingArena
 {
     SpaceSavingArena() {}
     const TKey emplace(const TKey & key) { return key; }
@@ -42,7 +43,8 @@ template <typename TKey> struct SpaceSavingArena
  * Keys of this type that are retained on insertion must be serialised into local storage,
  * otherwise the reference would be invalid after the processed block is released.
  */
-template <> struct SpaceSavingArena<StringRef>
+template <>
+struct SpaceSavingArena<StringRef>
 {
     const StringRef emplace(const StringRef & key)
     {
@@ -128,6 +130,11 @@ public:
     inline size_t capacity() const
     {
         return m_capacity;
+    }
+
+    void clear()
+    {
+        return destroyElements();
     }
 
     void resize(size_t new_capacity)
@@ -255,6 +262,8 @@ public:
         writeVarUInt(size(), wb);
         for (auto counter : counter_list)
             counter->write(wb);
+
+        writeVarUInt(alpha_map.size(), wb);
         for (auto alpha : alpha_map)
             writeVarUInt(alpha, wb);
     }
@@ -273,7 +282,14 @@ public:
             push(counter);
         }
 
-        for (size_t i = 0; i < nextAlphaSize(m_capacity); ++i)
+        readAlphaMap(rb);
+    }
+
+    void readAlphaMap(ReadBuffer & rb)
+    {
+        size_t alpha_size = 0;
+        readVarUInt(alpha_size, rb);
+        for (size_t i = 0; i < alpha_size; ++i)
         {
             UInt64 alpha = 0;
             readVarUInt(alpha, rb);
