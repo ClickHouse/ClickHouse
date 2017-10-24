@@ -4,6 +4,7 @@
 # echo "3.0 (native)" > debian/source/format
 # build ubuntu:
 # sudo DIST=trusty pbuilder create --configfile debian/.pbuilderrc && DIST=trusty pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=xenial pbuilder create --configfile debian/.pbuilderrc && DIST=xenial pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=zesty  pbuilder create --configfile debian/.pbuilderrc && DIST=zesty  pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=artful pbuilder create --configfile debian/.pbuilderrc && DIST=artful pdebuild --configfile debian/.pbuilderrc
 # build debian:
@@ -13,14 +14,14 @@
 # sudo DIST=experimental pbuilder create --configfile debian/.pbuilderrc && DIST=experimental pdebuild --configfile debian/.pbuilderrc
 # build i386 experimental:
 # sudo DIST=trusty       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=trusty       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=xenial       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=xenial       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=zesty        ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=zesty        ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=artful       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=artful       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=stable       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=stable       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
-# BROKEN (can't install fresh gcc):
-# sudo DIST=xenial pbuilder create --configfile debian/.pbuilderrc && DIST=xenial pdebuild --configfile debian/.pbuilderrc
-# TODO:
+
+# Your packages built here: /var/cache/pbuilder/*-*/result
 
 # from https://wiki.debian.org/PbuilderTricks :
 
@@ -101,10 +102,13 @@ elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     MIRRORSITE="http://$UBUNTU_MIRROR/$OSNAME/"
     COMPONENTS="main restricted universe multiverse"
 
+    OTHERMIRROR+="deb $MIRRORSITE $DIST-updates main restricted universe multiverse |"
+    OTHERMIRROR+="deb $MIRRORSITE $DIST-security main restricted universe multiverse |"
+
     case "$DIST" in
        "trusty" | "xenial" )
-           OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/$OSNAME $DIST main"
-           #OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/ppa/$OSNAME $DIST main"
+           OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/$OSNAME $DIST main |"
+           #OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/ppa/$OSNAME $DIST main |"
            ALLOWUNTRUSTED=yes
            ;;
     esac
@@ -127,7 +131,7 @@ case "$DIST" in
 esac
 
 case "$DIST" in
-    "trusty" | "artful" | "experimental" | "unstable" )
+    "trusty" | "xenial" | "artful" | "experimental" | "unstable" )
         export DEB_CC=gcc-7
         export DEB_CXX=g++-7
         ;;
