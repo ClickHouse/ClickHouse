@@ -1091,7 +1091,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             else
             {
                 const IDataType & type = *new_primary_key_sample.safeGetByPosition(i).type;
-                new_index[i] = type.createConstColumn(part->size, type.getDefault())->convertToFullColumnIfConst();
+                new_index[i] = type.createConstColumn(part->marks_count, type.getDefault())->convertToFullColumnIfConst();
             }
         }
 
@@ -1102,7 +1102,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         WriteBufferFromFile index_file(index_tmp_path);
         HashingWriteBuffer index_stream(index_file);
 
-        for (size_t i = 0, size = part->size; i < size; ++i)
+        for (size_t i = 0, marks_count = part->marks_count; i < marks_count; ++i)
             for (size_t j = 0; j < new_key_size; ++j)
                 new_primary_key_sample.getByPosition(j).type->serializeBinary(*new_index[j].get(), i, index_stream);
 
@@ -1122,7 +1122,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     /// Apply the expression and write the result to temporary files.
     if (expression)
     {
-        MarkRanges ranges{MarkRange(0, part->size)};
+        MarkRanges ranges{MarkRange(0, part->marks_count)};
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
             *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
             false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);

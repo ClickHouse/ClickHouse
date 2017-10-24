@@ -499,7 +499,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         merge_entry->total_size_bytes_compressed += part->size_in_bytes;
-        merge_entry->total_size_marks += part->size;
+        merge_entry->total_size_marks += part->marks_count;
     }
 
     MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
@@ -557,7 +557,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeBlockInputStream>(
-            data, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, merging_column_names, MarkRanges(1, MarkRange(0, part->size)),
+            data, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, merging_column_names, MarkRanges(1, MarkRange(0, part->marks_count)),
             false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         input->setProgressCallback(MergeProgressCallback(
@@ -691,7 +691,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
                 auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
-                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_name_, MarkRanges{MarkRange(0, parts[part_num]->size)},
+                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_name_, MarkRanges{MarkRange(0, parts[part_num]->marks_count)},
                     false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
 
                 column_part_stream->setProgressCallback(MergeProgressCallbackVerticalStep(
@@ -755,7 +755,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
         to.writeSuffixAndFinalizePart(new_data_part, &all_columns, &checksums_gathered_columns);
 
     /// For convenience, even CollapsingSortedBlockInputStream can not return zero rows.
-    if (0 == to.marksCount())
+    if (0 == to.getRowsCount())
         throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
 
     return new_data_part;
@@ -862,12 +862,16 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
     /// Merge all parts of the partition.
 
+    size_t total_input_rows = 0;
+
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
+        total_input_rows += part->rows_count;
+
         std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         merge_entry->total_size_bytes_compressed += part->size_in_bytes;
-        merge_entry->total_size_marks += part->size;
+        merge_entry->total_size_marks += part->marks_count;
     }
 
     MergeTreeData::DataPart::ColumnToSize merged_column_to_size;
@@ -882,22 +886,18 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
 
     BlockInputStreams src_streams;
 
-    size_t sum_rows_approx = 0;
-
-    const auto rows_total = merge_entry->total_size_marks * data.index_granularity;
-
     for (size_t i = 0; i < parts.size(); ++i)
     {
-        MarkRanges ranges(1, MarkRange(0, parts[i]->size));
+        MarkRanges ranges(1, MarkRange(0, parts[i]->marks_count));
 
         auto input = std::make_unique<MergeTreeBlockInputStream>(
             data, parts[i], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_names,
             ranges, false, nullptr, "", true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
 
-        input->setProgressCallback([&merge_entry, rows_total] (const Progress & value)
+        input->setProgressCallback([&merge_entry, total_input_rows] (const Progress & value)
             {
                 const auto new_rows_read = merge_entry->rows_read += value.rows;
-                merge_entry->progress = static_cast<Float64>(new_rows_read) / rows_total;
+                merge_entry->progress = static_cast<Float64>(new_rows_read) / total_input_rows;
                 merge_entry->bytes_read_uncompressed += value.bytes;
             });
 
@@ -906,8 +906,6 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
                 std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryExpression())));
         else
             src_streams.emplace_back(std::move(input));
-
-        sum_rows_approx += parts[i]->size * data.index_granularity;
     }
 
     /// Sharding of merged blocks.
@@ -1038,7 +1036,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
             merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
 
             if (disk_reservation)
-                disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / sum_rows_approx)) * initial_reservation));
+                disk_reservation->update(static_cast<size_t>((1 - std::min(1., 1. * rows_written / total_input_rows)) * initial_reservation));
         }
     }
 
@@ -1050,7 +1048,7 @@ MergeTreeData::PerShardDataParts MergeTreeDataMerger::reshardPartition(
         abortReshardPartitionIfRequested();
 
         MergedBlockOutputStreamPtr & output_stream = per_shard_output.at(shard_no);
-        if (0 == output_stream->marksCount())
+        if (0 == output_stream->getRowsCount())
         {
             /// There was no data in this shard. Ignore.
             LOG_WARNING(log, "No data in partition for shard " + job.paths[shard_no].first);

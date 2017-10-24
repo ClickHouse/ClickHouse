@@ -89,3 +89,21 @@ SELECT 'Sum after DROP PARTITION:';
 SELECT sum(x) FROM test.partitioned_by_string;
 
 DROP TABLE test.partitioned_by_string;
+
+SELECT '*** Table without columns with fixed size ***';
+
+DROP TABLE IF EXISTS test.without_fixed_size_columns;
+CREATE TABLE test.without_fixed_size_columns(s String) ENGINE MergeTree PARTITION BY length(s) ORDER BY s;
+
+INSERT INTO test.without_fixed_size_columns VALUES ('a'), ('aa'), ('b'), ('cc');
+
+SELECT 'Parts:';
+SELECT partition, name, rows FROM system.parts WHERE database = 'test' AND table = 'without_fixed_size_columns' AND active ORDER BY name;
+
+SELECT 'Before DROP PARTITION:';
+SELECT * FROM test.without_fixed_size_columns ORDER BY s;
+ALTER TABLE test.without_fixed_size_columns DROP PARTITION 1;
+SELECT 'After DROP PARTITION:';
+SELECT * FROM test.without_fixed_size_columns ORDER BY s;
+
+DROP TABLE test.without_fixed_size_columns;
