@@ -486,6 +486,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns)
     {
+        // Table SQL definition is available even if the table is detached
         auto query = context.getCreateQuery(database_name, table_name);
         auto & as_create = typeid_cast<const ASTCreateQuery &>(*query);
         create = as_create; // Copy the saved create query, but use ATTACH instead of CREATE
