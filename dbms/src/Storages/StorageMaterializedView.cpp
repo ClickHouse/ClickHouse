@@ -69,8 +69,8 @@ StorageMaterializedView::StorageMaterializedView(
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    if (!query.inner_storage)
-        throw Exception("ENGINE of MaterializedView should be specified explicitly", ErrorCodes::INCORRECT_QUERY);
+    if (!query.storage)
+        throw Exception("ENGINE of MaterializedView must be specified explicitly", ErrorCodes::INCORRECT_QUERY);
 
     extractDependentTable(*query.select, select_database_name, select_table_name);
 
@@ -90,7 +90,7 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->database = database_name;
         manual_create_query->table = inner_table_name;
         manual_create_query->set(manual_create_query->columns, query.columns->ptr());
-        manual_create_query->set(manual_create_query->storage, query.inner_storage->ptr());
+        manual_create_query->set(manual_create_query->storage, query.storage->ptr());
 
         /// Execute the query.
         try
