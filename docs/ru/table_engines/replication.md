@@ -168,8 +168,8 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Если вы хотите избавиться от таблицы ReplicatedMergeTree, не запуская сервер, то
 
-:   -   удалите соответствующий файл .sql в директории с метаданными (`/var/lib/clickhouse/metadata/`);
-    -   удалите соответствующий путь в ZooKeeper (`/path_to_table/replica_name`);
+-   удалите соответствующий файл .sql в директории с метаданными (`/var/lib/clickhouse/metadata/`);
+-   удалите соответствующий путь в ZooKeeper (`/path_to_table/replica_name`);
 
 После этого, вы можете запустить сервер, создать таблицу типа MergeTree, перенести данные в её директорию, и перезапустить сервер.
 

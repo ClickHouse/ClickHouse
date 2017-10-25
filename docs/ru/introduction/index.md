@@ -1,9 +1,8 @@
-Введение
-========
+# Введение
+
 
 ```eval_rst
 .. toctree::
-    :glob:
 
     what_is_clickhouse
     distinctive_features
