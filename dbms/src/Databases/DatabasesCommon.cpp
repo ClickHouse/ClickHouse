@@ -64,7 +64,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     /// - the database has not been created yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
     if (!ast_create_query.columns)
-        throw Exception("Missing definition of columns");
+        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(*ast_create_query.columns, context);
 
@@ -77,7 +77,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     else
     {
         if (!ast_create_query.storage)
-            throw Exception("Missing ENGINE definition");
+            throw Exception("Missing ENGINE definition.", ErrorCodes::ENGINE_REQUIRED);
         storage_name = ast_create_query.storage->engine->name;
     }
 
