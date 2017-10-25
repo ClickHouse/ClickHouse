@@ -92,8 +92,6 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 
 
 list(REMOVE_ITEM dbms_sources
-    src/Storages/StorageCloud.cpp
-    src/Databases/DatabaseCloud.cpp
     src/Common/StringUtils.cpp)
 
 if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
