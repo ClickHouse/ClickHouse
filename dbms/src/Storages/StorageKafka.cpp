@@ -167,7 +167,6 @@ public:
 
 private:
     StorageKafka & storage;
-    rd_kafka_t * consumer;
     Block sample_block;
     std::unique_ptr<ReadBufferFromKafkaConsumer> read_buf;
     BlockInputStreamPtr reader;

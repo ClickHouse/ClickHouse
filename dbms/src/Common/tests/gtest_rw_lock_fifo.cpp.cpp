@@ -67,7 +67,7 @@ TEST(Common, RWLockFIFO_1)
             Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
             std::list<std::thread> threads;
-            for (int thread = 0; thread < pool_size; ++thread)
+            for (size_t thread = 0; thread < pool_size; ++thread)
                 threads.emplace_back([=] () { func(pool_size, round); });
 
             for (auto & thread : threads)
@@ -139,7 +139,7 @@ TEST(Common, RWLockFIFO_PerfTest_Readers)
             };
 
             std::list<std::thread> threads;
-            for (int thread = 0; thread < pool_size; ++thread)
+            for (size_t thread = 0; thread < pool_size; ++thread)
                 threads.emplace_back(func);
 
             for (auto & thread : threads)
