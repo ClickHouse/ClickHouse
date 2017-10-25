@@ -89,7 +89,6 @@ public:
     String table;
     ASTExpressionList * columns = nullptr;
     ASTStorage * storage = nullptr;
-    ASTStorage * inner_storage = nullptr; /// Internal engine for the CREATE MATERIALIZED VIEW query
     String as_database;
     String as_table;
     ASTSelectQuery * select = nullptr;
@@ -111,8 +110,6 @@ public:
             res->set(res->storage, storage->clone());
         if (select)
             res->set(res->select, select->clone());
-        if (inner_storage)
-            res->set(res->inner_storage, inner_storage->clone());
 
         cloneOutputOptions(*res);
 
@@ -184,11 +181,8 @@ protected:
             settings.ostr << (settings.one_line ? ")" : "\n)");
         }
 
-        if (storage && !is_materialized_view && !is_view)
+        if (storage)
             storage->formatImpl(settings, state, frame);
-
-        if (inner_storage)
-            inner_storage->formatImpl(settings, state, frame);
 
         if (is_populate)
         {

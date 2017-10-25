@@ -57,6 +57,8 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_QUERY;
+    extern const int ENGINE_REQUIRED;
 }
 
 
@@ -357,13 +359,12 @@ For further info please read the documentation: https://clickhouse.yandex/
 
 
 StoragePtr StorageFactory::get(
-    const String & name,
+    ASTCreateQuery & query,
     const String & data_path,
     const String & table_name,
     const String & database_name,
     Context & local_context,
     Context & context,
-    ASTCreateQuery & query,
     NamesAndTypesListPtr columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
@@ -371,13 +372,31 @@ StoragePtr StorageFactory::get(
     bool attach,
     bool has_force_restore_data_flag) const
 {
+    if (query.is_view)
+    {
+        if (query.storage)
+            throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
+
+        return StorageView::create(
+            table_name, database_name, context, query, columns,
+            materialized_columns, alias_columns, column_defaults);
+    }
+
     /// Check for some special types, that are not allowed to be stored in tables. Example: NULL data type.
     /// Exception: any type is allowed in View, because plain (non-materialized) View does not store anything itself.
-    if (name != "View")
+    checkAllTypesAreAllowedInTable(*columns);
+    checkAllTypesAreAllowedInTable(materialized_columns);
+    checkAllTypesAreAllowedInTable(alias_columns);
+
+    if (!query.storage)
+        throw Exception("Incorrect CREATE query: ENGINE required", ErrorCodes::ENGINE_REQUIRED);
+
+    if (query.is_materialized_view)
     {
-        checkAllTypesAreAllowedInTable(*columns);
-        checkAllTypesAreAllowedInTable(materialized_columns);
-        checkAllTypesAreAllowedInTable(alias_columns);
+        return StorageMaterializedView::create(
+            table_name, database_name, context, query, columns,
+            materialized_columns, alias_columns, column_defaults,
+            attach);
     }
 
     ASTStorage & storage_def = *query.storage;
@@ -386,6 +405,8 @@ StoragePtr StorageFactory::get(
     if (engine_def.parameters)
         throw Exception(
             "Engine definition cannot take the form of a parametric function", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
+
+    const String & name = engine_def.name;
 
     if ((storage_def.partition_by || storage_def.order_by || storage_def.sample_by || storage_def.settings)
         && !endsWith(name, "MergeTree"))
@@ -403,28 +424,25 @@ StoragePtr StorageFactory::get(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     };
 
-    if (name == "Log")
+    if (name == "View")
+    {
+        throw Exception(
+            "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement",
+            ErrorCodes::INCORRECT_QUERY);
+    }
+    else if (name == "MaterializedView")
+    {
+        throw Exception(
+            "Direct creation of tables with ENGINE MaterializedView is not supported, use CREATE MATERIALIZED VIEW statement",
+            ErrorCodes::INCORRECT_QUERY);
+    }
+    else if (name == "Log")
     {
         check_arguments_empty();
         return StorageLog::create(
             data_path, table_name, columns,
             materialized_columns, alias_columns, column_defaults,
             context.getSettings().max_compress_block_size);
-    }
-    else if (name == "View")
-    {
-        check_arguments_empty();
-        return StorageView::create(
-            table_name, database_name, context, query, columns,
-            materialized_columns, alias_columns, column_defaults);
-    }
-    else if (name == "MaterializedView")
-    {
-        check_arguments_empty();
-        return StorageMaterializedView::create(
-            table_name, database_name, context, query, columns,
-            materialized_columns, alias_columns, column_defaults,
-            attach);
     }
     else if (name == "Dictionary")
     {
