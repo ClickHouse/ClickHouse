@@ -295,7 +295,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::finalize()
 }
 
 
-void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker * memory_tracker)
+void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTrackerPtr memory_tracker)
 {
     setThreadName("MergeAggMergThr");
     current_memory_tracker = memory_tracker;

@@ -89,17 +89,17 @@ ProcessList::EntryPtr ProcessList::insert(
                 ///  setting from one query effectively sets values for all other queries.
 
                 /// Track memory usage for all simultaneously running queries from single user.
-                user_process_list.user_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_user);
-                user_process_list.user_memory_tracker.setDescription("(for user)");
-                current_memory_tracker->setNext(&user_process_list.user_memory_tracker);
+                user_process_list.user_memory_tracker->setOrRaiseLimit(settings.limits.max_memory_usage_for_user);
+                user_process_list.user_memory_tracker->setDescription("(for user)");
+                current_memory_tracker->setNext(user_process_list.user_memory_tracker);
 
                 /// Track memory usage for all simultaneously running queries.
                 /// You should specify this value in configuration for default profile,
                 ///  not for specific users, sessions or queries,
                 ///  because this setting is effectively global.
-                total_memory_tracker.setOrRaiseLimit(settings.limits.max_memory_usage_for_all_queries);
-                total_memory_tracker.setDescription("(total)");
-                user_process_list.user_memory_tracker.setNext(&total_memory_tracker);
+                total_memory_tracker->setOrRaiseLimit(settings.limits.max_memory_usage_for_all_queries);
+                total_memory_tracker->setDescription("(total)");
+                user_process_list.user_memory_tracker->setNext(total_memory_tracker);
             }
 
             if (settings.limits.max_network_bandwidth_for_user && !user_process_list.user_throttler)
@@ -161,8 +161,8 @@ ProcessListEntry::~ProcessListEntry()
     if (parent.cur_size == 0)
     {
         /// Reset MemoryTracker, similarly (see above).
-        parent.total_memory_tracker.logPeakMemoryUsage();
-        parent.total_memory_tracker.reset();
+        parent.total_memory_tracker->logPeakMemoryUsage();
+        parent.total_memory_tracker->reset();
     }
 }
 

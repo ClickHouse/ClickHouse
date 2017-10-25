@@ -1322,7 +1322,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
     bool final,
     ThreadPool * thread_pool) const
 {
-    auto converter = [&](size_t bucket, MemoryTracker * memory_tracker)
+    auto converter = [&](size_t bucket, MemoryTrackerPtr memory_tracker)
     {
         current_memory_tracker = memory_tracker;
         return convertOneBucketToBlock(data_variants, method, final, bucket);
@@ -1777,7 +1777,7 @@ private:
             max_scheduled_bucket_num, current_memory_tracker));
     }
 
-    void thread(Int32 bucket_num, MemoryTracker * memory_tracker)
+    void thread(Int32 bucket_num, MemoryTrackerPtr memory_tracker)
     {
         current_memory_tracker = memory_tracker;
         setThreadName("MergingAggregtd");
@@ -2103,7 +2103,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, &key_sizes, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
+        auto merge_bucket = [&bucket_to_blocks, &result, &key_sizes, this](Int32 bucket, Arena * aggregates_pool, MemoryTrackerPtr memory_tracker)
         {
             current_memory_tracker = memory_tracker;
 

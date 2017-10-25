@@ -173,7 +173,7 @@ private:
         handler.onBlock(block, extra_info, thread_num);
     }
 
-    void thread(MemoryTracker * memory_tracker, size_t thread_num)
+    void thread(MemoryTrackerPtr memory_tracker, size_t thread_num)
     {
         current_memory_tracker = memory_tracker;
         std::exception_ptr exception;

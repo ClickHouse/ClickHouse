@@ -113,9 +113,9 @@ void BackgroundProcessingPool::threadFunction()
 {
     setThreadName("BackgrProcPool");
 
-    MemoryTracker memory_tracker;
-    memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
-    current_memory_tracker = &memory_tracker;
+    MemoryTrackerPtr memory_tracker = {std::make_shared<MemoryTracker>()};
+    memory_tracker->setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
+    current_memory_tracker = memory_tracker;
 
     pcg64 rng(randomSeed());
     std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));

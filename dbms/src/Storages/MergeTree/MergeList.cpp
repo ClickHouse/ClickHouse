@@ -23,8 +23,8 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
     background_pool_task_memory_tracker = current_memory_tracker;
     if (background_pool_task_memory_tracker)
     {
-        memory_tracker.setMetric(CurrentMetrics::MemoryTrackingForMerges);
-        background_pool_task_memory_tracker->setNext(&memory_tracker);
+        memory_tracker->setMetric(CurrentMetrics::MemoryTrackingForMerges);
+        background_pool_task_memory_tracker->setNext(memory_tracker);
     }
 }
 
@@ -44,7 +44,7 @@ MergeInfo MergeListElement::getInfo() const
     res.rows_read = rows_read.load(std::memory_order_relaxed);
     res.rows_written = rows_written.load(std::memory_order_relaxed);
     res.columns_written = columns_written.load(std::memory_order_relaxed);
-    res.memory_usage = memory_tracker.get();
+    res.memory_usage = memory_tracker->get();
     res.thread_number = thread_number;
 
     for (const auto & source_part_name : source_part_names)

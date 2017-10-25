@@ -130,7 +130,7 @@ protected:
 
 
     /// Calculations that can be performed in a separate thread
-    void calculate(MemoryTracker * memory_tracker)
+    void calculate(MemoryTrackerPtr memory_tracker)
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
