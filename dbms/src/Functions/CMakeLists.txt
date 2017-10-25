@@ -74,6 +74,11 @@ target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOUR
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
 
+if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
+    target_compile_options(clickhouse_functions PRIVATE "-g0")
+endif ()
+
 if (USE_VECTORCLASS)
     target_include_directories (clickhouse_functions BEFORE PUBLIC ${VECTORCLASS_INCLUDE_DIR})
 endif ()
