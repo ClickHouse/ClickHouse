@@ -60,14 +60,14 @@ struct AddNullability<T, HasNoNull>
 
 template <typename T> struct Next;
 
-template <> struct Next<Bits0>    { using Type = Bits0; };
-template <> struct Next<Bits8>    { using Type = Bits16; };
-template <> struct Next<Bits16>    { using Type = Bits32; };
-template <> struct Next<Bits32>    { using Type = Bits64; };
-template <> struct Next<Bits64>    { using Type = Bits64; };
+template <> struct Next<Bits0> { using Type = Bits0; };
+template <> struct Next<Bits8> { using Type = Bits16; };
+template <> struct Next<Bits16> { using Type = Bits32; };
+template <> struct Next<Bits32> { using Type = Bits64; };
+template <> struct Next<Bits64> { using Type = Bits64; };
 
 template <typename T> struct ExactNext { using Type = typename Next<T>::Type; };
-template <> struct ExactNext<Bits64>    { using Type = BitsTooMany; };
+template <> struct ExactNext<Bits64> { using Type = BitsTooMany; };
 
 template <typename T> struct Traits;
 

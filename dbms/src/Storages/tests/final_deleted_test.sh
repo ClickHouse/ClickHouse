@@ -2,7 +2,7 @@
 
 echo "DROP DATABASE IF EXISTS final_deleted_test" | clickhouse-client || exit 1
 echo "CREATE DATABASE final_deleted_test" | clickhouse-client || exit 2
-echo "CREATE TABLE final_deleted_test.a ( d Date, k String,  s Int8,  v String) ENGINE = CollapsingMergeTree(d, tuple(k), 8192, s)" | clickhouse-client || exit 4
+echo "CREATE TABLE final_deleted_test.a ( d Date, k String, s Int8, v String) ENGINE = CollapsingMergeTree(d, tuple(k), 8192, s)" | clickhouse-client || exit 4
 
 echo "('2014-01-01','key1',1,'val1'),('2014-01-01','key1',-1,'val1')" | clickhouse-client --query="INSERT INTO final_deleted_test.a VALUES" || exit 5
 

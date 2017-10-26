@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 
-# METR-9072
-
 echo "DROP DATABASE IF EXISTS collapsing_test" | clickhouse-client || exit 1
 echo "CREATE DATABASE collapsing_test" | clickhouse-client || exit 2
-echo "CREATE TABLE collapsing_test.p0 ( d Date, k String,  s Int8,  v String) ENGINE = CollapsingMergeTree(d, tuple(k), 8192, s)" | clickhouse-client || exit 3
+echo "CREATE TABLE collapsing_test.p0 ( d Date, k String, s Int8, v String) ENGINE = CollapsingMergeTree(d, tuple(k), 8192, s)" | clickhouse-client || exit 3
 echo "CREATE TABLE collapsing_test.p1 AS collapsing_test.p0" | clickhouse-client || exit 4
 echo "CREATE TABLE collapsing_test.p2 AS collapsing_test.p0" | clickhouse-client || exit 5
 echo "CREATE TABLE collapsing_test.m0 AS collapsing_test.p0" | clickhouse-client || exit 9
