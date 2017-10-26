@@ -56,14 +56,15 @@ struct IDictionaryBase : public IExternalLoadable
     bool supportUpdates() const override { return !isCached(); }
 
     bool isModified() const override
-    {   auto source = getSource();
+    {
+        auto source = getSource();
         return source && source->isModified();
     }
 
     std::unique_ptr<IExternalLoadable> cloneObject() const override
     {
         return clone();
-    };
+    }
 
     std::shared_ptr<IDictionaryBase> shared_from_this()
     {

@@ -8,12 +8,12 @@ namespace DB
 {
 
 /// CatBoost wrapper interface functions.
-struct CatBoostWrapperApi;
-class CatBoostWrapperApiProvider
+struct CatBoostWrapperAPI;
+class CatBoostWrapperAPIProvider
 {
 public:
-    virtual ~CatBoostWrapperApiProvider() = default;
-    virtual const CatBoostWrapperApi & getApi() const = 0;
+    virtual ~CatBoostWrapperAPIProvider() = default;
+    virtual const CatBoostWrapperAPI & getAPI() const = 0;
 };
 
 /// CatBoost model interface.
@@ -23,7 +23,7 @@ public:
     virtual ~ICatBoostModel() = default;
     /// Evaluate model. Use first `float_features_count` columns as float features,
     /// the others `cat_features_count` as categorical features.
-    virtual ColumnPtr eval(const Columns & columns, size_t float_features_count, size_t cat_features_count) const = 0;
+    virtual ColumnPtr evaluate(const Columns & columns, size_t float_features_count, size_t cat_features_count) const = 0;
 };
 
 /// General ML model evaluator interface.
@@ -65,8 +65,8 @@ private:
     std::string lib_path;
     ExternalLoadableLifetime lifetime;
     std::exception_ptr creation_exception;
-    std::shared_ptr<CatBoostWrapperApiProvider> api_provider;
-    const CatBoostWrapperApi * api;
+    std::shared_ptr<CatBoostWrapperAPIProvider> api_provider;
+    const CatBoostWrapperAPI * api;
 
     std::unique_ptr<ICatBoostModel> model;
 
