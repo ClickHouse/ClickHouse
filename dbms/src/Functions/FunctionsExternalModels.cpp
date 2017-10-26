@@ -34,7 +34,6 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const DataTypes & arguments
         throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                         + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-
     return std::make_shared<DataTypeFloat64>();
 }
 
