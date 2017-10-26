@@ -417,7 +417,14 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.storage)
+    {
+        if (create.is_temporary && create.storage->engine->name != "Memory")
+            throw Exception(
+                "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
+                ErrorCodes::INCORRECT_QUERY);
+
         return;
+    }
 
     if (create.is_temporary)
     {
