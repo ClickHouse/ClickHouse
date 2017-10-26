@@ -63,6 +63,7 @@ struct IDictionaryBase : public IExternalLoadable
     {
         return std::static_pointer_cast<IDictionaryBase>(IExternalLoadable::shared_from_this());
     }
+
     std::shared_ptr<const IDictionaryBase> shared_from_this() const
     {
         return std::static_pointer_cast<const IDictionaryBase>(IExternalLoadable::shared_from_this());
