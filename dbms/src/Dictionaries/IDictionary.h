@@ -41,7 +41,7 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual bool isCached() const = 0;
 
-    virtual DictionaryPtr clone() const = 0;
+    virtual std::unique_ptr<IExternalLoadable> clone() const = 0;
 
     virtual const IDictionarySource * getSource() const = 0;
 
