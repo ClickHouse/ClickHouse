@@ -93,7 +93,7 @@ void MemoryTracker::alloc(Int64 size)
     if (will_be > peak.load(std::memory_order_relaxed))        /// Races doesn't matter. Could rewrite with CAS, but not worth.
         peak.store(will_be, std::memory_order_relaxed);
 
-    if (auto loaded_next = std::atomic_load_explicit(&next, std::memory_order_relaxed))
+    if (auto loaded_next = std::atomic_load_explicit(&next))
         loaded_next->alloc(size);
 }
 
@@ -114,7 +114,7 @@ void MemoryTracker::free(Int64 size)
         size += new_amount;
     }
 
-    if (auto loaded_next = std::atomic_load_explicit(&next, std::memory_order_relaxed))
+    if (auto loaded_next = std::atomic_load_explicit(&next))
         loaded_next->free(size);
     else
         CurrentMetrics::sub(metric, size);
