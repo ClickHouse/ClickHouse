@@ -23,7 +23,7 @@ extern const int CANNOT_APPLY_CATBOOST_MODEL;
 
 
 /// CatBoost wrapper interface functions.
-struct CatBoostWrapperApi
+struct CatBoostWrapperAPI
 {
     typedef void ModelCalcerHandle;
 
@@ -61,21 +61,21 @@ namespace
 class CatBoostModelHolder
 {
 private:
-    CatBoostWrapperApi::ModelCalcerHandle * handle;
-    const CatBoostWrapperApi * api;
+    CatBoostWrapperAPI::ModelCalcerHandle * handle;
+    const CatBoostWrapperAPI * api;
 public:
-    explicit CatBoostModelHolder(const CatBoostWrapperApi * api) : api(api) { handle = api->ModelCalcerCreate(); }
+    explicit CatBoostModelHolder(const CatBoostWrapperAPI * api) : api(api) { handle = api->ModelCalcerCreate(); }
     ~CatBoostModelHolder() { api->ModelCalcerDelete(handle); }
 
-    CatBoostWrapperApi::ModelCalcerHandle * get() { return handle; }
-    explicit operator CatBoostWrapperApi::ModelCalcerHandle * () { return handle; }
+    CatBoostWrapperAPI::ModelCalcerHandle * get() { return handle; }
+    explicit operator CatBoostWrapperAPI::ModelCalcerHandle * () { return handle; }
 };
 
 
 class CatBoostModelImpl : public ICatBoostModel
 {
 public:
-    CatBoostModelImpl(const CatBoostWrapperApi * api, const std::string & model_path) : api(api)
+    CatBoostModelImpl(const CatBoostWrapperAPI * api, const std::string & model_path) : api(api)
     {
         auto handle_ = std::make_unique<CatBoostModelHolder>(api);
         if (!handle_)
@@ -91,7 +91,7 @@ public:
         handle = std::move(handle_);
     }
 
-    ColumnPtr eval(const Columns & columns, size_t float_features_count, size_t cat_features_count) const override
+    ColumnPtr evaluate(const Columns & columns, size_t float_features_count, size_t cat_features_count) const override
     {
         if (columns.empty())
             throw Exception("Got empty columns list for CatBoost model.", ErrorCodes::BAD_ARGUMENTS);
@@ -143,7 +143,7 @@ public:
 
 private:
     std::unique_ptr<CatBoostModelHolder> handle;
-    const CatBoostWrapperApi * api;
+    const CatBoostWrapperAPI * api;
 
     /// Buffer should be allocated with features_count * column->size() elements.
     /// Place column elements in positions buffer[0], buffer[features_count], ... , buffer[size * features_count]
@@ -379,20 +379,20 @@ private:
 
 
 /// Holds CatBoost wrapper library and provides wrapper interface.
-class CatBoostLibHolder: public CatBoostWrapperApiProvider
+class CatBoostLibHolder: public CatBoostWrapperAPIProvider
 {
 public:
-    explicit CatBoostLibHolder(const std::string & lib_path) : lib_path(lib_path), lib(lib_path) { initApi(); }
+    explicit CatBoostLibHolder(const std::string & lib_path) : lib_path(lib_path), lib(lib_path) { initAPI(); }
 
-    const CatBoostWrapperApi & getApi() const override { return api; }
+    const CatBoostWrapperAPI & getAPI() const override { return api; }
     const std::string & getCurrentPath() const { return lib_path; }
 
 private:
-    CatBoostWrapperApi api;
+    CatBoostWrapperAPI api;
     std::string lib_path;
     boost::dll::shared_library lib;
 
-    void initApi();
+    void initAPI();
 
     template <typename T>
     void load(T& func, const std::string & name)
@@ -402,7 +402,7 @@ private:
     }
 };
 
-void CatBoostLibHolder::initApi()
+void CatBoostLibHolder::initAPI()
 {
     load(api.ModelCalcerCreate, "ModelCalcerCreate");
     load(api.ModelCalcerDelete, "ModelCalcerDelete");
@@ -455,7 +455,7 @@ CatBoostModel::CatBoostModel(const std::string & name, const std::string & model
 void CatBoostModel::init(const std::string & lib_path)
 {
     api_provider = getCatBoostWrapperHolder(lib_path);
-    api = &api_provider->getApi();
+    api = &api_provider->getAPI();
     model = std::make_unique<CatBoostModelImpl>(api, model_path);
 }
 
@@ -488,7 +488,7 @@ ColumnPtr CatBoostModel::evaluate(const Columns & columns) const
 {
     if (!model)
         throw Exception("CatBoost model was not loaded.", ErrorCodes::LOGICAL_ERROR);
-    return model->eval(columns, float_features_count, cat_features_count);
+    return model->evaluate(columns, float_features_count, cat_features_count);
 }
 
 }
