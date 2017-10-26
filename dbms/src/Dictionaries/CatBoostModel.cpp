@@ -91,7 +91,8 @@ public:
         handle = std::move(handle_);
     }
 
-    ColumnPtr evaluate(const Columns & columns, size_t float_features_count, size_t cat_features_count) const override
+    ColumnPtr evaluate(const ConstColumnPlainPtrs & columns,
+                       size_t float_features_count, size_t cat_features_count) const override
     {
         if (columns.empty())
             throw Exception("Got empty columns list for CatBoost model.", ErrorCodes::BAD_ARGUMENTS);
@@ -123,11 +124,11 @@ public:
         bool cat_features_are_strings = true;
         for (size_t i = float_features_count; i < float_features_count + cat_features_count; ++i)
         {
-            const auto & column = columns[i];
+            auto column = columns[i];
             if (column->isNumeric())
                 cat_features_are_strings = false;
-            else if (!(typeid_cast<const ColumnString *>(column.get())
-                       || typeid_cast<const ColumnFixedString *>(column.get())))
+            else if (!(typeid_cast<const ColumnString *>(column)
+                       || typeid_cast<const ColumnFixedString *>(column)))
             {
                 std::string msg;
                 {
@@ -148,7 +149,7 @@ private:
     /// Buffer should be allocated with features_count * column->size() elements.
     /// Place column elements in positions buffer[0], buffer[features_count], ... , buffer[size * features_count]
     template <typename T>
-    void placeColumnAsNumber(const ColumnPtr & column, T * buffer, size_t features_count) const
+    void placeColumnAsNumber(const IColumn * column, T * buffer, size_t features_count) const
     {
         size_t size = column->size();
         FieldVisitorConvertToNumber<T> visitor;
@@ -200,7 +201,8 @@ private:
 
     /// Place columns into buffer, returns column which holds placed data. Buffer should contains column->size() values.
     template <typename T>
-    ColumnPtr placeNumericColumns(const Columns & columns, size_t offset, size_t size, const T** buffer) const
+    ColumnPtr placeNumericColumns(const ConstColumnPlainPtrs & columns,
+                                  size_t offset, size_t size, const T** buffer) const
     {
         if (size == 0)
             return nullptr;
@@ -209,7 +211,7 @@ private:
         T* data = data_column->getData().data();
         for (size_t i = 0; i < size; ++i)
         {
-            const auto & column = columns[offset + i];
+            auto column = columns[offset + i];
             if (column->isNumeric())
                 placeColumnAsNumber(column, data + i, size);
         }
@@ -227,7 +229,7 @@ private:
     /// Place columns into buffer, returns data which was used for fixed string columns.
     /// Buffer should contains column->size() values, each value contains size strings.
     std::vector<PODArray<char>> placeStringColumns(
-            const Columns & columns, size_t offset, size_t size, const char ** buffer) const
+            const ConstColumnPlainPtrs & columns, size_t offset, size_t size, const char ** buffer) const
     {
         if (size == 0)
             return {};
@@ -235,10 +237,10 @@ private:
         std::vector<PODArray<char>> data;
         for (size_t i = 0; i < size; ++i)
         {
-            const auto & column = columns[offset + i];
-            if (auto column_string = typeid_cast<const ColumnString *>(column.get()))
+            auto column = columns[offset + i];
+            if (auto column_string = typeid_cast<const ColumnString *>(column))
                 placeStringColumn(*column_string, buffer + i, size);
-            else if (auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column.get()))
+            else if (auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column))
                 data.push_back(placeFixedStringColumn(*column_fixed_string, buffer + i, size));
             else
                 throw Exception("Cannot place string column.", ErrorCodes::LOGICAL_ERROR);
@@ -273,7 +275,7 @@ private:
     /// buffer contains column->size() rows and size columns.
     /// For int cat features calc hash inplace.
     /// For string cat features calc hash from column rows.
-    void calcHashes(const Columns & columns, size_t offset, size_t size, const int ** buffer) const
+    void calcHashes(const ConstColumnPlainPtrs & columns, size_t offset, size_t size, const int ** buffer) const
     {
         if (size == 0)
             return;
@@ -282,10 +284,10 @@ private:
         std::vector<PODArray<char>> data;
         for (size_t i = 0; i < size; ++i)
         {
-            const auto & column = columns[offset + i];
-            if (auto column_string = typeid_cast<const ColumnString *>(column.get()))
+            auto column = columns[offset + i];
+            if (auto column_string = typeid_cast<const ColumnString *>(column))
                 calcStringHashes(column_string, i, buffer);
-            else if (auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column.get()))
+            else if (auto column_fixed_string = typeid_cast<const ColumnFixedString *>(column))
                 calcStringHashes(column_fixed_string, i, buffer);
             else
                 calcIntHashes(column_size, i, buffer);
@@ -308,7 +310,7 @@ private:
     ///  * CalcModelPredictionFlat if no cat features
     ///  * CalcModelPrediction if all cat features are strings
     ///  * CalcModelPredictionWithHashedCatFeatures if has int cat features.
-    ColumnPtr evalImpl(const Columns & columns, size_t float_features_count, size_t cat_features_count,
+    ColumnPtr evalImpl(const ConstColumnPlainPtrs & columns, size_t float_features_count, size_t cat_features_count,
                        bool cat_features_are_strings) const
     {
         std::string error_msg = "Error occurred while applying CatBoost model: ";
@@ -344,7 +346,7 @@ private:
             auto cat_features_buf = cat_features.data();
 
             fillCatFeaturesBuffer(cat_features_buf, cat_features_holder.data(), column_size, cat_features_count);
-            /// Fixed strings are stored without termination zero, so have to copy data into fixed_strings_data
+            /// Fixed strings are stored without termination zero, so have to copy data into fixed_strings_data.
             auto fixed_strings_data = placeStringColumns(columns, float_features_count,
                                                          cat_features_count, cat_features_holder.data());
 
@@ -484,7 +486,7 @@ size_t CatBoostModel::getCatFeaturesCount() const
     return cat_features_count;
 }
 
-ColumnPtr CatBoostModel::evaluate(const Columns & columns) const
+ColumnPtr CatBoostModel::evaluate(const ConstColumnPlainPtrs & columns) const
 {
     if (!model)
         throw Exception("CatBoost model was not loaded.", ErrorCodes::LOGICAL_ERROR);
