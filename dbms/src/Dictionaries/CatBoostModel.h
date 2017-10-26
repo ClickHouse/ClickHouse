@@ -23,14 +23,14 @@ public:
     virtual ~ICatBoostModel() = default;
     /// Evaluate model. Use first `float_features_count` columns as float features,
     /// the others `cat_features_count` as categorical features.
-    virtual ColumnPtr evaluate(const Columns & columns, size_t float_features_count, size_t cat_features_count) const = 0;
+    virtual ColumnPtr evaluate(const ConstColumnPlainPtrs & columns, size_t float_features_count, size_t cat_features_count) const = 0;
 };
 
 /// General ML model evaluator interface.
 class IModel : public IExternalLoadable
 {
 public:
-    virtual ColumnPtr evaluate(const Columns & columns) const = 0;
+    virtual ColumnPtr evaluate(const ConstColumnPlainPtrs & columns) const = 0;
 };
 
 class CatBoostModel : public IModel
@@ -40,7 +40,7 @@ public:
                   const std::string & lib_path, const ExternalLoadableLifetime & lifetime,
                   size_t float_features_count, size_t cat_features_count);
 
-    ColumnPtr evaluate(const Columns & columns) const override;
+    ColumnPtr evaluate(const ConstColumnPlainPtrs & columns) const override;
 
     size_t getFloatFeaturesCount() const;
     size_t getCatFeaturesCount() const;
