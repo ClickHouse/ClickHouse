@@ -127,7 +127,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
         try
         {
-            auto loadable_ptr = failed_loadable_object.second.loadable->cloneObject();
+            auto loadable_ptr = failed_loadable_object.second.loadable->clone();
             if (const auto exception_ptr = loadable_ptr->getCreationException())
             {
                 /// recalculate next attempt time
@@ -211,7 +211,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
                 if (current->isModified())
                 {
                     /// create new version of loadable object
-                    auto new_version = current->cloneObject();
+                    auto new_version = current->clone();
 
                     if (const auto exception_ptr = new_version->getCreationException())
                         std::rethrow_exception(exception_ptr);
