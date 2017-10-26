@@ -173,7 +173,6 @@ struct ProcessListForUser
     QueryToElement queries;
 
     /// Limit and counter for memory of all simultaneously running queries of single user.
-    //std::shared_ptr<MemoryTracker> 
     MemoryTrackerPtr user_memory_tracker {std::make_shared<MemoryTracker>()};
 
     /// Count network usage for all simultaneously running queries of single user.
