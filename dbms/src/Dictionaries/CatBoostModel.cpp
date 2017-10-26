@@ -1,6 +1,5 @@
 #include <Dictionaries/CatBoostModel.h>
 #include <Core/FieldVisitors.h>
-#include <boost/dll/import.hpp>
 #include <mutex>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -9,6 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/PODArray.h>
+#include <Common/SharedLibrary.h>
 
 namespace DB
 {
@@ -392,16 +392,12 @@ public:
 private:
     CatBoostWrapperAPI api;
     std::string lib_path;
-    boost::dll::shared_library lib;
+    SharedLibrary lib;
 
     void initAPI();
 
     template <typename T>
-    void load(T& func, const std::string & name)
-    {
-        using Type = typename std::remove_pointer<T>::type;
-        func = lib.get<Type>(name);
-    }
+    void load(T& func, const std::string & name) { func = lib.get<T>(name); }
 };
 
 void CatBoostLibHolder::initAPI()
