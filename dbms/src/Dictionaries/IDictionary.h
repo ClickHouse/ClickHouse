@@ -41,8 +41,6 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual bool isCached() const = 0;
 
-    virtual std::unique_ptr<IExternalLoadable> clone() const = 0;
-
     virtual const IDictionarySource * getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
@@ -59,11 +57,6 @@ struct IDictionaryBase : public IExternalLoadable
     {
         auto source = getSource();
         return source && source->isModified();
-    }
-
-    std::unique_ptr<IExternalLoadable> cloneObject() const override
-    {
-        return clone();
     }
 
     std::shared_ptr<IDictionaryBase> shared_from_this()

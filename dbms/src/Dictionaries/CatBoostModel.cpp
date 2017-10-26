@@ -469,7 +469,7 @@ bool CatBoostModel::isModified() const
     return true;
 }
 
-std::unique_ptr<IExternalLoadable> CatBoostModel::cloneObject() const
+std::unique_ptr<IExternalLoadable> CatBoostModel::clone() const
 {
     return std::make_unique<CatBoostModel>(name, model_path, lib_path, lifetime, float_features_count, cat_features_count);
 }

@@ -55,7 +55,7 @@ public:
 
     bool isModified() const override;
 
-    std::unique_ptr<IExternalLoadable> cloneObject() const override;
+    std::unique_ptr<IExternalLoadable> clone() const override;
 
     std::exception_ptr getCreationException() const override { return creation_exception; }
 
