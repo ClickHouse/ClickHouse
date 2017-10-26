@@ -27,7 +27,7 @@ using TestResult = std::pair<bool, std::string>;
 void run();
 void performTests(const TestEntries & entries);
 TestResult check(const TestEntry & entry);
-bool parse(DB::ASTPtr  & ast, const std::string & query);
+bool parse(DB::ASTPtr & ast, const std::string & query);
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs);
 void reorder(DB::IAST * ast);
 

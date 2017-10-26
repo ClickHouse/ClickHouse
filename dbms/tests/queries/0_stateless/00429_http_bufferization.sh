@@ -47,7 +47,7 @@ function check_exception_handling() {
 
     check_only_exception         "max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=1" 5000000
     check_only_exception         "max_result_bytes=4000000&wait_end_of_query=1" 5000000
-    check_last_line_exception     "max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=0" 5000000
+    check_last_line_exception    "max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=0" 5000000
 }
 
 check_exception_handling
