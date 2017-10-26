@@ -263,13 +263,12 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!s_rparen.ignore(pos, expected))
                 return false;
 
-            if (!is_temporary && !storage_p.parse(pos, storage, expected))
+            if (!storage_p.parse(pos, storage, expected) && !is_temporary)
                 return false;
         }
         else
         {
-            if (!is_temporary)
-                storage_p.parse(pos, storage, expected);
+            storage_p.parse(pos, storage, expected);
 
             if (!s_as.ignore(pos, expected))
                 return false;
@@ -288,8 +287,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
 
                 /// Optional - ENGINE can be specified.
-                if (!is_temporary)
-                    storage_p.parse(pos, storage, expected);
+                storage_p.parse(pos, storage, expected);
             }
         }
     }
