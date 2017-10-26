@@ -52,6 +52,10 @@ struct CatBoostWrapperAPI
     int (* GetStringCatFeatureHash)(const char * data, size_t size);
 
     int (* GetIntegerCatFeatureHash)(long long val);
+
+    size_t (* GetFloatFeaturesCount)(ModelCalcerHandle* calcer);
+
+    size_t (* GetCatFeaturesCount)(ModelCalcerHandle* calcer);
 };
 
 
@@ -94,6 +98,8 @@ public:
     ColumnPtr evaluate(const ConstColumnPlainPtrs & columns,
                        size_t float_features_count, size_t cat_features_count) const override
     {
+        checkFeaturesCount(float_features_count, cat_features_count);
+
         if (columns.empty())
             throw Exception("Got empty columns list for CatBoost model.", ErrorCodes::BAD_ARGUMENTS);
 
@@ -140,6 +146,25 @@ public:
         }
 
         return evalImpl(columns, float_features_count, cat_features_count, cat_features_are_strings);
+    }
+
+    void checkFeaturesCount(size_t float_features_count, size_t cat_features_count) const
+    {
+        if (api->GetFloatFeaturesCount)
+        {
+            size_t float_features_in_model = api->GetCatFeaturesCount(handle->get());
+            if (float_features_count != float_features_in_model)
+                throw Exception("CatBoost model expected " + std::to_string(float_features_in_model) + " float features"
+                                + ", but " + std::to_string(float_features_count) + " was provided.");
+        }
+
+        if (api->GetCatFeaturesCount)
+        {
+            size_t cat_features_in_model = api->GetCatFeaturesCount(handle->get());
+            if (cat_features_count != cat_features_in_model)
+                throw Exception("CatBoost model expected " + std::to_string(cat_features_in_model) + " cat features"
+                                + ", but " + std::to_string(cat_features_count) + " was provided.");
+        }
     }
 
 private:
@@ -398,6 +423,9 @@ private:
 
     template <typename T>
     void load(T& func, const std::string & name) { func = lib.get<T>(name); }
+
+    template <typename T>
+    void tryLoad(T& func, const std::string & name) { func = lib.get<T>(name); }
 };
 
 void CatBoostLibHolder::initAPI()
@@ -411,6 +439,9 @@ void CatBoostLibHolder::initAPI()
     load(api.CalcModelPredictionWithHashedCatFeatures, "CalcModelPredictionWithHashedCatFeatures");
     load(api.GetStringCatFeatureHash, "GetStringCatFeatureHash");
     load(api.GetIntegerCatFeatureHash, "GetIntegerCatFeatureHash");
+
+    tryLoad(api.GetFloatFeaturesCount, "GetFloatFeaturesCount");
+    tryLoad(api.GetIntegerCatFeatureHash, "GetIntegerCatFeatureHash");
 }
 
 std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & lib_path)
