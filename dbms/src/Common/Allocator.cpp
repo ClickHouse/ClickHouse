@@ -54,11 +54,11 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
     if (size >= MMAP_THRESHOLD)
     {
         if (alignment > MMAP_MIN_ALIGNMENT)
-            throw DB::Exception("Too large alignment: more than page size.", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception("Too large alignment: more than page size (" + DB::toString(size) + " bytes).", DB::ErrorCodes::BAD_ARGUMENTS);
 
         buf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == buf)
-            DB::throwFromErrno("Allocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            DB::throwFromErrno("Allocator: Cannot mmap " + DB::toString(size) + " bytes.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         /// No need for zero-fill, because mmap guarantees it.
     }
@@ -72,7 +72,7 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
                 buf = ::malloc(size);
 
             if (nullptr == buf)
-                DB::throwFromErrno("Allocator: Cannot malloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno("Allocator: Cannot malloc " + DB::toString(size) + " bytes.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
         else
         {
@@ -80,7 +80,7 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
             int res = posix_memalign(&buf, alignment, size);
 
             if (0 != res)
-                DB::throwFromErrno("Cannot allocate memory (posix_memalign)", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
+                DB::throwFromErrno("Cannot allocate memory (posix_memalign) " + DB::toString(size) + " bytes.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
 
             if (clear_memory)
                 memset(buf, 0, size);
@@ -97,7 +97,7 @@ void Allocator<clear_memory_>::free(void * buf, size_t size)
     if (size >= MMAP_THRESHOLD)
     {
         if (0 != munmap(buf, size))
-            DB::throwFromErrno("Allocator: Cannot munmap.", DB::ErrorCodes::CANNOT_MUNMAP);
+            DB::throwFromErrno("Allocator: Cannot munmap " + DB::toString(size) + " bytes.", DB::ErrorCodes::CANNOT_MUNMAP);
     }
     else
     {
@@ -119,7 +119,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
         buf = ::realloc(buf, new_size);
 
         if (nullptr == buf)
-            DB::throwFromErrno("Allocator: Cannot realloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            DB::throwFromErrno("Allocator: Cannot realloc from " + DB::toString(old_size) + " to " + DB::toString(new_size) + " bytes.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         if (clear_memory)
             memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
@@ -144,7 +144,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
         buf = ::realloc(buf, new_size);
 
         if (nullptr == buf)
-            DB::throwFromErrno("Allocator: Cannot realloc.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            DB::throwFromErrno("Allocator: Cannot realloc from " + DB::toString(old_size) + " to " + DB::toString(new_size) + " bytes.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         if (clear_memory)
             memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
