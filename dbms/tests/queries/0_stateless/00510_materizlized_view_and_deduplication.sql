@@ -11,11 +11,11 @@ CREATE TABLE test.without_deduplication(x UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/test/without_deduplication', 'r1') ORDER BY x SETTINGS replicated_deduplication_window = 0;
 
 CREATE MATERIALIZED VIEW test.with_deduplication_mv
-    ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/test/with_deduplication_mv', 'r1', dummy, dummy, 8192)
-    AS SELECT toDate(0) AS dummy, countState(x) AS cnt FROM test.with_deduplication;
+    ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/test/with_deduplication_mv', 'r1') ORDER BY dummy
+    AS SELECT 0 AS dummy, countState(x) AS cnt FROM test.with_deduplication;
 CREATE MATERIALIZED VIEW test.without_deduplication_mv
-    ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/test/without_deduplication_mv', 'r1', dummy, dummy, 8192)
-    AS SELECT toDate(0) AS dummy, countState(x) AS cnt FROM test.without_deduplication;
+    ENGINE = ReplicatedAggregatingMergeTree('/clickhouse/tables/test/without_deduplication_mv', 'r1') ORDER BY dummy
+    AS SELECT 0 AS dummy, countState(x) AS cnt FROM test.without_deduplication;
 
 INSERT INTO test.with_deduplication VALUES (42);
 INSERT INTO test.with_deduplication VALUES (42);
@@ -34,12 +34,12 @@ SELECT countMerge(cnt) FROM test.with_deduplication_mv;
 SELECT countMerge(cnt) FROM test.without_deduplication_mv;
 
 -- Explicit insert is deduplicated
-ALTER TABLE test.`.inner.with_deduplication_mv` DROP PARTITION 197001;
-ALTER TABLE test.`.inner.without_deduplication_mv` DROP PARTITION 197001;
-INSERT INTO test.`.inner.with_deduplication_mv` SELECT toDate(0) AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;
-INSERT INTO test.`.inner.with_deduplication_mv` SELECT toDate(0) AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;
-INSERT INTO test.`.inner.without_deduplication_mv` SELECT toDate(0) AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;
-INSERT INTO test.`.inner.without_deduplication_mv` SELECT toDate(0) AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;
+ALTER TABLE test.`.inner.with_deduplication_mv` DROP PARTITION ID 'all';
+ALTER TABLE test.`.inner.without_deduplication_mv` DROP PARTITION ID 'all';
+INSERT INTO test.`.inner.with_deduplication_mv` SELECT 0 AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;
+INSERT INTO test.`.inner.with_deduplication_mv` SELECT 0 AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;
+INSERT INTO test.`.inner.without_deduplication_mv` SELECT 0 AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;
+INSERT INTO test.`.inner.without_deduplication_mv` SELECT 0 AS dummy, arrayReduce('countState', [toUInt32(42)]) AS cnt;
 
 SELECT '';
 SELECT countMerge(cnt) FROM test.with_deduplication_mv;
