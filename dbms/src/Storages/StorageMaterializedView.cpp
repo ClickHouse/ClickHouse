@@ -57,7 +57,7 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
 StorageMaterializedView::StorageMaterializedView(
     const String & table_name_,
     const String & database_name_,
-    Context & context_,
+    Context & local_context,
     const ASTCreateQuery & query,
     NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
@@ -65,7 +65,7 @@ StorageMaterializedView::StorageMaterializedView(
     const ColumnDefaults & column_defaults_,
     bool attach_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    database_name(database_name_), context(context_), columns(columns_)
+    database_name(database_name_), global_context(local_context.getGlobalContext()), columns(columns_)
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -76,7 +76,7 @@ StorageMaterializedView::StorageMaterializedView(
     extractDependentTable(*query.select, select_database_name, select_table_name);
 
     if (!select_table_name.empty())
-        context.getGlobalContext().addDependency(
+        global_context.addDependency(
             DatabaseAndTableName(select_database_name, select_table_name),
             DatabaseAndTableName(database_name, table_name));
 
@@ -96,14 +96,14 @@ StorageMaterializedView::StorageMaterializedView(
         /// Execute the query.
         try
         {
-            InterpreterCreateQuery create_interpreter(manual_create_query, context);
+            InterpreterCreateQuery create_interpreter(manual_create_query, local_context);
             create_interpreter.execute();
         }
         catch (...)
         {
             /// In case of any error we should remove dependency to the view.
             if (!select_table_name.empty())
-                context.getGlobalContext().removeDependency(
+                global_context.removeDependency(
                     DatabaseAndTableName(select_database_name, select_table_name),
                     DatabaseAndTableName(database_name, table_name));
 
@@ -140,20 +140,20 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 
 void StorageMaterializedView::drop()
 {
-    context.getGlobalContext().removeDependency(
+    global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
         DatabaseAndTableName(database_name, table_name));
 
     auto inner_table_name = getInnerTableName();
 
-    if (context.tryGetTable(database_name, inner_table_name))
+    if (global_context.tryGetTable(database_name, inner_table_name))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->database = database_name;
         drop_query->table = inner_table_name;
         ASTPtr ast_drop_query = drop_query;
-        InterpreterDropQuery drop_interpreter(ast_drop_query, context);
+        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
     }
 }
@@ -165,7 +165,7 @@ bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & part
 
 StoragePtr StorageMaterializedView::getInnerTable() const
 {
-    return context.getTable(database_name, getInnerTableName());
+    return global_context.getTable(database_name, getInnerTableName());
 }
 
 }
