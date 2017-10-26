@@ -11,41 +11,29 @@ namespace ErrorCodes
 
 namespace
 {
-const ExternalLoaderUpdateSettings & getExternalModelsUpdateSettings()
-{
-    static ExternalLoaderUpdateSettings settings;
-    static std::once_flag flag;
 
-    std::call_once(flag, [] {
-        settings.check_period_sec = 5;
-        settings.backoff_initial_sec = 5;
-        /// 10 minutes
-        settings.backoff_max_sec = 10 * 60;
-    });
+    const ExternalLoaderUpdateSettings externalModelsUpdateSettings;
 
-    return settings;
-}
+    const ExternalLoaderConfigSettings & getExternalModelsConfigSettings()
+    {
+        static ExternalLoaderConfigSettings settings;
+        static std::once_flag flag;
 
-const ExternalLoaderConfigSettings & getExternalModelsConfigSettings()
-{
-    static ExternalLoaderConfigSettings settings;
-    static std::once_flag flag;
+        std::call_once(flag, [] {
+            settings.external_config = "model";
+            settings.external_name = "name";
 
-    std::call_once(flag, [] {
-        settings.external_config = "model";
-        settings.external_name = "name";
+            settings.path_setting_name = "models_config";
+        });
 
-        settings.path_setting_name = "models_config";
-    });
-
-    return settings;
-}
+        return settings;
+    }
 }
 
 
 ExternalModels::ExternalModels(Context & context, bool throw_on_error)
         : ExternalLoader(context.getConfigRef(),
-                         getExternalModelsUpdateSettings(),
+                         externalModelsUpdateSettings,
                          getExternalModelsConfigSettings(),
                          &Logger::get("ExternalModels"),
                          "external model"),

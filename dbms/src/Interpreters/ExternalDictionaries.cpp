@@ -7,20 +7,7 @@ namespace DB
 
 namespace
 {
-    const ExternalLoaderUpdateSettings & getExternalDictionariesUpdateSettings()
-    {
-        static ExternalLoaderUpdateSettings settings;
-        static std::once_flag flag;
-
-        std::call_once(flag, [] {
-            settings.check_period_sec = 5;
-            settings.backoff_initial_sec = 5;
-            /// 10 minutes
-            settings.backoff_max_sec = 10 * 60;
-        });
-
-        return settings;
-    }
+    const ExternalLoaderUpdateSettings externalDictionariesUpdateSettings;
 
     const ExternalLoaderConfigSettings & getExternalDictionariesConfigSettings()
     {
@@ -41,7 +28,7 @@ namespace
 
 ExternalDictionaries::ExternalDictionaries(Context & context, bool throw_on_error)
         : ExternalLoader(context.getConfigRef(),
-                         getExternalDictionariesUpdateSettings(),
+                         externalDictionariesUpdateSettings,
                          getExternalDictionariesConfigSettings(),
                          &Logger::get("ExternalDictionaries"),
                          "external dictionary"),

@@ -24,6 +24,12 @@ struct ExternalLoaderUpdateSettings
     UInt64 backoff_initial_sec = 5;
     /// 10 minutes
     UInt64 backoff_max_sec = 10 * 60;
+
+    ExternalLoaderUpdateSettings() = default;
+    ExternalLoaderUpdateSettings(UInt64 check_period_sec, UInt64 backoff_initial_sec, UInt64 backoff_max_sec)
+            : check_period_sec(check_period_sec),
+              backoff_initial_sec(backoff_initial_sec),
+              backoff_max_sec(backoff_max_sec) {}
 };
 
 
