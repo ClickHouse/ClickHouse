@@ -101,8 +101,18 @@ protected:
     virtual std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
                                                       const std::string & config_prefix) = 0;
 
+    class LockedObjectsMap
+    {
+    public:
+        LockedObjectsMap(std::mutex & mutex, const ObjectsMap & objectsMap) : lock(mutex), objectsMap(objectsMap) {}
+        const ObjectsMap & get() { return objectsMap; }
+    private:
+        std::unique_lock<std::mutex> lock;
+        const ObjectsMap & objectsMap;
+    };
+
     /// Direct access to objects.
-    std::tuple<std::unique_lock<std::mutex>, const ObjectsMap &> getObjectsMap() const;
+    LockedObjectsMap getObjectsMap() const;
 
     /// Should be called in derived constructor (to avoid pure virtual call).
     void init(bool throw_on_error);

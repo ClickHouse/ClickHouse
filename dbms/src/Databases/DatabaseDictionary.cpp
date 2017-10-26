@@ -27,7 +27,7 @@ void DatabaseDictionary::loadTables(Context & context, ThreadPool * thread_pool,
 Tables DatabaseDictionary::loadTables()
 {
     auto objects_map = external_dictionaries.getObjectsMap();
-    const auto & dictionaries = std::get<1>(objects_map);
+    const auto & dictionaries = objects_map.get();
 
     Tables tables;
     for (const auto & pair : dictionaries)
@@ -52,7 +52,7 @@ bool DatabaseDictionary::isTableExist(
     const String & table_name) const
 {
     auto objects_map = external_dictionaries.getObjectsMap();
-    const auto & dictionaries = std::get<1>(objects_map);
+    const auto & dictionaries = objects_map.get();
     return dictionaries.count(table_name) && !deleted_tables.count(table_name);
 }
 
@@ -61,7 +61,7 @@ StoragePtr DatabaseDictionary::tryGetTable(
     const String & table_name)
 {
     auto objects_map = external_dictionaries.getObjectsMap();
-    const auto & dictionaries = std::get<1>(objects_map);
+    const auto & dictionaries = objects_map.get();
 
     if (deleted_tables.count(table_name))
         return {};
@@ -90,7 +90,7 @@ DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context)
 bool DatabaseDictionary::empty(const Context & context) const
 {
     auto objects_map = external_dictionaries.getObjectsMap();
-    const auto & dictionaries = std::get<1>(objects_map);
+    const auto & dictionaries = objects_map.get();
     for (const auto & pair : dictionaries)
         if (pair.second.loadable && !deleted_tables.count(pair.first))
             return false;

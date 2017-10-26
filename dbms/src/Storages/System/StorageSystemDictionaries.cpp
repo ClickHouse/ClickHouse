@@ -77,7 +77,7 @@ BlockInputStreams StorageSystemDictionaries::read(
 
     const auto & external_dictionaries = context.getExternalDictionaries();
     auto objects_map = external_dictionaries.getObjectsMap();
-    const auto & dictionaries = std::get<1>(objects_map);
+    const auto & dictionaries = objects_map.get();
 
     for (const auto & dict_info : dictionaries)
     {
