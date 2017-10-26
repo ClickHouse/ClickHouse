@@ -113,13 +113,13 @@ public:
     /// что в области применения этой функции не было и не будет недель, состоящих не из семи дней)
     inline unsigned toRelativeWeekNum(DayNum_t d) const
     {
-        return (d - (lut[d].day_of_week - 1)) / 7;
+        return (d + 8 - lut[d].day_of_week) / 7;
     }
 
     inline unsigned toRelativeWeekNum(time_t t) const
     {
         size_t index = findIndex(t);
-        return (index - (lut[index].day_of_week - 1)) / 7;
+        return (index + 8 - lut[index].day_of_week) / 7;
     }
 
     /// номер месяца, начиная с какого-то месяца в прошлом (год * 12 + номер месяца в году)

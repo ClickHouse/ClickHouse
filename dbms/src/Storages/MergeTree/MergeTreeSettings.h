@@ -47,7 +47,7 @@ struct MergeTreeSettings
     /** If table contains at least that many active parts, artificially slow down insert into table. */       \
     M(SettingUInt64, parts_to_delay_insert, 150)                                                              \
                                                                                                               \
-    /** If more than this number active parts, throw 'Too much parts ...' exception */                        \
+    /** If more than this number active parts, throw 'Too many parts ...' exception */                        \
     M(SettingUInt64, parts_to_throw_insert, 300)                                                              \
                                                                                                               \
     /** Max delay of inserting data into MergeTree table in seconds, if there are a lot of unmerged parts. */ \

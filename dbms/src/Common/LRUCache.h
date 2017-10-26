@@ -165,7 +165,7 @@ private:
     /// Represents pending insertion attempt.
     struct InsertToken
     {
-        InsertToken(LRUCache & cache_) : cache(cache_) {}
+        explicit InsertToken(LRUCache & cache_) : cache(cache_) {}
 
         std::mutex mutex;
         bool cleaned_up = false; /// Protected by the token mutex

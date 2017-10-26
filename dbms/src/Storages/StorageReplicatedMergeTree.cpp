@@ -1237,7 +1237,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
         static std::atomic_uint total_fetches {0};
         if (data.settings.replicated_max_parallel_fetches && total_fetches >= data.settings.replicated_max_parallel_fetches)
         {
-            throw Exception("Too much total fetches from replicas, maximum: " + data.settings.replicated_max_parallel_fetches.toString(),
+            throw Exception("Too many total fetches from replicas, maximum: " + data.settings.replicated_max_parallel_fetches.toString(),
                 ErrorCodes::TOO_MUCH_FETCHES);
         }
 
@@ -1246,7 +1246,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 
         if (data.settings.replicated_max_parallel_fetches_for_table && current_table_fetches >= data.settings.replicated_max_parallel_fetches_for_table)
         {
-            throw Exception("Too much fetches from replicas for table, maximum: " + data.settings.replicated_max_parallel_fetches_for_table.toString(),
+            throw Exception("Too many fetches from replicas for table, maximum: " + data.settings.replicated_max_parallel_fetches_for_table.toString(),
                 ErrorCodes::TOO_MUCH_FETCHES);
         }
 
@@ -3382,7 +3382,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
             LOG_INFO(log, "Some of parts (" << missing_parts.size() << ") are missing. Will try to fetch covering parts.");
 
         if (try_no >= 5)
-            throw Exception("Too much retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MUCH_RETRIES_TO_FETCH_PARTS);
+            throw Exception("Too many retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MUCH_RETRIES_TO_FETCH_PARTS);
 
         Strings parts = getZooKeeper()->getChildren(best_replica_path + "/parts");
         ActiveDataPartSet active_parts_set(data.format_version, parts);

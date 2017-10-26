@@ -42,7 +42,6 @@ add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
-add_headers_and_sources(dbms src/DataBases/Distributed)
 add_headers_and_sources(dbms src/Dictionaries)
 add_headers_and_sources(dbms src/Dictionaries/Embedded)
 add_headers_and_sources(dbms src/Interpreters)
@@ -93,8 +92,6 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 
 
 list(REMOVE_ITEM dbms_sources
-    src/Storages/StorageCloud.cpp
-    src/Databases/DatabaseCloud.cpp
     src/Common/StringUtils.cpp)
 
 if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
@@ -116,7 +113,7 @@ else ()
 endif ()
 
 
-if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
     set_source_files_properties(
         src/Dictionaries/FlatDictionary.cpp
