@@ -11,7 +11,7 @@ namespace DB
 
 class Context;
 
-/// Manages user-defined dictionaries.
+/// Manages user-defined models.
 class ExternalModels : public ExternalLoader
 {
 public:

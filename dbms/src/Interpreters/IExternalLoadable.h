@@ -22,6 +22,8 @@ struct ExternalLoadableLifetime final
     ExternalLoadableLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };
 
+
+/// Basic interface for external loadable objects. Is used in ExternalLoader.
 class IExternalLoadable : public std::enable_shared_from_this<IExternalLoadable>
 {
 public:
@@ -30,11 +32,11 @@ public:
     virtual const ExternalLoadableLifetime & getLifetime() const = 0;
 
     virtual std::string getName() const = 0;
-
+    /// True if object can be updated when lifetime exceeded.
     virtual bool supportUpdates() const = 0;
-
+    /// If lifetime exceeded and isModified() ExternalLoader replace current object with the result of clone().
     virtual bool isModified() const = 0;
-
+    /// Returns new object with the same configuration. Is used to update modified object when lifetime exceeded.
     virtual std::unique_ptr<IExternalLoadable> clone() const = 0;
 
     virtual std::exception_ptr getCreationException() const = 0;
