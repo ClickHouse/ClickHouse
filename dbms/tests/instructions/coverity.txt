@@ -5,7 +5,7 @@ export PATH=$PATH:/home/milovidov/cov-analysis-linux64-2017.07/bin
 
 mkdir ClickHouse_coverity
 cd ClickHouse_coverity
-git clone git@github.com:yandex/ClickHouse.git .
+git clone --recursive git@github.com:yandex/ClickHouse.git .
 
 mkdir build
 cd build
