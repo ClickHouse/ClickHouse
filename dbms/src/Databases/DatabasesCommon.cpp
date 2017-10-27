@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+}
+
 
 String getTableDefinitionFromCreateQuery(const ASTPtr & query)
 {
@@ -30,7 +35,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
         create.select = nullptr;
 
     /// For "MATERIALIZED VIEW x TO y" it's necessary to save destination table
-    if (engine != "MaterializedView" || create.inner_storage)
+    if (!(create.is_materialized_view && !create.storage))
     {
         create.as_database.clear();
         create.as_table.clear();

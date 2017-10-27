@@ -81,10 +81,10 @@ StorageMaterializedView::StorageMaterializedView(
             DatabaseAndTableName(database_name, table_name));
 
     // If the destination table is not set, use inner table
-    if (!create.inner_storage)
+    if (!query.storage)
     {
-        target_database_name = create.as_database;
-        target_table_name = create.as_table;
+        target_database_name = query.as_database;
+        target_table_name = query.as_table;
     }
     else
     {

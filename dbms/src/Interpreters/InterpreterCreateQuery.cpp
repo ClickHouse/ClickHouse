@@ -434,12 +434,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         storage_ast->set(storage_ast->engine, engine_ast);
         create.set(create.storage, storage_ast);
     }
-    else if (create.is_temporary)
-        set_engine("Memory");
-    else if (create.is_view)
-        set_engine("View");
-    else if (create.is_materialized_view)
-        set_engine("MaterializedView");
     else if (!create.as_table.empty())
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
