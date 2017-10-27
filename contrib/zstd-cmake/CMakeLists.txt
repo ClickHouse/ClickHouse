@@ -60,8 +60,12 @@ SET(Sources
         ${LIBRARY_DIR}/compress/fse_compress.c
         ${LIBRARY_DIR}/compress/huf_compress.c
         ${LIBRARY_DIR}/compress/zstd_compress.c
-        ${LIBRARY_DIR}/compress/zstdmt_compress.c
+        ${LIBRARY_DIR}/compress/zstd_double_fast.c
+        ${LIBRARY_DIR}/compress/zstd_fast.c
+        ${LIBRARY_DIR}/compress/zstd_lazy.c
         ${LIBRARY_DIR}/compress/zstd_ldm.c
+        ${LIBRARY_DIR}/compress/zstdmt_compress.c
+        ${LIBRARY_DIR}/compress/zstd_opt.c
         ${LIBRARY_DIR}/decompress/huf_decompress.c
         ${LIBRARY_DIR}/decompress/zstd_decompress.c
         ${LIBRARY_DIR}/deprecated/zbuff_common.c
@@ -82,6 +86,11 @@ SET(Headers
         ${LIBRARY_DIR}/common/xxhash.h
         ${LIBRARY_DIR}/common/zstd_errors.h
         ${LIBRARY_DIR}/common/zstd_internal.h
+        ${LIBRARY_DIR}/compress/zstd_compress.h
+        ${LIBRARY_DIR}/compress/zstd_double_fast.h
+        ${LIBRARY_DIR}/compress/zstd_fast.h
+        ${LIBRARY_DIR}/compress/zstd_lazy.h
+        ${LIBRARY_DIR}/compress/zstd_ldm.h
         ${LIBRARY_DIR}/compress/zstdmt_compress.h
         ${LIBRARY_DIR}/compress/zstd_opt.h
         ${LIBRARY_DIR}/compress/zstd_ldm.h
