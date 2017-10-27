@@ -6,7 +6,7 @@
 template <typename F, typename C>
 struct RangeFiltered
 {
-    using RawIterator = typename C:: iterator;
+    using RawIterator = typename C::iterator;
     class Iterator;
 
     /// Will iterate over elements for which filter(*it) == true
@@ -15,19 +15,19 @@ struct RangeFiltered
 
     Iterator begin() const
     {
-        return {*this, std::begin(container)};
+        return Iterator{*this, std::begin(container)};
     }
 
     Iterator end() const
     {
-        return {*this, std::end(container)};
+        return Iterator{*this, std::end(container)};
     }
 
     /// Convert ordinary iterator to filtered one
     /// Real position will be in range [ordinary_iterator; end()], so it is suitable to use with lower[upper]_bound()
     inline Iterator convert(RawIterator ordinary_iterator) const
     {
-        return {*this, ordinary_iterator};
+        return Iterator{*this, ordinary_iterator};
     }
 
 
