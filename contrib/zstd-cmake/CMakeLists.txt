@@ -93,6 +93,7 @@ SET(Headers
         ${LIBRARY_DIR}/compress/zstd_ldm.h
         ${LIBRARY_DIR}/compress/zstdmt_compress.h
         ${LIBRARY_DIR}/compress/zstd_opt.h
+        ${LIBRARY_DIR}/compress/zstd_ldm.h
         ${LIBRARY_DIR}/deprecated/zbuff.h
         ${LIBRARY_DIR}/dictBuilder/divsufsort.h
         ${LIBRARY_DIR}/dictBuilder/zdict.h
