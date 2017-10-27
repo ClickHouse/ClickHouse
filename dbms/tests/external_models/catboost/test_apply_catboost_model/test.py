@@ -74,7 +74,7 @@ def test_apply_float_features_only():
     print 'python predictions', pred_python
     print 'clickhouse predictions', pred_ch
 
-    check_predictions(name, test_target, pred_python, pred_ch, 0.95)
+    check_predictions(name, test_target, pred_python, pred_ch, 0.9)
 
 
 def test_apply_float_features_with_string_cat_features():
@@ -127,7 +127,7 @@ def test_apply_float_features_with_string_cat_features():
     print 'python predictions', pred_python
     print 'clickhouse predictions', pred_ch
 
-    check_predictions(name, test_target, pred_python, pred_ch, 0.95)
+    check_predictions(name, test_target, pred_python, pred_ch, 0.9)
 
 
 def test_apply_float_features_with_int_cat_features():
@@ -180,7 +180,7 @@ def test_apply_float_features_with_int_cat_features():
     print 'python predictions', pred_python
     print 'clickhouse predictions', pred_ch
 
-    check_predictions(name, test_target, pred_python, pred_ch, 0.95)
+    check_predictions(name, test_target, pred_python, pred_ch, 0.9)
 
 
 def test_apply_float_features_with_mixed_cat_features():
@@ -233,4 +233,4 @@ def test_apply_float_features_with_mixed_cat_features():
     print 'python predictions', pred_python
     print 'clickhouse predictions', pred_ch
 
-    check_predictions(name, test_target, pred_python, pred_ch, 0.95)
+    check_predictions(name, test_target, pred_python, pred_ch, 0.9)
