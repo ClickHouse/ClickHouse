@@ -12,23 +12,23 @@ function test_cmp {
     rm test.json
 }
 
-test_cmp "u64 > i64         "
-test_cmp "u64 > toInt64(1)  "
-test_cmp "i64 > u64         "
-test_cmp "i64 > toUInt64(1) "
+test_cmp "u64 > i64"
+test_cmp "u64 > toInt64(1)"
+test_cmp "i64 > u64"
+test_cmp "i64 > toUInt64(1)"
 
-test_cmp "u64 = i64         "
-test_cmp "u64 = toInt64(1)  "
-test_cmp "i64 = u64         "
-test_cmp "i64 = toUInt64(1) "
+test_cmp "u64 = i64"
+test_cmp "u64 = toInt64(1)"
+test_cmp "i64 = u64"
+test_cmp "i64 = toUInt64(1)"
 
 test_cmp "u64 >= i64"
-test_cmp "i64 >  -1 "
-test_cmp "i64 =  0  "
-test_cmp "u64 != 0  "
+test_cmp "i64 > -1"
+test_cmp "i64 = 0"
+test_cmp "u64 != 0"
 
-test_cmp "i64 =  f64"
-test_cmp "i64 <  f64"
-test_cmp "f64 >= 0  "
+test_cmp "i64 = f64"
+test_cmp "i64 < f64"
+test_cmp "f64 >= 0"
 
 clickhouse-client -q "DROP TABLE IF EXISTS test.comparisons"
