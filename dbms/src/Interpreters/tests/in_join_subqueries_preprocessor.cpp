@@ -96,7 +96,7 @@ using TestEntries = std::vector<TestEntry>;
 using TestResult = std::pair<bool, std::string>;
 
 TestResult check(const TestEntry & entry);
-bool parse(DB::ASTPtr  & ast, const std::string & query);
+bool parse(DB::ASTPtr & ast, const std::string & query);
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs);
 void reorder(DB::IAST * ast);
 
