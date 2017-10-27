@@ -25,10 +25,8 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     create.if_not_exists = false;
     create.is_populate = false;
 
-    String engine = create.storage->engine->name;
-
-    /// For engine VIEW it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (engine != "View" && engine != "MaterializedView")
+    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
+    if (!create.is_view && !create.is_materialized_view)
         create.select = nullptr;
 
     /// For "MATERIALIZED VIEW x TO y" it's necessary to save destination table
@@ -68,26 +66,13 @@ std::pair<String, StoragePtr> createTableFromDefinition(
 
     InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(*ast_create_query.columns, context);
 
-    String storage_name;
-
-    if (ast_create_query.is_view)
-        storage_name = "View";
-    else if (ast_create_query.is_materialized_view)
-        storage_name = "MaterializedView";
-    else
-    {
-        if (!ast_create_query.storage)
-            throw Exception("Missing ENGINE definition.", ErrorCodes::ENGINE_REQUIRED);
-        storage_name = ast_create_query.storage->engine->name;
-    }
-
     return
     {
         ast_create_query.table,
         StorageFactory::instance().get(
-            storage_name, database_data_path, ast_create_query.table, database_name, context,
-            context.getGlobalContext(), ast_create_query, columns_info.columns,
-            columns_info.materialized_columns, columns_info.alias_columns, columns_info.column_defaults,
+            ast_create_query,
+            database_data_path, ast_create_query.table, database_name, context, context.getGlobalContext(),
+            columns_info.columns, columns_info.materialized_columns, columns_info.alias_columns, columns_info.column_defaults,
             true, has_force_restore_data_flag)
     };
 }

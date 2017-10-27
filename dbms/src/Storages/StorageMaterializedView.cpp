@@ -11,6 +11,7 @@
 #include <Storages/VirtualColumnFactory.h>
 
 #include <Common/typeid_cast.h>
+#include "StorageReplicatedMergeTree.h"
 
 
 namespace DB
@@ -56,7 +57,7 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
 StorageMaterializedView::StorageMaterializedView(
     const String & table_name_,
     const String & database_name_,
-    Context & context_,
+    Context & local_context,
     const ASTCreateQuery & query,
     NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
@@ -64,18 +65,18 @@ StorageMaterializedView::StorageMaterializedView(
     const ColumnDefaults & column_defaults_,
     bool attach_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    database_name(database_name_), context(context_), columns(columns_)
+    database_name(database_name_), global_context(local_context.getGlobalContext()), columns(columns_)
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    if (!query.inner_storage && query.as_table.empty())
+    if (!query.storage && query.as_table.empty())
         throw Exception("ENGINE of MaterializedView should be specified explicitly", ErrorCodes::INCORRECT_QUERY);
 
     extractDependentTable(*query.select, select_database_name, select_table_name);
 
     if (!select_table_name.empty())
-        context.getGlobalContext().addDependency(
+        global_context.addDependency(
             DatabaseAndTableName(select_database_name, select_table_name),
             DatabaseAndTableName(database_name, table_name));
 
@@ -102,19 +103,19 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->database = target_database_name;
         manual_create_query->table = target_table_name;
         manual_create_query->set(manual_create_query->columns, query.columns->ptr());
-        manual_create_query->set(manual_create_query->storage, query.inner_storage->ptr());
+        manual_create_query->set(manual_create_query->storage, query.storage->ptr());
 
         /// Execute the query.
         try
         {
-            InterpreterCreateQuery create_interpreter(manual_create_query, context);
+            InterpreterCreateQuery create_interpreter(manual_create_query, local_context);
             create_interpreter.execute();
         }
         catch (...)
         {
             /// In case of any error we should remove dependency to the view.
             if (!select_table_name.empty())
-                context.getGlobalContext().removeDependency(
+                global_context.removeDependency(
                     DatabaseAndTableName(select_database_name, select_table_name),
                     DatabaseAndTableName(database_name, table_name));
 
@@ -151,18 +152,18 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 
 void StorageMaterializedView::drop()
 {
-    context.getGlobalContext().removeDependency(
+    global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
         DatabaseAndTableName(database_name, table_name));
 
-    if (has_inner_table && context.tryGetTable(target_database_name, target_table_name))
+    if (has_inner_table && global_context.tryGetTable(target_database_name, target_table_name))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->database = target_database_name;
         drop_query->table = target_table_name;
         ASTPtr ast_drop_query = drop_query;
-        InterpreterDropQuery drop_interpreter(ast_drop_query, context);
+        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
     }
 }
@@ -174,7 +175,7 @@ bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & part
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
-    return context.getTable(target_database_name, target_table_name);
+    return global_context.getTable(target_database_name, target_table_name);
 }
 
 }

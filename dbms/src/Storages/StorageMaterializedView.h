@@ -52,14 +52,14 @@ private:
     String table_name;
     String database_name;
     ASTPtr inner_query;
-    Context & context;
+    Context & global_context;
     NamesAndTypesListPtr columns;
     bool has_inner_table = false;
 
     StorageMaterializedView(
         const String & table_name_,
         const String & database_name_,
-        Context & context_,
+        Context & local_context,
         const ASTCreateQuery & query,
         NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,

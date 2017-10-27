@@ -367,6 +367,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.merge_selecting_event.set();
     storage.queue_updating_event->set();
     storage.alter_query_event->set();
+    storage.cleanup_thread_event.set();
     storage.replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
