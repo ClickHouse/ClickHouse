@@ -152,7 +152,7 @@ public:
     {
         if (api->GetFloatFeaturesCount)
         {
-            size_t float_features_in_model = api->GetCatFeaturesCount(handle->get());
+            size_t float_features_in_model = api->GetFloatFeaturesCount(handle->get());
             if (float_features_count != float_features_in_model)
                 throw Exception("CatBoost model expected " + std::to_string(float_features_in_model) + " float features"
                                 + ", but " + std::to_string(float_features_count) + " was provided.");
@@ -441,7 +441,7 @@ void CatBoostLibHolder::initAPI()
     load(api.GetIntegerCatFeatureHash, "GetIntegerCatFeatureHash");
 
     tryLoad(api.GetFloatFeaturesCount, "GetFloatFeaturesCount");
-    tryLoad(api.GetIntegerCatFeatureHash, "GetIntegerCatFeatureHash");
+    tryLoad(api.GetCatFeaturesCount, "GetCatFeaturesCount");
 }
 
 std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & lib_path)
