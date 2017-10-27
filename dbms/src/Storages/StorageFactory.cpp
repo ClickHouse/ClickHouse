@@ -393,8 +393,9 @@ StoragePtr StorageFactory::get(
 
     if (query.is_materialized_view)
     {
+        /// Pass local_context here to convey setting for inner table
         return StorageMaterializedView::create(
-            table_name, database_name, context, query, columns,
+            table_name, database_name, local_context, query, columns,
             materialized_columns, alias_columns, column_defaults,
             attach);
     }
