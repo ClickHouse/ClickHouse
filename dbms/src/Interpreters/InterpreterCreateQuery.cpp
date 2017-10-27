@@ -434,6 +434,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         storage_ast->set(storage_ast->engine, engine_ast);
         create.set(create.storage, storage_ast);
     }
+    else if (create.is_temporary)
+        set_engine("Memory");
+    else if (create.is_view)
+        set_engine("View");
+    else if (create.is_materialized_view)
+        set_engine("MaterializedView");
     else if (!create.as_table.empty())
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
@@ -469,6 +475,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     String data_path = path + "data/" + database_name_escaped + "/";
     String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
+
+    // If this is a stub ATTACH query, read the query definition from the database
+    if (create.attach && !create.storage && !create.columns)
+    {
+        // Table SQL definition is available even if the table is detached
+        auto query = context.getCreateQuery(database_name, table_name);
+        auto & as_create = typeid_cast<const ASTCreateQuery &>(*query);
+        create = as_create; // Copy the saved create query, but use ATTACH instead of CREATE
+        create.attach = true;
+    }
 
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;
     Block as_select_sample;
