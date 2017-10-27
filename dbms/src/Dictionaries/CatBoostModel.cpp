@@ -425,7 +425,7 @@ private:
     void load(T& func, const std::string & name) { func = lib.get<T>(name); }
 
     template <typename T>
-    void tryLoad(T& func, const std::string & name) { func = lib.get<T>(name); }
+    void tryLoad(T& func, const std::string & name) { func = lib.tryGet<T>(name); }
 };
 
 void CatBoostLibHolder::initAPI()
