@@ -417,7 +417,14 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.storage)
+    {
+        if (create.is_temporary && create.storage->engine->name != "Memory")
+            throw Exception(
+                "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
+                ErrorCodes::INCORRECT_QUERY);
+
         return;
+    }
 
     if (create.is_temporary)
     {
@@ -462,6 +469,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     String data_path = path + "data/" + database_name_escaped + "/";
     String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
+
+    // If this is a stub ATTACH query, read the query definition from the database
+    if (create.attach && !create.storage && !create.columns)
+    {
+        // Table SQL definition is available even if the table is detached
+        auto query = context.getCreateQuery(database_name, table_name);
+        auto & as_create = typeid_cast<const ASTCreateQuery &>(*query);
+        create = as_create; // Copy the saved create query, but use ATTACH instead of CREATE
+        create.attach = true;
+    }
 
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;
     Block as_select_sample;

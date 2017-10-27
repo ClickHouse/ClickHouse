@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -213,6 +214,51 @@ public:
             = DataTypeString().createConstColumn(block.rows(), block.getByPosition(arguments[0]).type->getName());
     }
 };
+
+
+/// Returns number of fields in Enum data type of passed value.
+class FunctionGetSizeOfEnumType : public IFunction
+{
+public:
+    static constexpr auto name = "getSizeOfEnumType";
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionGetSizeOfEnumType>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (checkDataType<DataTypeEnum8>(arguments[0].get()))
+            return std::make_shared<DataTypeUInt8>();
+        else if (checkDataType<DataTypeEnum16>(arguments[0].get()))
+            return std::make_shared<DataTypeUInt16>();
+
+        throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        if (auto type = checkAndGetDataType<DataTypeEnum8>(block.getByPosition(arguments[0]).type.get()))
+            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), type->getValues().size());
+        else if (auto type = checkAndGetDataType<DataTypeEnum16>(block.getByPosition(arguments[0]).type.get()))
+            block.getByPosition(result).column = DataTypeUInt16().createConstColumn(block.rows(), type->getValues().size());
+        else
+            throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+};
+
 
 
 /// Returns name of IColumn instance.
@@ -1733,6 +1779,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionHostName>();
     factory.registerFunction<FunctionVisibleWidth>();
     factory.registerFunction<FunctionToTypeName>();
+    factory.registerFunction<FunctionGetSizeOfEnumType>();
     factory.registerFunction<FunctionToColumnTypeName>();
     factory.registerFunction<FunctionDefaultValueOfArgumentType>();
     factory.registerFunction<FunctionBlockSize>();

@@ -393,8 +393,9 @@ StoragePtr StorageFactory::get(
 
     if (query.is_materialized_view)
     {
+        /// Pass local_context here to convey setting for inner table
         return StorageMaterializedView::create(
-            table_name, database_name, context, query, columns,
+            table_name, database_name, local_context, query, columns,
             materialized_columns, alias_columns, column_defaults,
             attach);
     }
@@ -405,6 +406,10 @@ StoragePtr StorageFactory::get(
     if (engine_def.parameters)
         throw Exception(
             "Engine definition cannot take the form of a parametric function", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
+
+    ASTs * args_ptr = nullptr;
+    if (engine_def.arguments)
+        args_ptr = &engine_def.arguments->children;
 
     const String & name = engine_def.name;
 
@@ -418,9 +423,9 @@ StoragePtr StorageFactory::get(
 
     auto check_arguments_empty = [&]
     {
-        if (engine_def.arguments)
+        if (args_ptr)
             throw Exception(
-                "Engine " + name + " doesn't support any arguments (" + toString(engine_def.arguments->children.size()) + " given)",
+                "Engine " + name + " doesn't support any arguments (" + toString(args_ptr->size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     };
 
@@ -468,12 +473,11 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "File")
     {
-        ASTs args = engine_def.arguments->children;
-
-        if (args.empty() || args.size() > 2)
+        if (!args_ptr || !(args_ptr->size() == 1 || args_ptr->size() == 2))
             throw Exception(
                 "Storage File requires 1 or 2 arguments: name of used format and source.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
         String format_name = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
@@ -527,12 +531,11 @@ StoragePtr StorageFactory::get(
     {
         /// Join(ANY, LEFT, k1, k2, ...)
 
-        const ASTs & args = engine_def.arguments->children;
-
-        if (args.size() < 3)
+        if (!args_ptr || args_ptr->size() < 3)
             throw Exception(
                 "Storage Join requires at least 3 parameters: Join(ANY|ALL, LEFT|INNER, keys...).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        const ASTs & args = *args_ptr;
 
         const ASTIdentifier * strictness_id = typeid_cast<ASTIdentifier *>(&*args[0]);
         if (!strictness_id)
@@ -595,12 +598,11 @@ StoragePtr StorageFactory::get(
           *  as well as regex for source-table names.
           */
 
-        ASTs args = engine_def.arguments->children;
-
-        if (args.size() != 2)
+        if (!args_ptr || args_ptr->size() != 2)
             throw Exception("Storage Merge requires exactly 2 parameters"
                 " - name of source database and regexp for table names.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
         args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
@@ -627,12 +629,11 @@ StoragePtr StorageFactory::get(
           * - empty string means 'use default database from cluster'.
           */
 
-        ASTs args = engine_def.arguments->children;
-
-        if (args.size() != 3 && args.size() != 4)
+        if (!args_ptr || !(args_ptr->size() == 3 || args_ptr->size() == 4))
             throw Exception("Storage Distributed requires 3 or 4 parameters"
                 " - name of configuration section with list of remote servers, name of remote database, name of remote table,"
                 " sharding key expression (optional).", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
         String cluster_name = getClusterName(*args[0]);
 
@@ -675,12 +676,11 @@ StoragePtr StorageFactory::get(
           * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer.
           */
 
-        ASTs args = engine_def.arguments->children;
-
-        if (args.size() != 9)
+        if (!args_ptr || args_ptr->size() != 9)
             throw Exception("Storage Buffer requires 9 parameters: "
                 " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
         args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
@@ -717,13 +717,12 @@ StoragePtr StorageFactory::get(
           * - Schema (optional, if the format supports it)
           */
 
-        ASTs args = engine_def.arguments->children;
-
-        if (args.size() != 4 && args.size() != 5)
+        if (!args_ptr || !(args_ptr->size() == 4 || args_ptr->size() == 5))
             throw Exception(
                 "Storage Kafka requires 4 parameters"
                 " - Kafka broker list, list of topics to consume, consumer group ID, message format",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
         String brokers;
         auto ast = typeid_cast<ASTLiteral *>(&*args[0]);
@@ -829,8 +828,8 @@ StoragePtr StorageFactory::get(
                 ErrorCodes::UNKNOWN_STORAGE);
 
         ASTs args;
-        if (engine_def.arguments)
-            args = engine_def.arguments->children;
+        if (args_ptr)
+            args = *args_ptr;
 
         /// NOTE Quite complicated.
 
