@@ -49,10 +49,10 @@ def main(args):
 
 
     def is_data_present():
-        proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        (stdout, stderr) = proc.communicate("EXISTS TABLE test.hits")
+        clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        (stdout, stderr) = clickhouse_proc.communicate("EXISTS TABLE test.hits")
         if proc.returncode != 0:
-            raise CalledProcessError(proc.returncode, args.client, stderr)
+            raise CalledProcessError(clickhouse_proc.returncode, args.client, stderr)
 
         return stdout.startswith('1')
 
@@ -73,18 +73,17 @@ def main(args):
 
     if args.zookeeper is None:
         try:
-            check_call(['grep', '-q', '<zookeeper', '/etc/clickhouse-server/config-preprocessed.xml'], )
+            check_call(['grep', '-q', '<zookeeper', '/etc/clickhouse-server/config-preprocessed.xml'])
             args.zookeeper = True
         except CalledProcessError:
             args.zookeeper = False
 
     if args.shard is None:
         try:
-            check_call(['grep', '-qE', '"127.0.0.2|<listen_host>::</listen_host>"', '/etc/clickhouse-server/config-preprocessed.xml'], )
+            check_call(['grep', '-qE', '"127.0.0.2|<listen_host>::</listen_host>"', '/etc/clickhouse-server/config-preprocessed.xml'])
             args.shard = True
         except CalledProcessError:
-            # TODO: false here after setting <listen_host>::1</listen_host>
-            args.shard = True
+            args.shard = False
 
     base_dir = os.path.abspath(args.queries)
 
@@ -128,6 +127,10 @@ def main(args):
                     report_testcase = et.Element("testcase", attrib = {"name": name})
 
                     try:
+                        if args.testname:
+                            clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                            clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
+
                         print "{0:70}".format(name + ": "),
                         sys.stdout.flush()
 
@@ -272,6 +275,7 @@ if __name__ == '__main__':
     parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
     parser.add_argument('--stop', action = 'store_true', default = None, dest = 'stop', help = 'Stop on network errors')
     parser.add_argument('--random', action = 'store_true', default = None, dest = 'random', help = 'Randomize tests order')
+    parser.add_argument('--testname', action = 'store_true', default = None, dest = 'testname', help = 'Make query with test name before test run')
 
     group = parser.add_mutually_exclusive_group(required = False)
     group.add_argument('--zookeeper', action = 'store_true', default = None, dest = 'zookeeper', help = 'Run zookeeper related tests')
