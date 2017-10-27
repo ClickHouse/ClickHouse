@@ -168,7 +168,8 @@ protected:
 
         if (!as_table.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
+            std::string what = (!is_materialized_view ? " AS " : " TO ");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << what << (settings.hilite ? hilite_none : "")
             << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
         }
 
