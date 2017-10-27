@@ -61,7 +61,7 @@ private:
 
     /// Calculate list of columns of table and return it.
     ColumnsInfo setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
-    String setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const;
+    void setEngine(ASTCreateQuery & create) const;
 
     ASTPtr query_ptr;
     Context & context;

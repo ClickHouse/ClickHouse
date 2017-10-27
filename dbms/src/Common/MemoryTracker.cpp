@@ -20,7 +20,16 @@ namespace DB
 MemoryTracker::~MemoryTracker()
 {
     if (peak)
-        logPeakMemoryUsage();
+    {
+        try
+        {
+            logPeakMemoryUsage();
+        }
+        catch (...)
+        {
+            /// Exception in Logger, intentionally swallow.
+        }
+    }
 
     /** This is needed for next memory tracker to be consistent with sum of all referring memory trackers.
       *

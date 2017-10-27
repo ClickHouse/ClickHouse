@@ -44,6 +44,10 @@ sum(x)
 Calculates the sum.
 Only works for numbers.
 
+sumWithOverflow(x)
+------------------
+Calculates the sum of numbers using the same data type as the input. If the sum of values is larger than the maximum value for given type, it will overflow. Only works for numbers.
+
 sumMap(key, value)
 ------
 Performs summation of array 'value' by corresponding keys of array 'key'.

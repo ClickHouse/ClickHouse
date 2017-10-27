@@ -133,7 +133,7 @@ This query is fully equivalent to using the subquery:
 
 Materialized views store data transformed by the corresponding SELECT query.
 
-When creating a materialized view, you can either specify ENGINE - the table engine for storing data, or target table for materialized results. By default, it uses the same engine as for the table that the SELECT query is made from.
+When creating a materialized view, you have to either specify ENGINE - the table engine for storing data, or target table for materialized results. By default, it uses the same engine as for the table that the SELECT query is made from.
 
 A materialized view is arranged as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
 
