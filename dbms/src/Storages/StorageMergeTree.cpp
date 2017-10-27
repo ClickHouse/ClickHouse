@@ -482,7 +482,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partit
         if (detach)
             data.renameAndDetachPart(part, "");
         else
-            data.replaceParts({part}, {}, false);
+            data.removePartsFromWorkingSet({part}, false);
     }
 
     LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside partition ID " << partition_id << ".");
