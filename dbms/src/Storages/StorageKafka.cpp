@@ -17,7 +17,11 @@
 #include <Storages/StorageKafka.h>
 #include <common/logger_useful.h>
 
+#if __has_include(<rdkafka.h>) // maybe bundled
 #include <rdkafka.h>
+#else // system
+#include <librdkafka/rdkafka.h>
+#endif
 
 namespace DB
 {
