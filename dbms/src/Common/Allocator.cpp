@@ -56,7 +56,8 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
     if (size >= MMAP_THRESHOLD)
     {
         if (alignment > MMAP_MIN_ALIGNMENT)
-            throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(size) + ": more than page size.", DB::ErrorCodes::BAD_ARGUMENTS);
+            throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating " 
+                + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
 
         buf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == buf)
