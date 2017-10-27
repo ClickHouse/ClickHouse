@@ -37,7 +37,7 @@ void ReplicatedMergeTreeCleanupThread::run()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        storage.shutdown_event.tryWait(CLEANUP_SLEEP_MS);
+        storage.cleanup_thread_event.tryWait(CLEANUP_SLEEP_MS);
     }
 
     LOG_DEBUG(log, "Cleanup thread finished");
@@ -46,7 +46,7 @@ void ReplicatedMergeTreeCleanupThread::run()
 
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
-    storage.clearOldPartsAndRemoveFromZK(log);
+    storage.clearOldPartsAndRemoveFromZK();
     storage.data.clearOldTemporaryDirectories();
 
     if (storage.is_leader_node)

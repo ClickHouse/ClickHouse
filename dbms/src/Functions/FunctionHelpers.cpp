@@ -100,7 +100,7 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size
             if (col.type->isNullable())
             {
                 bool is_const = col.column->isConst();
-                auto const_col = static_cast<const ColumnConst *>(col.column.get());
+                auto const_col = typeid_cast<const ColumnConst *>(col.column.get());
 
                 if (is_const && !const_col->getDataColumn().isNullable())
                     throw Exception("Column at position " + toString(i + 1) + " with type " + col.type->getName() +
