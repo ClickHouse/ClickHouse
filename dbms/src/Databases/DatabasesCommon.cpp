@@ -22,14 +22,19 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     /// We remove everything that is not needed for ATTACH from the query.
     create.attach = true;
     create.database.clear();
-    create.as_database.clear();
-    create.as_table.clear();
     create.if_not_exists = false;
     create.is_populate = false;
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!create.is_view && !create.is_materialized_view)
         create.select = nullptr;
+
+    /// For "MATERIALIZED VIEW x TO y" it's necessary to save destination table
+    if (engine != "MaterializedView" || create.inner_storage)
+    {
+        create.as_database.clear();
+        create.as_table.clear();
+    }
 
     std::ostringstream statement_stream;
     formatAST(create, statement_stream, 0, false);
@@ -56,6 +61,8 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     /// We do not directly use `InterpreterCreateQuery::execute`, because
     /// - the database has not been created yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
+    if (!ast_create_query.columns)
+        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(*ast_create_query.columns, context);
 
