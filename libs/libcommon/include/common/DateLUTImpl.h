@@ -56,7 +56,7 @@ public:
 private:
     /// Lookup table is indexed by DayNum.
     /// Day nums are the same in all time zones. 1970-01-01 is 0 and so on.
-    /// Table is relatively large, so better not to place object on stack.
+    /// Table is relatively large, so better not to place the object on stack.
     /// In comparison to std::vector, plain array is cheaper by one indirection.
     Values lut[DATE_LUT_SIZE];
 
@@ -249,7 +249,7 @@ public:
         size_t index = findIndex(t);
 
         if (unlikely(index == 0))
-            return t - offset_at_start_of_epoch;
+            return t + offset_at_start_of_epoch;
 
         time_t res = t - lut[index].date;
 
@@ -264,7 +264,7 @@ public:
         size_t index = findIndex(t);
 
         if (unlikely(index == 0))
-            return (t - offset_at_start_of_epoch) / 3600;
+            return (t + offset_at_start_of_epoch) / 3600;
 
         time_t res = t - lut[index].date;
 
