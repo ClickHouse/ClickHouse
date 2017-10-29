@@ -94,6 +94,8 @@ struct ConvertImpl
   */
 struct ToDateTimeImpl
 {
+    static constexpr auto name = "toDateTime";
+
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(DayNum_t(d));
@@ -101,7 +103,7 @@ struct ToDateTimeImpl
 };
 
 template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
-    : DateTimeTransformImpl<UInt16, UInt32, ToDateTimeImpl, Name> {};
+    : DateTimeTransformImpl<UInt16, UInt32, ToDateTimeImpl> {};
 
 
 /// Implementation of toDate function.
@@ -109,6 +111,8 @@ template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name
 template <typename FromType, typename ToType>
 struct ToDateTransform32Or64
 {
+    static constexpr auto name = "toDate";
+
     static inline ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < 0xFFFF) ? from : time_zone.toDayNum(from);
@@ -118,7 +122,7 @@ struct ToDateTransform32Or64
 /** Conversion of DateTime to Date: throw off time component.
   */
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
-    : DateTimeTransformImpl<UInt32, UInt16, ToDateImpl, Name> {};
+    : DateTimeTransformImpl<UInt32, UInt16, ToDateImpl> {};
 
 /** Special case of converting (U)Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to Date.
   * If number is less than 65536, then it is treated as DayNum, and if greater or equals, then as unix timestamp.
@@ -128,17 +132,17 @@ template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name
   *  (otherwise such usage would be frequent mistake).
   */
 template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name>
-    : DateTimeTransformImpl<UInt32, UInt16, ToDateTransform32Or64<UInt32, UInt16>, Name> {};
+    : DateTimeTransformImpl<UInt32, UInt16, ToDateTransform32Or64<UInt32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name>
-    : DateTimeTransformImpl<UInt64, UInt16, ToDateTransform32Or64<UInt64, UInt16>, Name> {};
+    : DateTimeTransformImpl<UInt64, UInt16, ToDateTransform32Or64<UInt64, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name>
-    : DateTimeTransformImpl<Int32, UInt16, ToDateTransform32Or64<Int32, UInt16>, Name> {};
+    : DateTimeTransformImpl<Int32, UInt16, ToDateTransform32Or64<Int32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name>
-    : DateTimeTransformImpl<Int64, UInt16, ToDateTransform32Or64<Int64, UInt16>, Name> {};
+    : DateTimeTransformImpl<Int64, UInt16, ToDateTransform32Or64<Int64, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name>
-    : DateTimeTransformImpl<Float32, UInt16, ToDateTransform32Or64<Float32, UInt16>, Name> {};
+    : DateTimeTransformImpl<Float32, UInt16, ToDateTransform32Or64<Float32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
-    : DateTimeTransformImpl<Float64, UInt16, ToDateTransform32Or64<Float64, UInt16>, Name> {};
+    : DateTimeTransformImpl<Float64, UInt16, ToDateTransform32Or64<Float64, UInt16>> {};
 
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.

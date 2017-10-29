@@ -44,6 +44,10 @@ public:
         UInt8 day_of_month;
         UInt8 day_of_week;
 
+        /// Total number of days in current month. Actually we can use separate table that is independent of time zone.
+        /// But due to alignment, this field is totally zero cost.
+        UInt8 days_in_month;
+
         /// For days, when offset from UTC was changed due to daylight saving time or permanent change, following values could be non zero.
         UInt16 time_at_offset_change; /// In seconds from beginning of the day. Assuming offset never changed close to the end of day (so, value < 65536).
         Int16 amount_of_offset_change; /// Usually -3600 or 3600, but look at Lord Howe Island.
@@ -217,13 +221,20 @@ public:
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
+    inline size_t daysInMonth(DayNum_t d) const
+    {
+        return lut[d].days_in_month;
+    }
+
     inline size_t daysInMonth(time_t t) const
     {
-        size_t today = findIndex(t);
-        size_t start_of_month = today - (lut[today].day_of_month - 1);
-        size_t next_month = start_of_month + 31;
-        size_t start_of_next_month = next_month - (lut[next_month].day_of_month - 1);
-        return start_of_next_month - start_of_month;
+        return find(t).days_in_month;
+    }
+
+    inline size_t daysInMonth(short year, char month) const
+    {
+        auto any_day_of_month = years_lut[year - DATE_LUT_MIN_YEAR] + 31 * (month - 1);
+        return lut[any_day_of_month].days_in_month;
     }
 
     /** Round to start of day, then shift for specified amount of days.
@@ -444,6 +455,122 @@ public:
             num / 100 % 100,
             num % 100);
     }
+
+    /// Adding calendar intervals.
+    /// Implementation specific behaviour when delta is too big.
+
+    inline time_t addDays(time_t t, ssize_t delta) const
+    {
+        size_t index = findIndex(t);
+        time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
+
+        index += delta;
+
+        if (time_offset >= lut[index].time_at_offset_change)
+            time_offset -= lut[index].amount_of_offset_change;
+
+        return lut[index].date + time_offset;
+    }
+
+    inline time_t addWeeks(time_t t, ssize_t delta) const
+    {
+        return addDays(t, delta * 7);
+    }
+
+    inline char saturateDayOfMonth(short year, char month, char day_of_month) const
+    {
+        if (likely(day_of_month <= 28))
+            return day_of_month;
+
+        auto days_in_month = daysInMonth(year, month);
+
+        if (day_of_month > days_in_month)
+            day_of_month = days_in_month;
+
+        return day_of_month;
+    }
+
+    /// If resulting month has less deys than source month, then saturation can happen.
+    /// Example: 31 Aug + 1 month = 30 Sep.
+    inline time_t addMonths(time_t t, ssize_t delta) const
+    {
+        size_t index = findIndex(t);
+        const Values & values = lut[index];
+
+        time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
+
+        auto month = values.month + delta;
+        bool year_will_be_next = month > 12;
+        if (year_will_be_next)
+            month -= 12;
+
+        auto year = values.year + year_will_be_next;
+
+        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+
+        DayNum_t result_day = makeDayNum(year, month, day_of_month);
+
+        if (time_offset >= lut[result_day].time_at_offset_change)
+            time_offset -= lut[result_day].amount_of_offset_change;
+
+        return lut[result_day].date + time_offset;
+    }
+
+    inline DayNum_t addMonths(DayNum_t d, ssize_t delta) const
+    {
+        const Values & values = lut[d];
+
+        auto month = values.month + delta;
+        bool year_will_be_next = month > 12;
+        if (year_will_be_next)
+            month -= 12;
+
+        auto year = values.year + year_will_be_next;
+
+        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+
+        return makeDayNum(year, month, day_of_month);
+    }
+
+    /// Saturation can occur if 29 Feb is mapped to non-leap year.
+    inline time_t addYears(time_t t, ssize_t delta) const
+    {
+        size_t index = findIndex(t);
+        const Values & values = lut[index];
+
+        time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
+
+        auto year = values.year + delta;
+        auto month = values.month;
+        auto day_of_month = values.day_of_month;
+
+        /// Saturation to 28 Feb can happen.
+        if (unlikely(day_of_month == 29 && month == 2))
+            day_of_month = saturateDayOfMonth(year, month, day_of_month);
+
+        DayNum_t result_day = makeDayNum(year, month, day_of_month);
+
+        if (time_offset >= lut[result_day].time_at_offset_change)
+            time_offset -= lut[result_day].amount_of_offset_change;
+
+        return lut[result_day].date + time_offset;
+    }
+
+    inline DayNum_t addYears(DayNum_t d, ssize_t delta) const
+    {
+        const Values & values = lut[d];
+
+        auto year = values.year + delta;
+        auto month = values.month;
+        auto day_of_month = values.day_of_month;
+
+        /// Saturation to 28 Feb can happen.
+        if (unlikely(day_of_month == 29 && month == 2))
+            day_of_month = saturateDayOfMonth(year, month, day_of_month);
+
+        return makeDayNum(year, month, day_of_month);
+    }
+
 
     inline std::string timeToString(time_t t) const
     {
