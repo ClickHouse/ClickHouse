@@ -10,14 +10,13 @@
 #include <unordered_map>
 #include <ctime>
 
-#define DATE_LUT_MIN 0
-#define DATE_LUT_MAX (0xFFFFFFFF - 86400)
-#define DATE_LUT_MAX_DAY_NUM (0xFFFFFFFF / 86400)
+#define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
+#define DATE_LUT_MAX_DAY_NUM (0xFFFFFFFFU / 86400)
 /// Table size is bigger than DATE_LUT_MAX_DAY_NUM to fill all indices within UInt16 range: this allows to remove extra check.
 #define DATE_LUT_SIZE 0x10000
 #define DATE_LUT_MIN_YEAR 1970
 #define DATE_LUT_MAX_YEAR 2105 /// Last supported year
-#define DATE_LUT_YEARS 136 /// Number of years in lookup table
+#define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
 
 STRONG_TYPEDEF(UInt16, DayNum_t);
@@ -106,47 +105,7 @@ public:
     inline unsigned toDayOfWeek(time_t t) const { return find(t).day_of_week; }
     inline unsigned toDayOfMonth(time_t t) const { return find(t).day_of_month; }
 
-    /// номер недели, начиная с какой-то недели в прошлом; неделя начинается с понедельника
-    /// (переводим к понедельнику и делим DayNum на 7; будем исходить из допущения,
-    /// что в области применения этой функции не было и не будет недель, состоящих не из семи дней)
-    inline unsigned toRelativeWeekNum(DayNum_t d) const
-    {
-        return (d + 8 - lut[d].day_of_week) / 7;
-    }
-
-    inline unsigned toRelativeWeekNum(time_t t) const
-    {
-        size_t index = findIndex(t);
-        return (index + 8 - lut[index].day_of_week) / 7;
-    }
-
-    /// номер месяца, начиная с какого-то месяца в прошлом (год * 12 + номер месяца в году)
-    inline unsigned toRelativeMonthNum(DayNum_t d) const
-    {
-        return lut[d].year * 12 + lut[d].month;
-    }
-
-    inline unsigned toRelativeMonthNum(time_t t) const
-    {
-        size_t index = findIndex(t);
-        return lut[index].year * 12 + lut[index].month;
-    }
-
-    /// делим unix timestamp на 3600;
-    /// (таким образом, учитываются прошедшие интервалы времени длительностью в час, не зависимо от перевода стрелок;
-    /// поддерживаются только часовые пояса, в которых перевод стрелок осуществлялся только на целое число часов)
-    inline time_t toRelativeHourNum(time_t t) const
-    {
-        return t / 3600;
-    }
-
-    /// делим unix timestamp на 60
-    inline time_t toRelativeMinuteNum(time_t t) const
-    {
-        return t / 60;
-    }
-
-    /// округление вниз до понедельника
+    /// Round down to start of monday.
     inline time_t toFirstDayOfWeek(time_t t) const
     {
         size_t index = findIndex(t);
@@ -164,7 +123,7 @@ public:
         return DayNum_t(index - (lut[index].day_of_week - 1));
     }
 
-    /// округление вниз до первого числа месяца
+    /// Round down to start of month.
     inline time_t toFirstDayOfMonth(time_t t) const
     {
         size_t index = findIndex(t);
@@ -182,7 +141,7 @@ public:
         return DayNum_t(index - (lut[index].day_of_month - 1));
     }
 
-    /// округление до первого числа квартала
+    /// Round down to start of quarter.
     inline time_t toFirstDayOfQuarter(time_t t) const
     {
         size_t index = findIndex(t);
@@ -228,7 +187,7 @@ public:
         return DayNum_t(index);
     }
 
-    /// округление вниз до первого числа года
+    /// Round down to start of year.
     inline time_t toFirstDayOfYear(time_t t) const
     {
         return lut[years_lut[lut[findIndex(t)].year - DATE_LUT_MIN_YEAR]].date;
@@ -244,7 +203,6 @@ public:
         return lut[years_lut[lut[findIndex(t)].year - DATE_LUT_MIN_YEAR]].date;
     }
 
-    /// первое число следующего месяца
     inline time_t toFirstDayOfNextMonth(time_t t) const
     {
         size_t index = findIndex(t);
@@ -252,7 +210,6 @@ public:
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
-    /// первое число предыдущего месяца
     inline time_t toFirstDayOfPrevMonth(time_t t) const
     {
         size_t index = findIndex(t);
@@ -260,7 +217,6 @@ public:
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
-    /// количество дней в месяце
     inline size_t daysInMonth(time_t t) const
     {
         size_t today = findIndex(t);
@@ -270,8 +226,7 @@ public:
         return start_of_next_month - start_of_month;
     }
 
-    /** Округление до даты; затем сдвиг на указанное количество дней.
-      * Замечание: результат сдвига должен находиться в пределах LUT.
+    /** Round to start of day, then shift for specified amount of days.
       */
     inline time_t toDateAndShift(time_t t, int days) const
     {
@@ -290,7 +245,7 @@ public:
         if (res >= lut[index].time_at_offset_change)
             res += lut[index].amount_of_offset_change;
 
-        return res - offset_at_start_of_epoch; /// Отсчёт от 1970-01-01 00:00:00 по локальному времени
+        return res - offset_at_start_of_epoch; /// Starting at 1970-01-01 00:00:00 local time.
     }
 
     inline unsigned toHour(time_t t) const
@@ -360,10 +315,49 @@ public:
     inline unsigned toDayOfWeek(DayNum_t d) const { return lut[d].day_of_week; }
     inline unsigned toDayOfMonth(DayNum_t d) const { return lut[d].day_of_month; }
 
-    inline const Values & getValues(DayNum_t d) const { return lut[d]; }
-    inline const Values & getValues(time_t t) const { return lut[findIndex(t)]; }
+    /// Number of week from some fixed moment in the past. Week begins at monday.
+    /// (round down to monday and divide DayNum by 7; we made an assumption,
+    ///  that in domain of the function there was no weeks with any other number of days than 7)
+    inline unsigned toRelativeWeekNum(DayNum_t d) const
+    {
+        /// We add 8 to avoid underflow at beginning of unix epoch.
+        return (d + 8 - lut[d].day_of_week) / 7;
+    }
 
-    /// получает DayNum_t из года, месяца, дня
+    inline unsigned toRelativeWeekNum(time_t t) const
+    {
+        size_t index = findIndex(t);
+        return (index + 8 - lut[index].day_of_week) / 7;
+    }
+
+    /// Number of month from some fixed moment in the past (year * 12 + month)
+    inline unsigned toRelativeMonthNum(DayNum_t d) const
+    {
+        return lut[d].year * 12 + lut[d].month;
+    }
+
+    inline unsigned toRelativeMonthNum(time_t t) const
+    {
+        size_t index = findIndex(t);
+        return lut[index].year * 12 + lut[index].month;
+    }
+
+    /// We calculate all hour-length intervals, unrelated to offset changes.
+    inline time_t toRelativeHourNum(time_t t) const
+    {
+        if (offset_is_whole_number_of_hours_everytime)
+            return t / 3600;
+
+        /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
+        return (t + 86400 - offset_at_start_of_epoch) / 3600;
+    }
+
+    inline time_t toRelativeMinuteNum(time_t t) const
+    {
+        return t / 60;
+    }
+
+    /// Create DayNum_t from year, month, day of month.
     inline DayNum_t makeDayNum(short year, char month, char day_of_month) const
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
@@ -389,6 +383,9 @@ public:
 
         return lut[index].date + time_offset;
     }
+
+    inline const Values & getValues(DayNum_t d) const { return lut[d]; }
+    inline const Values & getValues(time_t t) const { return lut[findIndex(t)]; }
 
     inline UInt32 toNumYYYYMM(time_t t) const
     {
