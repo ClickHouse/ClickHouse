@@ -45,6 +45,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
     cctz::time_zone::absolute_lookup start_of_epoch_lookup = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(start_of_day));
     offset_at_start_of_epoch = start_of_epoch_lookup.offset;
+    offset_is_whole_number_of_hours_everytime = true;
 
     cctz::civil_day date{1970, 1, 1};
 
@@ -63,6 +64,9 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
         values.time_at_offset_change = 0;
         values.amount_of_offset_change = 0;
+
+        if (start_of_day % 3600)
+            offset_is_whole_number_of_hours_everytime = false;
 
         /// If UTC offset was changed in previous day.
         if (i != 0)
@@ -102,7 +106,14 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     }
     while (start_of_day <= DATE_LUT_MAX && i <= DATE_LUT_MAX_DAY_NUM);
 
-    /// Заполняем lookup таблицу для годов
+    /// Fill excessive part of lookup table. This is needed only to simplify handling of overflow cases.
+    while (i < DATE_LUT_SIZE)
+    {
+        lut[i] = lut[0];
+        ++i;
+    }
+
+    /// Fill lookup table for years.
     ::memset(years_lut, 0, DATE_LUT_YEARS * sizeof(years_lut[0]));
     for (size_t day = 0; day < i && lut[day].year <= DATE_LUT_MAX_YEAR; ++day)
     {
