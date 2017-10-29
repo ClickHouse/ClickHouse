@@ -482,7 +482,7 @@ public:
         if (likely(day_of_month <= 28))
             return day_of_month;
 
-        auto days_in_month = daysInMonth(year, month);
+        char days_in_month = daysInMonth(year, month);
 
         if (day_of_month > days_in_month)
             day_of_month = days_in_month;
@@ -500,12 +500,8 @@ public:
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
 
         auto month = values.month + delta;
-        bool year_will_be_next = month > 12;
-        if (year_will_be_next)
-            month -= 12;
-
-        auto year = values.year + year_will_be_next;
-
+        auto year = values.year + (month - 1) / 12;
+        month = ((month - 1) % 12) + 1;
         auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
 
         DayNum_t result_day = makeDayNum(year, month, day_of_month);
@@ -521,12 +517,8 @@ public:
         const Values & values = lut[d];
 
         auto month = values.month + delta;
-        bool year_will_be_next = month > 12;
-        if (year_will_be_next)
-            month -= 12;
-
-        auto year = values.year + year_will_be_next;
-
+        auto year = values.year + (month - 1) / 12;
+        month = ((month - 1) % 12) + 1;
         auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
 
         return makeDayNum(year, month, day_of_month);
