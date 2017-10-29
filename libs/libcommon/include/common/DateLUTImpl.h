@@ -145,18 +145,15 @@ public:
     inline DayNum_t toFirstDayNumOfQuarter(DayNum_t d) const
     {
         size_t index = d;
-        switch (lut[index].month % 3)
+        size_t month_inside_quarter = (lut[index].month - 1) % 3;
+
+        while (month_inside_quarter)
         {
-            case 0:
-                index = index - lut[index].day_of_month;
-                [[fallthrough]];
-            case 2:
-                index = index - lut[index].day_of_month;
-                [[fallthrough]];
-            case 1:
-                index = index - lut[index].day_of_month + 1;
+            index = index - lut[index].day_of_month;
+            --month_inside_quarter;
         }
-        return DayNum_t(index);
+
+        return DayNum_t(index + 1);
     }
 
     inline DayNum_t toFirstDayNumOfQuarter(time_t t) const
