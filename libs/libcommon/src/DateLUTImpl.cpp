@@ -9,6 +9,8 @@
 #include <cstring>
 #include <iostream>
 
+#define DATE_LUT_MIN 0
+
 
 namespace
 {
