@@ -64,6 +64,14 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         values.day_of_week = getDayOfWeek(date);
         values.date = start_of_day;
 
+        if (values.day_of_month == 1)
+        {
+            cctz::civil_month month(date);
+            values.days_in_month = cctz::civil_day(month + 1) - cctz::civil_day(month);
+        }
+        else
+            values.days_in_month = i != 0 ? lut[i - 1].days_in_month : 31;
+
         values.time_at_offset_change = 0;
         values.amount_of_offset_change = 0;
 
