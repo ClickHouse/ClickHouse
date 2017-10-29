@@ -1,13 +1,9 @@
 #pragma once
 
 #include <common/Types.h>
-#include <ext/singleton.h>
 #include <common/likely.h>
 #include <common/strong_typedef.h>
 
-#include <iostream>
-#include <vector>
-#include <unordered_map>
 #include <ctime>
 
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
@@ -221,17 +217,17 @@ public:
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
-    inline size_t daysInMonth(DayNum_t d) const
+    inline UInt8 daysInMonth(DayNum_t d) const
     {
         return lut[d].days_in_month;
     }
 
-    inline size_t daysInMonth(time_t t) const
+    inline UInt8 daysInMonth(time_t t) const
     {
         return find(t).days_in_month;
     }
 
-    inline size_t daysInMonth(short year, char month) const
+    inline UInt8 daysInMonth(UInt16 year, UInt8 month) const
     {
         auto any_day_of_month = years_lut[year - DATE_LUT_MIN_YEAR] + 31 * (month - 1);
         return lut[any_day_of_month].days_in_month;
@@ -239,7 +235,7 @@ public:
 
     /** Round to start of day, then shift for specified amount of days.
       */
-    inline time_t toDateAndShift(time_t t, int days) const
+    inline time_t toDateAndShift(time_t t, Int32 days) const
     {
         return lut[findIndex(t) + days].date;
     }
@@ -369,7 +365,7 @@ public:
     }
 
     /// Create DayNum_t from year, month, day of month.
-    inline DayNum_t makeDayNum(short year, char month, char day_of_month) const
+    inline DayNum_t makeDayNum(UInt16 year, UInt8 month, UInt8 day_of_month) const
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return DayNum_t(0);
@@ -377,14 +373,14 @@ public:
         return DayNum_t(any_day_of_month - toDayOfMonth(any_day_of_month) + day_of_month);
     }
 
-    inline time_t makeDate(short year, char month, char day_of_month) const
+    inline time_t makeDate(UInt16 year, UInt8 month, UInt8 day_of_month) const
     {
         return lut[makeDayNum(year, month, day_of_month)].date;
     }
 
     /** Does not accept daylight saving time as argument: in case of ambiguity, it choose greater timestamp.
       */
-    inline time_t makeDateTime(short year, char month, char day_of_month, char hour, char minute, char second) const
+    inline time_t makeDateTime(UInt16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
     {
         size_t index = makeDayNum(year, month, day_of_month);
         time_t time_offset = hour * 3600 + minute * 60 + second;
@@ -459,7 +455,7 @@ public:
     /// Adding calendar intervals.
     /// Implementation specific behaviour when delta is too big.
 
-    inline time_t addDays(time_t t, ssize_t delta) const
+    inline time_t addDays(time_t t, Int64 delta) const
     {
         size_t index = findIndex(t);
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
@@ -472,17 +468,17 @@ public:
         return lut[index].date + time_offset;
     }
 
-    inline time_t addWeeks(time_t t, ssize_t delta) const
+    inline time_t addWeeks(time_t t, Int64 delta) const
     {
         return addDays(t, delta * 7);
     }
 
-    inline char saturateDayOfMonth(short year, char month, char day_of_month) const
+    inline UInt8 saturateDayOfMonth(UInt16 year, UInt8 month, UInt8 day_of_month) const
     {
         if (likely(day_of_month <= 28))
             return day_of_month;
 
-        char days_in_month = daysInMonth(year, month);
+        UInt8 days_in_month = daysInMonth(year, month);
 
         if (day_of_month > days_in_month)
             day_of_month = days_in_month;
@@ -492,7 +488,7 @@ public:
 
     /// If resulting month has less deys than source month, then saturation can happen.
     /// Example: 31 Aug + 1 month = 30 Sep.
-    inline time_t addMonths(time_t t, ssize_t delta) const
+    inline time_t addMonths(time_t t, Int64 delta) const
     {
         size_t index = findIndex(t);
         const Values & values = lut[index];
@@ -512,7 +508,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline DayNum_t addMonths(DayNum_t d, ssize_t delta) const
+    inline DayNum_t addMonths(DayNum_t d, Int64 delta) const
     {
         const Values & values = lut[d];
 
@@ -525,7 +521,7 @@ public:
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
-    inline time_t addYears(time_t t, ssize_t delta) const
+    inline time_t addYears(time_t t, Int64 delta) const
     {
         size_t index = findIndex(t);
         const Values & values = lut[index];
@@ -548,7 +544,7 @@ public:
         return lut[result_day].date + time_offset;
     }
 
-    inline DayNum_t addYears(DayNum_t d, ssize_t delta) const
+    inline DayNum_t addYears(DayNum_t d, Int64 delta) const
     {
         const Values & values = lut[d];
 
