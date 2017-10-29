@@ -142,21 +142,6 @@ public:
     }
 
     /// Round down to start of quarter.
-    inline time_t toFirstDayOfQuarter(time_t t) const
-    {
-        size_t index = findIndex(t);
-        switch (lut[index].month % 3)
-        {
-            case 0:
-                index = index - lut[index].day_of_month;
-            case 2:
-                index = index - lut[index].day_of_month;
-            case 1:
-                index = index - lut[index].day_of_month + 1;
-        }
-        return DayNum_t(index);
-    }
-
     inline DayNum_t toFirstDayNumOfQuarter(DayNum_t d) const
     {
         size_t index = d;
@@ -164,8 +149,10 @@ public:
         {
             case 0:
                 index = index - lut[index].day_of_month;
+                [[fallthrough]];
             case 2:
                 index = index - lut[index].day_of_month;
+                [[fallthrough]];
             case 1:
                 index = index - lut[index].day_of_month + 1;
         }
@@ -174,17 +161,12 @@ public:
 
     inline DayNum_t toFirstDayNumOfQuarter(time_t t) const
     {
-        size_t index = findIndex(t);
-        switch (lut[index].month % 3)
-        {
-            case 0:
-                index = index - lut[index].day_of_month;
-            case 2:
-                index = index - lut[index].day_of_month;
-            case 1:
-                index = index - lut[index].day_of_month + 1;
-        }
-        return DayNum_t(index);
+        return toFirstDayNumOfQuarter(toDayNum(t));
+    }
+
+    inline time_t toFirstDayOfQuarter(time_t t) const
+    {
+        return fromDayNum(toFirstDayNumOfQuarter(t));
     }
 
     /// Round down to start of year.
