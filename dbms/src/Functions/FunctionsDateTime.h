@@ -188,7 +188,7 @@ struct ToStartOfMinuteImpl
 {
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfMinuteInaccurate(t);
+        return time_zone.toStartOfMinute(t);
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -202,7 +202,7 @@ struct ToStartOfFiveMinuteImpl
 {
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfFiveMinuteInaccurate(t);
+        return time_zone.toStartOfFiveMinute(t);
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -216,8 +216,9 @@ struct ToStartOfHourImpl
 {
     static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toStartOfHourInaccurate(t);
+        return time_zone.toStartOfHour(t);
     }
+
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         throw Exception("Illegal type Date of argument for function toStartOfHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -288,6 +289,7 @@ struct ToHourImpl
     {
         return time_zone.toHour(t);
     }
+
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         throw Exception("Illegal type Date of argument for function toHour", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -300,7 +302,7 @@ struct ToMinuteImpl
 {
     static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toMinuteInaccurate(t);
+        return time_zone.toMinute(t);
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
@@ -314,7 +316,7 @@ struct ToSecondImpl
 {
     static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toSecondInaccurate(t);
+        return time_zone.toSecond(t);
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
