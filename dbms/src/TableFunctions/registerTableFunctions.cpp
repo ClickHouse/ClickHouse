@@ -9,6 +9,7 @@ void registerTableFunctionMerge(TableFunctionFactory & factory);
 void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionShardByHash(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
+void registerTableFunctionCatBoostPool(TableFunctionFactory & factory);
 
 
 void registerTableFunctions()
@@ -19,6 +20,7 @@ void registerTableFunctions()
     registerTableFunctionRemote(factory);
     registerTableFunctionShardByHash(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionCatBoostPool(factory);
 }
 
 }
