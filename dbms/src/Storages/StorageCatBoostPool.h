@@ -69,8 +69,8 @@ private:
         DatasetColumnType column_type;
 
         ColumnDescription() : column_type(DatasetColumnType::Num) {}
-        ColumnDescription(const std::string & column_name, DatasetColumnType column_type)
-                : column_name(column_name), column_type(column_type) {}
+        ColumnDescription(std::string column_name, DatasetColumnType column_type)
+                : column_name(std::move(column_name)), column_type(column_type) {}
     };
 
     std::vector<ColumnDescription> columns_description;
