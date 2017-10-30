@@ -18,6 +18,8 @@ private:
     size_t n;
 
 public:
+    static constexpr bool is_parametric = true;
+
     DataTypeFixedString(size_t n_) : n(n_)
     {
         if (n == 0)
