@@ -364,6 +364,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             to_table = true;
 
+            /// FIXME: as_table is ambiguous, it is set in AS clause also
+
             if (!name_p.parse(pos, as_table, expected))
                 return false;
 
