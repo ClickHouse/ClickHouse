@@ -336,6 +336,7 @@ public:
             return t / 3600;
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
+        /// NOTE This assumption is false for "Pacific/Pitcairn" time zone.
         return (t + 86400 - offset_at_start_of_epoch) / 3600;
     }
 
