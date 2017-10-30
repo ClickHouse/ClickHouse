@@ -58,7 +58,7 @@ def test(started_cluster):
         assert node_2_1.query("SELECT sum(x) FROM replicated").strip() == ''
         assert node_2_2.query("SELECT sum(x) FROM replicated").strip() == '2'
 
-        # With in_order balancing first replicas chosen.
+        # With in_order balancing first replicas are chosen.
         assert instance_with_dist_table.query(
             "SELECT count() FROM distributed SETTINGS load_balancing='in_order'").strip() == ''
 
@@ -89,3 +89,12 @@ SELECT count() FROM distributed SETTINGS
     max_replica_delay_for_distributed_queries=1,
     fallback_to_stale_replicas_for_distributed_queries=0
 ''')
+
+        # Now partition off the remote replica of the local shard and test that failover still works.
+        pm.partition_instances(node_1_1, node_1_2, port=9000)
+
+        assert instance_with_dist_table.query('''
+SELECT sum(x) FROM distributed SETTINGS
+    load_balancing='in_order',
+    max_replica_delay_for_distributed_queries=1
+''').strip() == '2'

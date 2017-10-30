@@ -33,6 +33,7 @@ class DataTypeNumber<void> final : public IDataTypeDummy
 {
 public:
     using FieldType = void;
+    static constexpr bool is_parametric = false;
 
     std::string getName() const override { return "Void"; }
     const char * getFamilyName() const override { return "Void"; }
@@ -46,6 +47,7 @@ class DataTypeNumber<Null> final : public IDataTypeDummy
 {
 public:
     using FieldType = Null;
+    static constexpr bool is_parametric = false;
 
     std::string getName() const override { return "Null"; }
     const char * getFamilyName() const override { return "Null"; }
