@@ -26,7 +26,6 @@ public:
                                     const Block & sample_block, const Context & context, size_t max_block_size)
             : file_name(file_name), format_name(format_name)
     {
-
         read_buf = std::make_unique<ReadBufferFromFile>(file_name);
         reader = FormatFactory().getInput(format_name, *read_buf, sample_block, context, max_block_size);
     }
@@ -69,7 +68,7 @@ private:
 StoragePtr StorageCatBoostPool::create(const String & column_description_file_name,
                                        const String & data_description_file_name)
 {
-    return std::make_shared<StorageCatBoostPool>(column_description_file_name, data_description_file_name);
+    return make_shared(column_description_file_name, data_description_file_name);
 }
 
 StorageCatBoostPool::StorageCatBoostPool(const String & column_description_file_name,
@@ -145,7 +144,7 @@ void StorageCatBoostPool::parseColumnDescription()
         while (std::getline(iss, token, '\t'))
             tokens.push_back(token);
 
-        if (tokens.size() != 2 || tokens.size() != 3)
+        if (tokens.size() != 2 && tokens.size() != 3)
             throw Exception("Cannot parse column description at line " + str_line_num + " '" + line + "' "
                             + ": expected 2 or 3 columns, got " + std::to_string(tokens.size()),
                             ErrorCodes::CANNOT_PARSE_TEXT);
@@ -212,7 +211,7 @@ BlockInputStreams StorageCatBoostPool::read(const Names & column_names,
                        const Context & context,
                        QueryProcessingStage::Enum & processed_stage,
                        size_t max_block_size,
-                       unsigned threads) override
+                       unsigned threads)
 {
     auto stream = std::make_shared<CatBoostDatasetBlockInputStream>(
             data_description_file_name, "TSV", sample_block, context, max_block_size);
