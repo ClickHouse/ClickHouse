@@ -47,6 +47,7 @@ public:
             case Week: return "Week";
             case Month: return "Month";
             case Year: return "Year";
+            default: __builtin_unreachable();
         }
     }
 
