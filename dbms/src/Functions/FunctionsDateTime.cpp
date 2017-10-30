@@ -37,6 +37,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionToYYYYMM>();
     factory.registerFunction<FunctionToYYYYMMDD>();
     factory.registerFunction<FunctionToYYYYMMDDhhmmss>();
+
     factory.registerFunction<FunctionAddSeconds>();
     factory.registerFunction<FunctionAddMinutes>();
     factory.registerFunction<FunctionAddHours>();
@@ -44,6 +45,14 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionAddWeeks>();
     factory.registerFunction<FunctionAddMonths>();
     factory.registerFunction<FunctionAddYears>();
+
+    factory.registerFunction<FunctionSubtractSeconds>();
+    factory.registerFunction<FunctionSubtractMinutes>();
+    factory.registerFunction<FunctionSubtractHours>();
+    factory.registerFunction<FunctionSubtractDays>();
+    factory.registerFunction<FunctionSubtractWeeks>();
+    factory.registerFunction<FunctionSubtractMonths>();
+    factory.registerFunction<FunctionSubtractYears>();
 }
 
 }
