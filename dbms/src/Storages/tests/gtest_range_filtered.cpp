@@ -11,8 +11,8 @@ TEST(RangeFiltered, simple)
     for (int i = 0; i < 10; ++i)
         v.push_back(i);
 
-    auto v30 = createRangeFiltered([] (int i) { return i % 3 == 0;}, v);
-    auto v31 = createRangeFiltered([] (int i) { return i % 3 != 0;}, v);
+    auto v30 = createRangeFiltered([] (int i) { return i % 3 == 0; }, v);
+    auto v31 = createRangeFiltered([] (int i) { return i % 3 != 0; }, v);
 
     for (const int & i : v30)
         ASSERT_EQ(i % 3, 0);
@@ -27,7 +27,6 @@ TEST(RangeFiltered, simple)
         auto it2 = std::next(it);
         ASSERT_EQ(*it2, 3);
 
-        auto it3 = it;
         it = std::next(it2);
         ASSERT_EQ(*it, 6);
     }

@@ -3,7 +3,7 @@
 set -e
 
 BRANCH=trunk
-#BRANCH=tags/RELEASE_400/final
+#BRANCH=tags/RELEASE_500/final
 
 THREADS=$(grep -c ^processor /proc/cpuinfo)
 
