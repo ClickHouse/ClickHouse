@@ -35,7 +35,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
         create.select = nullptr;
 
     /// For "MATERIALIZED VIEW x TO y" it's necessary to save destination table
-    if (!(create.is_materialized_view && !create.storage))
+    if (!create.is_materialized_view || create.storage)
     {
         create.as_database.clear();
         create.as_table.clear();
