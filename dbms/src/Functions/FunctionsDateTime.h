@@ -782,6 +782,30 @@ struct AddYearsImpl
     }
 };
 
+
+template <typename Transform>
+struct SubtractIntervalImpl
+{
+    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return Transform::execute(t, -delta, time_zone);
+    }
+
+    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return Transform::execute(d, -delta, time_zone);
+    }
+};
+
+struct SubtractSecondsImpl : SubtractIntervalImpl<AddSecondsImpl> { static constexpr auto name = "subtractSeconds"; };
+struct SubtractMinutesImpl : SubtractIntervalImpl<AddMinutesImpl> { static constexpr auto name = "subtractMinutes"; };
+struct SubtractHoursImpl : SubtractIntervalImpl<AddHoursImpl> { static constexpr auto name = "subtractHours"; };
+struct SubtractDaysImpl : SubtractIntervalImpl<AddDaysImpl> { static constexpr auto name = "subtractDays"; };
+struct SubtractWeeksImpl : SubtractIntervalImpl<AddWeeksImpl> { static constexpr auto name = "subtractWeeks"; };
+struct SubtractMonthsImpl : SubtractIntervalImpl<AddMonthsImpl> { static constexpr auto name = "subtractMonths"; };
+struct SubtractYearsImpl : SubtractIntervalImpl<AddYearsImpl> { static constexpr auto name = "subtractYears"; };
+
+
 template <typename FromType, typename ToType, typename Transform>
 struct Adder
 {
@@ -1258,5 +1282,13 @@ using FunctionAddDays = FunctionDateOrDateTimeAddInterval<AddDaysImpl>;
 using FunctionAddWeeks = FunctionDateOrDateTimeAddInterval<AddWeeksImpl>;
 using FunctionAddMonths = FunctionDateOrDateTimeAddInterval<AddMonthsImpl>;
 using FunctionAddYears = FunctionDateOrDateTimeAddInterval<AddYearsImpl>;
+
+using FunctionSubtractSeconds = FunctionDateOrDateTimeAddInterval<SubtractSecondsImpl>;
+using FunctionSubtractMinutes = FunctionDateOrDateTimeAddInterval<SubtractMinutesImpl>;
+using FunctionSubtractHours = FunctionDateOrDateTimeAddInterval<SubtractHoursImpl>;
+using FunctionSubtractDays = FunctionDateOrDateTimeAddInterval<SubtractDaysImpl>;
+using FunctionSubtractWeeks = FunctionDateOrDateTimeAddInterval<SubtractWeeksImpl>;
+using FunctionSubtractMonths = FunctionDateOrDateTimeAddInterval<SubtractMonthsImpl>;
+using FunctionSubtractYears = FunctionDateOrDateTimeAddInterval<SubtractYearsImpl>;
 
 }
