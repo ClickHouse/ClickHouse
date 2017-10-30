@@ -233,7 +233,7 @@ private:
     void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
 
     /// If true, the table is offline and can not be written to it.
-    bool is_readonly = false;
+    std::atomic_bool is_readonly = false;
 
     String database_name;
     String table_name;

@@ -187,7 +187,7 @@ private:
     bool enabled_extremes = false;
 
     /// Information about the approximate total number of rows is collected in the parent source.
-    bool collected_total_rows_approx = false;
+    std::atomic_bool collected_total_rows_approx = false;
 
     /// The limit on the number of rows/bytes has been exceeded, and you need to stop execution on the next `read` call, as if the thread has run out.
     bool limit_exceeded_need_break = false;
