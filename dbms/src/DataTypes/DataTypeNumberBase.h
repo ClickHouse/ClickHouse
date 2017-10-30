@@ -12,6 +12,7 @@ template <typename T>
 class DataTypeNumberBase : public IDataType
 {
 public:
+    static constexpr bool is_parametric = false;
     using FieldType = T;
 
     std::string getName() const override { return TypeName<T>::get(); }

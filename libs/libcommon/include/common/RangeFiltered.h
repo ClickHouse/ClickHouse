@@ -6,12 +6,14 @@
 template <typename F, typename C>
 struct RangeFiltered
 {
-    using RawIterator = typename C::iterator;
+    /// Template parameter C may be const. Then const_iterator is used.
+    using RawIterator = decltype(std::declval<C>().begin());
     class Iterator;
 
     /// Will iterate over elements for which filter(*it) == true
-    RangeFiltered(F && filter, const C & container)
-            : filter(std::move(filter)), container(container) {}
+    template <typename F_, typename C_> /// Another template for universal references to work.
+    RangeFiltered(F_ && filter, C_ && container)
+        : filter(std::move(filter)), container(container) {}
 
     Iterator begin() const
     {
@@ -114,12 +116,12 @@ struct RangeFiltered
 
 protected:
     F filter;
-    const C & container;
+    C & container;
 };
 
 
 template <typename F, typename C>
-inline RangeFiltered<std::decay_t<F>, std::decay_t<C>> createRangeFiltered(F && filter, C && container)
+inline RangeFiltered<std::decay_t<F>, std::remove_reference_t<C>> createRangeFiltered(F && filter, C && container)
 {
     return {std::forward<F>(filter), std::forward<C>(container)};
 };
