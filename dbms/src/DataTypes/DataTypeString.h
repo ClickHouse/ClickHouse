@@ -12,6 +12,7 @@ class DataTypeString final : public IDataType
 {
 public:
     using FieldType = String;
+    static constexpr bool is_parametric = false;
 
     std::string getName() const override
     {

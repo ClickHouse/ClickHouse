@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -94,6 +95,8 @@ struct ConvertImpl
   */
 struct ToDateTimeImpl
 {
+    static constexpr auto name = "toDateTime";
+
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(DayNum_t(d));
@@ -101,7 +104,7 @@ struct ToDateTimeImpl
 };
 
 template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name>
-    : DateTimeTransformImpl<UInt16, UInt32, ToDateTimeImpl, Name> {};
+    : DateTimeTransformImpl<UInt16, UInt32, ToDateTimeImpl> {};
 
 
 /// Implementation of toDate function.
@@ -109,6 +112,8 @@ template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime, Name
 template <typename FromType, typename ToType>
 struct ToDateTransform32Or64
 {
+    static constexpr auto name = "toDate";
+
     static inline ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < 0xFFFF) ? from : time_zone.toDayNum(from);
@@ -118,7 +123,7 @@ struct ToDateTransform32Or64
 /** Conversion of DateTime to Date: throw off time component.
   */
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
-    : DateTimeTransformImpl<UInt32, UInt16, ToDateImpl, Name> {};
+    : DateTimeTransformImpl<UInt32, UInt16, ToDateImpl> {};
 
 /** Special case of converting (U)Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to Date.
   * If number is less than 65536, then it is treated as DayNum, and if greater or equals, then as unix timestamp.
@@ -128,17 +133,17 @@ template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name
   *  (otherwise such usage would be frequent mistake).
   */
 template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name>
-    : DateTimeTransformImpl<UInt32, UInt16, ToDateTransform32Or64<UInt32, UInt16>, Name> {};
+    : DateTimeTransformImpl<UInt32, UInt16, ToDateTransform32Or64<UInt32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name>
-    : DateTimeTransformImpl<UInt64, UInt16, ToDateTransform32Or64<UInt64, UInt16>, Name> {};
+    : DateTimeTransformImpl<UInt64, UInt16, ToDateTransform32Or64<UInt64, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name>
-    : DateTimeTransformImpl<Int32, UInt16, ToDateTransform32Or64<Int32, UInt16>, Name> {};
+    : DateTimeTransformImpl<Int32, UInt16, ToDateTransform32Or64<Int32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name>
-    : DateTimeTransformImpl<Int64, UInt16, ToDateTransform32Or64<Int64, UInt16>, Name> {};
+    : DateTimeTransformImpl<Int64, UInt16, ToDateTransform32Or64<Int64, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name>
-    : DateTimeTransformImpl<Float32, UInt16, ToDateTransform32Or64<Float32, UInt16>, Name> {};
+    : DateTimeTransformImpl<Float32, UInt16, ToDateTransform32Or64<Float32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
-    : DateTimeTransformImpl<Float64, UInt16, ToDateTransform32Or64<Float64, UInt16>, Name> {};
+    : DateTimeTransformImpl<Float64, UInt16, ToDateTransform32Or64<Float64, UInt16>> {};
 
 
 /** Transformation of numbers, dates, datetimes to strings: through formatting.
@@ -196,7 +201,7 @@ const DateLUTImpl * extractTimeZoneFromFunctionArguments(Block & block, const Co
 
 
 template <typename FromDataType, typename Name>
-struct ConvertImpl<FromDataType, DataTypeString, Name>
+struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataType, DataTypeString>::value, DataTypeString>::type, Name>
 {
     using FromFieldType = typename FromDataType::FieldType;
 
@@ -261,7 +266,7 @@ struct ConvertImplGenericToString
             ColumnString::Chars_t & data_to = col_to->getChars();
             ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
 
-            data_to.resize(size * 2);    /// Using coefficient 2 for initial size is arbitary.
+            data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
             offsets_to.resize(size);
 
             WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
@@ -326,7 +331,7 @@ void throwExceptionForIncompletelyParsedValue(
 
 
 template <typename ToDataType, typename Name>
-struct ConvertImpl<DataTypeString, ToDataType, Name>
+struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeString>::value, DataTypeString>::type, ToDataType, Name>
 {
     using ToFieldType = typename ToDataType::FieldType;
 
@@ -479,7 +484,7 @@ struct ConvertImplGenericFromString
 
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
 /// Note that time zone argument could be passed only for toUnixTimestamp function.
-struct NameToUnixTimestamp    { static constexpr auto name = "toUnixTimestamp"; };
+struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
 
 template <>
 struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
@@ -488,8 +493,8 @@ struct ConvertImpl<DataTypeString, DataTypeUInt32, NameToUnixTimestamp>
 
 /** If types are identical, just take reference to column.
   */
-template <typename Name>
-struct ConvertImpl<DataTypeString, DataTypeString, Name>
+template <typename T, typename Name>
+struct ConvertImpl<typename std::enable_if<!T::is_parametric, T>::type, T, Name>
 {
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result)
     {
@@ -566,7 +571,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
             ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
             size_t size = col_from->size();
             size_t n = col_from->getN();
-            data_to.resize(size * (n + 1));        /// + 1 - zero terminator
+            data_to.resize(size * (n + 1)); /// + 1 - zero terminator
             offsets_to.resize(size);
 
             size_t offset_from = 0;
@@ -596,8 +601,26 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
 
 /// Declared early because used below.
-struct NameToDate            { static constexpr auto name = "toDate"; };
-struct NameToString            { static constexpr auto name = "toString"; };
+struct NameToDate { static constexpr auto name = "toDate"; };
+struct NameToString { static constexpr auto name = "toString"; };
+
+
+#define DEFINE_NAME_TO_INTERVAL(INTERVAL_KIND) \
+    struct NameToInterval ## INTERVAL_KIND \
+    { \
+        static constexpr auto name = "toInterval" #INTERVAL_KIND; \
+        static constexpr auto kind = DataTypeInterval::INTERVAL_KIND; \
+    };
+
+DEFINE_NAME_TO_INTERVAL(Second)
+DEFINE_NAME_TO_INTERVAL(Minute)
+DEFINE_NAME_TO_INTERVAL(Hour)
+DEFINE_NAME_TO_INTERVAL(Day)
+DEFINE_NAME_TO_INTERVAL(Week)
+DEFINE_NAME_TO_INTERVAL(Month)
+DEFINE_NAME_TO_INTERVAL(Year)
+
+#undef DEFINE_NAME_TO_INTERVAL
 
 
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
@@ -707,9 +730,11 @@ private:
 
     template <typename ToDataType2 = ToDataType, typename Name2 = Name>
     DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
-        typename std::enable_if<!(std::is_same<ToDataType2, DataTypeString>::value ||
-            std::is_same<Name2, NameToUnixTimestamp>::value ||
-            std::is_same<Name2, NameToDate>::value)>::type * = nullptr) const
+        typename std::enable_if<!(
+            std::is_same<ToDataType2, DataTypeString>::value
+            || std::is_same<ToDataType2, DataTypeInterval>::value
+            || std::is_same<Name2, NameToUnixTimestamp>::value
+            || std::is_same<Name2, NameToDate>::value)>::type * = nullptr) const
     {
         if (arguments.size() != 1)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -790,6 +815,18 @@ private:
         }
 
         return std::make_shared<ToDataType2>();
+    }
+
+    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
+    DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
+        typename std::enable_if<std::is_same<ToDataType2, DataTypeInterval>::value>::type * = nullptr) const
+    {
+        if (arguments.size() != 1)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 1.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return std::make_shared<DataTypeInterval>(Name::kind);
     }
 };
 
@@ -1066,36 +1103,39 @@ struct ToStringMonotonicity
     }
 };
 
-struct NameToUInt8             { static constexpr auto name = "toUInt8"; };
-struct NameToUInt16         { static constexpr auto name = "toUInt16"; };
-struct NameToUInt32         { static constexpr auto name = "toUInt32"; };
-struct NameToUInt64         { static constexpr auto name = "toUInt64"; };
-struct NameToInt8             { static constexpr auto name = "toInt8"; };
-struct NameToInt16             { static constexpr auto name = "toInt16"; };
-struct NameToInt32            { static constexpr auto name = "toInt32"; };
-struct NameToInt64            { static constexpr auto name = "toInt64"; };
-struct NameToFloat32        { static constexpr auto name = "toFloat32"; };
-struct NameToFloat64        { static constexpr auto name = "toFloat64"; };
-struct NameToDateTime        { static constexpr auto name = "toDateTime"; };
-struct NameToUUID           { static constexpr auto name = "toUUID"; };
 
-using FunctionToUInt8         = FunctionConvert<DataTypeUInt8,    NameToUInt8,    ToIntMonotonicity<UInt8>>;
-using FunctionToUInt16         = FunctionConvert<DataTypeUInt16,    NameToUInt16,    ToIntMonotonicity<UInt16>>;
-using FunctionToUInt32         = FunctionConvert<DataTypeUInt32,    NameToUInt32,    ToIntMonotonicity<UInt32>>;
-using FunctionToUInt64         = FunctionConvert<DataTypeUInt64,    NameToUInt64,    ToIntMonotonicity<UInt64>>;
-using FunctionToInt8         = FunctionConvert<DataTypeInt8,        NameToInt8,        ToIntMonotonicity<Int8>>;
-using FunctionToInt16         = FunctionConvert<DataTypeInt16,    NameToInt16,    ToIntMonotonicity<Int16>>;
-using FunctionToInt32         = FunctionConvert<DataTypeInt32,    NameToInt32,    ToIntMonotonicity<Int32>>;
-using FunctionToInt64         = FunctionConvert<DataTypeInt64,    NameToInt64,    ToIntMonotonicity<Int64>>;
-using FunctionToFloat32     = FunctionConvert<DataTypeFloat32,    NameToFloat32,    PositiveMonotonicity>;
-using FunctionToFloat64     = FunctionConvert<DataTypeFloat64,    NameToFloat64,    PositiveMonotonicity>;
-using FunctionToDate         = FunctionConvert<DataTypeDate,        NameToDate,        ToIntMonotonicity<UInt16>>;
-using FunctionToDateTime     = FunctionConvert<DataTypeDateTime,    NameToDateTime,    ToIntMonotonicity<UInt32>>;
-using FunctionToUUID         = FunctionConvert<DataTypeUUID,      NameToUUID,          ToIntMonotonicity<UInt128>>;
-using FunctionToString         = FunctionConvert<DataTypeString,    NameToString,     ToStringMonotonicity>;
-using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32,    NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
+struct NameToUInt8 { static constexpr auto name = "toUInt8"; };
+struct NameToUInt16 { static constexpr auto name = "toUInt16"; };
+struct NameToUInt32 { static constexpr auto name = "toUInt32"; };
+struct NameToUInt64 { static constexpr auto name = "toUInt64"; };
+struct NameToInt8 { static constexpr auto name = "toInt8"; };
+struct NameToInt16 { static constexpr auto name = "toInt16"; };
+struct NameToInt32 { static constexpr auto name = "toInt32"; };
+struct NameToInt64 { static constexpr auto name = "toInt64"; };
+struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
+struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
+struct NameToDateTime { static constexpr auto name = "toDateTime"; };
+struct NameToUUID { static constexpr auto name = "toUUID"; };
+
+using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToIntMonotonicity<UInt8>>;
+using FunctionToUInt16 = FunctionConvert<DataTypeUInt16, NameToUInt16, ToIntMonotonicity<UInt16>>;
+using FunctionToUInt32 = FunctionConvert<DataTypeUInt32, NameToUInt32, ToIntMonotonicity<UInt32>>;
+using FunctionToUInt64 = FunctionConvert<DataTypeUInt64, NameToUInt64, ToIntMonotonicity<UInt64>>;
+using FunctionToInt8 = FunctionConvert<DataTypeInt8, NameToInt8, ToIntMonotonicity<Int8>>;
+using FunctionToInt16 = FunctionConvert<DataTypeInt16, NameToInt16, ToIntMonotonicity<Int16>>;
+using FunctionToInt32 = FunctionConvert<DataTypeInt32, NameToInt32, ToIntMonotonicity<Int32>>;
+using FunctionToInt64 = FunctionConvert<DataTypeInt64, NameToInt64, ToIntMonotonicity<Int64>>;
+using FunctionToFloat32 = FunctionConvert<DataTypeFloat32, NameToFloat32, PositiveMonotonicity>;
+using FunctionToFloat64 = FunctionConvert<DataTypeFloat64, NameToFloat64, PositiveMonotonicity>;
+using FunctionToDate = FunctionConvert<DataTypeDate, NameToDate, ToIntMonotonicity<UInt16>>;
+using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToIntMonotonicity<UInt32>>;
+using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToIntMonotonicity<UInt128>>;
+using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
+using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
+
 
 template <typename DataType> struct FunctionTo;
+
 template <> struct FunctionTo<DataTypeUInt8> { using Type = FunctionToUInt8; };
 template <> struct FunctionTo<DataTypeUInt16> { using Type = FunctionToUInt16; };
 template <> struct FunctionTo<DataTypeUInt32> { using Type = FunctionToUInt32; };
@@ -1111,32 +1151,33 @@ template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTim
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
+
 template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
     : FunctionTo<DataTypeNumber<FieldType>>
 {
 };
 
-struct NameToUInt8OrZero         { static constexpr auto name = "toUInt8OrZero"; };
-struct NameToUInt16OrZero         { static constexpr auto name = "toUInt16OrZero"; };
-struct NameToUInt32OrZero         { static constexpr auto name = "toUInt32OrZero"; };
-struct NameToUInt64OrZero         { static constexpr auto name = "toUInt64OrZero"; };
-struct NameToInt8OrZero         { static constexpr auto name = "toInt8OrZero"; };
-struct NameToInt16OrZero         { static constexpr auto name = "toInt16OrZero"; };
-struct NameToInt32OrZero        { static constexpr auto name = "toInt32OrZero"; };
-struct NameToInt64OrZero        { static constexpr auto name = "toInt64OrZero"; };
-struct NameToFloat32OrZero        { static constexpr auto name = "toFloat32OrZero"; };
-struct NameToFloat64OrZero        { static constexpr auto name = "toFloat64OrZero"; };
+struct NameToUInt8OrZero { static constexpr auto name = "toUInt8OrZero"; };
+struct NameToUInt16OrZero { static constexpr auto name = "toUInt16OrZero"; };
+struct NameToUInt32OrZero { static constexpr auto name = "toUInt32OrZero"; };
+struct NameToUInt64OrZero { static constexpr auto name = "toUInt64OrZero"; };
+struct NameToInt8OrZero { static constexpr auto name = "toInt8OrZero"; };
+struct NameToInt16OrZero { static constexpr auto name = "toInt16OrZero"; };
+struct NameToInt32OrZero { static constexpr auto name = "toInt32OrZero"; };
+struct NameToInt64OrZero { static constexpr auto name = "toInt64OrZero"; };
+struct NameToFloat32OrZero { static constexpr auto name = "toFloat32OrZero"; };
+struct NameToFloat64OrZero { static constexpr auto name = "toFloat64OrZero"; };
 
-using FunctionToUInt8OrZero     = FunctionConvertOrZero<DataTypeUInt8,        NameToUInt8OrZero>;
-using FunctionToUInt16OrZero     = FunctionConvertOrZero<DataTypeUInt16,        NameToUInt16OrZero>;
-using FunctionToUInt32OrZero     = FunctionConvertOrZero<DataTypeUInt32,        NameToUInt32OrZero>;
-using FunctionToUInt64OrZero     = FunctionConvertOrZero<DataTypeUInt64,        NameToUInt64OrZero>;
-using FunctionToInt8OrZero         = FunctionConvertOrZero<DataTypeInt8,        NameToInt8OrZero>;
-using FunctionToInt16OrZero     = FunctionConvertOrZero<DataTypeInt16,        NameToInt16OrZero>;
-using FunctionToInt32OrZero     = FunctionConvertOrZero<DataTypeInt32,        NameToInt32OrZero>;
-using FunctionToInt64OrZero     = FunctionConvertOrZero<DataTypeInt64,        NameToInt64OrZero>;
-using FunctionToFloat32OrZero     = FunctionConvertOrZero<DataTypeFloat32,    NameToFloat32OrZero>;
-using FunctionToFloat64OrZero     = FunctionConvertOrZero<DataTypeFloat64,    NameToFloat64OrZero>;
+using FunctionToUInt8OrZero = FunctionConvertOrZero<DataTypeUInt8, NameToUInt8OrZero>;
+using FunctionToUInt16OrZero = FunctionConvertOrZero<DataTypeUInt16, NameToUInt16OrZero>;
+using FunctionToUInt32OrZero = FunctionConvertOrZero<DataTypeUInt32, NameToUInt32OrZero>;
+using FunctionToUInt64OrZero = FunctionConvertOrZero<DataTypeUInt64, NameToUInt64OrZero>;
+using FunctionToInt8OrZero = FunctionConvertOrZero<DataTypeInt8, NameToInt8OrZero>;
+using FunctionToInt16OrZero = FunctionConvertOrZero<DataTypeInt16, NameToInt16OrZero>;
+using FunctionToInt32OrZero = FunctionConvertOrZero<DataTypeInt32, NameToInt32OrZero>;
+using FunctionToInt64OrZero = FunctionConvertOrZero<DataTypeInt64, NameToInt64OrZero>;
+using FunctionToFloat32OrZero = FunctionConvertOrZero<DataTypeFloat32, NameToFloat32OrZero>;
+using FunctionToFloat64OrZero = FunctionConvertOrZero<DataTypeFloat64, NameToFloat64OrZero>;
 
 
 class FunctionCast final : public IFunction
