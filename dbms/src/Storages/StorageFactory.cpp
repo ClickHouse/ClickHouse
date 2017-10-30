@@ -388,9 +388,6 @@ StoragePtr StorageFactory::get(
     checkAllTypesAreAllowedInTable(materialized_columns);
     checkAllTypesAreAllowedInTable(alias_columns);
 
-    if (!query.storage)
-        throw Exception("Incorrect CREATE query: ENGINE required", ErrorCodes::ENGINE_REQUIRED);
-
     if (query.is_materialized_view)
     {
         /// Pass local_context here to convey setting for inner table
@@ -399,6 +396,9 @@ StoragePtr StorageFactory::get(
             materialized_columns, alias_columns, column_defaults,
             attach);
     }
+
+    if (!query.storage)
+        throw Exception("Incorrect CREATE query: ENGINE required", ErrorCodes::ENGINE_REQUIRED);
 
     ASTStorage & storage_def = *query.storage;
     const ASTFunction & engine_def = *storage_def.engine;
@@ -423,7 +423,7 @@ StoragePtr StorageFactory::get(
 
     auto check_arguments_empty = [&]
     {
-        if (args_ptr)
+        if (args_ptr && !args_ptr->empty())
             throw Exception(
                 "Engine " + name + " doesn't support any arguments (" + toString(args_ptr->size()) + " given)",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
