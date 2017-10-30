@@ -20,6 +20,7 @@ void registerFunctionsConversion(FunctionFactory &);
 void registerFunctionsDateTime(FunctionFactory &);
 void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
 void registerFunctionsExternalDictionaries(FunctionFactory &);
+void registerFunctionsExternalModels(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
@@ -54,6 +55,7 @@ void registerFunctions()
     registerFunctionsDateTime(factory);
     registerFunctionsEmbeddedDictionaries(factory);
     registerFunctionsExternalDictionaries(factory);
+    registerFunctionsExternalModels(factory);
     registerFunctionsFormatting(factory);
     registerFunctionsHashing(factory);
     registerFunctionsHigherOrder(factory);

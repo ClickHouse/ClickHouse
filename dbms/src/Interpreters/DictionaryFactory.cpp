@@ -24,7 +24,7 @@ namespace ErrorCodes
 }
 
 
-DictionaryPtr DictionaryFactory::create(const std::string & name, Poco::Util::AbstractConfiguration & config,
+DictionaryPtr DictionaryFactory::create(const std::string & name, const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix, Context & context) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
