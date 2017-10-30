@@ -808,7 +808,7 @@ StoragePtr StorageFactory::get(
         merging_params.mode = MergeTreeData::MergingParams::Ordinary;
 
         const bool allow_extended_storage_def =
-            local_context.getSettingsRef().experimental_allow_extended_storage_definition_syntax;
+            attach || local_context.getSettingsRef().experimental_allow_extended_storage_definition_syntax;
 
         if (name_part == "Collapsing")
             merging_params.mode = MergeTreeData::MergingParams::Collapsing;
