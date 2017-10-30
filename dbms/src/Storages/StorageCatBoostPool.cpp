@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/FilterColumnsBlockInputStream.h>
+#include <Interpreters/Context.h>
+#include <boost/filesystem.hpp>
 
 namespace DB
 {
@@ -14,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int DATABASE_ACCESS_DENIED;
 }
 
 namespace
@@ -65,17 +68,51 @@ private:
 
 }
 
-StoragePtr StorageCatBoostPool::create(const String & column_description_file_name,
-                                       const String & data_description_file_name)
+static boost::filesystem::path canonicalPath(std::string && path)
 {
-    return make_shared(column_description_file_name, data_description_file_name);
+    return boost::filesystem::canonical(boost::filesystem::path(path));
 }
 
-StorageCatBoostPool::StorageCatBoostPool(const String & column_description_file_name,
-                                         const String & data_description_file_name)
-        : column_description_file_name(column_description_file_name),
-          data_description_file_name(data_description_file_name)
+static std::string resolvePath(const boost::filesystem::path & base_path, std::string && path)
 {
+    boost::filesystem::path resolved_path(path);
+    if (!resolved_path.is_absolute())
+        return (base_path / resolved_path).string();
+    return resolved_path.string();
+}
+
+static void checkCreationIsAllowed(const String & base_path, const String & path)
+{
+    if (base_path != path.substr(0, base_path.size()))
+        throw Exception(
+            "Using file descriptor or user specified path as source of storage isn't allowed for server daemons",
+            ErrorCodes::DATABASE_ACCESS_DENIED);
+}
+
+StoragePtr StorageCatBoostPool::create(const Context & context,
+                                       const String & column_description_file_name,
+                                       const String & data_description_file_name)
+{
+    return make_shared(context, column_description_file_name, data_description_file_name);
+}
+
+
+StorageCatBoostPool::StorageCatBoostPool(const Context & context,
+                                         String column_description_file_name_,
+                                         String data_description_file_name_)
+        : column_description_file_name(std::move(column_description_file_name_)),
+          data_description_file_name(std::move(data_description_file_name_))
+{
+    auto base_path = canonicalPath(context.getPath());
+    column_description_file_name = resolvePath(base_path, std::move(column_description_file_name));
+    data_description_file_name = resolvePath(base_path, std::move(data_description_file_name));
+    if (context.getApplicationType() == Context::ApplicationType::SERVER)
+    {
+        const auto & base_path_str = base_path.string();
+        checkCreationIsAllowed(base_path_str, column_description_file_name);
+        checkCreationIsAllowed(base_path_str, data_description_file_name);
+    }
+
     parseColumnDescription();
     createSampleBlockAndColumns();
 }
@@ -151,7 +188,7 @@ void StorageCatBoostPool::parseColumnDescription()
 
         std::string str_id = tokens[0];
         std::string col_type = tokens[1];
-        std::string col_name = tokens.size() > 2 ? tokens[2] : str_id;
+        std::string col_name = "feature" + (tokens.size() > 2 ? tokens[2] : str_id);
 
         size_t num_id;
         try
