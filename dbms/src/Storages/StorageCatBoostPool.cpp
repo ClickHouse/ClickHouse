@@ -198,8 +198,11 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
 
         if (desc.column_type == DatasetColumnType::Categ)
             cat_columns.emplace_back(desc.column_name, type);
-        if (desc.column_type == DatasetColumnType::Num)
+        else if (desc.column_type == DatasetColumnType::Num)
             num_columns.emplace_back(desc.column_name, type);
+        else
+            materialized_columns.emplace_back(desc.column_name, type);
+
         sample_block.insert(ColumnWithTypeAndName(type->createColumn(), type, desc.column_name));
     }
     columns.insert(columns.end(), num_columns.begin(), num_columns.end());
