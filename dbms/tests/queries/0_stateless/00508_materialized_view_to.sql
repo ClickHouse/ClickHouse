@@ -3,7 +3,7 @@ DROP TABLE IF EXISTS test.dst;
 DROP TABLE IF EXISTS test.mv;
 
 CREATE TABLE test.src (x UInt8) ENGINE = Null;
-CREATE TABLE test.dst (x UInt8) ENGINE = Memory();
+CREATE TABLE test.dst (x UInt8) ENGINE = Memory;
 
 CREATE MATERIALIZED VIEW test.mv TO test.dst AS SELECT * FROM test.src;
 INSERT INTO test.src VALUES (1), (2);
