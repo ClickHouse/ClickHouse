@@ -609,7 +609,7 @@ struct NameToString { static constexpr auto name = "toString"; };
     struct NameToInterval ## INTERVAL_KIND \
     { \
         static constexpr auto name = "toInterval" #INTERVAL_KIND; \
-        static constexpr auto kind = DataTypeInterval::INTERVAL_KIND; \
+        static constexpr int kind = DataTypeInterval::INTERVAL_KIND; \
     };
 
 DEFINE_NAME_TO_INTERVAL(Second)
@@ -826,7 +826,7 @@ private:
                 + toString(arguments.size()) + ", should be 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return std::make_shared<DataTypeInterval>(Name::kind);
+        return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
     }
 };
 
