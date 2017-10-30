@@ -36,6 +36,8 @@ public:
     using NameToValueMap = HashMap<StringRef, FieldType, StringRefHash>;
     using ValueToNameMap = std::unordered_map<FieldType, StringRef>;
 
+    static constexpr bool is_parametric = true;
+
 private:
     Values values;
     NameToValueMap name_to_value_map;

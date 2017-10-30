@@ -27,7 +27,6 @@ TEST(RangeFiltered, simple)
         auto it2 = std::next(it);
         ASSERT_EQ(*it2, 3);
 
-        auto it3 = it;
         it = std::next(it2);
         ASSERT_EQ(*it, 6);
     }

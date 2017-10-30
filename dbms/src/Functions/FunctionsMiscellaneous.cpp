@@ -251,9 +251,9 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (auto type = checkAndGetDataType<DataTypeEnum8>(block.getByPosition(arguments[0]).type.get()))
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), type->getValues().size());
+            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(type->getValues().size()));
         else if (auto type = checkAndGetDataType<DataTypeEnum16>(block.getByPosition(arguments[0]).type.get()))
-            block.getByPosition(result).column = DataTypeUInt16().createConstColumn(block.rows(), type->getValues().size());
+            block.getByPosition(result).column = DataTypeUInt16().createConstColumn(block.rows(), UInt64(type->getValues().size()));
         else
             throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

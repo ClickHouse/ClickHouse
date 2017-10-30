@@ -19,6 +19,8 @@ private:
     DataTypePtr offsets;
 
 public:
+    static constexpr bool is_parametric = true;
+
     DataTypeArray(const DataTypePtr & nested_);
     DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_);
 
