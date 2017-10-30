@@ -208,6 +208,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr database;
     ASTPtr table;
     ASTPtr columns;
+    ASTPtr to_database;
+    ASTPtr to_table;
     ASTPtr storage;
     ASTPtr as_database;
     ASTPtr as_table;
@@ -219,7 +221,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool is_materialized_view = false;
     bool is_populate = false;
     bool is_temporary = false;
-    bool to_table = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -362,17 +363,13 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         // TO [db.]table
         if (ParserKeyword{"TO"}.ignore(pos, expected))
         {
-            to_table = true;
-
-            /// FIXME: as_table is ambiguous, it is set in AS clause also
-
-            if (!name_p.parse(pos, as_table, expected))
+            if (!name_p.parse(pos, to_table, expected))
                 return false;
 
             if (s_dot.ignore(pos, expected))
             {
-                as_database = as_table;
-                if (!name_p.parse(pos, as_table, expected))
+                to_database = to_table;
+                if (!name_p.parse(pos, to_table, expected))
                     return false;
             }
         }
@@ -421,6 +418,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
     query->cluster = cluster_str;
+
+    if (to_database)
+        query->to_database = typeid_cast<ASTIdentifier &>(*to_database).name;
+    if (to_table)
+        query->to_table = typeid_cast<ASTIdentifier &>(*to_table).name;
 
     query->set(query->columns, columns);
     query->set(query->storage, storage);
