@@ -13,7 +13,8 @@ class StorageCatBoostPool : private ext::shared_ptr_helper<StorageCatBoostPool>,
     friend class ext::shared_ptr_helper<StorageCatBoostPool>;
 
 public:
-    static StoragePtr create(const String & column_description_file_name, const String & data_description_file_name);
+    static StoragePtr create(const Context & context,
+                             const String & column_description_file_name, const String & data_description_file_name);
 
     std::string getName() const override { return "CatBoostPool"; }
 
@@ -75,7 +76,7 @@ private:
 
     std::vector<ColumnDescription> columns_description;
 
-    StorageCatBoostPool(const String & column_description_file_name, const String & data_description_file_name);
+    StorageCatBoostPool(const Context & context, String column_description_file_name, String data_description_file_name);
 
     void checkDatasetDescription();
     void parseColumnDescription();
