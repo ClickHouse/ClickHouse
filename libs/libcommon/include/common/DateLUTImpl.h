@@ -147,6 +147,7 @@ public:
         size_t index = d;
         size_t month_inside_quarter = (lut[index].month - 1) % 3;
 
+        index = index - lut[index].day_of_month;
         while (month_inside_quarter)
         {
             index = index - lut[index].day_of_month;
