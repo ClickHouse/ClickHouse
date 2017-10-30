@@ -40,7 +40,7 @@ public:
 
     bool isCached() const override { return false; }
 
-    DictionaryPtr clone() const override { return std::make_unique<HashedDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<HashedDictionary>(*this); }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

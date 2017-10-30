@@ -90,7 +90,7 @@ DictionarySourceFactory::DictionarySourceFactory()
 
 
 DictionarySourcePtr DictionarySourceFactory::create(
-    const std::string & name, Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+    const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
     const DictionaryStructure & dict_struct, Context & context) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
