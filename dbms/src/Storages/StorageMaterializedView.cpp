@@ -70,8 +70,10 @@ StorageMaterializedView::StorageMaterializedView(
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    if (!query.storage && query.as_table.empty())
-        throw Exception("ENGINE of MaterializedView should be specified explicitly", ErrorCodes::INCORRECT_QUERY);
+    if (!query.storage && query.to_table.empty())
+        throw Exception(
+            "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
+            ErrorCodes::INCORRECT_QUERY);
 
     extractDependentTable(*query.select, select_database_name, select_table_name);
 
@@ -81,10 +83,10 @@ StorageMaterializedView::StorageMaterializedView(
             DatabaseAndTableName(database_name, table_name));
 
     // If the destination table is not set, use inner table
-    if (!query.as_table.empty())
+    if (!query.to_table.empty())
     {
-        target_database_name = query.as_database;
-        target_table_name = query.as_table;
+        target_database_name = query.to_database;
+        target_table_name = query.to_table;
     }
     else
     {
