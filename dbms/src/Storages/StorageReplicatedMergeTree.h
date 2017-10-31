@@ -254,7 +254,7 @@ private:
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
-    std::atomic_bool is_leader_node = false;
+    std::atomic_bool is_leader_node {false};
     std::mutex leader_node_mutex;
 
     InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
