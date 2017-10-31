@@ -27,19 +27,14 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     /// We remove everything that is not needed for ATTACH from the query.
     create.attach = true;
     create.database.clear();
+    create.as_database.clear();
+    create.as_table.clear();
     create.if_not_exists = false;
     create.is_populate = false;
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!create.is_view && !create.is_materialized_view)
         create.select = nullptr;
-
-    /// For "MATERIALIZED VIEW x TO y" it's necessary to save destination table
-    if (!create.is_materialized_view || create.storage)
-    {
-        create.as_database.clear();
-        create.as_table.clear();
-    }
 
     std::ostringstream statement_stream;
     formatAST(create, statement_stream, 0, false);

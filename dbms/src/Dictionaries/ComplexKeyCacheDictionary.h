@@ -98,7 +98,7 @@ public:
         return true;
     }
 
-    DictionaryPtr clone() const override
+    std::unique_ptr<IExternalLoadable> clone() const override
     {
         return std::make_unique<ComplexKeyCacheDictionary>(*this);
     }
