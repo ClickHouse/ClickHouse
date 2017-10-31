@@ -8,6 +8,7 @@
 #include <DataStreams/FilterColumnsBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <boost/filesystem.hpp>
+#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
@@ -167,6 +168,10 @@ void StorageCatBoostPool::parseColumnDescription()
     auto column_types_map = getColumnTypesMap();
     auto column_types_string = getColumnTypesString(column_types_map);
 
+    /// Enumerate default names for columns as Auxiliary, Auxiliary1, Auxiliary2, ...
+    std::map<DatasetColumnType, size_t> columns_per_type_count;
+    size_t features_column_count = 0;
+
     while (std::getline(in, line))
     {
         ++line_num;
@@ -188,7 +193,7 @@ void StorageCatBoostPool::parseColumnDescription()
 
         std::string str_id = tokens[0];
         std::string col_type = tokens[1];
-        std::string col_name = "feature" + (tokens.size() > 2 ? tokens[2] : str_id);
+        std::string col_alias = tokens.size() > 2 ? tokens[2] : "";
 
         size_t num_id;
         try
@@ -211,9 +216,20 @@ void StorageCatBoostPool::parseColumnDescription()
                             ErrorCodes::CANNOT_PARSE_TEXT);
 
         auto type = column_types_map[col_type];
+
+        std::string col_name;
         if (type != DatasetColumnType::Num && type != DatasetColumnType::Categ)
-            col_name = col_type;
-        columns_description[num_id] = ColumnDescription(col_name, type);
+        {
+            auto & col_number = columns_per_type_count[type];
+            col_name = col_type + (col_number ? std::to_string(col_number) : "");
+            ++col_number;
+        }
+        else
+        {
+            col_name = "feature" + std::to_string(features_column_count);
+            ++features_column_count;
+        }
+        columns_description[num_id] = ColumnDescription(col_name, col_alias, type);
     }
 }
 
@@ -239,6 +255,13 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
             num_columns.emplace_back(desc.column_name, type);
         else
             materialized_columns.emplace_back(desc.column_name, type);
+
+        if (!desc.alias.empty())
+        {
+            auto alias = std::make_shared<ASTIdentifier>();
+            alias->name = desc.alias;
+            column_defaults[desc.alias] = {ColumnDefaultType::Alias, alias};
+        }
 
         sample_block.insert(ColumnWithTypeAndName(type->createColumn(), type, desc.column_name));
     }
