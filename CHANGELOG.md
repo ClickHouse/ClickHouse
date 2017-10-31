@@ -1,3 +1,21 @@
+# ClickHouse release 1.1.54304
+
+## New features:
+* TLS support in the native protocol (to enable, set `tcp_ssl_port` in `config.xml`)
+
+## Bug fixes:
+* `ALTER` for replicated tables now tries to start running as soon as possible
+* Fixed crashing when reading data with the setting `preferred_block_size_bytes=0`
+* Fixed crashes of `clickhouse-client` when `Page Down` is pressed
+* Correct interpretation of certain complex queries with `GLOBAL IN` and `UNION ALL`
+* `FREEZE PARTITION` always works atomically now
+* Empty POST requests now return a response with code 411
+* Fixed interpretation errors for expressions like `CAST(1 AS Nullable(UInt8))`
+* Fixed an error when reading columns like `Array(Nullable(String))` from `MergeTree` tables
+* Fixed crashing when parsing queries like `SELECT dummy AS dummy, dummy AS b`
+* Users are updated correctly when `users.xml` is invalid
+* Correct handling when an executable dictionary returns a non-zero response code
+
 # ClickHouse release 1.1.54292
 
 ## New features:
