@@ -1,7 +1,6 @@
 #include <Core/Block.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
-#include <Parsers/IAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -23,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(std::shared_ptr<IAST> & node, const Context & context)
+std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context)
 {
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
         node, context, nullptr, NamesAndTypesList{{ "_dummy", std::make_shared<DataTypeUInt8>() }}).getConstActions();
@@ -51,7 +50,7 @@ std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(std::sha
 }
 
 
-ASTPtr evaluateConstantExpressionAsLiteral(ASTPtr & node, const Context & context)
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return node;
@@ -61,7 +60,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(ASTPtr & node, const Context & contex
 }
 
 
-ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(ASTPtr & node, const Context & context)
+ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (auto id = typeid_cast<const ASTIdentifier *>(node.get()))
         return std::make_shared<ASTLiteral>(node->range, Field(id->name));

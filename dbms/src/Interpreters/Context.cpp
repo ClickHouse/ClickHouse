@@ -1390,7 +1390,7 @@ QueryLog & Context::getQueryLog()
                 "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
         system_logs->query_log = std::make_unique<QueryLog>(
-            *global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+            *global_context, database, table, "ENGINE = MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
     }
 
     return *system_logs->query_log;
@@ -1427,8 +1427,9 @@ PartLog * Context::getPartLog(const String & database, const String & table)
 
         size_t flush_interval_milliseconds = config.getUInt64(
                 "part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-        system_logs->part_log = std::make_unique<PartLog>(*global_context, part_log_database, part_log_table,
-                                                     "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+        system_logs->part_log = std::make_unique<PartLog>(
+            *global_context, part_log_database, part_log_table,
+            "ENGINE = MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
     }
 
     return system_logs->part_log.get();

@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include <Common/config_version.h>
 #if USE_RDKAFKA
 
 #include <thread>
@@ -16,7 +17,11 @@
 #include <Storages/StorageKafka.h>
 #include <common/logger_useful.h>
 
+#if __has_include(<rdkafka.h>) // maybe bundled
 #include <rdkafka.h>
+#else // system
+#include <librdkafka/rdkafka.h>
+#endif
 
 namespace DB
 {
@@ -123,7 +128,7 @@ public:
         Context context = context_;
         context.setSetting("input_format_skip_unknown_fields", UInt64(1));
         if (schema.size() > 0)
-            context.setSetting("schema", schema);
+            context.setSetting("format_schema", schema);
         // Create a formatted reader on Kafka messages
         LOG_TRACE(storage.log, "Creating formatted reader");
         read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(storage.consumer, max_block_size, storage.log);
@@ -166,7 +171,6 @@ public:
 
 private:
     StorageKafka & storage;
-    rd_kafka_t * consumer;
     Block sample_block;
     std::unique_ptr<ReadBufferFromKafkaConsumer> read_buf;
     BlockInputStreamPtr reader;
@@ -187,19 +191,19 @@ StorageKafka::StorageKafka(
     columns(columns_), topics(topics_), format_name(format_name_), schema_name(schema_name_),
     conf(rd_kafka_conf_new()), log(&Logger::get("StorageKafka (" + table_name_ + ")"))
 {
-    char errstr[512];
+    std::vector<char> errstr(512);
 
     LOG_TRACE(log, "Setting brokers: " << brokers_);
-    if (rd_kafka_conf_set(conf, "metadata.broker.list", brokers_.c_str(), errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK)
-        throw Exception(String(errstr), ErrorCodes::INCORRECT_DATA);
+    if (rd_kafka_conf_set(conf, "metadata.broker.list", brokers_.c_str(), errstr.data(), errstr.size()) != RD_KAFKA_CONF_OK)
+        throw Exception(String(errstr.data()), ErrorCodes::INCORRECT_DATA);
 
     LOG_TRACE(log, "Setting Group ID: " << group_ << " Client ID: clickhouse");
 
-    if (rd_kafka_conf_set(conf, "group.id", group_.c_str(), errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK)
-        throw Exception(String(errstr), ErrorCodes::INCORRECT_DATA);
+    if (rd_kafka_conf_set(conf, "group.id", group_.c_str(), errstr.data(), errstr.size()) != RD_KAFKA_CONF_OK)
+        throw Exception(String(errstr.data()), ErrorCodes::INCORRECT_DATA);
 
-    if (rd_kafka_conf_set(conf, "client.id", "clickhouse", errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK)
-        throw Exception(String(errstr), ErrorCodes::INCORRECT_DATA);
+    if (rd_kafka_conf_set(conf, "client.id", VERSION_FULL, errstr.data(), errstr.size()) != RD_KAFKA_CONF_OK)
+        throw Exception(String(errstr.data()), ErrorCodes::INCORRECT_DATA);
 
     // Don't store offsets of messages before they're processed
     rd_kafka_conf_set(conf, "enable.auto.offset.store", "false", nullptr, 0);
@@ -239,11 +243,12 @@ BlockInputStreams StorageKafka::read(
 
 void StorageKafka::startup()
 {
+    std::vector<char> errstr(512);
+
     // Create a consumer from saved configuration
-    char errstr[512];
-    consumer = rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr, sizeof(errstr));
+    consumer = rd_kafka_new(RD_KAFKA_CONSUMER, conf, errstr.data(), errstr.size());
     if (consumer == nullptr)
-        throw Exception("Failed to create consumer handle: " + String(errstr), ErrorCodes::UNKNOWN_EXCEPTION);
+        throw Exception("Failed to create consumer handle: " + String(errstr.data()), ErrorCodes::UNKNOWN_EXCEPTION);
 
     rd_kafka_poll_set_consumer(consumer);
 

@@ -111,8 +111,7 @@ void DatabaseDictionary::createTable(
     const Context & context,
     const String & table_name,
     const StoragePtr & table,
-    const ASTPtr & query,
-    const String & engine)
+    const ASTPtr & query)
 {
     throw Exception("DatabaseDictionary: createTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }

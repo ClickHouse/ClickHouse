@@ -198,7 +198,27 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        const auto & merged_maps = this->data(place).merged_maps;
+        // Final step does compaction of keys that have zero values, this mutates the state
+        auto & merged_maps = this->data(const_cast<AggregateDataPtr>(place)).merged_maps;
+        for (auto it = merged_maps.cbegin(); it != merged_maps.cend();)
+        {
+            // Key is not compacted if it has at least one non-zero value
+            bool erase = true;
+            for (size_t col = 0; col < values_types.size(); ++col)
+            {
+                if (it->second[col] != values_types[col]->getDefault())
+                {
+                    erase = false;
+                    break;
+                }
+            }
+
+            if (erase)
+                it = merged_maps.erase(it);
+            else
+                ++it;
+        }
+
         size_t size = merged_maps.size();
 
         auto & to_cols = static_cast<ColumnTuple &>(to).getColumns();

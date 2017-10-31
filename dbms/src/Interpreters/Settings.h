@@ -186,6 +186,9 @@ struct Settings
     /** The maximum number of concurrent requests per user. */ \
     M(SettingUInt64, max_concurrent_queries_for_user, 0) \
     \
+    /** For INSERT queries in the replicated table, specifies that deduplication of insertings blocks should be preformed */ \
+    M(SettingBool, insert_deduplicate, true) \
+    \
     /** For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled. */ \
     M(SettingUInt64, insert_quorum, 0) \
     M(SettingMilliseconds, insert_quorum_timeout, 600000) \
@@ -298,17 +301,15 @@ struct Settings
     /* Timeout for DDL query responses from all hosts in cluster. Negative value means infinite. */ \
     M(SettingInt64, distributed_ddl_task_timeout, 120) \
     \
-    /** If true, and the date parameter of MergeTree engines is an expression (not a column name), \
-      * it will be interpreted as the partitioning expression, allowing custom partitions. \
-      * IMPORTANT: Don't use this setting just yet. \
-      *  It is for testing purposes, the syntax will likely change soon and the server will not be able \
-      *  to load the tables created this way. You have been warned. \
+    /** If true, allow parameters of storage engines such as partitioning expression, primary key, etc. \
+      * to be set not in the engine parameters but as separate clauses (PARTITION BY, ORDER BY...) \
+      * Enable this setting to allow custom MergeTree partitions. \
       */ \
-    M(SettingBool, experimental_merge_tree_allow_custom_partitions, false) \
+    M(SettingBool, experimental_allow_extended_storage_definition_syntax, false) \
     /* Timeout for flushing data from streaming storages. */ \
     M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS) \
     /* Schema identifier (used by schema-based formats) */ \
-    M(SettingString, schema, "")
+    M(SettingString, format_schema, "")
 
 
     /// Possible limits for query execution.

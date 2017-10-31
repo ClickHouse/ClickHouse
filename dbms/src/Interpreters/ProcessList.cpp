@@ -28,7 +28,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
         if (!is_kill_query && max_size && cur_size >= max_size
             && (!settings.queue_max_wait_ms.totalMilliseconds() || !have_space.tryWait(mutex, settings.queue_max_wait_ms.totalMilliseconds())))
-            throw Exception("Too much simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
+            throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);
 
         /** Why we use current user?
           * Because initial one is passed by client and credentials for it is not verified,
@@ -47,7 +47,7 @@ ProcessList::EntryPtr ProcessList::insert(
             {
                 if (!is_kill_query && settings.max_concurrent_queries_for_user
                     && user_process_list->second.queries.size() >= settings.max_concurrent_queries_for_user)
-                    throw Exception("Too much simultaneous queries for user " + client_info.current_user
+                    throw Exception("Too many simultaneous queries for user " + client_info.current_user
                         + ". Current: " + toString(user_process_list->second.queries.size())
                         + ", maximum: " + settings.max_concurrent_queries_for_user.toString(),
                         ErrorCodes::TOO_MUCH_SIMULTANEOUS_QUERIES);

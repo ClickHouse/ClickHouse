@@ -7,7 +7,7 @@ orca=${4-on}
 host1=somehost
 host2=somehost
 mem='15GB'
-cat $filename  | sed "s/{table}/$table/g" | while read query ;
+cat $filename | sed "s/{table}/$table/g" | while read query ;
 do
     ssh -n $host1 'echo 3 |  tee /proc/sys/vm/drop_caches; sync' > /dev/null
     ssh -n $host2 'echo 3 |  tee /proc/sys/vm/drop_caches; sync' > /dev/null
