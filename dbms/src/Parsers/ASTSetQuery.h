@@ -14,6 +14,8 @@ namespace DB
 class ASTSetQuery : public IAST
 {
 public:
+    bool is_standalone = true; /// If false, this AST is a part of another query, such as SELECT.
+
     struct Change
     {
         String name;
@@ -31,10 +33,10 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTSetQuery>(*this); }
 
-protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SET " << (settings.hilite ? hilite_none : "");
+        if (is_standalone)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << "SET " << (settings.hilite ? hilite_none : "");
 
         for (ASTSetQuery::Changes::const_iterator it = changes.begin(); it != changes.end(); ++it)
         {

@@ -533,7 +533,9 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
             if (block.getByName(dst_col.name).type->getName() != dst_col.type->getName())
             {
                 LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table
-                    << " have different type of column " << dst_col.name << ". Block of data is discarded.");
+                    << " have different type of column " << dst_col.name << " ("
+                    << block.getByName(dst_col.name).type->getName() << " != " << dst_col.type->getName()
+                    << "). Block of data is discarded.");
                 return;
             }
 

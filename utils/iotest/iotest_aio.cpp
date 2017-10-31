@@ -45,7 +45,7 @@ inline int io_destroy(aio_context_t ctx)
     return syscall(__NR_io_destroy, ctx);
 }
 
-inline int io_submit(aio_context_t ctx, long nr,  struct iocb **iocbpp)
+inline int io_submit(aio_context_t ctx, long nr, struct iocb **iocbpp)
 {
     return syscall(__NR_io_submit, ctx, nr, iocbpp);
 }

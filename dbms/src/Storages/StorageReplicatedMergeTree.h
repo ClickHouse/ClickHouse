@@ -91,10 +91,9 @@ public:
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 
     void startup() override;
     void shutdown() override;
@@ -206,7 +205,7 @@ public:
 
 private:
     /// Delete old chunks from disk and from ZooKeeper.
-    void clearOldPartsAndRemoveFromZK(Logger * log_ = nullptr);
+    void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;
     friend class ReplicatedMergeTreeRestartingThread;
@@ -308,6 +307,8 @@ private:
 
     /// A thread that removes old parts, log entries, and blocks.
     std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
+    /// Is used to wakeup cleanup_thread
+    Poco::Event cleanup_thread_event;
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
@@ -339,10 +340,9 @@ private:
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_,
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 
     /// Initialization.
 
@@ -382,7 +382,8 @@ private:
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
-    void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names);
+    void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
+                                  NameSet * parts_should_be_retied = nullptr);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);

@@ -38,7 +38,7 @@ int main(int argc, char ** argv)
     {
         size_t n = argc > 1 ? atoi(argv[1]) : 10;
         bool nested = false, sum = false, composite = false, multivalue = false;
-        for (size_t i = 2; i < argc; ++i)
+        for (int i = 2; i < argc; ++i)
         {
             if (strcmp(argv[i], "nested") == 0)
                 nested = true;
@@ -54,8 +54,8 @@ int main(int argc, char ** argv)
 
         ColumnWithTypeAndName column_x;
         column_x.name = "x";
-        column_x.type = std::make_shared<DataTypeUInt64>();
-        auto x = std::make_shared<ColumnUInt64>();
+        column_x.type = std::make_shared<DataTypeUInt32>();
+        auto x = std::make_shared<ColumnUInt32>();
         column_x.column = x;
         auto & vec_x = x->getData();
 

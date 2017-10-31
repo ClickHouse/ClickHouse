@@ -15,6 +15,7 @@
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 
+#include <common/RangeFiltered.h>
 
 namespace DB
 {
@@ -62,7 +63,8 @@ namespace ErrorCodes
 /// Part directory - / partiiton-id _ min-id _ max-id _ level /
 /// Inside the part directory:
 /// The same files as for month-partitioned tables, plus
-/// partition.dat - contains the value of the partitioning expression
+/// count.txt - contains total number of rows in this part.
+/// partition.dat - contains the value of the partitioning expression.
 /// minmax_[Column].idx - MinMax indexes (see MergeTreeDataPart::MinMaxIndex class) for the columns required by the partitioning expression.
 ///
 /// Several modes are implemented. Modes determine additional actions during merge:
@@ -98,6 +100,10 @@ public:
     /// After the DataPart is added to the working set, it cannot be changed.
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
+    using DataPartState = MergeTreeDataPart::State;
+    using DataPartStates = std::initializer_list<DataPartState>;
+    using DataPartStateVector = std::vector<DataPartState>;
+
     struct DataPartPtrLess
     {
         using is_transparent = void;
@@ -121,10 +127,7 @@ public:
     public:
         Transaction() {}
 
-        void commit()
-        {
-            clear();
-        }
+        void commit();
 
         void rollback();
 
@@ -154,6 +157,8 @@ public:
             parts_to_remove_on_rollback.clear();
             parts_to_add_on_rollback.clear();
         }
+
+        void replaceParts(DataPartState move_precommitted_to, DataPartState move_committed_to, bool remove_without_delay);
     };
 
     /// An object that stores the names of temporary files created in the part directory during ALTER of its
@@ -236,7 +241,6 @@ public:
     /// primary_expr_ast - expression used for sorting; empty for UnsortedMergeTree.
     /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
     ///     Otherwise, partition_expr_ast is used for partitioning.
-    /// index_granularity - how many rows correspond to one primary key value.
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(  const String & database_, const String & table_,
@@ -249,7 +253,6 @@ public:
                     const String & date_column_name,
                     const ASTPtr & partition_expr_ast_,
                     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-                    size_t index_granularity_,
                     const MergingParams & merging_params_,
                     const MergeTreeSettings & settings_,
                     const String & log_name_,
@@ -306,9 +309,28 @@ public:
     String getLogName() const { return log_name; }
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
+    DataParts getDataParts(const DataPartStates & affordable_states) const;
+    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states) const;
+    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector & out_states_snapshot) const;
+
+    /// Returns a virtual container iteration only through parts with specified states
+    decltype(auto) getDataPartsRange(const DataPartStates & affordable_states) const
+    {
+        return createRangeFiltered(DataPart::getStatesFilter(affordable_states), data_parts);
+    }
+
+    /// Returns Committed parts
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
+
+    /// Returns all parts except Temporary and Deleting ones
     DataParts getAllDataParts() const;
+
+    /// Returns an comitted part with the given name or a part containing it. If there is no such part, returns nullptr.
+    DataPartPtr getActiveContainingPart(const String & part_name);
+
+    /// Returns the part with the given name (and state) or nullptr if no such part.
+    DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states = {DataPartState::Committed});
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -319,12 +341,6 @@ public:
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     void delayInsertIfNeeded(Poco::Event * until = nullptr);
 
-    /// Returns an active part with the given name or a part containing it. If there is no such part,
-    /// returns nullptr.
-    DataPartPtr getActiveContainingPart(const String & part_name);
-
-    /// Returns the part with the given name or nullptr if no such part.
-    DataPartPtr getPartIfExists(const String & part_name);
     DataPartPtr getShardedPartIfExists(const String & part_name, size_t shard_no);
 
     /// Renames temporary part to a permanent part and adds it to the working set.
@@ -338,26 +354,26 @@ public:
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
-    /// Removes from the working set parts in remove and adds parts in add. Parts in add must already be in
-    /// all_data_parts.
+    /// Removes parts from the working set parts.
+    /// Parts in add must already be in data_parts with PreCommitted, Committed, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
-    void replaceParts(const DataPartsVector & remove, const DataPartsVector & add, bool clear_without_timeout);
+    void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout);
 
     /// Renames the part to detached/<prefix>_<part> and forgets about it. The data won't be deleted in
     /// clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
     void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
 
-    /// Removes the part from the list of parts (including all_data_parts), but doesn't move the directory.
-    void detachPartInPlace(const DataPartPtr & part);
-
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
     /// but not from the disk.
     DataPartsVector grabOldParts();
 
-    /// Reverts the changes made by grabOldParts().
-    void addOldParts(const DataPartsVector & parts);
+    /// Reverts the changes made by grabOldParts(), parts should be in Deleting state.
+    void rollbackDeletingParts(const DataPartsVector & parts);
+
+    /// Removes parts from data_parts, they should be in Deleting state
+    void removePartsFinally(const DataPartsVector & parts);
 
     /// Delete irrelevant parts.
     void clearOldParts();
@@ -399,12 +415,6 @@ public:
     void reportBrokenPart(const String & name)
     {
         broken_part_callback(name);
-    }
-
-    /// Delete old parts from disk and ZooKeeper (in replicated case)
-    void clearOldPartsAndRemoveFromZK()
-    {
-        parts_clean_callback();
     }
 
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
@@ -524,8 +534,6 @@ private:
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
-    /// Use to delete outdated parts immediately from memory, disk and ZooKeeper
-    PartsCleanCallback parts_clean_callback;
 
     String log_name;
     Logger * log;
@@ -537,8 +545,8 @@ private:
     /// The set of all data parts including already merged but not yet deleted. Usually it is small (tens of elements).
     /// The part is referenced from here, from the list of current parts and from each thread reading from it.
     /// This means that if reference count is 1 - the part is not used right now and can be deleted.
-    DataParts all_data_parts;
-    mutable std::mutex all_data_parts_mutex;
+//    DataParts all_data_parts;
+//    mutable std::mutex all_data_parts_mutex;
 
     /// Used to serialize calls to grabOldParts.
     std::mutex grab_old_parts_mutex;
@@ -573,7 +581,7 @@ private:
     void addPartContributionToColumnSizes(const DataPartPtr & part);
     void removePartContributionToColumnSizes(const DataPartPtr & part);
 
-    /// If there is no part in the partition with ID `partition_id`, returns empty ptr.
+    /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, std::lock_guard<std::mutex> & data_parts_lock);
 };
 

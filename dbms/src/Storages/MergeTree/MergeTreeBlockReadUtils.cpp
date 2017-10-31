@@ -83,7 +83,7 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
     : data_part(data_part_)
 {
-    number_of_rows_in_part = data_part->getExactSizeRows();
+    number_of_rows_in_part = data_part->rows_count;
     /// Initialize with sample block untill update won't called.
     initialize(sample_block, columns);
 }

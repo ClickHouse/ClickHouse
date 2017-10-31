@@ -29,8 +29,7 @@ public:
         const Context & context,
         const String & table_name,
         const StoragePtr & table,
-        const ASTPtr & query,
-        const String & engine) override;
+        const ASTPtr & query) override;
 
     void removeTable(
         const Context & context,

@@ -108,9 +108,6 @@ struct MergeTreeDataPart
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
 
-    /// If part has column with fixed size, will return exact size of part (in rows)
-    size_t getExactSizeRows() const;
-
     /// Returns full path to part dir
     String getFullPath() const;
 
@@ -132,7 +129,8 @@ struct MergeTreeDataPart
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     mutable String relative_path;
 
-    size_t size = 0;                        /// in number of marks.
+    size_t rows_count = 0;
+    size_t marks_count = 0;
     std::atomic<size_t> size_in_bytes {0};  /// size in bytes, 0 - if not counted;
                                             ///  is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
@@ -141,8 +139,86 @@ struct MergeTreeDataPart
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
 
+    /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
+    bool is_duplicate = false;
+
     /// For resharding.
     size_t shard_no = 0;
+
+    /**
+     * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
+     * Part state should be modified under data_parts mutex.
+     *
+     * Possible state transitions:
+     * Temporary -> Precommitted: we are trying to commit a fetched, inserted or merged part to active set
+     * Precommitted -> Outdated:  we could not to add a part to active set and doing a rollback (for example it is duplicated part)
+     * Precommitted -> Commited:  we successfully committed a part to active dataset
+     * Precommitted -> Outdated:  a part was replaced by a covering part or DROP PARTITION
+     * Outdated -> Deleting:      a cleaner selected this part for deletion
+     * Deleting -> Outdated:      if an ZooKeeper error occurred during the deletion, we will retry deletion
+     */
+    enum class State
+    {
+        Temporary,      /// the part is generating now, it is not in data_parts list
+        PreCommitted,   /// the part is in data_parts, but not used for SELECTs
+        Committed,      /// active data part, used by current and upcoming SELECTs
+        Outdated,       /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
+        Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
+    };
+
+    /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
+    mutable State state{State::Temporary};
+
+    /// Returns name of state
+    static String stateToString(State state);
+    String stateString() const;
+
+    String getNameWithState() const
+    {
+        return name + " (state " + stateString() + ")";
+    }
+
+    /// Returns true if state of part is one of affordable_states
+    bool checkState(const std::initializer_list<State> & affordable_states) const
+    {
+        for (auto affordable_state : affordable_states)
+        {
+            if (state == affordable_state)
+                return true;
+        }
+        return false;
+    }
+
+    /// Throws an exception if state of the part is not in affordable_states
+    void assertState(const std::initializer_list<State> & affordable_states) const
+    {
+        if (!checkState(affordable_states))
+        {
+            String states_str;
+            for (auto state : affordable_states)
+                states_str += stateToString(state) + " ";
+
+            throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str);
+        }
+    }
+
+    /// In comparison with lambdas, it is move assignable and could has several overloaded operator()
+    struct StatesFilter
+    {
+        std::initializer_list<State> affordable_states;
+        StatesFilter(const std::initializer_list<State> & affordable_states) : affordable_states(affordable_states) {}
+
+        bool operator() (const std::shared_ptr<const MergeTreeDataPart> & part) const
+        {
+            return part->checkState(affordable_states);
+        }
+    };
+
+    /// Returns a lambda that returns true only for part with states from specified list
+    static inline StatesFilter getStatesFilter(const std::initializer_list<State> & affordable_states)
+    {
+        return StatesFilter(affordable_states);
+    }
 
     /// Primary key (correspond to primary.idx file).
     /// Always loaded in RAM. Contains each index_granularity-th value of primary key tuple.
@@ -239,8 +315,12 @@ private:
     /// If checksums.txt exists, reads files' checksums (and sizes) from it
     void loadChecksums(bool require);
 
-    /// Loads index file. Also calculates this->size if size=0
+    /// Loads index file. Also calculates this->marks_count if marks_count = 0
     void loadIndex();
+
+    /// Load rows count for this part from disk (for the newer storage format version).
+    /// For the older format version calculates rows count from the size of a column with a fixed size.
+    void loadRowsCount();
 
     void loadPartitionAndMinMaxIndex();
 
