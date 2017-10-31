@@ -174,33 +174,41 @@ BlockInputStreams StorageSystemParts::read(
               */
             if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
                 continue;
-            else
-                throw;
+
+            throw;
         }
 
         String engine = storage->getName();
 
         MergeTreeData * data = nullptr;
 
-        if (StorageMergeTree * merge_tree = dynamic_cast<StorageMergeTree *>(&*storage))
+        if (auto merge_tree = dynamic_cast<StorageMergeTree *>(&*storage))
         {
             data = &merge_tree->getData();
         }
-        else if (StorageReplicatedMergeTree * replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(&*storage))
+        else if (auto replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(&*storage))
         {
             data = &replicated_merge_tree->getData();
         }
-
-        MergeTreeData::DataParts active_parts = data->getDataParts();
-        MergeTreeData::DataParts all_parts;
-        if (need[0])
-            all_parts = data->getAllDataParts();
         else
-            all_parts = active_parts;
+        {
+            throw Exception("Unknown engine " + engine, ErrorCodes::LOGICAL_ERROR);
+        }
+
+        using State = MergeTreeDataPart::State;
+        MergeTreeData::DataPartStateVector all_parts_state;
+        MergeTreeData::DataPartsVector all_parts;
+        if (need[0])
+            all_parts = data->getDataPartsVector({State::Committed, State::Outdated}, all_parts_state);
+        else
+            all_parts = data->getDataPartsVector({State::Committed}, all_parts_state);
 
         /// Finally, we'll go through the list of parts.
-        for (const MergeTreeData::DataPartPtr & part : all_parts)
+        for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
         {
+            const auto & part = all_parts[part_number];
+            auto part_state = all_parts_state[part_number];
+
             size_t i = 0;
             {
                 WriteBufferFromOwnString out;
@@ -208,8 +216,8 @@ BlockInputStreams StorageSystemParts::read(
                 block.getByPosition(i++).column->insert(out.str());
             }
             block.getByPosition(i++).column->insert(part->name);
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(active_parts.count(part)));
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->size));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part_state == State::Committed));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->marks_count));
 
             size_t marks_size = 0;
             for (const NameAndTypePair & it : part->columns)
@@ -221,13 +229,13 @@ BlockInputStreams StorageSystemParts::read(
             }
             block.getByPosition(i++).column->insert(static_cast<UInt64>(marks_size));
 
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getExactSizeRows()));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->rows_count));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->size_in_bytes));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->modification_time));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->remove_time));
 
             /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(part.use_count() - (active_parts.count(part) ? 2 : 1)));
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part.use_count() - 1));
 
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getMinDate()));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getMaxDate()));

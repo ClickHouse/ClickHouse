@@ -26,18 +26,19 @@ void DatabaseDictionary::loadTables(Context & context, ThreadPool * thread_pool,
 
 Tables DatabaseDictionary::loadTables()
 {
-    const std::lock_guard<std::mutex> lock_dictionaries {external_dictionaries.dictionaries_mutex};
+    auto objects_map = external_dictionaries.getObjectsMap();
+    const auto & dictionaries = objects_map.get();
 
     Tables tables;
-    for (const auto & pair : external_dictionaries.dictionaries)
+    for (const auto & pair : dictionaries)
     {
         const std::string & name = pair.first;
         if (deleted_tables.count(name))
             continue;
-        auto dict_ptr = pair.second.dict;
+        auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(pair.second.loadable);
         if (dict_ptr)
         {
-            const DictionaryStructure & dictionary_structure = dict_ptr->get()->getStructure();
+            const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
             tables[name] = StorageDictionary::create(name, columns, {}, {}, {}, dictionary_structure, name);
         }
@@ -50,26 +51,28 @@ bool DatabaseDictionary::isTableExist(
     const Context & context,
     const String & table_name) const
 {
-    const std::lock_guard<std::mutex> lock_dictionaries {external_dictionaries.dictionaries_mutex};
-    return external_dictionaries.dictionaries.count(table_name) && !deleted_tables.count(table_name);
+    auto objects_map = external_dictionaries.getObjectsMap();
+    const auto & dictionaries = objects_map.get();
+    return dictionaries.count(table_name) && !deleted_tables.count(table_name);
 }
 
 StoragePtr DatabaseDictionary::tryGetTable(
     const Context & context,
     const String & table_name)
 {
-    const std::lock_guard<std::mutex> lock_dictionaries {external_dictionaries.dictionaries_mutex};
+    auto objects_map = external_dictionaries.getObjectsMap();
+    const auto & dictionaries = objects_map.get();
 
     if (deleted_tables.count(table_name))
         return {};
     {
-        auto it = external_dictionaries.dictionaries.find(table_name);
-        if (it != external_dictionaries.dictionaries.end())
+        auto it = dictionaries.find(table_name);
+        if (it != dictionaries.end())
         {
-            const auto & dict_ptr = it->second.dict;
+            const auto & dict_ptr = std::static_pointer_cast<IDictionaryBase>(it->second.loadable);
             if (dict_ptr)
             {
-                const DictionaryStructure & dictionary_structure = dict_ptr->get()->getStructure();
+                const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
                 auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
                 return StorageDictionary::create(table_name, columns, {}, {}, {}, dictionary_structure, table_name);
             }
@@ -86,9 +89,10 @@ DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context)
 
 bool DatabaseDictionary::empty(const Context & context) const
 {
-    const std::lock_guard<std::mutex> lock_dictionaries {external_dictionaries.dictionaries_mutex};
-    for (const auto & pair : external_dictionaries.dictionaries)
-        if (pair.second.dict && !deleted_tables.count(pair.first))
+    auto objects_map = external_dictionaries.getObjectsMap();
+    const auto & dictionaries = objects_map.get();
+    for (const auto & pair : dictionaries)
+        if (pair.second.loadable && !deleted_tables.count(pair.first))
             return false;
     return true;
 }
@@ -107,8 +111,7 @@ void DatabaseDictionary::createTable(
     const Context & context,
     const String & table_name,
     const StoragePtr & table,
-    const ASTPtr & query,
-    const String & engine)
+    const ASTPtr & query)
 {
     throw Exception("DatabaseDictionary: createTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -120,7 +123,7 @@ void DatabaseDictionary::removeTable(
     if (!isTableExist(context, table_name))
         throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    const std::lock_guard<std::mutex> lock_dictionaries {external_dictionaries.dictionaries_mutex};
+    auto objects_map = external_dictionaries.getObjectsMap();
     deleted_tables.insert(table_name);
 }
 
@@ -157,7 +160,6 @@ ASTPtr DatabaseDictionary::getCreateQuery(
     const String & table_name) const
 {
     throw Exception("DatabaseDictionary: getCreateQuery() is not supported", ErrorCodes::NOT_IMPLEMENTED);
-    return nullptr;
 }
 
 void DatabaseDictionary::shutdown()

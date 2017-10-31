@@ -20,7 +20,7 @@ struct Rand
     reseed(static_cast<uint32_t>(0));
   }
 
-  Rand( uint32_t seed )
+  explicit Rand( uint32_t seed )
   {
     reseed(seed);
   }

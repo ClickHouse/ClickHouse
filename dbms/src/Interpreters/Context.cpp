@@ -29,6 +29,7 @@
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/ExternalModels.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
@@ -94,6 +95,7 @@ struct ContextShared
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
+    mutable std::mutex external_models_mutex;
     /// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
@@ -111,6 +113,7 @@ struct ContextShared
     FormatFactory format_factory;                           /// Formats.
     mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaeis. Have lazy initialization.
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
+    mutable std::shared_ptr<ExternalModels> external_models;
     String default_profile_name;                            /// Default profile name used for default values.
     Users users;                                            /// Known users.
     Quotas quotas;                                          /// Known quotas for resource use.
@@ -1062,6 +1065,17 @@ ExternalDictionaries & Context::getExternalDictionaries()
 }
 
 
+const ExternalModels & Context::getExternalModels() const
+{
+    return getExternalModelsImpl(false);
+}
+
+ExternalModels & Context::getExternalModels()
+{
+    return getExternalModelsImpl(false);
+}
+
+
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(shared->embedded_dictionaries_mutex);
@@ -1087,6 +1101,19 @@ ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_
     return *shared->external_dictionaries;
 }
 
+ExternalModels & Context::getExternalModelsImpl(bool throw_on_error) const
+{
+    std::lock_guard<std::mutex> lock(shared->external_models_mutex);
+
+    if (!shared->external_models)
+    {
+        if (!this->global_context)
+            throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
+        shared->external_models = std::make_shared<ExternalModels>(*this->global_context, throw_on_error);
+    }
+
+    return *shared->external_models;
+}
 
 void Context::tryCreateEmbeddedDictionaries() const
 {
@@ -1097,6 +1124,12 @@ void Context::tryCreateEmbeddedDictionaries() const
 void Context::tryCreateExternalDictionaries() const
 {
     static_cast<void>(getExternalDictionariesImpl(true));
+}
+
+
+void Context::tryCreateExternalModels() const
+{
+    static_cast<void>(getExternalModelsImpl(true));
 }
 
 
@@ -1357,7 +1390,7 @@ QueryLog & Context::getQueryLog()
                 "query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
         system_logs->query_log = std::make_unique<QueryLog>(
-            *global_context, database, table, "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+            *global_context, database, table, "ENGINE = MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
     }
 
     return *system_logs->query_log;
@@ -1394,8 +1427,9 @@ PartLog * Context::getPartLog(const String & database, const String & table)
 
         size_t flush_interval_milliseconds = config.getUInt64(
                 "part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-        system_logs->part_log = std::make_unique<PartLog>(*global_context, part_log_database, part_log_table,
-                                                     "MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
+        system_logs->part_log = std::make_unique<PartLog>(
+            *global_context, part_log_database, part_log_table,
+            "ENGINE = MergeTree(event_date, event_time, 1024)", flush_interval_milliseconds);
     }
 
     return system_logs->part_log.get();

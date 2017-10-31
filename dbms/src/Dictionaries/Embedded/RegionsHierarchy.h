@@ -5,10 +5,10 @@
 #include <common/Types.h>
 
 
-#define REGION_TYPE_CITY       6
-#define REGION_TYPE_AREA       5
-#define REGION_TYPE_DISTRICT  4
-#define REGION_TYPE_COUNTRY   3
+#define REGION_TYPE_CITY 6
+#define REGION_TYPE_AREA 5
+#define REGION_TYPE_DISTRICT 4
+#define REGION_TYPE_COUNTRY 3
 #define REGION_TYPE_CONTINENT 1
 
 

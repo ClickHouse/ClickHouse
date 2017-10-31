@@ -164,11 +164,22 @@ protected:
 };
 
 
+/// Optional conversion to INTERVAL data type. Example: "INTERVAL x SECOND" parsed as "toIntervalSecond(x)".
+class ParserIntervalOperatorExpression : public IParserBase
+{
+protected:
+    ParserMultiplicativeExpression next_parser;
+
+    const char * getName() const { return "INTERVAL operator expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
 class ParserAdditiveExpression : public IParserBase
 {
 private:
     static const char * operators[];
-    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserMultiplicativeExpression>()};
+    ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserIntervalOperatorExpression>()};
 
 protected:
     const char * getName() const { return "additive expression"; }
@@ -323,6 +334,7 @@ protected:
     }
 };
 
+
 class ParserExpressionInCastExpression : public IParserBase
 {
 public:
@@ -344,7 +356,7 @@ class ParserExpressionList : public IParserBase
 {
 public:
     ParserExpressionList(bool allow_alias_without_as_keyword_, bool prefer_alias_to_column_name_ = false)
-    : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), prefer_alias_to_column_name(prefer_alias_to_column_name_) {}
+        : allow_alias_without_as_keyword(allow_alias_without_as_keyword_), prefer_alias_to_column_name(prefer_alias_to_column_name_) {}
 
 protected:
     bool allow_alias_without_as_keyword;
@@ -359,7 +371,7 @@ class ParserNotEmptyExpressionList : public IParserBase
 {
 public:
     ParserNotEmptyExpressionList(bool allow_alias_without_as_keyword, bool prefer_alias_to_column_name = false)
-    : nested_parser(allow_alias_without_as_keyword, prefer_alias_to_column_name) {}
+        : nested_parser(allow_alias_without_as_keyword, prefer_alias_to_column_name) {}
 private:
     ParserExpressionList nested_parser;
 protected:

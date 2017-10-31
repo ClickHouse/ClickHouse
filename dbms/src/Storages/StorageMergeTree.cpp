@@ -44,10 +44,9 @@ StorageMergeTree::StorageMergeTree(
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-    size_t index_granularity_,
     const MergeTreeData::MergingParams & merging_params_,
-    bool has_force_restore_data_flag,
-    const MergeTreeSettings & settings_)
+    const MergeTreeSettings & settings_,
+    bool has_force_restore_data_flag)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
     path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
     context(context_), background_pool(context_.getBackgroundPool()),
@@ -55,7 +54,7 @@ StorageMergeTree::StorageMergeTree(
          full_path, columns_,
          materialized_columns_, alias_columns_, column_defaults_,
          context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
-         sampling_expression_, index_granularity_, merging_params_,
+         sampling_expression_, merging_params_,
          settings_, database_name_ + "." + table_name, false, attach),
     reader(data), writer(data), merger(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
@@ -198,9 +197,9 @@ void StorageMergeTree::alter(
 
     auto table_hard_lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
-    IDatabase::ASTModifier engine_modifier;
+    IDatabase::ASTModifier storage_modifier;
     if (primary_key_is_modified)
-        engine_modifier = [&new_primary_key_ast] (ASTPtr & engine_ast)
+        storage_modifier = [&new_primary_key_ast] (IAST & ast)
         {
             auto tuple = std::make_shared<ASTFunction>(new_primary_key_ast->range);
             tuple->name = "tuple";
@@ -209,13 +208,14 @@ void StorageMergeTree::alter(
 
             /// Primary key is in the second place in table engine description and can be represented as a tuple.
             /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
-            typeid_cast<ASTExpressionList &>(*typeid_cast<ASTFunction &>(*engine_ast).arguments).children.at(1) = tuple;
+            auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+            typeid_cast<ASTExpressionList &>(*storage_ast.engine->arguments).children.at(1) = tuple;
         };
 
     context.getDatabase(database_name)->alterTable(
         context, table_name,
         new_columns, new_materialized_columns, new_alias_columns, new_column_defaults,
-        engine_modifier);
+        storage_modifier);
 
     materialized_columns = new_materialized_columns;
     alias_columns = new_alias_columns;
@@ -482,7 +482,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partit
         if (detach)
             data.renameAndDetachPart(part, "");
         else
-            data.replaceParts({part}, {}, false);
+            data.removePartsFromWorkingSet({part}, false);
     }
 
     LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside partition ID " << partition_id << ".");
