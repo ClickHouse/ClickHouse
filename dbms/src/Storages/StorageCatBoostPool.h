@@ -67,11 +67,12 @@ private:
     struct ColumnDescription
     {
         std::string column_name;
+        std::string alias;
         DatasetColumnType column_type;
 
         ColumnDescription() : column_type(DatasetColumnType::Num) {}
-        ColumnDescription(std::string column_name, DatasetColumnType column_type)
-                : column_name(std::move(column_name)), column_type(column_type) {}
+        ColumnDescription(std::string column_name, std::string alias, DatasetColumnType column_type)
+                : column_name(std::move(column_name)), alias(std::move(alias)), column_type(column_type) {}
     };
 
     std::vector<ColumnDescription> columns_description;
