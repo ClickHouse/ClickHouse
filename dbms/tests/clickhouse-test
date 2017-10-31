@@ -286,5 +286,5 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     if args.client is None:
-        args.client = args.binary + ' client'
+        args.client = args.binary + '-client'
     main(args)
