@@ -17,7 +17,7 @@ public:
     String table;
 
     ASTQueryWithTableAndOutput() = default;
-    ASTQueryWithTableAndOutput(const StringRange range_) : ASTQueryWithOutput(range_) {}
+    explicit ASTQueryWithTableAndOutput(const StringRange range_) : ASTQueryWithOutput(range_) {}
 
 protected:
     void formatHelper(const FormatSettings & settings, FormatState & state, FormatStateStacked frame, const char * name) const
@@ -28,27 +28,29 @@ protected:
 };
 
 
-/// Declares the inheritance class of ASTQueryWithTableAndOutput with the implementation of methods getID and clone.
-#define DEFINE_AST_QUERY_WITH_TABLE_AND_OUTPUT(Name, ID, Query) \
-    class Name : public ASTQueryWithTableAndOutput \
-    { \
-    public: \
-        Name() = default;                                                \
-        Name(const StringRange range_) : ASTQueryWithTableAndOutput(range_) {} \
-        String getID() const override { return ID"_" + database + "_" + table; }; \
-    \
-        ASTPtr clone() const override \
-        { \
-            std::shared_ptr<Name> res = std::make_shared<Name>(*this); \
-            res->children.clear(); \
-            cloneOutputOptions(*res); \
-            return res; \
-        } \
-    \
-    protected: \
-        void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override \
-        { \
-            formatHelper(settings, state, frame, Query); \
-        } \
-    };
+template <typename AstIDAndQueryNames>
+class ASTQueryWithTableAndOutputImpl : public ASTQueryWithTableAndOutput
+{
+public:
+    ASTQueryWithTableAndOutputImpl() = default;
+
+    explicit ASTQueryWithTableAndOutputImpl(const StringRange range_) : ASTQueryWithTableAndOutput(range_) {}
+
+    String getID() const override { return AstIDAndQueryNames::ID + ("_" + database) + "_" + table; };
+
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTQueryWithTableAndOutputImpl<AstIDAndQueryNames>>(*this);
+        res->children.clear();
+        cloneOutputOptions(*res);
+        return res;
+    }
+
+protected:
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    {
+        formatHelper(settings, state, frame, AstIDAndQueryNames::Query);
+    }
+};
+
 }

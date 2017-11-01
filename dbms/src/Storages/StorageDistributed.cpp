@@ -40,6 +40,7 @@
 #include <memory>
 
 #include <boost/filesystem.hpp>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -409,16 +410,30 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
     /// Create DESCRIBE TABLE query.
     auto cluster = getCluster();
 
-    ASTPtr describe_query_ptr = std::make_shared<ASTDescribeQuery>();
-    auto & describe_query = static_cast<ASTDescribeQuery &>(*describe_query_ptr);
+    auto describe_query = std::make_shared<ASTDescribeQuery>();
 
-    describe_query.database = remote_database;
-    describe_query.table = remote_table;
+    std::string name = remote_database + '.' + remote_table;
+
+    auto id = std::make_shared<ASTIdentifier>();
+    id->name = name;
+
+    auto desc_database = std::make_shared<ASTIdentifier>();
+    auto desc_table = std::make_shared<ASTIdentifier>();
+    desc_database->name = remote_database;
+    desc_table->name = remote_table;
+
+    id->children.push_back(desc_database);
+    id->children.push_back(desc_table);
+
+    auto table_expression = std::make_shared<ASTTableExpression>();
+    table_expression->database_and_table_name = id;
+
+    describe_query->table_expression = table_expression;
 
     ClusterProxy::DescribeStreamFactory describe_stream_factory;
 
     return ClusterProxy::executeQuery(
-            describe_stream_factory, cluster, describe_query_ptr, context, settings);
+            describe_stream_factory, cluster, describe_query, context, settings);
 }
 
 
