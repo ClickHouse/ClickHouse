@@ -76,9 +76,10 @@ void ReplicatedMergeTreeRestartingThread::run()
                 {
                     LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
-                    if (!storage.is_readonly)
+                    bool old_val = false;
+                    if (storage.is_readonly.compare_exchange_strong(old_val, true))
                         CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-                    storage.is_readonly = true;
+
                     partialShutdown();
                 }
 
@@ -109,9 +110,10 @@ void ReplicatedMergeTreeRestartingThread::run()
                 if (need_stop)
                     break;
 
-                if (storage.is_readonly)
+                bool old_val = true;
+                if (storage.is_readonly.compare_exchange_strong(old_val, false))
                     CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-                storage.is_readonly = false;
+
                 first_time = false;
             }
 
