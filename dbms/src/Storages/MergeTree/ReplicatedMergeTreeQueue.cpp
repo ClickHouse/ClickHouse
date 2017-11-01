@@ -310,6 +310,7 @@ bool ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
                 const auto & entry = *copied_entries.back();
                 if (entry.type == LogEntry::GET_PART)
                 {
+                    std::lock_guard<std::mutex> lock(mutex);
                     if (entry.create_time && (!min_unprocessed_insert_time || entry.create_time < min_unprocessed_insert_time))
                     {
                         min_unprocessed_insert_time = entry.create_time;
