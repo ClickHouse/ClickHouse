@@ -140,9 +140,9 @@ void ReplicatedMergeTreeRestartingThread::run()
 
                     ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
 
-                    if (storage.is_leader_node)
+                    bool old_val = true;
+                    if (storage.is_leader_node.compare_exchange_strong(old_val, false))
                     {
-                        storage.is_leader_node = false;
                         CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
                         if (storage.merge_selecting_thread.joinable())
                             storage.merge_selecting_thread.join();
@@ -376,9 +376,9 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     {
         std::lock_guard<std::mutex> lock(storage.leader_node_mutex);
 
-        if (storage.is_leader_node)
+        bool old_val = true;
+        if (storage.is_leader_node.compare_exchange_strong(old_val, false))
         {
-            storage.is_leader_node = false;
             CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
             if (storage.merge_selecting_thread.joinable())
                 storage.merge_selecting_thread.join();
