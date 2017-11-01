@@ -65,8 +65,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr data_part = std::make_shared<MergeTreeData::DataPart>(data);
-    data_part->name = part_name;
+    MergeTreeData::MutableDataPartPtr data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name);
     data_part->relative_path = relative_part_name;
     data_part->is_temp = true;
 
@@ -83,9 +82,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
         WriteBufferFromFile file_out{absolute_part_path + file_name};
         HashingWriteBuffer hashing_out{file_out};
-        copyData(body, hashing_out, file_size, is_cancelled);
+        copyData(body, hashing_out, file_size, blocker.getCounter());
 
-        if (is_cancelled)
+        if (blocker.isCancelled())
         {
             part_file.remove(true);
             throw Exception{"Fetching of part was cancelled", ErrorCodes::ABORTED};
@@ -97,18 +96,14 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
         if (expected_hash != hashing_out.getHash())
             throw Exception{"Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path};
 
-        if (file_name != "checksums.txt" &&
-            file_name != "columns.txt")
+        if (file_name != "checksums.txt" && file_name != "columns.txt")
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
     assertEOF(body);
 
-    data_part->info = MergeTreePartInfo::fromPartName(part_name);
-    MergeTreePartInfo::parseMinMaxDatesFromPartName(part_name, data_part->min_date, data_part->max_date);
     data_part->modification_time = time(nullptr);
-    data_part->loadColumnsChecksumsIndex(true, false);
-    data_part->is_sharded = false;
+    data_part->loadColumnsChecksumsIndexes(true, false);
     data_part->checksums.checkEqual(checksums, false);
 
     /// Now store permanently the received part.
@@ -146,7 +141,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
     LOG_TRACE(log, "Sending part " << part_name);
 
-    auto storage_lock = storage.lockStructure(false);
+    auto storage_lock = storage.lockStructure(false, __PRETTY_FUNCTION__);
 
     MergeTreeData::DataPartPtr part = findShardedPart(part_name, shard_no);
 

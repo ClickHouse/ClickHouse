@@ -26,7 +26,7 @@ class MemoryTracker
 
     /// Singly-linked list. All information will be passed to subsequent memory trackers also (it allows to implement trackers hierarchy).
     /// In terms of tree nodes it is the list of parents. Lifetime of these trackers should "include" lifetime of current tracker.
-    MemoryTracker * next = nullptr;
+    std::atomic<MemoryTracker *> next {};
 
     /// You could specify custom metric to track memory usage.
     CurrentMetrics::Metric metric = CurrentMetrics::MemoryTracking;
@@ -78,9 +78,10 @@ public:
         fault_probability = value;
     }
 
+    /// next should be changed only once: from nullptr to some value.
     void setNext(MemoryTracker * elem)
     {
-        next = elem;
+        next.store(elem, std::memory_order_relaxed);
     }
 
     /// The memory consumption could be shown in realtime via CurrentMetrics counter
@@ -107,7 +108,7 @@ public:
   * This pointer is set when memory consumption is monitored in current thread.
   * So, you just need to pass it to all the threads that handle one request.
   */
-extern __thread MemoryTracker * current_memory_tracker;
+extern thread_local MemoryTracker * current_memory_tracker;
 
 /// Convenience methods, that use current_memory_tracker if it is available.
 namespace CurrentMemoryTracker

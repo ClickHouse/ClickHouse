@@ -1,9 +1,9 @@
 #include <Core/Block.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
-#include <Parsers/IAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(std::shared_ptr<IAST> & node, const Context & context)
+std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context)
 {
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
         node, context, nullptr, NamesAndTypesList{{ "_dummy", std::make_shared<DataTypeUInt8>() }}).getConstActions();
@@ -50,7 +50,7 @@ std::pair<Field, std::shared_ptr<IDataType>> evaluateConstantExpression(std::sha
 }
 
 
-ASTPtr evaluateConstantExpressionAsLiteral(ASTPtr & node, const Context & context)
+ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return node;
@@ -60,12 +60,32 @@ ASTPtr evaluateConstantExpressionAsLiteral(ASTPtr & node, const Context & contex
 }
 
 
-ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(ASTPtr & node, const Context & context)
+ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
-    if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(node.get()))
+    if (auto id = typeid_cast<const ASTIdentifier *>(node.get()))
         return std::make_shared<ASTLiteral>(node->range, Field(id->name));
 
     return evaluateConstantExpressionAsLiteral(node, context);
+}
+
+
+bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result)
+{
+    IParser::Pos begin = pos;
+    ASTPtr res;
+
+    if (!ParserIdentifier().parse(pos, res, expected))
+    {
+        pos = begin;
+        if (!ParserStringLiteral().parse(pos, res, expected))
+            return false;
+
+        result = typeid_cast<const ASTLiteral &>(*res).value.safeGet<String>();
+    }
+    else
+        result = typeid_cast<const ASTIdentifier &>(*res).name;
+
+    return true;
 }
 
 }

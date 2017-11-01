@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Common/Exception.h>
+#include <Common/RWLockFIFO.h>
 #include <Core/QueryProcessingStage.h>
 #include <Storages/ITableDeclaration.h>
 #include <Storages/SelectQueryInfo.h>
@@ -22,10 +23,14 @@ class Context;
 class IBlockInputStream;
 class IBlockOutputStream;
 
+class RWLockFIFO;
+using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
+
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
+class ASTCreateQuery;
 
 class IStorage;
 
@@ -54,18 +59,19 @@ private:
 
     StoragePtr storage;
     /// Order is important.
-    std::shared_lock<std::shared_mutex> data_lock;
-    std::shared_lock<std::shared_mutex> structure_lock;
+    RWLockFIFO::LockHandler data_lock;
+    RWLockFIFO::LockHandler structure_lock;
 
 public:
-    TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data);
+    TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data, const std::string & who);
 };
+
 
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
-using TableStructureWriteLock = std::unique_lock<std::shared_mutex>;
-using TableDataWriteLock = std::unique_lock<std::shared_mutex>;
+using TableStructureWriteLock = RWLockFIFO::LockHandler;
+using TableDataWriteLock = RWLockFIFO::LockHandler;
 using TableFullWriteLock = std::pair<TableDataWriteLock, TableStructureWriteLock>;
 
 
@@ -103,13 +109,14 @@ public:
     /** Does not allow you to change the structure or name of the table.
       * If you change the data in the table, you will need to specify will_modify_data = true.
       * This will take an extra lock that does not allow starting ALTER MODIFY.
+      * Parameter 'who' identifies a client of the lock (ALTER query, merge process, etc), used for diagnostic purposes.
       *
       * WARNING: You need to call methods from ITableDeclaration under such a lock. Without it, they are not thread safe.
       * WARNING: To avoid deadlocks, this method must not be called under lock of Context.
       */
-    TableStructureReadLockPtr lockStructure(bool will_modify_data)
+    TableStructureReadLockPtr lockStructure(bool will_modify_data, const std::string & who)
     {
-        TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(shared_from_this(), true, will_modify_data);
+        TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(shared_from_this(), true, will_modify_data, who);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -117,11 +124,11 @@ public:
 
     /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP.
       */
-    TableFullWriteLock lockForAlter()
+    TableFullWriteLock lockForAlter(const std::string & who = "Alter")
     {
         /// The calculation order is important.
-        auto data_lock = lockDataForAlter();
-        auto structure_lock = lockStructureForAlter();
+        auto data_lock = lockDataForAlter(who);
+        auto structure_lock = lockStructureForAlter(who);
 
         return {std::move(data_lock), std::move(structure_lock)};
     }
@@ -130,17 +137,17 @@ public:
       * It is taken during write temporary data in ALTER MODIFY.
       * Under this lock, you can take lockStructureForAlter() to change the structure of the table.
       */
-    TableDataWriteLock lockDataForAlter()
+    TableDataWriteLock lockDataForAlter(const std::string & who = "Alter")
     {
-        std::unique_lock<std::shared_mutex> res(data_lock);
+        auto res = data_lock->getLock(RWLockFIFO::Write, who);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
     }
 
-    TableStructureWriteLock lockStructureForAlter()
+    TableStructureWriteLock lockStructureForAlter(const std::string & who = "Alter")
     {
-        std::unique_lock<std::shared_mutex> res(structure_lock);
+        auto res = structure_lock->getLock(RWLockFIFO::Write, who);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -215,35 +222,35 @@ public:
     }
 
     /** Execute CLEAR COLUMN ... IN PARTITION query which removes column from given partition. */
-    virtual void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
+    virtual void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
     {
         throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the query (DROP|DETACH) PARTITION.
       */
-    virtual void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings)
+    virtual void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
     {
         throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the ATTACH request (PART|PARTITION).
       */
-    virtual void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings)
+    virtual void attachPartition(const ASTPtr & partition, bool part, const Context & context)
     {
         throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the FETCH PARTITION query.
       */
-    virtual void fetchPartition(const Field & partition, const String & from, const Settings & settings)
+    virtual void fetchPartition(const ASTPtr & partition, const String & from, const Context & context)
     {
         throw Exception("Method fetchPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the FREEZE PARTITION request. That is, create a local backup (snapshot) of data using the `localBackup` function (see localBackup.h)
       */
-    virtual void freezePartition(const Field & partition, const String & with_name, const Settings & settings)
+    virtual void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
     {
         throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -252,10 +259,10 @@ public:
       */
     virtual void reshardPartitions(
         const ASTPtr & query, const String & database_name,
-        const Field & partition,
+        const ASTPtr & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        Context & context)
+        const Context & context)
     {
         throw Exception("Method reshardPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -263,7 +270,7 @@ public:
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
-    virtual bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings)
+    virtual bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -298,6 +305,10 @@ public:
     /// Otherwise - throws an exception with detailed information or returns false
     virtual bool checkTableCanBeDropped() const { return true; }
 
+
+    /** Notify engine about updated dependencies for this storage. */
+    virtual void updateDependencies() {}
+
 protected:
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;
@@ -316,7 +327,7 @@ private:
       *  2) all changes to the data after releasing the lock will be based on the structure of the table at the time after the lock was released.
       * You need to take for read for the entire time of the operation that changes the data.
       */
-    mutable std::shared_mutex data_lock;
+    mutable RWLockFIFOPtr data_lock = RWLockFIFO::create();
 
     /** Lock for multiple columns and path to table. It is taken for write at RENAME, ALTER (for ALTER MODIFY for a while) and DROP.
       * It is taken for read for the whole time of SELECT, INSERT and merge parts (for MergeTree).
@@ -325,7 +336,7 @@ private:
       * That is, if this lock is taken for write, you should not worry about `parts_writing_lock`.
       * parts_writing_lock is only needed for cases when you do not want to take `table_structure_lock` for long operations (ALTER MODIFY).
       */
-    mutable std::shared_mutex structure_lock;
+    mutable RWLockFIFOPtr structure_lock = RWLockFIFO::create();
 };
 
 /// table name -> table

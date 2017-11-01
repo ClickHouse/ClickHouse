@@ -24,8 +24,8 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
-    StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_)
-    : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_),
+    StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_, bool deduplicate_)
+    : storage(storage_), quorum(quorum_), quorum_timeout_ms(quorum_timeout_ms_), deduplicate(deduplicate_),
     log(&Logger::get(storage.data.getLogName() + " (Replicated OutputStream)"))
 {
     /// The quorum value `1` has the same meaning as if it is disabled.
@@ -91,6 +91,8 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
 
 void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 {
+    last_block_is_duplicate = false;
+
     /// TODO Is it possible to not lock the table structure here?
     storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
 
@@ -115,21 +117,28 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
         MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block);
 
-        SipHash hash;
-        part->checksums.summaryDataChecksum(hash);
-        union
+        String block_id;
+
+        if (deduplicate)
         {
-            char bytes[16];
-            UInt64 words[2];
-        } hash_value;
-        hash.get128(hash_value.bytes);
+            SipHash hash;
+            part->checksums.summaryDataChecksum(hash);
+            union
+            {
+                char bytes[16];
+                UInt64 words[2];
+            } hash_value;
+            hash.get128(hash_value.bytes);
 
-        String checksum(hash_value.bytes, 16);
+            /// We take the hash from the data as ID. That is, do not insert the same data twice.
+            block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
-        /// We take the hash from the data as ID. That is, do not insert the same data twice.
-        String block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
-
-        LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << block.rows() << " rows");
+            LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << block.rows() << " rows");
+        }
+        else
+        {
+            LOG_DEBUG(log, "Wrote block with " << block.rows() << " rows");
+        }
 
         commitPart(zookeeper, part, block_id);
 
@@ -141,6 +150,8 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
 void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
+    last_block_is_duplicate = false;
+
     /// NOTE No delay in this case. That's Ok.
 
     auto zookeeper = storage.getZooKeeper();
@@ -175,7 +186,11 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     part->info.max_block = block_number;
     part->info.level = 0;
 
-    String part_name = MergeTreePartInfo::getPartName(part->min_date, part->max_date, block_number, block_number, 0);
+    String part_name;
+    if (storage.data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        part_name = part->info.getPartNameV0(part->getMinDate(), part->getMaxDate());
+    else
+        part_name = part->info.getPartName();
 
     part->name = part_name;
 
@@ -290,7 +305,9 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             {
                 LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
 
+                part->is_duplicate = true;
                 transaction.rollback();
+                last_block_is_duplicate = true;
             }
             else if (zookeeper->exists(quorum_info.status_path))
             {

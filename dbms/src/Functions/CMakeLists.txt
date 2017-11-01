@@ -52,6 +52,12 @@ generate_function_register(Array
   FunctionRange
   FunctionArrayReduce
   FunctionArrayReverse
+  FunctionArrayConcat
+  FunctionArraySlice
+  FunctionArrayPushBack
+  FunctionArrayPushFront
+  FunctionArrayPopBack
+  FunctionArrayPopFront
 )
 
 
@@ -67,6 +73,11 @@ target_link_libraries(clickhouse_functions dbms)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
+    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
+    target_compile_options(clickhouse_functions PRIVATE "-g0")
+endif ()
 
 if (USE_VECTORCLASS)
     target_include_directories (clickhouse_functions BEFORE PUBLIC ${VECTORCLASS_INCLUDE_DIR})

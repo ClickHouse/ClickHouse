@@ -3,7 +3,7 @@
 #include <future>
 #include <memory>
 #include <vector>
-#include <zookeeper/zookeeper.h>
+#include <zookeeper.h>
 #include <Poco/Event.h>
 
 

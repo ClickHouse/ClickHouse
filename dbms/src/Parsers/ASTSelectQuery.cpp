@@ -82,7 +82,7 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
     struct Arrow
     {
         Arrow() = default;
-        Arrow(size_t to_position_) :
+        explicit Arrow(size_t to_position_) :
             to_position(to_position_), is_selected(true)
         {
         }
@@ -315,15 +315,7 @@ void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & sta
     if (settings)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
-
-        const ASTSetQuery & ast_set = typeid_cast<const ASTSetQuery &>(*settings);
-        for (ASTSetQuery::Changes::const_iterator it = ast_set.changes.begin(); it != ast_set.changes.end(); ++it)
-        {
-            if (it != ast_set.changes.begin())
-                s.ostr << ", ";
-
-            s.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
-        }
+        settings->formatImpl(s, state, frame);
     }
 
     if (next_union_all)

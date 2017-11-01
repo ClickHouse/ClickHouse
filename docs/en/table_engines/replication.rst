@@ -159,7 +159,7 @@ If the data differs on various replicas, first sync it, or delete this data on a
 
 Rename the existing MergeTree table, then create a ReplicatedMergeTree table with the old name.
 Move the data from the old table to the 'detached' subdirectory inside the directory with the new table data (``/var/lib/clickhouse/data/db_name/table_name/``).
-Then run ALTER TABLE ATTACH PART on one of the replicas to add these data parts to the working set.
+Then run ALTER TABLE ATTACH PARTITION on one of the replicas to add these data parts to the working set.
 
 If exactly the same parts exist on the other replicas, they are added to the working set on them. If not, the parts are downloaded from the replica that has them.
 

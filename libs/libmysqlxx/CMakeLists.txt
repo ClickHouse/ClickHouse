@@ -30,7 +30,11 @@ add_library (mysqlxx
 
 target_include_directories (mysqlxx PUBLIC include)
 
-set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
+set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
+
+if (USE_MYSQL)
+    include_directories (${MYSQL_INCLUDE_DIR})
+endif ()
 
 if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
     set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
@@ -41,9 +45,10 @@ if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
         COMMENT "Patching mysqlclient library.")
     add_custom_target (our_mysql_client DEPENDS ${MYSQLCLIENT_LIB})
     add_dependencies (mysqlxx our_mysql_client)
+    set (MYSQLCLIENT_LIBRARIES ${MYSQLCLIENT_LIB})
 endif ()
 
-target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBS})
+target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIBRARIES} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBRARIES})
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

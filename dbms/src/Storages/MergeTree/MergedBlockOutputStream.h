@@ -20,7 +20,7 @@ public:
         MergeTreeData & storage_,
         size_t min_compress_block_size_,
         size_t max_compress_block_size_,
-        CompressionMethod compression_method_,
+        CompressionSettings compression_settings_,
         size_t aio_threshold_);
 
 protected:
@@ -35,7 +35,7 @@ protected:
             const std::string & marks_path,
             const std::string & marks_file_extension_,
             size_t max_compress_block_size,
-            CompressionMethod compression_method,
+            CompressionSettings compression_settings,
             size_t estimated_size,
             size_t aio_threshold);
 
@@ -66,8 +66,8 @@ protected:
         size_t level, const String & filename, bool skip_offsets);
 
     /// Write data of one column.
-    void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns,
-        size_t level, bool skip_offsets);
+    void writeData(const String & name, const DataTypePtr & type, const ColumnPtr & column,
+                   OffsetColumns & offset_columns, size_t level, bool skip_offsets);
 
     MergeTreeData & storage;
 
@@ -81,12 +81,15 @@ protected:
 
     size_t aio_threshold;
 
-    CompressionMethod compression_method;
+    CompressionSettings compression_settings;
 
 private:
     /// Internal version of writeData.
-    void writeDataImpl(const String & name, const IDataType & type, const IColumn & column,
-        OffsetColumns & offset_columns, size_t level, bool write_array_data, bool skip_offsets);
+    void writeDataImpl(const String & name, const DataTypePtr & type, const ColumnPtr & column,
+                       const ColumnPtr & offsets, OffsetColumns & offset_columns, size_t level, bool skip_offsets);
+    /// Writes column data into stream.
+    /// If type is Array, writes offsets only. To write array data, unpack array column and use offsets argument.
+    void writeColumn(const ColumnPtr & column, const DataTypePtr & type, ColumnStream & stream, ColumnPtr offsets);
 };
 
 
@@ -100,13 +103,13 @@ public:
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionMethod compression_method);
+        CompressionSettings compression_settings);
 
     MergedBlockOutputStream(
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionMethod compression_method,
+        CompressionSettings compression_settings,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
         size_t aio_threshold_);
 
@@ -122,16 +125,13 @@ public:
 
     void writeSuffix() override;
 
-    MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums(
-        const NamesAndTypesList & total_column_list,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+    void writeSuffixAndFinalizePart(
+            MergeTreeData::MutableDataPartPtr & new_part,
+            const NamesAndTypesList * total_columns_list = nullptr,
+            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
-    MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums();
-
-    MergeTreeData::DataPart::Index & getIndex();
-
-    /// How many marks are already written.
-    size_t marksCount();
+    /// How many rows are already written.
+    size_t getRowsCount() const { return rows_count; }
 
 private:
     void init();
@@ -145,6 +145,7 @@ private:
     NamesAndTypesList columns_list;
     String part_path;
 
+    size_t rows_count = 0;
     size_t marks_count = 0;
 
     std::unique_ptr<WriteBufferFromFile> index_file_stream;
@@ -158,7 +159,7 @@ class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
 {
 public:
     MergedColumnOnlyOutputStream(
-        MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method, bool skip_offsets_);
+        MergeTreeData & storage_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
 
     void write(const Block & block) override;
     void writeSuffix() override;

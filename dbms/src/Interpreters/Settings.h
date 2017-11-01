@@ -163,6 +163,9 @@ struct Settings
     /** Allows you to select the method of data compression when writing */ \
     M(SettingCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
     \
+    /** Allows you to select the level of ZSTD compression */ \
+    M(SettingInt64, network_zstd_compression_level, 1) \
+    \
     /** Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities. */ \
     M(SettingUInt64, priority, 0) \
     \
@@ -183,6 +186,9 @@ struct Settings
     /** The maximum number of concurrent requests per user. */ \
     M(SettingUInt64, max_concurrent_queries_for_user, 0) \
     \
+    /** For INSERT queries in the replicated table, specifies that deduplication of insertings blocks should be preformed */ \
+    M(SettingBool, insert_deduplicate, true) \
+    \
     /** For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled. */ \
     M(SettingUInt64, insert_quorum, 0) \
     M(SettingMilliseconds, insert_quorum_timeout, 600000) \
@@ -193,13 +199,13 @@ struct Settings
     M(SettingUInt64, table_function_remote_max_addresses, 1000) \
     /** Settings to reduce the number of threads in case of slow reads. */ \
     /** Pay attention only to readings that took at least that much time. */ \
-    M(SettingMilliseconds,     read_backoff_min_latency_ms, 1000) \
+    M(SettingMilliseconds, read_backoff_min_latency_ms, 1000) \
     /** Count events when the bandwidth is less than that many bytes per second. */ \
-    M(SettingUInt64,         read_backoff_max_throughput, 1048576) \
+    M(SettingUInt64, read_backoff_max_throughput, 1048576) \
     /** Do not pay attention to the event, if the previous one has passed less than a certain amount of time. */ \
-    M(SettingMilliseconds,     read_backoff_min_interval_between_events_ms, 1000) \
+    M(SettingMilliseconds, read_backoff_min_interval_between_events_ms, 1000) \
     /** The number of events after which the number of threads will be reduced. */ \
-    M(SettingUInt64,         read_backoff_min_events, 2) \
+    M(SettingUInt64, read_backoff_min_events, 2) \
     \
     /** For testing of `exception safety` - throw an exception every time you allocate memory with the specified probability. */ \
     M(SettingFloat, memory_tracker_fault_probability, 0.) \
@@ -293,7 +299,17 @@ struct Settings
      */ \
     M(SettingUInt64, insert_distributed_timeout, 0) \
     /* Timeout for DDL query responses from all hosts in cluster. Negative value means infinite. */ \
-    M(SettingInt64, distributed_ddl_task_timeout, 120)
+    M(SettingInt64, distributed_ddl_task_timeout, 120) \
+    \
+    /** If true, allow parameters of storage engines such as partitioning expression, primary key, etc. \
+      * to be set not in the engine parameters but as separate clauses (PARTITION BY, ORDER BY...) \
+      * Enable this setting to allow custom MergeTree partitions. \
+      */ \
+    M(SettingBool, experimental_allow_extended_storage_definition_syntax, false) \
+    /* Timeout for flushing data from streaming storages. */ \
+    M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS) \
+    /* Schema identifier (used by schema-based formats) */ \
+    M(SettingString, format_schema, "")
 
 
     /// Possible limits for query execution.

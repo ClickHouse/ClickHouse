@@ -126,6 +126,15 @@ int Server::main(const std::vector<std::string> & args)
 
     StatusFile status{path + "status"};
 
+    SCOPE_EXIT({
+        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
+          * At this moment, no one could own shared part of Context.
+          */
+        global_context.reset();
+
+        LOG_DEBUG(log, "Destroyed global context.");
+    });
+
     /// Try to increase limit on number of open files.
     {
         rlimit rlim;
@@ -265,6 +274,17 @@ int Server::main(const std::vector<std::string> & args)
 
     global_context->setCurrentDatabase(default_database);
 
+    SCOPE_EXIT({
+        /** Ask to cancel background jobs all table engines,
+          *  and also query_log.
+          * It is important to do early, not in destructor of Context, because
+          *  table engines could use Context on destroy.
+          */
+        LOG_INFO(log, "Shutting down storages.");
+        global_context->shutdown();
+        LOG_DEBUG(log, "Shutted down storages.");
+    });
+
     bool has_resharding_worker = false;
     if (has_zookeeper && config().has("resharding"))
     {
@@ -281,28 +301,10 @@ int Server::main(const std::vector<std::string> & args)
         global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
 
-    SCOPE_EXIT({
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
-        LOG_INFO(log, "Shutting down storages.");
-        global_context->shutdown();
-        LOG_DEBUG(log, "Shutted down storages.");
-
-        /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
-          * At this moment, no one could own shared part of Context.
-          */
-        global_context.reset();
-
-        LOG_DEBUG(log, "Destroyed global context.");
-    });
-
     {
-        Poco::Timespan keep_alive_timeout(config().getInt("keep_alive_timeout", 10), 0);
+        Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
-        Poco::ThreadPool server_pool(3, config().getInt("max_connections", 1024));
+        Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
         Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
         http_params->setTimeout(settings.receive_timeout);
         http_params->setKeepAliveTimeout(keep_alive_timeout);
@@ -319,7 +321,8 @@ int Server::main(const std::vector<std::string> & args)
             try_listen = true;
         }
 
-        auto make_socket_address = [&](const std::string & host, std::uint16_t port) {
+        auto make_socket_address = [&](const std::string & host, UInt16 port)
+        {
             Poco::Net::SocketAddress socket_address;
             try
             {
@@ -393,6 +396,7 @@ int Server::main(const std::vector<std::string> & args)
                 /// TCP
                 if (config().has("tcp_port"))
                 {
+                    std::call_once(ssl_init_once, SSLInit);
                     Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_port"));
                     Poco::Net::ServerSocket tcp_socket(tcp_address);
                     tcp_socket.setReceiveTimeout(settings.receive_timeout);
@@ -404,6 +408,26 @@ int Server::main(const std::vector<std::string> & args)
                         new Poco::Net::TCPServerParams));
 
                     LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
+                }
+
+                /// TCP with SSL
+                if (config().has("tcp_ssl_port"))
+                {
+#if Poco_NetSSL_FOUND
+                    Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_ssl_port"));
+                    Poco::Net::SecureServerSocket tcp_socket(tcp_address);
+                    tcp_socket.setReceiveTimeout(settings.receive_timeout);
+                    tcp_socket.setSendTimeout(settings.send_timeout);
+                    servers.emplace_back(new Poco::Net::TCPServer(
+                        new TCPHandlerFactory(*this),
+                                                                  server_pool,
+                                                                  tcp_socket,
+                                                                  new Poco::Net::TCPServerParams));
+                    LOG_INFO(log, "Listening tcp_ssl: " + tcp_address.toString());
+#else
+                    throw Exception{"tcp_ssl protocol disabled because poco library built without NetSSL support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
                 }
 
                 /// At least one of TCP and HTTP servers must be created.
@@ -530,7 +554,8 @@ int Server::main(const std::vector<std::string> & args)
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
-            metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(async_metrics, graphite_key));
+            metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
+                *global_context, async_metrics, graphite_key));
         }
 
         SessionCleaner session_cleaner(*global_context);

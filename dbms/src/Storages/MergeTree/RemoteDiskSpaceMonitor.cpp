@@ -39,7 +39,7 @@ std::string Service::getId(const std::string & node_id) const
 
 void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
 {
-    if (is_cancelled)
+    if (blocker.isCancelled())
         throw Exception{"RemoteDiskSpaceMonitor service terminated", ErrorCodes::ABORTED};
 
     size_t free_space = DiskSpaceMonitor::getUnreservedFreeSpace(context.getPath());

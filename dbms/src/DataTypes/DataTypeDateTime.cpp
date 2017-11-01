@@ -57,9 +57,15 @@ void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num,
 void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
     time_t x;
-    assertChar('"', istr);
-    readDateTimeText(x, istr);
-    assertChar('"', istr);
+    if (checkChar('"', istr)) /// Cases: "2017-08-31 18:36:48" or "1504193808"
+    {
+        readDateTimeText(x, istr);
+        assertChar('"', istr);
+    }
+    else /// Just 1504193808 or 01504193808
+    {
+        readIntText(x, istr);
+    }
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 

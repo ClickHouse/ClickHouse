@@ -33,7 +33,7 @@ void CompressedWriteBuffer::nextImpl()
     /** The format of compressed block - see CompressedStream.h
       */
 
-    switch (method)
+    switch (compression_settings.method)
     {
         case CompressionMethod::LZ4:
         case CompressionMethod::LZ4HC:
@@ -47,7 +47,7 @@ void CompressedWriteBuffer::nextImpl()
 
             compressed_buffer[0] = static_cast<UInt8>(CompressionMethodByte::LZ4);
 
-            if (method == CompressionMethod::LZ4)
+            if (compression_settings.method == CompressionMethod::LZ4)
                 compressed_size = header_size + LZ4_compress_default(
                     working_buffer.begin(),
                     &compressed_buffer[header_size],
@@ -59,7 +59,7 @@ void CompressedWriteBuffer::nextImpl()
                     &compressed_buffer[header_size],
                     uncompressed_size,
                     LZ4_COMPRESSBOUND(uncompressed_size),
-                    0);
+                    compression_settings.level);
 
             UInt32 compressed_size_32 = compressed_size;
             UInt32 uncompressed_size_32 = uncompressed_size;
@@ -80,10 +80,10 @@ void CompressedWriteBuffer::nextImpl()
 
             size_t res = ZSTD_compress(
                 &compressed_buffer[header_size],
-                compressed_buffer.size(),
+                compressed_buffer.size() - header_size,
                 working_buffer.begin(),
                 uncompressed_size,
-                1);
+                compression_settings.level);
 
             if (ZSTD_isError(res))
                 throw Exception("Cannot compress block with ZSTD: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_COMPRESS);
@@ -131,9 +131,9 @@ void CompressedWriteBuffer::nextImpl()
 
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_,
-    CompressionMethod method_,
+    CompressionSettings compression_settings_,
     size_t buf_size)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), method(method_)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), compression_settings(compression_settings_)
 {
 }
 

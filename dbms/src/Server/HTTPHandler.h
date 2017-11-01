@@ -13,6 +13,8 @@ namespace CurrentMetrics
     extern const Metric HTTPConnection;
 }
 
+namespace Poco { class Logger; }
+
 namespace DB
 {
 
@@ -52,7 +54,7 @@ private:
     };
 
     IServer & server;
-    Logger * log;
+    Poco::Logger * log;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 

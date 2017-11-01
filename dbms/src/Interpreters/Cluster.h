@@ -19,8 +19,10 @@ public:
     Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name);
 
     /// Construct a cluster by the names of shards and replicas. Local are treated as well as remote ones.
+    /// 'clickhouse_port' - port that this server instance listen for queries.
+    /// This parameter is needed only to check that some address is local (points to ourself).
     Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-            const String & username, const String & password);
+            const String & username, const String & password, UInt16 clickhouse_port);
 
     Cluster(const Cluster &) = delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -59,7 +61,7 @@ public:
 
         Address() = default;
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-        Address(const String & host_port_, const String & user_, const String & password_);
+        Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -124,7 +126,7 @@ public:
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
 private:
-    using SlotToShard = std::vector<size_t>;
+    using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
 
 public:

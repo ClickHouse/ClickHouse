@@ -3,7 +3,7 @@
 #include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
-
+#include <AggregateFunctions/IAggregateFunction.h>
 
 namespace DB
 {
@@ -47,7 +47,7 @@ private:
 
     /// Columns with which numbers should be summed.
     Names column_names_to_sum;    /// If set, it is converted to column_numbers_to_sum when initialized.
-    ColumnNumbers column_numbers_to_sum;
+    ColumnNumbers column_numbers_not_to_aggregate;
 
     /** A table can have nested tables that are treated in a special way.
      *    If the name of the nested table ends in `Map` and it contains at least two columns,
@@ -69,6 +69,23 @@ private:
      *   and can be deleted at any time.
      */
 
+    /// Stores aggregation function, state, and columns to be used as function arguments
+    struct AggregateDescription
+    {
+        AggregateFunctionPtr function;
+        std::vector<size_t> column_numbers;
+        ColumnPtr merged_column;
+        std::vector<char> state;
+        bool created = false;
+
+        /// Explicitly destroy aggregation state if the stream is terminated
+        ~AggregateDescription()
+        {
+            if (created)
+                function->destroy(state.data());
+        }
+    };
+
     /// Stores numbers of key-columns and value-columns.
     struct MapDescription
     {
@@ -76,7 +93,7 @@ private:
         std::vector<size_t> val_col_nums;
     };
 
-    /// Found nested Map-tables.
+    std::vector<AggregateDescription> columns_to_aggregate;
     std::vector<MapDescription> maps_to_sum;
 
     RowRef current_key;        /// The current primary key.
@@ -90,25 +107,19 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     /// Insert the summed row for the current group into the result.
     void insertCurrentRow(ColumnPlainPtrs & merged_columns);
 
-    /** For nested Map, a merge by key is performed with the ejection of rows of nested arrays, in which
-      * all items are zero.
-      */
-    template <class TSortCursor>
-    bool mergeMaps(Row & row, TSortCursor & cursor);
-
-    template <class TSortCursor>
+    template <typename TSortCursor>
     bool mergeMap(const MapDescription & map, Row & row, TSortCursor & cursor);
 
     /** Add the row under the cursor to the `row`.
       * Returns false if the result is zero.
       */
-    template <class TSortCursor>
+    template <typename TSortCursor>
     bool addRow(Row & row, TSortCursor & cursor);
 };
 

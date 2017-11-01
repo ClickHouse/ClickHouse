@@ -8,7 +8,6 @@
 #include <Common/typeid_cast.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTraits.h>
@@ -181,18 +180,22 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 
     if (!checkSetSizeLimits())
     {
-        if (overflow_mode == OverflowMode::THROW)
-            throw Exception("IN-set size exceeded."
-                " Rows: " + toString(data.getTotalRowCount()) +
-                ", limit: " + toString(max_rows) +
-                ". Bytes: " + toString(data.getTotalByteCount()) +
-                ", limit: " + toString(max_bytes) + ".",
-                ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        switch (overflow_mode)
+        {
+            case OverflowMode::THROW:
+                throw Exception("IN-set size exceeded."
+                    " Rows: " + toString(data.getTotalRowCount()) +
+                    ", limit: " + toString(max_rows) +
+                    ". Bytes: " + toString(data.getTotalByteCount()) +
+                    ", limit: " + toString(max_bytes) + ".",
+                    ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
-        if (overflow_mode == OverflowMode::BREAK)
-            return false;
+            case OverflowMode::BREAK:
+                return false;
 
-        throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+            default:
+                throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+        }
     }
 
     return true;

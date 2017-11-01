@@ -1,7 +1,11 @@
 #pragma once
 
-#include <ext/singleton.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Exception.h>
+
 #include <common/Types.h>
+
+#include <ext/singleton.h>
 
 
 /** @brief Class that lets you know if a search engine or operating system belongs
@@ -15,10 +19,10 @@ private:
     UInt8 se_parent[256] {};
 
 public:
-    void reload();
+    void reload(const Poco::Util::AbstractConfiguration & config);
 
     /// Has corresponding section in configuration file.
-    static bool isConfigured();
+    static bool isConfigured(const Poco::Util::AbstractConfiguration & config);
 
 
     /// The "belongs" relation.

@@ -1,3 +1,7 @@
+if (USE_INCLUDE_WHAT_YOU_USE)
+    set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
+endif ()
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/find_vectorclass.cmake)
 
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
@@ -13,8 +17,6 @@ get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
-
-include_directories (${DBMS_INCLUDE_DIR})
 
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
@@ -40,7 +42,6 @@ add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
-add_headers_and_sources(dbms src/DataBases/Distributed)
 add_headers_and_sources(dbms src/Dictionaries)
 add_headers_and_sources(dbms src/Dictionaries/Embedded)
 add_headers_and_sources(dbms src/Interpreters)
@@ -91,8 +92,6 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 
 
 list(REMOVE_ITEM dbms_sources
-    src/Storages/StorageCloud.cpp
-    src/Databases/DatabaseCloud.cpp
     src/Common/StringUtils.cpp)
 
 if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
@@ -114,33 +113,9 @@ else ()
 endif ()
 
 
-if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
     set_source_files_properties(
-        src/Functions/FunctionsArithmetic.cpp
-        src/Functions/FunctionsArray.cpp
-        src/Functions/FunctionsCoding.cpp
-        src/Functions/FunctionsComparison.cpp
-        src/Functions/FunctionsConditional.cpp
-        src/Functions/FunctionsConversion.cpp
-        src/Functions/FunctionsDateTime.cpp
-        src/Functions/FunctionsDictionaries.cpp
-        src/Functions/FunctionsFormatting.cpp
-        src/Functions/FunctionsHashing.cpp
-        src/Functions/FunctionsHigherOrder.cpp
-        src/Functions/FunctionsLogical.cpp
-        src/Functions/FunctionsRandom.cpp
-        src/Functions/FunctionsReinterpret.cpp
-        src/Functions/FunctionsRound.cpp
-        src/Functions/FunctionsString.cpp
-        src/Functions/FunctionsStringArray.cpp
-        src/Functions/FunctionsStringSearch.cpp
-        src/Functions/FunctionsURL.cpp
-        src/Functions/FunctionsVisitParam.cpp
-        src/Functions/FunctionsMath.cpp
-        src/Functions/FunctionsGeo.cpp
-        src/Functions/FunctionsMiscellaneous.cpp
-        src/Functions/FunctionsTransform.cpp
         src/Dictionaries/FlatDictionary.cpp
         src/Dictionaries/HashedDictionary.cpp
         src/Dictionaries/CacheDictionary.cpp
@@ -148,6 +123,14 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
         src/Dictionaries/RangeHashedDictionary.cpp
         src/Dictionaries/ComplexKeyHashedDictionary.cpp
         src/Dictionaries/ComplexKeyCacheDictionary.cpp
+        src/Dictionaries/ComplexKeyCacheDictionary_generate1.cpp
+        src/Dictionaries/ComplexKeyCacheDictionary_generate2.cpp
+        src/Dictionaries/ComplexKeyCacheDictionary_generate3.cpp
+        src/Dictionaries/ODBCBlockInputStream.cpp
+        src/Dictionaries/HTTPDictionarySource.cpp
+        src/Dictionaries/LibraryDictionarySource.cpp
+        src/Dictionaries/ExecutableDictionarySource.cpp
+        src/Dictionaries/ClickHouseDictionarySource.cpp
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
@@ -199,6 +182,10 @@ if (USE_ICU)
     target_link_libraries (dbms ${ICU_LIBS})
 endif ()
 
+if (USE_CAPNP)
+    target_link_libraries (dbms ${CAPNP_LIBS})
+endif ()
+
 target_link_libraries (dbms
     ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
@@ -207,10 +194,23 @@ target_link_libraries (dbms
 
 target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+
+if (NOT USE_INTERNAL_LZ4_LIBRARY)
+    target_include_directories (dbms BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
+endif ()
+if (NOT USE_INTERNAL_ZSTD_LIBRARY)
+    target_include_directories (dbms BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()
+
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
+target_include_directories (dbms PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+
+if (USE_RDKAFKA)
+    target_link_libraries (dbms ${RDKAFKA_LIBRARY})
+endif ()
 
 # only for copy_headers.sh:
-target_include_directories (dbms PRIVATE ${COMMON_INCLUDE_DIR})
+target_include_directories (dbms BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 target_include_directories (dbms BEFORE PRIVATE ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 

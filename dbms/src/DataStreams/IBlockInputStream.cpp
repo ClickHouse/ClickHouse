@@ -99,7 +99,7 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
 BlockInputStreams IBlockInputStream::getLeaves()
 {
     BlockInputStreams res;
-    getLeavesImpl(res);
+    getLeavesImpl(res, nullptr);
     return res;
 }
 
@@ -122,7 +122,7 @@ void IBlockInputStream::getLeafRowsBytes(size_t & rows, size_t & bytes)
 }
 
 
-void IBlockInputStream::getLeavesImpl(BlockInputStreams & res, BlockInputStreamPtr this_shared_ptr)
+void IBlockInputStream::getLeavesImpl(BlockInputStreams & res, const BlockInputStreamPtr & this_shared_ptr)
 {
     if (children.empty())
     {
@@ -134,6 +134,13 @@ void IBlockInputStream::getLeavesImpl(BlockInputStreams & res, BlockInputStreamP
             (*it)->getLeavesImpl(res, *it);
 }
 
+/// By default all instances is different streams
+String IBlockInputStream::getID() const
+{
+    std::stringstream res;
+    res << getName() << "(" << this << ")";
+    return res.str();
+};
 
 }
 

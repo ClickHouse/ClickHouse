@@ -68,7 +68,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
 }
 
 
-template<class TSortCursor>
+template <typename TSortCursor>
 void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
@@ -133,7 +133,7 @@ void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, 
 }
 
 
-template <class TSortCursor>
+template <typename TSortCursor>
 void AggregatingSortedBlockInputStream::addRow(TSortCursor & cursor)
 {
     for (size_t i = 0, size = column_numbers_to_aggregate.size(); i < size; ++i)

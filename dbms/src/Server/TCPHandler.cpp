@@ -12,6 +12,7 @@
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/CompressionSettings.h>
 
 #include <IO/copyData.h>
 
@@ -315,7 +316,7 @@ void TCPHandler::processOrdinaryQuery()
             {
                 if (isQueryCancelled())
                 {
-        /// A package was received requesting to stop execution of the request.
+                    /// A packet was received requesting to stop execution of the request.
                     async_in.cancel();
                     break;
                 }
@@ -597,7 +598,7 @@ void TCPHandler::receiveQuery()
     state.stage = QueryProcessingStage::Enum(stage);
 
     readVarUInt(compression, *in);
-    state.compression = Protocol::Compression::Enum(compression);
+    state.compression = static_cast<Protocol::Compression>(compression);
 
     readStringBinary(state.query, *in);
 }
@@ -663,7 +664,7 @@ void TCPHandler::initBlockOutput()
     {
         if (state.compression == Protocol::Compression::Enable)
             state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                *out, query_context.getSettingsRef().network_compression_method);
+                *out, CompressionSettings(query_context.getSettingsRef()));
         else
             state.maybe_compressed_out = out;
 

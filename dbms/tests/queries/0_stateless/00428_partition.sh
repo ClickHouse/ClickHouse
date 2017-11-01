@@ -5,7 +5,7 @@ set -e
 # Test 1. Complex test checking columns.txt
 
 chl="clickhouse-client -q"
-ch_dir=`clickhouse --extract-from-config -c /etc/clickhouse-server/config.xml -k path`
+ch_dir=`clickhouse extract-from-config -c /etc/clickhouse-server/config.xml -k path`
 
 $chl "DROP TABLE IF EXISTS test.partition_428"
 $chl "CREATE TABLE test.partition_428 (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) ENGINE = MergeTree(p, k, 1)"

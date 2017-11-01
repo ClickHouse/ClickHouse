@@ -42,7 +42,7 @@ template <typename T> struct IsNullable { static constexpr bool value = false; }
 template <typename T> struct IsNullable<Nullable<T>> { static constexpr bool value = true; };
 
 template <typename T> struct IsNumber { static constexpr bool value = false; };
-template <typename T> struct IsNumber<Nullable<T> > { static constexpr bool value = IsNumber<T>::value; };
+template <typename T> struct IsNumber<Nullable<T>> { static constexpr bool value = IsNumber<T>::value; };
 
 template <> struct IsNumber<UInt8>   { static constexpr bool value = true; };
 template <> struct IsNumber<UInt16>  { static constexpr bool value = true; };
@@ -73,5 +73,6 @@ template <> struct TypeName<Int64>   { static const char * get() { return "Int64
 template <> struct TypeName<Float32> { static const char * get() { return "Float32"; } };
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
+
 
 }

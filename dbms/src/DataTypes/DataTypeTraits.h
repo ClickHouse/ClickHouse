@@ -213,12 +213,12 @@ struct DataTypeProduct
 };
 
 template <typename T1, typename T2>
-struct DataTypeProduct<T1, Nullable<T2> >
+struct DataTypeProduct<T1, Nullable<T2>>
 {
     using Type = typename ToEnrichedDataType<
         typename NumberTraits::TypeProduct<
             typename ToEnrichedNumericType<T1>::Type,
-            typename NumberTraits::EmbedType<Nullable<typename T2::FieldType> >::Type
+            typename NumberTraits::EmbedType<Nullable<typename T2::FieldType>>::Type
         >::Type
     >::Type;
 };

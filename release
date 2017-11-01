@@ -7,6 +7,9 @@ cd $CURDIR
 
 source "./release_lib.sh"
 
+DEB_CC=gcc-6
+DEB_CXX=g++-6
+
 CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
 
@@ -58,7 +61,7 @@ if [ -z "$THREAD_COUNT" ] ; then
     THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
 fi
 
-CMAKE_FLAGS_ADD+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE"
+CMAKE_FLAGS+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE"
 
 REVISION+=$VERSION_POSTFIX
 echo -e "\nCurrent revision is $REVISION"
@@ -66,4 +69,4 @@ echo -e "\nCurrent revision is $REVISION"
 gen_changelog "$REVISION" "" "$AUTHOR" ""
 
 # Build (only binary packages).
-debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT -e DEB_CC -e DEB_CXX -e DEB_CLANG -e CMAKE_FLAGS_ADD="$CMAKE_FLAGS_ADD" -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e USE_INTERNAL_COMPILER=1 -e CMAKE_FLAGS="$CMAKE_FLAGS" -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}

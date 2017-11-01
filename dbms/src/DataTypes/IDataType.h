@@ -29,6 +29,12 @@ using DataTypes = std::vector<DataTypePtr>;
 class IDataType
 {
 public:
+    /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
+    /// Example: DataTypeString is not parametric: thus all instances of DataTypeString are the same SQL type.
+    /// Example: DataTypeFixedString is parametric: different instances of DataTypeFixedString may be different SQL types.
+    /// Place it in descendants:
+    /// static constexpr bool is_parametric = false;
+
     /// Name of data type (examples: UInt64, Array(String)).
     virtual String getName() const = 0;
 
@@ -148,6 +154,11 @@ public:
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.
       */
     virtual Field getDefault() const = 0;
+
+    /** Directly insert default value into a column. Default implementation use method IColumn::insertDefault.
+      * This should be overriden if data type default value differs from column default value (example: Enum data types).
+      */
+    virtual void insertDefaultInto(IColumn & column) const;
 
     /// For fixed-size types, return size of value in bytes. For other data types, return some approximate size just for estimation.
     virtual size_t getSizeOfField() const

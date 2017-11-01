@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 clickhouse-client -q "DROP TABLE IF EXISTS test.ws";
 clickhouse-client -q "CREATE TABLE test.ws (i UInt8) ENGINE = Memory";

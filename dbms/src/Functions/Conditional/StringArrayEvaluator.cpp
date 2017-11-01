@@ -44,7 +44,7 @@ using VarCallback = std::function<size_t(ColumnString::Chars_t & to_data,
 /// the code slightly simpler to read.
 struct Chunk
 {
-    Chunk(const VarCallback & var_callback_)
+    explicit Chunk(const VarCallback & var_callback_)
         : var_callback{var_callback_}
     {
     }
@@ -90,7 +90,7 @@ public:
 
     Chunk get() const override
     {
-        return {var_callback};
+        return Chunk{var_callback};
     }
 
     void next() override
@@ -174,7 +174,7 @@ public:
 
     Chunk get() const override
     {
-        return {var_callback};
+        return Chunk{var_callback};
     }
 
     void next() override

@@ -197,7 +197,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 break;
             default:
                 UInt8 c = *it;
-                if (0x00 <= c && c <= 0x1F)
+                if (c <= 0x1F)
                 {
                     /// Escaping of ASCII control characters.
 
@@ -207,7 +207,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                     writeCString("\\u00", buf);
                     writeChar('0' + higher_half, buf);
 
-                    if (0 <= lower_half && lower_half <= 9)
+                    if (lower_half <= 9)
                         writeChar('0' + lower_half, buf);
                     else
                         writeChar('A' + lower_half - 10, buf);
@@ -522,7 +522,7 @@ inline void writeDateText(DayNum_t date, WriteBuffer & buf)
     buf.write(s, 10);
 }
 
-inline void writeDateText(LocalDate date, WriteBuffer & buf)
+inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 {
     char s[10] = {'0', '0', '0', '0', '-', '0', '0', '-', '0', '0'};
 
@@ -563,8 +563,8 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
     s[9] += values.day_of_month % 10;
 
     UInt8 hour = date_lut.toHour(datetime);
-    UInt8 minute = date_lut.toMinuteInaccurate(datetime);
-    UInt8 second = date_lut.toSecondInaccurate(datetime);
+    UInt8 minute = date_lut.toMinute(datetime);
+    UInt8 second = date_lut.toSecond(datetime);
 
     s[11] += hour / 10;
     s[12] += hour % 10;
@@ -577,7 +577,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
 }
 
 template <char date_delimeter = '-', char time_delimeter = ':'>
-inline void writeDateTimeText(LocalDateTime datetime, WriteBuffer & buf)
+inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 {
     char s[19] = {'0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0', ' ', '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'};
 

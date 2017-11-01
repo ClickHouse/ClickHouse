@@ -34,7 +34,7 @@ struct AggregateFunctionQuantileData
   */
 template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantile final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantile<ArgumentFieldType, returns_float> >
+    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantile<ArgumentFieldType, returns_float>>
 {
 private:
     using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
@@ -99,6 +99,8 @@ public:
         else
             static_cast<ColumnVector<ArgumentFieldType> &>(to).getData().push_back(sample.quantileInterpolated(level));
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -108,7 +110,7 @@ public:
   */
 template <typename ArgumentFieldType, bool returns_float = true>
 class AggregateFunctionQuantiles final
-    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantiles<ArgumentFieldType, returns_float> >
+    : public IUnaryAggregateFunction<AggregateFunctionQuantileData<ArgumentFieldType>, AggregateFunctionQuantiles<ArgumentFieldType, returns_float>>
 {
 private:
     using Sample = typename AggregateFunctionQuantileData<ArgumentFieldType>::Sample;
@@ -192,6 +194,8 @@ public:
                 data_to.push_back(sample.quantileInterpolated(levels[i]));
         }
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

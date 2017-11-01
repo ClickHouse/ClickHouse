@@ -1,8 +1,12 @@
+import os
 import os.path as p
+import sys
 import time
 import datetime
 import pytest
+from contextlib import contextmanager
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager, PartitionManagerDisbaler
 from helpers.test_tools import TSV
@@ -295,3 +299,10 @@ ENGINE = Distributed(cluster_without_replication, default, merge, i)
     ddl_check_query(instance, "DROP TABLE merge ON CLUSTER cluster_without_replication")
     ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER cluster_without_replication")
     ddl_check_query(instance, "DROP TABLE all_merge_64 ON CLUSTER cluster_without_replication")
+
+
+if __name__ == '__main__':
+    with contextmanager(started_cluster)() as cluster:
+       for name, instance in cluster.instances.items():
+           print name, instance.ip_address
+       raw_input("Cluster created, press any key to destroy...")

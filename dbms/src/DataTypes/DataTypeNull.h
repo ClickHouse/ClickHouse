@@ -16,6 +16,8 @@ public:
     using FieldType = Null;
 
 public:
+    static constexpr bool is_parametric = false;
+
     String getName() const override
     {
         return "Null";

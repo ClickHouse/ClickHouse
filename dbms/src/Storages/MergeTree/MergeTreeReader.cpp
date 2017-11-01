@@ -110,7 +110,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
             const IDataType * observed_type;
             bool is_nullable;
 
-            if (column.type.get()->isNullable())
+            if (column.type->isNullable())
             {
                 const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
                 observed_type = nullable_type.getNestedType().get();
@@ -403,7 +403,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
         std::string filename = name + NULL_MAP_EXTENSION;
 
         streams.emplace(filename, std::make_unique<Stream>(
-            path + escaped_column_name, NULL_MAP_EXTENSION, data_part->size,
+            path + escaped_column_name, NULL_MAP_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
@@ -425,7 +425,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 
         if (!streams.count(size_name))
             streams.emplace(size_name, std::make_unique<Stream>(
-                path + escaped_size_name, DATA_FILE_EXTENSION, data_part->size,
+                path + escaped_size_name, DATA_FILE_EXTENSION, data_part->marks_count,
                 all_mark_ranges, mark_cache, save_marks_in_cache,
                 uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
@@ -436,7 +436,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
     }
     else
         streams.emplace(name, std::make_unique<Stream>(
-            path + escaped_column_name, DATA_FILE_EXTENSION, data_part->size,
+            path + escaped_column_name, DATA_FILE_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 }

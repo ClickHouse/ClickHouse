@@ -52,7 +52,7 @@ namespace ErrorCodes
 }
 
 
-class TinyLogBlockInputStream : public IProfilingBlockInputStream
+class TinyLogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
     TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
@@ -76,7 +76,7 @@ private:
     struct Stream
     {
         Stream(const std::string & data_path, size_t max_read_buffer_size)
-            : plain(data_path, std::min(max_read_buffer_size, Poco::File(data_path).getSize())),
+            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(data_path).getSize())),
             compressed(plain)
         {
         }
@@ -93,10 +93,10 @@ private:
 };
 
 
-class TinyLogBlockOutputStream : public IBlockOutputStream
+class TinyLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    TinyLogBlockOutputStream(StorageTinyLog & storage_)
+    explicit TinyLogBlockOutputStream(StorageTinyLog & storage_)
         : storage(storage_)
     {
         for (const auto & col : storage.getColumnsList())
@@ -126,7 +126,7 @@ private:
     {
         Stream(const std::string & data_path, size_t max_compress_block_size) :
             plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, CompressionMethod::LZ4, max_compress_block_size)
+            compressed(plain, CompressionSettings(CompressionMethod::LZ4), max_compress_block_size)
         {
         }
 

@@ -20,7 +20,7 @@ namespace DB
   * `sizeof` is equal to the size of one pointer.
   *
   * Not exception-safe.
-  * Copying is not supported. Moving empties the original object.
+  * Copying is supported via assign() method. Moving empties the original object.
   * That is, it is inconvenient to use this array in many cases.
   *
   * Designed for situations in which many arrays of the same small size are created,
@@ -48,7 +48,7 @@ public:
         setEmpty();
     }
 
-    AutoArray(size_t size_)
+    explicit AutoArray(size_t size_)
     {
         init(size_, false);
     }
@@ -123,6 +123,24 @@ public:
     {
         uninit();
         setEmpty();
+    }
+
+    template <typename It>
+    void assign(It from_begin, It from_end)
+    {
+        uninit();
+
+        size_t size = from_end - from_begin;
+        init(size, /* dont_init_elems = */ true);
+
+        It it = from_begin;
+        for (size_t i = 0; i < size; ++i, ++it)
+            new (place(i)) T(*it);
+    }
+
+    void assign(const AutoArray & from)
+    {
+        assign(from.begin(), from.end());
     }
 
     /** You can read and modify elements using the [] operator

@@ -20,22 +20,21 @@ public:
     std::string getName() const override { return "MaterializedView"; }
     std::string getTableName() const override { return table_name; }
     const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
-    std::string getInnerTableName() const { return  ".inner." + table_name; }
     ASTPtr getInnerQuery() const { return inner_query->clone(); };
-    StoragePtr getInnerTable() const;
+    StoragePtr getTargetTable() const;
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
-    bool supportsSampling() const override { return getInnerTable()->supportsSampling(); }
-    bool supportsPrewhere() const override { return getInnerTable()->supportsPrewhere(); }
-    bool supportsFinal() const override { return getInnerTable()->supportsFinal(); }
-    bool supportsParallelReplicas() const override { return getInnerTable()->supportsParallelReplicas(); }
-    bool supportsIndexForIn() const override { return getInnerTable()->supportsIndexForIn(); }
+    bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
+    bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
+    bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
+    bool supportsParallelReplicas() const override { return getTargetTable()->supportsParallelReplicas(); }
+    bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
     void drop() override;
-    bool optimize(const ASTPtr & query, const String & partition, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     BlockInputStreams read(
         const Names & column_names,
@@ -48,17 +47,20 @@ public:
 private:
     String select_database_name;
     String select_table_name;
+    String target_database_name;
+    String target_table_name;
     String table_name;
     String database_name;
     ASTPtr inner_query;
-    Context & context;
+    Context & global_context;
     NamesAndTypesListPtr columns;
+    bool has_inner_table = false;
 
     StorageMaterializedView(
         const String & table_name_,
         const String & database_name_,
-        Context & context_,
-        ASTPtr & query_,
+        Context & local_context,
+        const ASTCreateQuery & query,
         NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,

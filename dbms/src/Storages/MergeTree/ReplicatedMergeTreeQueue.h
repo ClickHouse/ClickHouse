@@ -28,14 +28,16 @@ private:
     {
         bool operator()(const LogEntryPtr & lhs, const LogEntryPtr & rhs) const
         {
-            return std::forward_as_tuple(lhs.get()->create_time, lhs.get())
-                 < std::forward_as_tuple(rhs.get()->create_time, rhs.get());
+            return std::forward_as_tuple(lhs->create_time, lhs.get())
+                 < std::forward_as_tuple(rhs->create_time, rhs.get());
         }
     };
 
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
+
+    MergeTreeDataFormatVersion format_version;
 
     String zookeeper_path;
     String replica_path;
@@ -121,7 +123,11 @@ private:
     };
 
 public:
-    ReplicatedMergeTreeQueue() {}
+    ReplicatedMergeTreeQueue(MergeTreeDataFormatVersion format_version_)
+        : format_version(format_version_)
+        , virtual_parts(format_version)
+    {
+    }
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);

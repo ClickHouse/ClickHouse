@@ -6,6 +6,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/RemoteBlockInputStream.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace DB
@@ -39,13 +40,24 @@ BlockInputStreams executeQuery(
     Context new_context(context);
     new_context.setSettings(new_settings);
 
+    ThrottlerPtr user_level_throttler;
+    if (settings.limits.max_network_bandwidth_for_user)
+        if (auto process_list_element = context.getProcessListElement())
+            if (auto user_process_list = process_list_element->user_process_list)
+                user_level_throttler = user_process_list->user_throttler;
+
     /// Network bandwidth limit, if needed.
     ThrottlerPtr throttler;
     if (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes)
+    {
         throttler = std::make_shared<Throttler>(
-            settings.limits.max_network_bandwidth,
-            settings.limits.max_network_bytes,
-            "Limit for bytes to send or receive over network exceeded.");
+                settings.limits.max_network_bandwidth,
+                settings.limits.max_network_bytes,
+                "Limit for bytes to send or receive over network exceeded.",
+                user_level_throttler);
+    }
+    else if (settings.limits.max_network_bandwidth_for_user)
+        throttler = user_level_throttler;
 
     for (const auto & shard_info : cluster->getShardsInfo())
         stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, res);

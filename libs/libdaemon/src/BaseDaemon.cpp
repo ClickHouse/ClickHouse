@@ -161,10 +161,16 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
+thread_local bool already_signal_handled = false;
+
 /** Обработчик некоторых сигналов. Выводит информацию в лог (если получится).
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (already_signal_handled)
+        return;
+    already_signal_handled = true;
+
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
@@ -192,7 +198,7 @@ size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & co
 
     unw_cursor_t cursor;
 
-    if (unw_init_local_signal(&cursor, &context) < 0)
+    if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) < 0)
         return 0;
 
     size_t i = 0;
@@ -223,9 +229,9 @@ public:
         StopThread = -2
     };
 
-    SignalListener(BaseDaemon & daemon_)
-    : log(&Logger::get("BaseDaemon"))
-    , daemon(daemon_)
+    explicit SignalListener(BaseDaemon & daemon_)
+        : log(&Logger::get("BaseDaemon"))
+        , daemon(daemon_)
     {
     }
 
@@ -328,11 +334,6 @@ private:
         static const int max_frames = 50;
         void * frames[max_frames];
 
-
-
-
-
-
 #if USE_UNWIND
         int frames_size = backtraceLibUnwind(frames, max_frames, context);
 
@@ -401,11 +402,11 @@ private:
   */
 static void terminate_handler()
 {
-    static __thread bool terminating = false;
+    static thread_local bool terminating = false;
     if (terminating)
     {
         abort();
-        return;
+        return; /// Just for convenience.
     }
 
     terminating = true;
@@ -810,6 +811,13 @@ void BaseDaemon::initialize(Application & self)
 
     /// Ставим terminate_handler
     std::set_terminate(terminate_handler);
+
+    /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
+    {
+        sigset_t sig_set;
+        if (sigemptyset(&sig_set) || sigaddset(&sig_set, SIGPIPE) || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
+            throw Poco::Exception("Cannot block signal.");
+    }
 
     /// Ставим обработчики сигналов
     auto add_signal_handler =

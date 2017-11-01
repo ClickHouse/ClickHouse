@@ -12,13 +12,6 @@
 #include <IO/WriteHelpers.h>
 
 
-static constexpr auto config_key = "path_to_regions_hierarchy_file";
-
-
-RegionsHierarchy::RegionsHierarchy()
-{
-    path = Poco::Util::Application::instance().config().getString(config_key);
-}
 
 RegionsHierarchy::RegionsHierarchy(const std::string & path_)
 {

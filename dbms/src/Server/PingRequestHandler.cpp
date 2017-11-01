@@ -16,7 +16,9 @@ void PingRequestHandler::handleRequest(
 {
     try
     {
-        setResponseDefaultHeaders(response);
+        const auto & config = server.config();
+        setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
+
         const char * data = "Ok.\n";
         response.sendBuffer(data, strlen(data));
     }

@@ -15,8 +15,10 @@ private:
     DataTypePtr return_type;
 
 public:
+    static constexpr bool is_parametric = true;
+
     /// Some types could be still unknown.
-    DataTypeExpression(DataTypes argument_types_ = DataTypes(), DataTypePtr return_type_ = nullptr)
+    DataTypeExpression(const DataTypes & argument_types_ = DataTypes(), const DataTypePtr & return_type_ = nullptr)
         : argument_types(argument_types_), return_type(return_type_) {}
 
     std::string getName() const override;

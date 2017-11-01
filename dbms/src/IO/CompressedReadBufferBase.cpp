@@ -54,8 +54,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     size_t & size_compressed = size_compressed_without_checksum;
 
     if (method == static_cast<UInt8>(CompressionMethodByte::LZ4) ||
-            method == static_cast<UInt8>(CompressionMethodByte::ZSTD) ||
-            method == static_cast<UInt8>(CompressionMethodByte::NONE))
+        method == static_cast<UInt8>(CompressionMethodByte::ZSTD) ||
+        method == static_cast<UInt8>(CompressionMethodByte::NONE))
     {
         size_compressed = unalignedLoad<UInt32>(&own_compressed_buffer[1]);
         size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);

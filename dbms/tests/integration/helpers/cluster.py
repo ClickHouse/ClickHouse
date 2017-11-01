@@ -176,6 +176,7 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
         entrypoint:
             -  /usr/bin/clickhouse
+            -  server
             -  --config-file=/etc/clickhouse-server/config.xml
             -  --log-file=/var/log/clickhouse-server/clickhouse-server.log
         depends_on: {depends_on}
@@ -295,14 +296,14 @@ class ClickHouseInstance:
 
         os.makedirs(self.path)
 
-        configs_dir = p.join(self.path, 'configs')
+        configs_dir = p.abspath(p.join(self.path, 'configs'))
         os.mkdir(configs_dir)
 
         shutil.copy(p.join(self.base_configs_dir, 'config.xml'), configs_dir)
         shutil.copy(p.join(self.base_configs_dir, 'users.xml'), configs_dir)
 
-        config_d_dir = p.join(configs_dir, 'config.d')
-        users_d_dir = p.join(configs_dir, 'users.d')
+        config_d_dir = p.abspath(p.join(configs_dir, 'config.d'))
+        users_d_dir = p.abspath(p.join(configs_dir, 'users.d'))
         os.mkdir(config_d_dir)
         os.mkdir(users_d_dir)
 
@@ -330,12 +331,12 @@ class ClickHouseInstance:
         for path in self.custom_user_config_paths:
             shutil.copy(path, users_d_dir)
 
-        db_dir = p.join(self.path, 'database')
+        db_dir = p.abspath(p.join(self.path, 'database'))
         os.mkdir(db_dir)
         if self.clickhouse_path_dir is not None:
             distutils.dir_util.copy_tree(self.clickhouse_path_dir, db_dir)
 
-        logs_dir = p.join(self.path, 'logs')
+        logs_dir = p.abspath(p.join(self.path, 'logs'))
         os.mkdir(logs_dir)
 
         depends_on = '[]'

@@ -1,16 +1,22 @@
 #include <Storages/System/StorageSystemGraphite.h>
 
-#include <Core/Field.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Field.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Util/Application.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NO_ELEMENTS_IN_CONFIG;
+}
 
 namespace
 {
@@ -41,7 +47,11 @@ static Pattern readOnePattern(
 
     config.keys(path, keys);
 
-    for (const auto & key : keys) {
+    if (keys.empty())
+        throw Exception("Empty pattern in Graphite rollup configuration", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    for (const auto & key : keys)
+    {
         const String key_path = path + "." + key;
 
         if (startsWith(key, "regexp"))
@@ -63,16 +73,18 @@ static Pattern readOnePattern(
     return pattern;
 }
 
-static std::vector<Pattern> readPatterns(const std::string & section)
+static std::vector<Pattern> readPatterns(
+    const AbstractConfiguration & config,
+    const std::string & section)
 {
-    const AbstractConfiguration & config = Application::instance().config();
     AbstractConfiguration::Keys keys;
     std::vector<Pattern> result;
     size_t count = 0;
 
     config.keys(section, keys);
 
-    for (const auto & key : keys) {
+    for (const auto & key : keys)
+    {
         if (startsWith(key, "pattern"))
         {
             Pattern pattern(readOnePattern(config, section + "." + key));
@@ -92,9 +104,8 @@ static std::vector<Pattern> readPatterns(const std::string & section)
     return result;
 }
 
-static Strings getAllGraphiteSections()
+static Strings getAllGraphiteSections(const AbstractConfiguration & config)
 {
-    const AbstractConfiguration & config = Application::instance().config();
     Strings result;
 
     AbstractConfiguration::Keys keys;
@@ -180,10 +191,12 @@ BlockInputStreams StorageSystemGraphite::read(
     col_is_default.column = std::make_shared<ColumnUInt8>();
     block.insert(col_is_default);
 
-    Strings sections = getAllGraphiteSections();
+    const auto & config = context.getConfigRef();
+
+    Strings sections = getAllGraphiteSections(config);
     for (const auto & section : sections)
     {
-        const auto patterns = readPatterns(section);
+        const auto patterns = readPatterns(config, section);
         for (const auto & pattern : patterns)
         {
             for (const auto & ret : pattern.retentions)

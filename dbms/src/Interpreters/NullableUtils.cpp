@@ -34,6 +34,7 @@ void extractNestedColumnsAndNullMap(ConstColumnPlainPtrs & key_columns, ColumnPt
                 }
                 else
                 {
+                    mutable_null_map = &static_cast<ColumnUInt8 &>(*null_map_holder).getData();
                     const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMap();
                     for (size_t i = 0, size = mutable_null_map->size(); i < size; ++i)
                         (*mutable_null_map)[i] |= other_null_map[i];

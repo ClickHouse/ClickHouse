@@ -1,3 +1,80 @@
+# ClickHouse release 1.1.54304
+
+## New features:
+* TLS support in the native protocol (to enable, set `tcp_ssl_port` in `config.xml`)
+
+## Bug fixes:
+* `ALTER` for replicated tables now tries to start running as soon as possible
+* Fixed crashing when reading data with the setting `preferred_block_size_bytes=0`
+* Fixed crashes of `clickhouse-client` when `Page Down` is pressed
+* Correct interpretation of certain complex queries with `GLOBAL IN` and `UNION ALL`
+* `FREEZE PARTITION` always works atomically now
+* Empty POST requests now return a response with code 411
+* Fixed interpretation errors for expressions like `CAST(1 AS Nullable(UInt8))`
+* Fixed an error when reading columns like `Array(Nullable(String))` from `MergeTree` tables
+* Fixed crashing when parsing queries like `SELECT dummy AS dummy, dummy AS b`
+* Users are updated correctly when `users.xml` is invalid
+* Correct handling when an executable dictionary returns a non-zero response code
+
+# ClickHouse release 1.1.54292
+
+## New features:
+* Added the `pointInPolygon` function for working with coordinates on a coordinate plane.
+* Added the `sumMap` aggregate function for calculating the sum of arrays, similar to `SummingMergeTree`.
+* Added the `trunc` function. Improved performance of the rounding functions (`round`, `floor`, `ceil`, `roundToExp2`) and corrected the logic of how they work. Changed the logic of the `roundToExp2` function for fractions and negative numbers.
+* The ClickHouse executable file is now less dependent on the libc version. The same ClickHouse executable file can run on a wide variety of Linux systems. Note: There is still a dependency when using compiled queries (with the setting `compile = 1`, which is not used by default). 
+* Reduced the time needed for dynamic compilation of queries.
+
+## Bug fixes:
+* Fixed an error that sometimes produced `part ... intersects previous part` messages and weakened replica consistency.
+* Fixed an error that caused the server to lock up if ZooKeeper was unavailable during shutdown.
+* Removed excessive logging when restoring replicas.
+* Fixed an error in the UNION ALL implementation.
+* Fixed an error in the concat function that occurred if the first column in a block has the Array type.
+* Progress is now displayed correctly in the system.merges table.
+
+# ClickHouse release 1.1.54289
+
+## New features:
+* `SYSTEM` queries for server administration: `SYSTEM RELOAD DICTIONARY`, `SYSTEM RELOAD DICTIONARIES`, `SYSTEM DROP DNS CACHE`, `SYSTEM SHUTDOWN`, `SYSTEM KILL`.
+* Added functions for working with arrays: `concat`, `arraySlice`, `arrayPushBack`, `arrayPushFront`, `arrayPopBack`, `arrayPopFront`.
+* Added the `root` and `identity` parameters for the ZooKeeper configuration. This allows you to isolate individual users on the same ZooKeeper cluster.
+* Added the aggregate functions `groupBitAnd`, `groupBitOr`, and `groupBitXor` (for compatibility, they can also be accessed with the names `BIT_AND`, `BIT_OR`, and `BIT_XOR`).
+* External dictionaries can be loaded from MySQL by specifying a socket in the filesystem.
+* External dictionaries can be loaded from MySQL over SSL (the `ssl_cert`, `ssl_key`, and `ssl_ca` parameters).
+* Added the `max_network_bandwidth_for_user` setting to restrict the overall bandwidth use for queries per user.
+* Support for `DROP TABLE` for temporary tables.
+* Support for reading `DateTime` values in Unix timestamp format from the `CSV` and `JSONEachRow` formats.
+* Lagging replicas in distributed queries are now excluded by default (the default threshold is 5 minutes).
+* FIFO locking is used during ALTER: an ALTER query isn't blocked indefinitely for continuously running queries.
+* Option to set `umask` in the config file.
+* Improved performance for queries with `DISTINCT`.
+
+## Bug fixes:
+* Improved the process for deleting old nodes in ZooKeeper. Previously, old nodes sometimes didn't get deleted if there were very frequent inserts, which caused the server to be slow to shut down, among other things.
+* Fixed randomization when choosing hosts for the connection to ZooKeeper.
+* Fixed the exclusion of lagging replicas in distributed queries if the replica is localhost.
+* Fixed an error where a data part in a `ReplicatedMergeTree` table could be broken after running `ALTER MODIFY` on an element in a `Nested` structure.
+* Fixed an error that could cause SELECT queries to "hang". 
+* Improvements to distributed DDL queries.
+* Fixed the query `CREATE TABLE ... AS <materialized view>`.
+* Resolved the deadlock in the `ALTER ... CLEAR COLUMN IN PARTITION` query for `Buffer` tables.
+* Fixed the invalid default value for `Enum`s (0 instead of the minimum) when using the `JSONEachRow` and `TSKV` formats.
+* Resolved the appearance of zombie processes when using a dictionary with an `executable` source.
+* Fixed segfault for the HEAD query.
+
+## Improvements to development workflow and ClickHouse build:
+* You can use `pbuilder` to build ClickHouse.
+* You can use `libc++` instead of `libstdc++` for builds on Linux.
+* Added instructions for using static code analysis tools: `Coverity`, `clang-tidy`, and `cppcheck`.
+
+## Please note when upgrading:
+* There is now a higher default value for the MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (the maximum total size of data parts to merge, in bytes): it has increased from 100 GiB to 150 GiB. This might result in large merges running after the server upgrade, which could cause an increased load on the disk subsystem. If the free space available on the server is less than twice the total amount of the merges that are running, this will cause all other merges to stop running, including merges of small data parts. As a result, INSERT requests will fail with the message "Merges are processing significantly slower than inserts." Use the `SELECT * FROM system.merges` request to monitor the situation. You can also check the `DiskSpaceReservedForMerge` metric in the `system.metrics` table, or in Graphite. You don't need to do anything to fix this, since the issue will resolve itself once the large merges finish. If you find this unacceptable, you can restore the previous value for the `max_bytes_to_merge_at_max_space_in_pool` setting (to do this, go to the `<merge_tree>` section in config.xml, set `<max_bytes_to_merge_at_max_space_in_pool>107374182400</max_bytes_to_merge_at_max_space_in_pool>` and restart the server).
+
+# ClickHouse release 1.1.54284
+
+* This is bugfix release for previous 1.1.54282 release. It fixes ZooKeeper nodes leak in `parts/` directory.
+
 # ClickHouse release 1.1.54282
 
 This is a bugfix release. The following bugs were fixed:
@@ -20,7 +97,7 @@ This is a bugfix release. The following bugs were fixed:
 
 ## Major changes:
 
-* Improved security: all server files are created with 0640 permissions.
+* Improved security: all server files are created with 0640 permissions (can be changed via <umask> config parameter). 
 * Improved error messages for queries with invalid syntax.
 * Significantly reduced memory consumption and improved performance when merging large sections of MergeTree data.
 * Significantly increased the performance of data merges for the ReplacingMergeTree engine.

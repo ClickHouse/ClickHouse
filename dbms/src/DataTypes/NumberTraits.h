@@ -60,14 +60,14 @@ struct AddNullability<T, HasNoNull>
 
 template <typename T> struct Next;
 
-template <> struct Next<Bits0>    { using Type = Bits0; };
-template <> struct Next<Bits8>    { using Type = Bits16; };
-template <> struct Next<Bits16>    { using Type = Bits32; };
-template <> struct Next<Bits32>    { using Type = Bits64; };
-template <> struct Next<Bits64>    { using Type = Bits64; };
+template <> struct Next<Bits0> { using Type = Bits0; };
+template <> struct Next<Bits8> { using Type = Bits16; };
+template <> struct Next<Bits16> { using Type = Bits32; };
+template <> struct Next<Bits32> { using Type = Bits64; };
+template <> struct Next<Bits64> { using Type = Bits64; };
 
 template <typename T> struct ExactNext { using Type = typename Next<T>::Type; };
-template <> struct ExactNext<Bits64>    { using Type = BitsTooMany; };
+template <> struct ExactNext<Bits64> { using Type = BitsTooMany; };
 
 template <typename T> struct Traits;
 
@@ -503,16 +503,16 @@ template <> struct EmbedType<Float32> { using Type = Enriched::Float32<HasNoNull
 template <> struct EmbedType<Float64> { using Type = Enriched::Float64<HasNoNull>; };
 
 template <> struct EmbedType<Null> { using Type = Enriched::Void<HasNull>; };
-template <> struct EmbedType<Nullable<Int8> > { using Type = Enriched::Int8<HasNull>; };
-template <> struct EmbedType<Nullable<Int16> > { using Type = Enriched::Int16<HasNull>; };
-template <> struct EmbedType<Nullable<Int32> > { using Type = Enriched::Int32<HasNull>; };
-template <> struct EmbedType<Nullable<Int64> > { using Type = Enriched::Int64<HasNull>; };
-template <> struct EmbedType<Nullable<UInt8> > { using Type = Enriched::UInt8<HasNull>; };
-template <> struct EmbedType<Nullable<UInt16> > { using Type = Enriched::UInt16<HasNull>; };
-template <> struct EmbedType<Nullable<UInt32> > { using Type = Enriched::UInt32<HasNull>; };
-template <> struct EmbedType<Nullable<UInt64> > { using Type = Enriched::UInt64<HasNull>; };
-template <> struct EmbedType<Nullable<Float32> > { using Type = Enriched::Float32<HasNull>; };
-template <> struct EmbedType<Nullable<Float64> > { using Type = Enriched::Float64<HasNull>; };
+template <> struct EmbedType<Nullable<Int8>> { using Type = Enriched::Int8<HasNull>; };
+template <> struct EmbedType<Nullable<Int16>> { using Type = Enriched::Int16<HasNull>; };
+template <> struct EmbedType<Nullable<Int32>> { using Type = Enriched::Int32<HasNull>; };
+template <> struct EmbedType<Nullable<Int64>> { using Type = Enriched::Int64<HasNull>; };
+template <> struct EmbedType<Nullable<UInt8>> { using Type = Enriched::UInt8<HasNull>; };
+template <> struct EmbedType<Nullable<UInt16>> { using Type = Enriched::UInt16<HasNull>; };
+template <> struct EmbedType<Nullable<UInt32>> { using Type = Enriched::UInt32<HasNull>; };
+template <> struct EmbedType<Nullable<UInt64>> { using Type = Enriched::UInt64<HasNull>; };
+template <> struct EmbedType<Nullable<Float32>> { using Type = Enriched::Float32<HasNull>; };
+template <> struct EmbedType<Nullable<Float64>> { using Type = Enriched::Float64<HasNull>; };
 
 /// Get an ordinary type from an enriched type.
 template <typename TType>

@@ -11,7 +11,7 @@
 int main(int argc, char ** argv)
 {
     {
-        using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1> >;
+        using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;
         Cont cont;
 
         cont.insert(1);
@@ -28,22 +28,6 @@ int main(int argc, char ** argv)
 
         for (auto x : cont)
             std::cerr << x << std::endl;
-
-        DB::WriteBufferFromOwnString wb;
-        cont.writeText(wb);
-
-        std::cerr << "dump: " << wb.str() << std::endl;
-    }
-
-    {
-        using Cont = HashMap<int, std::string, DefaultHash<int>, HashTableGrower<1> >;
-        Cont cont;
-
-        cont.insert(Cont::value_type(1, "Hello, world!"));
-        cont[1] = "Goodbye.";
-
-        for (auto x : cont)
-            std::cerr << x.first << " -> " << x.second << std::endl;
 
         DB::WriteBufferFromOwnString wb;
         cont.writeText(wb);

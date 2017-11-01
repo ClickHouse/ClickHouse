@@ -121,7 +121,6 @@ public:
       */
     virtual bool isState() const { return false; }
 
-
     /** The inner loop that uses the function pointer is better than using the virtual function.
       * The reason is that in the case of virtual functions GCC 5.1.2 generates code,
       *  which, at each iteration of the loop, reloads the function address (the offset value in the virtual function table) from memory to the register.
@@ -130,6 +129,12 @@ public:
       */
     using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
     virtual AddFunc getAddressOfAddFunction() const = 0;
+
+    /** This is used for runtime code generation to determine, which header files to include in generated source.
+      * Always implement it as
+      * const char * getHeaderFilePath() const override { return __FILE__; }
+      */
+    virtual const char * getHeaderFilePath() const = 0;
 };
 
 

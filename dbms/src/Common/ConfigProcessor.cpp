@@ -75,7 +75,7 @@ using NodeListPtr = Poco::AutoPtr<Poco::XML::NodeList>;
 static ElementIdentifier getElementIdentifier(Node * element)
 {
     NamedNodeMapPtr attrs = element->attributes();
-    std::vector<std::pair<std::string, std::string> > attrs_kv;
+    std::vector<std::pair<std::string, std::string>> attrs_kv;
     for (size_t i = 0; i < attrs->length(); ++i)
     {
         Node * node = attrs->item(i);
@@ -325,7 +325,7 @@ void ConfigProcessor::doIncludesRecursive(
                     return nullptr;
 
                 /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                zk_document = dom_parser.parseString("<from_zk>" + contents.value() + "</from_zk>");
+                zk_document = dom_parser.parseString("<from_zk>" + *contents + "</from_zk>");
                 return getRootNode(zk_document.get());
             };
 

@@ -65,10 +65,10 @@ namespace
     /// By these return codes from the child process, we learn (for sure) about errors when creating it.
     enum class ReturnCodes : int
     {
-        CANNOT_DUP_STDIN    = 42,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
-        CANNOT_DUP_STDOUT     = 43,
-        CANNOT_DUP_STDERR     = 44,
-        CANNOT_EXEC         = 45,
+        CANNOT_DUP_STDIN    = 0x55555555,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
+        CANNOT_DUP_STDOUT   = 0x55555556,
+        CANNOT_DUP_STDERR   = 0x55555557,
+        CANNOT_EXEC         = 0x55555558,
     };
 }
 
@@ -76,6 +76,11 @@ namespace
 namespace DB
 {
 
+ShellCommand::~ShellCommand()
+{
+    if (!wait_called)
+        tryWait();
+}
 
 std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only)
 {
@@ -176,6 +181,8 @@ std::unique_ptr<ShellCommand> ShellCommand::executeDirect(const std::string & pa
 
 int ShellCommand::tryWait()
 {
+    wait_called = true;
+
     int status = 0;
     if (-1 == waitpid(pid, &status, 0))
         throwFromErrno("Cannot waitpid", ErrorCodes::CANNOT_WAITPID);

@@ -8,15 +8,18 @@
         <count>10</count>
     </logger>
 
-
     <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
 
+    <!-- For HTTPS and SSL over native protocol. -->
     <!--
     <https_port>8443</https_port>
+    <tcp_ssl_port>9440</tcp_ssl_port>
     -->
-    <!-- Used only with https_port. Full ssl options list: https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
+
+    <!-- Used with https_port and tcp_ssl_port. Full ssl options list: https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
-        <server>
+        <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
             <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
@@ -28,7 +31,8 @@
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
         </server>
-        <client>
+
+        <client> <!-- Used for connecting to https dictionary source -->
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
@@ -45,8 +49,6 @@
     <!--
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
-
-    <tcp_port>9000</tcp_port>
 
     <!-- Port for communication between replicas. Used for data exchange. -->
     <interserver_http_port>9009</interserver_http_port>
@@ -125,7 +127,17 @@
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.yandex/reference_en.html#Distributed
       -->
-    <remote_servers incl="clickhouse_remote_servers" />
+    <remote_servers incl="clickhouse_remote_servers" >
+        <!-- Test only shard config for testing distributed storage -->
+        <test_shard_localhost>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_shard_localhost>
+    </remote_servers>
 
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.

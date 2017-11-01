@@ -90,7 +90,7 @@ template <typename A, typename B> struct GreaterOrEqualsOp
 };
 
 
-template<typename A, typename B, typename Op>
+template <typename A, typename B, typename Op>
 struct NumComparisonImpl
 {
     /// If you don't specify NO_INLINE, the compiler will inline this function, but we don't need this as this function contains tight loop inside.
@@ -1059,9 +1059,6 @@ public:
             || (left_is_date && right_is_date)
             || (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.
             || (left_is_string && right_is_date)
-            || (left_is_date_time && right_is_date_time)
-            || (left_is_date_time && right_is_string)
-            || (left_is_string && right_is_date_time)
             || (left_is_date_time && right_is_date_time)
             || (left_is_date_time && right_is_string)
             || (left_is_string && right_is_date_time)

@@ -35,6 +35,7 @@ cmake_install.cmake
 CTestTestfile.cmake
 *.a
 *.o
+cmake-build-*
 
 # Python cache
 *.pyc
@@ -191,6 +192,7 @@ config-9001.xml
 *-preprocessed.xml
 
 core
+!core/
 vgcore*
 
 *.deb

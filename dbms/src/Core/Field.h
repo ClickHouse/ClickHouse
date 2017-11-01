@@ -37,8 +37,8 @@ STRONG_TYPEDEF(TupleBackend, Tuple); /// Array and Tuple are different types wit
   *  is not generalized,
   *  but somewhat more efficient, and simpler.
   *
-  * Used to represent a unit value of one of several types in the RAM.
-  * Warning! Preferably, instead of single values, store the pieces of the columns. See Column.h
+  * Used to represent a single value of one of several types in memory.
+  * Warning! Prefer to use chunks of columns instead of single values. See Column.h
   */
 class Field
 {

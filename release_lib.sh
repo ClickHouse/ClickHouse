@@ -1,3 +1,6 @@
+
+set +e
+
 function get_revision {
     BASEDIR=$(dirname "${BASH_SOURCE[0]}")
     grep "set(VERSION_REVISION" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\))$/\1/'
@@ -25,7 +28,7 @@ function gen_revision_author {
         while [ $succeeded -eq 0 ] && [ $attempts -le $max_attempts ]; do
             attempts=$(($attempts + 1))
             REVISION=$(($REVISION + 1))
-            ( git_tag_grep=`git tag | grep "$VERSION_PREFIX$REVISION$VERSION_POSTFIX"` ) || true
+            git_tag_grep=`git tag | grep "$VERSION_PREFIX$REVISION$VERSION_POSTFIX"`
             if [ "$git_tag_grep" == "" ]; then
                 succeeded=1
             fi
@@ -36,13 +39,13 @@ function gen_revision_author {
         fi
 
         auto_message="Auto version update to"
-        ( git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"` ) || true
+        git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"`
         if [ "$git_log_grep" == "" ]; then
             tag="$VERSION_PREFIX$REVISION$VERSION_POSTFIX"
 
             # First tag for correct git describe
             echo -e "\nTrying to create tag: $tag"
-            git tag -a "$tag" -m "$tag" || true
+            git tag -a "$tag" -m "$tag"
 
             git_describe=`git describe`
             sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake

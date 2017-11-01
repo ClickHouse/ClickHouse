@@ -246,7 +246,7 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
     params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(
@@ -270,10 +270,10 @@ void StorageDistributed::shutdown()
 
 void StorageDistributed::reshardPartitions(
     const ASTPtr & query, const String & database_name,
-    const Field & partition,
+    const ASTPtr & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-    Context & context)
+    const Context & context)
 {
     auto & resharding_worker = context.getReshardingWorker();
     if (!resharding_worker.isStarted())
@@ -322,8 +322,8 @@ void StorageDistributed::reshardPartitions(
         ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
 
         parameters.type = ASTAlterQuery::RESHARD_PARTITION;
-        if (!partition.isNull())
-            parameters.partition = std::make_shared<ASTLiteral>(StringRange(), partition);
+        if (partition)
+            parameters.partition = partition->clone();
 
         ASTPtr expr_list = std::make_shared<ASTExpressionList>();
         for (const auto & entry : weighted_zookeeper_paths)

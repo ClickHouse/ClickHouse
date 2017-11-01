@@ -14,10 +14,10 @@ namespace DB
 class MergingAggregatedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    MergingAggregatedBlockInputStream(BlockInputStreamPtr input_, const Aggregator::Params & params, bool final_, size_t max_threads_)
+    MergingAggregatedBlockInputStream(const BlockInputStreamPtr & input, const Aggregator::Params & params, bool final_, size_t max_threads_)
         : aggregator(params), final(final_), max_threads(max_threads_)
     {
-        children.push_back(input_);
+        children.push_back(input);
     }
 
     String getName() const override { return "MergingAggregated"; }

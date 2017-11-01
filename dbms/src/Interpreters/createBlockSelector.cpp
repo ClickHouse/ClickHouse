@@ -18,7 +18,7 @@ template <typename T>
 IColumn::Selector createBlockSelector(
     const IColumn & column,
     size_t num_shards,
-    const std::vector<size_t> & slots)
+    const std::vector<UInt64> & slots)
 {
     const auto total_weight = slots.size();
     size_t num_rows = column.size();
@@ -55,13 +55,13 @@ IColumn::Selector createBlockSelector(
 
 
 /// Explicit instantiations to avoid code bloat in headers.
-template IColumn::Selector createBlockSelector<UInt8>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
-template IColumn::Selector createBlockSelector<UInt16>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
-template IColumn::Selector createBlockSelector<UInt32>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
-template IColumn::Selector createBlockSelector<UInt64>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
-template IColumn::Selector createBlockSelector<Int8>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
-template IColumn::Selector createBlockSelector<Int16>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
-template IColumn::Selector createBlockSelector<Int32>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
-template IColumn::Selector createBlockSelector<Int64>(const IColumn & column, size_t num_shards, const std::vector<size_t> & slots);
+template IColumn::Selector createBlockSelector<UInt8>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<UInt16>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<UInt32>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<UInt64>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<Int8>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<Int16>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<Int32>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
+template IColumn::Selector createBlockSelector<Int64>(const IColumn & column, size_t num_shards, const std::vector<UInt64> & slots);
 
 }

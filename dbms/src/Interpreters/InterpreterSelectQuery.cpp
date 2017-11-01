@@ -69,7 +69,7 @@ namespace ErrorCodes
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
-void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & required_column_names)
+void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names & required_column_names)
 {
     ProfileEvents::increment(ProfileEvents::SelectQuery);
 
@@ -100,33 +100,23 @@ void InterpreterSelectQuery::init(BlockInputStreamPtr input, const Names & requi
         }
     }
 
-    if (is_first_select_inside_union_all && hasAsterisk())
-    {
-        basicInit(input);
+    renameColumns();
+    if (!required_column_names.empty())
+        rewriteExpressionList(required_column_names);
 
-        // We execute this code here, because otherwise the following kind of query would not work
-        // SELECT X FROM (SELECT * FROM (SELECT 1 AS X, 2 AS Y) UNION ALL SELECT 3, 4)
-        // because the asterisk is replaced with columns only when query_analyzer objects are created in basicInit().
-        renameColumns();
-
-        if (!required_column_names.empty() && (table_column_names.size() != required_column_names.size()))
-        {
-            rewriteExpressionList(required_column_names);
-            /// Now there is obsolete information to execute the query. We update this information.
-            initQueryAnalyzer();
-        }
-    }
-    else
-    {
-        renameColumns();
-        if (!required_column_names.empty())
-            rewriteExpressionList(required_column_names);
-
-        basicInit(input);
-    }
+    basicInit(input);
 }
 
-void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
+bool InterpreterSelectQuery::hasAggregation(const ASTSelectQuery & query_ptr)
+{
+    for (const ASTSelectQuery * elem = &query_ptr; elem; elem = static_cast<const ASTSelectQuery *>(elem->next_union_all.get()))
+        if (elem->group_expression_list || elem->having_expression)
+            return true;
+
+    return false;
+}
+
+void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
 {
     auto query_table = query.table();
 
@@ -156,7 +146,7 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
             storage = context.getTable(database_name, table_name);
         }
 
-        table_lock = storage->lockStructure(false);
+        table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
         if (table_column_names.empty())
             table_column_names = storage->getColumnsListNonMaterialized();
     }
@@ -167,12 +157,12 @@ void InterpreterSelectQuery::basicInit(BlockInputStreamPtr input_)
     query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
 
     /// Save the new temporary tables in the query context
-    for (auto & it : query_analyzer->getExternalTables())
+    for (const auto & it : query_analyzer->getExternalTables())
         if (!context.tryGetExternalTable(it.first))
             context.addExternalTable(it.first, it.second);
 
-    if (input_)
-        streams.push_back(input_);
+    if (input)
+        streams.push_back(input);
 
     if (is_first_select_inside_union_all)
     {
@@ -200,7 +190,7 @@ void InterpreterSelectQuery::initQueryAnalyzer()
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_, BlockInputStreamPtr input_)
+    size_t subquery_depth_, BlockInputStreamPtr input)
     : query_ptr(query_ptr_)
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
@@ -209,7 +199,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const 
     , is_first_select_inside_union_all(query.isUnionAllHead())
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init(input_);
+    init(input);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & query_ptr_, const Context & context_)
@@ -226,14 +216,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & qu
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_,
     const Names & required_column_names_,
-    QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
-    : InterpreterSelectQuery(query_ptr_, context_, required_column_names_, {}, to_stage_, subquery_depth_, input_)
+    QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input)
+    : InterpreterSelectQuery(query_ptr_, context_, required_column_names_, {}, to_stage_, subquery_depth_, input)
 {
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_,
     const Names & required_column_names_,
-    const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input_)
+    const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input)
     : query_ptr(query_ptr_)
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
@@ -243,7 +233,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const 
     , is_first_select_inside_union_all(query.isUnionAllHead())
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init(input_, required_column_names_);
+    init(input, required_column_names_);
 }
 
 bool InterpreterSelectQuery::hasAsterisk() const

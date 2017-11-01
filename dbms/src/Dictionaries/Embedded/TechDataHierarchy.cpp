@@ -10,10 +10,9 @@
 static constexpr auto config_key = "mysql_metrica";
 
 
-void TechDataHierarchy::reload()
+void TechDataHierarchy::reload(const Poco::Util::AbstractConfiguration & config)
 {
     Logger * log = &Logger::get("TechDataHierarchy");
-
     LOG_DEBUG(log, "Loading tech data hierarchy.");
 
     mysqlxx::PoolWithFailover pool(config_key);
@@ -53,9 +52,9 @@ void TechDataHierarchy::reload()
 }
 
 
-bool TechDataHierarchy::isConfigured()
+bool TechDataHierarchy::isConfigured(const Poco::Util::AbstractConfiguration & config)
 {
-    return Poco::Util::Application::instance().config().has(config_key);
+    return config.has(config_key);
 }
 
 #endif

@@ -8,15 +8,15 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(BlockInputStreamPtr input_, const Limits & limits, size_t limit_hint_, Names columns_)
-    : description( input_->getSortDescription() )
-    , columns_names(columns_)
+DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, const Names & columns)
+    : description(input->getSortDescription())
+    , columns_names(columns)
     , limit_hint(limit_hint_)
     , max_rows(limits.max_rows_in_distinct)
     , max_bytes(limits.max_bytes_in_distinct)
     , overflow_mode(limits.distinct_overflow_mode)
 {
-    children.push_back(input_);
+    children.push_back(input);
 }
 
 String DistinctSortedBlockInputStream::getID() const
@@ -71,18 +71,22 @@ Block DistinctSortedBlockInputStream::readImpl()
 
         if (!checkLimits())
         {
-            if (overflow_mode == OverflowMode::THROW)
-                throw Exception("DISTINCT-Set size limit exceeded."
-                    " Rows: " + toString(data.getTotalRowCount()) +
-                    ", limit: " + toString(max_rows) +
-                    ". Bytes: " + toString(data.getTotalByteCount()) +
-                    ", limit: " + toString(max_bytes) + ".",
-                    ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+            switch (overflow_mode)
+            {
+                case OverflowMode::THROW:
+                    throw Exception("DISTINCT-Set size limit exceeded."
+                        " Rows: " + toString(data.getTotalRowCount()) +
+                        ", limit: " + toString(max_rows) +
+                        ". Bytes: " + toString(data.getTotalByteCount()) +
+                        ", limit: " + toString(max_bytes) + ".",
+                        ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
-            if (overflow_mode == OverflowMode::BREAK)
-                return Block();
+                case OverflowMode::BREAK:
+                    return Block();
 
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+                default:
+                    throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+            }
         }
 
         prev_block.block = block;

@@ -36,6 +36,8 @@ public:
     using NameToValueMap = HashMap<StringRef, FieldType, StringRefHash>;
     using ValueToNameMap = std::unordered_map<FieldType, StringRef>;
 
+    static constexpr bool is_parametric = true;
+
 private:
     Values values;
     NameToValueMap name_to_value_map;
@@ -106,6 +108,7 @@ public:
     ColumnPtr createColumn() const override { return std::make_shared<ColumnType>(); }
 
     Field getDefault() const override;
+    void insertDefaultInto(IColumn & column) const override;
 };
 
 

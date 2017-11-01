@@ -49,9 +49,9 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        std::cerr << sizeof(HashMapCell<Key, Value, DefaultHash<Key> >) << std::endl;
+        std::cerr << sizeof(HashMapCell<Key, Value, DefaultHash<Key>>) << std::endl;
 
-        using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
+        using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key>>, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
 
         Map map;
         Map::iterator it;
@@ -86,7 +86,7 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key> >, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
+        using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key>>, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
         //using Map = HashMap<Key, Value, UniquesHashSetDefaultHash>;
 
         Map map;

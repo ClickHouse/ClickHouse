@@ -7,6 +7,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/Conditional/getArrayType.h>
 #include <Functions/Conditional/CondException.h>
+#include <Functions/GatherUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -1070,7 +1071,7 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
 void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     /// Check nullability.
-    bool is_nullable;
+    bool is_nullable = false;
 
     const ColumnArray * col_array = nullptr;
     const ColumnConst * col_const_array = nullptr;
@@ -1256,7 +1257,7 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
         Array res_values(values.size());
         for (size_t i = 0; i < values.size(); ++i)
         {
-            res_values[i] = i + 1;
+            res_values[i] = static_cast<UInt64>(i + 1);
         }
 
         block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(array->size(), res_values);
@@ -1485,7 +1486,7 @@ bool FunctionArrayUniq::executeConst(Block & block, const ColumnNumbers & argume
     for (size_t i = 0; i < values.size(); ++i)
         set.insert(values[i]);
 
-    block.getByPosition(result).column = DataTypeUInt32().createConstColumn(array->size(), set.size());
+    block.getByPosition(result).column = DataTypeUInt32().createConstColumn(array->size(), static_cast<UInt64>(set.size()));
     return true;
 }
 
@@ -2303,7 +2304,7 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 
     if (!checkDataType<DataTypeUInt8>(arg) &&
         !checkDataType<DataTypeUInt16>(arg) &&
-        !checkDataType<DataTypeUInt32>(arg) &
+        !checkDataType<DataTypeUInt32>(arg) &&
         !checkDataType<DataTypeUInt64>(arg))
     {
         throw Exception{
@@ -2412,8 +2413,7 @@ void FunctionRange::executeImpl(Block & block, const ColumnNumbers & arguments, 
     {
         throw Exception{
             "Illegal column " + col->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN
-        };
+            ErrorCodes::ILLEGAL_COLUMN};
     }
 }
 
@@ -2874,6 +2874,385 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     {
         block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(rows, res_col[0]);
     }
+}
+
+/// Implementation of FunctionArrayConcat.
+
+FunctionPtr FunctionArrayConcat::create(const Context & context)
+{
+    return std::make_shared<FunctionArrayConcat>();
+}
+
+String FunctionArrayConcat::getName() const
+{
+    return name;
+}
+
+DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    if (arguments.empty())
+        throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+    DataTypes nested_types;
+    nested_types.reserve(arguments.size());
+    for (size_t i : ext::range(0, arguments.size()))
+    {
+        auto argument = arguments[i].get();
+
+        if (auto data_type_array = checkAndGetDataType<DataTypeArray>(argument))
+            nested_types.push_back(data_type_array->getNestedType());
+        else
+            throw Exception(
+                    "Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
+                    + argument->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    if (foundNumericType(nested_types))
+    {
+        /// Since we have found at least one numeric argument, we infer that all
+        /// the arguments are numeric up to nullity. Let's determine the least
+        /// common type.
+        auto enriched_result_type = Conditional::getArrayType(nested_types);
+        return std::make_shared<DataTypeArray>(enriched_result_type);
+    }
+    else
+    {
+        /// Otherwise all the arguments must have the same type up to nullability or nullity.
+        if (!hasArrayIdenticalTypes(nested_types))
+            throw Exception{"Arguments for function " + getName() + " must have same type or behave as number.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeArray>(getArrayElementType(nested_types));
+    }
+}
+
+void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+    auto & result_column = block.getByPosition(result).column;
+    const DataTypePtr & return_type = block.getByPosition(result).type;
+    result_column = return_type->createColumn();
+
+    size_t size = 0;
+
+    for (auto argument : arguments)
+    {
+        const auto & argument_column = block.safeGetByPosition(argument).column;
+        size = argument_column->size();
+    }
+
+    std::vector<std::unique_ptr<IArraySource>> sources;
+
+    for (auto argument : arguments)
+    {
+        auto argument_column = block.getByPosition(argument).column.get();
+        size_t column_size = argument_column->size();
+        bool is_const = false;
+
+        if (auto argument_column_const = typeid_cast<ColumnConst *>(argument_column))
+        {
+            is_const = true;
+            argument_column = &argument_column_const->getDataColumn();
+        }
+
+        if (auto argument_column_array = typeid_cast<ColumnArray *>(argument_column))
+            sources.emplace_back(createArraySource(*argument_column_array, is_const, column_size));
+        else
+            throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
+    }
+
+    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column.get()), size);
+    concat(sources, *sink);
+}
+
+
+/// Implementation of FunctionArraySlice.
+
+FunctionPtr FunctionArraySlice::create(const Context & context)
+{
+    return std::make_shared<FunctionArraySlice>();
+}
+
+String FunctionArraySlice::getName() const
+{
+    return name;
+}
+
+DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    size_t number_of_arguments = arguments.size();
+
+    if (number_of_arguments < 2 || number_of_arguments > 3)
+        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                        + toString(number_of_arguments) + ", should be 2 or 3",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    if (arguments[0]->isNull())
+        return arguments[0];
+
+    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    if (!array_type)
+        throw Exception("First argument for function " + getName() + " must be an array but it has type "
+                        + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    for (size_t i = 1; i < number_of_arguments; ++i)
+    {
+        if (!arguments[i]->isNumeric() && !arguments[i]->isNull())
+            throw Exception(
+                    "Argument " + toString(i) + " for function " + getName() + " must be numeric but it has type "
+                    + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    return arguments[0];
+}
+
+void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+    auto & result_colum_with_name_and_type = block.getByPosition(result);
+    auto & result_column = result_colum_with_name_and_type.column;
+    auto & return_type = result_colum_with_name_and_type.type;
+    result_column = return_type->createColumn();
+
+    auto array_column = block.getByPosition(arguments[0]).column;
+    auto offset_column = block.getByPosition(arguments[1]).column;
+    auto length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
+
+    if (return_type->isNull())
+    {
+        result_column = array_column->clone();
+        return;
+    }
+
+    std::unique_ptr<IArraySource> source;
+
+    size_t size = array_column->size();
+    bool is_const = false;
+
+    if (auto const_array_column = typeid_cast<ColumnConst *>(array_column.get()))
+    {
+        is_const = true;
+        array_column = const_array_column->getDataColumnPtr();
+    }
+
+    if (auto argument_column_array = typeid_cast<ColumnArray *>(array_column.get()))
+        source = createArraySource(*argument_column_array, is_const, size);
+    else
+        throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
+
+    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
+
+    if (offset_column->isNull())
+    {
+        if (!length_column || length_column->isNull())
+            result_column = array_column->clone();
+        else if (length_column->isConst())
+            sliceFromLeftConstantOffsetBounded(*source, *sink, 0, length_column->getInt(0));
+        else
+        {
+            auto const_offset_column = std::make_shared<ColumnConst>(std::make_shared<ColumnInt8>(1, 1), size);
+            sliceDynamicOffsetBounded(*source, *sink, *const_offset_column, *length_column);
+        }
+    }
+    else if (offset_column->isConst())
+    {
+        ssize_t offset = offset_column->getUInt(0);
+
+        if (!length_column || length_column->isNull())
+        {
+            if (offset > 0)
+                sliceFromLeftConstantOffsetUnbounded(*source, *sink, static_cast<size_t>(offset - 1));
+            else
+                sliceFromRightConstantOffsetUnbounded(*source, *sink, static_cast<size_t>(-offset));
+        }
+        else if (length_column->isConst())
+        {
+            ssize_t length = length_column->getInt(0);
+            if (offset > 0)
+                sliceFromLeftConstantOffsetBounded(*source, *sink, static_cast<size_t>(offset - 1), length);
+            else
+                sliceFromRightConstantOffsetBounded(*source, *sink, static_cast<size_t>(-offset), length);
+        }
+        else
+            sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
+    }
+    else
+    {
+        if (!length_column || length_column->isNull())
+            sliceDynamicOffsetUnbounded(*source, *sink, *offset_column);
+        else
+            sliceDynamicOffsetBounded(*source, *sink, *offset_column, *length_column);
+    }
+}
+
+
+/// Implementation of FunctionArrayPush.
+
+DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    if (arguments[0]->isNull())
+        return arguments[0];
+
+    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    if (!array_type)
+        throw Exception("First argument for function " + getName() + " must be an array but it has type "
+                        + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    auto nested_type = array_type->getNestedType();
+
+    DataTypes types = {nested_type, arguments[1]};
+
+    if (foundNumericType(types))
+    {
+        /// Since we have found at least one numeric argument, we infer that all
+        /// the arguments are numeric up to nullity. Let's determine the least
+        /// common type.
+        auto enriched_result_type = Conditional::getArrayType(types);
+        return std::make_shared<DataTypeArray>(enriched_result_type);
+    }
+    else
+    {
+        /// Otherwise all the arguments must have the same type up to nullability or nullity.
+        if (!hasArrayIdenticalTypes(types))
+            throw Exception{"Arguments for function " + getName() + " must have same type or behave as number.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeArray>(getArrayElementType(types));
+    }
+}
+
+void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+    auto & result_colum_with_name_and_type = block.getByPosition(result);
+    auto & result_column = result_colum_with_name_and_type.column;
+    auto & return_type = result_colum_with_name_and_type.type;
+    result_column = return_type->createColumn();
+
+    auto array_column = block.getByPosition(arguments[0]).column;
+    auto appended_column = block.getByPosition(arguments[1]).column;
+
+    if (return_type->isNull())
+    {
+        result_column = array_column->clone();
+        return;
+    }
+
+    std::vector<std::unique_ptr<IArraySource>> sources;
+
+    size_t size = array_column->size();
+    bool is_const = false;
+
+    if (auto const_array_column = typeid_cast<ColumnConst *>(array_column.get()))
+    {
+        is_const = true;
+        array_column = const_array_column->getDataColumnPtr();
+    }
+
+    if (auto argument_column_array = typeid_cast<ColumnArray *>(array_column.get()))
+        sources.push_back(createArraySource(*argument_column_array, is_const, size));
+    else
+        throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
+
+
+    bool is_appended_const = false;
+    if (auto const_appended_column = typeid_cast<ColumnConst *>(appended_column.get()))
+    {
+        is_appended_const = true;
+        appended_column = const_appended_column->getDataColumnPtr();
+    }
+
+    auto offsets = std::make_shared<ColumnArray::ColumnOffsets_t>(appended_column->size());
+    for (size_t i : ext::range(0, offsets->size()))
+        offsets->getElement(i) = i + 1;
+
+    ColumnArray appended_array_column(appended_column, offsets);
+    sources.push_back(createArraySource(appended_array_column, is_appended_const, size));
+
+    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
+
+    if (push_front)
+        sources[0].swap(sources[1]);
+    concat(sources, *sink);
+}
+
+/// Implementation of FunctionArrayPushFront.
+
+FunctionPtr FunctionArrayPushFront::create(const Context & context)
+{
+    return std::make_shared<FunctionArrayPushFront>();
+}
+
+/// Implementation of FunctionArrayPushBack.
+
+FunctionPtr FunctionArrayPushBack::create(const Context & context)
+{
+    return std::make_shared<FunctionArrayPushBack>();
+}
+
+/// Implementation of FunctionArrayPop.
+
+DataTypePtr FunctionArrayPop::getReturnTypeImpl(const DataTypes & arguments) const
+{
+    if (arguments[0]->isNull())
+        return arguments[0];
+
+    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    if (!array_type)
+        throw Exception("First argument for function " + getName() + " must be an array but it has type "
+                        + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    return arguments[0];
+}
+
+void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+    auto & result_colum_with_name_and_type = block.getByPosition(result);
+    auto & result_column = result_colum_with_name_and_type.column;
+    auto & return_type = result_colum_with_name_and_type.type;
+    result_column = return_type->createColumn();
+
+    auto array_column = block.getByPosition(arguments[0]).column;
+
+    if (return_type->isNull())
+    {
+        result_column = array_column->clone();
+        return;
+    }
+
+    std::unique_ptr<IArraySource> source;
+
+    size_t size = array_column->size();
+    bool is_const = false;
+
+    if (auto const_array_column = typeid_cast<ColumnConst *>(array_column.get()))
+    {
+        is_const = true;
+        array_column = const_array_column->getDataColumnPtr();
+    }
+
+    if (auto argument_column_array = typeid_cast<ColumnArray *>(array_column.get()))
+        source = createArraySource(*argument_column_array, is_const, size);
+    else
+        throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
+
+    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
+
+    if (pop_front)
+        sliceFromLeftConstantOffsetUnbounded(*source, *sink, 1);
+    else
+        sliceFromLeftConstantOffsetBounded(*source, *sink, 0, -1);
+}
+
+/// Implementation of FunctionArrayPopFront.
+
+FunctionPtr FunctionArrayPopFront::create(const Context &context)
+{
+    return std::make_shared<FunctionArrayPopFront>();
+}
+
+/// Implementation of FunctionArrayPopBack.
+
+FunctionPtr FunctionArrayPopBack::create(const Context &context)
+{
+    return std::make_shared<FunctionArrayPopBack>();
 }
 
 }

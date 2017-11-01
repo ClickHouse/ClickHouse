@@ -223,7 +223,7 @@ PKCondition::PKCondition(
     const Context & context,
     const NamesAndTypesList & all_columns,
     const SortDescription & sort_descr_,
-    ExpressionActionsPtr pk_expr_)
+    const ExpressionActionsPtr & pk_expr_)
     : sort_descr(sort_descr_), pk_expr(pk_expr_), prepared_sets(query_info.sets)
 {
     for (size_t i = 0; i < sort_descr.size(); ++i)
@@ -837,9 +837,9 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             Range key_range_transformed;
-            bool evaluation_is_not_possible = false;
             if (!element.monotonic_functions_chain.empty())
             {
+                bool evaluation_is_not_possible = false;
                 key_range_transformed = *key_range;
                 DataTypePtr current_type = data_types[element.key_column];
                 for (auto & func : element.monotonic_functions_chain)

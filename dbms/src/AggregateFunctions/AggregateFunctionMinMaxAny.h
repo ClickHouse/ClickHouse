@@ -680,7 +680,7 @@ struct AggregateFunctionAnyHeavyData : Data
 
 
 template <typename Data>
-class AggregateFunctionsSingleValue final : public IUnaryAggregateFunction<Data, AggregateFunctionsSingleValue<Data> >
+class AggregateFunctionsSingleValue final : public IUnaryAggregateFunction<Data, AggregateFunctionsSingleValue<Data>>
 {
 private:
     DataTypePtr type;
@@ -726,6 +726,8 @@ public:
     {
         this->data(place).insertResultInto(to);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

@@ -3,10 +3,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
 #include <DataTypes/NumberTraits.h>
 #include <Core/AccurateComparison.h>
 #include <Core/FieldVisitors.h>
@@ -38,21 +40,21 @@ struct BinaryOperationImplBase
 {
     using ResultType = ResultType_;
 
-    static void vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
     }
 
-    static void vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b);
     }
 
-    static void constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
     {
         size_t size = b.size();
         for (size_t i = 0; i < size; ++i)
@@ -76,7 +78,7 @@ struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
 
-    static void vector(const PaddedPODArray<A> & a, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector(const PaddedPODArray<A> & a, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
@@ -542,9 +544,13 @@ class FunctionBinaryArithmetic : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
+
+    FunctionBinaryArithmetic(const Context & context) : context(context) {}
 
 private:
+    const Context & context;
+
     /// Overload for InvalidType
     template <typename ResultDataType,
               typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
@@ -745,6 +751,47 @@ private:
         return false;
     }
 
+    FunctionPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
+    {
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
+        /// We construct another function (example: addMonths) and call it.
+
+        bool function_is_plus = std::is_same<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>::value;
+        bool function_is_minus = std::is_same<Op<UInt8, UInt8>, MinusImpl<UInt8, UInt8>>::value;
+
+        if (!function_is_plus && !function_is_minus)
+            return {};
+
+        int interval_arg = 1;
+        const DataTypeInterval * interval_data_type = checkAndGetDataType<DataTypeInterval>(type1.get());
+        if (!interval_data_type)
+        {
+            interval_arg = 0;
+            interval_data_type = checkAndGetDataType<DataTypeInterval>(type0.get());
+        }
+        if (!interval_data_type)
+            return {};
+
+        if (interval_arg == 0 && function_is_minus)
+            throw Exception("Wrong order of arguments for function " + getName() + ": argument of type Interval cannot be first.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        const DataTypeDate * date_data_type = checkAndGetDataType<DataTypeDate>(interval_arg == 0 ? type1.get() : type0.get());
+        const DataTypeDateTime * date_time_data_type = nullptr;
+        if (!date_data_type)
+        {
+            date_time_data_type = checkAndGetDataType<DataTypeDateTime>(interval_arg == 0 ? type1.get() : type0.get());
+            if (!date_time_data_type)
+                throw Exception("Wrong argument types for function " + getName() + ": if one argument is Interval, then another must be Date or DateTime.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        std::stringstream function_name;
+        function_name << (function_is_plus ? "add" : "subtract") << interval_data_type->kindToString() << 's';
+
+        return FunctionFactory::instance().get(function_name.str(), context);
+    }
+
 public:
     String getName() const override
     {
@@ -755,6 +802,21 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
+        if (FunctionPtr function = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
+        {
+            DataTypes new_arguments = arguments;
+
+            /// Interval argument must be second.
+            if (checkDataType<DataTypeInterval>(new_arguments[0].get()))
+                std::swap(new_arguments[0], new_arguments[1]);
+
+            /// Change interval argument to its representation
+            new_arguments[1] = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+            return function->getReturnTypeImpl(new_arguments);
+        }
+
         DataTypePtr type_res;
 
         if (!( checkLeftType<DataTypeDate>(arguments, type_res)
@@ -777,6 +839,25 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
+        if (FunctionPtr function = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
+        {
+            ColumnNumbers new_arguments = arguments;
+
+            /// Interval argument must be second.
+            if (checkDataType<DataTypeInterval>(block.getByPosition(arguments[0]).type.get()))
+                std::swap(new_arguments[0], new_arguments[1]);
+
+            /// Change interval argument type to its representation
+            Block new_block = block;
+            new_block.getByPosition(new_arguments[1]).type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+            function->executeImpl(new_block, new_arguments, result);
+            block.getByPosition(result).column = new_block.getByPosition(result).column;
+
+            return;
+        }
+
         if (!( executeLeftType<DataTypeDate>(block, arguments, result)
             || executeLeftType<DataTypeDateTime>(block, arguments, result)
             || executeLeftType<DataTypeUInt8>(block, arguments, result)

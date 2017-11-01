@@ -57,16 +57,14 @@ namespace
             if (!user_pw_end || !colon)
                 throw Exception{
                     "Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
-                    ErrorCodes::INCORRECT_FILE_NAME
-                };
+                    ErrorCodes::INCORRECT_FILE_NAME};
 
             const bool has_pw = colon < user_pw_end;
             const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
             if (!host_end)
                 throw Exception{
                     "Shard address '" + address + "' does not contain port",
-                    ErrorCodes::INCORRECT_FILE_NAME
-                };
+                    ErrorCodes::INCORRECT_FILE_NAME};
 
             const char * has_db = strchr(address.data(), '#');
             const char * port_end = has_db ? has_db : address_end;
@@ -117,7 +115,7 @@ void StorageDistributedDirectoryMonitor::run()
 
     std::unique_lock<std::mutex> lock{mutex};
 
-    const auto quit_requested = [this] { return quit; };
+    const auto quit_requested = [this] { return quit.load(std::memory_order_relaxed); };
 
     while (!quit_requested())
     {

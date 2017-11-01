@@ -74,7 +74,7 @@ BlockInputStreams StorageSystemColumns::read(
             const DatabasePtr database = databases.at(database_name);
             offsets[i] = i ? offsets[i - 1] : 0;
 
-            for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
             {
                 const String & table_name = iterator->name();
                 storages.emplace(std::piecewise_construct,
@@ -130,7 +130,7 @@ BlockInputStreams StorageSystemColumns::read(
 
             try
             {
-                table_lock = storage->lockStructure(false);
+                table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
             }
             catch (const Exception & e)
             {
@@ -193,9 +193,9 @@ BlockInputStreams StorageSystemColumns::read(
                 }
                 else
                 {
-                    data_compressed_bytes_column->insert(it->second.data_compressed);
-                    data_uncompressed_bytes_column->insert(it->second.data_uncompressed);
-                    marks_bytes_column->insert(it->second.marks);
+                    data_compressed_bytes_column->insert(static_cast<UInt64>(it->second.data_compressed));
+                    data_uncompressed_bytes_column->insert(static_cast<UInt64>(it->second.data_uncompressed));
+                    marks_bytes_column->insert(static_cast<UInt64>(it->second.marks));
                 }
             }
         }

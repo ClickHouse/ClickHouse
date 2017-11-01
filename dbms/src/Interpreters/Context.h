@@ -11,7 +11,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
-#include <IO/CompressedStream.h>
+#include <IO/CompressionSettings.h>
 
 
 namespace Poco
@@ -35,6 +35,7 @@ struct ContextShared;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
+class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
 class ReshardingWorker;
@@ -128,12 +129,16 @@ public:
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
+    /// Global application configuration settings.
+    void setConfig(const ConfigurationPtr & config);
+    ConfigurationPtr getConfig() const;
+    Poco::Util::AbstractConfiguration & getConfigRef() const;
+
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
       * The accumulated quota values are not reset if the quota is not deleted.
       */
     void setUsersConfig(const ConfigurationPtr & config);
-
     ConfigurationPtr getUsersConfig();
 
     /// Must be called before getClientInfo.
@@ -169,7 +174,7 @@ public:
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
-    void addExternalTable(const String & table_name, StoragePtr storage);
+    void addExternalTable(const String & table_name, const StoragePtr & storage);
     StoragePtr tryRemoveExternalTable(const String & table_name);
 
     void addDatabase(const String & database_name, const DatabasePtr & database);
@@ -205,8 +210,13 @@ public:
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
+    const ExternalModels & getExternalModels() const;
+    EmbeddedDictionaries & getEmbeddedDictionaries();
+    ExternalDictionaries & getExternalDictionaries();
+    ExternalModels & getExternalModels();
     void tryCreateEmbeddedDictionaries() const;
     void tryCreateExternalDictionaries() const;
+    void tryCreateExternalModels() const;
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const;
@@ -248,8 +258,8 @@ public:
     Context & getGlobalContext();
     bool hasGlobalContext() const { return global_context != nullptr; }
 
-    void setSessionContext(Context & context_)                                { session_context = &context_; }
-    void setGlobalContext(Context & context_)                                { global_context = &context_; }
+    void setSessionContext(Context & context_)                                  { session_context = &context_; }
+    void setGlobalContext(Context & context_)                                   { global_context = &context_; }
 
     const Settings & getSettingsRef() const { return settings; };
     Settings & getSettingsRef() { return settings; };
@@ -264,7 +274,7 @@ public:
       */
     void setProcessListElement(ProcessListElement * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
-    ProcessListElement * getProcessListElement();
+    ProcessListElement * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -273,27 +283,21 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
-    void setUncompressedCache(size_t max_size_in_bytes);
-    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
-
     void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
 
+    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
+    void setUncompressedCache(size_t max_size_in_bytes);
+    std::shared_ptr<UncompressedCache> getUncompressedCache() const;
+    void dropUncompressedCache() const;
+
     /// Create a cache of marks of specified size. This can be done only once.
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
-
-    BackgroundProcessingPool & getBackgroundPool();
-
-    void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
-    ReshardingWorker & getReshardingWorker();
-
-    void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
-    DDLWorker & getDDLWorker();
+    void dropMarkCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -301,7 +305,15 @@ public:
       *  (when deleting a table - it is necessary, since in its place another can appear)
       * const - because the change in the cache is not considered significant.
       */
-    void resetCaches() const;
+    void dropCaches() const;
+
+    BackgroundProcessingPool & getBackgroundPool();
+
+    void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
+    ReshardingWorker & getReshardingWorker() const;
+
+    void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
+    DDLWorker & getDDLWorker() const;
 
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
@@ -320,8 +332,8 @@ public:
     void setMaxTableSizeToDrop(size_t max_size);
     void checkTableCanBeDropped(const String & database, const String & table, size_t table_size);
 
-    /// Lets you select the compression method according to the conditions described in the configuration file.
-    CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;
+    /// Lets you select the compression settings according to the conditions described in the configuration file.
+    CompressionSettings chooseCompressionSettings(size_t part_size, double part_size_ratio) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
@@ -352,8 +364,9 @@ private:
       */
     void checkDatabaseAccessRights(const std::string & database_name) const;
 
-    const EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-    const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+    EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
+    ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+    ExternalModels & getExternalModelsImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 

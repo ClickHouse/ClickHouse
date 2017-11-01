@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <atomic>
+#include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
@@ -21,6 +22,7 @@
 #include <Storages/MergeTree/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/RemotePartChecker.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
 
@@ -85,13 +87,13 @@ public:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_,
-        ASTPtr & primary_expr_ast_,
-        const String & date_column_name_,
+        const ASTPtr & primary_expr_ast_,
+        const String & date_column_name,
+        const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 
     void startup() override;
     void shutdown() override;
@@ -131,22 +133,22 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
-    void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
-    void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
-    void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
-    void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void reshardPartitions(
         const ASTPtr & query, const String & database_name,
-        const Field & partition,
+        const ASTPtr & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        Context & context) override;
+        const Context & context) override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
@@ -203,7 +205,7 @@ public:
 
 private:
     /// Delete old chunks from disk and from ZooKeeper.
-    void clearOldPartsAndRemoveFromZK(Logger * log_ = nullptr);
+    void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;
     friend class ReplicatedMergeTreeRestartingThread;
@@ -241,13 +243,6 @@ private:
     String replica_name;
     String replica_path;
 
-    /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
-      * In ZK entries in chronological order. Here it is not necessary.
-      */
-    ReplicatedMergeTreeQueue queue;
-    std::atomic<time_t> last_queue_update_start_time{0};
-    std::atomic<time_t> last_queue_update_finish_time{0};
-
     /** /replicas/me/is_active.
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
@@ -262,7 +257,7 @@ private:
     bool is_leader_node = false;
     std::mutex leader_node_mutex;
 
-    InterserverIOEndpointHolderPtr endpoint_holder;
+    InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
     InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;
     InterserverIOEndpointHolderPtr sharded_partition_uploader_endpoint_holder;
     InterserverIOEndpointHolderPtr remote_query_executor_endpoint_holder;
@@ -272,6 +267,14 @@ private:
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMerger merger;
+
+    /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
+     * In ZK entries in chronological order. Here it is not necessary.
+     */
+    ReplicatedMergeTreeQueue queue;
+    std::atomic<time_t> last_queue_update_start_time{0};
+    std::atomic<time_t> last_queue_update_finish_time{0};
+
 
     DataPartsExchange::Fetcher fetcher;
     RemoteDiskSpaceMonitor::Client disk_space_monitor_client;
@@ -304,6 +307,8 @@ private:
 
     /// A thread that removes old parts, log entries, and blocks.
     std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
+    /// Is used to wakeup cleanup_thread
+    Poco::Event cleanup_thread_event;
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
@@ -319,6 +324,8 @@ private:
 
     Logger * log;
 
+    pcg64 rng{randomSeed()};
+
     StorageReplicatedMergeTree(
         const String & zookeeper_path_,
         const String & replica_name_,
@@ -329,13 +336,13 @@ private:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_,
-        ASTPtr & primary_expr_ast_,
-        const String & date_column_name_,
+        const ASTPtr & primary_expr_ast_,
+        const String & date_column_name,
+        const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_,
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 
     /// Initialization.
 
@@ -375,7 +382,8 @@ private:
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
-    void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names);
+    void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
+                                  NameSet * parts_should_be_retied = nullptr);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);

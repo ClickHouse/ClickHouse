@@ -84,7 +84,7 @@ bool TabSeparatedRowInputStream::read(Block & block)
 
     for (size_t i = 0; i < size; ++i)
     {
-        data_types[i].get()->deserializeTextEscaped(*block.getByPosition(i).column.get(), istr);
+        data_types[i]->deserializeTextEscaped(*block.getByPosition(i).column.get(), istr);
 
         /// skip separators
         if (i + 1 == size)

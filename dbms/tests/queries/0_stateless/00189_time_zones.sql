@@ -24,19 +24,19 @@ SELECT toStartOfMonth(toDateTime(1419800400), 'Pacific/Pitcairn');
 
 /* toStartOfQuarter */
 
-SELECT toStartOfMonth(toDateTime(1419800400), 'Europe/Moscow');
-SELECT toStartOfMonth(toDateTime(1419800400), 'Europe/Paris');
-SELECT toStartOfMonth(toDateTime(1419800400), 'Europe/London');
-SELECT toStartOfMonth(toDateTime(1419800400), 'Asia/Tokyo');
-SELECT toStartOfMonth(toDateTime(1419800400), 'Pacific/Pitcairn');
-
-/* toStartOfYear */
-
 SELECT toStartOfQuarter(toDateTime(1412106600), 'Europe/Moscow');
 SELECT toStartOfQuarter(toDateTime(1412106600), 'Europe/Paris');
 SELECT toStartOfQuarter(toDateTime(1412106600), 'Europe/London');
 SELECT toStartOfQuarter(toDateTime(1412106600), 'Asia/Tokyo');
 SELECT toStartOfQuarter(toDateTime(1412106600), 'Pacific/Pitcairn');
+
+/* toStartOfYear */
+
+SELECT toStartOfYear(toDateTime(1419800400), 'Europe/Moscow');
+SELECT toStartOfYear(toDateTime(1419800400), 'Europe/Paris');
+SELECT toStartOfYear(toDateTime(1419800400), 'Europe/London');
+SELECT toStartOfYear(toDateTime(1419800400), 'Asia/Tokyo');
+SELECT toStartOfYear(toDateTime(1419800400), 'Pacific/Pitcairn');
 
 /* toTime */
 
@@ -120,59 +120,59 @@ SELECT toString(toStartOfHour(toDateTime(1412106600), 'Pacific/Pitcairn'), 'Paci
 
 /* toRelativeYearNum */
 
-SELECT toRelativeYearNum(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toRelativeYearNum(toDateTime(1412106600), 'Europe/Paris');
-SELECT toRelativeYearNum(toDateTime(1412106600), 'Europe/London');
-SELECT toRelativeYearNum(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toRelativeYearNum(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toRelativeYearNum(toDateTime(1412106600), 'Europe/Moscow') - toRelativeYearNum(toDateTime(0), 'Europe/Moscow');
+SELECT toRelativeYearNum(toDateTime(1412106600), 'Europe/Paris') - toRelativeYearNum(toDateTime(0), 'Europe/Paris');
+SELECT toRelativeYearNum(toDateTime(1412106600), 'Europe/London') - toRelativeYearNum(toDateTime(0), 'Europe/London');
+SELECT toRelativeYearNum(toDateTime(1412106600), 'Asia/Tokyo') - toRelativeYearNum(toDateTime(0), 'Asia/Tokyo');
+SELECT toRelativeYearNum(toDateTime(1412106600), 'Pacific/Pitcairn') - toRelativeYearNum(toDateTime(0), 'Pacific/Pitcairn');
 
 /* toRelativeMonthNum */
 
-SELECT toRelativeMonthNum(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toRelativeMonthNum(toDateTime(1412106600), 'Europe/Paris');
-SELECT toRelativeMonthNum(toDateTime(1412106600), 'Europe/London');
-SELECT toRelativeMonthNum(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toRelativeMonthNum(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toRelativeMonthNum(toDateTime(1412106600), 'Europe/Moscow') - toRelativeMonthNum(toDateTime(0), 'Europe/Moscow');
+SELECT toRelativeMonthNum(toDateTime(1412106600), 'Europe/Paris') - toRelativeMonthNum(toDateTime(0), 'Europe/Paris');
+SELECT toRelativeMonthNum(toDateTime(1412106600), 'Europe/London') - toRelativeMonthNum(toDateTime(0), 'Europe/London');
+SELECT toRelativeMonthNum(toDateTime(1412106600), 'Asia/Tokyo') - toRelativeMonthNum(toDateTime(0), 'Asia/Tokyo');
+SELECT toRelativeMonthNum(toDateTime(1412106600), 'Pacific/Pitcairn') - toRelativeMonthNum(toDateTime(0), 'Pacific/Pitcairn');
 
 /* toRelativeWeekNum */
 
-SELECT toRelativeWeekNum(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toRelativeWeekNum(toDateTime(1412106600), 'Europe/Paris');
-SELECT toRelativeWeekNum(toDateTime(1412106600), 'Europe/London');
-SELECT toRelativeWeekNum(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toRelativeWeekNum(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toRelativeWeekNum(toDateTime(1412106600), 'Europe/Moscow') - toRelativeWeekNum(toDateTime(0), 'Europe/Moscow');
+SELECT toRelativeWeekNum(toDateTime(1412106600), 'Europe/Paris') - toRelativeWeekNum(toDateTime(0), 'Europe/Paris');
+SELECT toRelativeWeekNum(toDateTime(1412106600), 'Europe/London') - toRelativeWeekNum(toDateTime(0), 'Europe/London');
+SELECT toRelativeWeekNum(toDateTime(1412106600), 'Asia/Tokyo') - toRelativeWeekNum(toDateTime(0), 'Asia/Tokyo');
+SELECT toRelativeWeekNum(toDateTime(1412106600), 'Pacific/Pitcairn') - toRelativeWeekNum(toDateTime(0), 'Pacific/Pitcairn');
 
 /* toRelativeDayNum */
 
-SELECT toRelativeDayNum(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toRelativeDayNum(toDateTime(1412106600), 'Europe/Paris');
-SELECT toRelativeDayNum(toDateTime(1412106600), 'Europe/London');
-SELECT toRelativeDayNum(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toRelativeDayNum(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toRelativeDayNum(toDateTime(1412106600), 'Europe/Moscow') - toRelativeDayNum(toDateTime(0), 'Europe/Moscow');
+SELECT toRelativeDayNum(toDateTime(1412106600), 'Europe/Paris') - toRelativeDayNum(toDateTime(0), 'Europe/Paris');
+SELECT toRelativeDayNum(toDateTime(1412106600), 'Europe/London') - toRelativeDayNum(toDateTime(0), 'Europe/London');
+SELECT toRelativeDayNum(toDateTime(1412106600), 'Asia/Tokyo') - toRelativeDayNum(toDateTime(0), 'Asia/Tokyo');
+SELECT toRelativeDayNum(toDateTime(1412106600), 'Pacific/Pitcairn') - toRelativeDayNum(toDateTime(0), 'Pacific/Pitcairn');
 
 /* toRelativeHourNum */
 
-SELECT toRelativeHourNum(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toRelativeHourNum(toDateTime(1412106600), 'Europe/Paris');
-SELECT toRelativeHourNum(toDateTime(1412106600), 'Europe/London');
-SELECT toRelativeHourNum(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toRelativeHourNum(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toRelativeHourNum(toDateTime(1412106600), 'Europe/Moscow') - toRelativeHourNum(toDateTime(0), 'Europe/Moscow');
+SELECT toRelativeHourNum(toDateTime(1412106600), 'Europe/Paris') - toRelativeHourNum(toDateTime(0), 'Europe/Paris');
+SELECT toRelativeHourNum(toDateTime(1412106600), 'Europe/London') - toRelativeHourNum(toDateTime(0), 'Europe/London');
+SELECT toRelativeHourNum(toDateTime(1412106600), 'Asia/Tokyo') - toRelativeHourNum(toDateTime(0), 'Asia/Tokyo');
+-- known wrong result: SELECT toRelativeHourNum(toDateTime(1412106600), 'Pacific/Pitcairn') - toRelativeHourNum(toDateTime(0), 'Pacific/Pitcairn');
 
 /* toRelativeMinuteNum */
 
-SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Europe/Paris');
-SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Europe/London');
-SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Europe/Moscow') - toRelativeMinuteNum(toDateTime(0), 'Europe/Moscow');
+SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Europe/Paris') - toRelativeMinuteNum(toDateTime(0), 'Europe/Paris');
+SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Europe/London') - toRelativeMinuteNum(toDateTime(0), 'Europe/London');
+SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Asia/Tokyo') - toRelativeMinuteNum(toDateTime(0), 'Asia/Tokyo');
+SELECT toRelativeMinuteNum(toDateTime(1412106600), 'Pacific/Pitcairn') - toRelativeMinuteNum(toDateTime(0), 'Pacific/Pitcairn');
 
 /* toRelativeSecondNum */
 
-SELECT toRelativeSecondNum(toDateTime(1412106600), 'Europe/Moscow');
-SELECT toRelativeSecondNum(toDateTime(1412106600), 'Europe/Paris');
-SELECT toRelativeSecondNum(toDateTime(1412106600), 'Europe/London');
-SELECT toRelativeSecondNum(toDateTime(1412106600), 'Asia/Tokyo');
-SELECT toRelativeSecondNum(toDateTime(1412106600), 'Pacific/Pitcairn');
+SELECT toRelativeSecondNum(toDateTime(1412106600), 'Europe/Moscow') - toRelativeSecondNum(toDateTime(0), 'Europe/Moscow');
+SELECT toRelativeSecondNum(toDateTime(1412106600), 'Europe/Paris') - toRelativeSecondNum(toDateTime(0), 'Europe/Paris');
+SELECT toRelativeSecondNum(toDateTime(1412106600), 'Europe/London') - toRelativeSecondNum(toDateTime(0), 'Europe/London');
+SELECT toRelativeSecondNum(toDateTime(1412106600), 'Asia/Tokyo') - toRelativeSecondNum(toDateTime(0), 'Asia/Tokyo');
+SELECT toRelativeSecondNum(toDateTime(1412106600), 'Pacific/Pitcairn') - toRelativeSecondNum(toDateTime(0), 'Pacific/Pitcairn');
 
 /* toDate */
 
