@@ -117,7 +117,8 @@ MergeTreeData::MergeTreeData(
 
     initPrimaryKey();
 
-    if (sampling_expression && (!primary_expr_ast || !primary_key_sample.has(sampling_expression->getColumnName())))
+    if (sampling_expression && (!primary_expr_ast || !primary_key_sample.has(sampling_expression->getColumnName()))
+        && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
     MergeTreeDataFormatVersion min_format_version(0);
@@ -125,7 +126,7 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-            String partition_expr_str = "toYYYYMM(" + date_column_name + ")";
+            String partition_expr_str = "toYYYYMM(" + backQuoteIfNeed(date_column_name) + ")";
             ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
             partition_expr_ast = parseQuery(
                 parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression");
