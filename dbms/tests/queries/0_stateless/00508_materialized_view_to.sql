@@ -10,11 +10,11 @@ USE test;
 CREATE MATERIALIZED VIEW mv TO dst AS SELECT * FROM src;
 
 INSERT INTO src VALUES (1), (2);
-SELECT * FROM mv;
+SELECT * FROM mv ORDER BY x;
 
 -- Detach MV and see if the data is still readable
 DETACH TABLE mv;
-SELECT * FROM dst;
+SELECT * FROM dst ORDER BY x;
 
 USE default;
 
@@ -23,11 +23,11 @@ ATTACH TABLE test.mv;
 
 INSERT INTO test.src VALUES (3);
 
-SELECT * FROM test.mv;
+SELECT * FROM test.mv ORDER BY x;
 
 -- Drop the MV and see if the data is still readable
 DROP TABLE test.mv;
-SELECT * FROM test.dst;
+SELECT * FROM test.dst ORDER BY x;
 
 DROP TABLE test.src;
 DROP TABLE test.dst;
