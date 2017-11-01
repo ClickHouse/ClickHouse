@@ -211,6 +211,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
+    /// If zookeeper chroot prefix is used, path should starts with '/', because chroot concatenates without it.
+    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
+        zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
 
     bool skip_sanity_checks = false;
