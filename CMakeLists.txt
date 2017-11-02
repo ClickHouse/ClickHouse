@@ -24,9 +24,6 @@ if (CMAKE_SYSTEM MATCHES "FreeBSD")
     set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
 endif ()
 
-cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
-cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
-
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
