@@ -11,11 +11,11 @@ class Client:
         self.command = [command, '--host', self.host, '--port', str(self.port), '--stacktrace']
 
 
-    def query(self, sql, stdin=None, timeout=None):
-        return self.get_query_request(sql, stdin, timeout).get_answer()
+    def query(self, sql, stdin=None, timeout=None, settings=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings).get_answer()
 
 
-    def get_query_request(self, sql, stdin=None, timeout=None):
+    def get_query_request(self, sql, stdin=None, timeout=None, settings=None):
         command = self.command[:]
 
         if stdin is None:
@@ -23,6 +23,10 @@ class Client:
             stdin = sql
         else:
             command += ['--query', sql]
+
+        if settings is not None:
+            for setting, value in settings.iteritems():
+                command += ['--' + setting, str(value)]
 
         return CommandRequest(command, stdin, timeout)
 
