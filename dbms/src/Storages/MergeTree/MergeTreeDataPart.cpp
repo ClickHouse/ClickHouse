@@ -538,10 +538,9 @@ void MergeTreeDataPart::remove() const
     }
     catch (const Poco::FileNotFoundException & e)
     {
-        LOG_WARNING(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
+        LOG_ERROR(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
             " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
 
-        std::terminate();
         return;
     }
 
