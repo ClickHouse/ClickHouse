@@ -317,7 +317,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
 
             shards_info.push_back({std::move(dir_name_for_internal_replication), current_shard_num, weight,
-                shard_local_addresses, shard_pool, internal_replication});
+                std::move(shard_local_addresses), shard_pool, internal_replication});
         }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -348,23 +348,30 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
         ConnectionPoolPtrs replicas;
         replicas.reserve(current.size());
 
+        Addresses shard_local_addresses;
+
         for (const auto & replica : current)
         {
-            replicas.emplace_back(std::make_shared<ConnectionPool>(
-                settings.distributed_connections_pool_size,
-                replica.host_name, replica.port, replica.resolved_address,
-                replica.default_database, replica.user, replica.password,
-                "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
-                saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
-                saturate(settings.receive_timeout, settings.limits.max_execution_time),
-                saturate(settings.send_timeout, settings.limits.max_execution_time)));
+            if (replica.is_local)
+                shard_local_addresses.push_back(replica);
+            else
+            {
+                replicas.emplace_back(std::make_shared<ConnectionPool>(
+                        settings.distributed_connections_pool_size,
+                        replica.host_name, replica.port, replica.resolved_address,
+                        replica.default_database, replica.user, replica.password,
+                        "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
+                        saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
+                        saturate(settings.receive_timeout, settings.limits.max_execution_time),
+                        saturate(settings.send_timeout, settings.limits.max_execution_time)));
+            }
         }
 
         ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
                 std::move(replicas), settings.load_balancing, settings.connections_with_failover_max_tries);
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
-        shards_info.push_back({{}, current_shard_num, default_weight, {}, shard_pool});
+        shards_info.push_back({{}, current_shard_num, default_weight, std::move(shard_local_addresses), shard_pool});
         ++current_shard_num;
     }
 
