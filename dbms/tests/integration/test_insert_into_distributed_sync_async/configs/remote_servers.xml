@@ -1,5 +1,6 @@
 <yandex>
     <remote_servers>
+
         <test_cluster>
             <shard>
                 <replica>
@@ -12,5 +13,16 @@
                 </replica>
             </shard>
         </test_cluster>
+
+        <local_shard_with_internal_replication>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </local_shard_with_internal_replication>
+
     </remote_servers>
 </yandex>
