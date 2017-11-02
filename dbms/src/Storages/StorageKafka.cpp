@@ -17,7 +17,11 @@
 #include <Storages/StorageKafka.h>
 #include <common/logger_useful.h>
 
+#if __has_include(<rdkafka.h>) // maybe bundled
 #include <rdkafka.h>
+#else // system
+#include <librdkafka/rdkafka.h>
+#endif
 
 namespace DB
 {
@@ -167,7 +171,6 @@ public:
 
 private:
     StorageKafka & storage;
-    rd_kafka_t * consumer;
     Block sample_block;
     std::unique_ptr<ReadBufferFromKafkaConsumer> read_buf;
     BlockInputStreamPtr reader;

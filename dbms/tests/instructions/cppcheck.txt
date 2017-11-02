@@ -8,11 +8,12 @@ make -j24
 sudo make install
 
 # Perform analysis
-# cd ClickHouse_clean/build
 
+cd ClickHouse_clean/build
 cppcheck -j24 --project=compile_commands.json --enable=all 2> cppcheck-errors.txt
-# or
-# cppcheck -j24 -i contrib -i build --enable=all . 2> cppcheck-errors.txt
+
+# or (from directory with sources)
+# cppcheck -i contrib -i build --enable=all . 2> cppcheck-errors.txt
 
 # Check is pretty fast.
 # It gives many false positives.

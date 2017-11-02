@@ -607,4 +607,58 @@ bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 }
 
 
+bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    Pos begin = pos;
+
+    /// If no INTERVAL keyword, go to nested parser.
+    if (!ParserKeyword("INTERVAL").ignore(pos, expected))
+        return next_parser.parse(pos, node, expected);
+
+    ASTPtr expr;
+    /// Any expression can be inside, because operator surrounds it.
+    if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
+        return false;
+
+    const char * function_name = nullptr;
+
+    if (ParserKeyword("SECOND").ignore(pos, expected))
+        function_name = "toIntervalSecond";
+    else if (ParserKeyword("MINUTE").ignore(pos, expected))
+        function_name = "toIntervalMinute";
+    else if (ParserKeyword("HOUR").ignore(pos, expected))
+        function_name = "toIntervalHour";
+    else if (ParserKeyword("DAY").ignore(pos, expected))
+        function_name = "toIntervalDay";
+    else if (ParserKeyword("WEEK").ignore(pos, expected))
+        function_name = "toIntervalWeek";
+    else if (ParserKeyword("MONTH").ignore(pos, expected))
+        function_name = "toIntervalMonth";
+    else if (ParserKeyword("YEAR").ignore(pos, expected))
+        function_name = "toIntervalYear";
+    else
+        return false;
+
+    /// the function corresponding to the operator
+    auto function = std::make_shared<ASTFunction>();
+
+    /// function arguments
+    auto exp_list = std::make_shared<ASTExpressionList>();
+
+    /// the first argument of the function is the previous element, the second is the next one
+    function->range.first = begin->begin;
+    function->range.second = pos->begin;
+    function->name = function_name;
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
+
+    exp_list->children.push_back(expr);
+    exp_list->range.first = begin->begin;
+    exp_list->range.second = pos->begin;
+
+    node = function;
+    return true;
+}
+
+
 }

@@ -22,13 +22,19 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
-    ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_,
-        size_t quorum_, size_t quorum_timeout_ms_);
+    ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_,
+                                         bool deduplicate_);
 
     void write(const Block & block) override;
 
     /// For ATTACHing existing data on filesystem.
     void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
+
+    /// For proper deduplication in MaterializedViews
+    bool lastBlockIsDuplicate() const
+    {
+        return last_block_is_duplicate;
+    }
 
 private:
     struct QuorumInfo
@@ -48,6 +54,9 @@ private:
     StorageReplicatedMergeTree & storage;
     size_t quorum;
     size_t quorum_timeout_ms;
+
+    bool deduplicate = true;
+    bool last_block_is_duplicate = false;
 
     using Logger = Poco::Logger;
     Logger * log;
