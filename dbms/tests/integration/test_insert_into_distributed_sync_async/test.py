@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from helpers.network import PartitionManager
+from helpers.test_tools import TSV
 
 import pytest
 
@@ -75,6 +76,20 @@ def test_insertion_sync_with_disabled_timeout(started_cluster):
         node1.query('''
         SET insert_distributed_sync = 1, insert_distributed_timeout = 0;
         INSERT INTO distributed_table SELECT today() as date, number as val FROM system.numbers''', timeout=1)
+
+
+def test_async_inserts_into_local_shard(started_cluster):
+    node1.query('''CREATE TABLE shard_local (i Int64) ENGINE = Memory''')
+    node1.query('''CREATE TABLE shard_distributed (i Int64) ENGINE = Distributed(local_shard_with_internal_replication, default, shard_local)''')
+    node1.query('''INSERT INTO shard_distributed VALUES (1)''', settings={ "insert_distributed_sync" : 0 })
+
+    assert TSV(node1.query('''SELECT count() FROM shard_distributed''')) == TSV("1\n")
+    node1.query('''DETACH TABLE shard_distributed''')
+    node1.query('''ATTACH TABLE shard_distributed''')
+    assert TSV(node1.query('''SELECT count() FROM shard_distributed''')) == TSV("1\n")
+
+    node1.query('''DROP TABLE shard_distributed''')
+    node1.query('''DROP TABLE shard_local''')
 
 
 if __name__ == '__main__':
