@@ -76,6 +76,7 @@ ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, co
     auto & actual_query = typeid_cast<ASTInsertQuery &>(*modified_query_ast);
     actual_query.database = database;
     actual_query.table = table;
+    actual_query.table_function = nullptr;
     /// make sure query is not INSERT SELECT
     actual_query.select = nullptr;
 
@@ -224,10 +225,12 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    auto cluster = context.getCluster(cluster_name);
+    auto cluster = owned_cluster ? owned_cluster : context.getCluster(cluster_name);
 
     /// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
-    bool write_enabled = !path.empty() && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
+    /// owned_cluster for remote table function use sync insertion => doesn't need a path.
+    bool write_enabled = (!path.empty() || owned_cluster)
+                         && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
 
     if (!write_enabled)
         throw Exception{
@@ -235,9 +238,12 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Setti
             " with more than one shard and no sharding key provided",
             ErrorCodes::STORAGE_REQUIRES_PARAMETER};
 
+    bool insert_sync = settings.insert_distributed_sync || owned_cluster;
+    auto timeout = settings.insert_distributed_timeout;
+
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings.insert_distributed_sync, settings.insert_distributed_timeout);
+        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, insert_sync, timeout);
 }
 
 
