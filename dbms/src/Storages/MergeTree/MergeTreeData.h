@@ -541,12 +541,7 @@ private:
     /// Current set of data parts.
     DataParts data_parts;
     mutable std::mutex data_parts_mutex;
-
-    /// The set of all data parts including already merged but not yet deleted. Usually it is small (tens of elements).
-    /// The part is referenced from here, from the list of current parts and from each thread reading from it.
-    /// This means that if reference count is 1 - the part is not used right now and can be deleted.
-//    DataParts all_data_parts;
-//    mutable std::mutex all_data_parts_mutex;
+    // TODO: this mutex could be a bottleneck. If so, make it shared, and split parts onto partitions
 
     /// Used to serialize calls to grabOldParts.
     std::mutex grab_old_parts_mutex;
