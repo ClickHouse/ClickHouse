@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+}
+
 
 String getTableDefinitionFromCreateQuery(const ASTPtr & query)
 {
@@ -56,6 +61,8 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     /// We do not directly use `InterpreterCreateQuery::execute`, because
     /// - the database has not been created yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
+    if (!ast_create_query.columns)
+        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(*ast_create_query.columns, context);
 

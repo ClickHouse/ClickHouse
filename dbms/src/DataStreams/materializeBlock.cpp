@@ -1,25 +1,27 @@
-#include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <ext/range.h>
 
 
 namespace DB
 {
 
-Block MaterializingBlockOutputStream::materialize(const Block & original_block)
+Block materializeBlock(const Block & block)
 {
-    /// copy block to get rid of const
-    auto block = original_block;
+    if (!block)
+        return block;
 
-    for (const auto i : ext::range(0, block.columns()))
+    Block res = block;
+    size_t columns = res.columns();
+    for (size_t i = 0; i < columns; ++i)
     {
-        auto & element = block.safeGetByPosition(i);
+        auto & element = res.getByPosition(i);
         auto & src = element.column;
         ColumnPtr converted = src->convertToFullColumnIfConst();
         if (converted)
         {
             src = converted;
+
             auto & type = element.type;
             if (type->isNull())
             {
@@ -30,7 +32,7 @@ Block MaterializingBlockOutputStream::materialize(const Block & original_block)
         }
     }
 
-    return block;
+    return res;
 }
 
 }

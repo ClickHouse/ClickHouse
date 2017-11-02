@@ -24,9 +24,6 @@ if (CMAKE_SYSTEM MATCHES "FreeBSD")
     set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
 endif ()
 
-cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
-cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
-
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
@@ -230,6 +227,7 @@ include (cmake/find_readline_edit.cmake)
 include (cmake/find_zookeeper.cmake)
 include (cmake/find_re2.cmake)
 include (cmake/find_rdkafka.cmake)
+include (cmake/find_capnp.cmake)
 
 include (cmake/find_contrib_lib.cmake)
 find_contrib_lib(cityhash)

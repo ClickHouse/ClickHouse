@@ -50,7 +50,7 @@ public:
 
     bool isCached() const override { return false; }
 
-    DictionaryPtr clone() const override { return std::make_unique<TrieDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<TrieDictionary>(*this); }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

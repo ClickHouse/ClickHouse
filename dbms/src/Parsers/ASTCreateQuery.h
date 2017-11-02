@@ -88,6 +88,8 @@ public:
     String database;
     String table;
     ASTExpressionList * columns = nullptr;
+    String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
+    String to_table;
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;
@@ -166,10 +168,18 @@ protected:
                 formatOnCluster(settings);
         }
 
+        if (!to_table.empty())
+        {
+            settings.ostr
+                << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
+                << (!to_database.empty() ? backQuoteIfNeed(to_database) + "." : "") << backQuoteIfNeed(to_table);
+        }
+
         if (!as_table.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
-            << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
+            settings.ostr
+                << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
+                << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
         }
 
         if (columns)
