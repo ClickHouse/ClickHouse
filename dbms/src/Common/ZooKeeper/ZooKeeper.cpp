@@ -71,7 +71,8 @@ void ZooKeeper::processCallback(zhandle_t * zh, int type, int state, const char 
         destroyContext(context);
 }
 
-void ZooKeeper::init(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_)
+void ZooKeeper::init(const std::string & hosts_, const std::string & identity_,
+                     int32_t session_timeout_ms_, bool check_root_exists)
 {
     log = &Logger::get("ZooKeeper");
     zoo_set_debug_level(ZOO_LOG_LEVEL_ERROR);
@@ -87,7 +88,7 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_, 
 
     if (!identity.empty())
     {
-        auto code = zoo_add_auth(impl, "digest", identity.c_str(), static_cast<int>(identity.size()), 0, 0);
+        auto code = zoo_add_auth(impl, "digest", identity.c_str(), static_cast<int>(identity.size()), nullptr, nullptr);
         if (code != ZOK)
             throw KeeperException("Zookeeper authentication failed. Hosts are  " + hosts, code);
 
@@ -97,11 +98,15 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_, 
         default_acl = &ZOO_OPEN_ACL_UNSAFE;
 
     LOG_TRACE(log, "initialized, hosts: " << hosts);
+
+    if (check_root_exists && !exists("/"))
+        throw KeeperException("Zookeeper root doesn't exist. You should create root node before start.");
 }
 
-ZooKeeper::ZooKeeper(const std::string & hosts, const std::string & identity, int32_t session_timeout_ms)
+ZooKeeper::ZooKeeper(const std::string & hosts, const std::string & identity,
+                     int32_t session_timeout_ms, bool check_root_exists)
 {
-    init(hosts, identity, session_timeout_ms);
+    init(hosts, identity, session_timeout_ms, check_root_exists);
 }
 
 struct ZooKeeperArgs
@@ -115,6 +120,7 @@ struct ZooKeeperArgs
         std::string root;
 
         session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
+        has_chroot = false;
         for (const auto & key : keys)
         {
             if (startsWith(key, "node"))
@@ -154,19 +160,24 @@ struct ZooKeeperArgs
         {
             if (root.front() != '/')
                 throw KeeperException(std::string("Root path in config file should start with '/', but got ") + root);
+            if (root.back() == '/')
+                root.pop_back();
+
             hosts += root;
+            has_chroot = true;
         }
     }
 
     std::string hosts;
     std::string identity;
     int session_timeout_ms;
+    bool has_chroot;
 };
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
     ZooKeeperArgs args(config, config_name);
-    init(args.hosts, args.identity, args.session_timeout_ms);
+    init(args.hosts, args.identity, args.session_timeout_ms, args.has_chroot);
 }
 
 WatchCallback ZooKeeper::callbackForEvent(const EventPtr & event)
