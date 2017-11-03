@@ -13,10 +13,11 @@ namespace DB
 class DatabaseOrdinary : public DatabaseMemory
 {
 protected:
-    const String path;
+    const String metadata_path;
+    String data_path;
 
 public:
-    DatabaseOrdinary(const String & name_, const String & path_);
+    DatabaseOrdinary(const String & name_, const String & metadata_path, const Context & context);
 
     String getEngineName() const override { return "Ordinary"; }
 
@@ -57,6 +58,8 @@ public:
     ASTPtr getCreateQuery(
         const Context & context,
         const String & table_name) const override;
+
+    String getDataPath(const Context & context) const override;
 
     void shutdown() override;
     void drop() override;

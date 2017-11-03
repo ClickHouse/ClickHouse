@@ -51,6 +51,8 @@ namespace ErrorCodes
     extern const int RESHARDING_NO_WORKER;
     extern const int RESHARDING_INVALID_PARAMETERS;
     extern const int RESHARDING_INITIATOR_CHECK_FAILED;
+    extern const int BAD_ARGUMENTS;
+    extern const int READONLY;
 }
 
 
@@ -223,16 +225,24 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    auto cluster = context.getCluster(cluster_name);
+    if (owned_cluster && context.getApplicationType() != Context::ApplicationType::LOCAL)
+        throw Exception(
+            "Method write is not supported by storage " + getName() +
+            " created via a table function", ErrorCodes::READONLY);
 
-    /// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
-    bool write_enabled = !path.empty() && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
+    auto cluster = (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
 
-    if (!write_enabled)
-        throw Exception{
+    bool is_sharding_key_ok = has_sharding_key || ((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2);
+    if (!is_sharding_key_ok)
+        throw Exception(
             "Method write is not supported by storage " + getName() +
             " with more than one shard and no sharding key provided",
-            ErrorCodes::STORAGE_REQUIRES_PARAMETER};
+            ErrorCodes::STORAGE_REQUIRES_PARAMETER);
+
+    if (path.empty() && !settings.insert_distributed_sync.value)
+        throw Exception(
+            "Data path should be set for storage " + getName() +
+            " to enable asynchronous inserts", ErrorCodes::BAD_ARGUMENTS);
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
