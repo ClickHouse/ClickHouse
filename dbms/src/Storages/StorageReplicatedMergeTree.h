@@ -72,7 +72,7 @@ namespace DB
 
 class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageReplicatedMergeTree>;
+friend struct ext::shared_ptr_helper<StorageReplicatedMergeTree>;
 
 public:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

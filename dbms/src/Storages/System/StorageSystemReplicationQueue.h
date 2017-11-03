@@ -14,7 +14,7 @@ class Context;
   */
 class StorageSystemReplicationQueue : public ext::shared_ptr_helper<StorageSystemReplicationQueue>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemReplicationQueue>;
+friend struct ext::shared_ptr_helper<StorageSystemReplicationQueue>;
 public:
     std::string getName() const override { return "SystemReplicationQueue"; }
     std::string getTableName() const override { return name; }

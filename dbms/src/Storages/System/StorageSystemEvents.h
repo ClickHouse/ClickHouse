@@ -14,7 +14,7 @@ class Context;
   */
 class StorageSystemEvents : public ext::shared_ptr_helper<StorageSystemEvents>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemEvents>;
+friend struct ext::shared_ptr_helper<StorageSystemEvents>;
 public:
     std::string getName() const override { return "SystemEvents"; }
     std::string getTableName() const override { return name; }

@@ -13,7 +13,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageView>;
+friend struct ext::shared_ptr_helper<StorageView>;
 
 public:
     std::string getName() const override { return "View"; }

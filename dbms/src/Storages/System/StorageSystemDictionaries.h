@@ -12,7 +12,7 @@ class Context;
 
 class StorageSystemDictionaries : public ext::shared_ptr_helper<StorageSystemDictionaries>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemDictionaries>;
+friend struct ext::shared_ptr_helper<StorageSystemDictionaries>;
 public:
     std::string getName() const override { return "SystemDictionaries"; }
     std::string getTableName() const override { return name; }

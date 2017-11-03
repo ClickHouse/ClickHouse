@@ -20,7 +20,7 @@ namespace DB
   */
 class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageTinyLog>;
+friend struct ext::shared_ptr_helper<StorageTinyLog>;
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
 

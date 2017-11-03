@@ -16,7 +16,7 @@ using SetPtr = std::shared_ptr<Set>;
   */
 class StorageSetOrJoinBase : public ext::shared_ptr_helper<StorageSetOrJoinBase>, public IStorage
 {
-    friend class ext::shared_ptr_helper<StorageSetOrJoinBase>;
+    friend struct ext::shared_ptr_helper<StorageSetOrJoinBase>;
     friend class SetOrJoinBlockOutputStream;
 
 public:
@@ -61,20 +61,9 @@ private:
   */
 class StorageSet : public ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
-friend class ext::shared_ptr_helper<StorageSet>;
+friend struct ext::shared_ptr_helper<StorageSet>;
 
 public:
-    static StoragePtr create(
-        const String & path_,
-        const String & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_)
-    {
-        return ext::shared_ptr_helper<StorageSet>::make_shared(path_, name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
-    }
-
     String getName() const override { return "Set"; }
 
     /// Access the insides.
