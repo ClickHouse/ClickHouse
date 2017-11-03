@@ -27,27 +27,32 @@ CREATE TABLE test.union_bug (
 INSERT INTO test.union_bug VALUES ('A', 1), ('B', 2);
 
 SELECT ' * A UNION * B:';
-
-SELECT * FROM test.union_bug WHERE Event = 'A'
-UNION ALL
-SELECT * FROM test.union_bug WHERE Event = 'B';
+SELECT * FROM (
+  SELECT * FROM test.union_bug WHERE Event = 'A'
+ UNION ALL
+  SELECT * FROM test.union_bug WHERE Event = 'B'
+) ORDER BY Datetime;
 
 SELECT ' Event, Datetime A UNION * B:';
-
-SELECT Event, Datetime FROM test.union_bug WHERE Event = 'A'
-UNION ALL
-SELECT * FROM test.union_bug WHERE Event = 'B';
+SELECT * FROM (
+  SELECT Event, Datetime FROM test.union_bug WHERE Event = 'A'
+ UNION ALL
+  SELECT * FROM test.union_bug WHERE Event = 'B'
+) ORDER BY Datetime;
 
 SELECT ' * A UNION Event, Datetime B:';
-
-SELECT * FROM test.union_bug WHERE Event = 'A'
-UNION ALL
-SELECT Event, Datetime FROM test.union_bug WHERE Event = 'B';
+SELECT * FROM (
+  SELECT * FROM test.union_bug WHERE Event = 'A'
+ UNION ALL
+  SELECT Event, Datetime FROM test.union_bug WHERE Event = 'B'
+) ORDER BY Datetime;
 
 SELECT ' Event, Datetime A UNION Event, Datetime B:';
-SELECT Event, Datetime FROM test.union_bug WHERE Event = 'A'
-UNION ALL
-SELECT Event, Datetime FROM test.union_bug WHERE Event = 'B';
+SELECT * FROM (
+  SELECT Event, Datetime FROM test.union_bug WHERE Event = 'A'
+ UNION ALL
+  SELECT Event, Datetime FROM test.union_bug WHERE Event = 'B'
+) ORDER BY Datetime;
 
 
 DROP TABLE test.union_bug;
