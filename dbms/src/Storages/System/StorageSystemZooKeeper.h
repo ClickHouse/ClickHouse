@@ -14,7 +14,7 @@ class Context;
   */
 class StorageSystemZooKeeper : public ext::shared_ptr_helper<StorageSystemZooKeeper>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemZooKeeper>;
+friend struct ext::shared_ptr_helper<StorageSystemZooKeeper>;
 public:
     std::string getName() const override { return "SystemZooKeeper"; }
     std::string getTableName() const override { return name; }

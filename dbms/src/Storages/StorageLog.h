@@ -39,7 +39,7 @@ using Marks = std::vector<Mark>;
   */
 class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageLog>;
+friend struct ext::shared_ptr_helper<StorageLog>;
 friend class LogBlockInputStream;
 friend class LogBlockOutputStream;
 

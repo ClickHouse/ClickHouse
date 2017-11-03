@@ -22,7 +22,7 @@ class StorageMemory;
   */
 class StorageMemory : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMemory>;
+friend struct ext::shared_ptr_helper<StorageMemory>;
 friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 
@@ -55,10 +55,6 @@ private:
     BlocksList data;
 
     std::mutex mutex;
-
-    StorageMemory(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_);
 
     StorageMemory(
         const std::string & name_,
