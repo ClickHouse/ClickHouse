@@ -10,7 +10,7 @@ if (NOT USE_INTERNAL_POCO_LIBRARY)
 endif ()
 
 if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
-    #include_directories (${Poco_INCLUDE_DIRS})
+    #include_directories (SYSTEM ${Poco_INCLUDE_DIRS})
 else ()
 
     set (USE_INTERNAL_POCO_LIBRARY 1)

@@ -10,7 +10,7 @@ if (ENABLE_CAPNP)
 
 	find_path (CAPNP_INCLUDE_DIR NAMES capnp/schema-parser.h PATHS ${CAPNP_INCLUDE_PATHS})
 	if (CAPNP_INCLUDE_DIR AND CAPNP_LIBS)
-	    include_directories (${CAPNP_INCLUDE_DIR})
+	    include_directories (SYSTEM ${CAPNP_INCLUDE_DIR})
 	    set(USE_CAPNP 1)
 	endif ()
 endif ()
