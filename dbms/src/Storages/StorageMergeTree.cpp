@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 
@@ -59,6 +60,9 @@ StorageMergeTree::StorageMergeTree(
     reader(data), writer(data), merger(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
+    if (path_.empty())
+        throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
     data.loadDataParts(has_force_restore_data_flag);
 
     if (!attach)

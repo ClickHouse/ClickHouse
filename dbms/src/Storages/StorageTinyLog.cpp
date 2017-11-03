@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 
@@ -453,6 +454,9 @@ StorageTinyLog::StorageTinyLog(
 {
     if (columns->empty())
         throw Exception("Empty list of columns passed to StorageTinyLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+
+    if (path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String full_path = path + escapeForFileName(name) + '/';
     if (!attach)

@@ -20,6 +20,8 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int DATABASE_ACCESS_DENIED;
+    extern const int INCORRECT_FILE_NAME;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 };
 
 
@@ -49,6 +51,9 @@ StorageFile::StorageFile(
     : IStorage(materialized_columns_, alias_columns_, column_defaults_),
     table_name(table_name_), format_name(format_name_), columns(columns_), context_global(context_), table_fd(table_fd_)
 {
+    if (columns->empty())
+        throw Exception("Empty list of columns passed to storage " + getName() + " constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+
     if (table_fd < 0) /// Will use file
     {
         use_table_fd = false;
@@ -61,6 +66,9 @@ StorageFile::StorageFile(
         }
         else /// Is DB's file
         {
+            if (db_dir_path.empty())
+                throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+
             path = getTablePath(db_dir_path, table_name, format_name);
             is_db_table = true;
             Poco::File(Poco::Path(path).parent()).createDirectories();

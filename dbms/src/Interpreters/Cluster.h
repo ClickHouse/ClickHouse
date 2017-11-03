@@ -172,6 +172,7 @@ public:
     Clusters & operator=(const Clusters &) = delete;
 
     ClusterPtr getCluster(const std::string & cluster_name) const;
+    void setCluster(const String & cluster_name, const ClusterPtr & cluster);
 
     void updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name);
 

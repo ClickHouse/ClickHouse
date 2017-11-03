@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 
@@ -189,6 +190,9 @@ StorageStripeLog::StorageStripeLog(
 {
     if (columns->empty())
         throw Exception("Empty list of columns passed to StorageStripeLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+
+    if (path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String full_path = path + escapeForFileName(name) + '/';
     if (!attach)

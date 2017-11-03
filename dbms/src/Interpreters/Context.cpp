@@ -878,7 +878,7 @@ ASTPtr Context::getCreateQuery(const String & database_name, const String & tabl
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    assertTableExists(db, table_name);
+    assertDatabaseExists(db);
 
     return shared->databases[db]->getCreateQuery(*this, table_name);
 }
@@ -1356,6 +1356,17 @@ void Context::setClustersConfig(const ConfigurationPtr & config, const String & 
         shared->clusters = std::make_unique<Clusters>(*shared->clusters_config, settings, config_name);
     else
         shared->clusters->updateClusters(*shared->clusters_config, settings, config_name);
+}
+
+
+void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
+{
+    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+
+    if (!shared->clusters)
+        throw Exception("Clusters are not set", ErrorCodes::LOGICAL_ERROR);
+
+    shared->clusters->setCluster(cluster_name, cluster);
 }
 
 

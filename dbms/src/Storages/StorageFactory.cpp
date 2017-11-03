@@ -607,7 +607,7 @@ StoragePtr StorageFactory::get(
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
         args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
 
-        String source_database         = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+        String source_database      = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
         String table_name_regexp    = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
         return StorageMerge::create(
@@ -640,7 +640,7 @@ StoragePtr StorageFactory::get(
         args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
         args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], local_context);
 
-        String remote_database     = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+        String remote_database  = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
         String remote_table     = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
         const auto & sharding_key = args.size() == 4 ? args[3] : nullptr;
@@ -686,7 +686,7 @@ StoragePtr StorageFactory::get(
         args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
 
         String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
-        String destination_table     = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+        String destination_table    = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
         UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[2]).value);
 
