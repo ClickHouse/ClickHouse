@@ -6,21 +6,6 @@
 namespace DB
 {
 
-CompressionSettings::CompressionSettings()
-{
-}
-
-CompressionSettings::CompressionSettings(CompressionMethod method, int level):
-    method(method),
-    level(level)
-{
-}
-
-CompressionSettings::CompressionSettings(CompressionMethod method):
-    CompressionSettings(method, getDefaultLevel(method))
-{
-}
-
 CompressionSettings::CompressionSettings(const Settings & settings)
 {
     method = settings.network_compression_method;
