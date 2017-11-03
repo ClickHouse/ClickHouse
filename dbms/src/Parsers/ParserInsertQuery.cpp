@@ -27,6 +27,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Pos begin = pos;
 
     ParserKeyword s_insert_into("INSERT INTO");
+    ParserKeyword s_table("TABLE");
+    ParserKeyword s_function("FUNCTION");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_values("VALUES");
     ParserKeyword s_format("FORMAT");
@@ -49,8 +51,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_insert_into.ignore(pos, expected))
         return false;
 
-    if (table_function_p.parse(pos, table_function, expected))
+    if (s_function.ignore(pos, expected) || (s_table.ignore(pos, expected) && s_function.ignore(pos, expected)))
     {
+        if (!table_function_p.parse(pos, table_function, expected))
+            return false;
         static_cast<ASTFunction &>(*table_function).kind = ASTFunction::TABLE_FUNCTION;
     }
     else
