@@ -21,7 +21,7 @@ namespace DB
   */
 class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageStripeLog>;
+friend struct ext::shared_ptr_helper<StorageStripeLog>;
 friend class StripeLogBlockInputStream;
 friend class StripeLogBlockOutputStream;
 

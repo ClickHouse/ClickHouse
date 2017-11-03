@@ -18,7 +18,7 @@ namespace DB
   */
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMergeTree>;
+friend struct ext::shared_ptr_helper<StorageMergeTree>;
 friend class MergeTreeBlockOutputStream;
 
 public:

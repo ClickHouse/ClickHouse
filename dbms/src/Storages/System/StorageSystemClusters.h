@@ -15,7 +15,7 @@ class Context;
   */
 class StorageSystemClusters : public ext::shared_ptr_helper<StorageSystemClusters>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemClusters>;
+friend struct ext::shared_ptr_helper<StorageSystemClusters>;
 
 public:
     StorageSystemClusters(const std::string & name_);

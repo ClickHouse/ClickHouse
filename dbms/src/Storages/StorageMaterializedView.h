@@ -14,7 +14,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMaterializedView>;
+friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 
 public:
     std::string getName() const override { return "MaterializedView"; }
