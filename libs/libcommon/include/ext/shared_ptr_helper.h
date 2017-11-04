@@ -14,6 +14,7 @@ namespace ext
   * - your class cannot be final;
   * - bad compilation error messages;
   * - bad code navigation.
+  * - different dynamic type of created object, you cannot use typeid.
   */
 template <typename T>
 struct shared_ptr_helper
