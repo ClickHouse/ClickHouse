@@ -19,8 +19,6 @@ class ExternalDictionaries;
 
 class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageDictionary>;
-
 public:
     static StoragePtr create(const String & table_name_,
         Context & context_,
