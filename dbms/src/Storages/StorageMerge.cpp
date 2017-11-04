@@ -32,17 +32,6 @@ namespace ErrorCodes
 StorageMerge::StorageMerge(
     const std::string & name_,
     NamesAndTypesListPtr columns_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
-    : name(name_), columns(columns_), source_database(source_database_),
-      table_name_regexp(table_name_regexp_), context(context_)
-{
-}
-
-StorageMerge::StorageMerge(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,

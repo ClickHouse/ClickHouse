@@ -197,7 +197,7 @@ public:
 
         /// Create table
         NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample_block.getColumnsList());
-        StoragePtr storage = StorageMemory::create(data.second, columns);
+        StoragePtr storage = StorageMemory::create(data.second, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
         storage->startup();
         context.addExternalTable(data.second, storage);
         BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());

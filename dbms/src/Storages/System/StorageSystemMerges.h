@@ -12,7 +12,6 @@ class Context;
 
 class StorageSystemMerges : public ext::shared_ptr_helper<StorageSystemMerges>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageSystemMerges>;
 public:
     std::string getName() const override { return "SystemMerges"; }
     std::string getTableName() const override { return name; }
@@ -30,6 +29,7 @@ private:
     const std::string name;
     NamesAndTypesList columns;
 
+protected:
     StorageSystemMerges(const std::string & name);
 };
 

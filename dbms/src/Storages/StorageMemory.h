@@ -12,9 +12,6 @@
 namespace DB
 {
 
-class StorageMemory;
-
-
 /** Implements storage in the RAM.
   * Suitable for temporary data.
   * It does not support keys.
@@ -22,7 +19,6 @@ class StorageMemory;
   */
 class StorageMemory : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageMemory>;
 friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;
 
@@ -56,6 +52,7 @@ private:
 
     std::mutex mutex;
 
+protected:
     StorageMemory(
         const std::string & name_,
         NamesAndTypesListPtr columns_,

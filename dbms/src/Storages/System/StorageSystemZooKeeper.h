@@ -14,7 +14,6 @@ class Context;
   */
 class StorageSystemZooKeeper : public ext::shared_ptr_helper<StorageSystemZooKeeper>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageSystemZooKeeper>;
 public:
     std::string getName() const override { return "SystemZooKeeper"; }
     std::string getTableName() const override { return name; }
@@ -33,6 +32,7 @@ private:
     const std::string name;
     NamesAndTypesList columns;
 
+protected:
     StorageSystemZooKeeper(const std::string & name_);
 };
 

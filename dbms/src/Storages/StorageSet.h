@@ -14,9 +14,8 @@ using SetPtr = std::shared_ptr<Set>;
 
 /** Common part of StorageSet and StorageJoin.
   */
-class StorageSetOrJoinBase : public ext::shared_ptr_helper<StorageSetOrJoinBase>, public IStorage
+class StorageSetOrJoinBase : public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSetOrJoinBase>;
     friend class SetOrJoinBlockOutputStream;
 
 public:
@@ -72,6 +71,10 @@ public:
 private:
     SetPtr set;
 
+    void insertBlock(const Block & block) override;
+    size_t getSize() const override;
+
+protected:
     StorageSet(
         const String & path_,
         const String & name_,
@@ -79,9 +82,6 @@ private:
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_);
-
-    void insertBlock(const Block & block) override;
-    size_t getSize() const override;
 };
 
 }
