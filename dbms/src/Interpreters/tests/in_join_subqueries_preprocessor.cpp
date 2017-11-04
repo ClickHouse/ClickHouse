@@ -64,7 +64,7 @@ public:
         if (!table.isRemote())
             return false;
 
-        const StorageDistributedFake * distributed = typeid_cast<const StorageDistributedFake *>(&table);
+        const StorageDistributedFake * distributed = dynamic_cast<const StorageDistributedFake *>(&table);
         if (!distributed)
             return false;
 
@@ -74,7 +74,7 @@ public:
     std::pair<std::string, std::string>
     getRemoteDatabaseAndTableName(const DB::IStorage & table) const override
     {
-        const StorageDistributedFake & distributed = typeid_cast<const StorageDistributedFake &>(table);
+        const StorageDistributedFake & distributed = dynamic_cast<const StorageDistributedFake &>(table);
         return { distributed.getRemoteDatabaseName(), distributed.getRemoteTableName() };
     }
 };
