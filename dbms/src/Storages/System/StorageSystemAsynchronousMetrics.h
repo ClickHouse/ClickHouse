@@ -15,8 +15,6 @@ class Context;
   */
 class StorageSystemAsynchronousMetrics : public ext::shared_ptr_helper<StorageSystemAsynchronousMetrics>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageSystemAsynchronousMetrics>;
-
 public:
     std::string getName() const override { return "SystemAsynchronousMetrics"; }
     std::string getTableName() const override { return name; }
@@ -36,6 +34,7 @@ private:
     NamesAndTypesList columns;
     const AsynchronousMetrics & async_metrics;
 
+protected:
     StorageSystemAsynchronousMetrics(const std::string & name_, const AsynchronousMetrics & async_metrics_);
 };
 

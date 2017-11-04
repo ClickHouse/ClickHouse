@@ -23,7 +23,6 @@ class StorageKafka;
   */
 class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageKafka>;
 friend class KafkaBlockInputStream;
 friend class KafkaBlockOutputStream;
 

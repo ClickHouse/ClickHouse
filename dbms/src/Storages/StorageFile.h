@@ -9,6 +9,7 @@
 
 #include <atomic>
 #include <shared_mutex>
+#include <ext/shared_ptr_helper.h>
 
 
 namespace DB
@@ -17,28 +18,9 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile : public IStorage
+class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
 public:
-    static StoragePtr create(
-        const std::string & table_path,
-        int table_fd,
-        const std::string & db_dir_path,
-        const std::string & table_name,
-        const std::string & format_name,
-        const NamesAndTypesListPtr & columns,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        Context & context)
-    {
-        return std::make_shared<StorageFile>(
-            table_path, table_fd,
-            db_dir_path, table_name, format_name, columns,
-            materialized_columns_, alias_columns_, column_defaults_,
-            context);
-    }
-
     std::string getName() const override
     {
         return "File";

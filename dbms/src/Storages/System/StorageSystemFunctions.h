@@ -15,7 +15,6 @@ class Context;
   */
 class StorageSystemFunctions : public ext::shared_ptr_helper<StorageSystemFunctions>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageSystemFunctions>;
 public:
     std::string getName() const override { return "SystemFunctions"; }
     std::string getTableName() const override { return name; }
@@ -29,7 +28,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-private:
+protected:
     StorageSystemFunctions(const std::string & name_);
 
 private:
