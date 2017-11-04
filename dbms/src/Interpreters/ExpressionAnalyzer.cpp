@@ -1584,7 +1584,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
 
             if (table)
             {
-                StorageSet * storage_set = typeid_cast<StorageSet *>(table.get());
+                StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
 
                 if (storage_set)
                 {
@@ -2416,7 +2416,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
         if (table)
         {
-            StorageJoin * storage_join = typeid_cast<StorageJoin *>(table.get());
+            StorageJoin * storage_join = dynamic_cast<StorageJoin *>(table.get());
 
             if (storage_join)
             {
