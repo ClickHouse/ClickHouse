@@ -15,11 +15,7 @@ class Context;
   */
 class StorageSystemClusters : public ext::shared_ptr_helper<StorageSystemClusters>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageSystemClusters>;
-
 public:
-    StorageSystemClusters(const std::string & name_);
-
     std::string getName() const override { return "SystemClusters"; }
     std::string getTableName() const override { return name; }
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
@@ -35,6 +31,9 @@ public:
 private:
     const std::string name;
     NamesAndTypesList columns;
+
+protected:
+    StorageSystemClusters(const std::string & name_);
 };
 
 }

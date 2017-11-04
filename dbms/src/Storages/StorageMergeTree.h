@@ -18,7 +18,6 @@ namespace DB
   */
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageMergeTree>;
 friend class MergeTreeBlockOutputStream;
 
 public:
@@ -112,6 +111,15 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
+    /** Determines what parts should be merged and merges it.
+      * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
+      * Returns true if merge is finished successfully.
+      */
+    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
+
+    bool mergeTask();
+
+protected:
     /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
@@ -137,14 +145,6 @@ private:
         const MergeTreeData::MergingParams & merging_params_,
         const MergeTreeSettings & settings_,
         bool has_force_restore_data_flag);
-
-    /** Determines what parts should be merged and merges it.
-      * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
-      * Returns true if merge is finished successfully.
-      */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
-
-    bool mergeTask();
 };
 
 }

@@ -13,8 +13,6 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageView>;
-
 public:
     std::string getName() const override { return "View"; }
     std::string getTableName() const override { return table_name; }
@@ -40,13 +38,12 @@ private:
     String table_name;
     String database_name;
     ASTPtr inner_query;
-    Context & context;
     NamesAndTypesListPtr columns;
 
+protected:
     StorageView(
         const String & table_name_,
         const String & database_name_,
-        Context & context_,
         const ASTCreateQuery & query,
         NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,

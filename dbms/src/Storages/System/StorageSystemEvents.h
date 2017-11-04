@@ -14,7 +14,6 @@ class Context;
   */
 class StorageSystemEvents : public ext::shared_ptr_helper<StorageSystemEvents>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageSystemEvents>;
 public:
     std::string getName() const override { return "SystemEvents"; }
     std::string getTableName() const override { return name; }
@@ -33,6 +32,7 @@ private:
     const std::string name;
     NamesAndTypesList columns;
 
+protected:
     StorageSystemEvents(const std::string & name_);
 };
 
