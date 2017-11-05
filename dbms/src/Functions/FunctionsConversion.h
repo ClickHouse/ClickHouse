@@ -196,10 +196,6 @@ struct ConvertImpl<DataTypeEnum<FieldType>, DataTypeNumber<FieldType>, Name>
 };
 
 
-/// For functions toDateTime, toUnixTimestamp and toString from DateTime type, second argument with time zone could be specified.
-const DateLUTImpl * extractTimeZoneFromFunctionArguments(Block & block, const ColumnNumbers & arguments);
-
-
 template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataType, DataTypeString>::value, DataTypeString>::type, Name>
 {
@@ -214,7 +210,7 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
 
         /// For argument of DateTime type, second argument with time zone could be specified.
         if (std::is_same<FromDataType, DataTypeDateTime>::value)
-            time_zone = extractTimeZoneFromFunctionArguments(block, arguments);
+            time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1);
 
         if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
         {
@@ -341,7 +337,7 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
 
         /// For conversion to DateTime type, second argument with time zone could be specified.
         if (std::is_same<ToDataType, DataTypeDateTime>::value)
-            time_zone = extractTimeZoneFromFunctionArguments(block, arguments);
+            time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1);
 
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
@@ -483,7 +479,6 @@ struct ConvertImplGenericFromString
 
 
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
-/// Note that time zone argument could be passed only for toUnixTimestamp function.
 struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
 
 template <>
@@ -518,7 +513,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 
             /// For conversion to DateTime type, second argument with time zone could be specified.
             if (std::is_same<ToDataType, DataTypeDateTime>::value)
-                time_zone = extractTimeZoneFromFunctionArguments(block, arguments);
+                time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1);
 
             auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
             block.getByPosition(result).column = col_to;
@@ -602,6 +597,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
 /// Declared early because used below.
 struct NameToDate { static constexpr auto name = "toDate"; };
+struct NameToDateTime { static constexpr auto name = "toDateTime"; };
 struct NameToString { static constexpr auto name = "toString"; };
 
 
@@ -641,10 +637,54 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const Block &) override { return std::is_same<Name, NameToString>::value; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    void getReturnTypeAndPrerequisitesImpl(
+        const ColumnsWithTypeAndName & arguments,
+        DataTypePtr & out_return_type,
+        std::vector<ExpressionAction> &) override
     {
-        return getReturnTypeInternal(arguments);
+        out_return_type = getReturnTypeInternal(arguments);
     }
+
+    template <typename Type = ToDataType>
+    typename std::enable_if<std::is_same<Type, DataTypeInterval>::value, DataTypePtr>::type
+    getReturnTypeInternal(const ColumnsWithTypeAndName & arguments)
+    {
+        return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
+    }
+
+    template <typename Type = ToDataType>
+    typename std::enable_if<!std::is_same<Type, DataTypeInterval>::value, DataTypePtr>::type
+    getReturnTypeInternal(const ColumnsWithTypeAndName & arguments)
+    {
+        /** Optional second argument with time zone is supported:
+          * - for functions toDateTime, toUnixTimestamp, toDate;
+          * - for function toString of DateTime argument.
+          */
+
+        if (arguments.size() == 2)
+        {
+            if (!checkAndGetDataType<DataTypeString>(arguments[1].type.get()))
+                throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            if (!(std::is_same<Name, NameToDateTime>::value
+                || std::is_same<Name, NameToDate>::value
+                || std::is_same<Name, NameToUnixTimestamp>::value
+                || (std::is_same<Name, NameToString>::value
+                    && checkDataType<DataTypeDateTime>(arguments[0].type.get()))))
+            {
+                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                    + toString(arguments.size()) + ", should be 1.",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            }
+        }
+
+        if (std::is_same<ToDataType, DataTypeDateTime>::value)
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1));
+        else
+            return std::make_shared<ToDataType>();
+    }
+
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -727,111 +767,10 @@ private:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
-
-    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
-    DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
-        typename std::enable_if<!(
-            std::is_same<ToDataType2, DataTypeString>::value
-            || std::is_same<ToDataType2, DataTypeInterval>::value
-            || std::is_same<Name2, NameToUnixTimestamp>::value
-            || std::is_same<Name2, NameToDate>::value)>::type * = nullptr) const
-    {
-        if (arguments.size() != 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        return std::make_shared<ToDataType>();
-    }
-
-    /** Conversion of anything to String. For DateTime, it allows second optional argument - time zone.
-      */
-    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
-    DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
-        typename std::enable_if<std::is_same<ToDataType2, DataTypeString>::value>::type * = nullptr) const
-    {
-        if ((arguments.size() < 1) || (arguments.size() > 2))
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!checkAndGetDataType<DataTypeDateTime>(arguments[0].get()))
-        {
-            if (arguments.size() != 1)
-                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                    + toString(arguments.size()) + ", should be 1.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        }
-        else if ((arguments.size() == 2) && !checkAndGetDataType<DataTypeString>(arguments[1].get()))
-        {
-            throw Exception{
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        return std::make_shared<ToDataType2>();
-    }
-
-    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
-    DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
-        typename std::enable_if<std::is_same<Name2, NameToUnixTimestamp>::value, void>::type * = nullptr) const
-    {
-        if ((arguments.size() < 1) || (arguments.size() > 2))
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!checkAndGetDataType<DataTypeString>(arguments[0].get()))
-        {
-            if (arguments.size() != 1)
-                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                    + toString(arguments.size()) + ", should be 1.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        }
-        else if ((arguments.size() == 2) && !checkAndGetDataType<DataTypeString>(arguments[1].get()))
-        {
-            throw Exception{
-                "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        return std::make_shared<ToDataType2>();
-    }
-
-    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
-    DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
-        typename std::enable_if<std::is_same<Name2, NameToDate>::value>::type * = nullptr) const
-    {
-        if ((arguments.size() < 1) || (arguments.size() > 2))
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if ((arguments.size() == 2) && !checkAndGetDataType<DataTypeString>(arguments[1].get()))
-        {
-            throw Exception{
-                "Illegal type " + arguments[1]->getName() + " of 2nd argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        return std::make_shared<ToDataType2>();
-    }
-
-    template <typename ToDataType2 = ToDataType, typename Name2 = Name>
-    DataTypePtr getReturnTypeInternal(const DataTypes & arguments,
-        typename std::enable_if<std::is_same<ToDataType2, DataTypeInterval>::value>::type * = nullptr) const
-    {
-        if (arguments.size() != 1)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
-    }
 };
 
 
-/** Functions tryToT (where T is number of date or datetime type):
+/** Functions toTOrZero (where T is number of date or datetime type):
   *  try to convert from String to type T through parsing,
   *  if cannot parse, return default value instead of throwing exception.
   * NOTE Also need implement tryToUnixTimestamp with timezone.
@@ -1114,7 +1053,6 @@ struct NameToInt32 { static constexpr auto name = "toInt32"; };
 struct NameToInt64 { static constexpr auto name = "toInt64"; };
 struct NameToFloat32 { static constexpr auto name = "toFloat32"; };
 struct NameToFloat64 { static constexpr auto name = "toFloat64"; };
-struct NameToDateTime { static constexpr auto name = "toDateTime"; };
 struct NameToUUID { static constexpr auto name = "toUUID"; };
 
 using FunctionToUInt8 = FunctionConvert<DataTypeUInt8, NameToUInt8, ToIntMonotonicity<UInt8>>;
@@ -1199,9 +1137,14 @@ private:
         auto function = FunctionType::create(context);
 
         /// Check conversion using underlying function
-        (void) function->getReturnType({ from_type });
+        {
+            DataTypePtr unused_data_type;
+            std::vector<ExpressionAction> unused_prerequisites;
+            function->getReturnTypeAndPrerequisites({{ nullptr, from_type, "" }}, unused_data_type, unused_prerequisites);
+        }
 
-        return [function] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+        return [function] (Block & block, const ColumnNumbers & arguments, const size_t result)
+        {
             function->execute(block, arguments, result);
         };
     }
@@ -1386,9 +1329,14 @@ private:
             auto function = Function::create(context);
 
             /// Check conversion using underlying function
-            (void) function->getReturnType({ from_type });
+            {
+                DataTypePtr unused_data_type;
+                std::vector<ExpressionAction> unused_prerequisites;
+                function->getReturnTypeAndPrerequisites({{ nullptr, from_type, "" }}, unused_data_type, unused_prerequisites);
+            }
 
-            return [function] (Block & block, const ColumnNumbers & arguments, const size_t result) {
+            return [function] (Block & block, const ColumnNumbers & arguments, const size_t result)
+            {
                 function->execute(block, arguments, result);
             };
         }
