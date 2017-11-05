@@ -83,7 +83,8 @@ def main(args):
             check_call(['grep', '-qE', '"127.0.0.2|<listen_host>::</listen_host>"', '/etc/clickhouse-server/config-preprocessed.xml'])
             args.shard = True
         except CalledProcessError:
-            args.shard = False
+            # TODO: false here after setting <listen_host>::1</listen_host>
+            args.shard = True
 
     base_dir = os.path.abspath(args.queries)
 
