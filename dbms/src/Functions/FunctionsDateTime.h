@@ -107,9 +107,9 @@ struct ToStartOfDayImpl
     {
         return time_zone.toDate(t);
     }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return d;
+        throw Exception("Illegal type Date of argument for function toStartOfDay", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     using FactorTransform = ZeroTransform;
