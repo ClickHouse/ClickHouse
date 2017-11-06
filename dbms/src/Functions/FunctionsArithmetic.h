@@ -14,6 +14,7 @@
 #include <Core/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
 
 
@@ -162,12 +163,9 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
-    /// Is it better to use siglongjmp instead of checks?
-
     if (unlikely(b == 0))
         return true;
 
-    /// http://avva.livejournal.com/2548306.html
     if (unlikely(std::is_signed<A>::value && std::is_signed<B>::value && a == std::numeric_limits<A>::min() && b == -1))
         return true;
 
@@ -805,16 +803,22 @@ public:
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (FunctionPtr function = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
         {
-            DataTypes new_arguments = arguments;
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
 
             /// Interval argument must be second.
-            if (checkDataType<DataTypeInterval>(new_arguments[0].get()))
+            if (checkDataType<DataTypeInterval>(new_arguments[0].type.get()))
                 std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
-            new_arguments[1] = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
-            return function->getReturnTypeImpl(new_arguments);
+            DataTypePtr res;
+            std::vector<ExpressionAction> unused_prerequisites;
+            function->getReturnTypeAndPrerequisites(new_arguments, res, unused_prerequisites);
+            return res;
         }
 
         DataTypePtr type_res;
