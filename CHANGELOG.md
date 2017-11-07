@@ -6,10 +6,10 @@
 * Added support for loading [CatBoost](https://catboost.yandex/) models and applying them to data stored in ClickHouse.
 * Added support for time zones with non-integer offsets from UTC.
 * Added support for arithmetic operations with time intervals.
-* The range of values for the Date and DateTime types is expanded to year 2105.
-* Added the `CREATE MATERIALIZED VIEW x TO y` query (allows specifying an existing table for storing data of a materialized view).
+* The range of values for the Date and DateTime types is extended to the year 2105.
+* Added the `CREATE MATERIALIZED VIEW x TO y` query (specifies an existing table for storing the data of a materialized view).
 * Added the `ATTACH TABLE` query without arguments.
-* The processing logic for Nested columns with names ending with -Map in a SummingMergeTree table was extracted to the sumMap aggregate function. You can now specify such columns explicitly.
+* The processing logic for Nested columns with names ending in -Map in a SummingMergeTree table was extracted to the sumMap aggregate function. You can now specify such columns explicitly.
 * Max size of the IP trie dictionary is increased to 128M entries.
 * Added the `getSizeOfEnumType` function.
 * Added the `sumWithOverflow` aggregate function.
@@ -19,7 +19,7 @@
 ## Backwards incompatible changes:
 * Creation of temporary tables with an engine other than Memory is forbidden.
 * Explicit creation of tables with the View or MaterializedView engine is forbidden.
-* It is now checked during the creation of a table that the sampling key expression is included in the primary key.
+* During table creation, a new check verifies that the sampling key expression is included in the primary key.  
 
 ## Bug fixes:
 * Fixed hangups when synchronously inserting into a Distributed table.
