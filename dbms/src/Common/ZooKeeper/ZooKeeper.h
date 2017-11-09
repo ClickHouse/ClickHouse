@@ -420,6 +420,11 @@ private:
     bool is_dirty = false;
 };
 
+
+/// Returns first op which op_result != ZOK or throws an exception
+size_t getFailedOpIndex(const OpResultsPtr & op_results);
+
+
 using ZooKeeperPtr = ZooKeeper::Ptr;
 
 

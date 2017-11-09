@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <boost/noncopyable.hpp>
+#include "IBlockInputStream.h"
 
 
 namespace DB

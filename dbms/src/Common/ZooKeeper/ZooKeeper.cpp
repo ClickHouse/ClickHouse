@@ -28,6 +28,15 @@ namespace CurrentMetrics
 }
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
+
+
 namespace zkutil
 {
 
@@ -999,6 +1008,21 @@ ZooKeeper::MultiFuture ZooKeeper::tryAsyncMulti(const zkutil::Ops & ops)
 ZooKeeper::MultiFuture ZooKeeper::asyncMulti(const zkutil::Ops & ops)
 {
     return asyncMultiImpl(ops, true);
+}
+
+
+size_t getFailedOpIndex(const OpResultsPtr & op_results)
+{
+    if (!op_results)
+        throw DB::Exception("OpResults is nullptr", DB::ErrorCodes::LOGICAL_ERROR);
+
+    for (size_t index = 0; index < op_results->size(); ++index)
+    {
+        if ((*op_results)[index].err != ZOK)
+            return index;
+    }
+
+    throw DB::Exception("There is no failed OpResult", DB::ErrorCodes::LOGICAL_ERROR);
 }
 
 }
