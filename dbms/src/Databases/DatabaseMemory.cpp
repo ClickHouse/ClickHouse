@@ -80,8 +80,7 @@ void DatabaseMemory::createTable(
     const Context & context,
     const String & table_name,
     const StoragePtr & table,
-    const ASTPtr & query,
-    const String & engine)
+    const ASTPtr & query)
 {
     attachTable(table_name, table);
 }

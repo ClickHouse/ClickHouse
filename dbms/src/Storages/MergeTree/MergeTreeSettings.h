@@ -47,7 +47,7 @@ struct MergeTreeSettings
     /** If table contains at least that many active parts, artificially slow down insert into table. */       \
     M(SettingUInt64, parts_to_delay_insert, 150)                                                              \
                                                                                                               \
-    /** If more than this number active parts, throw 'Too much parts ...' exception */                        \
+    /** If more than this number active parts, throw 'Too many parts ...' exception */                        \
     M(SettingUInt64, parts_to_throw_insert, 300)                                                              \
                                                                                                               \
     /** Max delay of inserting data into MergeTree table in seconds, if there are a lot of unmerged parts. */ \
@@ -122,7 +122,15 @@ struct MergeTreeSettings
     M(SettingUInt64, vertical_merge_algorithm_min_rows_to_activate, 16 * DEFAULT_MERGE_BLOCK_SIZE)            \
                                                                                                               \
     /** Minimal amount of non-PK columns to activate Vertical merge algorithm */                              \
-    M(SettingUInt64, vertical_merge_algorithm_min_columns_to_activate, 11)
+    M(SettingUInt64, vertical_merge_algorithm_min_columns_to_activate, 11)                                    \
+                                                                                                              \
+    /** Compatibility settings */                                                                             \
+                                                                                                              \
+    /** Allow to create a table with sampling expression not in primary key.                                  \
+      * This is needed only to temporarily allow to run the server with wrong tables                          \
+      *  for backward compatibility.                                                                          \
+      */                                                                                                      \
+    M(SettingBool, compatibility_allow_sampling_expression_not_in_primary_key, false)                         \
 
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M)  \

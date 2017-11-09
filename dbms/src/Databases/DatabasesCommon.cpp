@@ -13,6 +13,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+}
+
 
 String getTableDefinitionFromCreateQuery(const ASTPtr & query)
 {
@@ -27,10 +32,8 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     create.if_not_exists = false;
     create.is_populate = false;
 
-    String engine = create.storage->engine->name;
-
-    /// For engine VIEW it is necessary to save the SELECT query itself, for the rest - on the contrary
-    if (engine != "View" && engine != "MaterializedView")
+    /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
+    if (!create.is_view && !create.is_materialized_view)
         create.select = nullptr;
 
     std::ostringstream statement_stream;
@@ -58,25 +61,18 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     /// We do not directly use `InterpreterCreateQuery::execute`, because
     /// - the database has not been created yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
+    if (!ast_create_query.columns)
+        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(*ast_create_query.columns, context);
-
-    String storage_name;
-
-    if (ast_create_query.is_view)
-        storage_name = "View";
-    else if (ast_create_query.is_materialized_view)
-        storage_name = "MaterializedView";
-    else
-        storage_name = ast_create_query.storage->engine->name;
 
     return
     {
         ast_create_query.table,
         StorageFactory::instance().get(
-            storage_name, database_data_path, ast_create_query.table, database_name, context,
-            context.getGlobalContext(), ast_create_query, columns_info.columns,
-            columns_info.materialized_columns, columns_info.alias_columns, columns_info.column_defaults,
+            ast_create_query,
+            database_data_path, ast_create_query.table, database_name, context, context.getGlobalContext(),
+            columns_info.columns, columns_info.materialized_columns, columns_info.alias_columns, columns_info.column_defaults,
             true, has_force_restore_data_flag)
     };
 }

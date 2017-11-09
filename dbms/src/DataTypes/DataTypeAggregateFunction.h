@@ -26,6 +26,8 @@ private:
     Array parameters;
 
 public:
+    static constexpr bool is_parametric = true;
+
     DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
         : function(function_), argument_types(argument_types_), parameters(parameters_)
     {

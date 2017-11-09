@@ -72,8 +72,6 @@ namespace DB
 
 class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageReplicatedMergeTree>;
-
 public:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -205,7 +203,7 @@ public:
 
 private:
     /// Delete old chunks from disk and from ZooKeeper.
-    void clearOldPartsAndRemoveFromZK(Logger * log_ = nullptr);
+    void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;
     friend class ReplicatedMergeTreeRestartingThread;
@@ -307,6 +305,8 @@ private:
 
     /// A thread that removes old parts, log entries, and blocks.
     std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
+    /// Is used to wakeup cleanup_thread
+    Poco::Event cleanup_thread_event;
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
@@ -323,24 +323,6 @@ private:
     Logger * log;
 
     pcg64 rng{randomSeed()};
-
-    StorageReplicatedMergeTree(
-        const String & zookeeper_path_,
-        const String & replica_name_,
-        bool attach,
-        const String & path_, const String & database_name_, const String & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        Context & context_,
-        const ASTPtr & primary_expr_ast_,
-        const String & date_column_name,
-        const ASTPtr & partition_expr_ast_,
-        const ASTPtr & sampling_expression_,
-        const MergeTreeData::MergingParams & merging_params_,
-        const MergeTreeSettings & settings_,
-        bool has_force_restore_data_flag);
 
     /// Initialization.
 
@@ -380,7 +362,8 @@ private:
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
-    void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names);
+    void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
+                                  NameSet * parts_should_be_retied = nullptr);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
@@ -502,6 +485,25 @@ private:
     /** Checks that there is enough free space locally and on all replicas.
       */
     bool checkSpaceForResharding(const ReplicaToSpaceInfo & replica_to_space_info, size_t partition_size) const;
+
+protected:
+    StorageReplicatedMergeTree(
+        const String & zookeeper_path_,
+        const String & replica_name_,
+        bool attach,
+        const String & path_, const String & database_name_, const String & name_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        Context & context_,
+        const ASTPtr & primary_expr_ast_,
+        const String & date_column_name,
+        const ASTPtr & partition_expr_ast_,
+        const ASTPtr & sampling_expression_,
+        const MergeTreeData::MergingParams & merging_params_,
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 };
 
 

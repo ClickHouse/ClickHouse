@@ -228,7 +228,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
             }
         }
     }
-    else
+    else if (!trivial_substrings.empty())
     {
         required_substring = trivial_substrings.front().first;
         required_substring_is_prefix = trivial_substrings.front().second == 0;
