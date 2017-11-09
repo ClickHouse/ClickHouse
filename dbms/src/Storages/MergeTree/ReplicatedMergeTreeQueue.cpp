@@ -565,7 +565,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
     {
         if (!isNotCoveredByFuturePartsImpl(entry.new_part_name, out_postpone_reason))
         {
-            LOG_DEBUG(log, out_postpone_reason);
+            if (!out_postpone_reason.empty())
+                LOG_DEBUG(log, out_postpone_reason);
             return false;
         }
     }

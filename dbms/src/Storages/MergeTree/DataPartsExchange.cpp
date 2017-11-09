@@ -145,22 +145,25 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     catch (const Exception & e)
     {
         if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
-            typeid_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
+            dynamic_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
         throw;
     }
     catch (...)
     {
-        typeid_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
+        dynamic_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
         throw;
     }
 }
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
-    MergeTreeData::DataPartPtr part = data.getPartIfExists(name);
+    /// It is important to include PreCommitted parts here
+    /// Because part could be actually committed into ZooKeeper, but response from ZooKeeper to the server could be delayed
+    auto part = data.getPartIfExists(name, {MergeTreeDataPart::State::PreCommitted, MergeTreeDataPart::State::Committed});
     if (part)
         return part;
-    throw Exception("No part " + name + " in table");
+
+    throw Exception("No part " + name + " in table", ErrorCodes::NO_SUCH_DATA_PART);
 }
 
 MergeTreeData::DataPartPtr Service::findShardedPart(const String & name, size_t shard_no)

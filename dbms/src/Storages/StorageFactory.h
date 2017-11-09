@@ -18,13 +18,12 @@ class StorageFactory : public ext::singleton<StorageFactory>
 {
 public:
     StoragePtr get(
-        const String & name,
+        ASTCreateQuery & query,
         const String & data_path,
         const String & table_name,
         const String & database_name,
         Context & local_context,
         Context & context,
-        ASTCreateQuery & query,
         NamesAndTypesListPtr columns,
         const NamesAndTypesList & materialized_columns,
         const NamesAndTypesList & alias_columns,

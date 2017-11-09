@@ -247,8 +247,7 @@ void DatabaseOrdinary::createTable(
     const Context & context,
     const String & table_name,
     const StoragePtr & table,
-    const ASTPtr & query,
-    const String & engine)
+    const ASTPtr & query)
 {
     const auto & settings = context.getSettingsRef();
 
@@ -380,7 +379,7 @@ void DatabaseOrdinary::renameTable(
     ast_create_query.table = to_table_name;
 
     /// NOTE Non-atomic.
-    to_database_concrete->createTable(context, to_table_name, table, ast, table->getName());
+    to_database_concrete->createTable(context, to_table_name, table, ast);
     removeTable(context, table_name);
 }
 

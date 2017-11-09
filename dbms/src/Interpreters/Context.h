@@ -35,6 +35,7 @@ struct ContextShared;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
+class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
 class ReshardingWorker;
@@ -209,10 +210,13 @@ public:
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
+    const ExternalModels & getExternalModels() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionaries & getExternalDictionaries();
+    ExternalModels & getExternalModels();
     void tryCreateEmbeddedDictionaries() const;
     void tryCreateExternalDictionaries() const;
+    void tryCreateExternalModels() const;
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const;
@@ -362,6 +366,7 @@ private:
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
     ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+    ExternalModels & getExternalModelsImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 

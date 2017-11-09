@@ -1,6 +1,6 @@
 option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library instead of bundled" ${NOT_UNBUNDLED})
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/CMakeLists.txt")
+if (USE_INTERNAL_POCO_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/CMakeLists.txt")
    message (WARNING "submodule contrib/poco is missing. to fix try run: \n git submodule update --init --recursive")
    set (USE_INTERNAL_POCO_LIBRARY 0)
 endif ()
@@ -46,9 +46,7 @@ else ()
     if (ODBC_FOUND)
         set (Poco_DataODBC_FOUND 1)
         set (Poco_DataODBC_LIBRARY PocoDataODBC)
-        if (USE_STATIC_LIBRARIES)
-            list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIB})
-        endif ()
+        list (APPEND Poco_DataODBC_LIBRARY ${LTDL_LIB})
         set (Poco_DataODBC_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/")
     endif ()
 
@@ -87,10 +85,11 @@ message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${
 # and merge:
 # ClickHouse-Extras/clickhouse_unbundled
 # ClickHouse-Extras/clickhouse_unbundled_zlib
-# ClickHouse-Extras/clickhouse_task   # uses c++11, can't push to poco
+# ClickHouse-Extras/clickhouse_task
 # ClickHouse-Extras/clickhouse_misc
 # ClickHouse-Extras/clickhouse_anl
 # ClickHouse-Extras/clickhouse_http_header https://github.com/pocoproject/poco/pull/1574
 # ClickHouse-Extras/clickhouse_socket
 # ClickHouse-Extras/clickhouse_warning
-
+# ClickHouse-Extras/clickhouse-purge-logs-on-no-space
+# ClickHouse-Extras/clickhouse_freebsd

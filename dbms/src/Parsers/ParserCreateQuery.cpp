@@ -208,8 +208,9 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr database;
     ASTPtr table;
     ASTPtr columns;
+    ASTPtr to_database;
+    ASTPtr to_table;
     ASTPtr storage;
-    ASTPtr inner_storage;
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
@@ -234,23 +235,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         is_temporary = true;
     }
 
-    if (s_database.ignore(pos, expected))
-    {
-        if (s_if_not_exists.ignore(pos, expected))
-            if_not_exists = true;
-
-        if (!name_p.parse(pos, database, expected))
-            return false;
-
-        if (ParserKeyword{"ON"}.ignore(pos, expected))
-        {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                return false;
-        }
-
-        storage_p.parse(pos, storage, expected);
-    }
-    else if (s_table.ignore(pos, expected))
+    if (s_table.ignore(pos, expected))
     {
         if (s_if_not_exists.ignore(pos, expected))
             if_not_exists = true;
@@ -271,6 +256,23 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        // Shortcut for ATTACH a previously detached table
+        if (attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
+        {
+            auto query = std::make_shared<ASTCreateQuery>(StringRange(begin, pos));
+            node = query;
+
+            query->attach = attach;
+            query->if_not_exists = if_not_exists;
+
+            if (database)
+                query->database = typeid_cast<ASTIdentifier &>(*database).name;
+            if (table)
+                query->table = typeid_cast<ASTIdentifier &>(*table).name;
+
+            return true;
+        }
+
         /// List of columns.
         if (s_lparen.ignore(pos, expected))
         {
@@ -282,20 +284,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (!storage_p.parse(pos, storage, expected) && !is_temporary)
                 return false;
-
-            if (storage)
-            {
-                const auto & storage_ast = typeid_cast<const ASTStorage &>(*storage);
-                /// For engine VIEW, you also need to read AS SELECT
-                if (storage_ast.engine->name == "View" || storage_ast.engine->name == "MaterializedView")
-                {
-                    if (!s_as.ignore(pos, expected))
-                        return false;
-
-                    if (!select_p.parse(pos, select, expected))
-                        return false;
-                }
-            }
         }
         else
         {
@@ -321,6 +309,24 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 storage_p.parse(pos, storage, expected);
             }
         }
+    }
+    else if (is_temporary)
+        return false;
+    else if (s_database.ignore(pos, expected))
+    {
+        if (s_if_not_exists.ignore(pos, expected))
+            if_not_exists = true;
+
+        if (!name_p.parse(pos, database, expected))
+            return false;
+
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+        }
+
+        storage_p.parse(pos, storage, expected);
     }
     else
     {
@@ -354,6 +360,20 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        // TO [db.]table
+        if (ParserKeyword{"TO"}.ignore(pos, expected))
+        {
+            if (!name_p.parse(pos, to_table, expected))
+                return false;
+
+            if (s_dot.ignore(pos, expected))
+            {
+                to_database = to_table;
+                if (!name_p.parse(pos, to_table, expected))
+                    return false;
+            }
+        }
+
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
@@ -364,11 +384,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        /// Optional - internal ENGINE for MATERIALIZED VIEW can be specified
-        storage_p.parse(pos, inner_storage, expected);
+        if (is_materialized_view && !to_table)
+        {
+            /// Internal ENGINE for MATERIALIZED VIEW must be specified.
+            if (!storage_p.parse(pos, storage, expected))
+                return false;
 
-        if (s_populate.ignore(pos, expected))
-            is_populate = true;
+            if (s_populate.ignore(pos, expected))
+                is_populate = true;
+        }
 
         /// AS SELECT ...
         if (!s_as.ignore(pos, expected))
@@ -394,7 +418,11 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
     query->cluster = cluster_str;
-    query->set(query->inner_storage, inner_storage);
+
+    if (to_database)
+        query->to_database = typeid_cast<ASTIdentifier &>(*to_database).name;
+    if (to_table)
+        query->to_table = typeid_cast<ASTIdentifier &>(*to_table).name;
 
     query->set(query->columns, columns);
     query->set(query->storage, storage);

@@ -414,23 +414,25 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
 }
 
 
-String InterpreterCreateQuery::setEngine(ASTCreateQuery & create, const StoragePtr & as_storage) const
+void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
-    String storage_name;
-
-    auto set_engine = [&](const char * engine)
+    if (create.storage)
     {
-        storage_name = engine;
+        if (create.is_temporary && create.storage->engine->name != "Memory")
+            throw Exception(
+                "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
+                ErrorCodes::INCORRECT_QUERY);
+
+        return;
+    }
+
+    if (create.is_temporary)
+    {
         auto engine_ast = std::make_shared<ASTFunction>();
-        engine_ast->name = engine;
+        engine_ast->name = "Memory";
         auto storage_ast = std::make_shared<ASTStorage>();
         storage_ast->set(storage_ast->engine, engine_ast);
         create.set(create.storage, storage_ast);
-    };
-
-    if (create.storage)
-    {
-        storage_name = create.storage->engine->name;
     }
     else if (!create.as_table.empty())
     {
@@ -442,28 +444,13 @@ String InterpreterCreateQuery::setEngine(ASTCreateQuery & create, const StorageP
         ASTPtr as_create_ptr = context.getCreateQuery(as_database_name, as_table_name);
         const auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
 
-        if (!create.storage)
-        {
-            if (as_create.is_view || as_create.is_materialized_view)
-                create.set(create.storage, as_create.inner_storage->ptr());
-            else
-                create.set(create.storage, as_create.storage->ptr());
+        if (as_create.is_view)
+            throw Exception(
+                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
+                ErrorCodes::INCORRECT_QUERY);
 
-            storage_name = create.storage->engine->name;
-        }
-        else
-            storage_name = as_storage->getName();
+        create.set(create.storage, as_create.storage->ptr());
     }
-    else if (create.is_temporary)
-        set_engine("Memory");
-    else if (create.is_view)
-        set_engine("View");
-    else if (create.is_materialized_view)
-        set_engine("MaterializedView");
-    else
-        throw Exception("Incorrect CREATE query: required ENGINE.", ErrorCodes::ENGINE_REQUIRED);
-
-    return storage_name;
 }
 
 
@@ -483,12 +470,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String data_path = path + "data/" + database_name_escaped + "/";
     String metadata_path = path + "metadata/" + database_name_escaped + "/" + table_name_escaped + ".sql";
 
+    // If this is a stub ATTACH query, read the query definition from the database
+    if (create.attach && !create.storage && !create.columns)
+    {
+        // Table SQL definition is available even if the table is detached
+        auto query = context.getCreateQuery(database_name, table_name);
+        auto & as_create = typeid_cast<const ASTCreateQuery &>(*query);
+        create = as_create; // Copy the saved create query, but use ATTACH instead of CREATE
+        create.attach = true;
+    }
+
+    if (create.to_database.empty())
+        create.to_database = current_database;
+
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;
     Block as_select_sample;
     /// For `view` type tables, you may need `sample_block` to get the columns.
     if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
     {
-        create.select->setDatabaseIfNeeded(database_name);
+        create.select->setDatabaseIfNeeded(current_database);
         interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->ptr(), context);
         as_select_sample = interpreter_select->getSampleBlock();
     }
@@ -507,8 +507,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns.
     ColumnsInfo columns = setColumns(create, as_select_sample, as_storage);
 
-    /// Select the desired table engine
-    String storage_name = setEngine(create, as_storage);
+    /// Set the table engine if it was not specified explicitly.
+    setEngine(create);
 
     StoragePtr res;
 
@@ -537,20 +537,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
 
         res = StorageFactory::instance().get(
-            storage_name, data_path, table_name, database_name, context,
-            context.getGlobalContext(), create, columns.columns,
-            columns.materialized_columns, columns.alias_columns, columns.column_defaults, create.attach, false);
+            create, data_path, table_name, database_name, context, context.getGlobalContext(),
+            columns.columns, columns.materialized_columns, columns.alias_columns, columns.column_defaults,
+            create.attach, false);
 
         if (create.is_temporary)
             context.getSessionContext().addExternalTable(table_name, res);
         else
-            context.getDatabase(database_name)->createTable(context, table_name, res, query_ptr, storage_name);
+            context.getDatabase(database_name)->createTable(context, table_name, res, query_ptr);
     }
 
     res->startup();
 
     /// If the CREATE SELECT query is, insert the data into the table
-    if (create.select && storage_name != "View" && (storage_name != "MaterializedView" || create.is_populate))
+    if (create.select && !create.is_view && (!create.is_materialized_view || create.is_populate))
     {
         auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
 

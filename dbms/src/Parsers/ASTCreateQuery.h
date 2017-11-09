@@ -88,8 +88,9 @@ public:
     String database;
     String table;
     ASTExpressionList * columns = nullptr;
+    String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
+    String to_table;
     ASTStorage * storage = nullptr;
-    ASTStorage * inner_storage = nullptr; /// Internal engine for the CREATE MATERIALIZED VIEW query
     String as_database;
     String as_table;
     ASTSelectQuery * select = nullptr;
@@ -111,8 +112,6 @@ public:
             res->set(res->storage, storage->clone());
         if (select)
             res->set(res->select, select->clone());
-        if (inner_storage)
-            res->set(res->inner_storage, inner_storage->clone());
 
         cloneOutputOptions(*res);
 
@@ -169,10 +168,18 @@ protected:
                 formatOnCluster(settings);
         }
 
+        if (!to_table.empty())
+        {
+            settings.ostr
+                << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
+                << (!to_database.empty() ? backQuoteIfNeed(to_database) + "." : "") << backQuoteIfNeed(to_table);
+        }
+
         if (!as_table.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
-            << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
+            settings.ostr
+                << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
+                << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
         }
 
         if (columns)
@@ -184,11 +191,8 @@ protected:
             settings.ostr << (settings.one_line ? ")" : "\n)");
         }
 
-        if (storage && !is_materialized_view && !is_view)
+        if (storage)
             storage->formatImpl(settings, state, frame);
-
-        if (inner_storage)
-            inner_storage->formatImpl(settings, state, frame);
 
         if (is_populate)
         {

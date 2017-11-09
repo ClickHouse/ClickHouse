@@ -13,7 +13,6 @@ class Context;
   */
 class StorageSystemColumns : public ext::shared_ptr_helper<StorageSystemColumns>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemColumns>;
 public:
     std::string getName() const override { return "SystemColumns"; }
     std::string getTableName() const override { return name; }
@@ -27,7 +26,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-private:
+protected:
     StorageSystemColumns(const std::string & name_);
 
 private:

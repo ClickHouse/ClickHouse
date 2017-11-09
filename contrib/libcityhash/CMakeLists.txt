@@ -5,5 +5,5 @@ add_library(cityhash
 	include/city.h
 	src/config.h)
 
-target_include_directories (cityhash PUBLIC include)
+target_include_directories (cityhash BEFORE PUBLIC include)
 target_include_directories (cityhash PRIVATE src)
