@@ -370,7 +370,6 @@ int main(int argc, char ** argv)
         for (size_t arity = 2; arity <= columns; ++arity)
         {
             FunctionPtr function = std::make_shared<FunctionAnd>();
-            function->getReturnType(DataTypes(arity, DataTypePtr(std::make_shared<DataTypeUInt8>())));
 
             ColumnNumbers arguments(arity);
             for (size_t i = 0; i < arity; ++i)
