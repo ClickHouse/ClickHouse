@@ -307,11 +307,13 @@ static void applyFunction(
     const DataTypePtr & arg_type, const Field & arg_value,
     DataTypePtr & res_type, Field & res_value)
 {
-    res_type = func->getReturnType({arg_type});
+    std::vector<ExpressionAction> unused_prerequisites;
+    ColumnsWithTypeAndName arguments{{ arg_type->createConstColumn(1, arg_value), arg_type, "x" }};
+    func->getReturnTypeAndPrerequisites(arguments, res_type, unused_prerequisites);
 
     Block block
     {
-        { arg_type->createConstColumn(1, arg_value), arg_type, "x" },
+        arguments[0],
         { nullptr, res_type, "y" }
     };
 
@@ -435,7 +437,10 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
         if (!func || !func->hasInformationAboutMonotonicity())
             return false;
 
-        primary_key_column_type = func->getReturnType({primary_key_column_type});
+        std::vector<ExpressionAction> unused_prerequisites;
+        ColumnsWithTypeAndName arguments{{ nullptr, primary_key_column_type, "" }};
+        func->getReturnTypeAndPrerequisites(arguments, primary_key_column_type, unused_prerequisites);
+
         out_functions_chain.push_back(func);
     }
 
