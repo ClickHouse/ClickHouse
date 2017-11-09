@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 
 #include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/HashSet.h>
@@ -63,6 +64,15 @@ struct AggregateFunctionUniqHLL12Data
 
 template <>
 struct AggregateFunctionUniqHLL12Data<String>
+{
+    using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
+    Set set;
+
+    static String getName() { return "uniqHLL12"; }
+};
+
+template <>
+struct AggregateFunctionUniqHLL12Data<UInt128>
 {
     using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
     Set set;
@@ -196,6 +206,16 @@ template <typename T> struct AggregateFunctionUniqTraits
     static UInt64 hash(T x) { return x; }
 };
 
+template <> struct AggregateFunctionUniqTraits<UInt128>
+{
+    static UInt64 hash(UInt128 x)
+    {
+        SipHash hash;
+        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+        return hash.get64();
+    }
+};
+
 template <> struct AggregateFunctionUniqTraits<Float32>
 {
     static UInt64 hash(Float32 x)
@@ -221,6 +241,16 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 template <typename T> struct AggregateFunctionUniqCombinedTraits
 {
     static UInt32 hash(T x) { return static_cast<UInt32>(intHash64(x)); }
+};
+
+template <> struct AggregateFunctionUniqCombinedTraits<UInt128>
+{
+    static UInt32 hash(UInt128 x)
+    {
+        SipHash hash;
+        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+        return static_cast<UInt32>(hash.get64());
+    }
 };
 
 template <> struct AggregateFunctionUniqCombinedTraits<Float32>

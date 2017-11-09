@@ -4,7 +4,7 @@
 
 #include <city.h>
 
-#include <Common/HashTable/Hash.h>
+#include <Core/Types.h>
 
 #if __SSE4_2__
 #include <nmmintrin.h>
