@@ -94,7 +94,8 @@ StoragePtr StorageCatBoostPool::create(const Context & context,
                                        const String & column_description_file_name,
                                        const String & data_description_file_name)
 {
-    return make_shared(context, column_description_file_name, data_description_file_name);
+    return ext::shared_ptr_helper<StorageCatBoostPool>::create(
+        context, column_description_file_name, data_description_file_name);
 }
 
 
