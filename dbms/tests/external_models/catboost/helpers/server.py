@@ -31,11 +31,11 @@ class ClickHouseServer:
 
             step = 0.01
             for iter in range(int(timeout / step)):
-                if s.connect_ex(('127.0.0.1', port)) == 0:
+                if s.connect_ex(('localhost', port)) == 0:
                     return
                 time.sleep(step)
 
-            s.connect(('127.0.0.1', port))
+            s.connect(('localhost', port))
         except socket.error as socketerror:
             print "Error: ", socketerror
             raise

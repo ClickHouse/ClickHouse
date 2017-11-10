@@ -5,68 +5,35 @@
 namespace ext
 {
 
-/** Class AllocateShared allow to make std::shared_ptr<T> from T with private constructor.
-  * Derive your T class from shared_ptr_helper<T>, define him as friend and call allocate_shared()/make_shared() method.
+/** Allows to make std::shared_ptr from T with protected constructor.
+  *
+  * Derive your T class from shared_ptr_helper<T>
+  *  and you will have static 'create' method in your class.
+  *
+  * Downsides:
+  * - your class cannot be final;
+  * - bad compilation error messages;
+  * - bad code navigation.
+  * - different dynamic type of created object, you cannot use typeid.
   */
 template <typename T>
-class shared_ptr_helper
+struct shared_ptr_helper
 {
-protected:
-    typedef typename std::remove_const<T>::type TNoConst;
-
-    template <typename TAlloc>
-    struct Deleter
-    {
-        void operator()(typename TAlloc::value_type * ptr)
-        {
-            using AllocTraits = std::allocator_traits<TAlloc>;
-            ptr->~TNoConst();
-            AllocTraits::deallocate(alloc, ptr, 1);
-        }
-
-        TAlloc alloc;
-    };
-
-    /// see std::allocate_shared
-    template <typename TAlloc, typename... TArgs>
-    static std::shared_ptr<T> allocate_shared(const TAlloc & alloc, TArgs &&... args)
-    {
-        using AllocTraits = std::allocator_traits<TAlloc>;
-        TAlloc alloc_copy(alloc);
-
-        auto ptr = AllocTraits::allocate(alloc_copy, 1);
-
-        try
-        {
-            new (ptr) TNoConst(std::forward<TArgs>(args)...);
-        }
-        catch (...)
-        {
-            AllocTraits::deallocate(alloc_copy, ptr, 1);
-            throw;
-        }
-
-        return std::shared_ptr<TNoConst>(
-            ptr,
-            Deleter<TAlloc>(),
-            alloc_copy);
-    }
-
     template <typename... TArgs>
-    static std::shared_ptr<T> make_shared(TArgs &&... args)
+    static auto create(TArgs &&... args)
     {
-        return allocate_shared(std::allocator<TNoConst>(), std::forward<TArgs>(args)...);
-    }
+        /** Local struct makes protected constructor to be accessible by std::make_shared function.
+          * This trick is suggested by Yurii Diachenko,
+          *  inspired by https://habrahabr.ru/company/mailru/blog/341584/
+          *  that is translation of http://videocortex.io/2017/Bestiary/#-voldemort-types
+          */
+        struct Local : T
+        {
+            Local(TArgs &&... args) : T(std::forward<TArgs>(args)...) {};
+        };
 
-public:
-
-    /// Default implementation of 'create' method just use make_shared.
-    template <typename... TArgs>
-    static std::shared_ptr<T> create(TArgs &&... args)
-    {
-        return make_shared(std::forward<TArgs>(args)...);
+        return std::make_shared<Local>(std::forward<TArgs>(args)...);
     }
 };
 
 }
-

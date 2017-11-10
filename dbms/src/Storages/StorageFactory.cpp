@@ -378,7 +378,7 @@ StoragePtr StorageFactory::get(
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
         return StorageView::create(
-            table_name, database_name, context, query, columns,
+            table_name, database_name, query, columns,
             materialized_columns, alias_columns, column_defaults);
     }
 

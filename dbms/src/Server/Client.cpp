@@ -146,6 +146,7 @@ private:
 
     /// If the last query resulted in exception.
     bool got_exception = false;
+    String server_version;
 
     Stopwatch watch;
 
@@ -402,20 +403,19 @@ private:
             Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
 
+        String server_name;
+        UInt64 server_version_major = 0;
+        UInt64 server_version_minor = 0;
+        UInt64 server_revision = 0;
+
+        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+
+        server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
         if (is_interactive)
         {
-            String server_name;
-            UInt64 server_version_major = 0;
-            UInt64 server_version_minor = 0;
-            UInt64 server_revision = 0;
-
-            connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
-
             std::cout << "Connected to " << server_name
-                << " server version " << server_version_major
-                << "." << server_version_minor
-                << "." << server_revision
-                << "." << std::endl << std::endl;
+                      << " server version " << server_version
+                      << "." << std::endl << std::endl;
         }
     }
 
@@ -1148,7 +1148,7 @@ private:
         if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
             text.resize(embedded_stack_trace_pos);
 
-        std::cerr << "Received exception from server:" << std::endl
+        std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
             << "Code: " << e.code() << ". " << text << std::endl;
     }
 

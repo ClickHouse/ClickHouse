@@ -12,7 +12,7 @@ namespace ErrorCodes
 namespace
 {
 
-    const ExternalLoaderUpdateSettings externalModelsUpdateSettings;
+    const ExternalLoaderUpdateSettings externalModelsUpdateSettings { };
 
     const ExternalLoaderConfigSettings & getExternalModelsConfigSettings()
     {

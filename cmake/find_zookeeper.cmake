@@ -1,6 +1,6 @@
 option (USE_INTERNAL_ZOOKEEPER_LIBRARY "Set to FALSE to use system zookeeper library instead of bundled" ${NOT_UNBUNDLED})
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/zookeeper/src/c/CMakeLists.txt")
+if (USE_INTERNAL_ZOOKEEPER_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/zookeeper/src/c/CMakeLists.txt")
    message (WARNING "submodule contrib/zookeeper is missing. to fix try run: \n git submodule update --init --recursive")
    set (USE_INTERNAL_ZOOKEEPER_LIBRARY 0)
 endif ()

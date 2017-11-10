@@ -24,9 +24,6 @@ if (CMAKE_SYSTEM MATCHES "FreeBSD")
     set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
 endif ()
 
-cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
-cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
-
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
@@ -117,8 +114,16 @@ endif ()
 #    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
 #endif ()
 
+if (CMAKE_VERSION VERSION_LESS "3.8.0")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++1z")
+else ()
+    set (CMAKE_CXX_STANDARD 17)
+    set (CMAKE_CXX_STANDARD_REQUIRED ON)
+    set (CXX_FLAGS_INTERNAL_COMPILER "-std=gnu++1z")
+endif ()
+
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
-set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} -std=gnu++1z ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
 #set (CMAKE_CXX_FLAGS_RELEASE             "${CMAKE_CXX_FLAGS_RELEASE}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")

@@ -21,7 +21,6 @@ namespace DB
   */
 class StorageStripeLog : public ext::shared_ptr_helper<StorageStripeLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageStripeLog>;
 friend class StripeLogBlockInputStream;
 friend class StripeLogBlockOutputStream;
 
@@ -66,6 +65,7 @@ private:
 
     Logger * log;
 
+protected:
     StorageStripeLog(
         const std::string & path_,
         const std::string & name_,

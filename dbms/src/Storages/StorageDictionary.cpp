@@ -33,8 +33,9 @@ StoragePtr StorageDictionary::create(
 
     const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
     const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-    return make_shared(table_name, columns, materialized_columns, alias_columns,
-                       column_defaults, dictionary_structure, dictionary_name);
+    return ext::shared_ptr_helper<StorageDictionary>::create(
+        table_name, columns, materialized_columns, alias_columns,
+        column_defaults, dictionary_structure, dictionary_name);
 }
 
 StoragePtr StorageDictionary::create(
@@ -46,8 +47,9 @@ StoragePtr StorageDictionary::create(
     const DictionaryStructure & dictionary_structure,
     const String & dictionary_name)
 {
-    return make_shared(table_name, columns, materialized_columns, alias_columns,
-                       column_defaults, dictionary_structure, dictionary_name);
+    return ext::shared_ptr_helper<StorageDictionary>::create(
+        table_name, columns, materialized_columns, alias_columns,
+        column_defaults, dictionary_structure, dictionary_name);
 }
 
 StorageDictionary::StorageDictionary(
