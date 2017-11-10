@@ -211,6 +211,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
+    /// If zookeeper chroot prefix is used, path should starts with '/', because chroot concatenates without it.
+    if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
+        zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
 
     bool skip_sanity_checks = false;
@@ -314,7 +317,7 @@ StoragePtr StorageReplicatedMergeTree::create(
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag_)
 {
-    auto res = make_shared(
+    auto res = ext::shared_ptr_helper<StorageReplicatedMergeTree>::create(
         zookeeper_path_, replica_name_, attach,
         path_, database_name_, name_,
         columns_, materialized_columns_, alias_columns_, column_defaults_,

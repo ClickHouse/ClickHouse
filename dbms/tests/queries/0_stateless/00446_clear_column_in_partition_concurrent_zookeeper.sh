@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ch="clickhouse-client --stacktrace -q"
 

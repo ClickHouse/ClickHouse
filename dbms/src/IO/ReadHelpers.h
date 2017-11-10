@@ -770,9 +770,9 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
 }
 
 
-/// CSV, for numbers, dates, datetimes: quotes are optional, no special escaping rules.
+/// CSV, for numbers, dates: quotes are optional, no special escaping rules.
 template <typename T>
-inline void readCSVSimple(T & x, ReadBuffer & buf, void (*readText_)(T & x, ReadBuffer & buf) = readText)
+inline void readCSVSimple(T & x, ReadBuffer & buf)
 {
     if (buf.eof())
         throwReadAfterEOF();
@@ -782,7 +782,23 @@ inline void readCSVSimple(T & x, ReadBuffer & buf, void (*readText_)(T & x, Read
     if (maybe_quote == '\'' || maybe_quote == '\"')
         ++buf.position();
 
-    readText_(x, buf);
+    readText(x, buf);
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        assertChar(maybe_quote, buf);
+}
+
+inline void readDateTimeCSV(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    char maybe_quote = *buf.position();
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        ++buf.position();
+
+    readDateTimeText(datetime, buf, date_lut);
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, buf);

@@ -359,17 +359,32 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
 void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
-    if (shard_info.getLocalNodeCount() > 0)
-        writeToLocal(block, shard_info.getLocalNodeCount());
 
     if (shard_info.hasInternalReplication())
-        writeToShard(block, {shard_info.dir_name_for_internal_replication});
+    {
+        if (shard_info.getLocalNodeCount() > 0)
+        {
+            /// Prefer insert into current instance directly
+            writeToLocal(block, shard_info.getLocalNodeCount());
+        }
+        else
+        {
+            if (shard_info.dir_name_for_internal_replication.empty())
+                throw Exception("Directory name for async inserts is empty, table " + storage.getTableName(), ErrorCodes::LOGICAL_ERROR);
+
+            writeToShard(block, {shard_info.dir_name_for_internal_replication});
+        }
+    }
     else
     {
+        if (shard_info.getLocalNodeCount() > 0)
+            writeToLocal(block, shard_info.getLocalNodeCount());
+
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local)
                 dir_names.push_back(address.toStringFull());
+
         if (!dir_names.empty())
             writeToShard(block, dir_names);
     }

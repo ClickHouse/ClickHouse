@@ -14,8 +14,6 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMaterializedView>;
-
 public:
     std::string getName() const override { return "MaterializedView"; }
     std::string getTableName() const override { return table_name; }
@@ -56,6 +54,7 @@ private:
     NamesAndTypesListPtr columns;
     bool has_inner_table = false;
 
+protected:
     StorageMaterializedView(
         const String & table_name_,
         const String & database_name_,
