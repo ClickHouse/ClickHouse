@@ -170,7 +170,6 @@ void StorageCatBoostPool::parseColumnDescription()
 
     /// Enumerate default names for columns as Auxiliary, Auxiliary1, Auxiliary2, ...
     std::map<DatasetColumnType, size_t> columns_per_type_count;
-    size_t features_column_count = 0;
 
     while (std::getline(in, line))
     {
@@ -218,17 +217,13 @@ void StorageCatBoostPool::parseColumnDescription()
         auto type = column_types_map[col_type];
 
         std::string col_name;
-        if (type != DatasetColumnType::Num && type != DatasetColumnType::Categ)
-        {
-            auto & col_number = columns_per_type_count[type];
-            col_name = col_type + (col_number ? std::to_string(col_number) : "");
-            ++col_number;
-        }
-        else
-        {
-            col_name = "feature" + std::to_string(features_column_count);
-            ++features_column_count;
-        }
+
+        bool is_feature_column = type == DatasetColumnType::Num || type == DatasetColumnType::Categ;
+        auto & col_number = columns_per_type_count[type];
+        /// If column is not feature skip '0' after the name (to use 'Target' instead of 'Target0').
+        col_name = col_type + (is_feature_column || col_number ? std::to_string(col_number) : "");
+        ++col_number;
+
         columns_description[num_id] = ColumnDescription(col_name, col_alias, type);
     }
 }
@@ -259,8 +254,9 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
         if (!desc.alias.empty())
         {
             auto alias = std::make_shared<ASTIdentifier>();
-            alias->name = desc.alias;
+            alias->name = desc.column_name;
             column_defaults[desc.alias] = {ColumnDefaultType::Alias, alias};
+            alias_columns.emplace_back(desc.alias, type);
         }
 
         sample_block.insert(ColumnWithTypeAndName(type->createColumn(), type, desc.column_name));
