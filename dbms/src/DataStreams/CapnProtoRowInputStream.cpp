@@ -1,6 +1,7 @@
+#include <Common/config.h>
 #if USE_CAPNP
 
-#include <Core/Block.h>
+#include <Common/escapeForFileName.h>
 #include <IO/ReadBuffer.h>
 #include <DataStreams/CapnProtoRowInputStream.h>
 
@@ -14,6 +15,10 @@
 namespace DB
 {
 
+static String getSchemaPath(const String & schema_dir, const String & schema_file)
+{
+    return schema_dir + escapeForFileName(schema_file) + ".capnp";
+}
 
 CapnProtoRowInputStream::NestedField split(const Block & sample, size_t i)
 {
@@ -110,16 +115,17 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
     }
 }
 
-CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_file, const String & root_object)
+CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_dir, const String & schema_file, const String & root_object)
     : istr(istr_), sample(sample_), parser(std::make_shared<SchemaParser>())
 {
+
     // Parse the schema and fetch the root object
-    auto schema = parser->impl.parseDiskFile(schema_file, schema_file, {});
+    auto schema = parser->impl.parseDiskFile(schema_file, getSchemaPath(schema_dir, schema_file), {});
     root = schema.getNested(root_object).asStruct();
 
     /**
      * The schema typically consists of fields in various nested structures.
-     * Here we gather the list of fields and sort them in a way so that fields in the same structur are adjacent,
+     * Here we gather the list of fields and sort them in a way so that fields in the same structure are adjacent,
      * and the nesting level doesn't decrease to make traversal easier.
      */
     NestedFieldList list;
@@ -194,4 +200,4 @@ bool CapnProtoRowInputStream::read(Block & block)
 
 }
 
-#endif
+#endif // USE_CAPNP
