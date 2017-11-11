@@ -441,13 +441,7 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchCallb
 
 bool ZooKeeper::exists(const std::string & path, Stat * stat_, const EventPtr & watch)
 {
-    int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, callbackForEvent(watch)));
-
-    if (!(code == ZOK || code == ZNONODE))
-        throw KeeperException(code, path);
-    if (code == ZNONODE)
-        return false;
-    return true;
+    return existsWatch(path, stat_, callbackForEvent(watch));
 }
 
 bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchCallback & watch_callback)
@@ -507,15 +501,7 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr
 
 bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, const EventPtr & watch, int * return_code)
 {
-    int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, callbackForEvent(watch)));
-
-    if (!(code == ZOK || code == ZNONODE))
-        throw KeeperException(code, path);
-
-    if (return_code)
-        *return_code = code;
-
-    return code == ZOK;
+    return tryGetWatch(path, res, stat_, callbackForEvent(watch), return_code);
 }
 
 bool ZooKeeper::tryGetWatch(const std::string & path, std::string & res, Stat * stat_, const WatchCallback & watch_callback, int * return_code)
