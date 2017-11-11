@@ -1,5 +1,5 @@
 [Unit]
-Description=ClickHouse Server (analytics DBMs for big data)
+Description=ClickHouse Server (analytic DBMS for big data)
 
 [Service]
 Type=simple
