@@ -90,7 +90,7 @@ endif ()
 
 set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
-find_program (LINKER_PROGRAM NAMES lld gold ld)
+find_program (LINKER_PROGRAM NAMES gold ld) # TODO Add lld at front. For somewhat reason, right now gcc doesn't recognise when we type -fuse-ld=lld.
 get_filename_component (LINKER_NAME ${LINKER_PROGRAM} NAME CACHE)
 
 set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
