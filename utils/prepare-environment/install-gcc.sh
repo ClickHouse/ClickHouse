@@ -17,8 +17,8 @@ cd ~
 mkdir gcc
 cd gcc
 
-wget https://ftpmirror.gnu.org/gcc/${VERSION}/${VERSION}.tar.bz2
-tar xf ${VERSION}.tar.bz2
+wget https://ftpmirror.gnu.org/gcc/${VERSION}/${VERSION}.tar.xz
+tar xf ${VERSION}.tar.xz
 cd ${VERSION}
 ./contrib/download_prerequisites
 cd ..
