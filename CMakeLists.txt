@@ -90,12 +90,18 @@ endif ()
 
 set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
-find_program (LINKER_PROGRAM NAMES gold ld) # TODO Add lld at front. For somewhat reason, right now gcc doesn't recognise when we type -fuse-ld=lld.
-get_filename_component (LINKER_NAME ${LINKER_PROGRAM} NAME CACHE)
+find_program (LLD_PATH NAMES lld)
+find_program (GOLD_PATH NAMES gold)
 
-set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
-if (LINKER_NAME STREQUAL lld)
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -L/usr/local/lib")
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH)
+    set (LINKER_NAME "lld")
+elseif (GOLD_PATH)
+    set (LINKER_NAME "gold")
+endif ()
+
+if (LINKER_NAME)
+    message(STATUS "Using linker: ${LINKER_NAME}")
+    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 endif ()
 
 option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
