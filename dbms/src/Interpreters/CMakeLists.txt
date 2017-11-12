@@ -5,11 +5,8 @@ else ()
     set (PATH_SHARE "/usr/share" CACHE STRING "")
 endif ()
 
-if (USE_EMBEDDED_COMPILER)
-    set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
-    set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
-endif ()
-
+set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
+set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
 set (INTERNAL_COMPILER_NO_WARNING OFF CACHE BOOL "")
 
 set (INTERNAL_COMPILER_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_RELEASE} ${CXX_FLAGS_INTERNAL_COMPILER} -x c++ -march=native -fPIC -fvisibility=hidden -fno-implement-inlines " CACHE STRING "")
