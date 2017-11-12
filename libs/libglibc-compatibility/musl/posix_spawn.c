@@ -8,11 +8,12 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <sys/wait.h>
-#include <sys/syscall.h>
+#include <syscall.h>
 #include <sys/signal.h>
 #include <pthread.h>
 #include <spawn.h>
 #include <errno.h>
+#include "syscall.h"
 
 struct args {
 	int p[2];
@@ -39,16 +40,17 @@ static int child(void *args_vp)
 	 * to a different fd. We don't use F_DUPFD_CLOEXEC above because
 	 * it would fail on older kernels and atomicity is not needed --
 	 * in this process there are no threads or signal handlers. */
-	syscall(SYS_fcntl, p, F_SETFD, FD_CLOEXEC);
+	__syscall(SYS_fcntl, p, F_SETFD, FD_CLOEXEC);
 
 	pthread_sigmask(SIG_SETMASK, (attr->__flags & POSIX_SPAWN_SETSIGMASK)
 		? &attr->__ss : &args->oldmask, 0);
 
 	args->exec(args->path, args->argv, args->envp);
-	ret = errno;
+	ret = -errno;
 
 	/* Since sizeof errno < PIPE_BUF, the write is atomic. */
-	if (ret) while (syscall(SYS_write, p, &ret, sizeof ret) < 0);
+	ret = -ret;
+	if (ret) while (__syscall(SYS_write, p, &ret, sizeof ret) < 0);
 	_exit(127);
 }
 
