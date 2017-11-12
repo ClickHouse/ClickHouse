@@ -4,7 +4,7 @@ add_library(clickhouse-compiler
     cc1as_main.cpp
     lld.cpp)
 
-target_compile_options(clickhouse-compiler PRIVATE -fno-rtti)
+target_compile_options(clickhouse-compiler PRIVATE -fno-rtti -fno-exceptions -g0)
 
 llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
 
