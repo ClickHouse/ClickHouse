@@ -203,6 +203,7 @@ void Compiler::compile(
 
     std::string prefix = path + "/" + file_name;
     std::string cpp_file_path = prefix + ".cpp";
+    std::string o_file_path = prefix + ".o";
     std::string so_file_path = prefix + ".so";
     std::string so_tmp_file_path = prefix + ".so.tmp";
 
@@ -217,28 +218,35 @@ void Compiler::compile(
 
     /// Slightly unconvenient.
     command <<
-        INTERNAL_COMPILER_EXECUTABLE
-        " -fuse-ld=" INTERNAL_LINKER_EXECUTABLE
-        " " INTERNAL_COMPILER_FLAGS
-#if INTERNAL_COMPILER_CUSTOM_ROOT
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include/"
-#endif
-        " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
-        " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
-        " -I " INTERNAL_COMPILER_HEADERS "/contrib/libpcg-random/include/"
-        " -I " INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
-        " -I " INTERNAL_Poco_Foundation_INCLUDE_DIR
-        " -I " INTERNAL_Boost_INCLUDE_DIRS
-        " -I " INTERNAL_COMPILER_HEADERS "/libs/libcommon/include/"
-        " " << additional_compiler_flags <<
-        " -o " << so_tmp_file_path << " " << cpp_file_path
-        << " 2>&1 || echo Exit code: $?";
+        "("
+            INTERNAL_COMPILER_EXECUTABLE
+            " " INTERNAL_COMPILER_FLAGS
+    #if INTERNAL_COMPILER_CUSTOM_ROOT
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include/"
+    #endif
+            " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
+            " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
+            " -I " INTERNAL_COMPILER_HEADERS "/contrib/libpcg-random/include/"
+            " -I " INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
+            " -I " INTERNAL_Poco_Foundation_INCLUDE_DIR
+            " -I " INTERNAL_Boost_INCLUDE_DIRS
+            " -I " INTERNAL_COMPILER_HEADERS "/libs/libcommon/include/"
+            " " << additional_compiler_flags <<
+            " -c -o " << o_file_path << " " << cpp_file_path
+            << " 2>&1"
+        ") && ("
+            INTERNAL_LINKER_EXECUTABLE
+            " -shared"
+            " -o " << so_tmp_file_path
+            << " " << o_file_path
+            << " 2>&1"
+        ") || echo Return code: $?";
 
     std::string compile_result;
 
@@ -253,6 +261,7 @@ void Compiler::compile(
 
     /// If there was an error before, the file with the code remains for viewing.
     Poco::File(cpp_file_path).remove();
+    Poco::File(o_file_path).remove();
 
     Poco::File(so_tmp_file_path).renameTo(so_file_path);
     SharedLibraryPtr lib(new SharedLibrary(so_file_path));

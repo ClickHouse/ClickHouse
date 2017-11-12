@@ -82,6 +82,9 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 
 int main(int argc_, char ** argv_)
 {
+    if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
+        return mainEntryClickHouseClang(argc_, argv_);
+
 #if USE_TCMALLOC
     /** Without this option, tcmalloc returns memory to OS too frequently for medium-sized memory allocations
       *  (like IO buffers, column vectors, hash tables, etc.),
