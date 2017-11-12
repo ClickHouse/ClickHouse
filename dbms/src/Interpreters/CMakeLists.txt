@@ -5,10 +5,8 @@ else ()
     set (PATH_SHARE "/usr/share" CACHE STRING "")
 endif ()
 
-if (USE_EMBEDDED_COMPILER)
-    set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
-    set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
-endif ()
+set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
+set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
 
 set (INTERNAL_COMPILER_NO_WARNING OFF CACHE BOOL "")
 
