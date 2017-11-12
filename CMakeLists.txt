@@ -90,6 +90,11 @@ endif ()
 
 set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
+find_program (LINKER_PROGRAM NAMES lld gold ld)
+get_filename_component (LINKER_NAME ${LINKER_PROGRAM} NAME CACHE)
+
+set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
+
 option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
 if (PIPE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pipe")
@@ -159,12 +164,6 @@ endif ()
 set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
 set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
 set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
-    # See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
-    set (CMAKE_CXX_FLAGS_ASAN            "${CMAKE_CXX_FLAGS_ASAN} -fuse-ld=gold")
-    set (CMAKE_C_FLAGS_ASAN              "${CMAKE_C_FLAGS_ASAN}   -fuse-ld=gold")
-endif ()
 set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} ${SAN_FLAGS} -fsanitize=undefined")
 set (CMAKE_C_FLAGS_UBSAN                 "${CMAKE_C_FLAGS_UBSAN}   ${SAN_FLAGS} -fsanitize=undefined")
 set (CMAKE_CXX_FLAGS_MSAN                "${CMAKE_CXX_FLAGS_MSAN}  ${SAN_FLAGS} -fsanitize=memory")
