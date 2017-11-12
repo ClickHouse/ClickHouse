@@ -32,6 +32,6 @@ Polly
 PollyISL
 PollyPPCG
 
-common
 libtinfo.a
+common
 )
