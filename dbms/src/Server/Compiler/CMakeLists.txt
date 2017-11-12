@@ -1,19 +1,24 @@
 add_library(clickhouse-compiler
-  driver.cpp
-  cc1_main.cpp
-  cc1as_main.cpp
-  lld.cpp)
+    driver.cpp
+    cc1_main.cpp
+    cc1as_main.cpp
+    lld.cpp)
 
 target_compile_options(clickhouse-compiler PRIVATE -fno-rtti)
+
+llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
+
+# We link statically with zlib, and LLVM (sometimes) tries to bring its own dependency.
+list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-lz")
 
 # This is extracted almost directly from CMakeFiles/.../link.txt in LLVM build directory.
 
 target_link_libraries(clickhouse-compiler
+
 clangBasic clangCodeGen clangDriver clangFrontend clangFrontendTool
 clangRewriteFrontend clangARCMigrate clangStaticAnalyzerFrontend
-clangParse
-clangSerialization
-clangSema clangEdit clangStaticAnalyzerCheckers clangASTMatchers clangStaticAnalyzerCore clangAnalysis clangAST clangRewrite clangLex clangBasic
+clangParse clangSerialization clangSema clangEdit clangStaticAnalyzerCheckers
+clangASTMatchers clangStaticAnalyzerCore clangAnalysis clangAST clangRewrite clangLex clangBasic
 
 lldCOFF
 lldDriver
@@ -25,13 +30,11 @@ lldYAML
 lldCommon
 lldCore
 
-LLVMAArch64CodeGen LLVMAArch64AsmPrinter LLVMAArch64AsmParser LLVMAArch64Desc LLVMAArch64Info LLVMAArch64Disassembler LLVMAMDGPUCodeGen LLVMAMDGPUAsmPrinter LLVMAMDGPUAsmParser LLVMAMDGPUDesc LLVMAMDGPUInfo LLVMAMDGPUDisassembler LLVMARMCodeGen LLVMARMAsmPrinter LLVMARMAsmParser LLVMARMDesc LLVMARMInfo LLVMARMDisassembler LLVMBPFCodeGen LLVMBPFAsmPrinter LLVMBPFDesc LLVMBPFInfo LLVMBPFDisassembler LLVMHexagonCodeGen LLVMHexagonAsmParser LLVMHexagonDesc LLVMHexagonInfo LLVMHexagonDisassembler LLVMLanaiCodeGen LLVMLanaiAsmParser LLVMLanaiDesc LLVMLanaiInfo LLVMLanaiDisassembler LLVMMipsCodeGen LLVMMipsAsmPrinter LLVMMipsAsmParser LLVMMipsDesc LLVMMipsInfo LLVMMipsDisassembler LLVMMSP430CodeGen LLVMMSP430AsmPrinter LLVMMSP430Desc LLVMMSP430Info LLVMNVPTXCodeGen LLVMNVPTXAsmPrinter LLVMNVPTXDesc LLVMNVPTXInfo LLVMPowerPCCodeGen LLVMPowerPCAsmPrinter LLVMPowerPCAsmParser LLVMPowerPCDesc LLVMPowerPCInfo LLVMPowerPCDisassembler LLVMRISCVCodeGen LLVMRISCVDesc LLVMRISCVInfo LLVMSparcCodeGen LLVMSparcAsmPrinter LLVMSparcAsmParser LLVMSparcDesc LLVMSparcInfo LLVMSparcDisassembler LLVMSystemZCodeGen LLVMSystemZAsmPrinter LLVMSystemZAsmParser LLVMSystemZDesc LLVMSystemZInfo LLVMSystemZDisassembler LLVMX86CodeGen LLVMX86AsmPrinter LLVMX86AsmParser LLVMX86Desc LLVMX86Info LLVMX86Disassembler LLVMXCoreCodeGen LLVMXCoreAsmPrinter LLVMXCoreDesc LLVMXCoreInfo LLVMXCoreDisassembler LLVMAnalysis LLVMCodeGen LLVMCore LLVMipo LLVMInstCombine LLVMInstrumentation LLVMMC LLVMMCParser LLVMObjCARCOpts LLVMOption LLVMScalarOpts LLVMSupport LLVMTransformUtils LLVMVectorize LLVMAArch64Desc LLVMAArch64AsmPrinter LLVMAArch64Info LLVMAArch64Utils LLVMAMDGPUDesc LLVMAMDGPUAsmPrinter LLVMAMDGPUInfo LLVMAMDGPUUtils LLVMARMDesc LLVMARMAsmPrinter LLVMARMInfo LLVMBPFAsmPrinter LLVMBPFInfo LLVMHexagonDesc LLVMHexagonInfo LLVMLanaiDesc LLVMLanaiInstPrinter LLVMLanaiInfo LLVMMipsAsmPrinter LLVMMipsInfo LLVMMSP430AsmPrinter LLVMNVPTXAsmPrinter LLVMPowerPCAsmPrinter LLVMPowerPCInfo LLVMSparcAsmPrinter LLVMSparcInfo LLVMSystemZDesc LLVMSystemZAsmPrinter LLVMSystemZInfo LLVMGlobalISel LLVMX86AsmPrinter LLVMX86Utils LLVMX86Info LLVMXCoreAsmPrinter LLVMAsmPrinter LLVMDebugInfoCodeView LLVMDebugInfoMSF LLVMSelectionDAG LLVMXCoreInfo LLVMMCDisassembler LLVMCoroutines LLVMCoverage LLVMLTO LLVMObjCARCOpts LLVMPasses LLVMCodeGen LLVMTarget LLVMipo LLVMBitWriter LLVMIRReader LLVMAsmParser LLVMLinker LLVMInstrumentation LLVMScalarOpts LLVMInstCombine LLVMVectorize LLVMTransformUtils LLVMAnalysis LLVMObject LLVMOption LLVMProfileData LLVMMCParser LLVMBitReader LLVMCore LLVMMC LLVMSupport LLVMDemangle
-LLVMARMUtils LLVMBinaryFormat LLVMBPFAsmParser LLVMDebugInfoDWARF LLVMBinaryFormat LLVMWindowsManifest LLVMSupport LLVMDemangle
+${REQUIRED_LLVM_LIBRARIES}
 
 Polly
 PollyISL
 PollyPPCG
 
 libtinfo.a
-common
-)
+common)
