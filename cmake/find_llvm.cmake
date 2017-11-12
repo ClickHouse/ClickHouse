@@ -17,8 +17,7 @@ if (USE_EMBEDDED_COMPILER)
 
     find_program(LLVM_CONFIG_EXECUTABLE
         NAMES llvm-config
-        PATHS $ENV{LLVM_ROOT}/bin
-    )
+        PATHS $ENV{LLVM_ROOT}/bin)
 
     mark_as_advanced(LLVM_CONFIG_EXECUTABLE)
 
