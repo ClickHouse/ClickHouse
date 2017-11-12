@@ -217,9 +217,8 @@ void Compiler::compile(
 
     /// Slightly unconvenient.
     command <<
-        "LD_LIBRARY_PATH=" PATH_SHARE "/clickhouse/bin/"
-        " " INTERNAL_COMPILER_EXECUTABLE
-        " -B " PATH_SHARE "/clickhouse/bin/"
+        INTERNAL_COMPILER_EXECUTABLE
+        " -fuse-ld=" INTERNAL_LINKER_EXECUTABLE
         " " INTERNAL_COMPILER_FLAGS
 #if INTERNAL_COMPILER_CUSTOM_ROOT
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"

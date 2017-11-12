@@ -1,7 +1,10 @@
 #include <common/config_common.h>
+#include <Common/config.h>
+
 #if USE_TCMALLOC
 #include <gperftools/malloc_extension.h>
 #endif
+
 #include "Server.h"
 #include "LocalServer.h"
 #include <Common/StringUtils.h>
@@ -15,6 +18,11 @@ int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
 int mainEntryClickHouseFormat(int argc, char ** argv);
+
+#if USE_EMBEDDED_COMPILER
+    int mainEntryClickHouseClang(int argc, char ** argv);
+    int mainEntryClickHouseLLD(int argc, char ** argv);
+#endif
 
 namespace
 {
@@ -32,7 +40,11 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"performance-test", mainEntryClickHousePerformanceTest},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
     {"compressor", mainEntryClickHouseCompressor},
-    {"format", mainEntryClickHouseFormat}
+    {"format", mainEntryClickHouseFormat},
+#if USE_EMBEDDED_COMPILER
+    {"clang", mainEntryClickHouseClang},
+    {"lld", mainEntryClickHouseLLD},
+#endif
 };
 
 
