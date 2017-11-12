@@ -28,7 +28,7 @@ Detect number of threads
 export THREADS=$(grep -c ^processor /proc/cpuinfo)
 ```
 
-Install GCC 6
+Install GCC 7
 -------------
 
 There are several ways to do it.
@@ -39,40 +39,19 @@ There are several ways to do it.
 sudo apt-get install software-properties-common
 sudo apt-add-repository ppa:ubuntu-toolchain-r/test
 sudo apt-get update
-sudo apt-get install gcc-6 g++-6
+sudo apt-get install gcc-7 g++-7
 ```
 
 ### Install from sources
 
-Example:
+Look at [https://github.com/yandex/ClickHouse/blob/master/utils/prepare-environment/install-gcc.sh]
 
-```bash
-# Download gcc from https://gcc.gnu.org/mirrors.html
-wget ftp://ftp.fu-berlin.de/unix/languages/gcc/releases/gcc-6.2.0/gcc-6.2.0.tar.bz2
-tar xf gcc-6.2.0.tar.bz2
-cd gcc-6.2.0
-./contrib/download_prerequisites
-cd ..
-mkdir gcc-build
-cd gcc-build
-../gcc-6.2.0/configure --enable-languages=c,c++
-make -j $THREADS
-sudo make install
-hash gcc g++
-gcc --version
-sudo ln -s /usr/local/bin/gcc /usr/local/bin/gcc-6
-sudo ln -s /usr/local/bin/g++ /usr/local/bin/g++-6
-sudo ln -s /usr/local/bin/gcc /usr/local/bin/cc
-sudo ln -s /usr/local/bin/g++ /usr/local/bin/c++
-# /usr/local/bin/ should be in $PATH
-```
-
-Use GCC 6 for builds
+Use GCC 7 for builds
 --------------------
 
 ```bash
-export CC=gcc-6
-export CXX=g++-6
+export CC=gcc-7
+export CXX=g++-7
 ```
 
 Install required libraries from packages
