@@ -22,7 +22,6 @@ DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 CMAKE_FLAGS += -DENABLE_TESTS=0
 
 DEB_CLANG ?= $(shell which clang-6.0 || which clang-5.0 || which clang-4.0 || which clang || which clang-3.9 || which clang-3.8)
-# CMAKE_FLAGS += -DINTERNAL_COMPILER_EXECUTABLE=$(basename $(DEB_CLANG)) # TODO: this is actual only if you will also change clang name in copy_clang_binaries.sh
 
 #DEB_CC ?= gcc-6
 #DEB_CXX ?= g++-6
@@ -85,11 +84,9 @@ override_dh_install:
 	cp debian/clickhouse-server.cron.d $(DESTDIR)/etc/cron.d/clickhouse-server
 
 	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	mkdir -p $(DESTDIR)/usr/share/clickhouse/bin $(DESTDIR)/usr/share/clickhouse/headers
-ifeq ($(USE_INTERNAL_COMPILER),1)
-	CLANG=$(DEB_CLANG) debian/copy_clang_binaries.sh $(DESTDIR)/usr/share/clickhouse/bin/
+	mkdir -p $(DESTDIR)/usr/share/clickhouse/headers
+
 	CLANG=$(DEB_CLANG) ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
-endif
 
 	# fake metrika files when private dir is empty
 	mkdir -p debian/tmp/etc/clickhouse-server/metrika
