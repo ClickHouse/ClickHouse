@@ -94,6 +94,9 @@ find_program (LINKER_PROGRAM NAMES lld gold ld)
 get_filename_component (LINKER_NAME ${LINKER_PROGRAM} NAME CACHE)
 
 set (CMAKE_EXE_LINKER_FLAGS              "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
+if (LINKER_NAME STREQUAL lld)
+    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -L/usr/local/lib")
+endif ()
 
 option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
 if (PIPE)
