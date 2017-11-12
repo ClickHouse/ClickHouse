@@ -51,6 +51,13 @@ if (USE_EMBEDDED_COMPILER)
             OUTPUT_VARIABLE LLVM_CXXFLAGS
             OUTPUT_STRIP_TRAILING_WHITESPACE)
 
+        execute_process(
+            COMMAND ${LLVM_CONFIG_EXECUTABLE} --targets-built
+            OUTPUT_VARIABLE LLVM_TARGETS_BUILT
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+        string(REPLACE " " ";" LLVM_TARGETS_BUILT "${LLVM_TARGETS_BUILT}")
+
         # Get the link libs we need.
         function(llvm_map_components_to_libraries RESULT)
             execute_process(
