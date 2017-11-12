@@ -43,6 +43,10 @@ target_link_libraries (clickhouse-compressor-lib dbms ${Boost_PROGRAM_OPTIONS_LI
 add_library (clickhouse-format Format.cpp)
 target_link_libraries (clickhouse-format dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
+if (USE_EMBEDDED_COMPILER)
+    link_directories (${LLVM_LIBRARY_DIRS})
+endif ()
+
 add_executable(clickhouse main.cpp)
 target_include_directories(clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 target_link_libraries(clickhouse
@@ -57,6 +61,7 @@ target_link_libraries(clickhouse
 
 if (USE_EMBEDDED_COMPILER)
     add_subdirectory (Compiler)
+    link_directories (${LLVM_LIBRARY_DIRS})
     target_link_libraries (clickhouse clickhouse-compiler)
 endif ()
 
