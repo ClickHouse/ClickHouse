@@ -12,7 +12,6 @@ llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
 list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-lz")
 
 target_include_directories(clickhouse-compiler PRIVATE ${LLVM_INCLUDE_DIRS})
-link_directories(${LLVM_LIBRARY_DIRS})
 
 # This is extracted almost directly from CMakeFiles/.../link.txt in LLVM build directory.
 
