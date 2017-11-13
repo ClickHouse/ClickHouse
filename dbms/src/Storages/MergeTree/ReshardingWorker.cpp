@@ -592,7 +592,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
         throw Exception{"Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED};
 
     StoragePtr generic_storage = context.getTable(current_job.database_name, current_job.table_name);
-    auto & storage = typeid_cast<StorageReplicatedMergeTree &>(*generic_storage);
+    auto & storage = dynamic_cast<StorageReplicatedMergeTree &>(*generic_storage);
     current_job.storage = &storage;
 
     std::string dumped_coordinator_state;

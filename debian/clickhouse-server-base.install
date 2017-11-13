@@ -1,5 +1,7 @@
 /usr/bin/clickhouse
 /usr/bin/clickhouse-server
+/usr/bin/clickhouse-clang
+/usr/bin/clickhouse-lld
 /etc/init.d/clickhouse-server
 /etc/cron.d/clickhouse-server
 /usr/share/clickhouse/*

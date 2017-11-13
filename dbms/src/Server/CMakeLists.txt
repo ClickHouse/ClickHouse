@@ -40,6 +40,13 @@ target_include_directories (clickhouse-performance-test PRIVATE ${PCG_RANDOM_INC
 add_library (clickhouse-compressor-lib Compressor.cpp)
 target_link_libraries (clickhouse-compressor-lib dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
+add_library (clickhouse-format Format.cpp)
+target_link_libraries (clickhouse-format dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
+
+if (USE_EMBEDDED_COMPILER)
+    link_directories (${LLVM_LIBRARY_DIRS})
+endif ()
+
 add_executable(clickhouse main.cpp)
 target_include_directories(clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 target_link_libraries(clickhouse
@@ -49,7 +56,15 @@ target_link_libraries(clickhouse
     clickhouse-benchmark
     clickhouse-performance-test
     clickhouse-extract-from-config
-    clickhouse-compressor-lib)
+    clickhouse-compressor-lib
+    clickhouse-format)
+
+if (USE_EMBEDDED_COMPILER)
+    add_subdirectory (Compiler)
+    link_directories (${LLVM_LIBRARY_DIRS})
+    target_link_libraries (clickhouse clickhouse-compiler)
+endif ()
+
 INSTALL(TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 # make symbolic links to concrete clickhouse applications
 macro(install_symlink_to_clickhouse app)
@@ -61,6 +76,12 @@ install_symlink_to_clickhouse(clickhouse-client)
 install_symlink_to_clickhouse(clickhouse-local)
 install_symlink_to_clickhouse(clickhouse-benchmark)
 install_symlink_to_clickhouse(clickhouse-performance-test)
+install_symlink_to_clickhouse(clickhouse-format)
+
+if (USE_EMBEDDED_COMPILER)
+    install_symlink_to_clickhouse(clickhouse-clang)
+    install_symlink_to_clickhouse(clickhouse-lld)
+endif ()
 
 INSTALL(
     FILES config.xml users.xml

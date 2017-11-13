@@ -693,7 +693,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     /// Optimization in the case of a single aggregate function `count`.
     AggregateFunctionCount * agg_count = params.aggregates_size == 1
         ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-        : NULL;
+        : nullptr;
 
     if (agg_count)
         agg_count->addDelta(res, rows);

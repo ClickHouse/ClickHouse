@@ -14,8 +14,6 @@ class Context;
   */
 class StorageSystemBuildOptions : public ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemBuildOptions>;
-
 public:
     std::string getName() const override { return "SystemBuildOptions"; }
     std::string getTableName() const override { return name; }
@@ -34,6 +32,7 @@ private:
     const std::string name;
     NamesAndTypesList columns;
 
+protected:
     StorageSystemBuildOptions(const std::string & name_);
 };
 
