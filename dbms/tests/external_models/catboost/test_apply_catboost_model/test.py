@@ -67,7 +67,7 @@ def test_apply_float_features_only():
     pred_python = model.predict(test_df)
 
     server = ClickHouseServerWithCatboostModels(name, CLICKHOUSE_TESTS_SERVER_BIN_PATH, PORT)
-    server.add_model(name, model, 3, 0)
+    server.add_model(name, model)
     with server:
         pred_ch = (np.array(server.apply_model(name, test_df, [])) > 0).astype(int)
 
@@ -120,7 +120,7 @@ def test_apply_float_features_with_string_cat_features():
     pred_python = model.predict(test_df)
 
     server = ClickHouseServerWithCatboostModels(name, CLICKHOUSE_TESTS_SERVER_BIN_PATH, PORT)
-    server.add_model(name, model, 2, 2)
+    server.add_model(name, model)
     with server:
         pred_ch = (np.array(server.apply_model(name, test_df, [])) > 0).astype(int)
 
@@ -173,7 +173,7 @@ def test_apply_float_features_with_int_cat_features():
     pred_python = model.predict(test_df)
 
     server = ClickHouseServerWithCatboostModels(name, CLICKHOUSE_TESTS_SERVER_BIN_PATH, PORT)
-    server.add_model(name, model, 2, 2)
+    server.add_model(name, model)
     with server:
         pred_ch = (np.array(server.apply_model(name, test_df, [])) > 0).astype(int)
 
@@ -226,7 +226,7 @@ def test_apply_float_features_with_mixed_cat_features():
     pred_python = model.predict(test_df)
 
     server = ClickHouseServerWithCatboostModels(name, CLICKHOUSE_TESTS_SERVER_BIN_PATH, PORT)
-    server.add_model(name, model, 2, 2)
+    server.add_model(name, model)
     with server:
         pred_ch = (np.array(server.apply_model(name, test_df, [])) > 0).astype(int)
 
