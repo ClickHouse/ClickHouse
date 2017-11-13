@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <ext/range.h>
+#include <ext/bit_cast.h>
 #include <Poco/Net/DNS.h>
 #include <Common/ClickHouseRevision.h>
 #include <Columns/ColumnSet.h>
@@ -1245,11 +1246,23 @@ public:
 
 struct IsFiniteImpl
 {
+    /// Better implementation, because isinf, isfinite, isnan are not inlined for unknown reason.
+    /// Assuming IEEE 754.
+
     static constexpr auto name = "isFinite";
     template <typename T>
     static bool execute(const T t)
     {
-        return std::isfinite(t);
+        if constexpr (std::is_same<T, float>::value)
+            return (ext::bit_cast<uint32_t>(t)
+                 & 0b01111111100000000000000000000000)
+                != 0b01111111100000000000000000000000;
+        else if constexpr (std::is_same<T, double>::value)
+            return (ext::bit_cast<uint64_t>(t)
+                 & 0b0111111111110000000000000000000000000000000000000000000000000000)
+                != 0b0111111111110000000000000000000000000000000000000000000000000000;
+        else
+            return false;
     }
 };
 
@@ -1259,7 +1272,16 @@ struct IsInfiniteImpl
     template <typename T>
     static bool execute(const T t)
     {
-        return std::isinf(t);
+        if constexpr (std::is_same<T, float>::value)
+            return (ext::bit_cast<uint32_t>(t)
+                 & 0b01111111111111111111111111111111)
+                == 0b01111111100000000000000000000000;
+        else if constexpr (std::is_same<T, double>::value)
+            return (ext::bit_cast<uint64_t>(t)
+                 & 0b0111111111111111111111111111111111111111111111111111111111111111)
+                == 0b0111111111110000000000000000000000000000000000000000000000000000;
+        else
+            return false;
     }
 };
 
@@ -1269,7 +1291,7 @@ struct IsNaNImpl
     template <typename T>
     static bool execute(const T t)
     {
-        return std::isnan(t);
+        return t != t;
     }
 };
 
