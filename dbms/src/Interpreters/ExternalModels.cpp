@@ -54,8 +54,7 @@ std::unique_ptr<IExternalLoadable> ExternalModels::create(
         return std::make_unique<CatBoostModel>(
                 name, config.getString(config_prefix + ".path"),
                 context.getConfigRef().getString("catboost_dynamic_library_path"),
-                lifetime, config.getUInt(config_prefix + ".float_features_count"),
-                config.getUInt(config_prefix + ".cat_features_count")
+                lifetime
         );
     }
     else
