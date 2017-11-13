@@ -1248,6 +1248,7 @@ struct IsFiniteImpl
 {
     /// Better implementation, because isinf, isfinite, isnan are not inlined for unknown reason.
     /// Assuming IEEE 754.
+    /// NOTE gcc 7 doesn't vectorize this loop.
 
     static constexpr auto name = "isFinite";
     template <typename T>
