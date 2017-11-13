@@ -572,37 +572,98 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 
-/// In YYYY-MM-DD format
+/// In YYYY-mM-dD format
 inline void readDateText(DayNum_t & date, ReadBuffer & buf)
 {
     char s[10];
-    size_t size = buf.read(s, 10);
-    if (10 != size)
+    size_t size = buf.read(s, 8);
+    if (8 != size)
     {
         s[size] = 0;
         throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
     }
 
-    UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-    UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
-    UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+    if ('-' == s[7]) {
+        size = buf.read(s + 8, 2);
+        if (size == 0)
+            throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
+        if (size == 1 || s[9] < '0' || s[9] > '9') {
+            s[9] = 0;
+            buf.position() -= size == 2 ? 1 : 0;
+        }
+    } else {
+        size = buf.read(s + 8, 1);
+        if (size == 0 || s[8] < '0' || s[8] > '9') {
+            s[8] = 0;
+            buf.position() -= size == 1 ? 1 : 0;
+        }
+    }
 
+    UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+    UInt8 month, day;
+    if ('-' == s[7]) {
+        month = (s[5] - '0') * 10 + (s[6] - '0');
+        if (s[9]) {
+            day = (s[8] - '0') * 10 + (s[9] - '0');
+        } else {
+            day = s[8] - '0';
+        }
+    } else {
+        month = s[5] - '0';
+        if (s[8]) {
+            day = (s[7] - '0') * 10 + (s[8] - '0');
+        } else {
+            day = s[7] - '0';
+        }
+    }
     date = DateLUT::instance().makeDayNum(year, month, day);
 }
 
 inline void readDateText(LocalDate & date, ReadBuffer & buf)
 {
     char s[10];
-    size_t size = buf.read(s, 10);
-    if (10 != size)
+    size_t size = buf.read(s, 8);
+    if (8 != size)
     {
         s[size] = 0;
         throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
     }
 
+    if ('-' == s[7]) {
+        size = buf.read(s + 8, 2);
+        if (size == 0)
+            throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
+        if (size == 1 || s[9] < '0' || s[9] > '9') {
+            s[9] = 0;
+            buf.position() -= size == 2 ? 1 : 0;
+        }
+    } else {
+        size = buf.read(s + 8, 1);
+        if (size == 0 || s[8] < '0' || s[8] > '9') {
+            s[8] = 0;
+            buf.position() -= size == 1 ? 1 : 0;
+        }
+    }
+
     date.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
-    date.month((s[5] - '0') * 10 + (s[6] - '0'));
-    date.day((s[8] - '0') * 10 + (s[9] - '0'));
+    UInt8 month, day;
+    if ('-' == s[7]) {
+        month = (s[5] - '0') * 10 + (s[6] - '0');
+        if (s[9]) {
+            day = (s[8] - '0') * 10 + (s[9] - '0');
+        } else {
+            day = s[8] - '0';
+        }
+    } else {
+        month = s[5] - '0';
+        if (s[8]) {
+            day = (s[7] - '0') * 10 + (s[8] - '0');
+        } else {
+            day = s[7] - '0';
+        }
+    }
+    date.month(month);
+    date.day(day);
 }
 
 inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
