@@ -1477,7 +1477,7 @@ struct FunctionRunningDifferenceName<true>
 template <>
 struct FunctionRunningDifferenceName<false>
 {
-    static constexpr auto name = "runningIncome";
+    static constexpr auto name = "runningDifferenceStartingWithFirstValue";
 };
 
 /** Calculate difference of consecutive values in block.
