@@ -31,6 +31,8 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return std::make_shared<AggregateFunctionUniq<String, Data>>();
         else if (typeid_cast<const DataTypeTuple *>(&argument_type))
             return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true>>();
+        else if (typeid_cast<const DataTypeUUID *>(&argument_type))
+            return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data>>();
         else
             throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -69,6 +71,8 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return std::make_shared<AggregateFunctionUniq<String, Data<String>>>();
         else if (typeid_cast<const DataTypeTuple *>(&argument_type))
             return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true>>();
+        else if (typeid_cast<const DataTypeUUID *>(&argument_type))
+            return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType>>>();
         else
             throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

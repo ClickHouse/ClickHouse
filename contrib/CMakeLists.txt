@@ -49,7 +49,7 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_CCTZ_LIBRARY)
-    add_subdirectory (libcctz)
+    add_subdirectory (cctz-cmake)
 endif ()
 
 if (ENABLE_LIBTCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)

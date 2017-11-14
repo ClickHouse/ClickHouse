@@ -839,9 +839,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
                     MergeTreeWhereOptimizer{query_info, context, merge_tree.getData(), required_columns, log};
             };
 
-            if (const StorageMergeTree * merge_tree = typeid_cast<const StorageMergeTree *>(storage.get()))
+            if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(storage.get()))
                 optimize_prewhere(*merge_tree);
-            else if (const StorageReplicatedMergeTree * merge_tree = typeid_cast<const StorageReplicatedMergeTree *>(storage.get()))
+            else if (const StorageReplicatedMergeTree * merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
                 optimize_prewhere(*merge_tree);
         }
 

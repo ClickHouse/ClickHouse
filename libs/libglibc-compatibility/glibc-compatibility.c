@@ -119,6 +119,11 @@ int __open_2(const char *path, int oflag)
 }
 
 
+/// No-ops.
+int pthread_setname_np(pthread_t thread, const char *name) { return 0; }
+int pthread_getname_np(pthread_t thread, char *name, size_t len) { name[0] = '\0'; return 0; };
+
+
 #if defined (__cplusplus)
 }
 #endif
