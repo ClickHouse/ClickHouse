@@ -1,4 +1,3 @@
-
 set +e
 
 function get_revision {

@@ -26,14 +26,14 @@ public:
     /// Return singleton DateLUTImpl instance for the default time zone.
     static ALWAYS_INLINE const DateLUTImpl & instance()
     {
-        const auto & date_lut =ext::singleton<DateLUT>::instance();
+        const auto & date_lut = ext::singleton<DateLUT>::instance();
         return *date_lut.default_impl.load(std::memory_order_acquire);
     }
 
     /// Return singleton DateLUTImpl instance for a given time zone.
     static ALWAYS_INLINE const DateLUTImpl & instance(const std::string & time_zone)
     {
-        const auto & date_lut =ext::singleton<DateLUT>::instance();
+        const auto & date_lut = ext::singleton<DateLUT>::instance();
         if (time_zone.empty())
             return *date_lut.default_impl.load(std::memory_order_acquire);
 
@@ -42,7 +42,7 @@ public:
 
     static void setDefaultTimezone(const std::string & time_zone)
     {
-        auto & date_lut =ext::singleton<DateLUT>::instance();
+        auto & date_lut = ext::singleton<DateLUT>::instance();
         const auto & impl = date_lut.getImplementation(time_zone);
         date_lut.default_impl.store(&impl, std::memory_order_release);
     }
