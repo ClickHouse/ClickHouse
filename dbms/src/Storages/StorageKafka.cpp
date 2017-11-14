@@ -49,11 +49,16 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
     Messages::iterator current;
     Messages::iterator end;
     Poco::Logger * log;
+    bool eof = false;
 
     bool nextImpl() override
     {
         if (current == end)
         {
+            // EOF reached in the previous batch, bail
+            if (eof)
+                return false;
+
             // Fetch next batch of messages
             bool res = fetchMessages();
             if (!res)
@@ -64,7 +69,10 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
 
             // No error, but no messages read
             if (current == end)
+            {
+                LOG_DEBUG(log, "No messages consumed.");
                 return false;
+            }
         }
 
         // Process next buffered message
@@ -73,6 +81,14 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
         {
             if (msg->err != RD_KAFKA_RESP_ERR__PARTITION_EOF)
                 LOG_ERROR(log, "Consumer error: " << rd_kafka_err2str(msg->err) << " " << rd_kafka_message_errstr(msg));
+            else
+            {
+                // Reach EOF while reading current batch, skip it
+                eof = true;
+                if (current != end)
+                    return nextImpl();
+            }
+
             return false;
         }
 
