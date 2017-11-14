@@ -56,6 +56,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Poco/Process.h>
 
 
 namespace DB
@@ -136,13 +137,13 @@ struct TaskStateWithOwner
 };
 
 
-/// Hierarchical task description
+/// Hierarchical description of the tasks
 struct TaskPartition;
 struct TaskShard;
 struct TaskTable;
 struct TaskCluster;
 
-using TasksPartition = std::vector<TaskPartition>;
+using TasksPartition = std::map<String, TaskPartition>;
 using ShardInfo = Cluster::ShardInfo;
 using TaskShardPtr = TaskShard *;
 using TasksShard = std::vector<TaskShard>;
@@ -154,16 +155,35 @@ struct TaskPartition
 {
     TaskPartition(TaskShard & parent, const String & name_) : task_shard(parent), name(name_) {}
 
-    String getCommonPartitionPath() const;
+    String getPartitionPath() const;
     String getCommonPartitionIsDirtyPath() const;
-    String getCommonPartitionActiveWorkersPath() const;
+    String getPartitionActiveWorkersPath() const;
     String getActiveWorkerPath() const;
-    String getCommonPartitionShardsPath() const;
+    String getPartitionShardsPath() const;
     String getShardStatusPath() const;
 
     TaskShard & task_shard;
     String name;
 };
+
+
+struct ShardPriority
+{
+    UInt8 is_remote = 1;
+    size_t hostname_difference = 0;
+    UInt8 random = 0;
+
+    static bool isMorePriority(const ShardPriority & current, const ShardPriority & other)
+    {
+        return std::less<void>()(
+            std::forward_as_tuple(current.is_remote, current.hostname_difference, current.random),
+            std::forward_as_tuple(other.is_remote, other.hostname_difference, other.random)
+        );
+    }
+};
+
+ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random);
+
 
 struct TaskShard
 {
@@ -172,9 +192,12 @@ struct TaskShard
     TaskTable & task_table;
 
     ShardInfo info;
-    ConnectionPoolWithFailover::Entry connection_entry;
+    UInt32 numberInCluster() const { return info.shard_num; }
+    UInt32 indexInCluster() const { return info.shard_num - 1; }
 
     TasksPartition partitions;
+
+    ShardPriority priority;
 };
 
 struct TaskTable
@@ -183,6 +206,9 @@ struct TaskTable
                   const String & table_key);
 
     TaskCluster & task_cluster;
+
+    String getPartitionPath(const String & partition_name) const;
+    String getPartitionIsDirtyPath(const String & partition_name) const;
 
     /// Used as task ID
     String name_in_config;
@@ -218,13 +244,11 @@ struct TaskTable
     {
         TasksShard all_shards;
         TasksShardPtrs all_shards_prioritized;
-
-        TasksShardPtrs local_shards;
-        TasksShardPtrs remote_shards;
+        TasksShardPtrs local_shards_prioritized;
     };
 
     /// Prioritized list of shards
-    Shards shards_pull;
+    Shards shards;
 
     PartitionToShards partition_to_shards;
 
@@ -346,39 +370,51 @@ Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
     return squashStreamIntoOneBlock(stream)->read();
 }
 
+// Path getters
 
-String TaskPartition::getCommonPartitionPath() const
+String TaskTable::getPartitionPath(const String & partition_name) const
 {
-    return task_shard.task_table.task_cluster.task_zookeeper_path                   // root
-           + "/table_" + escapeForFileName(task_shard.task_table.name_in_config)    // table_test.hits
-           + "/" + name;                                                            // 201701
+    return task_cluster.task_zookeeper_path                 // root
+           + "/table_" + escapeForFileName(name_in_config)  // table_test.hits
+           + "/" + partition_name;                          // 201701
+}
+
+String TaskPartition::getPartitionPath() const
+{
+    return task_shard.task_table.getPartitionPath(name);
 }
 
 String TaskPartition::getShardStatusPath() const
 {
-    return getCommonPartitionPath()                         // /root/table_test.hits/201701
-        + "/shards/" + toString(task_shard.info.shard_num); // 1 (the first shard)
+    // /root/table_test.hits/201701/1
+    return getPartitionPath() + "/shards/" + toString(task_shard.numberInCluster());
 }
 
-String TaskPartition::getCommonPartitionShardsPath() const
+String TaskPartition::getPartitionShardsPath() const
 {
-    return getCommonPartitionPath() + "/shards";
+    return getPartitionPath() + "/shards";
 }
 
-String TaskPartition::getCommonPartitionActiveWorkersPath() const
+String TaskPartition::getPartitionActiveWorkersPath() const
 {
-    return getCommonPartitionPath() + "/active_workers";
+    return getPartitionPath() + "/active_workers";
 }
 
 String TaskPartition::getActiveWorkerPath() const
 {
-    return getCommonPartitionActiveWorkersPath() + "/partition_workers/" + toString(task_shard.info.shard_num);
+    return getPartitionActiveWorkersPath() + toString(task_shard.numberInCluster());
 }
 
 String TaskPartition::getCommonPartitionIsDirtyPath() const
 {
-    return getCommonPartitionPath() + "/is_dirty";
+    return getPartitionPath() + "/is_dirty";
 }
+
+String TaskTable::getPartitionIsDirtyPath(const String & partition_name) const
+{
+    return getPartitionPath(partition_name) + "/is_dirty";
+}
+
 
 TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfiguration & config, const String & prefix_,
                      const String & table_key)
@@ -425,44 +461,72 @@ TaskTable::TaskTable(TaskCluster & parent, const Poco::Util::AbstractConfigurati
 }
 
 
+ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random)
+{
+    ShardPriority res;
+
+    if (replicas.empty())
+        return res;
+
+    res.is_remote = 1;
+    for (auto & replica : replicas)
+    {
+        if (isLocalAddress(replica.resolved_address))
+        {
+            res.is_remote = 0;
+            break;
+        }
+    }
+
+    res.hostname_difference = std::numeric_limits<size_t>::max();
+    for (auto & replica : replicas)
+    {
+        size_t difference = getHostNameDifference(local_hostname, replica.host_name);
+        res.hostname_difference = std::min(difference, res.hostname_difference);
+    }
+
+    res.random = random;
+    return res;
+}
+
 template<class URNG>
 void TaskTable::initShards(URNG && urng)
 {
+    const String & fqdn_name = getFQDNOrHostName();
+    std::uniform_int_distribution<UInt8> get_rand(0, std::numeric_limits<UInt8>::max());
+
+    // Compute the priority
     for (auto & shard_info : cluster_pull->getShardsInfo())
-        shards_pull.all_shards.emplace_back(*this, shard_info);
-
-    auto has_local_addresses = [] (const ShardInfo & info, const ClusterPtr & cluster) -> bool
     {
-        if (info.isLocal()) /// isLocal() checks ports that aren't match
-            return true;
+        shards.all_shards.emplace_back(*this, shard_info);
 
-        for (auto & address : cluster->getShardsAddresses().at(info.shard_num - 1))
-        {
-            if (isLocalAddress(address.resolved_address))
-                return true;
-        }
-
-        return false;
-    };
-
-    for (TaskShard & shard : shards_pull.all_shards)
-    {
-        if (has_local_addresses(shard.info, cluster_pull))
-            shards_pull.local_shards.push_back(&shard);
-        else
-            shards_pull.remote_shards.push_back(&shard);
+        TaskShard & task_shard = shards.all_shards.back();
+        const auto & replicas = cluster_pull->getShardsAddresses().at(task_shard.indexInCluster());
+        task_shard.priority = getReplicasPriority(replicas, fqdn_name, get_rand(urng));
     }
 
-    // maybe it is not necessary to shuffle local addresses
-    std::shuffle(shards_pull.local_shards.begin(), shards_pull.local_shards.end(), std::forward<URNG>(urng));
-    std::shuffle(shards_pull.remote_shards.begin(), shards_pull.remote_shards.end(), std::forward<URNG>(urng));
+    // Sort by priority
+    auto is_more_priority = [] (TaskShardPtr lhs, TaskShardPtr rhs)
+    {
+        return ShardPriority::isMorePriority(lhs->priority, rhs->priority);
+    };
 
-    shards_pull.all_shards_prioritized.insert(shards_pull.all_shards_prioritized.end(),
-                                              shards_pull.local_shards.begin(), shards_pull.local_shards.end());
-    shards_pull.all_shards_prioritized.insert(shards_pull.all_shards_prioritized.end(),
-                                              shards_pull.remote_shards.begin(), shards_pull.remote_shards.end());
+    for (auto & task_shard : shards.all_shards)
+        shards.all_shards_prioritized.push_back(&task_shard);
+
+    std::sort(shards.all_shards_prioritized.begin(), shards.all_shards_prioritized.end(), is_more_priority);
+
+    // Select local shards
+    auto has_less_is_remote = [] (TaskShardPtr lhs, UInt8 is_remote)
+    {
+        return lhs->priority.is_remote < is_remote;
+    };
+
+    auto it_first_remote = std::lower_bound(shards.all_shards_prioritized.begin(), shards.all_shards_prioritized.end(), 1,
+                                          has_less_is_remote);
+
+    shards.local_shards_prioritized.assign(shards.all_shards_prioritized.begin(), it_first_remote);
 }
-
 
 TaskCluster::TaskCluster(const String & task_zookeeper_path_, const Poco::Util::AbstractConfiguration & config, const String & base_key,
                          const String & default_local_database_)
@@ -561,8 +625,7 @@ public:
         /// Compute set of partitions, set of partitions aren't changed
         for (auto & task_table : task_cluster->table_tasks)
         {
-            auto & shards = task_table.shards_pull.all_shards_prioritized;
-            LOG_DEBUG(log, "There are " << shards.size() << " tasks for table " << task_table.name_in_config);
+            auto & shards = task_table.shards.all_shards_prioritized;
 
             for (TaskShardPtr task_shard : shards)
             {
@@ -578,16 +641,17 @@ public:
                                << ", shard " << task_shard->info.shard_num << ")");
 
                 LOG_DEBUG(log, "There are "
-                    << task_table.shards_pull.local_shards.size() << " local shards, and "
-                    << task_table.shards_pull.remote_shards.size() << " remote ones");
+                    << task_table.shards.all_shards_prioritized.size() << " shards, and "
+                    << task_table.shards.local_shards_prioritized.size() << " remote ones");
 
-                task_shard->connection_entry = task_shard->info.pool->get(&task_cluster->settings_pull);
-                LOG_DEBUG(log, "Will use " << task_shard->connection_entry->getDescription());
+                auto connection_entry = task_shard->info.pool->get(&task_cluster->settings_pull);
+                LOG_DEBUG(log, "Will get meta information for shard " << task_shard->numberInCluster()
+                               << " from replica " << connection_entry->getDescription());
 
-                Strings partitions = getRemotePartitions(task_table.table_pull, *task_shard->connection_entry, &task_cluster->settings_pull);
+                Strings partitions = getRemotePartitions(task_table.table_pull, *connection_entry, &task_cluster->settings_pull);
                 for (const String & partition_name : partitions)
                 {
-                    task_shard->partitions.emplace_back(*task_shard, partition_name);
+                    task_shard->partitions.emplace(partition_name, TaskPartition(*task_shard, partition_name));
                     task_table.partition_to_shards[partition_name].emplace_back(task_shard);
                 }
 
@@ -603,25 +667,133 @@ public:
     {
         for (TaskTable & task_table : task_cluster->table_tasks)
         {
-            auto & shards = task_table.shards_pull.all_shards_prioritized;
+            auto & shards = task_table.shards.all_shards_prioritized;
 
             if (shards.empty())
                 continue;
 
             /// Try process all partitions of the first shard
-            for (TaskPartition & task_partition : shards[0]->partitions)
+            for (auto shard_ptr : shards)
             {
-                processPartitionTask(task_partition);
-            }
+                if (shard_ptr->priority.is_remote)
+                    continue;
 
-            for (TaskShardPtr task_shard : shards)
-            {
-                for (TaskPartition & task_partition : task_shard->partitions)
+                for (auto & task_partition : shards[0]->partitions)
                 {
-                    processPartitionTask(task_partition);
+                    LOG_DEBUG(log, "Process partition " << task_partition.first << " for local shard " << shard_ptr->numberInCluster());
+                    processPartitionTask(task_partition.second);
                 }
             }
+
+            /// Then check and copy all shards until the whole partition is copied
+            for (const auto & partition_with_shards : task_table.partition_to_shards)
+            {
+                const String & partition_name = partition_with_shards.first;
+                const TasksShardPtrs & shards_with_partition = partition_with_shards.second;
+                bool is_done;
+
+                do
+                {
+                    LOG_DEBUG(log, "Process partition " << partition_name << " for the whole cluster"
+                        << " (" << shards_with_partition.size() << " shards)");
+
+                    size_t num_successful_shards = 0;
+
+                    for (auto & shard : shards_with_partition)
+                    {
+                        auto it_shard_partition = shard->partitions.find(partition_name);
+                        if (it_shard_partition == shard->partitions.end())
+                            throw Exception("There are no such partition in a shard. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+                        TaskPartition & task_shard_partition = it_shard_partition->second;
+                        if (processPartitionTask(task_shard_partition))
+                            ++num_successful_shards;
+                    }
+
+                    try
+                    {
+                        is_done = (num_successful_shards == shards_with_partition.size())
+                            && checkPartitionIsDone(task_table, partition_name, shards_with_partition);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log);
+                        is_done = false;
+                    }
+                } while (!is_done);
+            }
         }
+    }
+
+    /** Checks that the whole partition of a table was copied. We should do it carefully due to dirty lock.
+     * State of some task could be changed during the processing.
+     * We have to ensure that all shards have the finished state and there are no dirty flag.
+     * Moreover, we have to check status twice and check zxid, because state could be changed during the checking.
+     */
+    bool checkPartitionIsDone(const TaskTable & task_table, const String & partition_name, const TasksShardPtrs & shards_with_partition)
+    {
+        LOG_DEBUG(log, "Check that all shards processed partition " << partition_name << " successfully");
+
+        auto zookeeper = getZooKeeper();
+
+        Strings status_paths;
+        for (auto & shard : shards_with_partition)
+        {
+            TaskPartition & task_shard_partition = shard->partitions.find(partition_name)->second;
+            status_paths.emplace_back(task_shard_partition.getShardStatusPath());
+        }
+
+        zkutil::Stat stat;
+        std::vector<int64_t> zxid1, zxid2;
+
+        try
+        {
+            // Check that state is Finished and remember zxid
+            for (const String & path : status_paths)
+            {
+                TaskStateWithOwner status = TaskStateWithOwner::fromString(zookeeper->get(path, &stat));
+                if (status.state != TaskState::Finished)
+                {
+                    LOG_INFO(log, "The task " << path << " is being rewritten by " << status.owner
+                                               << ". Partition will be rechecked");
+                    return false;
+                }
+                zxid1.push_back(stat.pzxid);
+            }
+
+            // Check that partition is not dirty
+            if (zookeeper->exists(task_table.getPartitionIsDirtyPath(partition_name)))
+            {
+                LOG_INFO(log, "Partition " << partition_name << " become dirty");
+                return false;
+            }
+
+            // Remember zxid of states again
+            for (const auto & path : status_paths)
+            {
+                zookeeper->exists(path, &stat);
+                zxid2.push_back(stat.pzxid);
+            }
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            LOG_INFO(log, "A ZooKeeper error occurred while checking partition " << partition_name
+                          << ". Will recheck the partition. Error: " << e.what());
+            return false;
+        }
+
+        // If all task is finished and zxid is not changed then partition could not become dirty again
+        for (size_t shard_num = 0; shard_num < status_paths.size(); ++shard_num)
+        {
+            if (zxid1[shard_num] != zxid2[shard_num])
+            {
+                LOG_INFO(log, "The task " << status_paths[shard_num] << " is being modified now. Partition will be rechecked");
+                return false;
+            }
+        }
+
+        LOG_INFO(log, "Partition " << partition_name << " is copied successfully");
+        return true;
     }
 
 protected:
@@ -679,7 +851,7 @@ protected:
     {
         TaskTable & task_table = task_partition.task_shard.task_table;
 
-        String current_shards_path = task_partition.getCommonPartitionShardsPath();
+        String current_shards_path = task_partition.getPartitionShardsPath();
         String is_dirty_flag_path = task_partition.getCommonPartitionIsDirtyPath();
         String dirt_cleaner_path = is_dirty_flag_path + "/cleaner";
 
@@ -826,8 +998,9 @@ protected:
         ASTPtr create_query_pull_ast;
         {
             /// Fetch and parse (possibly) new definition
-            String create_query_pull_str = getRemoteCreateTable(task_table.table_pull, *task_shard.connection_entry,
-                                                            &task_cluster->settings_pull);
+            auto connection_entry = task_shard.info.pool->get(&task_cluster->settings_pull);
+            String create_query_pull_str = getRemoteCreateTable(task_table.table_pull, *connection_entry, &task_cluster->settings_pull);
+
             ParserCreateQuery parser_create_query;
             create_query_pull_ast = parseQuery(parser_create_query, create_query_pull_str);
         }
@@ -839,8 +1012,7 @@ protected:
         {
             /// Create special cluster with single shard
             String shard_read_cluster_name = ".read_shard." + task_table.cluster_pull_name;
-            size_t current_shard_index = task_shard.info.shard_num - 1;
-            ClusterPtr cluster_pull_current_shard = task_table.cluster_pull->getClusterWithSingleShard(current_shard_index);
+            ClusterPtr cluster_pull_current_shard = task_table.cluster_pull->getClusterWithSingleShard(task_shard.indexInCluster());
             context.setCluster(shard_read_cluster_name, cluster_pull_current_shard);
 
             auto storage_shard_ast = createASTStorageDistributed(shard_read_cluster_name, task_table.table_pull.first, task_table.table_pull.second);
@@ -1294,13 +1466,13 @@ public:
 
     void mainImpl()
     {
-        ConfigurationPtr zookeeper_configuration(new Poco::Util::XMLConfiguration(config_xml));
-        auto log = &logger();
-
-        /// Hostname + random id (to be able to run multiple copiers on the same host)
-        process_id = Poco::UUIDGenerator().create().toString();
+        /// Hostname # pid _ start_time
+        process_id = std::to_string(Poco::Process::id()) + "_" + std::to_string(Poco::Timestamp().epochTime());
         host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
         String clickhouse_path = Poco::Path::current() + "/" + process_id;
+
+        ConfigurationPtr zookeeper_configuration(new Poco::Util::XMLConfiguration(config_xml));
+        auto log = &logger();
 
         LOG_INFO(log, "Starting clickhouse-copier ("
             << "id " << process_id << ", "

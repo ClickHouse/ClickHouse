@@ -28,12 +28,17 @@ bool isLocalAddress(const Poco::Net::SocketAddress & address)
 
 bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port)
 {
-    if (clickhouse_port == address.port())
-    {
-        return isLocalAddress(address);
-    }
+    return clickhouse_port == address.port() && isLocalAddress(address);
+}
 
-    return false;
+
+size_t getHostNameDifference(const std::string & local_hostname, const std::string & host)
+{
+    size_t hostname_difference = 0;
+    for (size_t i = 0; i < std::min(local_hostname.length(), host.length()); ++i)
+            if (local_hostname[i] != host[i])
+                ++hostname_difference;
+    return hostname_difference;
 }
 
 }
