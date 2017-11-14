@@ -2,7 +2,6 @@
 
 #include <Storages/IStorage.h>
 #include <Core/Defines.h>
-#include <common/MultiVersion.h>
 #include <ext/shared_ptr_helper.h>
 
 namespace DB
@@ -10,8 +9,6 @@ namespace DB
 
 class StorageCatBoostPool : private ext::shared_ptr_helper<StorageCatBoostPool>, public IStorage
 {
-    friend class ext::shared_ptr_helper<StorageCatBoostPool>;
-
 public:
     static StoragePtr create(const Context & context,
                              const String & column_description_file_name, const String & data_description_file_name);
@@ -77,11 +74,12 @@ private:
 
     std::vector<ColumnDescription> columns_description;
 
-    StorageCatBoostPool(const Context & context, String column_description_file_name, String data_description_file_name);
-
     void checkDatasetDescription();
     void parseColumnDescription();
     void createSampleBlockAndColumns();
+
+protected:
+    StorageCatBoostPool(const Context & context, String column_description_file_name, String data_description_file_name);
 };
 
 }
