@@ -241,6 +241,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
                 case AttributeUnderlyingType::UInt16:
                 case AttributeUnderlyingType::UInt32:
                 case AttributeUnderlyingType::UInt64:
+                case AttributeUnderlyingType::UInt128:
                 case AttributeUnderlyingType::Int8:
                 case AttributeUnderlyingType::Int16:
                 case AttributeUnderlyingType::Int32:

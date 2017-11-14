@@ -65,6 +65,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -113,6 +114,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -159,6 +161,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -196,6 +199,7 @@ void ComplexKeyHashedDictionary::has(const Columns & key_columns, const DataType
         case AttributeUnderlyingType::UInt16: has<UInt16>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::UInt32: has<UInt32>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::UInt64: has<UInt64>(attribute, key_columns, out); break;
+        case AttributeUnderlyingType::UInt128: has<UInt128>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Int8: has<Int8>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Int16: has<Int16>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Int32: has<Int32>(attribute, key_columns, out); break;
@@ -300,6 +304,7 @@ void ComplexKeyHashedDictionary::calculateBytesAllocated()
             case AttributeUnderlyingType::UInt16: addAttributeSize<UInt16>(attribute); break;
             case AttributeUnderlyingType::UInt32: addAttributeSize<UInt32>(attribute); break;
             case AttributeUnderlyingType::UInt64: addAttributeSize<UInt64>(attribute); break;
+            case AttributeUnderlyingType::UInt128: addAttributeSize<UInt128>(attribute); break;
             case AttributeUnderlyingType::Int8: addAttributeSize<Int8>(attribute); break;
             case AttributeUnderlyingType::Int16: addAttributeSize<Int16>(attribute); break;
             case AttributeUnderlyingType::Int32: addAttributeSize<Int32>(attribute); break;
@@ -336,6 +341,7 @@ ComplexKeyHashedDictionary::Attribute ComplexKeyHashedDictionary::createAttribut
         case AttributeUnderlyingType::UInt16: createAttributeImpl<UInt16>(attr, null_value); break;
         case AttributeUnderlyingType::UInt32: createAttributeImpl<UInt32>(attr, null_value); break;
         case AttributeUnderlyingType::UInt64: createAttributeImpl<UInt64>(attr, null_value); break;
+        case AttributeUnderlyingType::UInt128: createAttributeImpl<UInt128>(attr, null_value); break;
         case AttributeUnderlyingType::Int8: createAttributeImpl<Int8>(attr, null_value); break;
         case AttributeUnderlyingType::Int16: createAttributeImpl<Int16>(attr, null_value); break;
         case AttributeUnderlyingType::Int32: createAttributeImpl<Int32>(attr, null_value); break;
@@ -370,6 +376,7 @@ void ComplexKeyHashedDictionary::getItemsNumber(
     DISPATCH(UInt16)
     DISPATCH(UInt32)
     DISPATCH(UInt64)
+    DISPATCH(UInt128)
     DISPATCH(Int8)
     DISPATCH(Int16)
     DISPATCH(Int32)
@@ -401,7 +408,7 @@ void ComplexKeyHashedDictionary::getItemsImpl(
         const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
 
         const auto it = attr.find(key);
-        set_value(i, it != attr.end() ? it->second : get_default(i));
+        set_value(i, it != attr.end() ? static_cast<OutputType>(it->second) : get_default(i));
 
         /// free memory allocated for the key
         temporary_keys_pool.rollback(key.size);
@@ -427,6 +434,7 @@ bool ComplexKeyHashedDictionary::setAttributeValue(Attribute & attribute, const 
         case AttributeUnderlyingType::UInt16: return setAttributeValueImpl<UInt16>(attribute, key, value.get<UInt64>());
         case AttributeUnderlyingType::UInt32: return setAttributeValueImpl<UInt32>(attribute, key, value.get<UInt64>());
         case AttributeUnderlyingType::UInt64: return setAttributeValueImpl<UInt64>(attribute, key, value.get<UInt64>());
+        case AttributeUnderlyingType::UInt128: return setAttributeValueImpl<UInt128>(attribute, key, value.get<UInt128>());
         case AttributeUnderlyingType::Int8: return setAttributeValueImpl<Int8>(attribute, key, value.get<Int64>());
         case AttributeUnderlyingType::Int16: return setAttributeValueImpl<Int16>(attribute, key, value.get<Int64>());
         case AttributeUnderlyingType::Int32: return setAttributeValueImpl<Int32>(attribute, key, value.get<Int64>());
@@ -514,6 +522,7 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys() const
         case AttributeUnderlyingType::UInt16: return getKeys<UInt16>(attribute); break;
         case AttributeUnderlyingType::UInt32: return getKeys<UInt32>(attribute); break;
         case AttributeUnderlyingType::UInt64: return getKeys<UInt64>(attribute); break;
+        case AttributeUnderlyingType::UInt128: return getKeys<UInt128>(attribute); break;
         case AttributeUnderlyingType::Int8: return getKeys<Int8>(attribute); break;
         case AttributeUnderlyingType::Int16: return getKeys<Int16>(attribute); break;
         case AttributeUnderlyingType::Int32: return getKeys<Int32>(attribute); break;
