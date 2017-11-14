@@ -1,7 +1,10 @@
 #include <common/config_common.h>
+#include <Common/config.h>
+
 #if USE_TCMALLOC
 #include <gperftools/malloc_extension.h>
 #endif
+
 #include "Server.h"
 #include "LocalServer.h"
 #include <Common/StringUtils.h>
@@ -14,6 +17,12 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv);
 int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 int mainEntryClickHouseCompressor(int argc, char ** argv);
+int mainEntryClickHouseFormat(int argc, char ** argv);
+
+#if USE_EMBEDDED_COMPILER
+    int mainEntryClickHouseClang(int argc, char ** argv);
+    int mainEntryClickHouseLLD(int argc, char ** argv);
+#endif
 
 namespace
 {
@@ -30,7 +39,12 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"server", mainEntryClickHouseServer},
     {"performance-test", mainEntryClickHousePerformanceTest},
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
-    {"compressor", mainEntryClickHouseCompressor}
+    {"compressor", mainEntryClickHouseCompressor},
+    {"format", mainEntryClickHouseFormat},
+#if USE_EMBEDDED_COMPILER
+    {"clang", mainEntryClickHouseClang},
+    {"lld", mainEntryClickHouseLLD},
+#endif
 };
 
 
@@ -68,7 +82,16 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 
 int main(int argc_, char ** argv_)
 {
+#if USE_EMBEDDED_COMPILER
+    if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
+        return mainEntryClickHouseClang(argc_, argv_);
+#endif
+
 #if USE_TCMALLOC
+    /** Without this option, tcmalloc returns memory to OS too frequently for medium-sized memory allocations
+      *  (like IO buffers, column vectors, hash tables, etc.),
+      *  that lead to page faults and significantly hurts performance.
+      */
     MallocExtension::instance()->SetNumericProperty("tcmalloc.aggressive_memory_decommit", false);
 #endif
 

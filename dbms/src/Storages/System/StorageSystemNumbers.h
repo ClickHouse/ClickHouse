@@ -21,7 +21,6 @@ class Context;
   */
 class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemNumbers>;
 public:
     std::string getName() const override { return "SystemNumbers"; }
     std::string getTableName() const override { return name; }
@@ -42,6 +41,7 @@ private:
     bool multithreaded;
     size_t limit;
 
+protected:
     /// limit: 0 means unlimited.
     StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_ = 0);
 };
