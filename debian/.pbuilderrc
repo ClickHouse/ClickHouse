@@ -1,12 +1,15 @@
 # ubuntu:
-# prepare:
-# ln -s gutsy /usr/share/debootstrap/scripts/artful
+# prepare old (trusty or earlier) host system:
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/artful
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/bionic
 # echo "3.0 (native)" > debian/source/format
 # build ubuntu:
 # sudo DIST=trusty pbuilder create --configfile debian/.pbuilderrc && DIST=trusty pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=xenial pbuilder create --configfile debian/.pbuilderrc && DIST=xenial pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=zesty  pbuilder create --configfile debian/.pbuilderrc && DIST=zesty  pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=artful pbuilder create --configfile debian/.pbuilderrc && DIST=artful pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=bionic pbuilder create --configfile debian/.pbuilderrc && DIST=bionic pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=devel  pbuilder create --configfile debian/.pbuilderrc && DIST=devel  pdebuild --configfile debian/.pbuilderrc
 # build debian:
 # sudo DIST=stable       pbuilder create --configfile debian/.pbuilderrc && DIST=stable       pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=testing      pbuilder create --configfile debian/.pbuilderrc && DIST=testing      pdebuild --configfile debian/.pbuilderrc
@@ -17,6 +20,7 @@
 # sudo DIST=xenial       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=xenial       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=zesty        ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=zesty        ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=artful       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=artful       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=bionic       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=bionic       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=stable       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=stable       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
@@ -37,7 +41,7 @@ DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BAC
     "experimental" "unstable" "testing" "stable")
 
 # List of Ubuntu suites. Update these when needed.
-UBUNTU_SUITES=("artful" "zesty" "xenial" "trusty")
+UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
 
 # Mirrors to use. Update these to your preferred mirror.
 DEBIAN_MIRROR="deb.debian.org"
@@ -46,14 +50,7 @@ DEBIAN_MIRROR="deb.debian.org"
 UBUNTU_MIRROR="mirror.yandex.ru"
 #DEBIAN_MIRROR="mirror.yandex.ru"
 
-# Optionally use the changelog of a package to determine the suite to use if
-# none set.
-if [ -z "${DIST}" ] && [ -r "debian/changelog" ]; then
-    DIST=$(dpkg-parsechangelog --show-field=Distribution)
-fi
-
-# Optionally set a default distribution if none is used. Note that you can set
-# your own default (i.e. ${DIST:="unstable"}).
+# Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 : ${DIST:="$(lsb_release --short --codename)"}
 
 # Optionally change Debian codenames in $DIST to their aliases.
@@ -108,7 +105,6 @@ elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     case "$DIST" in
        "trusty" | "xenial" )
            OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/$OSNAME $DIST main |"
-           #OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/ppa/$OSNAME $DIST main |"
            ALLOWUNTRUSTED=yes
            ;;
     esac
@@ -131,7 +127,7 @@ case "$DIST" in
 esac
 
 case "$DIST" in
-    "trusty" | "xenial" | "artful" | "experimental" | "unstable" )
+    "trusty" | "xenial" | "experimental" | "unstable" )
         export DEB_CC=gcc-7
         export DEB_CXX=g++-7
         ;;

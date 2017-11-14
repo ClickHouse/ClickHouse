@@ -149,8 +149,8 @@ void AsynchronousMetrics::update()
             for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
             {
                 auto & table = iterator->table();
-                StorageMergeTree * table_merge_tree = typeid_cast<StorageMergeTree *>(table.get());
-                StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get());
+                StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
+                StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 
                 if (table_replicated_merge_tree)
                 {

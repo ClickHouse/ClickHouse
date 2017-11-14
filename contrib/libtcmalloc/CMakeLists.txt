@@ -28,7 +28,6 @@ add_library (tcmalloc_minimal_internal
 ./src/system-alloc.cc
 ./src/span.cc
 ./src/common.cc
-./src/debugallocation.cc
 ./src/stacktrace.cc
 ./src/stack_trace_table.cc
 ./src/heap-checker.cc

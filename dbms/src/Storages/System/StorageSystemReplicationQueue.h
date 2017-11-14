@@ -14,7 +14,6 @@ class Context;
   */
 class StorageSystemReplicationQueue : public ext::shared_ptr_helper<StorageSystemReplicationQueue>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemReplicationQueue>;
 public:
     std::string getName() const override { return "SystemReplicationQueue"; }
     std::string getTableName() const override { return name; }
@@ -33,6 +32,7 @@ private:
     const std::string name;
     NamesAndTypesList columns;
 
+protected:
     StorageSystemReplicationQueue(const std::string & name_);
 };
 
