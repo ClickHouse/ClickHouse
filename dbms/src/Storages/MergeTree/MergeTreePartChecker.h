@@ -26,7 +26,7 @@ public:
       *  - Calculates checksums and compares them with checksums.txt.
       * - For arrays and strings, checks the correspondence of the size and amount of data.
       * - Checks the correctness of marks.
-      * Throws an exception if the piece is corrupted or if the check fails (TODO: you can try to separate these cases).
+      * Throws an exception if the part is corrupted or if the check fails (TODO: you can try to separate these cases).
       */
     static void checkDataPart(
         String path,

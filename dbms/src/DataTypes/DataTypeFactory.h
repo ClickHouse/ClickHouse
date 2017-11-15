@@ -1,30 +1,57 @@
 #pragma once
 
-#include <map>
-#include <common/singleton.h>
-#include <Poco/RegularExpression.h>
+#include <memory>
+#include <functional>
+#include <unordered_map>
 #include <DataTypes/IDataType.h>
+#include <ext/singleton.h>
 
 
 namespace DB
 {
 
-/** Creates data type by its name (possibly name contains parameters in parens).
+class IDataType;
+using DataTypePtr = std::shared_ptr<IDataType>;
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+
+
+/** Creates a data type by name of data type family and parameters.
   */
-class DataTypeFactory : public Singleton<DataTypeFactory>
+class DataTypeFactory final : public ext::singleton<DataTypeFactory>
 {
+private:
+    using Creator = std::function<DataTypePtr(const ASTPtr & parameters)>;
+    using SimpleCreator = std::function<DataTypePtr()>;
+    using DataTypesDictionary = std::unordered_map<String, Creator>;
+
 public:
-    DataTypeFactory();
-    DataTypePtr get(const String & name) const;
+    DataTypePtr get(const String & full_name) const;
+    DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
+    DataTypePtr get(const ASTPtr & ast) const;
+
+    /// For compatibility with SQL, it's possible to specify that certain data type name is case insensitive.
+    enum CaseSensitiveness
+    {
+        CaseSensitive,
+        CaseInsensitive
+    };
+
+    /// Register a type family by its name.
+    void registerDataType(const String & family_name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+
+    /// Register a simple data type, that have no parameters.
+    void registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
 private:
-    using NonParametricDataTypes = std::map<String, DataTypePtr>;
-    NonParametricDataTypes non_parametric_data_types;
+    DataTypesDictionary data_types;
 
-    Poco::RegularExpression fixed_string_regexp {R"--(^FixedString\s*\(\s*(\d+)\s*\)$)--"};
+    /// Case insensitive data types will be additionally added here with lowercased name.
+    DataTypesDictionary case_insensitive_data_types;
 
-    Poco::RegularExpression nested_regexp {R"--(^(\w+)\s*\(\s*(.+)\s*\)$)--",
-        Poco::RegularExpression::RE_MULTILINE | Poco::RegularExpression::RE_DOTALL};
+    DataTypeFactory();
+    friend class ext::singleton<DataTypeFactory>;
 };
 
 }

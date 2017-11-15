@@ -1,0 +1,6 @@
+{%- extends "layout.html" %}
+{% block body %}
+{% if builder != "singlehtml" %}
+{{ body }}
+{% endif %}
+{% endblock %}

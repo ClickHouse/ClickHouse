@@ -1,5 +1,5 @@
 Functions for working with strings
-------------------------------
+----------------------------------
 
 empty
 ~~~~~
@@ -26,7 +26,7 @@ Returns the length of a string in Unicode code points (not in characters), assum
 The result type is UInt64.
 
 lower
-~~~~~~
+~~~~~
 Converts ASCII Latin symbols in a string to lowercase.
 
 upper

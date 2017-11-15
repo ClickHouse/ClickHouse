@@ -9,6 +9,7 @@ namespace DB
 
 class WriteBuffer;
 class Context;
+struct ExecuteTableFunctions;
 
 
 /** For SELECT query, determine names and types of columns of result,
@@ -19,7 +20,7 @@ class Context;
   */
 struct AnalyzeResultOfQuery
 {
-    void process(ASTPtr & ast, Context & context);
+    void process(ASTPtr & ast, const Context & context, ExecuteTableFunctions & table_functions);
 
     /// Block will have non-nullptr columns for constant expressions.
     Block result;

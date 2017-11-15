@@ -1,10 +1,11 @@
 #include <iostream>
 #include <iomanip>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/executeQuery.h>
 
@@ -14,7 +15,7 @@
 using namespace DB;
 
 
-void inputThread(BlockInputStreamPtr in, BlockOutputStreamPtr out, WriteBuffer & wb, std::mutex & mutex)
+void inputThread(const BlockInputStreamPtr & in, BlockOutputStreamPtr out, WriteBuffer & wb, std::mutex & mutex)
 {
     while (Block block = in->read())
     {
@@ -34,7 +35,7 @@ void forkThread(ForkPtr fork)
 int main(int argc, char ** argv)
 try
 {
-    Context context;
+    Context context = Context::createGlobal();
 
     context.setGlobalContext(context);
     context.setPath("./");
@@ -42,7 +43,7 @@ try
     loadMetadata(context);
 
     context.setCurrentDatabase("default");
-    context.setSetting("max_threads", 1UL);
+    context.setSetting("max_threads", UInt64(1));
 
     BlockIO io1 = executeQuery(
         "SELECT SearchPhrase, count()"
@@ -51,13 +52,13 @@ try
             " GROUP BY SearchPhrase"
             " ORDER BY count() DESC"
             " LIMIT 10",
-        context, QueryProcessingStage::Complete);
+        context, false, QueryProcessingStage::Complete);
 
     BlockIO io2 = executeQuery(
         "SELECT count()"
             " FROM hits"
             " WHERE SearchPhrase != ''",
-        context, QueryProcessingStage::Complete);
+        context, false, QueryProcessingStage::Complete);
 
     WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
 

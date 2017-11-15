@@ -8,30 +8,26 @@
 namespace DB
 {
 
-bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_case{"CASE", true, true};
-    ParserString s_when{"WHEN", true, true};
-    ParserString s_then{"THEN", true, true};
-    ParserString s_else{"ELSE", true, true};
-    ParserString s_end{ "END",  true, true};
+    ParserKeyword s_case{"CASE"};
+    ParserKeyword s_when{"WHEN"};
+    ParserKeyword s_then{"THEN"};
+    ParserKeyword s_else{"ELSE"};
+    ParserKeyword s_end{ "END"};
     ParserExpressionWithOptionalAlias p_expr{false};
 
-    if (!s_case.parse(pos, end, node, max_parsed_pos, expected))
+    if (!s_case.parse(pos, node, expected))
     {
         /// Parse as a simple ASTFunction.
-        return ParserFunction{}.parse(pos = begin, end, node, max_parsed_pos, expected);
+        pos = begin;
+        return ParserFunction{}.parse(pos, node, expected);
     }
 
-    ws.ignore(pos, end);
-
-    bool has_case_expr = false;
-
     auto old_pos = pos;
-    has_case_expr = !s_when.parse(pos, end, node, max_parsed_pos, expected);
+    bool has_case_expr = !s_when.parse(pos, node, expected);
     pos = old_pos;
 
     ASTs args;
@@ -39,50 +35,36 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
     auto parse_branches = [&]()
     {
         bool has_branch = false;
-        while (s_when.parse(pos, end, node, max_parsed_pos, expected))
+        while (s_when.parse(pos, node, expected))
         {
             has_branch = true;
 
-            ws.ignore(pos, end);
-
             ASTPtr expr_when;
-            if (!p_expr.parse(pos, end, expr_when, max_parsed_pos, expected))
+            if (!p_expr.parse(pos, expr_when, expected))
                 return false;
             args.push_back(expr_when);
 
-            ws.ignore(pos, end);
-
-            if (!s_then.parse(pos, end, node, max_parsed_pos, expected))
+            if (!s_then.parse(pos, node, expected))
                 return false;
-
-            ws.ignore(pos, end);
 
             ASTPtr expr_then;
-            if (!p_expr.parse(pos, end, expr_then, max_parsed_pos, expected))
+            if (!p_expr.parse(pos, expr_then, expected))
                 return false;
             args.push_back(expr_then);
-
-            ws.ignore(pos, end);
         }
 
         if (!has_branch)
             return false;
 
-        ws.ignore(pos, end);
-
-        if (!s_else.parse(pos, end, node, max_parsed_pos, expected))
+        if (!s_else.parse(pos, node, expected))
             return false;
 
-        ws.ignore(pos, end);
-
         ASTPtr expr_else;
-        if (!p_expr.parse(pos, end, expr_else, max_parsed_pos, expected))
+        if (!p_expr.parse(pos, expr_else, expected))
             return false;
         args.push_back(expr_else);
 
-        ws.ignore(pos, end);
-
-        if (!s_end.parse(pos, end, node, max_parsed_pos, expected))
+        if (!s_end.parse(pos, node, expected))
             return false;
 
         return true;
@@ -91,11 +73,9 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
     if (has_case_expr)
     {
         ASTPtr case_expr;
-        if (!p_expr.parse(pos, end, case_expr, max_parsed_pos, expected))
+        if (!p_expr.parse(pos, case_expr, expected))
             return false;
         args.push_back(case_expr);
-
-        ws.ignore(pos, end);
 
         if (!parse_branches())
             return false;
@@ -104,7 +84,7 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
         function_args->children = std::move(args);
 
         auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
-        function->name = "caseWithExpr";
+        function->name = "caseWithExpression";
         function->arguments = function_args;
         function->children.push_back(function->arguments);
 
@@ -119,7 +99,7 @@ bool ParserCase::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_p
         function_args->children = std::move(args);
 
         auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
-        function->name = "caseWithoutExpr";
+        function->name = "caseWithoutExpression";
         function->arguments = function_args;
         function->children.push_back(function->arguments);
 

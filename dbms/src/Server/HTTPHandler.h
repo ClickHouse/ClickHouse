@@ -1,13 +1,19 @@
 #pragma once
 
+#include "IServer.h"
+
+#include <Poco/Net/HTTPRequestHandler.h>
+
 #include <Common/CurrentMetrics.h>
-#include "Server.h"
+#include <Common/HTMLForm.h>
 
 
 namespace CurrentMetrics
 {
     extern const Metric HTTPConnection;
 }
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -19,7 +25,7 @@ class CascadeWriteBuffer;
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    explicit HTTPHandler(Server & server_);
+    explicit HTTPHandler(IServer & server_);
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
@@ -47,11 +53,10 @@ private:
         }
     };
 
-    Server & server;
+    IServer & server;
+    Poco::Logger * log;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
-
-    Logger * log;
 
     /// Also initializes 'used_output'.
     void processQuery(
@@ -60,8 +65,11 @@ private:
         Poco::Net::HTTPServerResponse & response,
         Output & used_output);
 
-    void trySendExceptionToClient(const std::string & s, int exception_code,
-        Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response,
+    void trySendExceptionToClient(
+        const std::string & s,
+        int exception_code,
+        Poco::Net::HTTPServerRequest & request,
+        Poco::Net::HTTPServerResponse & response,
         Output & used_output);
 
     void pushDelayedResults(Output & used_output);

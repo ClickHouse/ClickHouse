@@ -13,14 +13,15 @@ class Context;
 class ExpressionActions;
 struct ExpressionActionsChain;
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
-
 class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
+
+class Set;
+using SetPtr = std::shared_ptr<Set>;
+using PreparedSets = std::unordered_map<IAST*, SetPtr>;
 
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -34,32 +35,30 @@ class ASTExpressionList;
 class ASTSelectQuery;
 
 
-/** Информация о том, что делать при выполнении подзапроса в секции [GLOBAL] IN/JOIN.
+/** Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
   */
 struct SubqueryForSet
 {
-    /// Источник - получен с помощью InterpreterSelectQuery подзапроса.
+    /// The source is obtained using the InterpreterSelectQuery subquery.
     BlockInputStreamPtr source;
     Block source_sample;
 
-    /// Если задано - создать из результата Set.
+    /// If set, build it from result.
     SetPtr set;
-
-    /// Если задано - создать из результата Join.
     JoinPtr join;
 
-    /// Если задано - положить результат в таблицу.
-    /// Это - временная таблица для передачи на удалённые серверы при распределённой обработке запроса.
+    /// If set, put the result into the table.
+    /// This is a temporary table for transferring to remote servers for distributed query processing.
     StoragePtr table;
 };
 
-/// ID подзапроса -> что с ним делать.
+/// ID of subquery -> what to do with it.
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 
-/** Превращает выражение из синтаксического дерева в последовательность действий для его выполнения.
+/** Transforms an expression from a syntax tree into a sequence of actions to execute it.
   *
-  * NOTE: если ast - запрос SELECT из таблицы, структура этой таблицы не должна меняться во все время жизни ExpressionAnalyzer-а.
+  * NOTE: if `ast` is a SELECT query from a table, the structure of this table should not change during the lifetime of ExpressionAnalyzer.
   */
 class ExpressionAnalyzer : private boost::noncopyable
 {
@@ -70,25 +69,25 @@ public:
     ExpressionAnalyzer(
         const ASTPtr & ast_,
         const Context & context_,
-        StoragePtr storage_,
+        const StoragePtr & storage_,
         const NamesAndTypesList & columns_,
         size_t subquery_depth_ = 0,
         bool do_global_ = false);
 
-    /// Есть ли в выражении агрегатные функции или секция GROUP BY или HAVING.
+    /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
 
-    /// Получить список ключей агрегирования и описаний агрегатных функций, если в запросе есть GROUP BY.
+    /// Get a list of aggregation keys and descriptions of aggregate functions if the query contains GROUP BY.
     void getAggregateInfo(Names & key_names, AggregateDescriptions & aggregates) const;
 
-    /** Получить набор столбцов, которых достаточно прочитать из таблицы для вычисления выражения.
-      * Не учитываются столбцы, добавляемые из другой таблицы путём JOIN-а.
+    /** Get a set of columns that are enough to read from the table to evaluate the expression.
+      * Columns added from another table by JOIN are not counted.
       */
-    Names getRequiredColumns();
+    Names getRequiredColumns() const;
 
-    /** Эти методы позволяют собрать цепочку преобразований над блоком, получающую значения в нужных секциях запроса.
+    /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
-      * Пример использования:
+      * Example usage:
       *   ExpressionActionsChain chain;
       *   analyzer.appendWhere(chain);
       *   chain.addStep();
@@ -96,48 +95,50 @@ public:
       *   analyzer.appendOrderBy(chain);
       *   chain.finalize();
       *
-      * Если указано only_types = true, не выполняет подзапросы в соответствующих частях запроса. Полученные таким
-      *  образом действия не следует выполнять, они нужны только чтобы получить список столбцов с их типами.
+      * If only_types = true set, does not execute subqueries in the relevant parts of the query. The actions got this way
+      *  shouldn't be executed, they are only needed to get a list of columns with their types.
       */
 
-    /// До агрегации:
+    /// Before aggregation:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
-    /// После агрегации:
+    /// After aggregation:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
-    /// Удаляет все столбцы кроме выбираемых SELECT, упорядочивает оставшиеся столбцы и переименовывает их в алиасы.
+    /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     void appendProjectResult(ExpressionActionsChain & chain, bool only_types) const;
 
-    /// Если ast не запрос SELECT, просто получает все действия для вычисления выражения.
-    /// Если project_result, в выходном блоке останутся только вычисленные значения в нужном порядке, переименованные в алиасы.
-    /// Иначе, из блока будут удаляться только временные столбцы.
+    /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
+    /// If project_result, only the calculated values in the desired order, renamed to aliases, remain in the output block.
+    /// Otherwise, only temporary columns will be deleted from the block.
     ExpressionActionsPtr getActions(bool project_result);
 
-    /// Действия, которые можно сделать над пустым блоком: добавление констант и применение функций, зависящих только от констант.
-    /// Не выполняет подзапросы.
+    /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
+    /// Does not execute subqueries.
     ExpressionActionsPtr getConstActions();
 
-    /** Множества, для создания которых нужно будет выполнить подзапрос.
-      * Только множества, нужные для выполнения действий, возвращенных из уже вызванных append* или getActions.
-      * То есть, нужно вызвать getSetsWithSubqueries после всех вызовов append* или getActions
-      *  и создать все возвращенные множества перед выполнением действий.
+    /** Sets that require a subquery to be create.
+      * Only the sets needed to perform actions returned from already executed `append*` or `getActions`.
+      * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
+      *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets getSubqueriesForSets() { return subqueries_for_sets; }
+    SubqueriesForSets getSubqueriesForSets() const { return subqueries_for_sets; }
 
-    /** Таблицы, которые надо будет отправить на удалённые серверы при распределённой обработке запроса.
+    PreparedSets getPreparedSets() { return prepared_sets; }
+
+    /** Tables that will need to be sent to remote servers for distributed query processing.
       */
     const Tables & getExternalTables() const { return external_tables; }
 
-    /// Если ast - запрос SELECT, получает имена (алиасы) и типы столбцов из секции SELECT.
+    /// If ast is a SELECT query, it gets the aliases and column types from the SELECT section.
     Block getSelectSampleBlock();
 
-    /// Создаем какие сможем Set из секции IN для использования индекса по ним.
+    /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
 private:
@@ -147,18 +148,18 @@ private:
     Settings settings;
     size_t subquery_depth;
 
-    /// Столбцы, которые упоминаются в выражении, но не были заданы в конструкторе.
+    /// Columns that are mentioned in the expression, but were not specified in the constructor.
     NameSet unknown_required_columns;
 
-    /** Исходные столбцы.
-      * Сначала сюда помещаются все доступные столбцы таблицы. Затем (при разборе запроса) удаляются неиспользуемые столбцы.
+    /** Original columns.
+      * First, all available columns of the table are placed here. Then (when parsing the query), unused columns are deleted.
       */
     NamesAndTypesList columns;
 
-    /// Столбцы после ARRAY JOIN, JOIN и/или агрегации.
+    /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
 
-    /// Таблица, из которой делается запрос.
+    /// The table from which the query is made.
     const StoragePtr storage;
 
     bool has_aggregation = false;
@@ -167,14 +168,16 @@ private:
 
     SubqueriesForSets subqueries_for_sets;
 
-    /// NOTE: Пока поддерживается только один JOIN на запрос.
+    PreparedSets prepared_sets;
 
-    /** Запрос вида SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k
-      * Соединение делается по столбцу k.
-      * Во время JOIN-а,
-      *  - в "правой" таблице, он будет доступен по алиасу k, так как было выполнено действие Project для подзапроса.
-      *  - в "левой" таблице, он будет доступен по имени expr(x), так как ещё не было выполнено действие Project.
-      * Надо запомнить оба этих варианта.
+    /// NOTE: So far, only one JOIN per query is supported.
+
+    /** Query of the form `SELECT expr(x) AS FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
+      * The join is made by column k.
+      * During the JOIN,
+      *  - in the "right" table, it will be available by alias `k`, since `Project` action for the subquery was executed.
+      *  - in the "left" table, it will be accessible by the name `expr(x)`, since `Project` action has not been executed yet.
+      * You must remember both of these options.
       */
     Names join_key_names_left;
     Names join_key_names_right;
@@ -187,21 +190,21 @@ private:
     using SetOfASTs = std::set<const IAST *>;
     using MapOfASTs = std::map<ASTPtr, ASTPtr>;
 
-    /// Какой столбец нужно по-ARRAY-JOIN-ить, чтобы получить указанный.
-    /// Например, для SELECT s.v ... ARRAY JOIN a AS s сюда попадет "s.v" -> "a.v".
+    /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
+    /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
     NameToNameMap array_join_result_to_source;
 
-    /// Для секции ARRAY JOIN отображение из алиаса в полное имя столбца.
-    /// Например, для ARRAY JOIN [1,2] AS b сюда попадет "b" -> "array(1,2)".
+    /// For the ARRAY JOIN section, mapping from the alias to the full column name.
+    /// For example, for `ARRAY JOIN [1,2] AS b` "b" -> "array(1,2)" will enter here.
     NameToNameMap array_join_alias_to_name;
 
-    /// Обратное отображение для array_join_alias_to_name.
+    /// The backward mapping for array_join_alias_to_name.
     NameToNameMap array_join_name_to_alias;
 
-    /// Нужно ли подготавливать к выполнению глобальные подзапросы при анализировании запроса.
+    /// Do I need to prepare for execution global subqueries when analyzing the query.
     bool do_global;
 
-    /// Все новые временные таблицы, полученные при выполнении подзапросов GLOBAL IN/JOIN.
+    /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
     size_t external_table_id = 1;
 
@@ -211,22 +214,22 @@ private:
     static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
     NamesAndTypesList::iterator findColumn(const String & name) { return findColumn(name, columns); }
 
-    /** Из списка всех доступных столбцов таблицы (columns) удалить все ненужные.
-      * Заодно, сформировать множество неизвестных столбцов (unknown_required_columns),
-      * а также столбцов, добавленных JOIN-ом (columns_added_by_join).
+    /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
+      * At the same time, form a set of unknown columns (`unknown_required_columns`),
+      * as well as the columns added by JOIN (`columns_added_by_join`).
       */
     void collectUsedColumns();
 
-    /** Найти столбцы, получаемые путём JOIN-а.
+    /** Find the columns that are obtained by JOIN.
       */
     void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
 
-    /** Создать словарь алиасов.
+    /** Create a dictionary of aliases.
       */
     void addASTAliases(ASTPtr & ast, int ignore_levels = 0);
 
-    /** Для узлов-звёздочек - раскрыть их в список всех столбцов.
-      * Для узлов-литералов - подставить алиасы.
+    /** For star nodes(`*`), expand them to a list of all columns.
+      * For literal nodes, substitute aliases.
       */
     void normalizeTree();
     void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level);
@@ -234,7 +237,7 @@ private:
     ///    Eliminates injective function calls and constant expressions from group by statement
     void optimizeGroupBy();
 
-    /// Удалить из ORDER BY повторяющиеся элементы.
+    /// Remove duplicate items from ORDER BY.
     void optimizeOrderBy();
 
     void optimizeLimitBy();
@@ -244,73 +247,79 @@ private:
     void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, Aliases & aliases) const;
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
-    /// Превратить перечисление значений или подзапрос в ASTSet. node - функция in или notIn.
-    void makeSet(ASTFunction * node, const Block & sample_block);
+    void makeSet(const ASTFunction * node, const Block & sample_block);
 
-    /// Добавляет список ALIAS столбцов из таблицы
+    /// Adds a list of ALIAS columns from the table
     void addAliasColumns();
 
-    /// Замена скалярных подзапросов на значения-константы.
+    /// Replacing scalar subqueries with constant values.
     void executeScalarSubqueries();
     void executeScalarSubqueriesImpl(ASTPtr & ast);
 
-    /// Находит глобальные подзапросы в секциях GLOBAL IN/JOIN. Заполняет external_tables.
+    /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
     void initGlobalSubqueries(ASTPtr & ast);
 
-    /// Находит в запросе использования внешних таблиц (в виде идентификаторов таблиц). Заполняет external_tables.
+    /// Finds in the query the usage of external tables (as table identifiers). Fills in external_tables.
     void findExternalTables(ASTPtr & ast);
 
-    /** Инициализировать InterpreterSelectQuery для подзапроса в секции GLOBAL IN/JOIN,
-      * создать временную таблицу типа Memory и запомнить это в словаре external_tables.
+    /** Initialize InterpreterSelectQuery for a subquery in the GLOBAL IN/JOIN section,
+      * create a temporary table of type Memory and store it in the external_tables dictionary.
       */
     void addExternalStorage(ASTPtr & subquery_or_table_name);
 
     void getArrayJoinedColumns();
-    void getArrayJoinedColumnsImpl(ASTPtr ast);
+    void getArrayJoinedColumnsImpl(const ASTPtr & ast);
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 
     struct ScopeStack;
-    void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
+    void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
 
-    void getRootActions(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
+    void getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 
-    void getActionsBeforeAggregation(ASTPtr ast, ExpressionActionsPtr & actions, bool no_subqueries);
+    void getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries);
 
-    /** Добавить ключи агрегации в aggregation_keys, агрегатные функции в aggregate_descriptions,
-      * Создать набор столбцов aggregated_columns, получаемых после агрегации, если она есть,
-      *  или после всех действий, которые обычно выполняются до агрегации.
-      * Установить has_aggregation = true, если есть GROUP BY или хотя бы одна агрегатная функция.
+    /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
+      * Create a set of columns aggregated_columns resulting after the aggregation, if any,
+      *  or after all the actions that are normally performed before aggregation.
+      * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
     void analyzeAggregation();
     void getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions);
     void assertNoAggregates(const ASTPtr & ast, const char * description);
 
-    /** Получить множество нужных столбцов для чтения из таблицы.
-      * При этом, столбцы, указанные в ignored_names, считаются ненужными. И параметр ignored_names может модифицироваться.
-      * Множество столбцов available_joined_columns - столбцы, доступные из JOIN-а, они не нужны для чтения из основной таблицы.
-      * Положить в required_joined_columns множество столбцов, доступных из JOIN-а и востребованных.
+    /** Get a set of necessary columns to read from the table.
+      * In this case, the columns specified in ignored_names are considered unnecessary. And the ignored_names parameter can be modified.
+      * The set of columns available_joined_columns are the columns available from JOIN, they are not needed for reading from the main table.
+      * Put in required_joined_columns the set of columns available from JOIN and needed.
       */
-    void getRequiredColumnsImpl(ASTPtr ast,
+    void getRequiredColumnsImpl(const ASTPtr & ast,
         NameSet & required_columns, NameSet & ignored_names,
         const NameSet & available_joined_columns, NameSet & required_joined_columns);
 
-    /// Получить таблицу, из которой идет запрос
+    /// Get the table from which the query is made
     StoragePtr getTable();
 
-    /// columns - столбцы, присутствующие до начала преобразований.
+    /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
 
     void assertSelect() const;
     void assertAggregation() const;
 
-    /** Создать Set из явного перечисления значений в запросе.
-      * Если create_ordered_set = true - создать структуру данных, подходящую для использования индекса.
+    /** Create Set from an explicit enumeration of values in the query.
+      * If create_ordered_set = true - create a data structure suitable for using the index.
       */
-    void makeExplicitSet(ASTFunction * node, const Block & sample_block, bool create_ordered_set);
-    void makeSetsForIndexImpl(ASTPtr & node, const Block & sample_block);
+    void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set);
+    void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
+
+    /** Translate qualified names such as db.table.column, table.column, table_alias.column
+      *  to unqualified names. This is done in a poor transitional way:
+      *  only one ("main") table is supported. Ambiguity is not detected or resolved.
+      */
+    void translateQualifiedNames();
+    void translateQualifiedNamesImpl(ASTPtr & node, const String & database_name, const String & table_name, const String & alias);
 };
 
 }

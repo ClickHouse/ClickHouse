@@ -6,15 +6,15 @@
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
 #include <Columns/ColumnString.h>
-#include <ext/bit_cast.hpp>
-#include <Poco/RWLock.h>
+#include <ext/bit_cast.h>
 #include <cmath>
 #include <atomic>
 #include <chrono>
 #include <vector>
 #include <map>
 #include <tuple>
-#include <random>
+#include <pcg_random.hpp>
+#include <shared_mutex>
 
 
 namespace DB
@@ -25,7 +25,7 @@ class CacheDictionary final : public IDictionary
 public:
     CacheDictionary(const std::string & name, const DictionaryStructure & dict_struct,
         DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime,
-        const std::size_t size);
+        const size_t size);
 
     CacheDictionary(const CacheDictionary & other);
 
@@ -35,9 +35,9 @@ public:
 
     std::string getTypeName() const override { return "Cache"; }
 
-    std::size_t getBytesAllocated() const override { return bytes_allocated + (string_arena ? string_arena->size() : 0); }
+    size_t getBytesAllocated() const override { return bytes_allocated + (string_arena ? string_arena->size() : 0); }
 
-    std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override
     {
@@ -45,7 +45,7 @@ public:
             query_count.load(std::memory_order_relaxed);
     }
 
-    std::size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
+    size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
 
     double getLoadFactor() const override
     {
@@ -54,7 +54,7 @@ public:
 
     bool isCached() const override { return true; }
 
-    DictionaryPtr clone() const override { return std::make_unique<CacheDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<CacheDictionary>(*this); }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
@@ -137,6 +137,8 @@ public:
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+
 private:
     template <typename Value> using ContainerType = Value[];
     template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
@@ -208,7 +210,11 @@ private:
         const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
         AbsentIdHandler && on_id_not_found) const;
 
-    UInt64 getCellIdx(const Key id) const;
+    PaddedPODArray<Key> getCachedIds() const;
+
+    bool isEmptyCell(const UInt64 idx) const;
+
+    size_t getCellIdx(const Key id) const;
 
     void setDefaultAttributeValue(Attribute & attribute, const Key idx) const;
 
@@ -236,30 +242,30 @@ private:
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
 
-    mutable Poco::RWLock rw_lock;
+    mutable std::shared_mutex rw_lock;
 
     /// Actual size will be increased to match power of 2
-    const std::size_t size;
+    const size_t size;
 
     /// all bits to 1  mask (size - 1) (0b1000 - 1 = 0b111)
-    const std::size_t size_overlap_mask;
+    const size_t size_overlap_mask;
 
     /// Max tries to find cell, overlaped with mask: if size = 16 and start_cell=10: will try cells: 10,11,12,13,14,15,0,1,2,3
-    static constexpr std::size_t max_collision_length = 10;
+    static constexpr size_t max_collision_length = 10;
 
-    const UInt64 zero_cell_idx{getCellIdx(0)};
-    std::map<std::string, std::size_t> attribute_index_by_name;
+    const size_t zero_cell_idx{getCellIdx(0)};
+    std::map<std::string, size_t> attribute_index_by_name;
     mutable std::vector<Attribute> attributes;
     mutable std::vector<CellMetadata> cells;
     Attribute * hierarchical_attribute = nullptr;
     std::unique_ptr<ArenaWithFreeLists> string_arena;
 
-    mutable std::mt19937_64 rnd_engine;
+    mutable pcg64 rnd_engine;
 
-    mutable std::size_t bytes_allocated = 0;
-    mutable std::atomic<std::size_t> element_count{0};
-    mutable std::atomic<std::size_t> hit_count{0};
-    mutable std::atomic<std::size_t> query_count{0};
+    mutable size_t bytes_allocated = 0;
+    mutable std::atomic<size_t> element_count{0};
+    mutable std::atomic<size_t> hit_count{0};
+    mutable std::atomic<size_t> query_count{0};
 
     const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };

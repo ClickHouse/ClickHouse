@@ -1,7 +1,7 @@
 #pragma once
 
 #include <thread>
-#include <zkutil/Types.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Core/Types.h>
 #include <common/logger_useful.h>
 

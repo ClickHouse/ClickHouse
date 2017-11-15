@@ -65,13 +65,13 @@ private:
 
 public:
     MergeTreeReadPool(
-        const std::size_t threads, const std::size_t sum_marks, const std::size_t min_marks_for_concurrent_read,
+        const size_t threads, const size_t sum_marks, const size_t min_marks_for_concurrent_read,
         RangesInDataParts parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
         const String & prewhere_column_name, const bool check_columns, const Names & column_names,
         const BackoffSettings & backoff_settings, size_t preferred_block_size_bytes,
         const bool do_not_steal_tasks = false);
 
-    MergeTreeReadTaskPtr getTask(const std::size_t min_marks_to_read, const std::size_t thread);
+    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread);
 
     /** Each worker could call this method and pass information about read performance.
       * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.
@@ -80,15 +80,15 @@ public:
     void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info);
 
 private:
-    std::vector<std::size_t> fillPerPartInfo(
+    std::vector<size_t> fillPerPartInfo(
         RangesInDataParts & parts, const ExpressionActionsPtr & prewhere_actions, const String & prewhere_column_name,
         const bool check_columns);
 
     void fillPerThreadInfo(
-        const std::size_t threads, const std::size_t sum_marks, std::vector<std::size_t> per_part_sum_marks,
-        RangesInDataParts & parts, const std::size_t min_marks_for_concurrent_read);
+        const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
+        RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
 
-    std::vector<std::unique_ptr<Poco::ScopedReadRWLock>> per_part_columns_lock;
+    std::vector<std::shared_lock<std::shared_mutex>> per_part_columns_lock;
     MergeTreeData & data;
     Names column_names;
     bool do_not_steal_tasks;
@@ -104,7 +104,7 @@ private:
     struct Part
     {
         MergeTreeData::DataPartPtr data_part;
-        std::size_t part_index_in_query;
+        size_t part_index_in_query;
     };
 
     std::vector<Part> parts;
@@ -113,17 +113,17 @@ private:
     {
         struct PartIndexAndRange
         {
-            std::size_t part_idx;
+            size_t part_idx;
             MarkRanges ranges;
         };
 
         std::vector<PartIndexAndRange> parts_and_ranges;
-        std::vector<std::size_t> sum_marks_in_parts;
+        std::vector<size_t> sum_marks_in_parts;
     };
 
     std::vector<ThreadTask> threads_tasks;
 
-    std::set<std::size_t> remaining_thread_tasks;
+    std::set<size_t> remaining_thread_tasks;
 
     mutable std::mutex mutex;
 

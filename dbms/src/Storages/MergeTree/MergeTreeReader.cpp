@@ -10,6 +10,7 @@
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/typeid_cast.h>
 #include <Poco/File.h>
 
 
@@ -73,11 +74,17 @@ const MergeTreeReader::ValueSizeMap & MergeTreeReader::getAvgValueSizeHints() co
 }
 
 
-void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
+MergeTreeRangeReader MergeTreeReader::readRange(size_t from_mark, size_t to_mark)
 {
+    return MergeTreeRangeReader(*this, from_mark, to_mark, storage.index_granularity);
+}
+
+
+size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res)
+{
+    size_t read_rows = 0;
     try
     {
-        size_t max_rows_to_read = (to_mark - from_mark) * storage.index_granularity;
 
         /// Pointers to offset columns that are common to the nested data structure columns.
         /// If append is true, then the value will be equal to nullptr and will be used only to
@@ -103,7 +110,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
             const IDataType * observed_type;
             bool is_nullable;
 
-            if (column.type.get()->isNullable())
+            if (column.type->isNullable())
             {
                 const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
                 observed_type = nullable_type.getNestedType().get();
@@ -137,7 +144,9 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 
             try
             {
-                readData(column.name, *column.type, *column.column, from_mark, max_rows_to_read, 0, read_offsets);
+                size_t column_size_before_reading = column.column->size();
+                readData(column.name, *column.type, *column.column, from_mark, continue_reading, max_rows_to_read, 0, read_offsets);
+                read_rows = std::max(read_rows, column.column->size() - column_size_before_reading);
             }
             catch (Exception & e)
             {
@@ -152,7 +161,6 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 
         /// NOTE: positions for all streams must be kept in sync. In particular, even if for some streams there are no rows to be read,
         /// you must ensure that no seeks are skipped and at this point they all point to to_mark.
-        cur_mark_idx = to_mark;
     }
     catch (Exception & e)
     {
@@ -160,7 +168,7 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
             storage.reportBrokenPart(data_part->name);
 
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + path + " from mark " + toString(from_mark) + " to " + toString(to_mark) + ")");
+        e.addMessage("(while reading from part " + path + " from mark " + toString(from_mark) + " with max_rows_to_read = " + toString(max_rows_to_read) + ")");
         throw;
     }
     catch (...)
@@ -169,6 +177,8 @@ void MergeTreeReader::readRange(size_t from_mark, size_t to_mark, Block & res)
 
         throw;
     }
+
+    return read_rows;
 }
 
 
@@ -393,7 +403,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
         std::string filename = name + NULL_MAP_EXTENSION;
 
         streams.emplace(filename, std::make_unique<Stream>(
-            path + escaped_column_name, NULL_MAP_EXTENSION, data_part->size,
+            path + escaped_column_name, NULL_MAP_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
@@ -415,7 +425,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
 
         if (!streams.count(size_name))
             streams.emplace(size_name, std::make_unique<Stream>(
-                path + escaped_size_name, DATA_FILE_EXTENSION, data_part->size,
+                path + escaped_size_name, DATA_FILE_EXTENSION, data_part->marks_count,
                 all_mark_ranges, mark_cache, save_marks_in_cache,
                 uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 
@@ -426,16 +436,16 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
     }
     else
         streams.emplace(name, std::make_unique<Stream>(
-            path + escaped_column_name, DATA_FILE_EXTENSION, data_part->size,
+            path + escaped_column_name, DATA_FILE_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
 }
 
 
 void MergeTreeReader::readData(
-        const String & name, const IDataType & type, IColumn & column,
-        size_t from_mark, size_t max_rows_to_read,
-        size_t level, bool read_offsets)
+    const String & name, const IDataType & type, IColumn & column,
+    size_t from_mark, bool continue_reading, size_t max_rows_to_read,
+    size_t level, bool read_offsets)
 {
     if (type.isNullable())
     {
@@ -449,13 +459,13 @@ void MergeTreeReader::readData(
         std::string filename = name + NULL_MAP_EXTENSION;
 
         Stream & stream = *(streams.at(filename));
-        if (from_mark != cur_mark_idx)
+        if (!continue_reading)
             stream.seekToMark(from_mark);
         IColumn & col8 = nullable_col.getNullMapConcreteColumn();
         DataTypeUInt8{}.deserializeBinaryBulk(col8, *stream.data_buffer, max_rows_to_read, 0);
 
         /// Then read data.
-        readData(name, nested_type, nested_col, from_mark, max_rows_to_read, level, read_offsets);
+        readData(name, nested_type, nested_col, from_mark, continue_reading, max_rows_to_read, level, read_offsets);
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
@@ -463,7 +473,7 @@ void MergeTreeReader::readData(
         if (read_offsets)
         {
             Stream & stream = *streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)];
-            if (from_mark != cur_mark_idx)
+            if (!continue_reading)
                 stream.seekToMark(from_mark);
             type_arr->deserializeOffsets(
                 column,
@@ -478,7 +488,7 @@ void MergeTreeReader::readData(
             name,
             *type_arr->getNestedType(),
             array.getData(),
-            from_mark, required_internal_size - array.getData().size(),
+                 from_mark, continue_reading, required_internal_size - array.getData().size(),
             level + 1);
 
         size_t read_internal_size = array.getData().size();
@@ -491,10 +501,9 @@ void MergeTreeReader::readData(
                 LOG_ERROR(&Logger::get("MergeTreeReader"),
                     "Internal size of array " + name + " doesn't match offsets: corrupted data, filling with default values.");
 
-            array.getDataPtr() = dynamic_cast<IColumnConst &>(
-                *type_arr->getNestedType()->createConstColumn(
+            array.getDataPtr() = type_arr->getNestedType()->createConstColumn(
                     required_internal_size,
-                    type_arr->getNestedType()->getDefault())).convertToFullColumn();
+                    type_arr->getNestedType()->getDefault())->convertToFullColumnIfConst();
 
             /// NOTE: we could zero this column so that it won't get added to the block
             /// and later be recreated with more correct default values (from the table definition).
@@ -509,22 +518,11 @@ void MergeTreeReader::readData(
             return;
 
         double & avg_value_size_hint = avg_value_size_hints[name];
-        if (from_mark != cur_mark_idx)
+        if (!continue_reading)
             stream.seekToMark(from_mark);
         type.deserializeBinaryBulk(column, *stream.data_buffer, max_rows_to_read, avg_value_size_hint);
 
-        /// Calculate the average value size hint.
-        size_t column_size = column.size();
-        if (column_size)
-        {
-            double current_avg_value_size = static_cast<double>(column.byteSize()) / column_size;
-
-            /// Heuristic is chosen so that avg_value_size_hint increases rapidly but decreases slowly.
-            if (current_avg_value_size > avg_value_size_hint)
-                avg_value_size_hint = current_avg_value_size;
-            else if (current_avg_value_size * 2 < avg_value_size_hint)
-                avg_value_size_hint = (current_avg_value_size + avg_value_size_hint * 3) / 4;
-        }
+        IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
     }
 }
 
@@ -601,8 +599,8 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
                     size_t nested_rows = offsets_column->empty() ? 0
                         : typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
 
-                    ColumnPtr nested_column = dynamic_cast<IColumnConst &>(*nested_type->createConstColumn(
-                        nested_rows, nested_type->getDefault())).convertToFullColumn();
+                    ColumnPtr nested_column = nested_type->createConstColumn(
+                        nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
 
                     column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
                 }
@@ -610,8 +608,8 @@ void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_
                 {
                     /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
                     /// but in some blocks (from other parts) it can be a full column.
-                    column_to_add.column = dynamic_cast<IColumnConst &>(*column_to_add.type->createConstColumn(
-                        res.rows(), column_to_add.type->getDefault())).convertToFullColumn();
+                    column_to_add.column = column_to_add.type->createConstColumn(
+                        res.rows(), column_to_add.type->getDefault())->convertToFullColumnIfConst();
                 }
 
                 res.insert(std::move(column_to_add));

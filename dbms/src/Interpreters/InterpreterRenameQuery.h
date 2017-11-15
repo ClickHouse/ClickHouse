@@ -1,11 +1,14 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 
 
 namespace DB
 {
+
+class Context;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
 
 /** Rename one table
@@ -14,12 +17,12 @@ namespace DB
 class InterpreterRenameQuery : public IInterpreter
 {
 public:
-    InterpreterRenameQuery(ASTPtr query_ptr_, Context & context_);
+    InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_);
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
-    Context context;
+    Context & context;
 };
 
 

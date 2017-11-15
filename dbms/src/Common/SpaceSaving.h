@@ -5,6 +5,7 @@
 
 #include <boost/range/adaptor/reversed.hpp>
 
+#include <Common/ArenaWithFreeLists.h>
 #include <Common/UInt128.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
@@ -25,11 +26,48 @@
 namespace DB
 {
 
+/*
+ * Arena interface to allow specialized storage of keys.
+ * POD keys do not require additional storage, so this interface is empty.
+ */
+template <typename TKey>
+struct SpaceSavingArena
+{
+    SpaceSavingArena() {}
+    const TKey emplace(const TKey & key) { return key; }
+    void free(const TKey & key) {}
+};
+
+/*
+ * Specialized storage for StringRef with a freelist arena.
+ * Keys of this type that are retained on insertion must be serialised into local storage,
+ * otherwise the reference would be invalid after the processed block is released.
+ */
+template <>
+struct SpaceSavingArena<StringRef>
+{
+    const StringRef emplace(const StringRef & key)
+    {
+        auto ptr = arena.alloc(key.size);
+        std::copy(key.data, key.data + key.size, ptr);
+        return StringRef{ptr, key.size};
+    }
+
+    void free(const StringRef & key)
+    {
+        if (key.data)
+            arena.free(const_cast<char *>(key.data), key.size);
+    }
+
+private:
+    ArenaWithFreeLists arena;
+};
+
+
 template
 <
     typename TKey,
-    typename HashKey = TKey,
-    typename Hash = DefaultHash<HashKey>,
+    typename Hash = DefaultHash<TKey>,
     typename Grower = HashTableGrower<>,
     typename Allocator = HashTableAllocator
 >
@@ -45,7 +83,7 @@ private:
     }
 
 public:
-    using Self = SpaceSaving<TKey, HashKey, Hash, Grower, Allocator>;
+    using Self = SpaceSaving<TKey, Hash, Grower, Allocator>;
 
     struct Counter
     {
@@ -81,6 +119,7 @@ public:
     };
 
     SpaceSaving(size_t c = 10) : alpha_map(nextAlphaSize(c)), m_capacity(c) {}
+
     ~SpaceSaving() { destroyElements(); }
 
     inline size_t size() const
@@ -91,6 +130,11 @@ public:
     inline size_t capacity() const
     {
         return m_capacity;
+    }
+
+    void clear()
+    {
+        return destroyElements();
     }
 
     void resize(size_t new_capacity)
@@ -117,7 +161,7 @@ public:
         // Key doesn't exist, but can fit in the top K
         else if (unlikely(size() < capacity()))
         {
-            auto c = new Counter(key, increment, error, hash);
+            auto c = new Counter(arena.emplace(key), increment, error, hash);
             push(c);
             return;
         }
@@ -138,14 +182,15 @@ public:
         // Replace minimum with newly inserted element
         if (it != counter_map.end())
         {
+            arena.free(min->key);
             min->hash = hash;
-            min->key = key;
+            min->key = arena.emplace(key);
             min->count = alpha + increment;
             min->error = alpha + error;
             percolate(min);
 
             it->second = min;
-            it->first = key;
+            it->first = min->key;
             counter_map.reinsert(it, hash);
         }
     }
@@ -217,6 +262,8 @@ public:
         writeVarUInt(size(), wb);
         for (auto counter : counter_list)
             counter->write(wb);
+
+        writeVarUInt(alpha_map.size(), wb);
         for (auto alpha : alpha_map)
             writeVarUInt(alpha, wb);
     }
@@ -235,7 +282,14 @@ public:
             push(counter);
         }
 
-        for (size_t i = 0; i < nextAlphaSize(m_capacity); ++i)
+        readAlphaMap(rb);
+    }
+
+    void readAlphaMap(ReadBuffer & rb)
+    {
+        size_t alpha_size = 0;
+        readVarUInt(alpha_size, rb);
+        for (size_t i = 0; i < alpha_size; ++i)
         {
             UInt64 alpha = 0;
             readVarUInt(alpha, rb);
@@ -279,9 +333,10 @@ private:
         alpha_map.clear();
     }
 
-    HashMap<HashKey, Counter *, Hash, Grower, Allocator> counter_map;
+    HashMap<TKey, Counter *, Hash, Grower, Allocator> counter_map;
     std::vector<Counter *> counter_list;
     std::vector<UInt64> alpha_map;
+    SpaceSavingArena<TKey> arena;
     size_t m_capacity;
 };
 

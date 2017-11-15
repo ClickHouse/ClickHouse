@@ -5,12 +5,14 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/config.h>
+#include <Common/typeid_cast.h>
 
-/** More effective implementations of mathematical functions are possible when connecting a separate library
-  * Disabled due licence compatibility limitations
+/** More efficient implementations of mathematical functions are possible when using a separate library.
+  * Disabled due to licence compatibility limitations.
   * To enable: download http://www.agner.org/optimize/vectorclass.zip and unpack to contrib/vectorclass
-  *  Then rebuild with -DENABLE_VECTORCLASS=1
+  * Then rebuild with -DENABLE_VECTORCLASS=1
   */
 
 #if USE_VECTORCLASS
@@ -32,6 +34,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 template <typename Impl>
 class FunctionMathNullaryConstFloat64 : public IFunction
 {
@@ -51,9 +58,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(
-            block.rows(),
-            Impl::value);
+        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Impl::value);
     }
 };
 
@@ -73,22 +78,21 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto check_argument_type = [this] (const IDataType * const arg) {
-            if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
-                !typeid_cast<const DataTypeUInt16 *>(arg) &&
-                !typeid_cast<const DataTypeUInt32 *>(arg) &&
-                !typeid_cast<const DataTypeUInt64 *>(arg) &&
-                !typeid_cast<const DataTypeInt8 *>(arg) &&
-                !typeid_cast<const DataTypeInt16 *>(arg) &&
-                !typeid_cast<const DataTypeInt32 *>(arg) &&
-                !typeid_cast<const DataTypeInt64 *>(arg) &&
-                !typeid_cast<const DataTypeFloat32 *>(arg) &&
-                !typeid_cast<const DataTypeFloat64 *>(arg))
+        const auto check_argument_type = [this] (const IDataType * arg) {
+            if (!checkDataType<DataTypeUInt8>(arg) &&
+                !checkDataType<DataTypeUInt16>(arg) &&
+                !checkDataType<DataTypeUInt32>(arg) &&
+                !checkDataType<DataTypeUInt64>(arg) &&
+                !checkDataType<DataTypeInt8>(arg) &&
+                !checkDataType<DataTypeInt16>(arg) &&
+                !checkDataType<DataTypeInt32>(arg) &&
+                !checkDataType<DataTypeInt64>(arg) &&
+                !checkDataType<DataTypeFloat32>(arg) &&
+                !checkDataType<DataTypeFloat64>(arg))
             {
                 throw Exception{
                     "Illegal type " + arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-                };
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
             }
         };
 
@@ -98,12 +102,12 @@ private:
     }
 
     template <typename FieldType>
-    bool execute(Block & block, const IColumn * const arg, const size_t result)
+    bool execute(Block & block, const IColumn * arg, const size_t result)
     {
-        if (const auto col = typeid_cast<const ColumnVector<FieldType> *>(arg))
+        if (const auto col = checkAndGetColumn<ColumnVector<FieldType>>(arg))
         {
             const auto dst = std::make_shared<ColumnVector<Float64>>();
-            block.safeGetByPosition(result).column = dst;
+            block.getByPosition(result).column = dst;
 
             const auto & src_data = col->getData();
             const auto src_size = src_data.size();
@@ -130,24 +134,15 @@ private:
 
             return true;
         }
-        else if (const auto col = typeid_cast<const ColumnConst<FieldType> *>(arg))
-        {
-            const FieldType src[Impl::rows_per_iteration] { col->getData() };
-            Float64 dst[Impl::rows_per_iteration];
-
-            Impl::execute(src, dst);
-
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(col->size(), dst[0]);
-
-            return true;
-        }
 
         return false;
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto arg = block.safeGetByPosition(arguments[0]).column.get();
+        const auto arg = block.getByPosition(arguments[0]).column.get();
 
         if (!execute<UInt8>(block, arg, result) &&
             !execute<UInt16>(block, arg, result) &&
@@ -162,21 +157,20 @@ private:
         {
             throw Exception{
                 "Illegal column " + arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
         }
     }
 };
 
 
-template <typename Name, Float64(&Function)(Float64)>
+template <typename Name, Float64(Function)(Float64)>
 struct UnaryFunctionPlain
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 1;
 
     template <typename T>
-    static void execute(const T * const src, Float64 * const dst)
+    static void execute(const T * src, Float64 * dst)
     {
         dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src[0])));
     }
@@ -184,14 +178,14 @@ struct UnaryFunctionPlain
 
 #if USE_VECTORCLASS
 
-template <typename Name, Vec2d(&Function)(const Vec2d &)>
+template <typename Name, Vec2d(Function)(const Vec2d &)>
 struct UnaryFunctionVectorized
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 2;
 
     template <typename T>
-    static void execute(const T * const src, Float64 * const dst)
+    static void execute(const T * src, Float64 * dst)
     {
         const auto result = Function(Vec2d(src[0], src[1]));
         result.store(dst);
@@ -213,6 +207,8 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathBinaryFloat64>(); }
     static_assert(Impl::rows_per_iteration > 0, "Impl must process at least one row per iteration");
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
 private:
     String getName() const override { return name; }
 
@@ -220,17 +216,17 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto check_argument_type = [this] (const IDataType * const arg) {
-            if (!typeid_cast<const DataTypeUInt8 *>(arg) &&
-                !typeid_cast<const DataTypeUInt16 *>(arg) &&
-                !typeid_cast<const DataTypeUInt32 *>(arg) &&
-                !typeid_cast<const DataTypeUInt64 *>(arg) &&
-                !typeid_cast<const DataTypeInt8 *>(arg) &&
-                !typeid_cast<const DataTypeInt16 *>(arg) &&
-                !typeid_cast<const DataTypeInt32 *>(arg) &&
-                !typeid_cast<const DataTypeInt64 *>(arg) &&
-                !typeid_cast<const DataTypeFloat32 *>(arg) &&
-                !typeid_cast<const DataTypeFloat64 *>(arg))
+        const auto check_argument_type = [this] (const IDataType * arg) {
+            if (!checkDataType<DataTypeUInt8>(arg) &&
+                !checkDataType<DataTypeUInt16>(arg) &&
+                !checkDataType<DataTypeUInt32>(arg) &&
+                !checkDataType<DataTypeUInt64>(arg) &&
+                !checkDataType<DataTypeInt8>(arg) &&
+                !checkDataType<DataTypeInt16>(arg) &&
+                !checkDataType<DataTypeInt32>(arg) &&
+                !checkDataType<DataTypeInt64>(arg) &&
+                !checkDataType<DataTypeFloat32>(arg) &&
+                !checkDataType<DataTypeFloat64>(arg))
             {
                 throw Exception{
                     "Illegal type " + arg->getName() + " of argument of function " + getName(),
@@ -245,16 +241,16 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeRight(Block & block, const size_t result, const ColumnConst<LeftType> * const left_arg,
-        const IColumn * const right_arg)
+    bool executeRight(Block & block, const size_t result, const ColumnConst * left_arg,
+        const IColumn * right_arg)
     {
-        if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
             const auto dst = std::make_shared<ColumnVector<Float64>>();
-            block.safeGetByPosition(result).column = dst;
+            block.getByPosition(result).column = dst;
 
             LeftType left_src_data[Impl::rows_per_iteration];
-            std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->getData());
+            std::fill(std::begin(left_src_data), std::end(left_src_data), left_arg->template getValue<LeftType>());
             const auto & right_src_data = right_arg_typed->getData();
             const auto src_size = right_src_data.size();
             auto & dst_data = dst->getData();
@@ -280,30 +276,18 @@ private:
 
             return true;
         }
-        else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
-        {
-            const LeftType left_src[Impl::rows_per_iteration] { left_arg->getData() };
-            const RightType right_src[Impl::rows_per_iteration] { right_arg_typed->getData() };
-            Float64 dst[Impl::rows_per_iteration];
-
-            Impl::execute(left_src, right_src, dst);
-
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<Float64>>(left_arg->size(), dst[0]);
-
-            return true;
-        }
 
         return false;
     }
 
     template <typename LeftType, typename RightType>
-    bool executeRight(Block & block, const size_t result, const ColumnVector<LeftType> * const left_arg,
-        const IColumn * const right_arg)
+    bool executeRight(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg,
+        const IColumn * right_arg)
     {
-        if (const auto right_arg_typed = typeid_cast<const ColumnVector<RightType> *>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
             const auto dst = std::make_shared<ColumnVector<Float64>>();
-            block.safeGetByPosition(result).column = dst;
+            block.getByPosition(result).column = dst;
 
             const auto & left_src_data = left_arg->getData();
             const auto & right_src_data = right_arg_typed->getData();
@@ -334,14 +318,14 @@ private:
 
             return true;
         }
-        else if (const auto right_arg_typed = typeid_cast<const ColumnConst<RightType> *>(right_arg))
+        else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
             const auto dst = std::make_shared<ColumnVector<Float64>>();
-            block.safeGetByPosition(result).column = dst;
+            block.getByPosition(result).column = dst;
 
             const auto & left_src_data = left_arg->getData();
             RightType right_src_data[Impl::rows_per_iteration];
-            std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->getData());
+            std::fill(std::begin(right_src_data), std::end(right_src_data), right_arg_typed->template getValue<RightType>());
             const auto src_size = left_src_data.size();
             auto & dst_data = dst->getData();
             dst_data.resize(src_size);
@@ -370,13 +354,13 @@ private:
         return false;
     }
 
-    template <typename LeftType, template <typename> class LeftColumnType>
-    bool executeLeftImpl(Block & block, const ColumnNumbers & arguments, const size_t result,
-        const IColumn * const left_arg)
+    template <typename LeftType>
+    bool executeLeft(Block & block, const ColumnNumbers & arguments, const size_t result,
+        const IColumn * left_arg)
     {
-        if (const auto left_arg_typed = typeid_cast<const LeftColumnType<LeftType> *>(left_arg))
+        if (const auto left_arg_typed = checkAndGetColumn<ColumnVector<LeftType>>(left_arg))
         {
-            const auto right_arg = block.safeGetByPosition(arguments[1]).column.get();
+            const auto right_arg = block.getByPosition(arguments[1]).column.get();
 
             if (executeRight<LeftType, UInt8>(block, result, left_arg_typed, right_arg) ||
                 executeRight<LeftType, UInt16>(block, result, left_arg_typed, right_arg) ||
@@ -394,30 +378,43 @@ private:
             else
             {
                 throw Exception{
-                    "Illegal column " + block.safeGetByPosition(arguments[1]).column->getName() +
+                    "Illegal column " + block.getByPosition(arguments[1]).column->getName() +
                     " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN
-                };
+                    ErrorCodes::ILLEGAL_COLUMN};
+            }
+        }
+        else if (const auto left_arg_typed = checkAndGetColumnConst<ColumnVector<LeftType>>(left_arg))
+        {
+            const auto right_arg = block.getByPosition(arguments[1]).column.get();
+
+            if (executeRight<LeftType, UInt8>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, UInt16>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, UInt32>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, UInt64>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Int8>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Int16>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Int32>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Int64>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Float32>(block, result, left_arg_typed, right_arg) ||
+                executeRight<LeftType, Float64>(block, result, left_arg_typed, right_arg))
+            {
+                return true;
+            }
+            else
+            {
+                throw Exception{
+                    "Illegal column " + block.getByPosition(arguments[1]).column->getName() +
+                    " of second argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN};
             }
         }
 
         return false;
     }
 
-    template <typename LeftType>
-    bool executeLeft(Block & block, const ColumnNumbers & arguments, const size_t result,
-        const IColumn * const left_arg)
-    {
-        if (executeLeftImpl<LeftType, ColumnVector>(block, arguments, result, left_arg) ||
-            executeLeftImpl<LeftType, ColumnConst>(block, arguments, result, left_arg))
-            return true;
-
-        return false;
-    }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
-        const auto left_arg = block.safeGetByPosition(arguments[0]).column.get();
+        const auto left_arg = block.getByPosition(arguments[0]).column.get();
 
         if (!executeLeft<UInt8>(block, arguments, result, left_arg) &&
             !executeLeft<UInt16>(block, arguments, result, left_arg) &&
@@ -432,21 +429,20 @@ private:
         {
             throw Exception{
                 "Illegal column " + left_arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
         }
     }
 };
 
 
-template <typename Name, Float64(&Function)(Float64, Float64)>
+template <typename Name, Float64(Function)(Float64, Float64)>
 struct BinaryFunctionPlain
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 1;
 
     template <typename T1, typename T2>
-    static void execute(const T1 * const src_left, const T2 * const src_right, Float64 * const dst)
+    static void execute(const T1 * src_left, const T2 * src_right, Float64 * dst)
     {
         dst[0] = static_cast<Float64>(Function(static_cast<Float64>(src_left[0]), static_cast<Float64>(src_right[0])));
     }
@@ -454,14 +450,14 @@ struct BinaryFunctionPlain
 
 #if USE_VECTORCLASS
 
-template <typename Name, Vec2d(&Function)(const Vec2d &, const Vec2d &)>
+template <typename Name, Vec2d(Function)(const Vec2d &, const Vec2d &)>
 struct BinaryFunctionVectorized
 {
     static constexpr auto name = Name::name;
     static constexpr auto rows_per_iteration = 2;
 
     template <typename T1, typename T2>
-    static void execute(const T1 * const src_left, const T2 * const src_right, Float64 * const dst)
+    static void execute(const T1 * src_left, const T2 * src_right, Float64 * dst)
     {
         const auto result = Function(Vec2d(src_left[0], src_left[1]), Vec2d(src_right[0], src_right[1]));
         result.store(dst);

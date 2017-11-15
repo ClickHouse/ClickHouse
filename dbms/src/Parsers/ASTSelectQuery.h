@@ -19,33 +19,34 @@ public:
     ASTSelectQuery() = default;
     ASTSelectQuery(const StringRange range_);
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "SelectQuery"; };
 
-    /// Проверить наличие функции arrayJoin. (Не большого ARRAY JOIN.)
+    /// Check for the presence of the `arrayJoin` function. (Not capital `ARRAY JOIN`.)
     static bool hasArrayJoin(const ASTPtr & ast);
 
-    /// Содержит ли запрос астериск?
+    /// Does the query contain an asterisk?
     bool hasAsterisk() const;
 
-    /// Переименовать столбцы запроса в такие же имена, как в исходном запросе.
+    /// Rename the query columns to the same names as in the original query.
     void renameColumns(const ASTSelectQuery & source);
 
-    /// Переписывает select_expression_list, чтобы вернуть только необходимые столбцы в правильном порядке.
+    /// Rewrites select_expression_list to return only the required columns in the correct order.
     void rewriteSelectExpressionList(const Names & required_column_names);
 
     bool isUnionAllHead() const { return (prev_union_all == nullptr) && next_union_all != nullptr; }
 
     ASTPtr clone() const override;
 
-    /// Получить глубокую копию дерева первого запроса SELECT.
-    ASTPtr cloneFirstSelect() const;
+    /// Get a deep copy of the first SELECT query tree.
+    std::shared_ptr<ASTSelectQuery> cloneFirstSelect() const;
 
 private:
     std::shared_ptr<ASTSelectQuery> cloneImpl(bool traverse_union_all) const;
 
 public:
     bool distinct = false;
+    ASTPtr with_expression_list;
     ASTPtr select_expression_list;
     ASTPtr tables;
     ASTPtr prewhere_expression;
@@ -72,13 +73,13 @@ public:
     void setDatabaseIfNeeded(const String & database_name);
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
 
-    /// Двусвязный список запросов SELECT внутри запроса UNION ALL.
+    /// A double-linked list of SELECT queries inside a UNION ALL query.
 
-    /// Следующий запрос SELECT в цепочке UNION ALL, если такой есть
+    /// The next SELECT query in the UNION ALL chain, if there is one
     ASTPtr next_union_all;
-    /// Предыдущий запрос SELECT в цепочке UNION ALL (не вставляется в children и не клонируется)
-    /// Указатель голый по следующим причинам:
-    /// 1. чтобы предотвратить появление циклических зависимостей и, значит, утечки памяти;
+    /// Previous SELECT query in the UNION ALL chain (not inserted into children and not cloned)
+    /// The pointer is null for the following reasons:
+    /// 1. to prevent the occurrence of cyclic dependencies and, hence, memory leaks;
     IAST * prev_union_all = nullptr;
 
 protected:

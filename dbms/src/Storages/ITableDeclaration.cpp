@@ -5,9 +5,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Interpreters/Context.h>
-#include <ext/map.hpp>
-#include <ext/identity.hpp>
-#include <ext/collection_cast.hpp>
+#include <ext/map.h>
+#include <ext/identity.h>
+#include <ext/collection_cast.h>
 
 
 namespace DB

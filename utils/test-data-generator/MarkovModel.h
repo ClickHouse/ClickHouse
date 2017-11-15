@@ -3,8 +3,8 @@
 #include <Core/Types.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/Arena.h>
-#include <ext/bit_cast.hpp>
-#include <Core/StringRef.h>
+#include <ext/bit_cast.h>
+#include <common/StringRef.h>
 
 
 namespace DB
@@ -74,7 +74,7 @@ private:
     }
 
 public:
-    MarkovModel(size_t n_) : n(n_) {}
+    explicit MarkovModel(size_t n_) : n(n_) {}
     MarkovModel() {}
 
     void consume(const char * data, size_t size)

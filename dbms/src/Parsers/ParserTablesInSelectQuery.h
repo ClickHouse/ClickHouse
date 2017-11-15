@@ -12,7 +12,7 @@ class ParserTablesInSelectQuery : public IParserBase
 {
 protected:
     const char * getName() const { return "table, table function, subquery or list of joined tables"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
@@ -23,7 +23,7 @@ public:
 
 protected:
     const char * getName() const { return "table, table function, subquery or list of joined tables"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
 private:
     bool is_first;
@@ -34,7 +34,7 @@ class ParserTableExpression : public IParserBase
 {
 protected:
     const char * getName() const { return "table or subquery or table function"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
@@ -42,7 +42,7 @@ class ParserArrayJoin : public IParserBase
 {
 protected:
     const char * getName() const { return "array join"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 

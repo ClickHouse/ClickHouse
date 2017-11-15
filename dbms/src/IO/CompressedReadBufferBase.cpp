@@ -2,19 +2,15 @@
 
 #include <vector>
 
+#include <string.h>
 #include <city.h>
-
-#ifdef USE_QUICKLZ
-    #include <quicklz/quicklz_level1.h>
-#endif
-
 #include <lz4.h>
 #include <zstd.h>
 
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
-#include <Common/unaligned.h>
+#include <common/unaligned.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressedStream.h>
@@ -47,7 +43,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     if (compressed_in->eof())
         return 0;
 
-    uint128 checksum;
+    CityHash_v1_0_2::uint128 checksum;
     compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
 
     own_compressed_buffer.resize(COMPRESSED_BLOCK_HEADER_SIZE);
@@ -57,16 +53,9 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     size_t & size_compressed = size_compressed_without_checksum;
 
-    if (method < 0x80)
-    {
-    #ifdef USE_QUICKLZ
-        size_compressed = qlz_size_compressed(&own_compressed_buffer[0]);
-        size_decompressed = qlz_size_decompressed(&own_compressed_buffer[0]);
-    #else
-        throw Exception("QuickLZ compression method is disabled", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-    #endif
-    }
-    else if (method == static_cast<UInt8>(CompressionMethodByte::LZ4) || method == static_cast<UInt8>(CompressionMethodByte::ZSTD))
+    if (method == static_cast<UInt8>(CompressionMethodByte::LZ4) ||
+        method == static_cast<UInt8>(CompressionMethodByte::ZSTD) ||
+        method == static_cast<UInt8>(CompressionMethodByte::NONE))
     {
         size_compressed = unalignedLoad<UInt32>(&own_compressed_buffer[1]);
         size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);
@@ -94,7 +83,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         compressed_in->readStrict(&compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
     }
 
-    if (!disable_checksum && checksum != CityHash128(&compressed_buffer[0], size_compressed))
+    if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(&compressed_buffer[0], size_compressed))
         throw Exception("Checksum doesn't match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
     return size_compressed + sizeof(checksum);
@@ -108,18 +97,7 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
 
     UInt8 method = compressed_buffer[0];    /// See CompressedWriteBuffer.h
 
-    if (method < 0x80)
-    {
-    #ifdef USE_QUICKLZ
-        if (!qlz_state)
-            qlz_state = std::make_unique<qlz_state_decompress>();
-
-        qlz_decompress(&compressed_buffer[0], to, qlz_state.get());
-    #else
-        throw Exception("QuickLZ compression method is disabled", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-    #endif
-    }
-    else if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
+    if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
     {
         if (LZ4_decompress_fast(&compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], to, size_decompressed) < 0)
             throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
@@ -132,6 +110,10 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
 
         if (ZSTD_isError(res))
             throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);
+    }
+    else if (method == static_cast<UInt8>(CompressionMethodByte::NONE))
+    {
+        memcpy(to, &compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], size_decompressed);
     }
     else
         throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);

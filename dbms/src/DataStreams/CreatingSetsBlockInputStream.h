@@ -2,7 +2,7 @@
 
 #include <Poco/Logger.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionAnalyzer.h>    /// SubqueriesForSets
 
 
 namespace Poco { class Logger; }
@@ -18,7 +18,7 @@ class CreatingSetsBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     CreatingSetsBlockInputStream(
-        BlockInputStreamPtr input,
+        const BlockInputStreamPtr & input,
         const SubqueriesForSets & subqueries_for_sets_,
         const Limits & limits)
         : subqueries_for_sets(subqueries_for_sets_),

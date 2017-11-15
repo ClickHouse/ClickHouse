@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -114,17 +115,17 @@ void CSVRowInputStream::readPrefix()
 
 bool CSVRowInputStream::read(Block & block)
 {
+    if (istr.eof())
+        return false;
+
     updateDiagnosticInfo();
 
     size_t size = data_types.size();
 
-    if (istr.eof())
-        return false;
-
     for (size_t i = 0; i < size; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        data_types[i].get()->deserializeTextCSV(*block.getByPosition(i).column.get(), istr, delimiter);
+        data_types[i]->deserializeTextCSV(*block.getByPosition(i).column.get(), istr, delimiter);
         skipWhitespacesAndTabs(istr);
 
         skipDelimiter(istr, delimiter, i + 1 == size);
@@ -139,8 +140,7 @@ String CSVRowInputStream::getDiagnosticInfo()
     if (istr.eof())        /// Buffer has gone, cannot extract information about what has been parsed.
         return {};
 
-    String res;
-    WriteBufferFromString out(res);
+    WriteBufferFromOwnString out;
     Block block = sample.cloneEmpty();
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
@@ -148,7 +148,7 @@ String CSVRowInputStream::getDiagnosticInfo()
     if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
     {
         out << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
-        return res;
+        return out.str();
     }
 
     size_t max_length_of_column_name = 0;
@@ -169,14 +169,14 @@ String CSVRowInputStream::getDiagnosticInfo()
 
         out << "\nRow " << (row_num - 1) << ":\n";
         if (!parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name))
-            return res;
+            return out.str();
     }
     else
     {
         if (!pos_of_current_row)
         {
             out << "Could not print diagnostic info because parsing of data hasn't started.\n";
-            return res;
+            return out.str();
         }
 
         istr.position() = pos_of_current_row;
@@ -186,7 +186,7 @@ String CSVRowInputStream::getDiagnosticInfo()
     parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name);
     out << "\n";
 
-    return res;
+    return out.str();
 }
 
 
@@ -206,8 +206,8 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
             << "name: " << sample.safeGetByPosition(i).name << ", " << std::string(max_length_of_column_name - sample.safeGetByPosition(i).name.size(), ' ')
             << "type: " << data_types[i]->getName() << ", " << std::string(max_length_of_data_type_name - data_types[i]->getName().size(), ' ');
 
-        auto prev_position = istr.position();
-        auto curr_position = istr.position();
+        BufferBase::Position prev_position = istr.position();
+        BufferBase::Position curr_position = istr.position();
         std::exception_ptr exception;
 
         try

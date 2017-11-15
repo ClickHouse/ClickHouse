@@ -45,16 +45,41 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         password = cfg.has(config_name + ".password")
             ? cfg.getString(config_name + ".password")
             : cfg.getString(parent_config_name + ".password");
+
+        if (!cfg.has(config_name + ".port") && !cfg.has(config_name + ".socket")
+            && !cfg.has(parent_config_name + ".port") && !cfg.has(parent_config_name + ".socket"))
+            throw Poco::Exception("mysqlxx::Pool configuration: expected port or socket");
+
         port = cfg.has(config_name + ".port")
             ? cfg.getInt(config_name + ".port")
-            : cfg.getInt(parent_config_name + ".port");
+            : cfg.getInt(parent_config_name + ".port", 0);
+        socket = cfg.has(config_name + ".socket")
+            ? cfg.getString(config_name + ".socket")
+            : cfg.getString(parent_config_name + ".socket", "");
+        ssl_ca = cfg.has(config_name + ".ssl_ca")
+            ? cfg.getString(config_name + ".ssl_ca")
+            : cfg.getString(parent_config_name + ".ssl_ca", "");
+        ssl_cert = cfg.has(config_name + ".ssl_cert")
+            ? cfg.getString(config_name + ".ssl_cert")
+            : cfg.getString(parent_config_name + ".ssl_cert", "");
+        ssl_key = cfg.has(config_name + ".ssl_key")
+            ? cfg.getString(config_name + ".ssl_key")
+            : cfg.getString(parent_config_name + ".ssl_key", "");
     }
     else
     {
         db = cfg.getString(config_name + ".db", "");
         user = cfg.getString(config_name + ".user");
         password = cfg.getString(config_name + ".password");
-        port = cfg.getInt(config_name + ".port");
+
+        if (!cfg.has(config_name + ".port") && !cfg.has(config_name + ".socket"))
+            throw Poco::Exception("mysqlxx::Pool configuration: expected port or socket");
+
+        port = cfg.getInt(config_name + ".port", 0);
+        socket = cfg.getString(config_name + ".socket", "");
+        ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
+        ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
+        ssl_key = cfg.getString(config_name + ".ssl_key", "");
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -72,8 +97,8 @@ Pool::~Pool()
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    for (Connections::iterator it = connections.begin(); it != connections.end(); it++)
-        delete static_cast<Connection *>(*it);
+    for (auto & connection : connections)
+        delete static_cast<Connection *>(connection);
 }
 
 
@@ -84,10 +109,10 @@ Pool::Entry Pool::Get()
     initialize();
     for (;;)
     {
-        for (Connections::iterator it = connections.begin(); it != connections.end(); it++)
+        for (auto & connection : connections)
         {
-            if ((*it)->ref_count == 0)
-                return Entry(*it, this);
+            if (connection->ref_count == 0)
+                return Entry(connection, this);
         }
 
         if (connections.size() < static_cast<size_t>(max_connections))
@@ -110,21 +135,21 @@ Pool::Entry Pool::tryGet()
 
     initialize();
 
-    /// Поиск уже установленного, но не использующегося сейчас соединения.
-    for (Connections::iterator it = connections.begin(); it != connections.end(); ++it)
+    /// Searching for connection which was established but wasn't used.
+    for (auto & connection : connections)
     {
-        if ((*it)->ref_count == 0)
+        if (connection->ref_count == 0)
         {
-            Entry res(*it, this);
+            Entry res(connection, this);
             return res.tryForceConnected() ? res : Entry();
         }
     }
 
-    /// Если пул переполнен.
+    /// Throws if pool is overflowed.
     if (connections.size() >= max_connections)
         throw Poco::Exception("mysqlxx::Pool is full");
 
-    /// Выделение нового соединения.
+    /// Allocates new connection.
     Connection * conn = allocConnection(true);
     if (conn)
         return Entry(conn, this);
@@ -154,12 +179,16 @@ void Pool::Entry::forceConnected() const
         app.logger().information("MYSQL: Reconnecting to " + pool->description);
         data->conn.connect(
             pool->db.c_str(),
-                           pool->server.c_str(),
-                           pool->user.c_str(),
-                           pool->password.c_str(),
-                           pool->port,
-                     pool->connect_timeout,
-                     pool->rw_timeout);
+            pool->server.c_str(),
+            pool->user.c_str(),
+            pool->password.c_str(),
+            pool->port,
+            pool->socket.c_str(),
+            pool->ssl_ca.c_str(),
+            pool->ssl_cert.c_str(),
+            pool->ssl_key.c_str(),
+            pool->connect_timeout,
+            pool->rw_timeout);
     }
     while (!data->conn.ping());
 }
@@ -191,12 +220,16 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 
         conn->conn.connect(
             db.c_str(),
-                           server.c_str(),
-                           user.c_str(),
-                           password.c_str(),
-                           port,
-                     connect_timeout,
-                     rw_timeout);
+            server.c_str(),
+            user.c_str(),
+            password.c_str(),
+            port,
+            socket.c_str(),
+            ssl_ca.c_str(),
+            ssl_cert.c_str(),
+            ssl_key.c_str(),
+            connect_timeout,
+            rw_timeout);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {

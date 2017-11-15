@@ -6,12 +6,12 @@
 namespace DB
 {
 
-/** Создать объект для записи данных в файл.
-  * estimated_size - количество байтов, которые надо записать
-  * aio_threshold - минимальное количество байт для асинхронных операций записи
+/** Create an object to write data to a file.
+  * estimated_size - number of bytes to write
+  * aio_threshold - the minimum number of bytes for asynchronous writes
   *
-  * Если aio_threshold = 0 или estimated_size < aio_threshold, операции записи выполняются синхронно.
-  * В противном случае операции записи выполняются асинхронно.
+  * If aio_threshold = 0 or estimated_size < aio_threshold, the write operations are executed synchronously.
+  * Otherwise, write operations are performed asynchronously.
   */
 WriteBufferFromFileBase * createWriteBufferFromFileBase(const std::string & filename_,
         size_t estimated_size,

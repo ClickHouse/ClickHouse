@@ -6,12 +6,15 @@
 namespace DB
 {
 
-
 class ParserQuery : public IParserBase
 {
-protected:
-    const char * getName() const { return "Query"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+private:
+    const char * end;
+
+    const char * getName() const override { return "Query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+public:
+    ParserQuery(const char * end) : end(end) {}
 };
 
 }

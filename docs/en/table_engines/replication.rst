@@ -1,5 +1,5 @@
 Data replication
------------------
+----------------
 
 ReplicatedMergeTree
 ~~~~~~~~~~~~~~~~~~~
@@ -57,7 +57,7 @@ There are no quorum writes. You can't write data with confirmation that it was r
 
 Each block of data is written atomically. The INSERT query is divided into blocks up to max_insert_block_size = 1048576 rows. In other words, if the INSERT query has less than 1048576 rows, it is made atomically.
 
-Blocks of data are duplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application doesn't know if the data was written to the DB, so the INSERT query can simply be repeated. It doesn't matter which replica INSERTs were sent to with identical data - INSERTs are idempotent. This only works for the last 100 blocks inserted in a table.
+Blocks of data are deduplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application doesn't know if the data was written to the DB, so the INSERT query can simply be repeated. It doesn't matter which replica INSERTs were sent to with identical data - INSERTs are idempotent. This only works for the last 100 blocks inserted in a table.
 
 During replication, only the source data to insert is transferred over the network. Further data transformation (merging) is coordinated and performed on all the replicas in the same way. This minimizes network usage, which means that replication works well when replicas reside in different datacenters. (Note that duplicating data in different datacenters is the main goal of replication.)
 
@@ -66,14 +66,16 @@ You can have any number of replicas of the same data. Yandex.Metrica uses double
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 
 Creating replicated tables
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The ``'Replicated'`` prefix is added to the table engine name. For example, ``ReplicatedMergeTree``.
 
 Two parameters are also added in the beginning of the parameters list - the path to the table in ZooKeeper, and the replica name in ZooKeeper.
 
 Example:
-::
+
+.. code-block:: text
+
   ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 
 As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the 'macros' section of the config file. Example:
@@ -106,7 +108,7 @@ If you add a new replica after the table already contains some data on other rep
 To delete a replica, run DROP TABLE. However, only one replica is deleted - the one that resides on the server where you run the query.
 
 Recovery after failures
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
 
 If ZooKeeper is unavailable when a server starts, replicated tables switch to read-only mode. The system periodically attempts to connect to ZooKeeper.
 
@@ -123,13 +125,15 @@ When the server starts (or establishes a new session with ZooKeeper), it only ch
 If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by "pushing a button".
 
 To start recovery, create the node ``/path_to_table/replica_name/flags/force_restore_data`` in ZooKeeper with any content or run command to recover all replicated tables:
-::
+
+.. code-block:: text
+
   sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Then launch the server. On start, the server deletes these flags and starts recovery.
 
 Recovery after complete data loss
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 
@@ -145,7 +149,7 @@ An alternative recovery option is to delete information about the lost replica f
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 
 Converting from MergeTree to ReplicatedMergeTree
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 From here on, we use ``MergeTree`` to refer to all the table engines in the ``MergeTree`` family, including ``ReplicatedMergeTree``.
 
@@ -155,21 +159,22 @@ If the data differs on various replicas, first sync it, or delete this data on a
 
 Rename the existing MergeTree table, then create a ReplicatedMergeTree table with the old name.
 Move the data from the old table to the 'detached' subdirectory inside the directory with the new table data (``/var/lib/clickhouse/data/db_name/table_name/``).
-Then run ALTER TABLE ATTACH PART on one of the replicas to add these data parts to the working set.
+Then run ALTER TABLE ATTACH PARTITION on one of the replicas to add these data parts to the working set.
 
 If exactly the same parts exist on the other replicas, they are added to the working set on them. If not, the parts are downloaded from the replica that has them.
 
 Converting from ReplicatedMergeTree to MergeTree
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Create a MergeTree table with a different name. Move all the data from the directory with the ReplicatedMergeTree table data to the new table's data directory. Then delete the ReplicatedMergeTree table and restart the server.
 
 If you want to get rid of a ReplicatedMergeTree table without launching the server:
- * Delete the corresponding .sql file in the metadata directory (``/var/lib/clickhouse/metadata/``).
- * Delete the corresponding path in ZooKeeper (``/path_to_table/replica_name``).
+* Delete the corresponding .sql file in the metadata directory (``/var/lib/clickhouse/metadata/``).
+* Delete the corresponding path in ZooKeeper (``/path_to_table/replica_name``).
+
 After this, you can launch the server, create a MergeTree table, move the data to its directory, and then restart the server.
 
 Recovery when metadata in the ZooKeeper cluster is lost or damaged
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you lost ZooKeeper, you can save data by moving it to an unreplicated table as described above.

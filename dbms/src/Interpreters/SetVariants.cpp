@@ -1,4 +1,6 @@
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/SetVariants.h>
 
 namespace DB
@@ -146,7 +148,9 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
             return Type::key32;
         if (size_of_field == 8)
             return Type::key64;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
+        if (size_of_field == 16)
+            return Type::keys128;
+        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.", ErrorCodes::LOGICAL_ERROR);
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
@@ -156,7 +160,9 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
-    if (keys_size == 1 && (typeid_cast<const ColumnString *>(nested_key_columns[0]) || typeid_cast<const ColumnConstString *>(nested_key_columns[0])))
+    if (keys_size == 1
+        && (typeid_cast<const ColumnString *>(nested_key_columns[0])
+            || (nested_key_columns[0]->isConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(nested_key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(nested_key_columns[0]))

@@ -7,23 +7,21 @@ namespace DB
 {
 
 
-void PrettySpaceBlockOutputStream::write(const Block & block_)
+void PrettySpaceBlockOutputStream::write(const Block & block)
 {
     if (total_rows >= max_rows)
     {
-        total_rows += block_.rows();
+        total_rows += block.rows();
         return;
     }
-
-    /// We will insert here columns with the calculated values of visible lengths.
-    Block block = block_;
 
     size_t rows = block.rows();
     size_t columns = block.columns();
 
-    Widths_t max_widths;
-    Widths_t name_widths;
-    calculateWidths(block, max_widths, name_widths);
+    WidthsPerColumn widths;
+    Widths max_widths;
+    Widths name_widths;
+    calculateWidths(block, widths, max_widths, name_widths);
 
     /// Do not align on too long values.
     if (terminal_width > 80)
@@ -37,11 +35,11 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
         if (i != 0)
             writeCString("   ", ostr);
 
-        const ColumnWithTypeAndName & col = block.safeGetByPosition(i);
+        const ColumnWithTypeAndName & col = block.getByPosition(i);
 
         if (col.type->isNumeric())
         {
-            for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
+            for (ssize_t k = 0; k < std::max(static_cast<ssize_t>(0), static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
                 writeChar(' ', ostr);
 
             if (!no_escapes)
@@ -58,7 +56,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
             if (!no_escapes)
                 writeCString("\033[0m", ostr);
 
-            for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
+            for (ssize_t k = 0; k < std::max(static_cast<ssize_t>(0), static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
                 writeChar(' ', ostr);
         }
     }
@@ -71,24 +69,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block_)
             if (j != 0)
                 writeCString("   ", ostr);
 
-            const ColumnWithTypeAndName & col = block.safeGetByPosition(j);
-
-            if (col.type->isNumeric())
-            {
-                size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[i]);
-                for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)
-                    writeChar(' ', ostr);
-
-                col.type->serializeTextEscaped(*col.column.get(), i, ostr);
-            }
-            else
-            {
-                col.type->serializeTextEscaped(*col.column.get(), i, ostr);
-
-                size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[i]);
-                for (ssize_t k = 0; k < std::max(0L, static_cast<ssize_t>(max_widths[j] - width)); ++k)
-                    writeChar(' ', ostr);
-            }
+            writeValueWithPadding(block.getByPosition(j), i, widths[j].empty() ? max_widths[j] : widths[j][i], max_widths[j]);
         }
 
         writeChar('\n', ostr);

@@ -17,7 +17,7 @@ void IRowOutputStream::write(const Block & block, size_t row_num)
             writeFieldDelimiter();
 
         auto & col = block.getByPosition(i);
-        writeField(*col.column.get(), *col.type.get(), row_num);
+        writeField(*col.column, *col.type, row_num);
     }
 
     writeRowEndDelimiter();

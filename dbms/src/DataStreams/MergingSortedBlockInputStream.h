@@ -62,8 +62,9 @@ public:
       * out_row_sources - if isn't nullptr, then at the end of execution it should contain part numbers of each readed row (and needed flag)
       * quiet - don't log profiling info
       */
-    MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-                                  size_t limit_ = 0, MergedRowSources * out_row_sources_ = nullptr, bool quiet_ = false);
+    MergingSortedBlockInputStream(
+            BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+            size_t limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -146,13 +147,13 @@ protected:
 
     /// Used in Vertical merge algorithm to gather non-PK columns (on next step)
     /// If it is not nullptr then it should be populated during execution
-    MergedRowSources * out_row_sources = nullptr;
+    WriteBuffer * out_row_sources_buf;
 
 
     /// These methods are used in Collapsing/Summing/Aggregating... SortedBlockInputStream-s.
 
     /// Save the row pointed to by cursor in `row`.
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void setRow(Row & row, TSortCursor & cursor)
     {
         for (size_t i = 0; i < num_columns; ++i)
@@ -184,7 +185,7 @@ protected:
         }
     }
 
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void setRowRef(RowRef & row_ref, TSortCursor & cursor)
     {
         row_ref.row_num = cursor.impl->pos;
@@ -194,7 +195,7 @@ protected:
             row_ref.columns[i] = cursor->all_columns[i];
     }
 
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void setPrimaryKeyRef(RowRef & row_ref, TSortCursor & cursor)
     {
         row_ref.row_num = cursor.impl->pos;

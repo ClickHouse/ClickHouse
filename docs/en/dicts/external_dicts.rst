@@ -1,15 +1,15 @@
 External dictionaries
-===============
+=====================
 
 It is possible to add your own dictionaries from various data sources. The data source for a dictionary can be a file in the local file system, the ClickHouse server, or a MySQL server.
 A dictionary can be stored completely in RAM and updated regularly, or it can be partially cached in RAM and dynamically load missing values.
 
-The configuration of external dictionaries is in a separate file or files specified in the 'dictionaries_config' configuration parameter.
-This parameter contains the absolute or relative path to the file with the dictionary configuration. A relative path is relative to the directory with the server config file. The path can contain wildcards * and ?, in which case all matching files are found. Example: dictionaries/*.xml.
+The configuration of external dictionaries is in a separate file or files specified in the ``dictionaries_config`` configuration parameter.
+This parameter contains the absolute or relative path to the file with the dictionary configuration. A relative path is relative to the directory with the server config file. The path can contain wildcards ``*`` and ``?``, in which case all matching files are found. Example: ``dictionaries/*.xml``.
 
 The dictionary configuration, as well as the set of files with the configuration, can be updated without restarting the server. The server checks updates every 5 seconds. This means that dictionaries can be enabled dynamically.
 
-Dictionaries can be created when starting the server, or at first use. This is defined by the 'dictionaries_lazy_load' parameter in the main server config file. This parameter is optional, 'true' by default. If set to 'true', each dictionary is created at first use. If dictionary creation failed, the function that was using the dictionary throws an exception. If 'false', all dictionaries are created when the server starts, and if there is an error, the server shuts down.
+Dictionaries can be created when starting the server, or at first use. This is defined by the ``dictionaries_lazy_load`` parameter in the main server config file. This parameter is optional, 'true' by default. If set to 'true', each dictionary is created at first use. If dictionary creation failed, the function that was using the dictionary throws an exception. If 'false', all dictionaries are created when the server starts, and if there is an error, the server shuts down.
 
 The dictionary config file has the following format:
 
@@ -142,25 +142,27 @@ The dictionary identifier (key attribute) should be a number that fits into UInt
 There are six ways to store dictionaries in memory.
 
 flat
------
+----
 This is the most effective method. It works if all keys are smaller than ``500,000``.  If a larger key is discovered when creating the dictionary, an exception is thrown and the dictionary is not created. The dictionary is loaded to RAM in its entirety. The dictionary uses the amount of memory proportional to maximum key value. With the limit of 500,000, memory consumption is not likely to be high. All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 hashed
--------
+------
 This method is slightly less effective than the first one. The dictionary is also loaded to RAM in its entirety, and can contain any number of items with any identifiers. In practice, it makes sense to use up to tens of millions of items, while there is enough RAM.
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 
 cache
--------
+-----
 This is the least effective method. It is appropriate if the dictionary doesn't fit in RAM. It is a cache of a fixed number of cells, where frequently-used data can be located. MySQL, ClickHouse, executable, http sources are supported, but file sources are not supported. 
 When searching a dictionary, the cache is searched first. For each data block, all keys not found in the cache (or expired keys) are collected in a package, which is sent to the source with the query ``SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)``. The received data is then written to the cache.
 
 range_hashed
---------
+------------
 The table lists some data for date ranges, for each key. To give the possibility to extract this data for a given key, for a given date.
 
 Example: in the table there are discounts for each advertiser in the form:
-::
+
+.. code-block:: text
+
   advertiser id    discount start date    end date    value
   123                 2015-01-01                     2015-01-15    0.15
   123                 2015-01-16                     2015-01-31    0.25
@@ -251,7 +253,9 @@ ip_trie
 The table stores IP prefixes for each key (IP address), which makes it possible to map IP addresses to metadata such as ASN or threat score.
 
 Example: in the table there are prefixes matches to AS number and country:
-::
+
+.. code-block:: text
+
   prefix            asn       cca2
   202.79.32.0/20    17501     NP
   2620:0:870::/48   3856      US
@@ -299,17 +303,17 @@ No other type is supported. The function returns attribute for a prefix matching
 The data is stored currently in a bitwise trie, it has to fit in memory.
 
 complex_key_hashed
-----------------
+------------------
 
 The same as ``hashed``, but for complex keys.
 
 complex_key_cache
-----------
+-----------------
 
 The same as ``cache``, but for complex keys.
 
 Notes
-----------
+-----
 
 We recommend using the ``flat`` method when possible, or ``hashed``. The speed of the dictionaries is impeccable with this type of memory storage.
 
@@ -335,7 +339,7 @@ To use external dictionaries, see the section "Functions for working with extern
 Note that you can convert values for a small dictionary by specifying all the contents of the dictionary directly in a ``SELECT`` query (see the section "transform function"). This functionality is not related to external dictionaries.
 
 Dictionaries with complex keys
-----------------------------
+------------------------------
 
 You can use tuples consisting of fields of arbitrary types as keys. Configure your dictionary with ``complex_key_hashed`` or ``complex_key_cache`` layout in this case.
 

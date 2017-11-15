@@ -3,6 +3,7 @@ target_link_libraries (exception dbms)
 
 add_executable (string_pool string_pool.cpp)
 target_link_libraries (string_pool dbms)
+target_include_directories (string_pool BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 
 add_executable (field field.cpp)
 target_link_libraries (field dbms)

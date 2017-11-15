@@ -3,11 +3,14 @@
 #include <sstream>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -17,7 +20,7 @@ class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
 
-/** Range with open or closed ends; Perhaps unlimited.
+/** Range with open or closed ends; possibly unbounded.
   */
 struct Range
 {
@@ -28,12 +31,12 @@ private:
 public:
     Field left;                       /// the left border, if any
     Field right;                      /// the right border, if any
-    bool left_bounded = false;        /// limited to the left
-    bool right_bounded = false;       /// limited to the right
+    bool left_bounded = false;        /// bounded at the left
+    bool right_bounded = false;       /// bounded at the right
     bool left_included = false;       /// includes the left border, if any
     bool right_included = false;      /// includes the right border, if any
 
-    /// The whole set.
+    /// The whole unversum.
     Range() {}
 
     /// One point.
@@ -145,7 +148,7 @@ public:
         /// r to the right of me.
         if (r.left_bounded
             && right_bounded
-            && (less(right, r.left)                            /// ...} {...
+            && (less(right, r.left)                          /// ...} {...
                 || ((!right_included || !r.left_included)    /// ...) [... or ...] (...
                     && equals(r.left, right))))
             return false;
@@ -187,23 +190,24 @@ public:
 };
 
 
-class ASTSet;
-
-
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
-  *  as well as logical links AND/OR/NOT above these conditions.
+  *  as well as logical operators AND/OR/NOT above these conditions.
   *
   * Constructs a reverse polish notation from these conditions
-  *  and can calculate (interpret) its feasibility over key ranges.
+  *  and can calculate (interpret) its satisfiability over key ranges.
   */
 class PKCondition
 {
 public:
-    /// Does not include the SAMPLE section. all_columns - the set of all columns of the table.
-    PKCondition(ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns, const SortDescription & sort_descr,
-        const Block & pk_sample_block);
+    /// Does not take into account the SAMPLE section. all_columns - the set of all columns of the table.
+    PKCondition(
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        const NamesAndTypesList & all_columns,
+        const SortDescription & sort_descr,
+        const ExpressionActionsPtr & pk_expr);
 
     /// Whether the condition is feasible in the key range.
     /// left_pk and right_pk must contain all fields in the sort_descr in the appropriate order.
@@ -274,7 +278,7 @@ public:
     static Block getBlockWithConstants(
         const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
 
-    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, ASTPtr & node)>;
+    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const ASTPtr & node)>;
     static const AtomMap atom_map;
 
 private:
@@ -290,8 +294,8 @@ private:
 
     bool mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
-    void traverseAST(ASTPtr & node, const Context & context, Block & block_with_constants);
-    bool atomFromAST(ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
+    void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
+    bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
     bool operatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the primary key column
@@ -313,11 +317,20 @@ private:
         DataTypePtr & out_primary_key_column_type,
         std::vector<const ASTFunction *> & out_functions_chain);
 
+    bool canConstantBeWrappedByMonotonicFunctions(
+        const ASTPtr & node,
+        const Context & context,
+        size_t & out_primary_key_column_num,
+        DataTypePtr & out_primary_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type);
+
     RPN rpn;
 
     SortDescription sort_descr;
     ColumnIndices pk_columns;
-    const Block & pk_sample_block;
+    ExpressionActionsPtr pk_expr;
+    PreparedSets prepared_sets;
 };
 
 }

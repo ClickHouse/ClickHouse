@@ -1,4 +1,4 @@
-#include <numeric>
+#include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -11,8 +11,10 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <Common/VirtualColumnUtils.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -72,29 +74,21 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
     ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
-    ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
-    ASTs & asts = node.children;
-    auto cur = std::make_shared<ASTLiteral>(StringRange(), value);
-    cur->alias = column_name;
-    ASTPtr column_value = cur;
-    bool is_replaced = false;
-    for (size_t i = 0; i < asts.size(); ++i)
+    if (!select.with_expression_list)
     {
-        if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
-        {
-            if (identifier->kind == ASTIdentifier::Kind::Column && identifier->name == column_name)
-            {
-                asts[i] = column_value;
-                is_replaced = true;
-            }
-        }
+        select.with_expression_list = std::make_shared<ASTExpressionList>();
+        select.children.insert(select.children.begin(), select.with_expression_list);
     }
-    if (!is_replaced)
-        asts.insert(asts.begin(), column_value);
+
+    ASTExpressionList & with = typeid_cast<ASTExpressionList &>(*select.with_expression_list);
+    auto literal = std::make_shared<ASTLiteral>(StringRange(), value);
+    literal->alias = column_name;
+    literal->prefer_alias_to_column_name = true;
+    with.children.push_back(literal);
 }
 
 /// Verifying that the function depends only on the specified columns
-static bool isValidFunction(ASTPtr expression, const NameSet & columns)
+static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
 {
     for (size_t i = 0; i < expression->children.size(); ++i)
         if (!isValidFunction(expression->children[i], columns))
@@ -109,7 +103,7 @@ static bool isValidFunction(ASTPtr expression, const NameSet & columns)
 }
 
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
-static void extractFunctions(ASTPtr expression, const NameSet & columns, std::vector<ASTPtr> & result)
+static void extractFunctions(const ASTPtr & expression, const NameSet & columns, std::vector<ASTPtr> & result)
 {
     const ASTFunction * function = typeid_cast<const ASTFunction *>(&*expression);
     if (function && function->name == "and")
@@ -137,10 +131,9 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
     return new_query;
 }
 
-bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
+bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
 {
-    query = query->clone();
-    const ASTSelectQuery & select = typeid_cast<ASTSelectQuery & >(*query);
+    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery & >(*query);
     if (!select.where_expression && !select.prewhere_expression)
         return false;
 
@@ -158,7 +151,7 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
     if (!expression_ast)
         return false;
 
-    /// Let's parse and calculate the expression.
+    /// Let's analyze and calculate the expression.
     ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getColumnsList());
     ExpressionActionsPtr actions = analyzer.getActions(false);
     actions->execute(block);
@@ -168,9 +161,9 @@ bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context)
     ColumnPtr filter_column = block.getByName(filter_column_name).column;
     if (auto converted = filter_column->convertToFullColumnIfConst())
         filter_column = converted;
-    const IColumn::Filter & filter = dynamic_cast<ColumnUInt8 &>(*filter_column).getData();
+    const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
 
-    if (std::accumulate(filter.begin(), filter.end(), 0ul) == filter.size())
+    if (countBytesInFilter(filter) == 0)
         return false;
 
     for (size_t i = 0; i < block.columns(); ++i)

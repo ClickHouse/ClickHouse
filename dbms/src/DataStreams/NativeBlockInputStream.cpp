@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/typeid_cast.h>
+#include <ext/range.h>
 
 #include <DataStreams/NativeBlockInputStream.h>
 
@@ -44,7 +46,7 @@ NativeBlockInputStream::NativeBlockInputStream(
 }
 
 
-void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows)
+void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
     if (type.isNullable())
     {
@@ -55,16 +57,16 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
         IColumn & nested_col = *nullable_col.getNestedColumn();
 
         IColumn & null_map = nullable_col.getNullMapConcreteColumn();
-        DataTypeUInt8{}.deserializeBinaryBulk(null_map, istr, rows, 0);
+        DataTypeUInt8{}.deserializeBinaryBulk(null_map, istr, rows, avg_value_size_hint);
 
-        readData(nested_type, nested_col, istr, rows);
+        readData(nested_type, nested_col, istr, rows, avg_value_size_hint);
 
         return;
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
-        /** For arrays, you first need to deserialize the offsets, and then the values.
-        */
+        /** For arrays, we deserialize the offsets first, and then the values.
+          */
         IColumn & offsets_column = *typeid_cast<ColumnArray &>(column).getOffsetsColumn();
         type_arr->getOffsetsType()->deserializeBinaryBulk(offsets_column, istr, rows, 0);
 
@@ -76,10 +78,10 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
                 *type_arr->getNestedType(),
                 typeid_cast<ColumnArray &>(column).getData(),
                 istr,
-                typeid_cast<const ColumnArray &>(column).getOffsets()[rows - 1]);
+                typeid_cast<const ColumnArray &>(column).getOffsets()[rows - 1], 0);
     }
     else
-        type.deserializeBinaryBulk(column, istr, rows, 0);    /// TODO Use avg_value_size_hint.
+        type.deserializeBinaryBulk(column, istr, rows, avg_value_size_hint);
 
     if (column.size() != rows)
         throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -104,7 +106,7 @@ Block NativeBlockInputStream::readImpl()
     }
 
     /// Additional information about the block.
-    if (server_revision >= DBMS_MIN_REVISION_WITH_BLOCK_INFO)
+    if (server_revision > 0)
         res.info.read(istr);
 
     /// Dimensions
@@ -152,8 +154,9 @@ Block NativeBlockInputStream::readImpl()
         /// Data
         column.column = column.type->createColumn();
 
+        double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*column.type, *column.column, istr, rows);
+            readData(*column.type, *column.column, istr, rows, avg_value_size_hint);
 
         res.insert(std::move(column));
 
@@ -174,6 +177,20 @@ Block NativeBlockInputStream::readImpl()
     return res;
 }
 
+void NativeBlockInputStream::updateAvgValueSizeHints(const Block & block)
+{
+    auto rows = block.rows();
+    if (rows < 10)
+        return;
+
+    avg_value_size_hints.resize_fill(block.columns(), 0);
+
+    for (auto idx : ext::range(0, block.columns()))
+    {
+        auto & avg_value_size_hint = avg_value_size_hints[idx];
+        IDataType::updateAvgValueSizeHint(*block.getByPosition(idx).column, avg_value_size_hint);
+    }
+}
 
 void IndexForNativeFormat::read(ReadBuffer & istr, const NameSet & required_columns)
 {
@@ -209,6 +226,5 @@ void IndexForNativeFormat::read(ReadBuffer & istr, const NameSet & required_colu
         block.num_columns = block.columns.size();
     }
 }
-
 
 }

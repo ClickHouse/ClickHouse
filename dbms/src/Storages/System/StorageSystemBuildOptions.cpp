@@ -12,27 +12,22 @@ namespace DB
 
 StorageSystemBuildOptions::StorageSystemBuildOptions(const std::string & name_)
     : name(name_)
-    , columns{
-        { "name",             std::make_shared<DataTypeString>()    },
-        { "value",            std::make_shared<DataTypeString>()    },
+    , columns
+    {
+        { "name", std::make_shared<DataTypeString>() },
+        { "value", std::make_shared<DataTypeString>() },
     }
 {
-}
-
-StoragePtr StorageSystemBuildOptions::create(const std::string & name_)
-{
-    return make_shared(name_);
 }
 
 
 BlockInputStreams StorageSystemBuildOptions::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -40,15 +35,14 @@ BlockInputStreams StorageSystemBuildOptions::read(
     ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
     ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "value"};
 
-    for (auto it = auto_config_build.begin(); it != auto_config_build.end(); ++it) {
-        col_name.column->insert(String(*it));
-        ++it;
-        if (it == auto_config_build.end())
-            break;
-        col_value.column->insert(String(*it));
+    for (auto it = auto_config_build; *it; it += 2)
+    {
+        col_name.column->insert(String(it[0]));
+        col_value.column->insert(String(it[1]));
     }
 
-    Block block{
+    Block block
+    {
         col_name,
         col_value,
     };

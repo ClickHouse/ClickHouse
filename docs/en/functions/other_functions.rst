@@ -1,64 +1,64 @@
 Other functions
--------------
+---------------
 
 hostName()
-~~~~~~~
+~~~~~~~~~~
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
 visibleWidth(x)
-~~~~~~~~~
+~~~~~~~~~~~~~~~
 Calculates the approximate width when outputting values to the console in text format (tab-separated). This function is used by the system for implementing Pretty formats.
 
 toTypeName(x)
-~~~~~~~~
+~~~~~~~~~~~~~
 Gets the type name. Returns a string containing the type name of the passed argument.
 
 blockSize()
-~~~~~~~~
+~~~~~~~~~~~
 Gets the size of the block.
 In ClickHouse, queries are always run on blocks (sets of column parts). This function allows getting the size of the block that you called it for.
 
 materialize(x)
-~~~~~~~~
+~~~~~~~~~~~~~~
 Turns a constant into a full column containing just one value.
 In ClickHouse, full columns and constants are represented differently in memory. Functions work differently for constant arguments and normal arguments (different code is executed), although the result is almost always the same. This function is for debugging this behavior.
 
 ignore(...)
-~~~~~~~
+~~~~~~~~~~~
 A function that accepts any arguments and always returns 0.
 However, the argument is still calculated. This can be used for benchmarks.
 
 sleep(seconds)
-~~~~~~~~~
+~~~~~~~~~~~~~~
 Sleeps 'seconds' seconds on each data block. You can specify an integer or a floating-point number.
 
 currentDatabase()
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database..
 
 isFinite(x)
-~~~~~~~
+~~~~~~~~~~~
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is not infinite and not a NaN, otherwise 0.
 
 isInfinite(x)
-~~~~~~~
+~~~~~~~~~~~~~
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is infinite, otherwise 0.
 Note that 0 is returned for a NaN
 
 isNaN(x)
-~~~~~
+~~~~~~~~
 Accepts Float32 and Float64 and returns UInt8 equal to 1 if the argument is a NaN, otherwise 0.
 
-hasColumnInTable('database', 'table', 'column')
-~~~~~~~~
+hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Accepts constant String columns - database name, table name and column name. Returns constant UInt8 value, equal to 1 if column exists,
-otherwise 0.
+otherwise 0. If hostname is specified, the check will proceed on remote host.
 If table doesn't exist than exception is thrown.
 For elements of nested data structure function checks existence of column. For nested data structure 0 is returned.
 
 bar
-~~~~~
+~~~
 Allows building a unicode-art diagram.
 
 ``bar(x, min, max, width)`` - Draws a band with a width proportional to (x - min) and equal to 'width' characters when x == max.
@@ -76,7 +76,9 @@ The band is drawn with accuracy to one eighth of a symbol. Example:
   FROM test.hits
   GROUP BY h
   ORDER BY h ASC
-  
+
+.. code-block:: text
+
   ┌──h─┬──────c─┬─bar────────────────┐
   │  0 │ 292907 │ █████████▋         │
   │  1 │ 180563 │ ██████             │
@@ -105,7 +107,7 @@ The band is drawn with accuracy to one eighth of a symbol. Example:
   └────┴────────┴────────────────────┘
 
 transform
-~~~~~~~
+~~~~~~~~~
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
@@ -142,7 +144,9 @@ Example:
   WHERE SearchEngineID != 0
   GROUP BY title
   ORDER BY c DESC
-  
+
+.. code-block:: text
+
   ┌─title─────┬──────c─┐
   │ Яндекс    │ 498635 │
   │ Google    │ 229872 │
@@ -170,7 +174,9 @@ Example:
   GROUP BY domain(Referer)
   ORDER BY count() DESC
   LIMIT 10
-  
+
+.. code-block:: text
+
   ┌─s──────────────┬───────c─┐
   │                │ 2906259 │
   │ www.yandex     │  867767 │
@@ -185,7 +191,7 @@ Example:
   └────────────────┴─────────┘
 
 formatReadableSize(x)
-~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
 Gets a size (number of bytes). Returns a string that contains rounded size with the suffix (KiB, MiB etc.).
 
 Example:
@@ -195,7 +201,9 @@ Example:
   SELECT
       arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
       formatReadableSize(filesize_bytes) AS filesize
-  
+
+.. code-block:: text
+
   ┌─filesize_bytes─┬─filesize───┐
   │              1 │ 1.00 B     │
   │           1024 │ 1.00 KiB   │
@@ -204,32 +212,32 @@ Example:
   └────────────────┴────────────┘
 
 least(a, b)
-~~~~~~
+~~~~~~~~~~~
 Returns the least element of a and b.
 
 greatest(a, b)
-~~~~~~~~
+~~~~~~~~~~~~~~
 Returns the greatest element of a and b
 
 uptime()
-~~~~~~
+~~~~~~~~
 Returns server's uptime in seconds.
 
 version()
-~~~~~~~
+~~~~~~~~~
 Returns server's version as a string.
 
 rowNumberInAllBlocks()
-~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
 Returns an incremental row number within all blocks that were processed by this function.
 
 runningDifference(x)
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~
 Calculates the difference between consecutive values in the data block.
 Result of the function depends on the order of the data in the blocks.
 
 It works only inside of the each processed block of data. Data splitting in the blocks is not explicitly controlled by the user.
-If you specify ORDER BY in subquery and call runningDifference outside of it, you could get an expected result.
+If you specify ``ORDER BY`` in subquery and call runningDifference outside of it, you could get an expected result.
 
 Example:
 
@@ -249,7 +257,9 @@ Example:
       ORDER BY EventTime ASC
       LIMIT 5
   )
-  
+
+.. code-block:: text
+
   ┌─EventID─┬───────────EventTime─┬─delta─┐
   │    1106 │ 2016-11-24 00:00:04 │     0 │
   │    1107 │ 2016-11-24 00:00:05 │     1 │
@@ -269,4 +279,3 @@ The reverse function of MACNumToString. If the MAC address has an invalid format
 MACStringToOUI(s)
 ~~~~~~~~~~~~~~~~~
 Takes MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form). Returns first three octets as UInt64 number. If the MAC address has an invalid format, it returns 0.
-  

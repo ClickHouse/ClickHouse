@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/typeid_cast.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -125,6 +126,8 @@ void AsynchronousMetrics::update()
         }
     }
 
+    set("Uptime", context.getUptimeSeconds());
+
     {
         auto databases = context.getDatabases();
 
@@ -143,11 +146,11 @@ void AsynchronousMetrics::update()
 
         for (const auto & db : databases)
         {
-            for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
             {
                 auto & table = iterator->table();
-                StorageMergeTree * table_merge_tree = typeid_cast<StorageMergeTree *>(table.get());
-                StorageReplicatedMergeTree * table_replicated_merge_tree = typeid_cast<StorageReplicatedMergeTree *>(table.get());
+                StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
+                StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 
                 if (table_replicated_merge_tree)
                 {
@@ -173,14 +176,12 @@ void AsynchronousMetrics::update()
                             "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()));
                     }
 
-                    calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getData().getMaxPartsCountForMonth());
-                    if (auto unreplicated_data = table_replicated_merge_tree->getUnreplicatedData())
-                        calculateMax(max_part_count_for_partition, unreplicated_data->getMaxPartsCountForMonth());
+                    calculateMax(max_part_count_for_partition, table_replicated_merge_tree->getData().getMaxPartsCountForPartition());
                 }
 
                 if (table_merge_tree)
                 {
-                    calculateMax(max_part_count_for_partition, table_merge_tree->getData().getMaxPartsCountForMonth());
+                    calculateMax(max_part_count_for_partition, table_merge_tree->getData().getMaxPartsCountForPartition());
                 }
             }
         }

@@ -4,8 +4,9 @@
 #include <cstdlib>
 #include <climits>
 #include <random>
+#include <functional>
 #include <common/Types.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <Core/Types.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
@@ -70,7 +71,7 @@ public:
         TryResult() = default;
 
         explicit TryResult(Entry entry_)
-            : entry(std::move(entry))
+            : entry(std::move(entry_))
             , is_usable(true)
             , is_up_to_date(true)
         {
@@ -106,7 +107,7 @@ public:
     /// Returns at least min_entries and at most max_entries connections (at most one connection per nested pool).
     /// The method will throw if it is unable to get min_entries alive connections or
     /// if fallback_to_stale_replicas is false and it is unable to get min_entries connections to up-to-date replicas.
-    std::vector<Entry> getMany(
+    std::vector<TryResult> getMany(
             size_t min_entries, size_t max_entries,
             const TryGetEntryFunc & try_get_entry,
             const GetPriorityFunc & get_priority = GetPriorityFunc(),
@@ -136,20 +137,20 @@ protected:
     Logger * log;
 };
 
-template<typename TNestedPool>
+template <typename TNestedPool>
 typename TNestedPool::Entry
 PoolWithFailoverBase<TNestedPool>::get(const TryGetEntryFunc & try_get_entry, const GetPriorityFunc & get_priority)
 {
-    std::vector<Entry> entries = getMany(1, 1, try_get_entry, get_priority);
-    if (entries.empty() || entries[0].isNull())
+    std::vector<TryResult> results = getMany(1, 1, try_get_entry, get_priority);
+    if (results.empty() || results[0].entry.isNull())
         throw DB::Exception(
                 "PoolWithFailoverBase::getMany() returned less than min_entries entries.",
                 DB::ErrorCodes::LOGICAL_ERROR);
-    return entries[0];
+    return results[0].entry;
 }
 
-template<typename TNestedPool>
-std::vector<typename TNestedPool::Entry>
+template <typename TNestedPool>
+std::vector<typename PoolWithFailoverBase<TNestedPool>::TryResult>
 PoolWithFailoverBase<TNestedPool>::getMany(
         size_t min_entries, size_t max_entries,
         const TryGetEntryFunc & try_get_entry,
@@ -261,34 +262,27 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                     [](const TryResult & r) { return r.entry.isNull() || !r.is_usable; }),
             try_results.end());
 
-    std::vector<Entry> entries;
+    /// Sort so that preferred items are near the beginning.
+    std::stable_sort(
+            try_results.begin(), try_results.end(),
+            [](const TryResult & left, const TryResult & right)
+            {
+                return std::forward_as_tuple(!left.is_up_to_date, left.staleness)
+                    < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
+            });
 
     if (up_to_date_count >= min_entries)
     {
         /// There is enough up-to-date entries.
-        entries.reserve(up_to_date_count);
-        for (const TryResult & result: try_results)
-        {
-            if (result.is_up_to_date)
-                entries.push_back(result.entry);
-        }
+        try_results.resize(up_to_date_count);
     }
     else if (fallback_to_stale_replicas)
     {
         /// There is not enough up-to-date entries but we are allowed to return stale entries.
         /// Gather all up-to-date ones and least-bad stale ones.
-        std::stable_sort(
-                try_results.begin(), try_results.end(),
-                [](const TryResult & left, const TryResult & right)
-                {
-                    return std::forward_as_tuple(!left.is_up_to_date, left.staleness)
-                        < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
-                });
 
         size_t size = std::min(try_results.size(), max_entries);
-        entries.reserve(size);
-        for (size_t i = 0; i < size; ++i)
-            entries.push_back(try_results[i].entry);
+        try_results.resize(size);
     }
     else
         throw DB::Exception(
@@ -296,10 +290,10 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                 + ", needed: " + std::to_string(min_entries),
                 DB::ErrorCodes::ALL_REPLICAS_ARE_STALE);
 
-    return entries;
+    return try_results;
 }
 
-template<typename TNestedPool>
+template <typename TNestedPool>
 void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
 {
     for (size_t i = 0; i < nested_pools.size(); ++i)
@@ -314,7 +308,7 @@ void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
     throw DB::Exception("Can't find pool to report error.");
 }
 
-template<typename TNestedPool>
+template <typename TNestedPool>
 struct PoolWithFailoverBase<TNestedPool>::PoolState
 {
     UInt64 error_count = 0;
@@ -336,7 +330,7 @@ private:
     std::minstd_rand rng = std::minstd_rand(randomSeed());
 };
 
-template<typename TNestedPool>
+template <typename TNestedPool>
 typename PoolWithFailoverBase<TNestedPool>::PoolStates
 PoolWithFailoverBase<TNestedPool>::updatePoolStates()
 {
@@ -349,7 +343,7 @@ PoolWithFailoverBase<TNestedPool>::updatePoolStates()
         for (auto & state : shared_pool_states)
             state.randomize();
 
-        time_t current_time = time(0);
+        time_t current_time = time(nullptr);
 
         if (last_error_decrease_time)
         {

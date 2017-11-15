@@ -6,14 +6,14 @@
 namespace DB
 {
 
-/** Интерфейс интерпретаторов разных запросов.
+/** Interpreters interface for different queries.
   */
 class IInterpreter
 {
 public:
-    /** Для запросов, возвращающих результат (SELECT и похожие), устанавливает в BlockIO поток, из которого можно будет читать этот результат.
-      * Для запросов, принимающих данные (INSERT), устанавливает в BlockIO поток, куда можно писать данные.
-      * Для запросов, которые не требуют данные и ничего не возвращают, BlockIO будет пустым.
+    /** For queries that return a result (SELECT and similar), sets in BlockIO a stream from which you can read this result.
+      * For queries that receive data (INSERT), sets a thread in BlockIO where you can write data.
+      * For queries that do not require data and return nothing, BlockIO will be empty.
       */
     virtual BlockIO execute() = 0;
 

@@ -1,0 +1,144 @@
+# ubuntu:
+# prepare old (trusty or earlier) host system:
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/artful
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/bionic
+# echo "3.0 (native)" > debian/source/format
+# build ubuntu:
+# sudo DIST=trusty pbuilder create --configfile debian/.pbuilderrc && DIST=trusty pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=xenial pbuilder create --configfile debian/.pbuilderrc && DIST=xenial pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=zesty  pbuilder create --configfile debian/.pbuilderrc && DIST=zesty  pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=artful pbuilder create --configfile debian/.pbuilderrc && DIST=artful pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=bionic pbuilder create --configfile debian/.pbuilderrc && DIST=bionic pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=devel  pbuilder create --configfile debian/.pbuilderrc && DIST=devel  pdebuild --configfile debian/.pbuilderrc
+# build debian:
+# sudo DIST=stable       pbuilder create --configfile debian/.pbuilderrc && DIST=stable       pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=testing      pbuilder create --configfile debian/.pbuilderrc && DIST=testing      pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=unstable     pbuilder create --configfile debian/.pbuilderrc && DIST=unstable     pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=experimental pbuilder create --configfile debian/.pbuilderrc && DIST=experimental pdebuild --configfile debian/.pbuilderrc
+# build i386 experimental:
+# sudo DIST=trusty       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=trusty       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=xenial       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=xenial       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=zesty        ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=zesty        ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=artful       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=artful       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=bionic       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=bionic       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=stable       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=stable       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+
+# Your packages built here: /var/cache/pbuilder/*-*/result
+
+# from https://wiki.debian.org/PbuilderTricks :
+
+# Codenames for Debian suites according to their alias. Update these when
+# needed.
+UNSTABLE_CODENAME="sid"
+TESTING_CODENAME="buster"
+STABLE_CODENAME="stretch"
+STABLE_BACKPORTS_SUITE="$STABLE_CODENAME-backports"
+
+# List of Debian suites.
+DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BACKPORTS_SUITE
+    "experimental" "unstable" "testing" "stable")
+
+# List of Ubuntu suites. Update these when needed.
+UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
+
+# Mirrors to use. Update these to your preferred mirror.
+DEBIAN_MIRROR="deb.debian.org"
+#UBUNTU_MIRROR="mirrors.kernel.org"
+
+UBUNTU_MIRROR="mirror.yandex.ru"
+#DEBIAN_MIRROR="mirror.yandex.ru"
+
+# Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
+: ${DIST:="$(lsb_release --short --codename)"}
+
+# Optionally change Debian codenames in $DIST to their aliases.
+case "$DIST" in
+    $UNSTABLE_CODENAME)
+        DIST="unstable"
+        ;;
+    $TESTING_CODENAME)
+        DIST="testing"
+        ;;
+    $STABLE_CODENAME)
+        DIST="stable"
+        ;;
+esac
+
+# Optionally set the architecture to the host architecture if none set. Note
+# that you can set your own default (i.e. ${ARCH:="i386"}).
+: ${ARCH:="$(dpkg --print-architecture)"}
+
+NAME="$DIST"
+if [ -n "${ARCH}" ]; then
+    NAME="$NAME-$ARCH"
+    DEBOOTSTRAPOPTS=("--arch" "$ARCH" "${DEBOOTSTRAPOPTS[@]}")
+fi
+
+BASETGZ="/var/cache/pbuilder/$NAME-base.tgz"
+DISTRIBUTION="$DIST"
+BUILDRESULT="/var/cache/pbuilder/$NAME/result/"
+APTCACHE="/var/cache/pbuilder/$NAME/aptcache/"
+BUILDPLACE="/var/cache/pbuilder/build/"
+
+if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
+    # Debian configuration
+    OSNAME=debian
+    MIRRORSITE="http://$DEBIAN_MIRROR/$OSNAME/"
+    COMPONENTS="main contrib non-free"
+    if $(echo "$STABLE_CODENAME stable" | grep -q $DIST); then
+        OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $STABLE_BACKPORTS_SUITE $COMPONENTS"
+    fi
+    # APTKEYRINGS=/usr/share/keyrings/debian-archive-keyring.gpg
+    # sudo apt install debian-archive-keyring
+    DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-archive-keyring.gpg' )
+elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
+    # Ubuntu configuration
+    OSNAME=ubuntu
+    MIRRORSITE="http://$UBUNTU_MIRROR/$OSNAME/"
+    COMPONENTS="main restricted universe multiverse"
+
+    OTHERMIRROR+="deb $MIRRORSITE $DIST-updates main restricted universe multiverse |"
+    OTHERMIRROR+="deb $MIRRORSITE $DIST-security main restricted universe multiverse |"
+
+    case "$DIST" in
+       "trusty" | "xenial" )
+           OTHERMIRROR+="deb http://ppa.launchpad.net/ubuntu-toolchain-r/test/$OSNAME $DIST main |"
+           ALLOWUNTRUSTED=yes
+           ;;
+    esac
+
+    # deb http://apt.llvm.org/zesty/ llvm-toolchain-zesty-5.0 main
+else
+    echo "Unknown distribution: $DIST"
+    exit 1
+fi
+
+echo "using $NAME $OSNAME $DIST $ARCH $LOGNAME"
+
+case "$DIST" in
+    "trusty")
+        # ccache broken
+        ;;
+    *)
+        CCACHEDIR=/var/cache/pbuilder/ccache
+        ;;
+esac
+
+case "$DIST" in
+    "trusty" | "xenial" | "experimental" | "unstable" )
+        export DEB_CC=gcc-7
+        export DEB_CXX=g++-7
+        ;;
+esac
+
+export CCACHE_PREFIX=
+
+export DEB_BUILD_OPTIONS=parallel=`nproc`
+
+# Floating bug with permissions:
+sudo mkdir -p /var/cache/pbuilder/ccache
+sudo chmod -R a+rwx /var/cache/pbuilder/ccache
+
+# echo "DEBOOTSTRAPOPTS = ${DEBOOTSTRAPOPTS[@]}"

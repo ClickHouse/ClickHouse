@@ -13,7 +13,7 @@
 #include <common/logger_useful.h>
 #include <Poco/Ext/ThreadNumber.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace ProfileEvents
@@ -43,20 +43,6 @@ namespace ErrorCodes
 }
 
 
-StoragePtr StorageBuffer::create(const std::string & name_, NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    Context & context_,
-    size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-    const String & destination_database_, const String & destination_table_)
-{
-    return make_shared(
-        name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        context_, num_shards_, min_thresholds_, max_thresholds_, destination_database_, destination_table_);
-}
-
-
 StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
@@ -70,8 +56,7 @@ StorageBuffer::StorageBuffer(const std::string & name_, NamesAndTypesListPtr col
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
     no_destination(destination_database.empty() && destination_table.empty()),
-    log(&Logger::get("StorageBuffer (" + name + ")")),
-    flush_thread(&StorageBuffer::flushThread, this)
+    log(&Logger::get("StorageBuffer (" + name + ")"))
 {
 }
 
@@ -129,12 +114,11 @@ private:
 
 BlockInputStreams StorageBuffer::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
 
@@ -147,13 +131,7 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        /** Turn off the optimization "transfer to PREWHERE",
-          *  since Buffer does not support PREWHERE.
-          */
-        Settings modified_settings = settings;
-        modified_settings.optimize_move_to_prewhere = false;
-
-        streams_from_dst = destination->read(column_names, query, context, modified_settings, processed_stage, max_block_size, threads);
+        streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     BlockInputStreams streams_from_buffers;
@@ -166,7 +144,7 @@ BlockInputStreams StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query, context, processed_stage, 0, stream).execute().in;
+            stream = InterpreterSelectQuery(query_info.query, context, processed_stage, 0, stream).execute().in;
 
     streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams_from_dst;
@@ -232,7 +210,7 @@ static void appendBlock(const Block & from, Block & to)
 class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
+    explicit BufferBlockOutputStream(StorageBuffer & storage_) : storage(storage_) {}
 
     void write(const Block & block) override
     {
@@ -318,7 +296,7 @@ private:
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, std::unique_lock<std::mutex> && lock)
     {
-        time_t current_time = time(0);
+        time_t current_time = time(nullptr);
 
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
@@ -353,6 +331,12 @@ BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & query, const Settings &
 }
 
 
+void StorageBuffer::startup()
+{
+    flush_thread = std::thread(&StorageBuffer::flushThread, this);
+}
+
+
 void StorageBuffer::shutdown()
 {
     shutdown_event.set();
@@ -362,7 +346,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize({} /*partition*/, false /*final*/, false /*deduplicate*/, context.getSettings());
+        optimize(nullptr /*query*/, {} /*partition*/, false /*final*/, false /*deduplicate*/, context);
     }
     catch (...)
     {
@@ -381,9 +365,9 @@ void StorageBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageBuffer::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageBuffer::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
-    if (!partition.empty())
+    if (partition)
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
     if (final)
@@ -450,73 +434,71 @@ void StorageBuffer::flushAllBuffers(const bool check_thresholds)
 void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
 {
     Block block_to_write;
-    time_t current_time = time(0);
+    time_t current_time = time(nullptr);
 
     size_t rows = 0;
     size_t bytes = 0;
     time_t time_passed = 0;
 
+    std::lock_guard<std::mutex> lock(buffer.mutex);
+
+    block_to_write = buffer.data.cloneEmpty();
+
+    rows = buffer.data.rows();
+    bytes = buffer.data.bytes();
+    if (buffer.first_write_time)
+        time_passed = current_time - buffer.first_write_time;
+
+    if (check_thresholds)
     {
-        std::lock_guard<std::mutex> lock(buffer.mutex);
+        if (!checkThresholdsImpl(rows, bytes, time_passed))
+            return;
+    }
+    else
+    {
+        if (rows == 0)
+            return;
+    }
 
-        block_to_write = buffer.data.cloneEmpty();
+    buffer.data.swap(block_to_write);
+    buffer.first_write_time = 0;
 
-        rows = buffer.data.rows();
-        bytes = buffer.data.bytes();
-        if (buffer.first_write_time)
-            time_passed = current_time - buffer.first_write_time;
+    CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+    CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
-        if (check_thresholds)
-        {
-            if (!checkThresholdsImpl(rows, bytes, time_passed))
-                return;
-        }
-        else
-        {
-            if (rows == 0)
-                return;
-        }
+    ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
+
+    LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
+
+    if (no_destination)
+        return;
+
+    /** For simplicity, buffer is locked during write.
+        * We could unlock buffer temporary, but it would lead to too much difficulties:
+        * - data, that is written, will not be visible for SELECTs;
+        * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
+        * - this could lead to infinite memory growth.
+        */
+    try
+    {
+        writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
+    }
+    catch (...)
+    {
+        ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
+
+        /// Return the block to its place in the buffer.
+
+        CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
+        CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
 
         buffer.data.swap(block_to_write);
-        buffer.first_write_time = 0;
 
-        CurrentMetrics::sub(CurrentMetrics::StorageBufferRows, block_to_write.rows());
-        CurrentMetrics::sub(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
+        if (!buffer.first_write_time)
+            buffer.first_write_time = current_time;
 
-        ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
-
-        LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
-
-        if (no_destination)
-            return;
-
-        /** For simplicity, buffer is locked during write.
-          * We could unlock buffer temporary, but it would lead to too much difficulties:
-          * - data, that is written, will not be visible for SELECTs;
-          * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
-          * - this could lead to infinite memory growth.
-          */
-        try
-        {
-            writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
-        }
-        catch (...)
-        {
-            ProfileEvents::increment(ProfileEvents::StorageBufferErrorOnFlush);
-
-            /// Return the block to its place in the buffer.
-
-            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, block_to_write.rows());
-            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, block_to_write.bytes());
-
-            buffer.data.swap(block_to_write);
-
-            if (!buffer.first_write_time)
-                buffer.first_write_time = current_time;
-
-            /// After a while, the next write attempt will happen.
-            throw;
-        }
+        /// After a while, the next write attempt will happen.
+        throw;
     }
 }
 
@@ -551,7 +533,9 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
             if (block.getByName(dst_col.name).type->getName() != dst_col.type->getName())
             {
                 LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table
-                    << " have different type of column " << dst_col.name << ". Block of data is discarded.");
+                    << " have different type of column " << dst_col.name << " ("
+                    << block.getByName(dst_col.name).type->getName() << " != " << dst_col.type->getName()
+                    << "). Block of data is discarded.");
                 return;
             }
 
@@ -608,10 +592,10 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
     /// So that no blocks of the old structure remain.
-    optimize({} /*partition*/, false /*final*/, false /*deduplicate*/, context.getSettings());
+    optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 

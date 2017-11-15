@@ -21,7 +21,7 @@ void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & stat
 {
     formatQueryImpl(s, state, frame);
 
-    std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+    std::string indent_str = s.one_line ? "" : std::string(4u * frame.indent, ' ');
 
     if (out_file)
     {

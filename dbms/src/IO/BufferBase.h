@@ -8,30 +8,30 @@ namespace DB
 {
 
 
-/** Базовый класс для ReadBuffer и WriteBuffer.
-  * Содержит общие типы, переменные и функции.
+/** Base class for ReadBuffer and WriteBuffer.
+  * Contains mutual types, variables, and functions.
   *
-  * ReadBuffer и WriteBuffer похожи на istream и ostream, соответственно.
-  * Их приходится использовать, так как с использованием iostream-ов невозможно эффективно реализовать некоторые операции.
-  * Например, используя istream, невозможно быстро читать строковые значения из tab-separated файла,
-  *  чтобы после чтения, позиция осталась сразу после считанного значения.
-  * (Единственный вариант - вызывать функцию std::istream::get() на каждый байт, но это тормозит из-за нескольких виртуальных вызовов.)
+  * ReadBuffer and WriteBuffer are similar to istream and ostream, respectively.
+  * They have to be used, because using iostreams it is impossible to effectively implement some operations.
+  * For example, using istream, you can not quickly read string values from a tab-separated file,
+  *  so that after reading, the position remains immediately after the read value.
+  * (The only option is to call the std::istream::get() function on each byte, but this slows down due to several virtual calls.)
   *
-  * Read/WriteBuffer-ы предоставляют прямой доступ к внутреннему буферу, поэтому, необходимые операции реализуются эффективнее.
-  * Используется только одна виртуальная функция nextImpl(), которая вызывается редко:
-  * - в случае ReadBuffer - заполнить буфер новыми данными из источика;
-  * - в случае WriteBuffer - записать данные из буфера в приёмник.
+  * Read/WriteBuffers provide direct access to the internal buffer, so the necessary operations are implemented more efficiently.
+  * Only one virtual function nextImpl() is used, which is rarely called:
+  * - in the case of ReadBuffer - fill in the buffer with new data from the source;
+  * - in the case of WriteBuffer - write data from the buffer into the receiver.
   *
-  * Read/WriteBuffer-ы могут владеть или не владеть своим куском памяти.
-  * Во втором случае, можно эффективно читать из уже существующего куска памяти / std::string, не копируя его.
+  * Read/WriteBuffer can own or not own an own piece of memory.
+  * In the second case, you can effectively read from an already existing piece of memory / std::string without copying it.
   */
 class BufferBase
 {
 public:
-    /** Курсор в буфере. Позиция записи или чтения. */
+    /** Cursor in the buffer. The position of write or read. */
     using Position = char *;
 
-    /** Ссылка на диапазон памяти. */
+    /** A reference to the range of memory. */
     struct Buffer
     {
         Buffer(Position begin_pos_, Position end_pos_) : begin_pos(begin_pos_), end_pos(end_pos_) {}
@@ -49,11 +49,11 @@ public:
 
     private:
         Position begin_pos;
-        Position end_pos;        /// на 1 байт после конца буфера
+        Position end_pos;        /// 1 byte after the end of the buffer
     };
 
-    /** Конструктор принимает диапазон памяти, который следует использовать под буфер.
-      * offset - начальное место курсора. ReadBuffer должен установить его в конец диапазона, а WriteBuffer - в начало.
+    /** The constructor takes a range of memory to use for the buffer.
+      * offset - the starting point of the cursor. ReadBuffer must set it to the end of the range, and WriteBuffer - to the beginning.
       */
     BufferBase(Position ptr, size_t size, size_t offset)
         : internal_buffer(ptr, ptr + size), working_buffer(ptr, ptr + size), pos(ptr + offset) {}
@@ -65,19 +65,19 @@ public:
         pos = ptr + offset;
     }
 
-    /// получить буфер
+    /// get buffer
     inline Buffer & internalBuffer() { return internal_buffer; }
 
-    /// получить часть буфера, из которого можно читать / в который можно писать данные
+    /// get the part of the buffer from which you can read / write data
     inline Buffer & buffer() { return working_buffer; }
 
-    /// получить (для чтения и изменения) позицию в буфере
+    /// get (for reading and modifying) the position in the buffer
     inline Position & position() { return pos; };
 
-    /// смещение в байтах курсора от начала буфера
+    /// offset in bytes of the cursor from the beginning of the buffer
     inline size_t offset() const { return pos - working_buffer.begin(); }
 
-    /** Сколько байт было прочитано/записано, считая те, что ещё в буфере. */
+    /** How many bytes have been read/written, counting those that are still in the buffer. */
     size_t count() const
     {
         return bytes + offset();
@@ -90,21 +90,21 @@ public:
     }
 
 protected:
-    /// Ссылка на кусок памяти для буфера.
+    /// A reference to a piece of memory for the buffer.
     Buffer internal_buffer;
 
-    /** Часть куска памяти, которую можно использовать.
-      * Например, если internal_buffer - 1MB, а из файла для чтения было загружено в буфер
-      *  только 10 байт, то working_buffer будет иметь размер 10 байт
-      *  (working_buffer.end() будет указывать на позицию сразу после тех 10 байт, которых можно прочитать).
+    /** A piece of memory that you can use.
+      * For example, if internal_buffer is 1MB, and from a file for reading it was loaded into the buffer
+      *  only 10 bytes, then working_buffer will be 10 bytes in size
+      *  (working_buffer.end() will point to the position immediately after the 10 bytes that can be read).
       */
     Buffer working_buffer;
 
-    /// Позиция чтения/записи.
+    /// Read/write position.
     Position pos;
 
-    /** Сколько байт было прочитано/записано, не считая тех, что сейчас в буфере.
-      * (считая те, что были уже использованы и "удалены" из буфера)
+    /** How many bytes have been read/written, not counting those that are now in the buffer.
+      * (counting those that were already used and "removed" from the buffer)
       */
     size_t bytes = 0;
 };

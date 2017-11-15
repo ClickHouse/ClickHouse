@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Poco/RWLock.h>
+#include <shared_mutex>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Limits.h>
@@ -77,43 +76,43 @@ private:
       * We have not implemented such sophisticated behaviour.
       */
 
-    /** Типы данных, из которых было создано множество.
-      * При проверке на принадлежность множеству, типы проверяемых столбцов должны с ними совпадать.
+    /** The data types from which the set was created.
+      * When checking for belonging to a set, the types of columns to be checked must match with them.
       */
     DataTypes data_types;
 
     Logger * log;
 
-    /// Ограничения на максимальный размер множества
+    /// Limitations on the maximum size of the set
     size_t max_rows;
     size_t max_bytes;
     OverflowMode overflow_mode;
 
-    /// Если в левой части IN стоит массив. Проверяем, что хоть один элемент массива лежит в множестве.
+    /// If there is an array on the left side of IN. We check that at least one element of the array presents in the set.
     void executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
 
-    /// Если в левой части набор столбцов тех же типов, что элементы множества.
+    /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
         const ConstColumnPlainPtrs & key_columns,
         ColumnUInt8::Container_t & vec_res,
         bool negative,
         const PaddedPODArray<UInt8> * null_map) const;
 
-    /// Проверить не превышены ли допустимые размеры множества ключей
+    /// Check whether the permissible sizes of keys set reached
     bool checkSetSizeLimits() const;
 
-    /// Вектор упорядоченных элементов Set.
-    /// Нужен для работы индекса по первичному ключу в операторе IN.
+    /// Vector of ordered elements of `Set`.
+    /// It is necessary for the index to work on the primary key in the IN statement.
     using OrderedSetElements = std::vector<Field>;
     using OrderedSetElementsPtr = std::unique_ptr<OrderedSetElements>;
     OrderedSetElementsPtr ordered_set_elements;
 
-    /** Защищает работу с множеством в функциях insertFromBlock и execute.
-      * Эти функции могут вызываться одновременно из разных потоков только при использовании StorageSet,
-      *  и StorageSet вызывает только эти две функции.
-      * Поэтому остальные функции по работе с множеством, не защинены.
+    /** Protects work with the set in the functions `insertFromBlock` and `execute`.
+      * These functions can be called simultaneously from different threads only when using StorageSet,
+      *  and StorageSet calls only these two functions.
+      * Therefore, the rest of the functions for working with set are not protected.
       */
-    mutable Poco::RWLock rwlock;
+    mutable std::shared_mutex rwlock;
 
 
     template <typename Method>

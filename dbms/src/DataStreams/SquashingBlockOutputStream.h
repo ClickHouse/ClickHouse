@@ -20,6 +20,9 @@ public:
     void writePrefix() override;
     void writeSuffix() override;
 
+    /// Don't write blocks less than specified size even when flush method was called by user.
+    void disableFlush() { disable_flush = true; }
+
 private:
     BlockOutputStreamPtr output;
 
@@ -27,6 +30,8 @@ private:
     bool all_written = false;
 
     void finalize();
+
+    bool disable_flush = false;
 };
 
 }

@@ -50,13 +50,14 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     std::string part_name = params.get("path");
     std::string replica_path = params.get("endpoint");
 
-    String full_part_name = std::string("detached/") + "tmp_" + part_name;
-    String part_path = data.getFullPath() + full_part_name + "/";
-    Poco::File part_file{part_path};
+    static const String TMP_PREFIX = "tmp_resharded_fetch_";
+    String relative_part_name = String("detached/") + TMP_PREFIX + part_name;
+    String absolute_part_path = data.getFullPath() + relative_part_name + "/";
+    Poco::File part_file{absolute_part_path};
 
     if (part_file.exists())
     {
-        LOG_ERROR(log, "Directory " + part_path + " already exists. Removing.");
+        LOG_ERROR(log, "Directory " + absolute_part_path + " already exists. Removing.");
         part_file.remove(true);
     }
 
@@ -64,9 +65,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-    new_data_part->name = full_part_name;
-    new_data_part->is_temp = true;
+    MergeTreeData::MutableDataPartPtr data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name);
+    data_part->relative_path = relative_part_name;
+    data_part->is_temp = true;
 
     size_t files;
     readBinary(files, body);
@@ -79,50 +80,36 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
         readStringBinary(file_name, body);
         readBinary(file_size, body);
 
-        WriteBufferFromFile file_out{part_path + file_name};
+        WriteBufferFromFile file_out{absolute_part_path + file_name};
         HashingWriteBuffer hashing_out{file_out};
-        copyData(body, hashing_out, file_size, is_cancelled);
+        copyData(body, hashing_out, file_size, blocker.getCounter());
 
-        if (is_cancelled)
+        if (blocker.isCancelled())
         {
             part_file.remove(true);
             throw Exception{"Fetching of part was cancelled", ErrorCodes::ABORTED};
         }
 
-        uint128 expected_hash;
-        readBinary(expected_hash, body);
+        MergeTreeDataPartChecksum::uint128 expected_hash;
+        readPODBinary(expected_hash, body);
 
         if (expected_hash != hashing_out.getHash())
-            throw Exception{"Checksum mismatch for file " + part_path + file_name + " transferred from " + replica_path};
+            throw Exception{"Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path};
 
-        if (file_name != "checksums.txt" &&
-            file_name != "columns.txt")
+        if (file_name != "checksums.txt" && file_name != "columns.txt")
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
     assertEOF(body);
 
-    ActiveDataPartSet::parsePartName(part_name, *new_data_part);
-    new_data_part->modification_time = time(0);
-    new_data_part->loadColumns(true);
-    new_data_part->loadChecksums(true);
-    new_data_part->loadIndex();
-    new_data_part->is_sharded = false;
-    new_data_part->checksums.checkEqual(checksums, false);
+    data_part->modification_time = time(nullptr);
+    data_part->loadColumnsChecksumsIndexes(true, false);
+    data_part->checksums.checkEqual(checksums, false);
 
     /// Now store permanently the received part.
-    new_data_part->is_temp = false;
-    const std::string old_part_path = data.getFullPath() + full_part_name;
-    const std::string new_part_path = data.getFullPath() + "detached/" + part_name;
-
-    Poco::File new_part_dir{new_part_path};
-    if (new_part_dir.exists())
-    {
-        LOG_WARNING(log, "Directory " + new_part_path + " already exists. Removing.");
-        new_part_dir.remove(true);
-    }
-
-    Poco::File{old_part_path}.renameTo(new_part_path);
+    /// NOTE: will remove dst dir if it exists
+    data_part->renameTo("detached/" + part_name, true);
+    data_part->is_temp = false;
 }
 
 Client::Client(StorageReplicatedMergeTree & storage_)
@@ -154,11 +141,11 @@ bool Client::send(const std::string & part_name, size_t shard_no,
 
     LOG_TRACE(log, "Sending part " << part_name);
 
-    auto storage_lock = storage.lockStructure(false);
+    auto storage_lock = storage.lockStructure(false, __PRETTY_FUNCTION__);
 
     MergeTreeData::DataPartPtr part = findShardedPart(part_name, shard_no);
 
-    Poco::ScopedReadRWLock part_lock{part->columns_lock};
+    std::shared_lock<std::shared_mutex> part_lock{part->columns_lock};
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
@@ -189,7 +176,7 @@ bool Client::send(const std::string & part_name, size_t shard_no,
         if (hashing_out.count() != size)
             throw Exception{"Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART};
 
-        writeBinary(hashing_out.getHash(), out);
+        writePODBinary(hashing_out.getHash(), out);
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt")

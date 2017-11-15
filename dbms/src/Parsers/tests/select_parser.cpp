@@ -7,6 +7,7 @@
 
 
 int main(int argc, char ** argv)
+try
 {
     using namespace DB;
 
@@ -30,4 +31,9 @@ int main(int argc, char ** argv)
     std::cout << std::endl << ast->getTreeID() << std::endl;
 
     return 0;
+}
+catch (...)
+{
+    std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+    return 1;
 }

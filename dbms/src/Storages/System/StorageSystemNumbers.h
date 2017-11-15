@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -10,17 +10,18 @@ namespace DB
 class Context;
 
 
-/** Implements a repository for the system table Numbers.
+/** Implements a table engine for the system table "numbers".
   * The table contains the only column number UInt64.
   * From this table, you can read all natural numbers, starting from 0 (to 2^64 - 1, and then again).
+  *
+  * You could also specify a limit (how many numbers to give).
+  * If multithreaded is specified, numbers will be generated in several streams
+  *  (and result could be out of order). If both multithreaded and limit are specified,
+  *  the table could give you not exactly 1..limit range, but some arbitary 'limit' numbers.
   */
-class StorageSystemNumbers : private ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
+class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemNumbers>;
-
 public:
-    static StoragePtr create(const std::string & name_, bool multithreaded_ = false);
-
     std::string getName() const override { return "SystemNumbers"; }
     std::string getTableName() const override { return name; }
 
@@ -28,19 +29,21 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const SelectQueryInfo & query_info,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
 private:
     const std::string name;
     NamesAndTypesList columns;
     bool multithreaded;
+    size_t limit;
 
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_);
+protected:
+    /// limit: 0 means unlimited.
+    StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_ = 0);
 };
 
 }

@@ -4,12 +4,14 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/typeid_cast.h>
 
 #include <iterator>
 #include <memory>
@@ -62,10 +64,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
             size_t nested_rows = offsets_column->empty() ? 0
                 : typeid_cast<ColumnUInt64 &>(*offsets_column).getData().back();
 
-            ColumnPtr nested_column = dynamic_cast<IColumnConst &>(
-                *nested_type->createConstColumn(
-                    nested_rows, nested_type->getDefault())).convertToFullColumn();
-
+            ColumnPtr nested_column = nested_type->createConstColumn(nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
             column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
         }
         else
@@ -73,9 +72,7 @@ void Block::addDefaults(const NamesAndTypesList & required_columns)
             /** It is necessary to turn a constant column into a full column, since in part of blocks (from other parts),
               *  it can be full (or the interpreter may decide that it is constant everywhere).
               */
-            column_to_add.column = dynamic_cast<IColumnConst &>(
-                *column_to_add.type->createConstColumn(
-                    rows(), column_to_add.type->getDefault())).convertToFullColumn();
+            column_to_add.column = column_to_add.type->createConstColumn(rows(), column_to_add.type->getDefault())->convertToFullColumnIfConst();
         }
 
         insert(std::move(column_to_add));
@@ -309,42 +306,44 @@ size_t Block::bytes() const
     return res;
 }
 
+size_t Block::allocatedBytes() const
+{
+    size_t res = 0;
+    for (const auto & elem : data)
+        res += elem.column->allocatedBytes();
+
+    return res;
+}
 
 std::string Block::dumpNames() const
 {
-    std::string res;
+    WriteBufferFromOwnString out;
+    for (auto it = data.begin(); it != data.end(); ++it)
     {
-        WriteBufferFromString out(res);
-        for (auto it = data.begin(); it != data.end(); ++it)
-        {
-            if (it != data.begin())
-                out << ", ";
-            out << it->name;
-        }
+        if (it != data.begin())
+            out << ", ";
+        out << it->name;
     }
-    return res;
+    return out.str();
 }
 
 
 std::string Block::dumpStructure() const
 {
-    std::string res;
+    WriteBufferFromOwnString out;
+    for (auto it = data.begin(); it != data.end(); ++it)
     {
-        WriteBufferFromString out(res);
-        for (auto it = data.begin(); it != data.end(); ++it)
-        {
-            if (it != data.begin())
-                out << ", ";
+        if (it != data.begin())
+            out << ", ";
 
-            out << it->name << ' ' << it->type->getName();
+        out << it->name << ' ' << it->type->getName();
 
-            if (it->column)
-                out << ' ' << it->column->getName() << ' ' << it->column->size();
-            else
-                out << " nullptr";
-        }
+        if (it->column)
+            out << ' ' << it->column->getName() << ' ' << it->column->size();
+        else
+            out << " nullptr";
     }
-    return res;
+    return out.str();
 }
 
 
@@ -395,16 +394,7 @@ void Block::checkNestedArraysOffsets() const
 
     for (const auto & elem : data)
     {
-        const IColumn * observed_col;
-        if (elem.column->isNullable())
-        {
-            const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
-            observed_col = nullable_col.getNestedColumn().get();
-        }
-        else
-            observed_col = elem.column.get();
-
-        if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(observed_col))
+        if (const ColumnArray * column_array = typeid_cast<const ColumnArray *>(elem.column.get()))
         {
             String name = DataTypeNested::extractNestedTableName(elem.name);
 
@@ -429,16 +419,7 @@ void Block::optimizeNestedArraysOffsets()
 
     for (auto & elem : data)
     {
-        IColumn * observed_col;
-        if (elem.column->isNullable())
-        {
-            auto & nullable_col = static_cast<ColumnNullable &>(*elem.column);
-            observed_col = nullable_col.getNestedColumn().get();
-        }
-        else
-            observed_col = elem.column.get();
-
-        if (ColumnArray * column_array = typeid_cast<ColumnArray *>(observed_col))
+        if (ColumnArray * column_array = typeid_cast<ColumnArray *>(elem.column.get()))
         {
             String name = DataTypeNested::extractNestedTableName(elem.name);
 
@@ -469,7 +450,7 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
         const IDataType & lhs_type = *lhs.safeGetByPosition(i).type;
         const IDataType & rhs_type = *rhs.safeGetByPosition(i).type;
 
-        if (lhs_type.getName() != rhs_type.getName())
+        if (!lhs_type.equals(rhs_type))
             return false;
     }
 
@@ -600,6 +581,12 @@ void Block::unshareColumns()
                 null_map = null_map->clone();
 
             ColumnPtr & nested = nullable->getNestedColumn();
+            if (!pointers.insert(nested.get()).second)
+                nested = nested->clone();
+        }
+        else if (ColumnConst * col_const = typeid_cast<ColumnConst *>(elem.column.get()))
+        {
+            ColumnPtr & nested = col_const->getDataColumnPtr();
             if (!pointers.insert(nested.get()).second)
                 nested = nested->clone();
         }

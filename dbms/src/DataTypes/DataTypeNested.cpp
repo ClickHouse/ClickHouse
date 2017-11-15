@@ -1,9 +1,14 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeFactory.h>
+
+#include <Parsers/IAST.h>
+#include <Parsers/ASTNameTypePair.h>
 
 
 namespace DB
@@ -12,10 +17,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_NESTED_NAME;
+    extern const int EMPTY_DATA_PASSED;
+    extern const int NESTED_TYPE_TOO_DEEP;
 }
 
 
-DataTypeNested::DataTypeNested(NamesAndTypesListPtr nested_)
+DataTypeNested::DataTypeNested(const NamesAndTypesListPtr & nested_)
     : nested(nested_)
 {
 }
@@ -49,8 +56,7 @@ std::string DataTypeNested::extractNestedColumnName(const std::string & nested_n
 
 std::string DataTypeNested::getName() const
 {
-    std::string res;
-    WriteBufferFromString out(res);
+    WriteBufferFromOwnString out;
 
     writeCString("Nested(", out);
 
@@ -64,8 +70,7 @@ std::string DataTypeNested::getName() const
     }
 
     writeChar(')', out);
-
-    return res;
+    return out.str();
 }
 
 
@@ -87,6 +92,32 @@ NamesAndTypesListPtr DataTypeNested::expandNestedColumns(const NamesAndTypesList
             columns->push_back(*it);
     }
     return columns;
+}
+
+
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (arguments->children.empty())
+        throw Exception("Nested structure cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
+
+    NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
+
+    for (const auto & child : arguments->children)
+    {
+        const ASTNameTypePair & name_and_type_pair = typeid_cast<const ASTNameTypePair &>(*child);
+        DataTypePtr type = DataTypeFactory::instance().get(name_and_type_pair.type);
+        if (typeid_cast<const DataTypeNested *>(type.get()))
+            throw Exception("Nested inside Nested is not allowed", ErrorCodes::NESTED_TYPE_TOO_DEEP);
+        columns->emplace_back(name_and_type_pair.name, type);
+    }
+
+    return std::make_shared<DataTypeNested>(columns);
+}
+
+
+void registerDataTypeNested(DataTypeFactory & factory)
+{
+    factory.registerDataType("Nested", create);
 }
 
 }

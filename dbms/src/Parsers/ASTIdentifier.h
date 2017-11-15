@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Идентификатор (столбца или алиас)
+/** Identifier (column or alias)
   */
 class ASTIdentifier : public ASTWithAlias
 {
@@ -19,19 +19,17 @@ public:
         Format,
     };
 
-    /// имя. У составного идентификатора здесь будет конкатенированное имя (вида a.b.c), а отдельные составляюшие будут доступны внутри children.
+    /// name. The composite identifier here will have a concatenated name (of the form a.b.c), and individual components will be available inside the children.
     String name;
 
-    /// чего идентифицирует этот идентификатор
+    /// what this identifier identifies
     Kind kind;
 
     ASTIdentifier() = default;
     ASTIdentifier(const StringRange range_, const String & name_, const Kind kind_ = Column)
         : ASTWithAlias(range_), name(name_), kind(kind_) {}
 
-    String getColumnName() const override { return name; }
-
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "Identifier_" + name; }
 
     ASTPtr clone() const override { return std::make_shared<ASTIdentifier>(*this); }
@@ -43,6 +41,7 @@ public:
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    String getColumnNameImpl() const override { return name; }
 };
 
 }

@@ -7,6 +7,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils.h>
 #include <Common/Stopwatch.h>
+#include <common/ThreadPool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -96,7 +97,10 @@ DatabaseOrdinary::DatabaseOrdinary(
 }
 
 
-void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag)
+void DatabaseOrdinary::loadTables(
+    Context & context,
+    ThreadPool * thread_pool,
+    bool has_force_restore_data_flag)
 {
     log = &Logger::get("DatabaseOrdinary (" + name + ")");
 
@@ -131,7 +135,7 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
     }
 
     /** Tables load faster if they are loaded in sorted (by name) order.
-      * Otherwise (for the ext4 file system), `DirectoryIterator` iterates through them in some order,
+      * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
       */
     std::sort(file_names.begin(), file_names.end());
@@ -162,10 +166,6 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
         }
     };
 
-    /** `packaged_task` is used so that exceptions are automatically passed to the main thread.
-      * Disadvantage - exceptions fall into the main thread only after the end of all tasks.
-      */
-
     const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
     size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
 
@@ -186,12 +186,71 @@ void DatabaseOrdinary::loadTables(Context & context, ThreadPool * thread_pool, b
 
     if (thread_pool)
         thread_pool->wait();
+
+    /// After all tables was basically initialized, startup them.
+    startupTables(thread_pool);
+}
+
+
+void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
+{
+    LOG_INFO(log, "Starting up tables.");
+
+    StopwatchWithLock watch;
+    std::atomic<size_t> tables_processed {0};
+    size_t total_tables = tables.size();
+
+    auto task_function = [&](Tables::iterator begin, Tables::iterator end)
+    {
+        for (Tables::iterator it = begin; it != end; ++it)
+        {
+            if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
+                || watch.lockTestAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
+            {
+                LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
+                watch.restart();
+            }
+
+            it->second->startup();
+        }
+    };
+
+    const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
+    size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
+
+    Tables::iterator begin = tables.begin();
+    for (size_t i = 0; i < num_bunches; ++i)
+    {
+        auto end = begin;
+
+        if (i + 1 == num_bunches)
+            end = tables.end();
+        else
+            std::advance(end, bunch_size);
+
+        auto task = std::bind(task_function, begin, end);
+
+        if (thread_pool)
+            thread_pool->schedule(task);
+        else
+            task();
+
+        begin = end;
+    }
+
+    if (thread_pool)
+        thread_pool->wait();
 }
 
 
 void DatabaseOrdinary::createTable(
-    const String & table_name, const StoragePtr & table, const ASTPtr & query, const String & engine, const Settings & settings)
+    const Context & context,
+    const String & table_name,
+    const StoragePtr & table,
+    const ASTPtr & query)
 {
+    const auto & settings = context.getSettingsRef();
+
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
 
@@ -247,7 +306,9 @@ void DatabaseOrdinary::createTable(
 }
 
 
-void DatabaseOrdinary::removeTable(const String & table_name)
+void DatabaseOrdinary::removeTable(
+    const Context & context,
+    const String & table_name)
 {
     StoragePtr res = detachTable(table_name);
 
@@ -281,17 +342,20 @@ static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
 
 
 void DatabaseOrdinary::renameTable(
-    const Context & context, const String & table_name, IDatabase & to_database, const String & to_table_name, const Settings & settings)
+    const Context & context,
+    const String & table_name,
+    IDatabase & to_database,
+    const String & to_table_name)
 {
     DatabaseOrdinary * to_database_concrete = typeid_cast<DatabaseOrdinary *>(&to_database);
 
     if (!to_database_concrete)
         throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
-    StoragePtr table = tryGetTable(table_name);
+    StoragePtr table = tryGetTable(context, table_name);
 
     if (!table)
-        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     /// Notify the table that it is renamed. If the table does not support renaming, exception is thrown.
     try
@@ -299,6 +363,10 @@ void DatabaseOrdinary::renameTable(
         table->rename(context.getPath() + "/data/" + escapeForFileName(to_database_concrete->name) + "/",
             to_database_concrete->name,
             to_table_name);
+    }
+    catch (const Exception & e)
+    {
+        throw;
     }
     catch (const Poco::Exception & e)
     {
@@ -311,12 +379,14 @@ void DatabaseOrdinary::renameTable(
     ast_create_query.table = to_table_name;
 
     /// NOTE Non-atomic.
-    to_database_concrete->createTable(to_table_name, table, ast, table->getName(), settings);
-    removeTable(table_name);
+    to_database_concrete->createTable(context, to_table_name, table, ast);
+    removeTable(context, table_name);
 }
 
 
-time_t DatabaseOrdinary::getTableMetadataModificationTime(const String & table_name)
+time_t DatabaseOrdinary::getTableMetadataModificationTime(
+    const Context & context,
+    const String & table_name)
 {
     String table_metadata_path = getTableMetadataPath(path, table_name);
     Poco::File meta_file(table_metadata_path);
@@ -332,7 +402,9 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(const String & table_n
 }
 
 
-ASTPtr DatabaseOrdinary::getCreateQuery(const String & table_name) const
+ASTPtr DatabaseOrdinary::getCreateQuery(
+    const Context & context,
+    const String & table_name) const
 {
     ASTPtr ast = getCreateQueryImpl(path, table_name);
 
@@ -349,8 +421,15 @@ void DatabaseOrdinary::shutdown()
     /// You can not hold a lock during shutdown.
     /// Because inside `shutdown` function the tables can work with database, and mutex is not recursive.
 
-    for (auto iterator = getIterator(); iterator->isValid(); iterator->next())
-        iterator->table()->shutdown();
+    Tables tables_snapshot;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        tables_snapshot = tables;
+    }
+
+    for (const auto & kv: tables_snapshot) {
+        kv.second->shutdown();
+    }
 
     std::lock_guard<std::mutex> lock(mutex);
     tables.clear();
@@ -370,7 +449,7 @@ void DatabaseOrdinary::alterTable(
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults,
-    const ASTModifier & engine_modifier)
+    const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
 
@@ -391,14 +470,10 @@ void DatabaseOrdinary::alterTable(
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns, materialized_columns, alias_columns, column_defaults);
-    auto it = std::find(ast_create_query.children.begin(), ast_create_query.children.end(), ast_create_query.columns);
-    if (it == ast_create_query.children.end())
-        throw Exception("Logical error: cannot find columns child in ASTCreateQuery", ErrorCodes::LOGICAL_ERROR);
-    *it = new_columns;
-    ast_create_query.columns = new_columns;
+    ast_create_query.replace(ast_create_query.columns, new_columns);
 
-    if (engine_modifier)
-        engine_modifier(ast_create_query.storage);
+    if (storage_modifier)
+        storage_modifier(*ast_create_query.storage);
 
     statement = getTableDefinitionFromCreateQuery(ast);
 

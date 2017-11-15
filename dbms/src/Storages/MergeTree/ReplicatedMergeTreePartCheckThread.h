@@ -85,15 +85,16 @@ private:
 
     /** Parts for which you want to check one of two:
       *  - If we have the part, check, its data with its checksums, and them with ZooKeeper.
-      *  - If we do not have a part, check to see if it (or the part covering it) exists anywhere.
+      *  - If we do not have a part, check to see if it (or the part covering it) exists anywhere on another replicas.
       */
 
+    mutable std::mutex parts_mutex;
     StringSet parts_set;
     PartsToCheckQueue parts_queue;
-    mutable std::mutex mutex;
     Poco::Event wakeup_event;
-    std::atomic<bool> need_stop { false };
 
+    std::mutex start_stop_mutex;
+    std::atomic<bool> need_stop { false };
     std::thread thread;
 };
 

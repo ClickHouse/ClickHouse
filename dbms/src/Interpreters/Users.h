@@ -67,9 +67,6 @@ struct User
     DatabaseSet databases;
 
     User(const String & name_, const String & config_elem, Poco::Util::AbstractConfiguration & config);
-
-    /// For insertion to containers.
-    User() {}
 };
 
 
@@ -83,10 +80,14 @@ private:
 public:
     void loadFromConfig(Poco::Util::AbstractConfiguration & config);
 
-    const User & get(const String & name, const String & password, const Poco::Net::IPAddress & address) const;
+    /// Find user and make authorize checks
+    const User & get(const String & user_name, const String & password, const Poco::Net::IPAddress & address) const;
+
+    /// Just find user
+    const User & get(const String & user_name);
 
     /// Check if the user has access to the database.
-    bool isAllowedDatabase(const std::string & user_name, const std::string & database_name) const;
+    bool isAllowedDatabase(const String & user_name, const String & database_name) const;
 };
 
 

@@ -1,16 +1,16 @@
 Functions for working with IP addresses
--------------------------
+---------------------------------------
 
 IPv4NumToString(num)
-~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~
 Takes a UInt32 number. Interprets it as an IPv4 address in big endian. Returns a string containing the corresponding IPv4 address in the format A.B.C.d (dot-separated numbers in decimal form).
 
 IPv4StringToNum(s)
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 The reverse function of IPv4NumToString. If the IPv4 address has an invalid format, it returns 0.
 
 IPv4NumToStringClassC(num)
-~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 Similar to IPv4NumToString, but using ``xxx`` instead of the last octet. 
 
 Example:
@@ -24,7 +24,9 @@ Example:
   GROUP BY k
   ORDER BY c DESC
   LIMIT 10
-  
+
+.. code-block:: text
+
   ┌─k──────────────┬─────c─┐
   │ 83.149.9.xxx   │ 26238 │
   │ 217.118.81.xxx │ 26074 │
@@ -41,13 +43,15 @@ Example:
 Since using ``'xxx'`` is highly unusual, this may be changed in the future. We recommend that you don't rely on the exact format of this fragment.
 
 IPv6NumToString(x)
-~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
 IPv6-mapped IPv4 addresses are output in the format ``::ffff:111.222.33.44``. Examples:
 
 .. code-block:: sql
 
   SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
+
+.. code-block:: text
   
   ┌─addr─────────┐
   │ 2a02:6b8::11 │
@@ -96,6 +100,6 @@ IPv6-mapped IPv4 addresses are output in the format ``::ffff:111.222.33.44``. Ex
   └────────────────────────────┴────────┘
 
 IPv6StringToNum(s)
-~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes.
 HEX can be uppercase or lowercase.

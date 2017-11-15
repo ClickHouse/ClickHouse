@@ -1,0 +1,279 @@
+/* libunwind - a platform-independent unwind library
+   Copyright (C) 2001-2004 Hewlett-Packard Co
+	Contributed by David Mosberger-Tang <davidm@hpl.hp.com>
+
+This file is part of libunwind.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
+
+#define UNW_VERSION_MAJOR	@PKG_MAJOR@
+#define UNW_VERSION_MINOR	@PKG_MINOR@
+#define UNW_VERSION_EXTRA	@PKG_EXTRA@
+
+#define UNW_VERSION_CODE(maj,min)	(((maj) << 16) | (min))
+#define UNW_VERSION	UNW_VERSION_CODE(UNW_VERSION_MAJOR, UNW_VERSION_MINOR)
+
+#define UNW_PASTE2(x,y)	x##y
+#define UNW_PASTE(x,y)	UNW_PASTE2(x,y)
+#define UNW_OBJ(fn)	UNW_PASTE(UNW_PREFIX, fn)
+#define UNW_ARCH_OBJ(fn) UNW_PASTE(UNW_PASTE(UNW_PASTE(_U,UNW_TARGET),_), fn)
+
+#ifdef UNW_LOCAL_ONLY
+# define UNW_PREFIX	UNW_PASTE(UNW_PASTE(_UL,UNW_TARGET),_)
+#else /* !UNW_LOCAL_ONLY */
+# define UNW_PREFIX	UNW_PASTE(UNW_PASTE(_U,UNW_TARGET),_)
+#endif /* !UNW_LOCAL_ONLY */
+
+/* Error codes.  The unwind routines return the *negated* values of
+   these error codes on error and a non-negative value on success.  */
+typedef enum
+  {
+    UNW_ESUCCESS = 0,		/* no error */
+    UNW_EUNSPEC,		/* unspecified (general) error */
+    UNW_ENOMEM,			/* out of memory */
+    UNW_EBADREG,		/* bad register number */
+    UNW_EREADONLYREG,		/* attempt to write read-only register */
+    UNW_ESTOPUNWIND,		/* stop unwinding */
+    UNW_EINVALIDIP,		/* invalid IP */
+    UNW_EBADFRAME,		/* bad frame */
+    UNW_EINVAL,			/* unsupported operation or bad value */
+    UNW_EBADVERSION,		/* unwind info has unsupported version */
+    UNW_ENOINFO			/* no unwind info found */
+  }
+unw_error_t;
+
+/* The following enum defines the indices for a couple of
+   (pseudo-)registers which have the same meaning across all
+   platforms.  (RO) means read-only.  (RW) means read-write.  General
+   registers (aka "integer registers") are expected to start with
+   index 0.  The number of such registers is architecture-dependent.
+   The remaining indices can be used as an architecture sees fit.  The
+   last valid register index is given by UNW_REG_LAST.  */
+typedef enum
+  {
+    UNW_REG_IP = UNW_TDEP_IP,		/* (rw) instruction pointer (pc) */
+    UNW_REG_SP = UNW_TDEP_SP,		/* (ro) stack pointer */
+    UNW_REG_EH = UNW_TDEP_EH,		/* (rw) exception-handling reg base */
+    UNW_REG_LAST = UNW_TDEP_LAST_REG
+  }
+unw_frame_regnum_t;
+
+/* Number of exception-handler argument registers: */
+#define UNW_NUM_EH_REGS		UNW_TDEP_NUM_EH_REGS
+
+typedef enum
+  {
+    UNW_CACHE_NONE,			/* no caching */
+    UNW_CACHE_GLOBAL,			/* shared global cache */
+    UNW_CACHE_PER_THREAD		/* per-thread caching */
+  }
+unw_caching_policy_t;
+
+typedef enum
+  {
+    UNW_INIT_SIGNAL_FRAME = 1,          /* We know this is a signal frame */
+  }
+unw_init_local2_flags_t;
+
+typedef int unw_regnum_t;
+
+/* The unwind cursor starts at the youngest (most deeply nested) frame
+   and is used to track the frame state as the unwinder steps from
+   frame to frame.  It is safe to make (shallow) copies of variables
+   of this type.  */
+typedef struct unw_cursor
+  {
+    unw_word_t opaque[UNW_TDEP_CURSOR_LEN];
+  }
+unw_cursor_t;
+
+/* This type encapsulates the entire (preserved) machine-state.  */
+typedef unw_tdep_context_t unw_context_t;
+
+/* unw_getcontext() fills the unw_context_t pointed to by UC with the
+   machine state as it exists at the call-site.  For implementation
+   reasons, this needs to be a target-dependent macro.  It's easiest
+   to think of unw_getcontext() as being identical to getcontext(). */
+#define unw_getcontext(uc)		unw_tdep_getcontext(uc)
+
+/* Return 1 if register number R is a floating-point register, zero
+   otherwise.
+   This routine is signal-safe.  */
+#define unw_is_fpreg(r)			unw_tdep_is_fpreg(r)
+
+typedef unw_tdep_fpreg_t unw_fpreg_t;
+
+typedef struct unw_addr_space *unw_addr_space_t;
+
+/* Each target may define it's own set of flags, but bits 0-15 are
+   reserved for general libunwind-use.  */
+#define UNW_PI_FLAG_FIRST_TDEP_BIT	16
+/* The information comes from a .debug_frame section.  */
+#define UNW_PI_FLAG_DEBUG_FRAME	32
+
+typedef struct unw_proc_info
+  {
+    unw_word_t start_ip;	/* first IP covered by this procedure */
+    unw_word_t end_ip;		/* first IP NOT covered by this procedure */
+#if defined(NEED_LAST_IP)
+    unw_word_t last_ip;		/* first IP that could begin another procedure */
+#endif
+    unw_word_t lsda;		/* address of lang.-spec. data area (if any) */
+    unw_word_t handler;		/* optional personality routine */
+    unw_word_t gp;		/* global-pointer value for this procedure */
+    unw_word_t flags;		/* misc. flags */
+
+    int format;			/* unwind-info format (arch-specific) */
+    int unwind_info_size;	/* size of the information (if applicable) */
+    void *unwind_info;		/* unwind-info (arch-specific) */
+    unw_tdep_proc_info_t extra;	/* target-dependent auxiliary proc-info */
+  }
+unw_proc_info_t;
+
+typedef int (*unw_reg_states_callback)(void *token,
+				       void *reg_states_data,
+				       size_t reg_states_data_size,
+				       unw_word_t start_ip, unw_word_t end_ip);
+
+/* These are backend callback routines that provide access to the
+   state of a "remote" process.  This can be used, for example, to
+   unwind another process through the ptrace() interface.  */
+typedef struct unw_accessors
+  {
+    /* Look up the unwind info associated with instruction-pointer IP.
+       On success, the routine fills in the PROC_INFO structure.  */
+    int (*find_proc_info) (unw_addr_space_t, unw_word_t, unw_proc_info_t *,
+			   int, void *);
+
+    /* Release any resources (e.g., memory) that were allocated for
+       the unwind info returned in by a previous call to
+       find_proc_info() with NEED_UNWIND_INFO set to 1.  */
+    void (*put_unwind_info) (unw_addr_space_t, unw_proc_info_t *, void *);
+
+    /* Return the list-head of the dynamically registered unwind
+       info.  */
+    int (*get_dyn_info_list_addr) (unw_addr_space_t, unw_word_t *, void *);
+
+    /* Access aligned word at address ADDR.  The value is returned
+       according to the endianness of the host (e.g., if the host is
+       little-endian and the target is big-endian, access_mem() needs
+       to byte-swap the value before returning it).  */
+    int (*access_mem) (unw_addr_space_t, unw_word_t, unw_word_t *, int,
+		       void *);
+
+    /* Access register number REG at address ADDR.  */
+    int (*access_reg) (unw_addr_space_t, unw_regnum_t, unw_word_t *, int,
+		       void *);
+
+    /* Access register number REG at address ADDR.  */
+    int (*access_fpreg) (unw_addr_space_t, unw_regnum_t,
+			 unw_fpreg_t *, int, void *);
+
+    int (*resume) (unw_addr_space_t, unw_cursor_t *, void *);
+
+    /* Optional call back to obtain the name of a (static) procedure.
+       Dynamically generated procedures are handled automatically by
+       libunwind.  This callback is optional and may be set to
+       NULL.  */
+    int (*get_proc_name) (unw_addr_space_t, unw_word_t, char *, size_t,
+			  unw_word_t *, void *);
+  }
+unw_accessors_t;
+
+typedef enum unw_save_loc_type
+  {
+    UNW_SLT_NONE,	/* register is not saved ("not an l-value") */
+    UNW_SLT_MEMORY,	/* register has been saved in memory */
+    UNW_SLT_REG		/* register has been saved in (another) register */
+  }
+unw_save_loc_type_t;
+
+typedef struct unw_save_loc
+  {
+    unw_save_loc_type_t type;
+    union
+      {
+	unw_word_t addr;	/* valid if type==UNW_SLT_MEMORY */
+	unw_regnum_t regnum;	/* valid if type==UNW_SLT_REG */
+      }
+    u;
+    unw_tdep_save_loc_t extra;	/* target-dependent additional information */
+  }
+unw_save_loc_t;
+
+/* These routines work both for local and remote unwinding.  */
+
+#define unw_local_addr_space	UNW_OBJ(local_addr_space)
+#define unw_create_addr_space	UNW_OBJ(create_addr_space)
+#define unw_destroy_addr_space	UNW_OBJ(destroy_addr_space)
+#define unw_get_accessors	UNW_ARCH_OBJ(get_accessors)
+#define unw_init_local		UNW_OBJ(init_local)
+#define unw_init_local2	        UNW_OBJ(init_local2)
+#define unw_init_remote		UNW_OBJ(init_remote)
+#define unw_step		UNW_OBJ(step)
+#define unw_resume		UNW_OBJ(resume)
+#define unw_get_proc_info	UNW_OBJ(get_proc_info)
+#define unw_get_proc_info_by_ip	UNW_OBJ(get_proc_info_by_ip)
+#define unw_reg_states_iterate  UNW_OBJ(reg_states_iterate)
+#define unw_apply_reg_state     UNW_OBJ(apply_reg_state)
+#define unw_get_reg		UNW_OBJ(get_reg)
+#define unw_set_reg		UNW_OBJ(set_reg)
+#define unw_get_fpreg		UNW_OBJ(get_fpreg)
+#define unw_set_fpreg		UNW_OBJ(set_fpreg)
+#define unw_get_save_loc	UNW_OBJ(get_save_loc)
+#define unw_is_signal_frame	UNW_OBJ(is_signal_frame)
+#define unw_handle_signal_frame	UNW_OBJ(handle_signal_frame)
+#define unw_get_proc_name	UNW_OBJ(get_proc_name)
+#define unw_set_caching_policy	UNW_OBJ(set_caching_policy)
+#define unw_set_cache_size	UNW_OBJ(set_cache_size)
+#define unw_regname		UNW_ARCH_OBJ(regname)
+#define unw_flush_cache		UNW_ARCH_OBJ(flush_cache)
+#define unw_strerror		UNW_ARCH_OBJ(strerror)
+
+extern unw_addr_space_t unw_create_addr_space (unw_accessors_t *, int);
+extern void unw_destroy_addr_space (unw_addr_space_t);
+extern unw_accessors_t *unw_get_accessors (unw_addr_space_t);
+extern void unw_flush_cache (unw_addr_space_t, unw_word_t, unw_word_t);
+extern int unw_set_caching_policy (unw_addr_space_t, unw_caching_policy_t);
+extern int unw_set_cache_size (unw_addr_space_t, size_t, int);
+extern const char *unw_regname (unw_regnum_t);
+
+extern int unw_init_local (unw_cursor_t *, unw_context_t *);
+extern int unw_init_local2 (unw_cursor_t *, unw_context_t *, int);
+extern int unw_init_remote (unw_cursor_t *, unw_addr_space_t, void *);
+extern int unw_step (unw_cursor_t *);
+extern int unw_resume (unw_cursor_t *);
+extern int unw_get_proc_info (unw_cursor_t *, unw_proc_info_t *);
+extern int unw_get_proc_info_by_ip (unw_addr_space_t, unw_word_t,
+				    unw_proc_info_t *, void *);
+extern int unw_reg_states_iterate (unw_cursor_t *, unw_reg_states_callback, void *);
+extern int unw_apply_reg_state (unw_cursor_t *, void *);
+extern int unw_get_reg (unw_cursor_t *, int, unw_word_t *);
+extern int unw_set_reg (unw_cursor_t *, int, unw_word_t);
+extern int unw_get_fpreg (unw_cursor_t *, int, unw_fpreg_t *);
+extern int unw_set_fpreg (unw_cursor_t *, int, unw_fpreg_t);
+extern int unw_get_save_loc (unw_cursor_t *, int, unw_save_loc_t *);
+extern int unw_is_signal_frame (unw_cursor_t *);
+extern int unw_handle_signal_frame (unw_cursor_t *);
+extern int unw_get_proc_name (unw_cursor_t *, char *, size_t, unw_word_t *);
+extern const char *unw_strerror (int);
+extern int unw_backtrace (void **, int);
+
+extern unw_addr_space_t unw_local_addr_space;

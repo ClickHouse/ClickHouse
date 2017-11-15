@@ -1,6 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionState.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -163,12 +165,9 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
 /// Is required to support operations with Set
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    String buf;
-    {
-        WriteBufferFromString wbuf(buf);
-        func->serialize(getData()[n], wbuf);
-    }
-    hash.update(buf.c_str(), buf.size());
+    WriteBufferFromOwnString wbuf;
+    func->serialize(getData()[n], wbuf);
+    hash.update(wbuf.str().c_str(), wbuf.str().size());
 }
 
 /// NOTE: Highly overestimates size of a column if it was produced in AggregatingBlockInputStream (it contains size of other columns)
@@ -177,26 +176,28 @@ size_t ColumnAggregateFunction::byteSize() const
     size_t res = getData().size() * sizeof(getData()[0]);
 
     for (const auto & arena : arenas)
-        res += arena.get()->size();
+        res += arena->size();
 
     return res;
 }
 
 
 /// Like byteSize(), highly overestimates size
-size_t ColumnAggregateFunction::allocatedSize() const
+size_t ColumnAggregateFunction::allocatedBytes() const
 {
-    size_t res = getData().allocated_size() * sizeof(getData()[0]);
+    size_t res = getData().allocated_bytes();
 
     for (const auto & arena : arenas)
-        res += arena.get()->size();
+        res += arena->size();
 
     return res;
 }
+
 ColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
     return std::make_shared<ColumnAggregateFunction>(func, Arenas(1, std::make_shared<Arena>()));
 }
+
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
     Field field = String();
@@ -206,6 +207,7 @@ Field ColumnAggregateFunction::operator[](size_t n) const
     }
     return field;
 }
+
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
     res = String();
@@ -214,14 +216,17 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
         func->serialize(getData()[n], buffer);
     }
 }
+
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const
 {
     return StringRef(reinterpret_cast<const char *>(&getData()[n]), sizeof(getData()[n]));
 }
+
 void ColumnAggregateFunction::insertData(const char * pos, size_t length)
 {
     getData().push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 }
+
 void ColumnAggregateFunction::insertFrom(const IColumn & src, size_t n)
 {
     /// Must create new state of aggregate function and take ownership of it,
@@ -230,25 +235,30 @@ void ColumnAggregateFunction::insertFrom(const IColumn & src, size_t n)
     insertDefault();
     insertMergeFrom(src, n);
 }
+
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
 {
     insertDefault();
     insertMergeFrom(place);
 }
+
 void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
 {
     func->merge(getData().back(), place, &createOrGetArena());
 }
+
 void ColumnAggregateFunction::insertMergeFrom(const IColumn & src, size_t n)
 {
     insertMergeFrom(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
 }
+
 Arena & ColumnAggregateFunction::createOrGetArena()
 {
     if (unlikely(arenas.empty()))
         arenas.emplace_back(std::make_shared<Arena>());
     return *arenas.back().get();
 }
+
 void ColumnAggregateFunction::insert(const Field & x)
 {
     IAggregateFunction * function = func.get();
@@ -260,6 +270,7 @@ void ColumnAggregateFunction::insert(const Field & x)
     ReadBufferFromString read_buffer(x.get<const String &>());
     function->deserialize(getData().back(), read_buffer, &arena);
 }
+
 void ColumnAggregateFunction::insertDefault()
 {
     IAggregateFunction * function = func.get();
@@ -269,14 +280,17 @@ void ColumnAggregateFunction::insertDefault()
     getData().push_back(arena.alloc(function->sizeOfData()));
     function->create(getData().back());
 }
+
 StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
     throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
+
 const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * pos)
 {
     throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
+
 void ColumnAggregateFunction::popBack(size_t n)
 {
     size_t size = data.size();
@@ -288,10 +302,34 @@ void ColumnAggregateFunction::popBack(size_t n)
 
     data.resize_assume_reserved(new_size);
 }
+
 ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & offsets) const
 {
-    throw Exception("Method replicate is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+    size_t size = data.size();
+    if (size != offsets.size())
+        throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+
+    if (size == 0)
+        return res;
+
+    auto & res_data = res->getData();
+    res_data.reserve(offsets.back());
+
+    IColumn::Offset_t prev_offset = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        size_t size_to_replicate = offsets[i] - prev_offset;
+        prev_offset = offsets[i];
+
+        for (size_t j = 0; j < size_to_replicate; ++j)
+            res_data.push_back(data[i]);
+    }
+
+    return res;
 }
+
 Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
@@ -314,6 +352,7 @@ Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const
 
     return columns;
 }
+
 void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
     size_t s = getData().size();
@@ -321,8 +360,36 @@ void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan
     for (size_t i = 0; i < s; ++i)
         res[i] = i;
 }
+
+void ColumnAggregateFunction::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
+
 void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 {
-    throw Exception("Method getExtremes is not supported for ColumnAggregateFunction.", ErrorCodes::NOT_IMPLEMENTED);
+    /// Place serialized default values into min/max.
+
+    PODArrayWithStackMemory<char, 16> place_buffer(func->sizeOfData());
+    AggregateDataPtr place = place_buffer.data();
+
+    String serialized;
+
+    func->create(place);
+    try
+    {
+        WriteBufferFromString buffer(serialized);
+        func->serialize(place, buffer);
+    }
+    catch (...)
+    {
+        func->destroy(place);
+        throw;
+    }
+    func->destroy(place);
+
+    min = serialized;
+    max = serialized;
 }
+
 }

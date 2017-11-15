@@ -20,20 +20,14 @@ StorageSystemEvents::StorageSystemEvents(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemEvents::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemEvents::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

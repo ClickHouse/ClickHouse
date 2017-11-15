@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunction.h>
 #include <Common/Stopwatch.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <iomanip>
 
@@ -9,7 +10,15 @@
 namespace DB
 {
 
-template<typename B>
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
+}
+
+
+template <typename B>
 struct AndImpl
 {
     static inline UInt8 apply(UInt8 a, B b)
@@ -18,7 +27,7 @@ struct AndImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct OrImpl
 {
     static inline UInt8 apply(UInt8 a, B b)
@@ -27,7 +36,7 @@ struct OrImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct XorImpl
 {
     static inline UInt8 apply(UInt8 a, B b)
@@ -66,7 +75,7 @@ struct AssociativeOperationImpl
     AssociativeOperationImpl<Op, N - 1> continuation;
 
     /// Remembers the last N columns from in.
-    AssociativeOperationImpl(UInt8ColumnPtrs & in)
+    explicit AssociativeOperationImpl(UInt8ColumnPtrs & in)
         : vec(in[in.size() - N]->getData()), continuation(in) {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
@@ -88,7 +97,7 @@ struct AssociativeOperationImpl<Op, 1>
 
     const UInt8 * vec;
 
-    AssociativeOperationImpl(UInt8ColumnPtrs & in)
+    explicit AssociativeOperationImpl(UInt8ColumnPtrs & in)
         : vec(&in[in.size() - 1]->getData()[0]) {}
 
     inline UInt8 apply(size_t i) const
@@ -220,7 +229,7 @@ public:
         ColumnPlainPtrs in(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            in[i] = block.safeGetByPosition(arguments[i]).column.get();
+            in[i] = block.getByPosition(arguments[i]).column.get();
         }
         size_t n = in[0]->size();
 
@@ -233,8 +242,8 @@ public:
         {
             if (!in.empty())
                 const_val = Impl<UInt8>::apply(const_val, 0);
-            auto col_res = std::make_shared<ColumnConst<UInt8>>(n, const_val);
-            block.safeGetByPosition(result).column = col_res;
+            auto col_res = DataTypeUInt8().createConstColumn(n, const_val);
+            block.getByPosition(result).column = col_res;
             return;
         }
 
@@ -243,7 +252,7 @@ public:
             has_consts = false;
 
         auto col_res = std::make_shared<ColumnUInt8>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
         UInt8Container & vec_res = col_res->getData();
 
         if (has_consts)
@@ -306,13 +315,13 @@ public:
 };
 
 
-struct NameAnd    { static const char * get() { return "and"; } };
-struct NameOr    { static const char * get() { return "or"; } };
-struct NameXor    { static const char * get() { return "xor"; } };
+struct NameAnd { static const char * get() { return "and"; } };
+struct NameOr { static const char * get() { return "or"; } };
+struct NameXor { static const char * get() { return "xor"; } };
 
-using FunctionAnd = FunctionAnyArityLogical    <AndImpl,    NameAnd>;
-using FunctionOr = FunctionAnyArityLogical    <OrImpl,    NameOr>    ;
-using FunctionXor = FunctionAnyArityLogical    <XorImpl,    NameXor>;
+using FunctionAnd = FunctionAnyArityLogical<AndImpl, NameAnd>;
+using FunctionOr = FunctionAnyArityLogical<OrImpl, NameOr>    ;
+using FunctionXor = FunctionAnyArityLogical<XorImpl, NameXor>;
 }
 
 using namespace DB;
@@ -322,7 +331,7 @@ int main(int argc, char ** argv)
 {
     try
     {
-        size_t block_size = 1 << 20;
+        size_t block_size = 1ULL << 20;
         if (argc > 1)
         {
             block_size = atoi(argv[1]);
@@ -361,7 +370,6 @@ int main(int argc, char ** argv)
         for (size_t arity = 2; arity <= columns; ++arity)
         {
             FunctionPtr function = std::make_shared<FunctionAnd>();
-            function->getReturnType(DataTypes(arity, DataTypePtr(std::make_shared<DataTypeUInt8>())));
 
             ColumnNumbers arguments(arity);
             for (size_t i = 0; i < arity; ++i)

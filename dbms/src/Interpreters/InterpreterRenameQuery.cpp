@@ -1,15 +1,17 @@
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
-
+#include <Interpreters/DDLWorker.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
 
 
-InterpreterRenameQuery::InterpreterRenameQuery(ASTPtr query_ptr_, Context & context_)
+InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }
@@ -34,10 +36,13 @@ struct RenameDescription
 
 BlockIO InterpreterRenameQuery::execute()
 {
+    ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
+
+    if (!rename.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
+
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
-
-    ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
 
     /** In case of error while renaming, it is possible that only part of tables was renamed
       *  or we will be in inconsistent state. (It is worth to be fixed.)
@@ -90,12 +95,12 @@ BlockIO InterpreterRenameQuery::execute()
                     "Some table right now is being renamed to " + to.database_name + "." + to.table_name));
     }
 
-    std::vector<TableFullWriteLockPtr> locks;
+    std::vector<TableFullWriteLock> locks;
     locks.reserve(unique_tables_from.size());
 
     for (const auto & names : unique_tables_from)
         if (auto table = context.tryGetTable(names.database_name, names.table_name))
-            locks.emplace_back(table->lockForAlter());
+            locks.emplace_back(table->lockForAlter(__PRETTY_FUNCTION__));
 
     /** All tables are locked. If there are more than one rename in chain,
       *  we need to hold global lock while doing all renames. Order matters to avoid deadlocks.
@@ -113,7 +118,7 @@ BlockIO InterpreterRenameQuery::execute()
         context.assertTableDoesntExist(elem.to_database_name, elem.to_table_name);
 
         context.getDatabase(elem.from_database_name)->renameTable(
-            context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name, context.getSettingsRef());
+            context, elem.from_table_name, *context.getDatabase(elem.to_database_name), elem.to_table_name);
     }
 
     return {};

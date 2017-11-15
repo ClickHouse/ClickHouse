@@ -3,8 +3,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ParserQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
 
@@ -22,19 +22,13 @@ ReshardingJob::ReshardingJob(const std::string & serialized_job)
 
     readBinary(database_name, buf);
     readBinary(table_name, buf);
-    readBinary(partition, buf);
+    readBinary(partition_id, buf);
 
     std::string expr;
     readBinary(expr, buf);
 
-    IParser::Pos pos = expr.data();
-    IParser::Pos max_parsed_pos = pos;
-    const char * end = pos + expr.size();
-
-    ParserExpressionWithOptionalAlias parser(false);
-    Expected expected = "";
-    if (!parser.parse(pos, end, sharding_key_expr, max_parsed_pos, expected))
-        throw Exception{"ReshardingJob: Internal error", ErrorCodes::LOGICAL_ERROR};
+    ParserExpression parser;
+    sharding_key_expr = parseQuery(parser, expr.data(), expr.data() + expr.size(), "Sharding key expression");
 
     readBinary(coordinator_id, buf);
     readVarUInt(block_number, buf);
@@ -56,11 +50,11 @@ ReshardingJob::ReshardingJob(const std::string & serialized_job)
 }
 
 ReshardingJob::ReshardingJob(const std::string & database_name_, const std::string & table_name_,
-    const std::string & partition_, const WeightedZooKeeperPaths & paths_,
+    const std::string & partition_id_, const WeightedZooKeeperPaths & paths_,
     const ASTPtr & sharding_key_expr_, const std::string & coordinator_id_)
     : database_name{database_name_},
     table_name{table_name_},
-    partition{partition_},
+    partition_id{partition_id_},
     paths{paths_},
     sharding_key_expr{sharding_key_expr_},
     coordinator_id{coordinator_id_}
@@ -71,19 +65,18 @@ ReshardingJob::operator bool() const
 {
     return !database_name.empty()
         && !table_name.empty()
-        && !partition.empty()
+        && !partition_id.empty()
         && !paths.empty()
         && (storage != nullptr);
 }
 
 std::string ReshardingJob::toString() const
 {
-    std::string serialized_job;
-    WriteBufferFromString buf{serialized_job};
+    WriteBufferFromOwnString buf;
 
     writeBinary(database_name, buf);
     writeBinary(table_name, buf);
-    writeBinary(partition, buf);
+    writeBinary(partition_id, buf);
     writeBinary(queryToString(sharding_key_expr), buf);
     writeBinary(coordinator_id, buf);
     writeVarUInt(block_number, buf);
@@ -95,9 +88,8 @@ std::string ReshardingJob::toString() const
         writeBinary(path.first, buf);
         writeVarUInt(path.second, buf);
     }
-    buf.next();
 
-    return serialized_job;
+    return buf.str();
 }
 
 bool ReshardingJob::isCoordinated() const
@@ -109,7 +101,7 @@ void ReshardingJob::clear()
 {
     database_name.clear();
     table_name.clear();
-    partition.clear();
+    partition_id.clear();
     paths.clear();
     coordinator_id.clear();
     storage = nullptr;

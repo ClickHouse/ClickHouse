@@ -6,6 +6,7 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/VirtualColumnUtils.h>
+#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 
 
@@ -46,20 +47,14 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemReplicas::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemReplicas::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -67,8 +62,8 @@ BlockInputStreams StorageSystemReplicas::read(
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
-        for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
-            if (typeid_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+        for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replicated_tables[db.first][iterator->name()] = iterator->table();
 
     /// Do you need columns that require a walkthrough in ZooKeeper to compute.
@@ -103,14 +98,14 @@ BlockInputStreams StorageSystemReplicas::read(
     {
         Block filtered_block { col_database, col_table, col_engine };
 
-        VirtualColumnUtils::filterBlockWithQuery(query, filtered_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
             return BlockInputStreams();
 
-        col_database     = filtered_block.getByName("database");
-        col_table         = filtered_block.getByName("table");
-        col_engine         = filtered_block.getByName("engine");
+        col_database = filtered_block.getByName("database");
+        col_table = filtered_block.getByName("table");
+        col_engine = filtered_block.getByName("engine");
     }
 
     ColumnWithTypeAndName col_is_leader{std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "is_leader"};
@@ -140,7 +135,7 @@ BlockInputStreams StorageSystemReplicas::read(
     for (size_t i = 0, size = col_database.column->size(); i < size; ++i)
     {
         StorageReplicatedMergeTree::Status status;
-        typeid_cast<StorageReplicatedMergeTree &>(
+        dynamic_cast<StorageReplicatedMergeTree &>(
             *replicated_tables
                 [(*col_database.column)[i].safeGet<const String &>()]
                 [(*col_table.column)[i].safeGet<const String &>()]).getStatus(status, with_zk_fields);

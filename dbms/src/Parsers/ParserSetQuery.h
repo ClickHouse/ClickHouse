@@ -7,19 +7,19 @@
 namespace DB
 {
 
-/** Запрос типа такого:
-  * SET [GLOBAL] name1 = value1, name2 = value2, ...
+/** Query like this:
+  * SET name1 = value1, name2 = value2, ...
   */
 class ParserSetQuery : public IParserBase
 {
 public:
-    ParserSetQuery(bool parse_only_internals_ = false) : parse_only_internals(parse_only_internals_) {}
+    explicit ParserSetQuery(bool parse_only_internals_ = false) : parse_only_internals(parse_only_internals_) {}
 
 protected:
-    const char * getName() const { return "SET query"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const override { return "SET query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
-    /// Парсить список name = value пар, без SET [GLOBAL].
+    /// Parse the list `name = value` pairs, without SET.
     bool parse_only_internals;
 };
 

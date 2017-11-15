@@ -1,13 +1,15 @@
 #include <Functions/Conditional/ArgsInfo.h>
 #include <Functions/Conditional/CondException.h>
 #include <Functions/Conditional/common.h>
-#include <Functions/DataTypeTraits.h>
+#include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypeTraits.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -20,8 +22,7 @@ namespace
 
 std::string dumpArgTypes(const DataTypes & args)
 {
-    std::string out;
-    WriteBufferFromString buf{out};
+    WriteBufferFromOwnString buf;
 
     size_t else_arg = elseArg(args);
 
@@ -38,10 +39,7 @@ std::string dumpArgTypes(const DataTypes & args)
 
     writeString("; ", buf);
     writeString(args[else_arg]->getName(), buf);
-
-    buf.next();
-
-    return out;
+    return buf.str();
 }
 
 /// Forward declarations.
@@ -67,16 +65,16 @@ public:
             || ResultDataTypeDeducer<TType, DataTypeFloat32>::execute(args, i, type_res)
             || ResultDataTypeDeducer<TType, DataTypeFloat64>::execute(args, i, type_res)
             || ResultDataTypeDeducer<TType, DataTypeNull>::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt8> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt16> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt64> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt8> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt16> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt64> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeFloat32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeFloat64> >::execute(args, i, type_res)))
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt8>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt16>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt64>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt8>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt16>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt64>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeFloat32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeFloat64>>::execute(args, i, type_res)))
             throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
     }
 };
@@ -100,7 +98,7 @@ struct TypeChecker
     {
         if (arg->isNullable())
             return false;
-        return typeid_cast<const TType *>(arg.get()) != nullptr;
+        return typeid_cast<const TType *>(arg.get());
     }
 };
 
@@ -114,7 +112,7 @@ struct TypeChecker<Nullable<TType>>
 
         const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*arg);
         const IDataType * nested_type = nullable_type.getNestedType().get();
-        return typeid_cast<const TType *>(nested_type) != nullptr;
+        return typeid_cast<const TType *>(nested_type);
     }
 };
 
@@ -174,16 +172,16 @@ public:
             || ResultDataTypeDeducer<Void, DataTypeFloat32>::execute(args, i, type_res)
             || ResultDataTypeDeducer<Void, DataTypeFloat64>::execute(args, i, type_res)
             || ResultDataTypeDeducer<Void, DataTypeNull>::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt8> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt16> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt64> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt8> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt16> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt64> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeFloat32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeFloat64> >::execute(args, i, type_res)))
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt8>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt16>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt64>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt8>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt16>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt64>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeFloat32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeFloat64>>::execute(args, i, type_res)))
             throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
     }
 };
@@ -228,7 +226,7 @@ bool hasArrayBranches(const DataTypes & args)
         else
             observed_type = args[i].get();
 
-        return (typeid_cast<const DataTypeArray *>(observed_type) != nullptr) || args[i]->isNull();
+        return checkDataType<DataTypeArray>(observed_type) || args[i]->isNull();
     };
 
     size_t else_arg = elseArg(args);
@@ -293,7 +291,7 @@ bool hasFixedStrings(const DataTypes & args)
         else
             observed_type = args[i].get();
 
-        return (typeid_cast<const DataTypeFixedString *>(observed_type) != nullptr) || (args[i]->isNull());
+        return checkDataType<DataTypeFixedString>(observed_type) || (args[i]->isNull());
     };
 
     size_t else_arg = elseArg(args);
@@ -323,8 +321,8 @@ bool hasFixedStringsOfIdenticalLength(const DataTypes & args)
                 observed_type = args[i].get();
 
             /// Get the length of the fixed string currently being checked.
-            auto fixed_str = typeid_cast<const DataTypeFixedString *>(observed_type);
-            if (fixed_str == nullptr)
+            auto fixed_str = checkAndGetDataType<DataTypeFixedString>(observed_type);
+            if (!fixed_str)
                 throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
             size_t length = fixed_str->getN();
 
@@ -366,8 +364,8 @@ bool hasStrings(const DataTypes & args)
         else
             observed_type = args[i].get();
 
-        return (typeid_cast<const DataTypeFixedString *>(observed_type) != nullptr) ||
-            (typeid_cast<const DataTypeString *>(observed_type) != nullptr) || args[i]->isNull();
+        return checkDataType<DataTypeFixedString>(observed_type) ||
+            checkDataType<DataTypeString>(observed_type) || args[i]->isNull();
     };
 
     size_t else_arg = elseArg(args);

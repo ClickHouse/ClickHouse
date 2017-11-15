@@ -1,6 +1,3 @@
-include_directories (include)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include)
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
 
 add_library (mysqlxx
     src/Connection.cpp
@@ -31,7 +28,13 @@ add_library (mysqlxx
     include/mysqlxx/Value.h
 )
 
-set(PLATFORM_LIBS ${CMAKE_DL_LIBS})
+target_include_directories (mysqlxx PUBLIC include)
+
+set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
+
+if (USE_MYSQL)
+    target_include_directories (mysqlxx PRIVATE ${MYSQL_INCLUDE_DIR})
+endif ()
 
 if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
     set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
@@ -42,9 +45,10 @@ if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
         COMMENT "Patching mysqlclient library.")
     add_custom_target (our_mysql_client DEPENDS ${MYSQLCLIENT_LIB})
     add_dependencies (mysqlxx our_mysql_client)
+    set (MYSQLCLIENT_LIBRARIES ${MYSQLCLIENT_LIB})
 endif ()
 
-target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIB} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBS})
+target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIBRARIES} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBRARIES})
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

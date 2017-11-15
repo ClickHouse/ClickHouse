@@ -5,7 +5,7 @@
 #include <Core/Types.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <stdint.h>
 #include <string.h>
 

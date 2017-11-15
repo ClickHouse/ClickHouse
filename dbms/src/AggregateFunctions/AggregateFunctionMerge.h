@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -120,6 +121,8 @@ public:
     }
 
     IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }

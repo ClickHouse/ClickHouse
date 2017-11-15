@@ -1,27 +1,9 @@
 #pragma once
 
-#include <Poco/URI.h>
-
-#include <Poco/Util/LayeredConfiguration.h>
-
-#include <Poco/Net/HTTPServer.h>
-#include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include <Poco/Net/HTTPRequestHandler.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/HTTPServerParams.h>
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTMLForm.h>
-
-#include <Poco/Net/TCPServer.h>
-#include <Poco/Net/TCPServerConnectionFactory.h>
-#include <Poco/Net/TCPServerConnection.h>
+#include "IServer.h"
 
 #include <common/logger_useful.h>
 #include <daemon/BaseDaemon.h>
-#include <Common/HTMLForm.h>
-
-#include <Interpreters/Context.h>
 
 /** Server provides three interfaces:
   * 1. HTTP - simple interface for any applications.
@@ -37,11 +19,28 @@
 namespace DB
 {
 
-class Server : public BaseDaemon
+class Server : public BaseDaemon, public IServer
 {
 public:
-    /// Global settings of server.
-    std::unique_ptr<Context> global_context;
+    Poco::Util::LayeredConfiguration & config() const override
+    {
+        return BaseDaemon::config();
+    }
+
+    Poco::Logger & logger() const override
+    {
+        return BaseDaemon::logger();
+    }
+
+    Context & context() const override
+    {
+        return *global_context;
+    }
+
+    bool isCancelled() const override
+    {
+        return BaseDaemon::isCancelled();
+    }
 
 protected:
     void initialize(Application & self) override
@@ -58,11 +57,10 @@ protected:
 
     int main(const std::vector<std::string> & args) override;
 
-private:
-
-    void attachSystemTables(const std::string & path, bool has_zookeeper) const;
-
     std::string getDefaultCorePath() const override;
+
+private:
+    std::unique_ptr<Context> global_context;
 };
 
 }

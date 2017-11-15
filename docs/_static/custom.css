@@ -1,11 +1,65 @@
+div.document {
+	margin: 20px auto 0 auto;
+}
+div.document,
+div.footer {
+	width: 1240px;
+}
 div.sphinxsidebarwrapper {
-        padding: 2px 10px;
+	padding: 2px 10px;
+}
+div.body p {
+    line-height: 1.6em;
+}
+div.body dd,
+div.body li {
+	line-height: 1.2em;
+	margin-bottom: 0.4em;
+}
+div.body blockquote,
+div.body dd,
+div.body li,
+div.body p {
+    -moz-hyphens: none;
+    -ms-hyphens: none;
+    -webkit-hyphens: none;
+    hyphens: none;
+}
+input {
+	padding: 2px;
+}
+div.sphinxsidebar #searchbox input[type="text"] {
+	width: 190px;
+}
+div.sphinxsidebar #searchbox input[type="submit"],
+#search-form input[type="submit"] {
+	padding: 4px 8px;
+}
+#searchbox, #extra-nav-links {
+	margin: 20px 0;
+}
+ol ol ul,
+ol ul ul,
+ul ol ul,
+ul ul ul,
+ul ul,
+ol ul,
+div.sphinxsidebar ul ul,
+div.sphinxsidebar ul.want-points
+{
+	list-style-type: disc;
+}
+blockquote {
+	line-height: 1.4em;
+	border-left: 4px solid #ccc;
+	margin: 0;
+	padding: 0 0 0 20px;
 }
 
 div.sphinxsidebarwrapper p.logo {
     float: left;
     text-align: left;
-    margin: -4px 4px 0 0px;
+    margin: -2px 6px 0 0;
 }
 
 div.sphinxsidebar a {
@@ -14,12 +68,32 @@ div.sphinxsidebar a {
 }
 
 pre {
-    padding: 4px;
+    padding: 6px;
+}
+code {
+	padding: 2px;
 }
 
 input {
     display: block;
-    margin-bottom: 4px;
+    margin: 0 0 4px 0;
+}
+
+a.reference {
+	border-bottom: none;
+}
+
+span.strike {
+	text-decoration: line-through;
+}
+
+input[type="submit"] {
+	border: none!important;
+	background: #fc0;
+}
+
+#svg-flag {
+	border: 1px solid #eee;
 }
 
 @font-face {
@@ -85,4 +159,15 @@ input {
 	font-weight: 300;
 	font-style: normal;
 	font-stretch: normal
+}
+
+
+@media screen and (max-width: 870px) {
+	div.sphinxsidebar a {
+		color: #fff;
+	}
+
+	div.document, div.footer {
+		width: auto;
+	}
 }

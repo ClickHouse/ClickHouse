@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int NOT_A_COLUMN;
     extern const int UNKNOWN_TYPE_OF_AST_NODE;
     extern const int UNKNOWN_ELEMENT_IN_AST;
+    extern const int LOGICAL_ERROR;
 }
 
 using IdentifierNameSet = std::set<String>;
@@ -31,16 +32,16 @@ using ASTs = std::vector<ASTPtr>;
 class WriteBuffer;
 
 
-/** Элемент синтаксического дерева (в дальнейшем - направленного ациклического графа с элементами семантики)
+/** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST
+class IAST : public std::enable_shared_from_this<IAST>
 {
 public:
     ASTs children;
     StringRange range;
 
-    /** Строка с полным запросом.
-      * Этот указатель не дает ее удалить, пока range в нее ссылается.
+    /** A string with a full query.
+      * This pointer does not allow it to be deleted while the range refers to it.
       */
     StringPtr query_string;
 
@@ -48,25 +49,27 @@ public:
     IAST(const StringRange range_) : range(range_) {}
     virtual ~IAST() = default;
 
-    /** Получить каноническое имя столбца, если элемент является столбцом */
+    /** Get the canonical name of the column if the element is a column */
     virtual String getColumnName() const { throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::NOT_A_COLUMN); }
 
-    /** Получить алиас, если он есть, или каноническое имя столбца, если его нет. */
+    /** Get the alias, if any, or the canonical name of the column, if it is not. */
     virtual String getAliasOrColumnName() const { return getColumnName(); }
 
-    /** Получить алиас, если он есть, или пустую строку, если его нет, или если элемент не поддерживает алиасы. */
+    /** Get the alias, if any, or an empty string if it does not exist, or if the element does not support aliases. */
     virtual String tryGetAlias() const { return String(); }
 
-    /** Установить алиас. */
+    /** Set the alias. */
     virtual void setAlias(const String & to)
     {
         throw Exception("Can't set alias of " + getColumnName(), ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
     }
 
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     virtual String getID() const = 0;
 
-    /** Получить глубокую копию дерева. */
+    ASTPtr ptr() { return shared_from_this(); }
+
+    /** Get a deep copy of the tree. */
     virtual ASTPtr clone() const = 0;
 
     /** Get text, describing and identifying this element and its subtree.
@@ -89,20 +92,20 @@ public:
             child->dumpTree(ostr, indent + 1);
     }
 
-    /** Проверить глубину дерева.
-      * Если задано max_depth и глубина больше - кинуть исключение.
-      * Возвращает глубину дерева.
+    /** Check the depth of the tree.
+      * If max_depth is specified and the depth is greater - throw an exception.
+      * Returns the depth of the tree.
       */
     size_t checkDepth(size_t max_depth) const
     {
         return checkDepthImpl(max_depth, 0);
     }
 
-    /** То же самое для общего количества элементов дерева.
+    /** Same for the total number of tree elements.
       */
     size_t checkSize(size_t max_size) const;
 
-    /**  Получить set из имен индентификаторов
+    /** Get `set` from the names of the identifiers
      */
     virtual void collectIdentifierNames(IdentifierNameSet & set) const
     {
@@ -110,10 +113,46 @@ public:
             child->collectIdentifierNames(set);
     }
 
+    template <typename T>
+    void set(T * & field, const ASTPtr & child)
+    {
+        if (!child)
+            return;
 
-    /// Преобразовать в строку.
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
+            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
 
-    /// Настройки формата.
+        children.push_back(child);
+        field = casted;
+    }
+
+    template <typename T>
+    void replace(T * & field, const ASTPtr & child)
+    {
+        if (!child)
+            throw Exception("Trying to replace AST subtree with nullptr", ErrorCodes::LOGICAL_ERROR);
+
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
+            throw Exception("Could not cast AST subtree", ErrorCodes::LOGICAL_ERROR);
+
+        for (ASTPtr & current_child : children)
+        {
+            if (current_child.get() == field)
+            {
+                current_child = child;
+                field = casted;
+                return;
+            }
+        }
+
+        throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    /// Convert to a string.
+
+    /// Format settings.
     struct FormatSettings
     {
         std::ostream & ostr;
@@ -129,16 +168,16 @@ public:
         }
     };
 
-    /// Состояние. Например, может запоминаться множество узлов, которых мы уже обошли.
+    /// State. For example, a set of nodes can be remembered, which we already walk through.
     struct FormatState
     {
-        /** Запрос SELECT, в котором найден алиас; идентификатор узла с таким алиасом.
-          * Нужно, чтобы когда узел встретился повторно, выводить только алиас.
+        /** The SELECT query in which the alias was found; identifier of a node with such an alias.
+          * It is necessary that when the node has met again, output only the alias.
           */
         std::set<std::pair<const IAST *, std::string>> printed_asts_with_alias;
     };
 
-    /// Состояние, которое копируется при форматировании каждого узла. Например, уровень вложенности.
+    /// The state that is copied when each node is formatted. For example, nesting level.
     struct FormatStateStacked
     {
         UInt8 indent = 0;
@@ -163,8 +202,8 @@ public:
 
     void writeAlias(const String & name, std::ostream & s, bool hilite) const;
 
-protected:
-    /// Для подсветки синтаксиса.
+public:
+    /// For syntax highlighting.
     static const char * hilite_keyword;
     static const char * hilite_identifier;
     static const char * hilite_function;
@@ -177,7 +216,7 @@ private:
 };
 
 
-/// Квотировать идентификатор обратными кавычками, если это требуется.
+/// Surrounds an identifier by back quotes if it is necessary.
 String backQuoteIfNeed(const String & x);
 
 

@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <sparsehash/dense_hash_map>
 
 
@@ -21,44 +22,41 @@ void NamesAndTypesList::readText(ReadBuffer & buf)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    DB::assertString("columns format version: 1\n", buf);
+    assertString("columns format version: 1\n", buf);
     size_t count;
     DB::readText(count, buf);
-    DB::assertString(" columns:\n", buf);
+    assertString(" columns:\n", buf);
     resize(count);
     for (NameAndTypePair & it : *this)
     {
-        DB::readBackQuotedString(it.name, buf);
-        DB::assertChar(' ', buf);
+        readBackQuotedStringWithSQLStyle(it.name, buf);
+        assertChar(' ', buf);
         String type_name;
-        DB::readString(type_name, buf);
+        readString(type_name, buf);
         it.type = data_type_factory.get(type_name);
-        DB::assertChar('\n', buf);
+        assertChar('\n', buf);
     }
 }
 
 void NamesAndTypesList::writeText(WriteBuffer & buf) const
 {
-    DB::writeString("columns format version: 1\n", buf);
+    writeString("columns format version: 1\n", buf);
     DB::writeText(size(), buf);
-    DB::writeString(" columns:\n", buf);
+    writeString(" columns:\n", buf);
     for (const auto & it : *this)
     {
-        DB::writeBackQuotedString(it.name, buf);
-        DB::writeChar(' ', buf);
-        DB::writeString(it.type->getName(), buf);
-        DB::writeChar('\n', buf);
+        writeBackQuotedString(it.name, buf);
+        writeChar(' ', buf);
+        writeString(it.type->getName(), buf);
+        writeChar('\n', buf);
     }
 }
 
 String NamesAndTypesList::toString() const
 {
-    String s;
-    {
-        WriteBufferFromString out(s);
-        writeText(out);
-    }
-    return s;
+    WriteBufferFromOwnString out;
+    writeText(out);
+    return out.str();
 }
 
 NamesAndTypesList NamesAndTypesList::parse(const String & s)

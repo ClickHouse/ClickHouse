@@ -6,6 +6,7 @@
 #include <memory>
 #include <chrono>
 #include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
 
 
 namespace CurrentMetrics
@@ -56,11 +57,14 @@ private:
         if (0 == priority)
             return true;
 
+        std::chrono::nanoseconds cur_timeout = timeout;
+        Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+
         std::unique_lock<std::mutex> lock(mutex);
 
         while (true)
         {
-            /// Если ли хотя бы один более приоритетный запрос?
+            /// Is there at least one more priority query?
             bool found = false;
             for (const auto & value : container)
             {
@@ -78,8 +82,16 @@ private:
                 return true;
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryPreempted};
-            if (std::cv_status::timeout == condvar.wait_for(lock, timeout))
+            if (std::cv_status::timeout == condvar.wait_for(lock, cur_timeout))
                 return false;
+            else
+            {
+                /// False awakening, check and update time limit
+                auto elapsed = std::chrono::nanoseconds(watch.elapsed());
+                if (elapsed >= timeout)
+                    return false;
+                cur_timeout = timeout - elapsed;
+            }
         }
     }
 

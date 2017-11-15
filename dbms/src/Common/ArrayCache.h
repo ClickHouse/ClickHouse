@@ -5,15 +5,22 @@
 #include <list>
 #include <memory>
 #include <random>
+#include <pcg_random.hpp>
 #include <unordered_map>
 #include <sys/mman.h>
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/set.hpp>
 #include <boost/noncopyable.hpp>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
+#include <Common/formatReadable.h>
+
+/// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
 
 
 namespace DB
@@ -155,7 +162,7 @@ private:
 
     mutable std::mutex mutex;
 
-    std::mt19937_64 rng {static_cast<std::mt19937_64::result_type>(randomSeed())};
+    pcg64 rng{randomSeed()};
 
     struct Chunk : private boost::noncopyable
     {
@@ -166,13 +173,13 @@ private:
         {
             ptr = mmap(address_hint, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (MAP_FAILED == ptr)
-                DB::throwFromErrno("Allocator: Cannot mmap.", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+                DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         }
 
         ~Chunk()
         {
             if (ptr && 0 != munmap(ptr, size))
-                DB::throwFromErrno("Allocator: Cannot munmap.", DB::ErrorCodes::CANNOT_MUNMAP);
+                DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
         }
 
         Chunk(Chunk && other) : ptr(other.ptr), size(other.size)

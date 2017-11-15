@@ -1,7 +1,8 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <atomic>
+#include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMerger.h>
@@ -21,8 +22,9 @@
 #include <Storages/MergeTree/RemoteQueryExecutor.h>
 #include <Storages/MergeTree/RemotePartChecker.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <zkutil/ZooKeeper.h>
-#include <zkutil/LeaderElection.h>
+#include <Common/randomSeed.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/LeaderElection.h>
 
 
 namespace DB
@@ -38,7 +40,7 @@ namespace DB
   * - a set of parts of data on each replica (/replicas/replica_name/parts);
   * - list of the last N blocks of data with checksum, for deduplication (/blocks);
   * - the list of incremental block numbers (/block_numbers) that we are about to insert,
-  *   or that were unused (/nonincremental_block_numbers)
+  *   or that were unused (/nonincrement_block_numbers)
   *   to ensure the linear order of data insertion and data merge only on the intervals in this sequence;
   * - coordinates writes with quorum (/quorum).
   */
@@ -48,7 +50,6 @@ namespace DB
   * Each entry is one of:
   * - normal data insertion (GET),
   * - merge (MERGE),
-  * - slightly less common data insertion (ATTACH),
   * - delete the partition (DROP).
   *
   * Each replica copies (queueUpdatingThread, pullLogsToQueue) entries from the log to its queue (/replicas/replica_name/queue/queue-...)
@@ -69,12 +70,10 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class StorageReplicatedMergeTree : private ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
+class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageReplicatedMergeTree>;
-
 public:
-    /** If !attach, either creates a new table in ZK, or adds a replica to an existing table.
+    /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
     static StoragePtr create(
         const String & zookeeper_path_,
@@ -86,14 +85,15 @@ public:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         Context & context_,
-        ASTPtr & primary_expr_ast_,
-        const String & date_column_name_,
+        const ASTPtr & primary_expr_ast_,
+        const String & date_column_name,
+        const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 
+    void startup() override;
     void shutdown() override;
     ~StorageReplicatedMergeTree() override;
 
@@ -107,47 +107,46 @@ public:
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
     bool supportsParallelReplicas() const override { return true; }
+    bool supportsReplication() const override { return true; }
 
     const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
-        if (column_name == "_replicated") return NameAndTypePair("_replicated", std::make_shared<DataTypeUInt8>());
         return data.getColumn(column_name);
     }
 
     bool hasColumn(const String & column_name) const override
     {
-        if (column_name == "_replicated") return true;
         return data.hasColumn(column_name);
     }
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const SelectQueryInfo & query_info,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    void dropPartition(ASTPtr query, const Field & partition, bool detach, bool unreplicated, const Settings & settings) override;
-    void attachPartition(ASTPtr query, const Field & partition, bool unreplicated, bool part, const Settings & settings) override;
-    void fetchPartition(const Field & partition, const String & from, const Settings & settings) override;
-    void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void reshardPartitions(
         const ASTPtr & query, const String & database_name,
-        const Field & first_partition, const Field & last_partition,
+        const ASTPtr & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        Context & context) override;
+        const Context & context) override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
@@ -161,7 +160,6 @@ public:
 
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
-    MergeTreeData * getUnreplicatedData() { return unreplicated_data.get(); }
 
 
     /** For the system table replicas. */
@@ -204,7 +202,8 @@ public:
     }
 
 private:
-    void dropUnreplicatedPartition(const Field & partition, bool detach, const Settings & settings);
+    /// Delete old chunks from disk and from ZooKeeper.
+    void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;
     friend class ReplicatedMergeTreeRestartingThread;
@@ -242,13 +241,6 @@ private:
     String replica_name;
     String replica_path;
 
-    /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
-      * In ZK entries in chronological order. Here it is not necessary.
-      */
-    ReplicatedMergeTreeQueue queue;
-    std::atomic<time_t> last_queue_update_start_time{0};
-    std::atomic<time_t> last_queue_update_finish_time{0};
-
     /** /replicas/me/is_active.
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
@@ -258,12 +250,12 @@ private:
       */
     int columns_version = -1;
 
-    /** Is this replica "master". The master replica selects the parts to merge.
+    /** Is this replica "leading". The leader replica selects the parts to merge.
       */
     bool is_leader_node = false;
     std::mutex leader_node_mutex;
 
-    InterserverIOEndpointHolderPtr endpoint_holder;
+    InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
     InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;
     InterserverIOEndpointHolderPtr sharded_partition_uploader_endpoint_holder;
     InterserverIOEndpointHolderPtr remote_query_executor_endpoint_holder;
@@ -274,6 +266,14 @@ private:
     MergeTreeDataWriter writer;
     MergeTreeDataMerger merger;
 
+    /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
+     * In ZK entries in chronological order. Here it is not necessary.
+     */
+    ReplicatedMergeTreeQueue queue;
+    std::atomic<time_t> last_queue_update_start_time{0};
+    std::atomic<time_t> last_queue_update_finish_time{0};
+
+
     DataPartsExchange::Fetcher fetcher;
     RemoteDiskSpaceMonitor::Client disk_space_monitor_client;
     ShardedPartitionUploader::Client sharded_partition_uploader_client;
@@ -281,12 +281,6 @@ private:
     RemotePartChecker::Client remote_part_checker_client;
 
     zkutil::LeaderElectionPtr leader_election;
-
-    /// To read data from the `unreplicated` directory.
-    std::unique_ptr<MergeTreeData> unreplicated_data;
-    std::unique_ptr<MergeTreeDataSelectExecutor> unreplicated_reader;
-    std::unique_ptr<MergeTreeDataMerger> unreplicated_merger;
-    std::mutex unreplicated_mutex; /// For merge and removal of non-replicable parts.
 
     /// Do I need to complete background threads (except restarting_thread)?
     std::atomic<bool> shutdown_called {false};
@@ -311,6 +305,8 @@ private:
 
     /// A thread that removes old parts, log entries, and blocks.
     std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
+    /// Is used to wakeup cleanup_thread
+    Poco::Event cleanup_thread_event;
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
@@ -326,23 +322,7 @@ private:
 
     Logger * log;
 
-    StorageReplicatedMergeTree(
-        const String & zookeeper_path_,
-        const String & replica_name_,
-        bool attach,
-        const String & path_, const String & database_name_, const String & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        Context & context_,
-        ASTPtr & primary_expr_ast_,
-        const String & date_column_name_,
-        const ASTPtr & sampling_expression_,
-        size_t index_granularity_,
-        const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
+    pcg64 rng{randomSeed()};
 
     /// Initialization.
 
@@ -378,14 +358,12 @@ private:
       */
     void checkPartAndAddToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
 
-    /** Based on the assumption that there is no such part anywhere else (This is provided if the part number is highlighted with AbandonableLock).
-      * Adds actions to `ops` that add data about the part into ZooKeeper.
-      * Call under TableStructureLock.
-      */
-    void addNewPartToZooKeeper(const MergeTreeData::DataPartPtr & part, zkutil::Ops & ops, String name_override = "");
-
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     void removePartFromZooKeeper(const String & part_name, zkutil::Ops & ops);
+
+    /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
+    void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
+                                  NameSet * parts_should_be_retied = nullptr);
 
     /// Removes a part from ZooKeeper and adds a task to the queue to download it. It is supposed to do this with broken parts.
     void removePartAndEnqueueFetch(const String & part_name);
@@ -403,7 +381,8 @@ private:
     bool executeLogEntry(const LogEntry & entry);
 
     void executeDropRange(const LogEntry & entry);
-    bool executeAttachPart(const LogEntry & entry); /// Returns false if the part is absent, and it needs to be picked up from another replica.
+
+    void executeClearColumnInPartition(const LogEntry & entry);
 
     /** Updates the queue.
       */
@@ -420,13 +399,6 @@ private:
     /** Selects the parts to merge and writes to the log.
       */
     void mergeSelectingThread();
-
-    using MemoizedPartsThatCouldBeMerged = std::set<std::pair<std::string, std::string>>;
-    /// Is it possible to merge parts in the specified range? `memo` is an optional parameter.
-    bool canMergeParts(
-        const MergeTreeData::DataPartPtr & left,
-        const MergeTreeData::DataPartPtr & right,
-        MemoizedPartsThatCouldBeMerged * memo);
 
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.
@@ -465,7 +437,7 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
-    AbandonableLockInZooKeeper allocateBlockNumber(const String & month_name);
+    AbandonableLockInZooKeeper allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper);
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .
@@ -476,19 +448,15 @@ private:
       */
     void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
+    /// Choose leader replica, send requst to it and wait.
+    void sendRequestToLeaderReplica(const ASTPtr & query, const Settings & settings);
+
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
 
-    /** Get a lock that protects the specified partition from the merge task.
-      * The lock is recursive.
-      */
-    std::string acquirePartitionMergeLock(const std::string & partition_name);
-
-    /** Declare that we no longer refer to the lock corresponding to the specified
-      * partition. If there are no more links, the lock is destroyed.
-      */
-    void releasePartitionMergeLock(const std::string & partition_name);
-
+    /// The name of an imaginary part covering all parts in the specified partition (at the call moment).
+    /// Returns empty string if partition is empty.
+    String getFakePartNameCoveringAllPartsInPartition(const String & partition_id);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     std::unordered_set<std::string> existing_nodes_cache;
@@ -517,10 +485,28 @@ private:
     /** Checks that there is enough free space locally and on all replicas.
       */
     bool checkSpaceForResharding(const ReplicaToSpaceInfo & replica_to_space_info, size_t partition_size) const;
+
+protected:
+    StorageReplicatedMergeTree(
+        const String & zookeeper_path_,
+        const String & replica_name_,
+        bool attach,
+        const String & path_, const String & database_name_, const String & name_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        Context & context_,
+        const ASTPtr & primary_expr_ast_,
+        const String & date_column_name,
+        const ASTPtr & partition_expr_ast_,
+        const ASTPtr & sampling_expression_,
+        const MergeTreeData::MergingParams & merging_params_,
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 };
 
 
-extern const Int64 RESERVED_BLOCK_NUMBERS;
 extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER;
 
 }

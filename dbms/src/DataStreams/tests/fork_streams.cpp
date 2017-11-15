@@ -56,7 +56,7 @@ try
     formatAST(*ast, std::cerr);
     std::cerr << std::endl;
 
-    Context context;
+    Context context = Context::createGlobal();
 
     ExpressionAnalyzer analyzer(ast, context, {}, {NameAndTypePair("number", std::make_shared<DataTypeUInt64>())});
     ExpressionActionsChain chain;
@@ -65,14 +65,14 @@ try
     chain.finalize();
     ExpressionActionsPtr expression = chain.getLastActions();
 
-    StoragePtr table = StorageSystemNumbers::create("Numbers");
+    StoragePtr table = StorageSystemNumbers::create("numbers", false);
 
     Names column_names;
     column_names.push_back("number");
 
     QueryProcessingStage::Enum stage;
 
-    BlockInputStreamPtr in = table->read(column_names, 0, context, Settings(), stage)[0];
+    BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
 
     ForkBlockInputStreams fork(in);
 

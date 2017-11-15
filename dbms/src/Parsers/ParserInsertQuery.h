@@ -7,26 +7,30 @@ namespace DB
 {
 
 
-/** Варианты:
+/** Cases:
   *
-  * Обычный вариант:
+  * Normal case:
   * INSERT INTO [db.]table (c1, c2, c3) VALUES (v11, v12, v13), (v21, v22, v23), ...
   * INSERT INTO [db.]table VALUES (v11, v12, v13), (v21, v22, v23), ...
   *
-  * Вставка данных в произвольном формате.
-  * Сами данные идут после перевода строки, если он есть, или после всех пробельных символов, иначе.
+  * Insert of data in an arbitrary format.
+  * The data itself comes after LF(line feed), if it exists, or after all the whitespace characters, otherwise.
   * INSERT INTO [db.]table (c1, c2, c3) FORMAT format \n ...
   * INSERT INTO [db.]table FORMAT format \n ...
   *
-  * Вставка результата выполнения SELECT запроса.
+  * Insert the result of the SELECT query.
   * INSERT INTO [db.]table (c1, c2, c3) SELECT ...
   * INSERT INTO [db.]table SELECT ...
   */
 class ParserInsertQuery : public IParserBase
 {
-protected:
-    const char * getName() const { return "INSERT query"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+private:
+    const char * end;
+
+    const char * getName() const override { return "INSERT query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+public:
+    ParserInsertQuery(const char * end) : end(end) {}
 };
 
 }

@@ -1,4 +1,5 @@
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/typeid_cast.h>
 
 #include <Storages/StorageMerge.h>
 #include <Parsers/ASTExpressionList.h>
@@ -10,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 #include <TableFunctions/TableFunctionMerge.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB
@@ -31,7 +33,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
 
     {
         auto database = context.getDatabase(source_database);
-        auto iterator = database->getIterator();
+        auto iterator = database->getIterator(context);
 
         while (iterator->isValid())
         {
@@ -53,34 +55,45 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
 }
 
 
-StoragePtr TableFunctionMerge::execute(ASTPtr ast_function, Context & context) const
+StoragePtr TableFunctionMerge::execute(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
     if (args_func.size() != 1)
-        throw Exception("Storage Merge requires exactly 2 parameters"
+        throw Exception("Table function 'merge' requires exactly 2 arguments"
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
     if (args.size() != 2)
-        throw Exception("Storage Merge requires exactly 2 parameters"
+        throw Exception("Table function 'merge' requires exactly 2 arguments"
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    args[0] = evaluateConstantExpressionOrIdentidierAsLiteral(args[0], context);
+    args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
 
     String source_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
     String table_name_regexp = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
-    return StorageMerge::create(
+    auto res = StorageMerge::create(
         getName(),
         std::make_shared<NamesAndTypesList>(chooseColumns(source_database, table_name_regexp, context)),
+        NamesAndTypesList{},
+        NamesAndTypesList{},
+        ColumnDefaults{},
         source_database,
         table_name_regexp,
         context);
+    res->startup();
+    return res;
+}
+
+
+void registerTableFunctionMerge(TableFunctionFactory & factory)
+{
+    TableFunctionFactory::instance().registerFunction<TableFunctionMerge>();
 }
 
 }

@@ -28,12 +28,14 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Interpreters/Settings.h>
+#include <Common/typeid_cast.h>
+
+#include <Interpreters/Context.h>
 
 #include <Storages/StorageTinyLog.h>
 #include <Poco/DirectoryIterator.h>
 
-#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION     ".bin"
+#define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
 #define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null.bin"
 
 
@@ -46,10 +48,11 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int DUPLICATE_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
-class TinyLogBlockInputStream : public IProfilingBlockInputStream
+class TinyLogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
     TinyLogBlockInputStream(size_t block_size_, const Names & column_names_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
@@ -73,7 +76,7 @@ private:
     struct Stream
     {
         Stream(const std::string & data_path, size_t max_read_buffer_size)
-            : plain(data_path, std::min(max_read_buffer_size, Poco::File(data_path).getSize())),
+            : plain(data_path, std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(data_path).getSize())),
             compressed(plain)
         {
         }
@@ -90,10 +93,10 @@ private:
 };
 
 
-class TinyLogBlockOutputStream : public IBlockOutputStream
+class TinyLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    TinyLogBlockOutputStream(StorageTinyLog & storage_)
+    explicit TinyLogBlockOutputStream(StorageTinyLog & storage_)
         : storage(storage_)
     {
         for (const auto & col : storage.getColumnsList())
@@ -123,7 +126,7 @@ private:
     {
         Stream(const std::string & data_path, size_t max_compress_block_size) :
             plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, CompressionMethod::LZ4, max_compress_block_size)
+            compressed(plain, CompressionSettings(CompressionMethod::LZ4), max_compress_block_size)
         {
         }
 
@@ -277,7 +280,7 @@ void TinyLogBlockInputStream::addStream(const String & name, const IDataType & t
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
-        /// For arrays separate threads are used for sizes.
+        /// For arrays separate files are used for sizes.
         String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
         if (!streams.count(size_name))
             streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), max_read_buffer_size)));
@@ -350,7 +353,7 @@ void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & 
     }
     else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
     {
-        /// For arrays separate threads are used for sizes.
+        /// For arrays separate files are used for sizes.
         String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
         if (!streams.count(size_name))
             streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
@@ -464,24 +467,6 @@ StorageTinyLog::StorageTinyLog(
 }
 
 
-StoragePtr StorageTinyLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        attach, max_compress_block_size_
-    );
-}
-
-
 void StorageTinyLog::addFile(const String & column_name, const IDataType & type, size_t level)
 {
     if (files.end() != files.find(column_name))
@@ -543,16 +528,16 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
 
 BlockInputStreams StorageTinyLog::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
-    return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(max_block_size, column_names, *this, settings.max_read_buffer_size));
+    return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
+        max_block_size, column_names, *this, context.getSettingsRef().max_read_buffer_size));
 }
 
 

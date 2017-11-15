@@ -3,19 +3,28 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsArithmetic.h>
+#include <Functions/FunctionHelpers.h>
+#include <type_traits>
 
 
 namespace DB
 {
 
-/** Функции - логические связки: and, or, not, xor.
-  * Принимают любые числовые типы, возвращают UInt8, содержащий 0 или 1.
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+/** Functions are logical links: and, or, not, xor.
+  * Accept any numeric types, return a UInt8 containing 0 or 1.
   */
 
-template<typename B>
+template <typename B>
 struct AndImpl
 {
     static inline bool isSaturable()
@@ -34,7 +43,7 @@ struct AndImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct OrImpl
 {
     static inline bool isSaturable()
@@ -53,7 +62,7 @@ struct OrImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct XorImpl
 {
     static inline bool isSaturable()
@@ -72,7 +81,7 @@ struct XorImpl
     }
 };
 
-template<typename A>
+template <typename A>
 struct NotImpl
 {
     using ResultType = UInt8;
@@ -91,8 +100,8 @@ using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 template <typename Op, size_t N>
 struct AssociativeOperationImpl
 {
-    /// Выбрасывает N последних столбцов из in (если их меньше, то все) и кладет в result их комбинацию.
-    static void execute(UInt8ColumnPtrs & in, UInt8Container & result)
+    /// Erases the N last columns from `in` (if there are less, then all) and puts into `result` their combination.
+    static void NO_INLINE execute(UInt8ColumnPtrs & in, UInt8Container & result)
     {
         if (N > in.size())
         {
@@ -113,11 +122,11 @@ struct AssociativeOperationImpl
     const UInt8Container & vec;
     AssociativeOperationImpl<Op, N - 1> continuation;
 
-    /// Запоминает последние N столбцов из in.
+    /// Remembers the last N columns from `in`.
     AssociativeOperationImpl(UInt8ColumnPtrs & in)
         : vec(in[in.size() - N]->getData()), continuation(in) {}
 
-    /// Возвращает комбинацию значений в i-й строке всех столбцов, запомненных в конструкторе.
+    /// Returns a combination of values in the i-th row of all columns stored in the constructor.
     inline UInt8 apply(size_t i) const
     {
         if (Op::isSaturable())
@@ -188,7 +197,7 @@ private:
     template <typename T>
     bool convertTypeToUInt8(const IColumn * column, UInt8Container & res)
     {
-        auto col = typeid_cast<const ColumnVector<T> *>(column);
+        auto col = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col)
             return false;
         const typename ColumnVector<T>::Container_t & vec = col->getData();
@@ -217,7 +226,7 @@ private:
     template <typename T>
     bool executeUInt8Type(const UInt8Container & uint8_vec, IColumn * column, UInt8Container & res)
     {
-        auto col = typeid_cast<const ColumnVector<T> *>(column);
+        auto col = checkAndGetColumn<ColumnVector<T>>(column);
         if (!col)
             return false;
         const typename ColumnVector<T>::Container_t & other_vec = col->getData();
@@ -252,7 +261,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// Получить типы результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
+    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
@@ -277,30 +286,30 @@ public:
         ColumnPlainPtrs in(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            in[i] = block.safeGetByPosition(arguments[i]).column.get();
+            in[i] = block.getByPosition(arguments[i]).column.get();
         }
         size_t n = in[0]->size();
 
-        /// Скомбинируем все константные столбцы в одно значение.
+        /// Combine all constant columns into a single value.
         UInt8 const_val = 0;
         bool has_consts = extractConstColumns(in, const_val);
 
-        // Если это значение однозначно определяет результат, вернем его.
+        // If this value uniquely determines the result, return it.
         if (has_consts && (in.empty() || Impl<UInt8>::apply(const_val, 0) == Impl<UInt8>::apply(const_val, 1)))
         {
             if (!in.empty())
                 const_val = Impl<UInt8>::apply(const_val, 0);
-            auto col_res = std::make_shared<ColumnConst<UInt8>>(n, const_val);
-            block.safeGetByPosition(result).column = col_res;
+            auto col_res = DataTypeUInt8().createConstColumn(n, toField(const_val));
+            block.getByPosition(result).column = col_res;
             return;
         }
 
-        /// Если это значение - нейтральный элемент, забудем про него.
+        /// If this value is a neutral element, let's forget about it.
         if (has_consts && Impl<UInt8>::apply(const_val, 0) == 0 && Impl<UInt8>::apply(const_val, 1) == 1)
             has_consts = false;
 
         auto col_res = std::make_shared<ColumnUInt8>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
         UInt8Container & vec_res = col_res->getData();
 
         if (has_consts)
@@ -313,8 +322,8 @@ public:
             vec_res.resize(n);
         }
 
-        /// Разделим входные столбцы на UInt8 и остальные. Первые обработаем более эффективно.
-        /// col_res в каждый момент будет либо находится в конце uint8_in, либо не содержаться в uint8_in.
+        /// Divide the input columns into UInt8 and the rest. The first will be processed more efficiently.
+        /// col_res at each moment will either be at the end of uint8_in, or not contained in uint8_in.
         UInt8ColumnPtrs uint8_in;
         ColumnPlainPtrs other_in;
         for (IColumn * column : in)
@@ -325,7 +334,7 @@ public:
                 other_in.push_back(column);
         }
 
-        /// Нужен хотя бы один столбец в uint8_in, чтобы было с кем комбинировать столбцы из other_in.
+        /// You need at least one column in uint8_in, so that you can combine columns from other_in.
         if (uint8_in.empty())
         {
             if (other_in.empty())
@@ -336,16 +345,16 @@ public:
             uint8_in.push_back(col_res.get());
         }
 
-        /// Эффективно скомбинируем все столбцы правильного типа.
+        /// Effectively combine all the columns of the correct type.
         while (uint8_in.size() > 1)
         {
-            /// При большом размере блока объединять по 6 толбцов за проход быстрее всего.
-            /// При маленьком - чем больше, тем быстрее.
+            /// With a large block size, combining 6 columns per pass is the fastest.
+            /// When small - more, is faster.
             AssociativeOperationImpl<Impl<UInt8>, 10>::execute(uint8_in, vec_res);
             uint8_in.push_back(col_res.get());
         }
 
-        /// По одному добавим все столбцы неправильного типа.
+        /// Add all the columns of the wrong type one at a time.
         while (!other_in.empty())
         {
             executeUInt8Other(uint8_in[0]->getData(), other_in.back(), vec_res);
@@ -353,7 +362,7 @@ public:
             uint8_in[0] = col_res.get();
         }
 
-        /// Такое возможно, если среди аргументов ровно один неконстантный, и он имеет тип UInt8.
+        /// This is possible if there is exactly one non-constant among the arguments, and it is of type UInt8.
         if (uint8_in[0] != col_res.get())
         {
             vec_res.assign(uint8_in[0]->getData());
@@ -373,24 +382,14 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (ColumnVector<T> * col = typeid_cast<ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_res = std::make_shared<ColumnUInt8>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
 
             typename ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col->getData().size());
-            UnaryOperationImpl<T, Impl<T> >::vector(col->getData(), vec_res);
-
-            return true;
-        }
-        else if (ColumnConst<T> * col = typeid_cast<ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
-        {
-            UInt8 res = 0;
-            UnaryOperationImpl<T, Impl<T> >::constant(col->getData(), res);
-
-            auto col_res = std::make_shared<ColumnConst<UInt8>>(col->size(), res);
-            block.safeGetByPosition(result).column = col_res;
+            UnaryOperationImpl<T, Impl<T>>::vector(col->getData(), vec_res);
 
             return true;
         }
@@ -417,33 +416,35 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (!(    executeType<UInt8>(block, arguments, result)
-            ||    executeType<UInt16>(block, arguments, result)
-            ||    executeType<UInt32>(block, arguments, result)
-            ||    executeType<UInt64>(block, arguments, result)
-            ||    executeType<Int8>(block, arguments, result)
-            ||    executeType<Int16>(block, arguments, result)
-            ||    executeType<Int32>(block, arguments, result)
-            ||    executeType<Int64>(block, arguments, result)
-            ||    executeType<Float32>(block, arguments, result)
-            ||    executeType<Float64>(block, arguments, result)))
-           throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+        if (!( executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
+           throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
 
-struct NameAnd    { static constexpr auto name = "and"; };
-struct NameOr    { static constexpr auto name = "or"; };
-struct NameXor    { static constexpr auto name = "xor"; };
-struct NameNot    { static constexpr auto name = "not"; };
+struct NameAnd { static constexpr auto name = "and"; };
+struct NameOr { static constexpr auto name = "or"; };
+struct NameXor { static constexpr auto name = "xor"; };
+struct NameNot { static constexpr auto name = "not"; };
 
-using FunctionAnd = FunctionAnyArityLogical    <AndImpl,    NameAnd>;
-using FunctionOr = FunctionAnyArityLogical    <OrImpl,    NameOr>    ;
-using FunctionXor = FunctionAnyArityLogical    <XorImpl,    NameXor>;
-using FunctionNot = FunctionUnaryLogical    <NotImpl,    NameNot>;
+using FunctionAnd = FunctionAnyArityLogical<AndImpl, NameAnd>;
+using FunctionOr = FunctionAnyArityLogical<OrImpl, NameOr>;
+using FunctionXor = FunctionAnyArityLogical<XorImpl, NameXor>;
+using FunctionNot = FunctionUnaryLogical<NotImpl, NameNot>;
 
 }

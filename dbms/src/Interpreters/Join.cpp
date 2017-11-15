@@ -1,5 +1,6 @@
 #include <common/logger_useful.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -11,6 +12,7 @@
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Core/ColumnNumbers.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -73,7 +75,9 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
             return Type::key32;
         if (size_of_field == 8)
             return Type::key64;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
+        if (size_of_field == 16)
+            return Type::keys128;
+        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.", ErrorCodes::LOGICAL_ERROR);
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
@@ -83,7 +87,9 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
         return Type::keys256;
 
     /// If there is single string key, use hash table of it's values.
-    if (keys_size == 1 && (typeid_cast<const ColumnString *>(key_columns[0]) || typeid_cast<const ColumnConstString *>(key_columns[0])))
+    if (keys_size == 1
+        && (typeid_cast<const ColumnString *>(key_columns[0])
+            || (key_columns[0]->isConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
@@ -254,13 +260,13 @@ static void convertColumnToNullable(ColumnWithTypeAndName & column)
 
     if (column.column)
         column.column = std::make_shared<ColumnNullable>(column.column,
-            std::make_shared<ColumnConstUInt8>(column.column->size(), 0)->convertToFullColumn());
+            std::make_shared<ColumnUInt8>(column.column->size(), 0));
 }
 
 
 void Join::setSampleBlock(const Block & block)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     if (!empty())
         return;
@@ -426,7 +432,7 @@ namespace
 
 bool Join::insertFromBlock(const Block & block)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     if (empty())
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
@@ -521,18 +527,22 @@ bool Join::insertFromBlock(const Block & block)
 
     if (!checkSizeLimits())
     {
-        if (overflow_mode == OverflowMode::THROW)
-            throw Exception("Join size limit exceeded."
-                " Rows: " + toString(getTotalRowCount()) +
-                ", limit: " + toString(max_rows) +
-                ". Bytes: " + toString(getTotalByteCount()) +
-                ", limit: " + toString(max_bytes) + ".",
-                ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        switch (overflow_mode)
+        {
+            case OverflowMode::THROW:
+                throw Exception("Join size limit exceeded."
+                    " Rows: " + toString(getTotalRowCount()) +
+                    ", limit: " + toString(max_rows) +
+                    ". Bytes: " + toString(getTotalByteCount()) +
+                    ", limit: " + toString(max_bytes) + ".",
+                    ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
-        if (overflow_mode == OverflowMode::BREAK)
-            return false;
+            case OverflowMode::BREAK:
+                return false;
 
-        throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+            default:
+                throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+        }
     }
 
     return true;
@@ -874,7 +884,7 @@ void Join::joinBlock(Block & block) const
 {
 //    std::cerr << "joinBlock: " << block.dumpStructure() << "\n";
 
-    Poco::ScopedReadRWLock lock(rwlock);
+    std::shared_lock<std::shared_mutex> lock(rwlock);
 
     checkTypesOfKeys(block, sample_block_with_keys);
 

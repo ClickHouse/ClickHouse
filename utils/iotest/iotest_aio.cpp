@@ -13,8 +13,10 @@
 
 #include <Common/Exception.h>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Common/Stopwatch.h>
+
+#include <IO/BufferWithOwnMemory.h>
 
 #include <stdlib.h>
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
@@ -43,7 +45,7 @@ inline int io_destroy(aio_context_t ctx)
     return syscall(__NR_io_destroy, ctx);
 }
 
-inline int io_submit(aio_context_t ctx, long nr,  struct iocb **iocbpp)
+inline int io_submit(aio_context_t ctx, long nr, struct iocb **iocbpp)
 {
     return syscall(__NR_io_submit, ctx, nr, iocbpp);
 }
@@ -60,42 +62,6 @@ enum Mode
     MODE_WRITE = 2,
 };
 
-
-struct AlignedBuffer
-{
-    int size = 0;
-    char * data = nullptr;
-
-    AlignedBuffer() {}
-
-    void init(int size_)
-    {
-        uninit();
-        size_t page = sysconf(_SC_PAGESIZE);
-        size = size_;
-        data = static_cast<char*>(memalign(page, (size + page - 1) / page * page));
-        if (!data)
-            throwFromErrno("memalign failed");
-    }
-
-    void uninit()
-    {
-        if (data)
-            free(data);
-        data = nullptr;
-        size = 0;
-    }
-
-    AlignedBuffer(int size_) : size(0), data(NULL)
-    {
-        init(size_);
-    }
-
-    ~AlignedBuffer()
-    {
-        uninit();
-    }
-};
 
 struct AioContext
 {
@@ -119,11 +85,9 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 {
     AioContext ctx;
 
-    std::vector<AlignedBuffer> buffers(buffers_count);
+    std::vector<DB::Memory> buffers(buffers_count);
     for (size_t i = 0; i < buffers_count; ++i)
-    {
-        buffers[i].init(block_size);
-    }
+        buffers[i] = DB::Memory(block_size, sysconf(_SC_PAGESIZE));
 
     drand48_data rand_data;
     timespec times;
@@ -139,7 +103,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
     while (blocks_sent < count || in_progress > 0)
     {
-        /// Составим запросы.
+        /// Prepare queries.
         query_cbs.clear();
         for (size_t i = 0; i < buffers_count; ++i)
         {
@@ -153,7 +117,7 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
             ++blocks_sent;
             ++in_progress;
 
-            char * buf = buffers[i].data;
+            char * buf = buffers[i].data();
 
             long rand_result1 = 0;
             long rand_result2 = 0;
@@ -185,11 +149,11 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
             query_cbs.push_back(&cb);
         }
 
-        /// Отправим запросы.
+        /// Send queries.
         if  (io_submit(ctx.ctx, query_cbs.size(), &query_cbs[0]) < 0)
             throwFromErrno("io_submit failed");
 
-        /// Получим ответы. Если еще есть что отправлять, получим хотя бы один ответ (после этого пойдем отправлять), иначе дождемся всех ответов.
+        /// Receive answers. If we have something else to send, then receive at least one answer (after that send them), otherwise wait all answers.
         memset(&events[0], 0, buffers_count * sizeof(events[0]));
         int evs = io_getevents(ctx.ctx, (blocks_sent < count ? 1 : in_progress), buffers_count, &events[0], nullptr);
         if (evs < 0)

@@ -1,6 +1,6 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/ClickHouseRevision.h>
-#include <ext/unlock_guard.hpp>
+#include <ext/unlock_guard.h>
 
 #include <Common/SipHash.h>
 #include <Common/ShellCommand.h>
@@ -24,6 +24,10 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_DLOPEN;
+}
 
 Compiler::Compiler(const std::string & path_, size_t threads)
     : path(path_), pool(threads)
@@ -33,7 +37,7 @@ Compiler::Compiler(const std::string & path_, size_t threads)
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)
     {
-        std::string name = dir_it.name();
+        const std::string & name = dir_it.name();
         if (endsWith(name, ".so"))
         {
             files.insert(name.substr(0, name.size() - 3));
@@ -59,7 +63,7 @@ static Compiler::HashedKey getHash(const std::string & key)
     hash.update(key.data(), key.size());
 
     Compiler::HashedKey res;
-    hash.get128(res.first, res.second);
+    hash.get128(res.low, res.high);
     return res;
 }
 
@@ -67,14 +71,9 @@ static Compiler::HashedKey getHash(const std::string & key)
 /// Without .so extension.
 static std::string hashedKeyToFileName(Compiler::HashedKey hashed_key)
 {
-    std::string file_name;
-
-    {
-        WriteBufferFromString out(file_name);
-        out << hashed_key.first << '_' << hashed_key.second;
-    }
-
-    return file_name;
+    WriteBufferFromOwnString out;
+    out << hashed_key.low << '_' << hashed_key.high;
+    return out.str();
 }
 
 
@@ -92,25 +91,47 @@ SharedLibraryPtr Compiler::getOrCount(
     UInt32 count = ++counts[hashed_key];
 
     /// Is there a ready open library? Or, if the library is in the process of compiling, there will be nullptr.
-    Libraries::iterator it = libraries.find(hashed_key);
-    if (libraries.end() != it)
+    Libraries::iterator libraries_it = libraries.find(hashed_key);
+    if (libraries.end() != libraries_it)
     {
-        if (!it->second)
+        if (!libraries_it->second)
             LOG_INFO(log, "Library " << hashedKeyToFileName(hashed_key) << " is already compiling or compilation was failed.");
 
         /// TODO In this case, after the compilation is finished, the callback will not be called.
 
-        return it->second;
+        return libraries_it->second;
     }
 
     /// Is there a file with the library left over from the previous launch?
     std::string file_name = hashedKeyToFileName(hashed_key);
-    if (files.count(file_name))
+    Files::iterator files_it = files.find(file_name);
+    if (files.end() != files_it)
     {
         std::string so_file_path = path + '/' + file_name + ".so";
         LOG_INFO(log, "Loading existing library " << so_file_path);
 
-        SharedLibraryPtr lib(new SharedLibrary(so_file_path));
+        SharedLibraryPtr lib;
+
+        try
+        {
+            lib = std::make_shared<SharedLibrary>(so_file_path);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::CANNOT_DLOPEN)
+                throw;
+
+            /// Found broken .so file (or file cannot be dlopened by whatever reason).
+            /// This could happen when filesystem is corrupted after server restart.
+            /// We remove the file - it will be recompiled on next attempt.
+
+            tryLogCurrentException(log);
+
+            files.erase(files_it);
+            Poco::File(so_file_path).remove();
+            return nullptr;
+        }
+
         libraries[hashed_key] = lib;
         return lib;
     }
@@ -160,6 +181,17 @@ SharedLibraryPtr Compiler::getOrCount(
 }
 
 
+/// This will guarantee that code will compile only when version of headers match version of running server.
+static void addCodeToAssertHeadersMatch(WriteBuffer & out)
+{
+    out <<
+        "#include <Common/config_version.h>\n"
+        "#if VERSION_REVISION != " << ClickHouseRevision::get() << "\n"
+        "#error \"ClickHouse headers revision doesn't match runtime revision of the server.\"\n"
+        "#endif\n\n";
+}
+
+
 void Compiler::compile(
     HashedKey hashed_key,
     std::string file_name,
@@ -171,39 +203,50 @@ void Compiler::compile(
 
     std::string prefix = path + "/" + file_name;
     std::string cpp_file_path = prefix + ".cpp";
+    std::string o_file_path = prefix + ".o";
     std::string so_file_path = prefix + ".so";
     std::string so_tmp_file_path = prefix + ".so.tmp";
 
     {
         WriteBufferFromFile out(cpp_file_path);
+
+        addCodeToAssertHeadersMatch(out);
         out << get_code();
     }
 
     std::stringstream command;
 
-    /// Slightly uncomfortable.
+    /// Slightly unconvenient.
     command <<
-        "LD_LIBRARY_PATH=" PATH_SHARE "/clickhouse/bin/"
-        " " INTERNAL_COMPILER_EXECUTABLE
-        " -B " PATH_SHARE "/clickhouse/bin/"
-        " " INTERNAL_COMPILER_FLAGS
-#if INTERNAL_COMPILER_CUSTOM_ROOT
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
-        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include/"
-#endif
-        " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
-        " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
-        " -I " INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
-        " -I " INTERNAL_Poco_Foundation_INCLUDE_DIR
-        " -I " INTERNAL_Boost_INCLUDE_DIRS
-        " -I " INTERNAL_COMPILER_HEADERS "/libs/libcommon/include/"
-        " " << additional_compiler_flags <<
-        " -o " << so_tmp_file_path << " " << cpp_file_path
-        << " 2>&1 || echo Exit code: $?";
+        "("
+            INTERNAL_COMPILER_EXECUTABLE
+            " " INTERNAL_COMPILER_FLAGS
+    #if INTERNAL_COMPILER_CUSTOM_ROOT
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include/"
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include/"
+    #endif
+            " -I " INTERNAL_COMPILER_HEADERS "/dbms/src/"
+            " -I " INTERNAL_COMPILER_HEADERS "/contrib/libcityhash/include/"
+            " -I " INTERNAL_COMPILER_HEADERS "/contrib/libpcg-random/include/"
+            " -I " INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
+            " -I " INTERNAL_Poco_Foundation_INCLUDE_DIR
+            " -I " INTERNAL_Boost_INCLUDE_DIRS
+            " -I " INTERNAL_COMPILER_HEADERS "/libs/libcommon/include/"
+            " " << additional_compiler_flags <<
+            " -c -o " << o_file_path << " " << cpp_file_path
+            << " 2>&1"
+        ") && ("
+            INTERNAL_LINKER_EXECUTABLE
+            " -shared"
+            " -o " << so_tmp_file_path
+            << " " << o_file_path
+            << " 2>&1"
+        ") || echo Return code: $?";
 
     std::string compile_result;
 
@@ -218,6 +261,7 @@ void Compiler::compile(
 
     /// If there was an error before, the file with the code remains for viewing.
     Poco::File(cpp_file_path).remove();
+    Poco::File(o_file_path).remove();
 
     Poco::File(so_tmp_file_path).renameTo(so_file_path);
     SharedLibraryPtr lib(new SharedLibrary(so_file_path));

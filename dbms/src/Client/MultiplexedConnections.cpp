@@ -12,64 +12,42 @@ namespace ErrorCodes
 }
 
 
-MultiplexedConnections::MultiplexedConnections(Connection * connection_, const Settings * settings_, ThrottlerPtr throttler_)
-    : settings(settings_), throttler(throttler_), supports_parallel_execution(false)
+MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
+    : settings(settings_)
 {
-    if (connection_ == nullptr)
-        throw Exception("Invalid connection specified", ErrorCodes::LOGICAL_ERROR);
-
-    active_connection_total_count = 1;
-
-    ShardState shard_state;
-    shard_state.allocated_connection_count = active_connection_total_count;
-    shard_state.active_connection_count = active_connection_total_count;
-
-    shard_states.push_back(shard_state);
+    connection.setThrottler(throttler);
 
     ReplicaState replica_state;
-    replica_state.connection_index = 0;
-    replica_state.shard_state = &shard_states[0];
+    replica_state.connection = &connection;
+    replica_states.push_back(replica_state);
 
-    connection_->setThrottler(throttler);
-    connections.push_back(connection_);
-
-    auto res = replica_map.emplace(connections[0]->socket.impl()->sockfd(), replica_state);
-    if (!res.second)
-        throw Exception("Invalid set of connections", ErrorCodes::LOGICAL_ERROR);
+    active_connection_count = 1;
 }
 
 MultiplexedConnections::MultiplexedConnections(
-        ConnectionPoolWithFailover & pool_, const Settings * settings_, ThrottlerPtr throttler_,
-        bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table)
-    : settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
+        std::vector<IConnectionPool::Entry> && connections,
+        const Settings & settings_, const ThrottlerPtr & throttler, bool append_extra_info)
+    : settings(settings_)
 {
-    initFromShard(pool_, main_table);
-    registerShards();
+    /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
+    /// `skip_unavailable_shards` was set. Then just return.
+    if (connections.empty())
+        return;
 
-    supports_parallel_execution = active_connection_total_count > 1;
-
-    if (append_extra_info)
-        block_extra_info = std::make_unique<BlockExtraInfo>();
-}
-
-MultiplexedConnections::MultiplexedConnections(
-        const ConnectionPoolWithFailoverPtrs & pools_, const Settings * settings_, ThrottlerPtr throttler_,
-        bool append_extra_info, PoolMode pool_mode_, const QualifiedTableName * main_table)
-    : settings(settings_), throttler(throttler_), pool_mode(pool_mode_)
-{
-    if (pools_.empty())
-        throw Exception("Pools are not specified", ErrorCodes::LOGICAL_ERROR);
-
-    for (auto & pool : pools_)
+    replica_states.reserve(connections.size());
+    for (size_t i = 0; i < connections.size(); ++i)
     {
-        if (!pool)
-            throw Exception("Invalid pool specified", ErrorCodes::LOGICAL_ERROR);
-        initFromShard(*pool, main_table);
+        Connection * connection = &(*connections[i]);
+        connection->setThrottler(throttler);
+
+        ReplicaState replica_state;
+        replica_state.pool_entry = std::move(connections[i]);
+        replica_state.connection = connection;
+
+        replica_states.push_back(std::move(replica_state));
     }
 
-    registerShards();
-
-    supports_parallel_execution = active_connection_total_count > 1;
+    active_connection_count = connections.size();
 
     if (append_extra_info)
         block_extra_info = std::make_unique<BlockExtraInfo>();
@@ -82,17 +60,18 @@ void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesDa
     if (!sent_query)
         throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
 
-    if (data.size() < active_connection_total_count)
+    if (data.size() != active_connection_count)
         throw Exception("Mismatch between replicas and data sources", ErrorCodes::MISMATCH_REPLICAS_DATA_SOURCES);
 
     auto it = data.begin();
-    for (auto & e : replica_map)
+    for (ReplicaState & state : replica_states)
     {
-        ReplicaState & state = e.second;
-        Connection * connection = connections[state.connection_index];
+        Connection * connection = state.connection;
         if (connection != nullptr)
+        {
             connection->sendExternalTablesData(*it);
-        ++it;
+            ++it;
+        }
     }
 }
 
@@ -108,54 +87,28 @@ void MultiplexedConnections::sendQuery(
     if (sent_query)
         throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
 
-    if (supports_parallel_execution)
+    if (replica_states.size() > 1)
     {
-        if (settings == nullptr)
+        Settings query_settings = settings;
+        query_settings.parallel_replicas_count = replica_states.size();
+
+        for (size_t i = 0; i < replica_states.size(); ++i)
         {
-            /// Each shard has one address.
-            auto it = connections.begin();
-            for (size_t i = 0; i < shard_states.size(); ++i)
-            {
-                Connection * connection = *it;
-                if (connection == nullptr)
-                    throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
+            Connection * connection = replica_states[i].connection;
+            if (connection == nullptr)
+                throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
-                connection->sendQuery(query, query_id, stage, nullptr, client_info, with_pending_data);
-                ++it;
-            }
-        }
-        else
-        {
-            /// Each shard has one or more replicas.
-            auto it = connections.begin();
-            for (const auto & shard_state : shard_states)
-            {
-                Settings query_settings = *settings;
-                query_settings.parallel_replicas_count = shard_state.active_connection_count;
-
-                UInt64 offset = 0;
-
-                for (size_t i = 0; i < shard_state.allocated_connection_count; ++i)
-                {
-                    Connection * connection = *it;
-                    if (connection == nullptr)
-                        throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
-
-                    query_settings.parallel_replica_offset = offset;
-                    connection->sendQuery(query, query_id, stage, &query_settings, client_info, with_pending_data);
-                    ++offset;
-                    ++it;
-                }
-            }
+            query_settings.parallel_replica_offset = i;
+            connection->sendQuery(query, query_id, stage, &query_settings, client_info, with_pending_data);
         }
     }
     else
     {
-        Connection * connection = connections[0];
+        Connection * connection = replica_states[0].connection;
         if (connection == nullptr)
             throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
-        connection->sendQuery(query, query_id, stage, settings, client_info, with_pending_data);
+        connection->sendQuery(query, query_id, stage, &settings, client_info, with_pending_data);
     }
 
     sent_query = true;
@@ -187,14 +140,13 @@ void MultiplexedConnections::disconnect()
 {
     std::lock_guard<std::mutex> lock(cancel_mutex);
 
-    for (auto it = replica_map.begin(); it != replica_map.end(); ++it)
+    for (ReplicaState & state : replica_states)
     {
-        ReplicaState & state = it->second;
-        Connection * connection = connections[state.connection_index];
+        Connection * connection = state.connection;
         if (connection != nullptr)
         {
             connection->disconnect();
-            invalidateReplica(it);
+            invalidateReplica(state);
         }
     }
 }
@@ -206,10 +158,9 @@ void MultiplexedConnections::sendCancel()
     if (!sent_query || cancelled)
         throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
 
-    for (const auto & e : replica_map)
+    for (ReplicaState & state : replica_states)
     {
-        const ReplicaState & state = e.second;
-        Connection * connection = connections[state.connection_index];
+        Connection * connection = state.connection;
         if (connection != nullptr)
             connection->sendCancel();
     }
@@ -243,7 +194,7 @@ Connection::Packet MultiplexedConnections::drain()
 
             case Protocol::Server::Exception:
             default:
-                /// If we receive an exception or an unknown package, we save it.
+                /// If we receive an exception or an unknown packet, we save it.
                 res = std::move(packet);
                 break;
         }
@@ -262,10 +213,9 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
 {
     bool is_first = true;
     std::ostringstream os;
-    for (const auto & e : replica_map)
+    for (const ReplicaState & state : replica_states)
     {
-        const ReplicaState & state = e.second;
-        const Connection * connection = connections[state.connection_index];
+        const Connection * connection = state.connection;
         if (connection != nullptr)
         {
             os << (is_first ? "" : "; ") << connection->getDescription();
@@ -276,65 +226,6 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return os.str();
 }
 
-void MultiplexedConnections::initFromShard(ConnectionPoolWithFailover & pool, const QualifiedTableName * main_table)
-{
-    std::vector<IConnectionPool::Entry> entries;
-    if (main_table)
-        entries = pool.getManyChecked(settings, pool_mode, *main_table);
-    else
-        entries = pool.getMany(settings, pool_mode);
-
-    /// If getMany() did not allocate connections and did not throw exceptions, this means that
-    /// `skip_unavailable_shards` was set. Then just return.
-    if (entries.empty())
-        return;
-
-    ShardState shard_state;
-    shard_state.allocated_connection_count = entries.size();
-    shard_state.active_connection_count = entries.size();
-    active_connection_total_count += shard_state.active_connection_count;
-
-    shard_states.push_back(shard_state);
-
-    pool_entries.insert(pool_entries.end(), entries.begin(), entries.end());
-}
-
-void MultiplexedConnections::registerShards()
-{
-    replica_map.reserve(pool_entries.size());
-    connections.reserve(pool_entries.size());
-
-    size_t offset = 0;
-    for (auto & shard_state : shard_states)
-    {
-        size_t index_begin = offset;
-        size_t index_end = offset + shard_state.allocated_connection_count;
-        registerReplicas(index_begin, index_end, shard_state);
-        offset = index_end;
-    }
-}
-
-void MultiplexedConnections::registerReplicas(size_t index_begin, size_t index_end, ShardState & shard_state)
-{
-    for (size_t i = index_begin; i < index_end; ++i)
-    {
-        ReplicaState replica_state;
-        replica_state.connection_index = i;
-        replica_state.shard_state = &shard_state;
-
-        Connection * connection = &*(pool_entries[i]);
-        if (connection == nullptr)
-            throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
-
-        connection->setThrottler(throttler);
-        connections.push_back(connection);
-
-        auto res = replica_map.emplace(connection->socket.impl()->sockfd(), replica_state);
-        if (!res.second)
-            throw Exception("Invalid set of connections", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
 Connection::Packet MultiplexedConnections::receivePacketUnlocked()
 {
     if (!sent_query)
@@ -342,14 +233,10 @@ Connection::Packet MultiplexedConnections::receivePacketUnlocked()
     if (!hasActiveConnections())
         throw Exception("No more packets are available.", ErrorCodes::LOGICAL_ERROR);
 
-    auto it = getReplicaForReading();
-    if (it == replica_map.end())
-        throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
-
-    ReplicaState & state = it->second;
-    current_connection = connections[state.connection_index];
+    ReplicaState & state = getReplicaForReading();
+    current_connection = state.connection;
     if (current_connection == nullptr)
-        throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error: no available replica", ErrorCodes::NO_AVAILABLE_REPLICA);
 
     Connection::Packet packet = current_connection->receivePacket();
 
@@ -363,50 +250,34 @@ Connection::Packet MultiplexedConnections::receivePacketUnlocked()
             break;
 
         case Protocol::Server::EndOfStream:
-            invalidateReplica(it);
+            invalidateReplica(state);
             break;
 
         case Protocol::Server::Exception:
         default:
             current_connection->disconnect();
-            invalidateReplica(it);
+            invalidateReplica(state);
             break;
     }
 
     return packet;
 }
 
-MultiplexedConnections::ReplicaMap::iterator MultiplexedConnections::getReplicaForReading()
+MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForReading()
 {
-    ReplicaMap::iterator it;
+    if (replica_states.size() == 1)
+        return replica_states[0];
 
-    if (supports_parallel_execution)
-        it = waitForReadEvent();
-    else
-    {
-        it = replica_map.begin();
-        const ReplicaState & state = it->second;
-        Connection * connection = connections[state.connection_index];
-        if (connection == nullptr)
-            it = replica_map.end();
-    }
-
-    return it;
-}
-
-MultiplexedConnections::ReplicaMap::iterator MultiplexedConnections::waitForReadEvent()
-{
     Poco::Net::Socket::SocketList read_list;
-    read_list.reserve(active_connection_total_count);
+    read_list.reserve(active_connection_count);
 
     /// First, we check if there are data already in the buffer
     /// of at least one connection.
-    for (const auto & e : replica_map)
+    for (const ReplicaState & state : replica_states)
     {
-        const ReplicaState & state = e.second;
-        Connection * connection = connections[state.connection_index];
+        Connection * connection = state.connection;
         if ((connection != nullptr) && connection->hasReadBufferPendingData())
-            read_list.push_back(connection->socket);
+            read_list.push_back(*connection->socket);
     }
 
     /// If no data was found, then we check if there are any connections
@@ -416,32 +287,38 @@ MultiplexedConnections::ReplicaMap::iterator MultiplexedConnections::waitForRead
         Poco::Net::Socket::SocketList write_list;
         Poco::Net::Socket::SocketList except_list;
 
-        for (const auto & e : replica_map)
+        for (const ReplicaState & state : replica_states)
         {
-            const ReplicaState & state = e.second;
-            Connection * connection = connections[state.connection_index];
+            Connection * connection = state.connection;
             if (connection != nullptr)
-                read_list.push_back(connection->socket);
+                read_list.push_back(*connection->socket);
         }
 
-        int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings->receive_timeout);
+        int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.receive_timeout);
 
         if (n == 0)
             throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
     }
 
     auto & socket = read_list[rand() % read_list.size()];
-    return replica_map.find(socket.impl()->sockfd());
+    if (fd_to_replica_state_idx.empty())
+    {
+        fd_to_replica_state_idx.reserve(replica_states.size());
+        size_t replica_state_number = 0;
+        for (const auto & replica_state : replica_states)
+        {
+            fd_to_replica_state_idx.emplace(replica_state.connection->socket->impl()->sockfd(), replica_state_number);
+            ++replica_state_number;
+        }
+    }
+    return replica_states[fd_to_replica_state_idx.at(socket.impl()->sockfd())];
 }
 
-void MultiplexedConnections::invalidateReplica(MultiplexedConnections::ReplicaMap::iterator it)
+void MultiplexedConnections::invalidateReplica(ReplicaState & state)
 {
-    ReplicaState & state = it->second;
-    ShardState * shard_state = state.shard_state;
-
-    connections[state.connection_index] = nullptr;
-    --shard_state->active_connection_count;
-    --active_connection_total_count;
+    state.connection = nullptr;
+    state.pool_entry = IConnectionPool::Entry();
+    --active_connection_count;
 }
 
 }

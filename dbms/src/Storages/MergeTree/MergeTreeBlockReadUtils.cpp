@@ -1,5 +1,8 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnConst.h>
+#include <unordered_set>
 
 
 namespace DB {
@@ -64,7 +67,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
 
 
 MergeTreeReadTask::MergeTreeReadTask(
-    const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const std::size_t part_index_in_query,
+    const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
     const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
     const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
     MergeTreeBlockSizePredictorPtr && size_predictor)
@@ -78,44 +81,64 @@ MergeTreeReadTask::~MergeTreeReadTask() = default;
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
-: data_part(data_part_)
+    : data_part(data_part_)
 {
-    for (const String & column_name : columns)
+    number_of_rows_in_part = data_part->rows_count;
+    /// Initialize with sample block untill update won't called.
+    initialize(sample_block, columns);
+}
+
+void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const Names & columns, bool from_update)
+{
+    fixed_columns_bytes_per_row = 0;
+    dynamic_columns_infos.clear();
+
+    std::unordered_set<String> names_set;
+    if (!from_update)
+        names_set.insert(columns.begin(), columns.end());
+
+    for (const auto & column_with_type_and_name : sample_block.getColumns())
     {
+        const String & column_name = column_with_type_and_name.name;
+        const ColumnPtr & column_data = column_with_type_and_name.column;
+
         const auto column_checksum = data_part->tryGetBinChecksum(column_name);
 
-        /// There are no column data files, column will be const
-        if (!column_checksum || !data_part->hasColumnFiles(column_name))
-            return;
+        if (!from_update && !names_set.count(column_name))
+            continue;
 
-        const ColumnPtr & column_data = sample_block.getByName(column_name).column;
+        /// At least PREWHERE filter column might be const.
+        if (typeid_cast<const ColumnConst *>(column_data.get()))
+            continue;
 
         if (column_data->isFixed())
         {
             fixed_columns_bytes_per_row += column_data->sizeOfField();
+            max_size_per_row_fixed = std::max<size_t>(max_size_per_row_fixed, column_data->sizeOfField());
         }
         else
         {
             ColumnInfo info;
             info.name = column_name;
-            info.bytes_per_row_global = column_checksum->uncompressed_size;
+            /// If column isn't fixed and doesn't have checksum, than take first
+            info.bytes_per_row_global = column_checksum
+                ? column_checksum->uncompressed_size / number_of_rows_in_part
+                : column_data->byteSize() / std::max<size_t>(1, column_data->size());
 
             dynamic_columns_infos.emplace_back(info);
         }
-    };
-
-    size_t rows_approx = data_part->getExactSizeRows();
+    }
 
     bytes_per_row_global = fixed_columns_bytes_per_row;
     for (auto & info : dynamic_columns_infos)
     {
-        info.bytes_per_row_global /= rows_approx;
         info.bytes_per_row = info.bytes_per_row_global;
         bytes_per_row_global += info.bytes_per_row_global;
+
+        max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
     }
     bytes_per_row_current = bytes_per_row_global;
 }
-
 
 void MergeTreeBlockSizePredictor::startBlock()
 {
@@ -129,6 +152,12 @@ void MergeTreeBlockSizePredictor::startBlock()
 /// TODO: add last_read_row_in_part parameter to take into account gaps between adjacent ranges
 void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
 {
+    if (!is_initialized_in_update)
+    {
+        /// Reinitialize with read block to update estimation for DEFAULT and MATERIALIZED columns without data.
+        initialize(block, {}, true);
+        is_initialized_in_update = true;
+    }
     size_t new_rows = block.rows();
     if (new_rows < block_size_rows)
     {
@@ -143,8 +172,10 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
 
     /// Make recursive updates for each read row: v_{i+1} = (1 - decay) v_{i} + decay v_{target}
     /// Use sum of gemetric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
+    /// NOTE: DEFAULT and MATERIALIZED columns without data has inaccurate estimation of v_{target}
     double alpha = std::pow(1. - decay, diff_rows);
 
+    max_size_per_row_dynamic = 0;
     for (auto & info : dynamic_columns_infos)
     {
         size_t new_size = block.getByName(info.name).column->byteSize();
@@ -156,6 +187,8 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
         info.size_bytes = new_size;
         block_size_bytes += new_size;
         bytes_per_row_current += info.bytes_per_row;
+
+        max_size_per_row_dynamic = std::max<double>(max_size_per_row_dynamic, info.bytes_per_row);
     }
 }
 

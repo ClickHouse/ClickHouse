@@ -20,6 +20,7 @@ public:
         const size_t min_marks_to_read,
         const size_t max_block_size,
         size_t preferred_block_size_bytes,
+        size_t preferred_max_column_in_block_size_bytes,
         MergeTreeData & storage,
         const bool use_uncompressed_cache,
         const ExpressionActionsPtr & prewhere_actions,

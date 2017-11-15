@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

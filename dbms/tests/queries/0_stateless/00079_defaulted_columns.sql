@@ -11,6 +11,11 @@ select * from defaulted_test;
 select col3, col4 from defaulted_test;
 drop table defaulted_test;
 
+create table defaulted_test (col1 Int8, col2 UInt64 default (SELECT dummy+99 from system.one)) engine=Memory;
+insert into defaulted_test (col1) values (0);
+select col2 from defaulted_test;
+drop table defaulted_test;
+
 create table defaulted_test (payload String, date materialized today(), key materialized 0 * rand()) engine=MergeTree(date, key, 8192);
 desc table defaulted_test;
 insert into defaulted_test (payload) values ('hello clickhouse');

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
@@ -14,21 +14,9 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull : private ext::shared_ptr_helper<StorageNull>, public IStorage
+class StorageNull : public ext::shared_ptr_helper<StorageNull>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageNull>;
-
 public:
-    static StoragePtr create(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_)
-    {
-        return make_shared(name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
-    }
-
     std::string getName() const override { return "Null"; }
     std::string getTableName() const override { return name; }
 
@@ -36,12 +24,11 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const SelectQueryInfo & query_info,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        const size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        const unsigned threads = 1) override
+        size_t max_block_size,
+        unsigned num_streams) override
     {
         return { std::make_shared<NullBlockInputStream>() };
     }
@@ -60,6 +47,7 @@ private:
     String name;
     NamesAndTypesListPtr columns;
 
+protected:
     StorageNull(
         const std::string & name_,
         NamesAndTypesListPtr columns_,

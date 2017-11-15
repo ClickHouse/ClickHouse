@@ -14,6 +14,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Common/CurrentMetrics.h>
 #include <DataStreams/BlockIO.h>
+#include <Common/Throttler.h>
 
 
 namespace CurrentMetrics
@@ -29,6 +30,7 @@ using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
 struct Settings;
 class IAST;
+struct ProcessListForUser;
 
 
 /** List of currently executing queries.
@@ -75,6 +77,9 @@ struct ProcessListElement
 
     /// Temporary tables could be registered here. Modify under mutex.
     Tables temporary_tables;
+
+    /// Be careful using it. For example, queries field could be modified concurrently.
+    const ProcessListForUser * user_process_list = nullptr;
 
 protected:
 
@@ -169,6 +174,9 @@ struct ProcessListForUser
 
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker;
+
+    /// Count network usage for all simultaneously running queries of single user.
+    ThrottlerPtr user_throttler;
 };
 
 
@@ -214,10 +222,15 @@ private:
     mutable std::mutex mutex;
     mutable Poco::Condition have_space;        /// Number of currently running queries has become less than maximum.
 
+    /// List of queries
     Container cont;
     size_t cur_size;        /// In C++03 or C++11 and old ABI, std::list::size is not O(1).
     size_t max_size;        /// 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+
+    /// Stores per-user info: queries, statistics and limits
     UserToQueries user_to_queries;
+
+    /// Stores info about queries grouped by their priority
     QueryPriorities priorities;
 
     /// Limit and counter for memory of all simultaneously running queries.
@@ -261,11 +274,7 @@ public:
     }
 
     /// Register temporary table. Then it is accessible by query_id and name.
-    void addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage);
-
-    /// Find temporary table by query_id and name. NOTE: doesn't work fine if there are many queries with same query_id.
-    StoragePtr tryGetTemporaryTable(const String & query_id, const String & table_name) const;
-
+    void addTemporaryTable(ProcessListElement & elem, const String & table_name, const StoragePtr & storage);
 
     enum class CancellationCode
     {

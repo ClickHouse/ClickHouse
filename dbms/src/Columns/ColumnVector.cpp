@@ -11,7 +11,9 @@
 
 #include <Columns/ColumnVector.h>
 
-#include <ext/bit_cast.hpp>
+#include <DataStreams/ColumnGathererStream.h>
+
+#include <ext/bit_cast.h>
 
 #if __SSE2__
     #include <emmintrin.h>
@@ -97,7 +99,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 std::string ColumnVector<T>::getName() const
 {
-    return "ColumnVector<" + TypeName<T>::get() + ">";
+    return "ColumnVector<" + String(TypeName<T>::get()) + ">";
 }
 
 template <typename T>
@@ -114,7 +116,7 @@ ColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(&new_col.data[0], &data[0], count * sizeof(data[0]));
 
         if (size > count)
-            memset(&new_col.data[count], value_type(), size - count);
+            memset(&new_col.data[count], static_cast<int>(value_type()), size - count);
     }
 
     return new_col_holder;
@@ -256,6 +258,12 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets_t & offsets) const
 }
 
 template <typename T>
+void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
+
+template <typename T>
 void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 {
     size_t size = data.size();
@@ -293,8 +301,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 
         if (x < cur_min)
             cur_min = x;
-
-        if (x > cur_max)
+        else if (x > cur_max)
             cur_max = x;
     }
 
@@ -302,17 +309,16 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
     max = typename NearestFieldType<T>::Type(cur_max);
 }
 
-
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
 template class ColumnVector<UInt32>;
 template class ColumnVector<UInt64>;
+template class ColumnVector<UInt128>;
 template class ColumnVector<Int8>;
 template class ColumnVector<Int16>;
 template class ColumnVector<Int32>;
 template class ColumnVector<Int64>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
-
 }

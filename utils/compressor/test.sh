@@ -1,5 +1,5 @@
 #!/bin/sh
 
-./clickhouse-compressor < compressor > compressor.compressed
-./clickhouse-compressor -d < compressor.compressed > compressor2
-cmp compressor compressor2 && echo "Ok." || echo "Fail."
+./clickhouse-compressor < clickhouse-compressor > compressed
+./clickhouse-compressor -d < compressed > clickhouse-compressor2
+cmp clickhouse-compressor clickhouse-compressor2 && echo "Ok." || echo "Fail."

@@ -61,7 +61,7 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
+    explicit MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
 
     void write(const Block & block) override
     {
@@ -76,14 +76,6 @@ private:
 
 StorageMemory::StorageMemory(
     const std::string & name_,
-    NamesAndTypesListPtr columns_)
-    : name(name_), columns(columns_)
-{
-}
-
-
-StorageMemory::StorageMemory(
-    const std::string & name_,
     NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
@@ -94,32 +86,13 @@ StorageMemory::StorageMemory(
 }
 
 
-StoragePtr StorageMemory::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_)
-{
-    return make_shared(name_, columns_);
-}
-
-StoragePtr StorageMemory::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-{
-    return make_shared(name_, columns_, materialized_columns_, alias_columns_, column_defaults_);
-}
-
-
 BlockInputStreams StorageMemory::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -128,18 +101,18 @@ BlockInputStreams StorageMemory::read(
 
     size_t size = data.size();
 
-    if (threads > size)
-        threads = size;
+    if (num_streams > size)
+        num_streams = size;
 
     BlockInputStreams res;
 
-    for (size_t thread = 0; thread < threads; ++thread)
+    for (size_t stream = 0; stream < num_streams; ++stream)
     {
         BlocksList::iterator begin = data.begin();
         BlocksList::iterator end = data.begin();
 
-        std::advance(begin, thread * size / threads);
-        std::advance(end, (thread + 1) * size / threads);
+        std::advance(begin, stream * size / num_streams);
+        std::advance(end, (stream + 1) * size / num_streams);
 
         res.push_back(std::make_shared<MemoryBlockInputStream>(column_names, begin, end));
     }

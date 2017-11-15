@@ -1,13 +1,17 @@
 #pragma once
 
-#include <Databases/IDatabase.h>
+#include <memory>
+
 
 namespace DB
 {
+
 class Context;
 class AsynchronousMetrics;
+class IDatabase;
 
-void attachSystemTablesServer(DatabasePtr system_database, Context * global_context, bool has_zookeeper);
-void attachSystemTablesLocal(DatabasePtr system_database);
-void attachSystemTablesAsync(DatabasePtr system_database, AsynchronousMetrics & async_metrics);
+void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper);
+void attachSystemTablesLocal(IDatabase & system_database);
+void attachSystemTablesAsync(IDatabase & system_database, AsynchronousMetrics & async_metrics);
+
 }

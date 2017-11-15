@@ -82,7 +82,7 @@ void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_n
     struct Arrow
     {
         Arrow() = default;
-        Arrow(size_t to_position_) :
+        explicit Arrow(size_t to_position_) :
             to_position(to_position_), is_selected(true)
         {
         }
@@ -173,7 +173,7 @@ ASTPtr ASTSelectQuery::clone() const
     return ptr;
 }
 
-ASTPtr ASTSelectQuery::cloneFirstSelect() const
+std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneFirstSelect() const
 {
     auto res = cloneImpl(false);
     res->prev_union_all = nullptr;
@@ -197,6 +197,7 @@ std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_al
         * And if the cloning order does not match the parsing order,
         *  then different servers will get different identifiers.
         */
+    CLONE(with_expression_list)
     CLONE(select_expression_list)
     CLONE(tables)
     CLONE(prewhere_expression)
@@ -231,6 +232,15 @@ void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & sta
     frame.current_select = this;
     frame.need_parens = false;
     std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+
+    if (with_expression_list)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
+        s.one_line
+            ? with_expression_list->formatImpl(s, state, frame)
+            : typeid_cast<const ASTExpressionList &>(*with_expression_list).formatImplMultiline(s, state, frame);
+        s.ostr << s.nl_or_ws;
+    }
 
     s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "SELECT " << (distinct ? "DISTINCT " : "") << (s.hilite ? hilite_none : "");
 
@@ -305,15 +315,7 @@ void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & sta
     if (settings)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
-
-        const ASTSetQuery & ast_set = typeid_cast<const ASTSetQuery &>(*settings);
-        for (ASTSetQuery::Changes::const_iterator it = ast_set.changes.begin(); it != ast_set.changes.end(); ++it)
-        {
-            if (it != ast_set.changes.begin())
-                s.ostr << ", ";
-
-            s.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
-        }
+        settings->formatImpl(s, state, frame);
     }
 
     if (next_union_all)

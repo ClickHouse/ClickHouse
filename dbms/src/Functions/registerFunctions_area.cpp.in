@@ -1,0 +1,16 @@
+#include <Functions/FunctionFactory.h>
+#include <Functions/Functions@FUNCTION_AREA@.h>
+
+@REGISTER_HEADERS@
+
+namespace DB
+{
+
+void registerFunctions@FUNCTION_AREA@(FunctionFactory & factory)
+{
+
+@REGISTER_FUNCTIONS@
+
+}
+
+}

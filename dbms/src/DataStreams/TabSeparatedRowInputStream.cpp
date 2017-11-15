@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
 #include <DataStreams/TabSeparatedRowInputStream.h>
@@ -12,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -58,7 +60,7 @@ void TabSeparatedRowInputStream::readPrefix()
 }
 
 
- /** Check for a common error case - usage of Windows line feed.
+/** Check for a common error case - usage of Windows line feed.
   */
 static void checkForCarriageReturn(ReadBuffer & istr)
 {
@@ -73,16 +75,16 @@ static void checkForCarriageReturn(ReadBuffer & istr)
 
 bool TabSeparatedRowInputStream::read(Block & block)
 {
+    if (istr.eof())
+        return false;
+
     updateDiagnosticInfo();
 
     size_t size = data_types.size();
 
-    if (istr.eof())
-        return false;
-
     for (size_t i = 0; i < size; ++i)
     {
-        data_types[i].get()->deserializeTextEscaped(*block.getByPosition(i).column.get(), istr);
+        data_types[i]->deserializeTextEscaped(*block.getByPosition(i).column.get(), istr);
 
         /// skip separators
         if (i + 1 == size)
@@ -108,8 +110,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
     if (istr.eof())        /// Buffer has gone, cannot extract information about what has been parsed.
         return {};
 
-    String res;
-    WriteBufferFromString out(res);
+    WriteBufferFromOwnString out;
     Block block = sample.cloneEmpty();
 
     /// It is possible to display detailed diagnostics only if the last and next to last lines are still in the read buffer.
@@ -117,7 +118,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
     if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
     {
         out << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
-        return res;
+        return out.str();
     }
 
     size_t max_length_of_column_name = 0;
@@ -138,14 +139,14 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
 
         out << "\nRow " << (row_num - 1) << ":\n";
         if (!parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name))
-            return res;
+            return out.str();
     }
     else
     {
         if (!pos_of_current_row)
         {
             out << "Could not print diagnostic info because parsing of data hasn't started.\n";
-            return res;
+            return out.str();
         }
 
         istr.position() = pos_of_current_row;
@@ -155,7 +156,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
     parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name);
     out << "\n";
 
-    return res;
+    return out.str();
 }
 
 
@@ -306,15 +307,17 @@ void TabSeparatedRowInputStream::syncAfterError()
 {
     skipToUnescapedNextLineOrEOF(istr);
 }
+
+
 void TabSeparatedRowInputStream::updateDiagnosticInfo()
-    {
-        ++row_num;
+{
+    ++row_num;
 
-        bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
-        bytes_read_at_start_of_buffer_on_current_row = istr.count() - istr.offset();
+    bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
+    bytes_read_at_start_of_buffer_on_current_row = istr.count() - istr.offset();
 
-        pos_of_prev_row = pos_of_current_row;
-        pos_of_current_row = istr.position();
-    }
+    pos_of_prev_row = pos_of_current_row;
+    pos_of_current_row = istr.position();
+}
 
 }

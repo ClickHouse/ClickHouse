@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -91,7 +92,7 @@ private:
     }
 
 public:
-    AggregateFunctionForEach(AggregateFunctionPtr nested_)
+    explicit AggregateFunctionForEach(AggregateFunctionPtr nested_)
         : nested_func_owner(nested_), nested_func(nested_func_owner.get())
     {
     }
@@ -244,6 +245,8 @@ public:
     }
 
     IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

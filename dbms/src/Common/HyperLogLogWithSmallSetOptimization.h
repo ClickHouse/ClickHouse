@@ -1,5 +1,7 @@
 #pragma once
 
+#include <boost/noncopyable.hpp>
+
 #include <Common/HyperLogLogCounter.h>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/MemoryTracker.h>
@@ -21,7 +23,7 @@ template
     UInt8 K,
     typename Hash = IntHash32<Key>,
     typename DenominatorType = double>
-class HyperLogLogWithSmallSetOptimization
+class HyperLogLogWithSmallSetOptimization : private boost::noncopyable
 {
 private:
     using Small = SmallSet<Key, small_set_size>;
@@ -37,7 +39,7 @@ private:
 
     void toLarge()
     {
-        CurrentMemoryTracker::alloc(sizeof(large));
+        CurrentMemoryTracker::alloc(sizeof(Large));
 
         /// At the time of copying data from `tiny`, setting the value of `large` is still not possible (otherwise it will overwrite some data).
         Large * tmp_large = new Large;
@@ -55,7 +57,7 @@ public:
         {
             delete large;
 
-            CurrentMemoryTracker::free(sizeof(large));
+            CurrentMemoryTracker::free(sizeof(Large));
         }
     }
 

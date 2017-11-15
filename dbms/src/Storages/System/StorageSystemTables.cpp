@@ -22,21 +22,16 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
     : name(name_),
     columns
     {
-        {"database",                     std::make_shared<DataTypeString>()},
-        {"name",                         std::make_shared<DataTypeString>()},
-        {"engine",                        std::make_shared<DataTypeString>()},
-        {"metadata_modification_time",    std::make_shared<DataTypeDateTime>()}
+        {"database", std::make_shared<DataTypeString>()},
+        {"name", std::make_shared<DataTypeString>()},
+        {"engine", std::make_shared<DataTypeString>()},
+        {"metadata_modification_time", std::make_shared<DataTypeDateTime>()}
     }
 {
 }
 
-StoragePtr StorageSystemTables::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
 
-
-static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & context)
+static ColumnWithTypeAndName getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
     ColumnWithTypeAndName column;
     column.name = "database";
@@ -57,12 +52,11 @@ static ColumnWithTypeAndName getFilteredDatabases(ASTPtr query, const Context & 
 
 BlockInputStreams StorageSystemTables::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -93,7 +87,7 @@ BlockInputStreams StorageSystemTables::read(
     col_meta_mod_time.column = std::make_shared<ColumnUInt32>();
     block.insert(col_meta_mod_time);
 
-    ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query, context);
+    ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query_info.query, context);
 
     for (size_t row_number = 0; row_number < filtered_databases_column.column->size(); ++row_number)
     {
@@ -106,13 +100,13 @@ BlockInputStreams StorageSystemTables::read(
             continue;
         }
 
-        for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
         {
             auto table_name = iterator->name();
             col_db.column->insert(database_name);
             col_name.column->insert(table_name);
             col_engine.column->insert(iterator->table()->getName());
-            col_meta_mod_time.column->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(table_name)));
+            col_meta_mod_time.column->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
         }
     }
 

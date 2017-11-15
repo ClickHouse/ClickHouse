@@ -22,7 +22,7 @@ using namespace DB;
 int main(int argc, char ** argv)
 try
 {
-    Context context;
+    Context context = Context::createGlobal();
     Settings settings = context.getSettings();
 
     context.setPath("./");
@@ -35,7 +35,7 @@ try
     StoragePtr table = context.getTable("default", "hits6");
 
     QueryProcessingStage::Enum stage;
-    BlockInputStreams streams = table->read(column_names, nullptr, context, settings, stage, settings.max_block_size, settings.max_threads);
+    BlockInputStreams streams = table->read(column_names, {}, context, stage, settings.max_block_size, settings.max_threads);
 
     for (size_t i = 0, size = streams.size(); i < size; ++i)
         streams[i] = std::make_shared<AsynchronousBlockInputStream>(streams[i]);

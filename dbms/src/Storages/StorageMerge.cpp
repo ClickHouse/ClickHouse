@@ -10,8 +10,13 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
+#include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 #include <DataStreams/CastTypeBlockInputStream.h>
+#include <DataStreams/FilterColumnsBlockInputStream.h>
+#include <DataStreams/RemoveColumnsBlockInputStream.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
 
 
 namespace DB
@@ -23,17 +28,6 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_SOURCE_TABLES;
 }
 
-
-StorageMerge::StorageMerge(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
-    : name(name_), columns(columns_), source_database(source_database_),
-      table_name_regexp(table_name_regexp_), context(context_)
-{
-}
 
 StorageMerge::StorageMerge(
     const std::string & name_,
@@ -50,33 +44,24 @@ StorageMerge::StorageMerge(
 {
 }
 
-StoragePtr StorageMerge::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
+bool StorageMerge::isRemote() const
 {
-    return make_shared(
-        name_, columns_,
-        source_database_, table_name_regexp_, context_
-    );
-}
+    auto database = context.getDatabase(source_database);
+    auto iterator = database->getIterator(context);
 
-StoragePtr StorageMerge::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
-{
-    return make_shared(
-        name_, columns_, materialized_columns_, alias_columns_, column_defaults_,
-        source_database_, table_name_regexp_, context_
-    );
+    while (iterator->isValid())
+    {
+        if (table_name_regexp.match(iterator->name()))
+        {
+            auto & table = iterator->table();
+            if (table.get() != this && table->isRemote())
+                return true;
+        }
+
+        iterator->next();
+    }
+
+    return false;
 }
 
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
@@ -93,14 +78,59 @@ bool StorageMerge::hasColumn(const String & column_name) const
     return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
+static Names collectIdentifiersInFirstLevelOfSelectQuery(ASTPtr ast)
+{
+    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
+    ASTExpressionList & node = typeid_cast<ASTExpressionList &>(*select.select_expression_list);
+    ASTs & asts = node.children;
+
+    Names names;
+    for (size_t i = 0; i < asts.size(); ++i)
+    {
+        if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&* asts[i]))
+        {
+            if (identifier->kind == ASTIdentifier::Kind::Column)
+                names.push_back(identifier->name);
+        }
+    }
+    return names;
+}
+
+
+namespace
+{
+    using NodeHashToSet = std::map<IAST::Hash, SetPtr>;
+
+    void relinkSetsImpl(const ASTPtr & query, const NodeHashToSet & node_hash_to_set, PreparedSets & new_sets)
+    {
+        auto hash = query->getTreeHash();
+        auto it = node_hash_to_set.find(hash);
+        if (node_hash_to_set.end() != it)
+            new_sets[query.get()] = it->second;
+
+        for (const auto & child : query->children)
+            relinkSetsImpl(child, node_hash_to_set, new_sets);
+    }
+
+    /// Re-link prepared sets onto cloned and modified AST.
+    void relinkSets(const ASTPtr & query, const PreparedSets & old_sets, PreparedSets & new_sets)
+    {
+        NodeHashToSet node_hash_to_set;
+        for (const auto & node_set : old_sets)
+            node_hash_to_set.emplace(node_set.first->getTreeHash(), node_set.second);
+
+        relinkSetsImpl(query, node_hash_to_set, new_sets);
+    }
+}
+
+
 BlockInputStreams StorageMerge::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     BlockInputStreams res;
 
@@ -117,6 +147,8 @@ BlockInputStreams StorageMerge::read(
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
     StorageListWithLocks selected_tables = getSelectedTables();
+
+    const ASTPtr & query = query_info.query;
 
     /// If PREWHERE is used in query, you need to make sure that all tables support this.
     if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
@@ -140,8 +172,8 @@ BlockInputStreams StorageMerge::read(
     /** Just in case, turn off optimization "transfer to PREWHERE",
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
-    Settings modified_settings = settings;
-    modified_settings.optimize_move_to_prewhere = false;
+    Context modified_context = context;
+    modified_context.getSettingsRef().optimize_move_to_prewhere = false;
 
     size_t tables_count = selected_tables.size();
     size_t curr_table_number = 0;
@@ -158,28 +190,32 @@ BlockInputStreams StorageMerge::read(
         ASTPtr modified_query_ast = query->clone();
         VirtualColumnUtils::rewriteEntityInAst(modified_query_ast, "_table", table->getTableName());
 
+        SelectQueryInfo modified_query_info;
+        modified_query_info.query = modified_query_ast;
+
+        relinkSets(modified_query_info.query, query_info.sets, modified_query_info.sets);
+
         BlockInputStreams source_streams;
 
-        if (curr_table_number < threads)
+        if (curr_table_number < num_streams)
         {
             QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
             source_streams = table->read(
                 real_column_names,
-                modified_query_ast,
-                context,
-                modified_settings,
+                modified_query_info,
+                modified_context,
                 processed_stage_in_source_table,
                 max_block_size,
-                tables_count >= threads ? 1 : (threads / tables_count));
+                tables_count >= num_streams ? 1 : (num_streams / tables_count));
 
             if (!processed_stage_in_source_tables)
                 processed_stage_in_source_tables.emplace(processed_stage_in_source_table);
-            else if (processed_stage_in_source_table != processed_stage_in_source_tables.value())
+            else if (processed_stage_in_source_table != *processed_stage_in_source_tables)
                 throw Exception("Source tables for Merge table are processing data up to different stages",
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
             /// Subordinary tables could have different but convertible types, like numeric types of different width.
-            /// We must return streams with structure equals to structure of Merge table. 
+            /// We must return streams with structure equals to structure of Merge table.
             for (auto & stream : source_streams)
             {
                 /// will throw if some columns not convertible
@@ -194,9 +230,8 @@ BlockInputStreams StorageMerge::read(
                 QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
                 BlockInputStreams streams = table->read(
                     real_column_names,
-                    modified_query_ast,
-                    context,
-                    modified_settings,
+                    modified_query_info,
+                    modified_context,
                     processed_stage_in_source_table,
                     max_block_size,
                     1);
@@ -204,7 +239,7 @@ BlockInputStreams StorageMerge::read(
                 if (!processed_stage_in_source_tables)
                     throw Exception("Logical error: unknown processed stage in source tables",
                         ErrorCodes::LOGICAL_ERROR);
-                else if (processed_stage_in_source_table != processed_stage_in_source_tables.value())
+                else if (processed_stage_in_source_table != *processed_stage_in_source_tables)
                     throw Exception("Source tables for Merge table are processing data up to different stages",
                         ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
@@ -235,9 +270,33 @@ BlockInputStreams StorageMerge::read(
     }
 
     if (processed_stage_in_source_tables)
-        processed_stage = processed_stage_in_source_tables.value();
+        processed_stage = *processed_stage_in_source_tables;
 
-    return narrowBlockInputStreams(res, threads);
+    res = narrowBlockInputStreams(res, num_streams);
+
+    /// Added to avoid different block structure from different sources
+    if (!processed_stage_in_source_tables || *processed_stage_in_source_tables == QueryProcessingStage::FetchColumns)
+    {
+        for (auto & stream : res)
+            stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names, true);
+    }
+    else
+    {
+        /// Blocks from distributed tables may have extra columns.
+        /// We need to remove them to make blocks compatible.
+        auto identifiers = collectIdentifiersInFirstLevelOfSelectQuery(query);
+        std::set<String> identifiers_set(identifiers.begin(), identifiers.end());
+        Names columns_to_remove;
+        for (const auto & column : column_names)
+            if (!identifiers_set.count(column))
+                columns_to_remove.push_back(column);
+
+        if (!columns_to_remove.empty())
+            for (auto & stream : res)
+                stream = std::make_shared<RemoveColumnsBlockInputStream>(stream, columns_to_remove);
+    }
+
+    return res;
 }
 
 /// Construct a block consisting only of possible values of virtual columns
@@ -257,7 +316,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
 {
     StorageListWithLocks selected_tables;
     auto database = context.getDatabase(source_database);
-    auto iterator = database->getIterator();
+    auto iterator = database->getIterator(context);
 
     while (iterator->isValid())
     {
@@ -265,7 +324,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
         {
             auto & table = iterator->table();
             if (table.get() != this)
-                selected_tables.emplace_back(table, table->lockStructure(false));
+                selected_tables.emplace_back(table, table->lockStructure(false, __PRETTY_FUNCTION__));
         }
 
         iterator->next();
@@ -281,7 +340,7 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
     params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(

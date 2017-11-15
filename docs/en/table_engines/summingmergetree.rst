@@ -23,17 +23,21 @@ Summation is not performed for a read operation. If it is necessary, write the a
 
 In addition, a table can have nested data structures that are processed in a special way.
 If the name of a nested table ends in 'Map' and it contains at least two columns that meet the following criteria:
+* for the first table, numeric ((U)IntN, Date, DateTime), we'll refer to it as 'key'
+* for other tables, arithmetic ((U)IntN, Float32/64), we'll refer to it as '(values...)'
 
- * for the first table, numeric ((U)IntN, Date, DateTime), we'll refer to it as 'key'
- * for other tables, arithmetic ((U)IntN, Float32/64), we'll refer to it as '(values...)'
-then this nested table is interpreted as a mapping of key => (values...), and when merging its rows, the elements of two data sets are merged by 'key' with a summation of the corresponding (values...).
+Then this nested table is interpreted as a mapping of key => (values...), and when merging its rows, the elements of two data sets are merged by 'key' with a summation of the corresponding (values...).
 
 Examples:
-::
+
+.. code-block:: text
+
   [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
   [(1, 100)] + [(1, 150)] -> [(1, 250)]
   [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
   [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
+
+For aggregating Map use function sumMap(key, value).
 
 For nested data structures, you don't need to specify the columns as a list of columns for totaling.
 

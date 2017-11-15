@@ -27,7 +27,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
 
-/** Позволяет писать файл на удалённый сервер.
+/** Allows you to write a file to a remote server.
   */
 class RemoteWriteBuffer : public WriteBuffer
 {
@@ -45,15 +45,15 @@ private:
     std::string uri_str;
 
     Poco::Net::HTTPClientSession session;
-    std::ostream * ostr;    /// этим владеет session
+    std::ostream * ostr;    /// this is owned by session
     std::unique_ptr<WriteBuffer> impl;
 
-    /// Отправили все данные и переименовали файл
+    /// Have sent all the data and renamed the file
     bool finalized;
 public:
-    /** Если tmp_path не пустой, то записывает сначала временный файл, а затем переименовывает,
-      *  удаляя существующие файлы, если есть.
-      * Иначе используется параметр if_exists.
+    /** If tmp_path is not empty, it writes first the temporary file, and then renames it,
+      *  deleting existing files, if any.
+      * Otherwise, if_exists parameter is used.
       */
     RemoteWriteBuffer(const std::string & host_, int port_, const std::string & path_,
         const std::string & tmp_path_ = "", const std::string & if_exists_ = "remove",
@@ -83,7 +83,7 @@ public:
         session.setPort(port);
         session.setKeepAlive(true);
 
-        /// устанавливаем таймаут
+        /// set the timeout
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
         session.setTimeout(connection_timeout, send_timeout, receive_timeout);
 #else
@@ -134,7 +134,7 @@ public:
         if (!offset() || finalized)
             return;
 
-        /// Для корректной работы с AsynchronousWriteBuffer, который подменяет буферы.
+        /// For correct work with AsynchronousWriteBuffer, which replaces buffers.
         impl->set(buffer().begin(), buffer().size());
 
         impl->position() = pos;
@@ -146,7 +146,7 @@ public:
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
-                checkStatus();    /// Меняем сообщение об ошибке на более ясное.
+                checkStatus();    /// Change the error message to a clearer one.
             throw;
         }
     }
@@ -159,7 +159,7 @@ public:
         next();
         checkStatus();
 
-        /// Переименовываем файл, если нужно.
+        /// Rename the file if necessary.
         if (!tmp_path.empty())
             rename();
 
@@ -246,7 +246,7 @@ private:
             }
             catch (const Exception & e)
             {
-                /// Если в прошлую попытку от сервера не пришло ответа, но файл всё же был переименован.
+                /// If in the last attempt we did not receive a response from the server, but the file was renamed already.
                 if (i != 0 && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER
                     && nullptr != strstr(e.displayText().data(), "File not found"))
                 {

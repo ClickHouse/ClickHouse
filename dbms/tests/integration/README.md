@@ -5,11 +5,13 @@ This directory contains tests that involve several ClickHouse instances, custom 
 ### Running
 
 Prerequisites:
+* Ubuntu 14.04 (Trusty).
 * [docker](https://www.docker.com/community-edition#/download). Minimum required API version: 1.25, check with `docker version`.
-* [docker-compose](https://docs.docker.com/compose/). To install: `sudo pip install docker-compose`
-* [py.test](https://docs.pytest.org/) testing framework. To install: `sudo pip install pytest`
+* [pip](https://pypi.python.org/pypi/pip). To install: `sudo apt-get install python-pip`
+* [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
+* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install docker-compose docker dicttoxml`
 
-If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER`.
+If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 
 Run the tests with the `pytest` command. To select which tests to run, use: `pytest -k <test_name_pattern>`
 
@@ -26,7 +28,7 @@ To add new test named `foo`, create a directory `test_foo` with an empty `__init
 named `test.py` containing tests in it. All functions with names starting with `test` will become test cases.
 
 `helpers` directory contains utilities for:
-* Launching a ClickHouse cluster with or without ZooKeeper in docker containers.
+* Launching a ClickHouse cluster with or without ZooKeeper indocker containers.
 * Sending queries to launched instances.
 * Introducing network failures such as severing network link between two instances.
 

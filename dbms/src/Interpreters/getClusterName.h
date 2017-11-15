@@ -8,13 +8,13 @@ namespace DB
 
 class IAST;
 
-/// Получить имя кластера из AST.
-/** Имя кластера - это имя тега в xml-конфигурации.
-  * Обычно оно парсится как идентификатор. То есть, оно может содержать подчёркивания, но не может содержать дефисы,
-  *  при условии, что идентификатор не находится в обратных кавычках.
-  * Но в xml в качестве имени тега более привычно использовать дефисы.
-  * Такое имя будет парситься как выражение с оператором минус - совсем не то, что нужно.
-  * Поэтому, рассмотрим такой случай отдельно.
+/// Get the cluster name from AST.
+/** The name of the cluster is the name of the tag in the xml configuration.
+  * Usually it is parsed as an identifier. That is, it can contain underscores, but can not contain hyphens,
+  *  provided that the identifier is not in backquotes.
+  * But in xml, as a tag name, it's more common to use hyphens.
+  * This name will be parsed as an expression with an operator minus - not at all what you need.
+  * Therefore, consider this case separately.
   */
 std::string getClusterName(const IAST & node);
 

@@ -5,20 +5,13 @@
 #include <Poco/File.h>
 
 #include <common/logger_useful.h>
-#include <common/singleton.h>
+#include <ext/singleton.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 
-static constexpr auto config_key = "path_to_regions_hierarchy_file";
-
-
-RegionsHierarchy::RegionsHierarchy()
-{
-    path = Poco::Util::Application::instance().config().getString(config_key);
-}
 
 RegionsHierarchy::RegionsHierarchy(const std::string & path_)
 {

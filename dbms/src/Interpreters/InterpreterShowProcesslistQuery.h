@@ -1,28 +1,29 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
 {
 
+class Context;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
-/** Вернуть список запросов, исполняющихся прямо сейчас.
+
+/** Return list of currently executing queries.
   */
 class InterpreterShowProcesslistQuery : public IInterpreter
 {
 public:
-    InterpreterShowProcesslistQuery(ASTPtr query_ptr_, Context & context_)
+    InterpreterShowProcesslistQuery(const ASTPtr & query_ptr_, Context & context_)
         : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
-    Context context;
-
-    String getRewrittenQuery();
+    Context & context;
 };
 
 

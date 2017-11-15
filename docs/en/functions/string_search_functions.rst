@@ -1,5 +1,5 @@
 Functions for searching strings
-------------------------
+-------------------------------
 The search is case-sensitive in all these functions.
 The search substring or regular expression must be a constant in all these functions.
 

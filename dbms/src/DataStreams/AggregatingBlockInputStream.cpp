@@ -43,9 +43,8 @@ Block AggregatingBlockInputStream::readImpl()
             if (!isCancelled())
             {
                 /// Flush data in the RAM to disk also. It's easier.
-                size_t rows = data_variants->sizeWithoutOverflowRow();
-                if (rows)
-                    aggregator.writeToTemporaryFile(*data_variants, rows);
+                if (data_variants->size())
+                    aggregator.writeToTemporaryFile(*data_variants);
             }
 
             const auto & files = aggregator.getTemporaryFiles();

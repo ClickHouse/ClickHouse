@@ -7,7 +7,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 
 namespace DB
@@ -61,12 +61,9 @@ struct ReplicatedMergeTreeQuorumEntry
 
     String toString() const
     {
-        String res;
-        {
-            WriteBufferFromString out(res);
-            writeText(out);
-        }
-        return res;
+        WriteBufferFromOwnString out;
+        writeText(out);
+        return out.str();
     }
 
     void fromString(const String & str)

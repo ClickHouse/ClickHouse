@@ -2,196 +2,22 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8"/>
-    <title>ClickHouse — quick start guide</title>
+    <title>ClickHouse Quick Start Guide</title>
 
     <link rel="shortcut icon" href="favicon.ico"/>
 
     <meta name="description" content="Quick start guide to ClickHouse — open-source distributed column-oriented DBMS"/>
     <meta name="keywords"
-          content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
+          content="tutorial, ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics"/>
 
-    <style type="text/css">
-        @font-face {
-            font-family: 'Yandex Sans Text Web';
-            src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot);
-            src: url(https://yastatic.net/adv-www/_/yy5JveR58JFkc97waf-xp0i6_jM.eot?#iefix) format('embedded-opentype'),
-            url(https://yastatic.net/adv-www/_/CYblzLEXzCqQIvrYs7QKQe2omRk.woff2) format('woff2'),
-            url(https://yastatic.net/adv-www/_/pUcnOdRwl83MvPPzrNomhyletnA.woff) format('woff'),
-            url(https://yastatic.net/adv-www/_/vNFEmXOcGYKJ4AAidUprHWoXrLU.ttf) format('truetype'),
-            url(https://yastatic.net/adv-www/_/0w7OcWZM_QLP8x-LQUXFOgXO6dE.svg#YandexSansTextWeb-Bold) format('svg');
-            font-weight: 700;
-            font-style: normal;
-            font-stretch: normal
-        }
-
-        @font-face {
-            font-family: 'Yandex Sans Text Web';
-            src: url(https://yastatic.net/adv-www/_/LI6l3L2RqcgxBe2pXmuUha37czQ.eot);
-            src: url(https://yastatic.net/adv-www/_/LI6l3L2RqcgxBe2pXmuUha37czQ.eot?#iefix) format('embedded-opentype'),
-            url(https://yastatic.net/adv-www/_/z3MYElcut0R2MF_Iw1RDNrstgYs.woff2) format('woff2'),
-            url(https://yastatic.net/adv-www/_/1jvKJ_-hCXl3s7gmFl-y_-UHTaI.woff) format('woff'),
-            url(https://yastatic.net/adv-www/_/9nzjfpCR2QHvK1EzHpDEIoVFGuY.ttf) format('truetype'),
-            url(https://yastatic.net/adv-www/_/gwyBTpxSwkFCF1looxqs6JokKls.svg#YandexSansTextWeb-Regular) format('svg');
-            font-weight: 400;
-            font-style: normal;
-            font-stretch: normal
-        }
-
-        @font-face {
-            font-family: 'Yandex Sans Text Web';
-            src: url(https://yastatic.net/adv-www/_/ayAFYoY8swgBLhq_I56tKj2JftU.eot);
-            src: url(https://yastatic.net/adv-www/_/ayAFYoY8swgBLhq_I56tKj2JftU.eot?#iefix) format('embedded-opentype'),
-            url(https://yastatic.net/adv-www/_/lGQcYklLVV0hyvz1HFmFsUTj8_0.woff2) format('woff2'),
-            url(https://yastatic.net/adv-www/_/f0AAJ9GJ4iiwEmhG-7PWMHk6vUY.woff) format('woff'),
-            url(https://yastatic.net/adv-www/_/4UDe4nlVvgEJ-VmLWNVq3SxCsA.ttf) format('truetype'),
-            url(https://yastatic.net/adv-www/_/EKLr1STNokPqxLAQa_RyN82pL98.svg#YandexSansTextWeb-Light) format('svg');
-            font-weight: 300;
-            font-style: normal;
-            font-stretch: normal
-        }
-
-        @font-face {
-            font-family: 'Yandex Sans Display Web';
-            src: url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot);
-            src: url(https://yastatic.net/adv-www/_/H63jN0veW07XQUIA2317lr9UIm8.eot?#iefix) format('embedded-opentype'),
-            url(https://yastatic.net/adv-www/_/sUYVCPUAQE7ExrvMS7FoISoO83s.woff2) format('woff2'),
-            url(https://yastatic.net/adv-www/_/v2Sve_obH3rKm6rKrtSQpf-eB7U.woff) format('woff'),
-            url(https://yastatic.net/adv-www/_/PzD8hWLMunow5i3RfJ6WQJAL7aI.ttf) format('truetype'),
-            url(https://yastatic.net/adv-www/_/lF_KG5g4tpQNlYIgA0e77fBSZ5s.svg#YandexSansDisplayWeb-Regular) format('svg');
-            font-weight: 400;
-            font-style: normal;
-            font-stretch: normal
-        }
-
-        @font-face {
-            font-family: 'Yandex Sans Display Web';
-            src: url(https://yastatic.net/adv-www/_/g8_MyyKVquSZ3xEL6tarK__V9Vw.eot);
-            src: url(https://yastatic.net/adv-www/_/g8_MyyKVquSZ3xEL6tarK__V9Vw.eot?#iefix) format('embedded-opentype'),
-            url(https://yastatic.net/adv-www/_/LGiRvlfqQHlWR9YKLhsw5e7KGNA.woff2) format('woff2'),
-            url(https://yastatic.net/adv-www/_/40vXwNl4eYYMgteIVgLP49dwmfc.woff) format('woff'),
-            url(https://yastatic.net/adv-www/_/X6zG5x_wO8-AtwJ-vDLJcKC5228.ttf) format('truetype'),
-            url(https://yastatic.net/adv-www/_/ZKhaR0m08c8CRRL77GtFKoHcLYA.svg#YandexSansDisplayWeb-Light) format('svg');
-            font-weight: 300;
-            font-style: normal;
-            font-stretch: normal
-        }
-
-        body {
-            background: #fff;
-            font: 300 12pt/150% 'Yandex Sans Text Web', Arial, sans-serif;
-        }
-
-        .page {
-            width: 900px;
-            margin: auto;
-        }
-
-        h1 {
-            font-family: 'Yandex Sans Display Web', Arial, sans-serif;
-            font-size: 100px;
-            font-weight: normal;
-            margin-top: 100px;
-            margin-bottom: 0;
-            text-align: center;
-            padding-top: 27px;
-        }
-
-        .title_link, .title_link:active, .title_link:visited, .title_link:link, .title_link:hover {
-            text-decoration: none;
-            color: #000;
-        }
-
-        h2 {
-            font: normal 50px 'Yandex Sans Display Web', Arial, sans-serif;
-            text-align: center;
-            margin-top: 35px;
-            margin-bottom: 50px;
-        }
-
-        h3 {
-            font: normal 24px 'Yandex Sans Display Web', Arial, sans-serif;
-            margin-top: 36px;
-        }
-
-        a:link, a:visited {
-            color: #08f;
-            text-decoration: none;
-        }
-
-        a:hover, a:active {
-            color: #f00;
-            text-decoration: underline;
-        }
-
-        .footer {
-            text-align: right;
-            margin-top: 40px;
-            border-top: 1px solid #EEE;
-            padding: 10px 0 0;
-            color: #888;
-            font-size: 10pt;
-        }
-
-        pre {
-            font: 13px/18px monospace, "Courier New";
-            display: block;
-            border-left: 5px solid #ffdb4d;
-            padding: 5px 10px;
-            background-color: #FFF8E8;
-        }
-
-        .spoiler {
-            margin-bottom: 10px;
-        }
-
-        .spoiler_body {
-            display: none;
-        }
-
-        .spoiler_title {
-            color: #08f;
-            border-bottom: 1px dotted #08f;
-        }
-
-        .spoiler_title:hover {
-            cursor: pointer;
-            color: #f00;
-            border-bottom: 1px dashed #f00;
-            text-decoration: none;
-        }
-
-        .tip {
-            background-color: #EEE;
-            border: 1px solid #EEE;
-            padding: 5px 10px 5px 10px;
-        }
-
-        .tip b {
-            font-size: 150%;
-            color: #888;
-        }
-
-        .warranty {
-            font-size: 10pt;
-            color: #888;
-            line-height: 150%;
-        }
-
-        .orange {
-            fill: #fc0;
-        }
-
-        .red {
-            fill: #f00
-        }
-    </style>
+    <link href="index.css" media="all" rel="stylesheet" />
 </head>
 <body>
 
 <div class="page">
 
     <div>
-        <div style="float: left; margin-right: -100%; margin-top: 0; margin-left: 3px;">
+        <div id="tutorial_logo">
             <a href="/">
                 <svg xmlns="http://www.w3.org/2000/svg" width="90" height="80" viewBox="0 0 9 8">
                     <path class="red" d="M0,7 h1 v1 h-1 z"></path>
@@ -204,43 +30,42 @@
             </a>
         </div>
 
-        <h1 id="main_title"><a class="title_link" href="/">ClickHouse</a></h1>
-        <h2>Tutorial</h2>
+        <h1 id="tutorial_title">ClickHouse</h1>
+        <h2 id="tutorial_subtitle">Tutorial</h2>
     </div>
 
     <p>Let's get started with sample dataset from open sources. We will use USA civil flights data since 1987 till 2015.
         It's hard to call this sample a Big Data (contains 166 millions rows, 63 Gb of uncompressed data) but this
         allows us to quickly get to work. Dataset is available for download <a href="https://yadi.sk/d/pOZxpa42sDdgm">here</a>.
         Also you may download it from the original datasource <a
-                href="https://github.com/yandex/ClickHouse/raw/master/doc/example_datasets/1_ontime.txt"
-                rel="external nofollow">as described
-            here</a>.</p>
+                href="docs/en/getting_started/example_datasets/ontime.html"
+                rel="external nofollow">as described here</a>.</p>
 
     <p>Firstly we will deploy ClickHouse to a single server. Below that we will also review the process of deployment to
         a cluster with support for sharding and replication.</p>
 
-    <p>On Ubuntu and Debian Linux ClickHouse can be installed from <a href="/#download">packages</a>.
-        For other Linux distributions you can <a href="https://github.com/yandex/ClickHouse/blob/master/doc/build.md"
+    <p>On Ubuntu and Debian Linux ClickHouse can be installed from <a href="/#quick-start">packages</a>.
+        For other Linux distributions you can <a href="docs/en/development/build.html"
                                                  rel="external nofollow">compile
             ClickHouse from sources</a> and then install.</p>
 
     <p><b>clickhouse-client</b> package contains <a
-            href="/reference_en.html#Command-line%20client">clickhouse-client</a> application —
+            href="docs/en/interfaces/cli.html">clickhouse-client</a> application —
         interactive ClickHouse client. <b>clickhouse-server-base</b> contains a clickhouse-server binary file. <b>clickhouse-server-common</b>
         — contains config files for the clickhouse-server.</p>
 
     <p>Server config files are located in /etc/clickhouse-server/. Before getting to work please notice the <b>path</b>
         element in config. <b>Path</b>&nbsp;determines the location for data storage. It's not really handy to directly
         edit <b>config.xml</b> file considering package updates. Recommended way is to override the config elements in
-        <a href="/reference_en.html#Configuration%20files">files of config.d directory</a>.
-        Also you may want to <a href="/reference_en.html#Access%20rights">set up access
+        <a href="docs/en/configuration_files.html">files of config.d directory</a>.
+        Also you may want to <a href="docs/en/access_rights.html">set up access
             rights</a> at the start.</p>
 
     <p><b>clickhouse-server</b> won't be launched automatically after package installation. It won't be automatically
         restarted after updates either. Start the server with:
     <pre>sudo service clickhouse-server start</pre>
     Default location for server logs is /var/log/clickhouse-server/
-    Server is ready to handle client conections once "Ready&nbsp;for&nbsp;connections" message was logged.</p>
+    Server is ready to handle client connections once "Ready&nbsp;for&nbsp;connections" message was logged.</p>
 
     <p>Use <b>clickhouse-client</b> to connect to the server.</p>
 
@@ -261,7 +86,7 @@ clickhouse-client --multiline
 clickhouse-client --query='SELECT 1'
 echo 'SELECT 1' | clickhouse-client
 </pre>
-            Inser data from file of a specified format:
+            Insert data from file of a specified format:
 <pre>
 clickhouse-client --query='INSERT INTO table VALUES' &lt; data.txt
 clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' &lt; data.tsv
@@ -395,35 +220,31 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
         </div>
     </div>
 
-    <p>Now we have a table of <a href="/reference_en.html#MergeTree">MergeTree type</a>.
+    <p>Now we have a table of <a href="docs/en/table_engines/mergetree.html">MergeTree type</a>.
         MergeTree table type is recommended for usage in production. Table of this kind has a primary key used for
         incremental sort of table data. This allows fast execution of queries in ranges of a primary key.</p>
 
 
     <p><b>Note</b>
         We store ad network banners impressions logs in ClickHouse. Each table entry looks like:
-        <source>
-        [Advertiser ID, Impression ID, attribute1, attribute2, &hellip;]</pre>
+        [Advertiser ID, Impression ID, attribute1, attribute2, &hellip;].
         Let assume that our aim is to provide a set of reports for each advertiser. Common and frequently demanded query
         would be to count impressions for a specific Advertiser ID. This means that table primary key should start with
-        <source>
-        Advertiser ID</pre>. In this case ClickHouse needs to read smaller amount of data to perform the query for a
-        given
-        <source>
-        Advertiser ID</pre>.
+        Advertiser ID. In this case ClickHouse needs to read smaller amount of data to perform the query for a
+        given Advertiser ID.
     </p>
 
     <h3>Load data</h3>
     <pre>xz -v -c -d &lt; ontime.csv.xz | clickhouse-client --query="INSERT INTO ontime FORMAT CSV"</pre>
-    <p>ClickHouse INSERT query allows to load data in any <a href="/reference_en.html#Formats">supported
+    <p>ClickHouse INSERT query allows to load data in any <a href="docs/en/formats/index.html">supported
         format</a>. Data load requires just O(1) RAM consumption. INSERT query can receive any data volume as input.
         It's strongly recommended to insert data with <a
-                href="/reference_en.html#Performance%20on%20data%20insertion.">not too small
+                href="docs/en/introduction/performance.html#performance-on-data-insertion">not too small
             size blocks</a>. Notice that insert of blocks with size up to max_insert_block_size (= 1&nbsp;048&nbsp;576
         rows by default) is an atomic operation: data block will be inserted completely or not inserted at all. In case
         of disconnect during insert operation you may not know if the block was inserted successfully. To achieve
         exactly-once semantics ClickHouse supports idempotency for <a
-                href="/reference_en.html#Data%20replication">replicated tables</a>. This means
+                href="docs/en/table_engines/replication.html">replicated tables</a>. This means
         that you may retry insert of the same data block (possibly on a different replicas) but this block will be
         inserted just once. Anyway in this guide we will load data from our localhost so we may not take care about data
         blocks generation and exactly-once semantics.</p>
@@ -434,7 +255,7 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
     <p>Our sample dataset is a bit not optimal. There are two reasons.</p>
 
     <p>The first is that String data type is used in cases when <a
-            href="/reference_en.html#Enum">Enum</a> or numeric type would fit best.</p>
+            href="docs/en/data_types/enum.html">Enum</a> or numeric type would fit best.</p>
 
     <p class="tip"><b>⚖</b> When set of possible values is determined and known to be small. (E.g. OS name, browser
         vendors etc.) it's&nbsp;recommended to use Enums or numbers to improve performance.
@@ -445,9 +266,10 @@ ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192);
         which DateTime handling functions may be not efficient.</p>
 
     <p class="tip"><b>✯</b> ClickHouse <a
-            href="/reference_en.html#Functions%20for%20working%20with%20dates%20and%20times">functions
+            href="docs/en/functions/date_time_functions.html">functions
         for operating with DateTime fields</a> are well-optimized so such redundancy is not required. Anyway much
-        columns is not a reason to worry — ClickHouse is a <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS">column-oriented
+        columns is not a reason to worry — ClickHouse is a <a href="https://en.wikipedia.org/wiki/Column-oriented_DBMS"
+        rel="external nofollow">column-oriented
             DBMS</a>. This allows you to have as much fields as you need. Hundreds of columns in a table is fine for
         ClickHouse.</p>
 
@@ -467,7 +289,7 @@ SELECT
     bar(flights, 0, 20000, 40)
 FROM ontime WHERE Year = 2015 GROUP BY OriginCityName, DestCityName ORDER BY flights DESC LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/a85/18a/200/a8518a200d6d405a95ee80ea1c8e1c90.png"/>
+                    <img src="images/tutorial/a8518a200d6d405a95ee80ea1c8e1c90.png"/>
 <pre>
 SELECT
     OriginCityName &lt; DestCityName ? OriginCityName : DestCityName AS a,
@@ -476,7 +298,7 @@ SELECT
     bar(flights, 0, 40000, 40)
 FROM ontime WHERE Year = 2015 GROUP BY a, b ORDER BY flights DESC LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/d35/78d/b55/d3578db55e304bd7b5eba818abdb53f5.png"/></div>
+                    <img src="images/tutorial/d3578db55e304bd7b5eba818abdb53f5.png"/></div>
             </div>
         </li>
         <li>
@@ -486,7 +308,7 @@ FROM ontime WHERE Year = 2015 GROUP BY a, b ORDER BY flights DESC LIMIT 20
 SELECT OriginCityName, count(*) AS flights
 FROM ontime GROUP BY OriginCityName ORDER BY flights DESC LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/ef4/141/f34/ef4141f348234773a5349c4bd3e8f804.png"/></div>
+                    <img src="images/tutorial/ef4141f348234773a5349c4bd3e8f804.png"/></div>
             </div>
         </li>
         <li>
@@ -497,7 +319,7 @@ FROM ontime GROUP BY OriginCityName ORDER BY flights DESC LIMIT 20
 SELECT OriginCityName, uniq(Dest) AS u
 FROM ontime GROUP BY OriginCityName ORDER BY u DESC LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/240/9f4/9d1/2409f49d11fb4aa1b8b5ff34cf9ca75d.png"/></div>
+                    <img src="images/tutorial/2409f49d11fb4aa1b8b5ff34cf9ca75d.png"/></div>
             </div>
         </li>
         <li>
@@ -507,7 +329,7 @@ FROM ontime GROUP BY OriginCityName ORDER BY u DESC LIMIT 20
 SELECT DayOfWeek, count() AS c, avg(DepDelay &gt;  60) AS delays
 FROM ontime GROUP BY DayOfWeek ORDER BY DayOfWeek
 </pre>
-                    <img src="https://habrastorage.org/files/885/e50/793/885e507930e34b7c8f788d25e7ca2bcf.png"/></div>
+                    <img src="images/tutorial/885e507930e34b7c8f788d25e7ca2bcf.png"/></div>
             </div>
         </li>
         <li>
@@ -522,7 +344,7 @@ HAVING c &gt;  100000
 ORDER BY delays DESC
 LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/ac2/926/56d/ac292656d03946d0aba35c75783a31f2.png"/></div>
+                    <img src="images/tutorial/ac292656d03946d0aba35c75783a31f2.png"/></div>
             </div>
         </li>
         <li>
@@ -535,7 +357,7 @@ GROUP BY OriginCityName, DestCityName
 ORDER BY duration DESC
 LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/7b3/c2e/685/7b3c2e685832439b8c373bf2015131d2.png"/></div>
+                    <img src="images/tutorial/7b3c2e685832439b8c373bf2015131d2.png"/></div>
             </div>
         </li>
         <li>
@@ -545,7 +367,7 @@ LIMIT 20
 SELECT Carrier, count() AS c, round(quantileTDigest(0.99)(DepDelay), 2) AS q
 FROM ontime GROUP BY Carrier ORDER BY q DESC
 </pre>
-                    <img src="https://habrastorage.org/files/49c/332/e3d/49c332e3d93146ba8f46beef6b2b02b0.png"/></div>
+                    <img src="images/tutorial/49c332e3d93146ba8f46beef6b2b02b0.png"/></div>
             </div>
         </li>
         <li>
@@ -555,7 +377,7 @@ FROM ontime GROUP BY Carrier ORDER BY q DESC
 SELECT Carrier, min(Year), max(Year), count()
 FROM ontime GROUP BY Carrier HAVING max(Year) &lt; 2015 ORDER BY count() DESC
 </pre>
-                    <img src="https://habrastorage.org/files/249/56f/1a2/24956f1a2efc48d78212586958aa036c.png"/></div>
+                    <img src="images/tutorial/24956f1a2efc48d78212586958aa036c.png"/></div>
             </div>
         </li>
         <li>
@@ -573,7 +395,7 @@ GROUP BY DestCityName
 HAVING c2014 &gt;  10000 AND c2015 &gt;  1000 AND diff &gt;  1
 ORDER BY diff DESC
 </pre>
-                    <img src="https://habrastorage.org/files/f31/32f/4d1/f3132f4d1c0d42eab26d9111afe7771a.png"/></div>
+                    <img src="images/tutorial/f3132f4d1c0d42eab26d9111afe7771a.png"/></div>
             </div>
         </li>
         <li>
@@ -600,7 +422,7 @@ GROUP BY DestCityName
 ORDER BY avg_month_diff DESC
 LIMIT 20
 </pre>
-                    <img src="https://habrastorage.org/files/26b/2c7/aae/26b2c7aae21a4c76800cb1c7a33a374d.png"/></div>
+                    <img src="images/tutorial/26b2c7aae21a4c76800cb1c7a33a374d.png"/></div>
             </div>
         </li>
     </ul>
@@ -611,11 +433,11 @@ LIMIT 20
         <li>Install ClickHouse server on all machines of the cluster</li>
         <li>Set up cluster configs in configuration file</li>
         <li>Create local tables on each instance</li>
-        <li>Create a <a href="/reference_en.html#Distributed">Distributed table</a></li>
+        <li>Create a <a href="docs/en/table_engines/distributed.html">Distributed table</a></li>
     </ol>
     </p>
 
-    <p><a href="/reference_en.html#Distributed">Distributed-table</a> is actually a kind of
+    <p><a href="docs/en/table_engines/distributed.html">Distributed-table</a> is actually a kind of
         "view" to local tables of ClickHouse cluster. SELECT query from a distributed table will be executed using
         resources of all cluster's shards. You may specify configs for multiple clusters and create multiple
         Distributed-tables providing views to different clusters.</p>
@@ -657,21 +479,21 @@ LIMIT 20
 
     <p>You can create a Distributed table on all machines in the cluster. This would allow to run distributed queries on
         any machine of the cluster. Besides distributed table you can also use <a
-                href="/reference_en.html#remote">*remote* table function</a>.</p>
+                href="docs/en/table_functions/remote.html">*remote* table function</a>.</p>
 
-    <p>Let's run <a href="/reference_en.html#INSERT">INSERT SELECT</a> into Distributed table
+    <p>Let's run <a href="docs/en/query_language/queries.html#insert">INSERT SELECT</a> into Distributed table
         to spread the table to multiple servers.</p>
 
     <pre>INSERT INTO ontime_all SELECT * FROM ontime;</pre>
 
     <p class="tip"><b>⚠</b> Worth to notice that the approach given above wouldn't fit for sharding of large
-        tables.<br/>Please use <a href="/reference_en.html#Resharding">built-in sharding
+        tables.<br/>Please use <a href="docs/en/table_engines/resharding.html">built-in sharding
             feature</a>.</p>
 
     <p>As you could expect heavy queries are executed N times faster being launched on 3 servers instead of one.</p>
     <div class="spoiler"><a class="spoiler_title">See here</a>
         <div class="spoiler_body">
-            <img src="https://habrastorage.org/files/ece/020/129/ece020129fdf4a18a6e75daf2e699cb9.png"/>
+            <img src="images/tutorial/ece020129fdf4a18a6e75daf2e699cb9.png"/>
 
             <p>You may have noticed that quantiles calculation are slightly different. This happens due to <a
                     href="https://github.com/tdunning/t-digest/raw/master/docs/t-digest-paper/histo.pdf">t-digest</a>
@@ -710,9 +532,9 @@ LIMIT 20
         </div>
     </div>
 
-    <p>To enable replication <a href="http://zookeeper.apache.org/">ZooKeeper</a> is required. ClickHouse will take care
-        of data consistency on all replicas and run restore procedure after failure automatically. It's recommended to
-        deploy ZooKeeper cluster to separate servers.</p>
+    <p>To enable replication <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> is required.
+        ClickHouse will take care of data consistency on all replicas and run restore procedure after failure
+        automatically. It's recommended to deploy ZooKeeper cluster to separate servers.</p>
 
     <p>ZooKeeper is not a requirement — in some simple cases you can duplicate the data by writing it into all the
         replicas from your application code. This approach is not recommended — in this case ClickHouse is not able to
@@ -760,7 +582,7 @@ ENGINE = ReplicatedMergeTree(
     (Year, FlightDate),
     8192);
 </pre>
-    <p>Here we use <a href="/reference_en.html#ReplicatedMergeTree">ReplicatedMergeTree</a>
+    <p>Here we use <a href="docs/en/table_engines/replication.html#replicatedmergetree">ReplicatedMergeTree</a>
         table type. In parameters we specify ZooKeeper path containing shard and replica identifiers.</p>
 
     <pre>INSERT INTO ontime_replica SELECT * FROM ontime;</pre>
@@ -770,30 +592,17 @@ ENGINE = ReplicatedMergeTree(
         repair consistency once they will become active again. Please notice that such scheme allows for the possibility
         of just appended data loss.</p>
 
-    <h3>Feedback</h3>
+    <p class="warranty"><a href="https://github.com/yandex/ClickHouse/blob/master/LICENSE"
+                           rel="external nofollow" target="_blank">
+        ClickHouse source code is published under Apache 2.0 License.</a> Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+        KIND, either express or implied.</p>
 
-    <p>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse" rel="external nofollow">Stack
-        Overflow</a>.</p>
-    <p>Discuss with real users in Telegram chat in <a href="https://telegram.me/clickhouse_en" rel="external nofollow">English</a>
-        or in <a
-                href="https://telegram.me/clickhouse_ru" rel="external nofollow">Russian</a>.</p>
-    <p>Use <a href="https://groups.google.com/group/clickhouse" rel="external nofollow">Google Group</a> for discussion.
-    </p>
-    <p>Or send private message to developers:
-        <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
-    </p>
-    <p class="warranty">Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
-        either express or implied.</p>
+    <p id="footer">&copy; 2016–2017 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
 
-    <p class="footer">&copy; 2016–2017 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
 </div>
 
 <script type="text/javascript" src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
 <script type="text/javascript">
-    function getParams() {
-        var matches = document.cookie.match(/yandex_login=([\w\-]+)/);
-        return (matches && matches.length == 2) ? {"login": matches[1]} : {};
-    }
     $('.spoiler_title').click(function () {
         $(this).next('.spoiler_body').toggle(100);
     });

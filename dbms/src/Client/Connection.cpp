@@ -1,12 +1,7 @@
 #include <iomanip>
 
 #include <Poco/Net/NetException.h>
-
-#include <Common/ClickHouseRevision.h>
-
 #include <Core/Defines.h>
-#include <Common/Exception.h>
-
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -14,16 +9,19 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-
 #include <Client/Connection.h>
-
+#include <Common/ClickHouseRevision.h>
+#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
-
 #include <Interpreters/ClientInfo.h>
+
+#include <Common/config.h>
+#if Poco_NetSSL_FOUND
+#include <Poco/Net/SecureStreamSocket.h>
+#endif
 
 
 namespace CurrentMetrics
@@ -41,6 +39,7 @@ namespace ErrorCodes
     extern const int SERVER_REVISION_IS_TOO_OLD;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -53,13 +52,25 @@ void Connection::connect()
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user);
 
-        socket.connect(resolved_address, connect_timeout);
-        socket.setReceiveTimeout(receive_timeout);
-        socket.setSendTimeout(send_timeout);
-        socket.setNoDelay(true);
+        if (static_cast<bool>(encryption))
+        {
+#if Poco_NetSSL_FOUND
+            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+#else
+            throw Exception{"tcp_ssl protocol is disabled because poco library built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+        }
+        else
+        {
+            socket = std::make_unique<Poco::Net::StreamSocket>();
+        }
+        socket->connect(resolved_address, connect_timeout);
+        socket->setReceiveTimeout(receive_timeout);
+        socket->setSendTimeout(send_timeout);
+        socket->setNoDelay(true);
 
-        in = std::make_shared<ReadBufferFromPocoSocket>(socket);
-        out = std::make_shared<WriteBufferFromPocoSocket>(socket);
+        in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+        out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
 
         connected = true;
 
@@ -93,9 +104,11 @@ void Connection::disconnect()
 {
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
-    socket.close();
     in = nullptr;
-    out = nullptr;
+    out = nullptr; // can write to socket
+    if (socket)
+        socket->close();
+    socket = nullptr;
     connected = false;
 }
 
@@ -233,7 +246,7 @@ bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
 
-    TimeoutSetter timeout_setter(socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
     try
     {
         UInt64 pong = 0;
@@ -273,7 +286,7 @@ TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & req
     if (!connected)
         connect();
 
-    TimeoutSetter timeout_setter(socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
@@ -304,7 +317,7 @@ void Connection::sendQuery(
     if (!connected)
         connect();
 
-    network_compression_method = settings ? settings->network_compression_method.value : CompressionMethod::LZ4;
+    compression_settings = settings ? CompressionSettings(*settings) : CompressionSettings(CompressionMethod::LZ4);
 
     query_id = query_id_;
 
@@ -342,7 +355,7 @@ void Connection::sendQuery(
         writeStringBinary("", *out);
 
     writeVarUInt(stage, *out);
-    writeVarUInt(compression, *out);
+    writeVarUInt(static_cast<bool>(compression), *out);
 
     writeStringBinary(query, *out);
 
@@ -351,8 +364,8 @@ void Connection::sendQuery(
     block_in.reset();
     block_out.reset();
 
-    /// If server version is new enough, send empty block which meand end of data.
-    if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES && !with_pending_data)
+    /// Send empty block which means end of data.
+    if (!with_pending_data)
     {
         sendData(Block());
         out->next();
@@ -376,7 +389,7 @@ void Connection::sendData(const Block & block, const String & name)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
-            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, network_compression_method);
+            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_settings);
         else
             maybe_compressed_out = out;
 
@@ -384,9 +397,7 @@ void Connection::sendData(const Block & block, const String & name)
     }
 
     writeVarUInt(Protocol::Client::Data, *out);
-
-    if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-        writeStringBinary(name, *out);
+    writeStringBinary(name, *out);
 
     size_t prev_bytes = out->count();
 
@@ -405,9 +416,7 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
 
     writeVarUInt(Protocol::Client::Data, *out);
-
-    if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-        writeStringBinary(name, *out);
+    writeStringBinary(name, *out);
 
     if (0 == size)
         copyData(input, *out);
@@ -419,13 +428,6 @@ void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String 
 
 void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
-    /// If working with older server, don't send any info.
-    if (server_revision < DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-    {
-        out->next();
-        return;
-    }
-
     if (data.empty())
     {
         /// Send empty block, which means end of data transfer.
@@ -552,9 +554,7 @@ Block Connection::receiveData()
     initBlockInput();
 
     String external_table_name;
-
-    if (server_revision >= DBMS_MIN_REVISION_WITH_TEMPORARY_TABLES)
-        readStringBinary(external_table_name, *in);
+    readStringBinary(external_table_name, *in);
 
     size_t prev_bytes = in->count();
 

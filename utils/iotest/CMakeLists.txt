@@ -1,5 +1,3 @@
-include_directories (${ClickHouse_SOURCE_DIR}/dbms/src)
-include_directories (${ClickHouse_SOURCE_DIR}/libs/libcommon/include)
 
 add_executable (iotest iotest.cpp ${SRCS})
 target_link_libraries (iotest dbms)

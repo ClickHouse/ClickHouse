@@ -10,6 +10,7 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_sources
     AggregateFunctionIf.cpp
     AggregateFunctionMerge.cpp
     AggregateFunctionCount.cpp
+    parseAggregateFunctionParameters.cpp
 )
 
 list(REMOVE_ITEM clickhouse_aggregate_functions_headers
@@ -22,6 +23,9 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_headers
     AggregateFunctionIf.h
     AggregateFunctionMerge.h
     AggregateFunctionCount.h
+    parseAggregateFunctionParameters.h
 )
 
 add_library(clickhouse_aggregate_functions ${clickhouse_aggregate_functions_sources})
+target_link_libraries(clickhouse_aggregate_functions dbms)
+target_include_directories (clickhouse_aggregate_functions BEFORE PRIVATE ${COMMON_INCLUDE_DIR})

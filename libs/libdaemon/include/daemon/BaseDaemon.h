@@ -54,6 +54,8 @@ class BaseDaemon : public Poco::Util::ServerApplication
     friend class SignalListener;
 
 public:
+    static constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
+
     BaseDaemon();
     ~BaseDaemon();
 
@@ -67,7 +69,7 @@ public:
     void buildLoggers();
 
     /// Определяет параметр командной строки
-    void defineOptions(Poco::Util::OptionSet& _options) override;
+    void defineOptions(Poco::Util::OptionSet & _options) override;
 
     /// Заставляет демон завершаться, если хотя бы одна задача завершилась неудачно
     void exitOnTaskError();
@@ -79,7 +81,7 @@ public:
     void kill();
 
     /// Получен ли сигнал на завершение?
-    bool isCancelled()
+    bool isCancelled() const
     {
         return is_cancelled;
     }
@@ -107,7 +109,7 @@ public:
     /// root_path по умолчанию one_min
     /// key - лучше группировать по смыслу. Например "meminfo.cached" или "meminfo.free", "meminfo.total"
     template <class T>
-    void writeToGraphite(const std::string & key, const T & value, const std::string & config_name = "graphite", time_t timestamp = 0, const std::string & custom_root_path = "")
+    void writeToGraphite(const std::string & key, const T & value, const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME, time_t timestamp = 0, const std::string & custom_root_path = "")
     {
         auto writer = getGraphiteWriter(config_name);
         if (writer)
@@ -115,14 +117,14 @@ public:
     }
 
     template <class T>
-    void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, const std::string & config_name = "graphite", time_t timestamp = 0, const std::string & custom_root_path = "")
+    void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME, time_t timestamp = 0, const std::string & custom_root_path = "")
     {
         auto writer = getGraphiteWriter(config_name);
         if (writer)
             writer->write(key_vals, timestamp, custom_root_path);
     }
 
-    GraphiteWriter * getGraphiteWriter(const std::string & config_name = "graphite")
+    GraphiteWriter * getGraphiteWriter(const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME)
     {
         if (graphite_writers.count(config_name))
             return graphite_writers[config_name].get();
@@ -216,6 +218,7 @@ protected:
 
     std::string config_path;
     ConfigProcessor::LoadedConfig loaded_config;
+    Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 };
 
 

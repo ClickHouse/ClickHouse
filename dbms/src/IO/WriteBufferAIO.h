@@ -20,7 +20,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/** Класс для асинхронной записи данных.
+/** Class for asynchronous data writing.
   */
 class WriteBufferAIO : public WriteBufferFromFileBase
 {
@@ -42,20 +42,20 @@ private:
     off_t doSeek(off_t off, int whence) override;
     void doTruncate(off_t length) override;
 
-    /// Если в буфере ещё остались данные - запишем их.
+    /// If there's still data in the buffer, we'll write them.
     void flush();
-    /// Ждать окончания текущей асинхронной задачи.
+    /// Wait for the end of the current asynchronous task.
     bool waitForAIOCompletion();
-    /// Подготовить асинхронный запрос.
+    /// Prepare an asynchronous request.
     void prepare();
     ///
     void finalize();
 
 private:
-    /// Буфер для асинхронных операций записи данных.
+    /// Buffer for asynchronous data writes.
     BufferWithOwnMemory<WriteBuffer> flush_buffer;
 
-    /// Описание асинхронного запроса на запись.
+    /// Description of the asynchronous write request.
     iocb request = { 0 };
     std::vector<iocb *> request_ptrs{&request};
     std::vector<io_event> events{1};
@@ -64,33 +64,33 @@ private:
 
     const std::string filename;
 
-    /// Количество байтов, которые будут записаны на диск.
+    /// The number of bytes to be written to the disk.
     off_t bytes_to_write = 0;
-    /// Количество записанных байт при последнем запросе.
+    /// Number of bytes written with the last request.
     off_t bytes_written = 0;
-    /// Количество нулевых байтов, которые надо отрезать c конца файла
-    /// после завершения операции записи данных.
+    /// The number of zero bytes to be cut from the end of the file
+    /// after the data write operation completes.
     off_t truncation_count = 0;
 
-    /// Текущая позиция в файле.
+    /// The current position in the file.
     off_t pos_in_file = 0;
-    /// Максимальная достигнутая позиция в файле.
+    /// The maximum position reached in the file.
     off_t max_pos_in_file = 0;
 
-    /// Начальная позиция выровненного региона диска, в который записываются данные.
+    /// The starting position of the aligned region of the disk to which the data is written.
     off_t region_aligned_begin = 0;
-    /// Размер выровненного региона диска.
+    /// The size of the aligned region of the disk.
     size_t region_aligned_size = 0;
 
-    /// Файловый дескриптор для записи.
+    /// The file descriptor for writing.
     int fd = -1;
 
-    /// Буфер данных, которые хотим записать на диск.
+    /// The data buffer that we want to write to the disk.
     Position buffer_begin = nullptr;
 
-    /// Асинхронная операция записи ещё не завершилась?
+    /// Is the asynchronous write operation still in progress?
     bool is_pending_write = false;
-    /// Асинхронная операция завершилась неудачно?
+    /// Did the asynchronous operation fail?
     bool aio_failed = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForWrite};

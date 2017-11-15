@@ -6,7 +6,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
 #include <memory>
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB
@@ -45,7 +45,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
         where{config.getString(config_prefix + ".where", "")},
         query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
         sample_block{sample_block}, context(context),
-        is_local{isLocalAddress({ host, port })},
+        is_local{isLocalAddress({ host, port }, config.getInt("tcp_port", 0))},
         pool{is_local ? nullptr : createPool(host, port, db, user, password)},
         load_all_query{query_builder.composeLoadAllQuery()}
 {}
@@ -71,7 +71,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
       */
     if (is_local)
         return executeQuery(load_all_query, context, true).in;
-    return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, nullptr);
+    return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, context);
 }
 
 
@@ -83,7 +83,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadIds(const std::vector<UInt64
 
 
 BlockInputStreamPtr ClickHouseDictionarySource::loadKeys(
-    const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows)
+    const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     return createStreamForSelectiveLoad(
         query_builder.composeLoadKeysQuery(
@@ -97,11 +97,11 @@ std::string ClickHouseDictionarySource::toString() const
 }
 
 
-BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(const std::string query)
+BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(const std::string & query)
 {
     if (is_local)
         return executeQuery(query, context, true).in;
-    return std::make_shared<RemoteBlockInputStream>(pool, query, nullptr);
+    return std::make_shared<RemoteBlockInputStream>(pool, query, context);
 }
 
 }

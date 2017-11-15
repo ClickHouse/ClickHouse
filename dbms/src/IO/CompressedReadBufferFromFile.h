@@ -11,16 +11,16 @@ namespace DB
 {
 
 
-/// В отличие от CompressedReadBuffer, умеет делать seek.
+/// Unlike CompressedReadBuffer, it can do seek.
 class CompressedReadBufferFromFile : public CompressedReadBufferBase, public BufferWithOwnMemory<ReadBuffer>
 {
 private:
-    /** В любой момент выполняется одно из двух:
+      /** At any time, one of two things is true:
       * a) size_compressed = 0
       * b)
-      *  - working_buffer содержит целиком один блок.
-      *  - file_in смотрит в конец этого блока.
-      *  - size_compressed содержит сжатый размер этого блока.
+      *  - `working_buffer` contains the entire block.
+      *  - `file_in` points to the end of this block.
+      *  - `size_compressed` contains the compressed size of this block.
       */
     std::unique_ptr<ReadBufferFromFileBase> p_file_in;
     ReadBufferFromFileBase & file_in;

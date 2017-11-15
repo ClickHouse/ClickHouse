@@ -15,14 +15,13 @@ namespace ErrorCodes
 }
 
 
-MergingSortedBlockInputStream::MergingSortedBlockInputStream(BlockInputStreams & inputs_, const SortDescription & description_,
-    size_t max_block_size_, size_t limit_, MergedRowSources * out_row_sources_, bool quiet_)
-    : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_),
-    source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources(out_row_sources_)
+MergingSortedBlockInputStream::MergingSortedBlockInputStream(
+        BlockInputStreams & inputs_, const SortDescription & description_,
+        size_t max_block_size_, size_t limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
+    : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
+    , source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
-    if (out_row_sources)
-        out_row_sources->clear();
 }
 
 String MergingSortedBlockInputStream::getID() const
@@ -175,6 +174,38 @@ Block MergingSortedBlockInputStream::readImpl()
     return merged_block;
 }
 
+
+template <typename TSortCursor>
+void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue)
+{
+    size_t i = 0;
+    size_t size = cursors.size();
+    for (; i < size; ++i)
+    {
+        if (&cursors[i] == current.impl)
+        {
+            source_blocks[i] = new detail::SharedBlock(children[i]->read());
+            if (*source_blocks[i])
+            {
+                cursors[i].reset(*source_blocks[i]);
+                queue.push(TSortCursor(&cursors[i]));
+            }
+
+            break;
+        }
+    }
+
+    if (i == size)
+        throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
+}
+
+template
+void MergingSortedBlockInputStream::fetchNextBlock<SortCursor>(const SortCursor & current, std::priority_queue<SortCursor> & queue);
+
+template
+void MergingSortedBlockInputStream::fetchNextBlock<SortCursorWithCollation>(const SortCursorWithCollation & current, std::priority_queue<SortCursorWithCollation> & queue);
+
+
 template <typename TSortCursor>
 void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
@@ -253,8 +284,12 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
                     finished = true;
                 }
 
-                if (out_row_sources)
-                    out_row_sources->resize_fill(out_row_sources->size() + merged_rows, RowSourcePart(source_num));
+                if (out_row_sources_buf)
+                {
+                    RowSourcePart row_source(source_num);
+                    for (size_t i = 0; i < merged_rows; ++i)
+                        out_row_sources_buf->write(row_source.data);
+                }
 
     //            std::cerr << "fetching next block\n";
 
@@ -268,10 +303,11 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
             for (size_t i = 0; i < num_columns; ++i)
                 merged_columns[i]->insertFrom(*current->all_columns[i], current->pos);
 
-            if (out_row_sources)
+            if (out_row_sources_buf)
             {
                 /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
-                out_row_sources->emplace_back(current.impl->order);
+                RowSourcePart row_source(current.impl->order);
+                out_row_sources_buf->write(row_source.data);
             }
 
             if (!current->isLast())
@@ -314,31 +350,6 @@ void MergingSortedBlockInputStream::merge(Block & merged_block, ColumnPlainPtrs 
 
     cancel();
     finished = true;
-}
-
-
-template <typename TSortCursor>
-void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue)
-{
-    size_t i = 0;
-    size_t size = cursors.size();
-    for (; i < size; ++i)
-    {
-        if (&cursors[i] == current.impl)
-        {
-            source_blocks[i] = new detail::SharedBlock(children[i]->read());
-            if (*source_blocks[i])
-            {
-                cursors[i].reset(*source_blocks[i]);
-                queue.push(TSortCursor(&cursors[i]));
-            }
-
-            break;
-        }
-    }
-
-    if (i == size)
-        throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
 }
 
 

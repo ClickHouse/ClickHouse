@@ -34,6 +34,11 @@
     M(StorageBufferRows) \
     M(StorageBufferBytes) \
     M(DictCacheRequests) \
+    M(Revision) \
+    M(RWLockWaitingReaders) \
+    M(RWLockWaitingWriters) \
+    M(RWLockActiveReaders) \
+    M(RWLockActiveWriters)
 
 
 namespace CurrentMetrics

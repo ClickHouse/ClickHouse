@@ -22,19 +22,23 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/typeid_cast.h>
 
 #include <Poco/Event.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 
+#include <boost/noncopyable.hpp>
+
 #include <future>
 #include <chrono>
 #include <cstdlib>
 #include <ctime>
-#include <random>
+#include <pcg_random.hpp>
+
 
 namespace DB
 {
@@ -82,12 +86,12 @@ public:
         for (const auto & key : keys)
         {
             if (key == "task_queue_path")
-                task_queue_path = config.getString(config_name + "." + key);
+                ddl_queries_root = config.getString(config_name + "." + key);
             else
                 throw Exception{"Unknown parameter in resharding configuration", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
         }
 
-        if (task_queue_path.empty())
+        if (ddl_queries_root.empty())
             throw Exception{"Resharding: missing parameter task_queue_path", ErrorCodes::INVALID_CONFIG_PARAMETER};
     }
 
@@ -96,11 +100,11 @@ public:
 
     std::string getTaskQueuePath() const
     {
-        return task_queue_path;
+        return ddl_queries_root;
     }
 
 private:
-    std::string task_queue_path;
+    std::string ddl_queries_root;
 };
 
 /// Helper class we use to read and write the status of a coordinator
@@ -114,7 +118,7 @@ public:
     {
     }
 
-    Status(const std::string & str)
+    explicit Status(const std::string & str)
     {
         size_t pos = str.find(',');
         code = static_cast<ReshardingWorker::StatusCode>(std::stoull(str.substr(0, pos)));
@@ -173,10 +177,10 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 
     for (Poco::DirectoryIterator it(data_path); it != end; ++it)
     {
-        const auto filename = it.name();
-        if (!ActiveDataPartSet::isPartDirectory(filename))
+        MergeTreePartInfo part_info;
+        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info))
             continue;
-        if (!startsWith(filename, partition_name))
+        if (part_info.partition_id != partition_name)
             continue;
 
         const auto part_path = it.path().absolute().toString();
@@ -319,7 +323,7 @@ std::string computeHashFromPartition(const std::string & data_path, const std::s
 ///
 
 ReshardingWorker::ReshardingWorker(const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_name, Context & context_)
+    const std::string & config_name, const Context & context_)
     : context{context_}, get_zookeeper{[&]() { return context.getZooKeeper(); }}
 {
     Arguments arguments(config, config_name);
@@ -420,16 +424,12 @@ void ReshardingWorker::trackAndPerform()
             else
                 LOG_ERROR(log, ex.message());
         }
-        catch (const std::exception & ex)
-        {
-            LOG_ERROR(log, ex.what());
-        }
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        while (true)
+        while (!must_stop)
         {
             try
             {
@@ -460,10 +460,6 @@ void ReshardingWorker::trackAndPerform()
                 else
                     LOG_ERROR(log, ex.message());
             }
-            catch (const std::exception & ex)
-            {
-                LOG_ERROR(log, ex.what());
-            }
             catch (...)
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
@@ -475,13 +471,9 @@ void ReshardingWorker::trackAndPerform()
         if (ex.code() != ErrorCodes::ABORTED)
             error_msg = ex.message();
     }
-    catch (const std::exception & ex)
-    {
-        error_msg = ex.what();
-    }
     catch (...)
     {
-        error_msg = "unspecified";
+        error_msg = getCurrentExceptionMessage(false);
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
@@ -600,7 +592,7 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
         throw Exception{"Coordinator has been deleted", ErrorCodes::RESHARDING_COORDINATOR_DELETED};
 
     StoragePtr generic_storage = context.getTable(current_job.database_name, current_job.table_name);
-    auto & storage = typeid_cast<StorageReplicatedMergeTree &>(*generic_storage);
+    auto & storage = dynamic_cast<StorageReplicatedMergeTree &>(*generic_storage);
     current_job.storage = &storage;
 
     std::string dumped_coordinator_state;
@@ -769,18 +761,10 @@ void ReshardingWorker::perform(const std::string & job_descriptor, const std::st
             LOG_ERROR(log, dumped_coordinator_state);
         throw;
     }
-    catch (const std::exception & ex)
-    {
-        /// An error has occurred on this performer.
-        handle_exception("Resharding job cancelled", ex.what());
-        if (current_job.isCoordinated())
-            LOG_ERROR(log, dumped_coordinator_state);
-        throw;
-    }
     catch (...)
     {
         /// An error has occurred on this performer.
-        handle_exception("Resharding job cancelled", "An unspecified error has occurred");
+        handle_exception("Resharding job cancelled", getCurrentExceptionMessage(false));
         if (current_job.isCoordinated())
             LOG_ERROR(log, dumped_coordinator_state);
         throw;
@@ -820,8 +804,7 @@ void ReshardingWorker::storeTargetShardsInfo()
 
     zookeeper->tryRemove(getLocalJobPath() + "/shards");
 
-    std::string out;
-    WriteBufferFromString buf{out};
+    WriteBufferFromOwnString buf;
 
     size_t entries_count = 0;
     for (const auto & entry : per_shard_data_parts)
@@ -849,9 +832,7 @@ void ReshardingWorker::storeTargetShardsInfo()
         writeBinary(hash, buf);
     }
 
-    buf.next();
-
-    (void) zookeeper->create(getLocalJobPath() + "/shards", out,
+    zookeeper->create(getLocalJobPath() + "/shards", buf.str(),
         zkutil::CreateMode::Persistent);
 }
 
@@ -959,7 +940,7 @@ void ReshardingWorker::publishShardedPartitions()
 
     ThreadPool pool(remote_count);
 
-    using Tasks = std::vector<std::packaged_task<bool()> >;
+    using Tasks = std::vector<std::packaged_task<bool()>>;
     Tasks tasks(remote_count);
 
     ReplicatedMergeTreeAddress local_address{zookeeper->get(storage.replica_path + "/host")};
@@ -1114,7 +1095,7 @@ void ReshardingWorker::commit()
     size_t pool_size = operation_count;
     ThreadPool pool(pool_size);
 
-    using Tasks = std::vector<std::packaged_task<void()> >;
+    using Tasks = std::vector<std::packaged_task<void()>>;
     Tasks tasks(pool_size);
 
     try
@@ -1186,7 +1167,7 @@ void ReshardingWorker::repairLogRecord(LogRecord & log_record)
         /// new sharded partitions, we cannot drop it since it could result in data loss.
         auto & storage = *(current_job.storage);
 
-        if (storage.data.getPartitionSize(current_job.partition) == 0)
+        if (storage.data.getPartitionSize(current_job.partition_id) == 0)
             found = false;
         else
         {
@@ -1203,10 +1184,10 @@ void ReshardingWorker::repairLogRecord(LogRecord & log_record)
             /// while resharding a partition.
 #if 0
             auto current_hash = computeHashFromPartition(storage.data.getFullPath(),
-                current_job.partition);
+                current_job.partition_id);
             if (current_hash != log_record.partition_hash)
             {
-                LOG_WARNING(log, "The source partition " << current_job.partition
+                LOG_WARNING(log, "The source partition " << current_job.partition_id
                     << " cannot be dropped because it has changed since the last"
                     " time we were online");
                 found = false;
@@ -1250,7 +1231,7 @@ void ReshardingWorker::executeDrop(LogRecord & log_record)
 
     /// Locally drop the source partition.
     std::string query_str = "ALTER TABLE " + current_job.database_name + "."
-        + current_job.table_name + " DROP PARTITION " + current_job.partition;
+        + current_job.table_name + " DROP PARTITION " + current_job.partition_id;
     (void) executeQuery(query_str, context, true);
 
     log_record.state = LogRecord::DONE;
@@ -1312,7 +1293,7 @@ bool ReshardingWorker::checkAttachLogRecord(LogRecord & log_record)
 
     ThreadPool pool(task_info_list.size());
 
-    using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()> >;
+    using Tasks = std::vector<std::packaged_task<RemotePartChecker::Status()>>;
     Tasks tasks(task_info_list.size());
 
     try
@@ -1374,11 +1355,11 @@ bool ReshardingWorker::checkAttachLogRecord(LogRecord & log_record)
             const TaskInfo & entry = task_info_list[i];
 
             if (status == RemotePartChecker::Status::INCONSISTENT)
-                LOG_WARNING(log, "Cannot attach sharded partition " << current_job.partition
+                LOG_WARNING(log, "Cannot attach sharded partition " << current_job.partition_id
                     << " on host " << entry.dest.host << " because some changes have occurred "
                     " in part " << entry.part << " since the last time we were online.");
             else if (status == RemotePartChecker::Status::ERROR)
-                LOG_WARNING(log, "Cannot attach sharded partition " << current_job.partition
+                LOG_WARNING(log, "Cannot attach sharded partition " << current_job.partition_id
                     << " on host " << entry.dest.host << " because an unexpected error "
                     << " was triggered while trying to check part " << entry.part);
         }
@@ -1413,19 +1394,8 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
     /// Description of tasks for each replica of a shard.
     /// For fault tolerance purposes, some fields are provided
     /// to perform attempts on more than one replica if needed.
-    struct ShardTaskInfo
+    struct ShardTaskInfo : private boost::noncopyable
     {
-        ShardTaskInfo()
-        {
-            rng = std::mt19937(randomSeed());
-        }
-
-        ShardTaskInfo(const ShardTaskInfo &) = delete;
-        ShardTaskInfo & operator=(const ShardTaskInfo &) = delete;
-
-        ShardTaskInfo(ShardTaskInfo &&) = default;
-        ShardTaskInfo & operator=(ShardTaskInfo &&) = default;
-
         /// one task for each replica
         std::vector<TaskInfo> shard_tasks;
         /// index to the replica to be used
@@ -1433,7 +1403,7 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
         /// result of the operation on the current replica
         bool is_success = false;
         /// For pseudo-random number generation.
-        std::mt19937 rng;
+        pcg64 rng{randomSeed()};
     };
 
     const WeightedZooKeeperPath & weighted_path = current_job.paths[log_record.shard_no];
@@ -1472,7 +1442,7 @@ void ReshardingWorker::executeAttach(LogRecord & log_record)
         InterserverIOEndpointLocation location(replica_path, dest.host, dest.replication_port);
 
         std::string query_str = "ALTER TABLE " + dest.database + "."
-            + dest.table + " ATTACH PARTITION " + current_job.partition;
+            + dest.table + " ATTACH PARTITION " + current_job.partition_id;
 
         bool res = storage.remote_query_executor_client.executeQuery(location, query_str);
         if (res)
@@ -1496,7 +1466,7 @@ void ReshardingWorker::electLeader()
     /// sequential znode onto ZooKeeper persistent storage. When all the performers
     /// have entered the game, i.e. the election barrier is released, the winner
     /// is the performer having the znode with the lowest ID.
-    /// Then one of the nodes publishes this piece of information as a new znode.
+    /// Then one of the nodes publishes this part of information as a new znode.
     ///
     /// In case of failure this election scheme is guaranteed to always succeed:
     ///
@@ -1572,11 +1542,11 @@ void ReshardingWorker::createLog()
     {
         LogRecord log_record{zookeeper};
         log_record.operation = LogRecord::OP_DROP;
-        log_record.partition = current_job.partition;
+        log_record.partition_id = current_job.partition_id;
         /// Disabled. See comment in repairLogRecord().
 #if 0
         log_record.partition_hash = computeHashFromPartition(storage.data.getFullPath(),
-            current_job.partition);
+            current_job.partition_id);
 #endif
         log_record.state = LogRecord::READY;
 
@@ -1615,7 +1585,7 @@ void ReshardingWorker::createLog()
 
         LogRecord log_record{zookeeper};
         log_record.operation = LogRecord::OP_ATTACH;
-        log_record.partition = current_job.partition;
+        log_record.partition_id = current_job.partition_id;
         log_record.shard_no = shard_no;
         log_record.state = LogRecord::READY;
 
@@ -1722,17 +1692,7 @@ std::string ReshardingWorker::createCoordinator(const Cluster & cluster)
     if (!cluster.getShardsAddresses().empty())
     {
         size_t shard_no = 0;
-        for (const auto & address : cluster.getShardsAddresses())
-        {
-            publish_address(address.host_name, shard_no);
-            publish_address(address.resolved_address.host().toString(), shard_no);
-            ++shard_no;
-        }
-    }
-    else if (!cluster.getShardsWithFailoverAddresses().empty())
-    {
-        size_t shard_no = 0;
-        for (const auto & addresses : cluster.getShardsWithFailoverAddresses())
+        for (const auto & addresses : cluster.getShardsAddresses())
         {
             for (const auto & address : addresses)
             {
@@ -1874,9 +1834,9 @@ void ReshardingWorker::addPartitions(const std::string & coordinator_id,
 
     auto current_host = getFQDNOrHostName();
 
-    for (const auto & partition : partition_list)
+    for (const auto & partition_id : partition_list)
     {
-        auto partition_path = getCoordinatorPath(coordinator_id) + "/partitions/" + partition;
+        auto partition_path = getCoordinatorPath(coordinator_id) + "/partitions/" + partition_id;
 
         auto nodes_path = partition_path + "/nodes/";
         zookeeper->createAncestors(nodes_path);
@@ -1892,13 +1852,13 @@ ReshardingWorker::PartitionList::iterator ReshardingWorker::categorizePartitions
     auto current_host = getFQDNOrHostName();
     auto zookeeper = context.getZooKeeper();
 
-    auto is_coordinated = [&](const std::string & partition)
+    auto is_coordinated = [&](const std::string & partition_id)
     {
-        auto path = getCoordinatorPath(coordinator_id) + "/partitions/" + partition + "/nodes";
+        auto path = getCoordinatorPath(coordinator_id) + "/partitions/" + partition_id + "/nodes";
         auto nodes = zookeeper->getChildren(path);
         if ((nodes.size() == 1) && (nodes[0] == current_host))
         {
-            zookeeper->removeRecursive(getCoordinatorPath(coordinator_id) + "/partitions/" + partition);
+            zookeeper->removeRecursive(getCoordinatorPath(coordinator_id) + "/partitions/" + partition_id);
             return false;
         }
         else
@@ -2126,49 +2086,38 @@ ReshardingWorker::StatusCode ReshardingWorker::getStatusCommon(const std::string
 
 std::string ReshardingWorker::dumpCoordinatorState(const std::string & coordinator_id)
 {
-    std::string out;
-
     auto current_host = getFQDNOrHostName();
 
-    try
+    WriteBufferFromOwnString buf;
+
+    writeString("Coordinator dump: ", buf);
+    writeString("ID: {", buf);
+    writeString(coordinator_id + "}; ", buf);
+
+    auto zookeeper = context.getZooKeeper();
+
+    Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status"));
+
+    if (status.getCode() != STATUS_OK)
     {
-        WriteBufferFromString buf{out};
+        writeString("Global status: {", buf);
+        writeString(status.getMessage() + "}; ", buf);
+    }
 
-        writeString("Coordinator dump: ", buf);
-        writeString("ID: {", buf);
-        writeString(coordinator_id + "}; ", buf);
-
-        auto zookeeper = context.getZooKeeper();
-
-        Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status"));
+    auto hosts = zookeeper->getChildren(getCoordinatorPath(coordinator_id) + "/status");
+    for (const auto & host : hosts)
+    {
+        Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status/" + host));
 
         if (status.getCode() != STATUS_OK)
         {
-            writeString("Global status: {", buf);
+            writeString("NODE ", buf);
+            writeString(((host == current_host) ? "localhost" : host) + ": {", buf);
             writeString(status.getMessage() + "}; ", buf);
         }
-
-        auto hosts = zookeeper->getChildren(getCoordinatorPath(coordinator_id) + "/status");
-        for (const auto & host : hosts)
-        {
-            Status status(zookeeper->get(getCoordinatorPath(coordinator_id) + "/status/" + host));
-
-            if (status.getCode() != STATUS_OK)
-            {
-                writeString("NODE ", buf);
-                writeString(((host == current_host) ? "localhost" : host) + ": {", buf);
-                writeString(status.getMessage() + "}; ", buf);
-            }
-        }
-
-        buf.next();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    return out;
+    return buf.str();
 }
 
 /// Compute the hash function from the checksum files of a given part.
@@ -2591,7 +2540,7 @@ std::string ReshardingWorker::getCoordinatorPath(const std::string & coordinator
 
 std::string ReshardingWorker::getPartitionPath() const
 {
-    return coordination_path + "/" + current_job.coordinator_id + "/partitions/" + current_job.partition;
+    return coordination_path + "/" + current_job.coordinator_id + "/partitions/" + current_job.partition_id;
 }
 
 std::string ReshardingWorker::getLocalJobPath() const
@@ -2704,7 +2653,7 @@ ReshardingWorker::LogRecord::LogRecord(zkutil::ZooKeeperPtr zookeeper_, const st
     readVarUInt(val, buf);
     state = static_cast<State>(val);
 
-    readBinary(partition, buf);
+    readBinary(partition_id, buf);
     readBinary(partition_hash, buf);
     readVarUInt(shard_no, buf);
 
@@ -2735,12 +2684,11 @@ void ReshardingWorker::LogRecord::writeBack()
 
 std::string ReshardingWorker::LogRecord::toString()
 {
-    std::string out;
-    WriteBufferFromString buf{out};
+    WriteBufferFromOwnString buf;
 
     writeVarUInt(static_cast<unsigned int>(operation), buf);
     writeVarUInt(static_cast<unsigned int>(state), buf);
-    writeBinary(partition, buf);
+    writeBinary(partition_id, buf);
     writeBinary(partition_hash, buf);
     writeVarUInt(shard_no, buf);
 
@@ -2751,9 +2699,7 @@ std::string ReshardingWorker::LogRecord::toString()
         writeBinary(entry.second, buf);
     }
 
-    buf.next();
-
-    return out;
+    return buf.str();
 }
 
 }

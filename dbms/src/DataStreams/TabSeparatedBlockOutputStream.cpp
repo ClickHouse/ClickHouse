@@ -23,7 +23,7 @@ void TabSeparatedBlockOutputStream::write(const Block & block)
         {
             if (j != 0)
                 ostr.write('\t');
-            col.type->serializeTextEscaped(*col.column.get(), j, ostr);
+            col.type->serializeTextEscaped(*col.column, j, ostr);
         }
         ostr.write('\n');
     }

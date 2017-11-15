@@ -1,5 +1,7 @@
 #include <IO/ConcatReadBuffer.h>
 
+#include <Common/typeid_cast.h>
+
 #include <DataStreams/ProhibitColumnsBlockOutputStream.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
@@ -84,14 +86,14 @@ BlockIO InterpreterInsertQuery::execute()
     ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
     StoragePtr table = getTable();
 
-    auto table_lock = table->lockStructure(true);
+    auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
 
     NamesAndTypesListPtr required_columns = std::make_shared<NamesAndTypesList>(table->getColumnsList());
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
 
-    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, context, query_ptr);
+    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, context, query_ptr, query.no_destination);
 
     out = std::make_shared<MaterializingBlockOutputStream>(out);
 

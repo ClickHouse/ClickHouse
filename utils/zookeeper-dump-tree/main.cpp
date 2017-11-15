@@ -2,10 +2,10 @@
 #include <boost/program_options.hpp>
 #include <Common/Exception.h>
 #include <Poco/Event.h>
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 
 
-/** Выводит в произвольном порядке пути всех узлов ZK. Возможно, только в указанной директории.
+/** Outputs paths of all ZK nodes in arbitrary order. Possibly only in specified directory.
   */
 
 struct CallbackState

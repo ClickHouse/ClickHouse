@@ -1,10 +1,13 @@
 #pragma once
 
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Exception.h>
+
+#include <common/Types.h>
+#include <common/StringRef.h>
+
 #include <string>
 #include <vector>
-#include <Poco/Exception.h>
-#include <common/Types.h>
-#include <Core/StringRef.h>
 
 
 /** A class that allows you to recognize by region id its text name in one of the supported languages: ru, en, ua, by, kz, tr.
@@ -67,11 +70,11 @@ private:
 public:
     /** Reboot, if necessary, the names of regions.
       */
-    void reload();
+    void reload(const Poco::Util::AbstractConfiguration & config);
     void reload(const std::string & directory);
 
     /// Has corresponding section in configuration file.
-    static bool isConfigured();
+    static bool isConfigured(const Poco::Util::AbstractConfiguration & config);
 
 
     StringRef getRegionName(RegionID region_id, Language language = Language::RU) const

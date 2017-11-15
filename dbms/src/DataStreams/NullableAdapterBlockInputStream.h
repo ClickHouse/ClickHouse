@@ -12,12 +12,13 @@ namespace DB
 /// - if a target column is nullable while the corresponding source
 /// column is not, we embed the source column into a nullable column;
 /// - if a source column is nullable while the corresponding target
-/// column is not, we extract the nested column from the source;    /// TODO Probably this is totally incorrect.
+/// column is not, we extract the nested column from the source
+/// while checking that is doesn't actually contain NULLs;
 /// - otherwise we just perform an identity mapping.
 class NullableAdapterBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    NullableAdapterBlockInputStream(BlockInputStreamPtr input_, const Block & in_sample_,
+    NullableAdapterBlockInputStream(const BlockInputStreamPtr & input, const Block & in_sample_,
         const Block & out_sample_);
 
     String getName() const override { return "NullableAdapterBlockInputStream"; }
@@ -53,7 +54,7 @@ private:
 private:
     Actions actions;
     std::vector<std::experimental::optional<String>> rename;
-    bool must_transform;
+    bool must_transform = false;
 };
 
 }

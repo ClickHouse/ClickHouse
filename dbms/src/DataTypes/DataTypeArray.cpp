@@ -5,9 +5,17 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNull.h>
+#include <DataTypes/DataTypeNullable.h>
+
+#include <Parsers/IAST.h>
+
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -16,16 +24,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 
-DataTypeArray::DataTypeArray(DataTypePtr nested_)
+DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
     : enriched_nested(std::make_pair(nested_, std::make_shared<DataTypeVoid>())), nested{nested_}
 {
     offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
 }
 
-DataTypeArray::DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_)
+DataTypeArray::DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_)
     : enriched_nested{enriched_nested_}, nested{enriched_nested.first}
 {
     offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
@@ -125,16 +135,16 @@ void DataTypeArray::serializeBinaryBulk(const IColumn & column, WriteBuffer & os
 }
 
 
-void DataTypeArray::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeArray::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
 {
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
     ColumnArray::Offsets_t & offsets = column_array.getOffsets();
     IColumn & nested_column = column_array.getData();
 
-    /// Number of values correlated with `offsets` must be read.
+    /// Number of values corresponding with `offsets` must be read.
     size_t last_offset = (offsets.empty() ? 0 : offsets.back());
     if (last_offset < nested_column.size())
-        throw Exception("Nested column longer than last offset", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
     size_t nested_limit = last_offset - nested_column.size();
     nested->deserializeBinaryBulk(nested_column, istr, nested_limit, 0);
 
@@ -220,11 +230,11 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
     IColumn & nested_column = column_array.getData();
 
     size_t size = 0;
-    bool first = true;
     assertChar('[', istr);
 
     try
     {
+        bool first = true;
         while (!istr.eof() && *istr.position() != ']')
         {
             if (!first)
@@ -304,7 +314,7 @@ void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) c
 }
 
 
-void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
+void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
@@ -319,7 +329,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
     {
         if (i != offset)
             writeChar(',', ostr);
-        nested->serializeTextJSON(nested_column, i, ostr, force_quoting_64bit_integers);
+        nested->serializeTextJSON(nested_column, i, ostr, settings);
     }
     writeChar(']', ostr);
 }
@@ -355,12 +365,9 @@ void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, Wri
 void DataTypeArray::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     /// There is no good way to serialize an array in CSV. Therefore, we serialize it into a string, and then write the resulting string in CSV.
-    String s;
-    {
-        WriteBufferFromString wb(s);
-        serializeText(column, row_num, wb);
-    }
-    writeCSV(s, ostr);
+    WriteBufferFromOwnString wb;
+    serializeText(column, row_num, wb);
+    writeCSV(wb.str(), ostr);
 }
 
 
@@ -388,31 +395,34 @@ ColumnPtr DataTypeArray::createColumn() const
 }
 
 
-ColumnPtr DataTypeArray::createConstColumn(size_t size, const Field & field) const
+Field DataTypeArray::getDefault() const
 {
-    /// `this` can not be passed as the last argument.
-    return std::make_shared<ColumnConstArray>(size, get<const Array &>(field), std::make_shared<DataTypeArray>(nested));
+    return Array();
 }
 
 
-const DataTypePtr & DataTypeArray::getMostNestedType() const
+static DataTypePtr create(const ASTPtr & arguments)
 {
-    const DataTypeArray * array = this;
-    const IDataType * array_nested_type = array->getNestedType().get();
+    if (!arguments || arguments->children.size() != 1)
+        throw Exception("Array data type family must have exactly one argument - type of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    while (true)
+    DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
+
+    if (typeid_cast<const DataTypeNull *>(nested_type.get()))
     {
-        const DataTypeArray * type = typeid_cast<const DataTypeArray *>(array_nested_type);
-        if (type == nullptr)
-                break;
-        else
-        {
-            array = type;
-            array_nested_type = array->getNestedType().get();
-        }
+        /// Special case: Array(Null) is actually Array(Nullable(UInt8)).
+        return std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeNullable>(
+                std::make_shared<DataTypeUInt8>()));
     }
 
-    return array->getNestedType();
+    return std::make_shared<DataTypeArray>(nested_type);
+}
+
+
+void registerDataTypeArray(DataTypeFactory & factory)
+{
+    factory.registerDataType("Array", create);
 }
 
 }

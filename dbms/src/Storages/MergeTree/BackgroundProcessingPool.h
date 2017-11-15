@@ -6,8 +6,9 @@
 #include <list>
 #include <condition_variable>
 #include <mutex>
+#include <shared_mutex>
 #include <atomic>
-#include <Poco/RWLock.h>
+#include <functional>
 #include <Poco/Event.h>
 #include <Poco/Timestamp.h>
 #include <Core/Types.h>
@@ -43,7 +44,7 @@ public:
         Task function;
 
         /// Read lock is hold when task is executed.
-        Poco::RWLock rwlock;
+        std::shared_mutex rwlock;
         std::atomic<bool> removed {false};
 
         std::multimap<Poco::Timestamp, std::shared_ptr<TaskInfo>>::iterator iterator;

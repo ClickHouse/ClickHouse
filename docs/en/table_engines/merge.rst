@@ -4,7 +4,9 @@ Merge
 The Merge engine (not to be confused with MergeTree) does not store data itself, but allows reading from any number of other tables simultaneously.
 Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
 The Merge engine accepts parameters: the database name and a regular expression for tables. Example:
-::
+
+.. code-block:: text
+
   Merge(hits, '^WatchLog')
 
 - Data will be read from the tables in the 'hits' database with names that match the regex ``'^WatchLog'``.
@@ -19,7 +21,7 @@ It is possible to create two Merge tables that will endlessly try to read each o
 The typical way to use the Merge engine is for working with a large number of TinyLog tables as if with a single table.
 
 Virtual columns
-~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~
 
 Virtual columns are columns that are provided by the table engine, regardless of the table definition. In other words, these columns are not specified in CREATE TABLE, but they are accessible for SELECT.
 

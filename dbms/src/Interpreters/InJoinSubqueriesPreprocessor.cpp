@@ -5,6 +5,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -209,10 +210,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
 
 bool InJoinSubqueriesPreprocessor::hasAtLeastTwoShards(const IStorage & table) const
 {
-    if (!table.isRemote())
-        return false;
-
-    const StorageDistributed * distributed = typeid_cast<const StorageDistributed *>(&table);
+    const StorageDistributed * distributed = dynamic_cast<const StorageDistributed *>(&table);
     if (!distributed)
         return false;
 
@@ -223,7 +221,7 @@ bool InJoinSubqueriesPreprocessor::hasAtLeastTwoShards(const IStorage & table) c
 std::pair<std::string, std::string>
 InJoinSubqueriesPreprocessor::getRemoteDatabaseAndTableName(const IStorage & table) const
 {
-    const StorageDistributed & distributed = typeid_cast<const StorageDistributed &>(table);
+    const StorageDistributed & distributed = dynamic_cast<const StorageDistributed &>(table);
     return { distributed.getRemoteDatabaseName(), distributed.getRemoteTableName() };
 }
 

@@ -1,26 +1,29 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 
 
 namespace DB
 {
 
+class Context;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
-/** Вывести список имён таблиц/баз данных по некоторым условиям.
-  * Интерпретирует запрос путём замены его на запрос SELECT из таблицы system.tables или system.databases.
+
+/** Return a list of tables or databases meets specified conditions.
+  * Interprets a query through replacing it to SELECT query from system.tables or system.databases.
   */
 class InterpreterShowTablesQuery : public IInterpreter
 {
 public:
-    InterpreterShowTablesQuery(ASTPtr query_ptr_, Context & context_);
+    InterpreterShowTablesQuery(const ASTPtr & query_ptr_, Context & context_);
 
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
-    Context context;
+    Context & context;
 
     String getRewrittenQuery();
 };

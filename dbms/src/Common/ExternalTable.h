@@ -35,7 +35,7 @@ public:
     std::string format;     /// Name of the data storage format
 
     /// Description of the table structure: (column name, data type name)
-    std::vector<std::pair<std::string, std::string> > structure;
+    std::vector<std::pair<std::string, std::string>> structure;
 
     std::unique_ptr<ReadBuffer> read_buffer;
     Block sample_block;
@@ -197,7 +197,8 @@ public:
 
         /// Create table
         NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample_block.getColumnsList());
-        StoragePtr storage = StorageMemory::create(data.second, columns);
+        StoragePtr storage = StorageMemory::create(data.second, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
+        storage->startup();
         context.addExternalTable(data.second, storage);
         BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());
 

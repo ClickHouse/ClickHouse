@@ -20,6 +20,7 @@ void registerFunctionsConversion(FunctionFactory &);
 void registerFunctionsDateTime(FunctionFactory &);
 void registerFunctionsEmbeddedDictionaries(FunctionFactory &);
 void registerFunctionsExternalDictionaries(FunctionFactory &);
+void registerFunctionsExternalModels(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
@@ -38,6 +39,7 @@ void registerFunctionsTransform(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsCharset(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
+void registerFunctionsFindCluster(FunctionFactory &);
 
 
 void registerFunctions()
@@ -53,6 +55,7 @@ void registerFunctions()
     registerFunctionsDateTime(factory);
     registerFunctionsEmbeddedDictionaries(factory);
     registerFunctionsExternalDictionaries(factory);
+    registerFunctionsExternalModels(factory);
     registerFunctionsFormatting(factory);
     registerFunctionsHashing(factory);
     registerFunctionsHigherOrder(factory);
@@ -71,6 +74,7 @@ void registerFunctions()
     registerFunctionsGeo(factory);
     registerFunctionsCharset(factory);
     registerFunctionsNull(factory);
+    registerFunctionsFindCluster(factory);
 }
 
 }

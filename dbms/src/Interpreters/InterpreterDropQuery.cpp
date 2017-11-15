@@ -1,10 +1,13 @@
 #include <Poco/File.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/DDLWorker.h>
 
 
 namespace DB
@@ -18,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-InterpreterDropQuery::InterpreterDropQuery(ASTPtr query_ptr_, Context & context_)
+InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }
@@ -26,10 +29,13 @@ InterpreterDropQuery::InterpreterDropQuery(ASTPtr query_ptr_, Context & context_
 
 BlockIO InterpreterDropQuery::execute()
 {
+    ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
+
+    if (!drop.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
+
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
-
-    ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
 
     bool drop_database = drop.table.empty() && !drop.database.empty();
 
@@ -37,6 +43,22 @@ BlockIO InterpreterDropQuery::execute()
     {
         context.detachDatabase(drop.database);
         return {};
+    }
+
+    /// Drop temporary table.
+    if (drop.database.empty())
+    {
+        StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context).tryRemoveExternalTable(drop.table);
+        if (table)
+        {
+            table->shutdown();
+            /// If table was already dropped by anyone, an exception will be thrown
+            auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
+            /// Delete table data
+            table->drop();
+            table->is_dropped = true;
+            return {};
+        }
     }
 
     String database_name = drop.database.empty() ? current_database : drop.database;
@@ -77,17 +99,24 @@ BlockIO InterpreterDropQuery::execute()
             return {};
         }
 
-        for (auto iterator = database->getIterator(); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
             tables_to_drop.emplace_back(iterator->table(), context.getDDLGuard(database_name, iterator->name(),
                 "Table " + database_name + "." + iterator->name() + " is dropping or detaching right now"));
     }
 
     for (auto & table : tables_to_drop)
     {
+        if (!drop.detach)
+        {
+            if (!table.first->checkTableCanBeDropped())
+                throw Exception("Table " + database_name  + "." + table.first->getTableName() + " couldn't be dropped due to failed pre-drop check",
+                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+        }
+
         table.first->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table.first->lockForAlter();
+        auto table_lock = table.first->lockForAlter(__PRETTY_FUNCTION__);
 
         String current_table_name = table.first->getTableName();
 
@@ -98,12 +127,8 @@ BlockIO InterpreterDropQuery::execute()
         }
         else
         {
-            if (!table.first->checkTableCanBeDropped())
-                throw Exception("Table " + database_name  + "." + current_table_name + " couldn't be dropped due to failed pre-drop check",
-                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
-
             /// Delete table metdata and table itself from memory
-            database->removeTable(current_table_name);
+            database->removeTable(context, current_table_name);
             /// Delete table data
             table.first->drop();
 
@@ -126,7 +151,7 @@ BlockIO InterpreterDropQuery::execute()
         context.assertDatabaseExists(database_name);
 
         /// Someone could have time to create a table in the database to be deleted while we deleted the tables without the context lock.
-        if (!context.getDatabase(database_name)->empty())
+        if (!context.getDatabase(database_name)->empty(context))
             throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
         /// Delete database information from the RAM

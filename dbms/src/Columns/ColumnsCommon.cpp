@@ -38,12 +38,52 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
             | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
                 _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
                 zero16))) << 48));
+
+    /// TODO Add duff device for tail?
 #endif
 
     for (; pos < end; ++pos)
         count += *pos > 0;
 
     return count;
+}
+
+
+/** clang 4 generates better code than gcc 6.
+  * And both gcc and clang could not vectorize trivial loop by bytes automatically.
+  */
+bool memoryIsZero(const void * data, size_t size)
+{
+    const Int8 * pos = reinterpret_cast<const Int8 *>(data);
+    const Int8 * end = pos + size;
+
+#if __SSE2__
+    const __m128 zero16 = _mm_setzero_ps();
+    const Int8 * end64 = pos + size / 64 * 64;
+
+    for (; pos < end64; pos += 64)
+        if (_mm_movemask_ps(_mm_cmpneq_ps(
+                _mm_loadu_ps(reinterpret_cast<const float *>(pos)),
+                zero16))
+            | _mm_movemask_ps(_mm_cmpneq_ps(
+                _mm_loadu_ps(reinterpret_cast<const float *>(pos + 16)),
+                zero16))
+            | _mm_movemask_ps(_mm_cmpneq_ps(
+                _mm_loadu_ps(reinterpret_cast<const float *>(pos + 32)),
+                zero16))
+            | _mm_movemask_ps(_mm_cmpneq_ps(
+                _mm_loadu_ps(reinterpret_cast<const float *>(pos + 48)),
+                zero16)))
+            return false;
+
+    /// TODO Add duff device for tail?
+#endif
+
+    for (; pos < end; ++pos)
+        if (*pos)
+            return false;
+
+    return true;
 }
 
 
@@ -63,7 +103,7 @@ namespace
         IColumn::Offsets_t & res_offsets;
         IColumn::Offset_t current_src_offset = 0;
 
-        ResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) : res_offsets(*res_offsets_) {}
+        explicit ResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) : res_offsets(*res_offsets_) {}
 
         void reserve(ssize_t result_size_hint, size_t src_size)
         {
@@ -107,7 +147,7 @@ namespace
 
     struct NoResultOffsetsBuilder
     {
-        NoResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) {}
+        explicit NoResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) {}
         void reserve(ssize_t result_size_hint, size_t src_size) {}
         void insertOne(size_t array_size) {}
 

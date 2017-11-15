@@ -1,5 +1,5 @@
 Type conversion functions
-----------------------------
+-------------------------
 
 toUInt8, toUInt16, toUInt32, toUInt64
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -26,7 +26,9 @@ When converting dates to numbers or vice versa, the date corresponds to the numb
 When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
 
 Formats of date and date with time for toDate/toDateTime functions are defined as follows:
-::
+
+.. code-block:: text
+
   YYYY-MM-DD
   YYYY-MM-DD hh:mm:ss
 
@@ -43,21 +45,27 @@ To do transformations on DateTime in given time zone, pass second argument with 
   SELECT
       now() AS now_local,
       toString(now(), 'Asia/Yekaterinburg') AS now_yekat
-  
+
+.. code-block:: text
+
   ┌───────────now_local─┬─now_yekat───────────┐
   │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
   └─────────────────────┴─────────────────────┘
 
 To format DateTime in given time zone:
-::
+
+.. code-block:: text
+
   toString(now(), 'Asia/Yekaterinburg')
   
 To get unix timestamp for string with datetime in specified time zone:
-::
+
+.. code-block:: text
+
   toUnixTimestamp('2000-01-01 00:00:00', 'Asia/Yekaterinburg')
 
 toFixedString(s, N)
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
 Converts a String type argument to a FixedString(N) type (a string with fixed length N). N must be a constant. If the string has fewer bytes than N, it is passed with null bytes to the right. If the string has more bytes than N, an exception is thrown.
 
 toStringCutToZero(s)
@@ -68,13 +76,15 @@ Example:
 
 .. code-block:: sql
 
-  :) SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
+  SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
   
+.. code-block:: text
+
   ┌─s─────────────┬─s_cut─┐
   │ foo\0\0\0\0\0 │ foo   │
   └───────────────┴───────┘
 
-  :) SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
+  SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
   
   ┌─s──────────┬─s_cut─┐
   │ foo\0bar\0 │ foo   │
@@ -112,7 +122,9 @@ Example:
       CAST(timestamp AS Date) AS date,
       CAST(timestamp, 'String') AS string,
       CAST(timestamp, 'FixedString(22)') AS fixed_string
-  
+
+.. code-block:: text
+
   ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
   │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
   └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘

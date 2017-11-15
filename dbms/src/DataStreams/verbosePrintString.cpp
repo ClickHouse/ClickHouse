@@ -1,11 +1,12 @@
 #include <DataStreams/verbosePrintString.h>
+#include <Common/hex.h>
 #include <IO/Operators.h>
 
 
 namespace DB
 {
 
-void verbosePrintString(BufferBase::Position begin, BufferBase::Position end, WriteBuffer & out)
+void verbosePrintString(const char * begin, const char * end, WriteBuffer & out)
 {
     if (end == begin)
     {
@@ -50,10 +51,7 @@ void verbosePrintString(BufferBase::Position begin, BufferBase::Position end, Wr
             default:
             {
                 if (*pos >= 0 && *pos < 32)
-                {
-                    static const char * hex = "0123456789ABCDEF";
-                    out << "<0x" << hex[*pos / 16] << hex[*pos % 16] << ">";
-                }
+                    out << "<0x" << hexDigitUppercase(*pos / 16) << hexDigitUppercase(*pos % 16) << ">";
                 else
                     out << *pos;
             }

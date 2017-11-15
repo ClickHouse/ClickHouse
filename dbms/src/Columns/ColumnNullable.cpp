@@ -1,10 +1,12 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -240,6 +242,8 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
 
         if (!limit)
             limit = end_idx;
+        else
+            limit = std::min(end_idx, limit);
 
         while (read_idx < limit && !isNullAt(res[read_idx]))
         {
@@ -271,7 +275,7 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
     }
     else
     {
-        /// Shift all NULL values to the begin.
+        /// Shift all NULL values to the beginning.
 
         ssize_t read_idx = res.size() - 1;
         ssize_t write_idx = res.size() - 1;
@@ -296,6 +300,11 @@ void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_directi
     }
 }
 
+void ColumnNullable::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
+
 void ColumnNullable::reserve(size_t n)
 {
     nested_column->reserve(n);
@@ -307,9 +316,9 @@ size_t ColumnNullable::byteSize() const
     return nested_column->byteSize() + getNullMapConcreteColumn().byteSize();
 }
 
-size_t ColumnNullable::allocatedSize() const
+size_t ColumnNullable::allocatedBytes() const
 {
-    return nested_column->allocatedSize() + getNullMapConcreteColumn().allocatedSize();
+    return nested_column->allocatedBytes() + getNullMapConcreteColumn().allocatedBytes();
 }
 
 
@@ -350,6 +359,7 @@ void getExtremesFromNullableContent(const ColumnVector<T> & col, const NullMap &
             cur_min = x;
             cur_max = x;
             has_not_null = true;
+            has_not_nan = !isNaN(x);
             continue;
         }
 
@@ -366,8 +376,7 @@ void getExtremesFromNullableContent(const ColumnVector<T> & col, const NullMap &
 
         if (x < cur_min)
             cur_min = x;
-
-        if (x > cur_max)
+        else if (x > cur_max)
             cur_max = x;
     }
 

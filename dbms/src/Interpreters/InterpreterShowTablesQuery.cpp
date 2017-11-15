@@ -3,8 +3,11 @@
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTIdentifier.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
+
+#include <Common/typeid_cast.h>
 
 #include <iomanip>
 
@@ -13,7 +16,7 @@ namespace DB
 {
 
 
-InterpreterShowTablesQuery::InterpreterShowTablesQuery(ASTPtr query_ptr_, Context & context_)
+InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_, Context & context_)
     : query_ptr(query_ptr_), context(context_)
 {
 }

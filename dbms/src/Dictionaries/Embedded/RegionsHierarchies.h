@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Dictionaries/Embedded/RegionsHierarchy.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Exception.h>
+
 #include <unordered_map>
 
 
@@ -24,11 +27,11 @@ public:
       * For example, if /opt/geo/regions_hierarchy.txt is specified,
       *  then the /opt/geo/regions_hierarchy_ua.txt file will also be loaded, if any, it will be accessible by the `ua` key.
       */
-    RegionsHierarchies();
-    explicit RegionsHierarchies(const std::string & path_to_regions_hierarchy_file);
+    void reload(const Poco::Util::AbstractConfiguration & config);
+    void reload(const std::string & directory);
 
     /// Has corresponding section in configuration file.
-    static bool isConfigured();
+    static bool isConfigured(const Poco::Util::AbstractConfiguration & config);
 
 
     /** Reloads, if necessary, all hierarchies of regions.

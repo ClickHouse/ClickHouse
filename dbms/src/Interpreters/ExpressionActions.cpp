@@ -3,6 +3,7 @@
 #include <Interpreters/Join.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>

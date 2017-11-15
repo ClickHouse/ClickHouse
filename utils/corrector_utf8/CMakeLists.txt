@@ -1,4 +1,3 @@
-include_directories (${ClickHouse_SOURCE_DIR}/dbms/src)
 
 add_executable(corrector_utf8 corrector_utf8.cpp)
 

@@ -69,13 +69,13 @@ class MergeSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
-    MergeSortingBlockInputStream(BlockInputStreamPtr input_, SortDescription & description_,
+    MergeSortingBlockInputStream(const BlockInputStreamPtr & input, SortDescription & description_,
         size_t max_merged_block_size_, size_t limit_,
         size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
         : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
         max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
     {
-        children.push_back(input_);
+        children.push_back(input);
     }
 
     String getName() const override { return "MergeSorting"; }

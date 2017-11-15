@@ -4,12 +4,9 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Parsers/CommonParsers.h>
-#include <ext/range.hpp>
-#include <boost/range/iterator_range_core.hpp>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ASTLiteral.h>
+#include <ext/range.h>
 #include <Common/PODArray.h>
+#include <Common/typeid_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <bitset>
@@ -26,6 +23,7 @@ namespace ErrorCodes
     extern const int TOO_MUCH_ARGUMENTS_FOR_FUNCTION;
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 /// helper type for comparing `std::pair`s using solely the .first member
@@ -114,13 +112,13 @@ struct AggregateFunctionSequenceMatchData final
     {
         readBinary(sorted, buf);
 
-        std::size_t size;
+        size_t size;
         readBinary(size, buf);
 
         events_list.clear();
         events_list.reserve(size);
 
-        for (std::size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             std::uint32_t timestamp;
             readBinary(timestamp, buf);
@@ -140,7 +138,7 @@ constexpr auto sequence_match_max_iterations = 1000000;
 class AggregateFunctionSequenceMatch : public IAggregateFunctionHelper<AggregateFunctionSequenceMatchData>
 {
 public:
-    static bool sufficientArgs(const std::size_t arg_count) { return arg_count >= 3; }
+    static bool sufficientArgs(const size_t arg_count) { return arg_count >= 3; }
 
     String getName() const override { return "sequenceMatch"; }
 
@@ -151,8 +149,7 @@ public:
         if (params.size() != 1)
             throw Exception{
                 "Aggregate function " + getName() + " requires exactly one parameter.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         pattern = params.front().safeGet<std::string>();
     }
@@ -164,23 +161,20 @@ public:
         if (!sufficientArgs(arg_count))
             throw Exception{
                 "Aggregate function " + getName() + " requires at least 3 arguments.",
-                ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION
-            };
+                ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
 
         if (arg_count - 1 > Data::max_events)
             throw Exception{
                 "Aggregate function " + getName() + " supports up to " +
                     std::to_string(Data::max_events) + " event arguments.",
-                ErrorCodes::TOO_MUCH_ARGUMENTS_FOR_FUNCTION
-            };
+                ErrorCodes::TOO_MUCH_ARGUMENTS_FOR_FUNCTION};
 
         const auto time_arg = arguments.front().get();
         if (!typeid_cast<const DataTypeDateTime *>(time_arg))
             throw Exception{
                 "Illegal type " + time_arg->getName() + " of first argument of aggregate function " +
                     getName() + ", must be DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         for (const auto i : ext::range(1, arg_count))
         {
@@ -189,8 +183,7 @@ public:
                 throw Exception{
                     "Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) +
                         " of aggregate function " + getName() + ", must be UInt8",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-                };
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         parsePattern();
@@ -245,6 +238,8 @@ public:
 
     IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
+    const char * getHeaderFilePath() const override { return __FILE__; }
+
 private:
     enum class PatternActionType
     {
@@ -275,52 +270,51 @@ private:
         actions.clear();
         actions.emplace_back(PatternActionType::KleeneStar);
 
-        ParserString special_open_p("(?");
-        ParserString special_close_p(")");
-        ParserString t_p("t");
-        ParserString less_or_equal_p("<=");
-        ParserString less_p("<");
-        ParserString greater_or_equal_p(">=");
-        ParserString greater_p(">");
-        ParserString dot_closure_p(".*");
-        ParserString dot_p(".");
-        ParserNumber number_p;
-
         const char * pos = pattern.data();
-        const auto begin = pos;
-        const auto end = pos + pattern.size();
+        const char * begin = pos;
+        const char * end = pos + pattern.size();
 
-        ASTPtr node;
-        decltype(pos) max_parsed_pos{};
-        Expected expected;
-
-        const auto throw_exception = [&] (const std::string & msg)
+        auto throw_exception = [&](const std::string & msg)
         {
             throw Exception{
                 msg + " '" + std::string(pos, end) + "' at position " + std::to_string(pos - begin),
                 ErrorCodes::SYNTAX_ERROR};
         };
 
+        auto match = [&pos, end](const char * str) mutable
+        {
+            size_t length = strlen(str);
+            if (pos + length <= end && 0 == memcmp(pos, str, length))
+            {
+                pos += length;
+                return true;
+            }
+            return false;
+        };
+
         while (pos < end)
         {
-            if (special_open_p.ignore(pos, end))
+            if (match("(?"))
             {
-                if (t_p.ignore(pos, end))
+                if (match("t"))
                 {
                     PatternActionType type;
 
-                    if (less_or_equal_p.ignore(pos, end))
+                    if (match("<="))
                         type = PatternActionType::TimeLessOrEqual;
-                    else if (less_p.ignore(pos, end))
+                    else if (match("<"))
                         type = PatternActionType::TimeLess;
-                    else if (greater_or_equal_p.ignore(pos, end))
+                    else if (match(">="))
                         type = PatternActionType::TimeGreaterOrEqual;
-                    else if (greater_p.ignore(pos, end))
+                    else if (match(">"))
                         type = PatternActionType::TimeGreater;
                     else
                         throw_exception("Unknown time condition");
 
-                    if (!number_p.parse(pos, end, node, max_parsed_pos, expected))
+                    UInt64 duration = 0;
+                    auto prev_pos = pos;
+                    pos = tryReadIntText(duration, pos, end);
+                    if (pos == prev_pos)
                         throw_exception("Could not parse number");
 
                     if (actions.back().type != PatternActionType::SpecificEvent &&
@@ -328,32 +322,33 @@ private:
                         actions.back().type != PatternActionType::KleeneStar)
                         throw Exception{
                             "Temporal condition should be preceeded by an event condition",
-                            ErrorCodes::BAD_ARGUMENTS
-                        };
+                            ErrorCodes::BAD_ARGUMENTS};
 
-                    actions.emplace_back(type, typeid_cast<const ASTLiteral &>(*node).value.safeGet<UInt64>());
+                    actions.emplace_back(type, duration);
                 }
-                else if (number_p.parse(pos, end, node, max_parsed_pos, expected))
+                else
                 {
-                    const auto event_number = typeid_cast<const ASTLiteral &>(*node).value.safeGet<UInt64>();
+                    UInt64 event_number = 0;
+                    auto prev_pos = pos;
+                    pos = tryReadIntText(event_number, pos, end);
+                    if (pos == prev_pos)
+                        throw_exception("Could not parse number");
+
                     if (event_number > arg_count - 1)
                         throw Exception{
                             "Event number " + std::to_string(event_number) + " is out of range",
-                            ErrorCodes::BAD_ARGUMENTS
-                        };
+                            ErrorCodes::BAD_ARGUMENTS};
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
                 }
-                else
-                    throw_exception("Unexpected special sequence");
 
-                if (!special_close_p.ignore(pos, end))
+                if (!match(")"))
                     throw_exception("Expected closing parenthesis, found");
 
             }
-            else if (dot_closure_p.ignore(pos, end))
+            else if (match(".*"))
                 actions.emplace_back(PatternActionType::KleeneStar);
-            else if (dot_p.ignore(pos, end))
+            else if (match("."))
                 actions.emplace_back(PatternActionType::AnyEvent);
             else
                 throw_exception("Could not parse pattern, unexpected starting symbol");
@@ -394,7 +389,7 @@ protected:
             return false;
         };
 
-        std::size_t i = 0;
+        size_t i = 0;
         while (action_it != action_end && events_it != events_end)
         {
             if (action_it->type == PatternActionType::SpecificEvent)
@@ -468,14 +463,12 @@ protected:
             else
                 throw Exception{
                     "Unknown PatternActionType",
-                    ErrorCodes::LOGICAL_ERROR
-                };
+                    ErrorCodes::LOGICAL_ERROR};
 
             if (++i > sequence_match_max_iterations)
                 throw Exception{
                     "Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
-                    ErrorCodes::TOO_SLOW
-                };
+                    ErrorCodes::TOO_SLOW};
         }
 
         /// if there are some actions remaining
@@ -497,7 +490,7 @@ protected:
 
 private:
     std::string pattern;
-    std::size_t arg_count;
+    size_t arg_count;
     PatternActions actions;
 };
 
@@ -523,7 +516,7 @@ private:
         const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
-        std::size_t count = 0;
+        size_t count = 0;
         while (events_it != events_end && match(events_it, events_end))
             ++count;
 

@@ -8,7 +8,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <zkutil/ZooKeeperNodeCache.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ConfigProcessor.h>
 #include <Common/Exception.h>
 
@@ -74,7 +74,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         {
             std::cerr << "Preprocess config file and extract value of the given key." << std::endl
                 << std::endl;
-            std::cerr << "Usage: clickhouse --extract-from-config [options]" << std::endl
+            std::cerr << "Usage: clickhouse extract-from-config [options]" << std::endl
                 << std::endl;
             std::cerr << options_desc << std::endl;
             return 0;

@@ -4,9 +4,6 @@
 #include <map>
 #include <experimental/optional>
 
-#include <Poco/Path.h>
-#include <Poco/Util/XMLConfiguration.h>
-
 #include <Common/escapeForFileName.h>
 
 #include <Common/Exception.h>
@@ -18,9 +15,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNested.h>
-
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -29,10 +23,9 @@
 
 #include <Columns/ColumnArray.h>
 
-#include <Interpreters/Settings.h>
+#include <Interpreters/Context.h>
 
 #include <Storages/StorageStripeLog.h>
-#include <Poco/DirectoryIterator.h>
 
 
 namespace DB
@@ -47,7 +40,7 @@ namespace ErrorCodes
 }
 
 
-class StripeLogBlockInputStream : public IProfilingBlockInputStream
+class StripeLogBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
     StripeLogBlockInputStream(const NameSet & column_names_, StorageStripeLog & storage_, size_t max_read_buffer_size_,
@@ -79,7 +72,7 @@ protected:
 
             data_in.emplace(
                 storage.full_path() + "data.bin", 0, 0,
-                std::min(max_read_buffer_size, Poco::File(storage.full_path() + "data.bin").getSize()));
+                std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(storage.full_path() + "data.bin").getSize()));
 
             block_in.emplace(*data_in, 0, true, index_begin, index_end);
         }
@@ -118,13 +111,13 @@ private:
 };
 
 
-class StripeLogBlockOutputStream : public IBlockOutputStream
+class StripeLogBlockOutputStream final : public IBlockOutputStream
 {
 public:
-    StripeLogBlockOutputStream(StorageStripeLog & storage_)
+    explicit StripeLogBlockOutputStream(StorageStripeLog & storage_)
         : storage(storage_), lock(storage.rwlock),
         data_out_compressed(storage.full_path() + "data.bin", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
-        data_out(data_out_compressed, CompressionMethod::LZ4, storage.max_compress_block_size),
+        data_out(data_out_compressed, CompressionSettings(CompressionMethod::LZ4), storage.max_compress_block_size),
         index_out_compressed(storage.full_path() + "index.mrk", INDEX_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
         index_out(index_out_compressed),
         block_out(data_out, 0, &index_out, Poco::File(storage.full_path() + "data.bin").getSize())
@@ -167,7 +160,7 @@ public:
 
 private:
     StorageStripeLog & storage;
-    Poco::ScopedWriteRWLock lock;
+    std::unique_lock<std::shared_mutex> lock;
 
     WriteBufferFromFile data_out_compressed;
     CompressedWriteBuffer data_out;
@@ -206,27 +199,10 @@ StorageStripeLog::StorageStripeLog(
     }
 }
 
-StoragePtr StorageStripeLog::create(
-    const std::string & path_,
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach,
-    size_t max_compress_block_size_)
-{
-    return make_shared(
-        path_, name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        attach, max_compress_block_size_
-    );
-}
-
 
 void StorageStripeLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     /// Rename directory with data.
     Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
@@ -239,14 +215,13 @@ void StorageStripeLog::rename(const String & new_path_to_db, const String & new_
 
 BlockInputStreams StorageStripeLog::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
-    Poco::ScopedReadRWLock lock(rwlock);
+    std::shared_lock<std::shared_mutex> lock(rwlock);
 
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -262,18 +237,19 @@ BlockInputStreams StorageStripeLog::read(
     BlockInputStreams res;
 
     size_t size = index->blocks.size();
-    if (threads > size)
-        threads = size;
+    if (num_streams > size)
+        num_streams = size;
 
-    for (size_t thread = 0; thread < threads; ++thread)
+    for (size_t stream = 0; stream < num_streams; ++stream)
     {
         IndexForNativeFormat::Blocks::const_iterator begin = index->blocks.begin();
         IndexForNativeFormat::Blocks::const_iterator end = index->blocks.begin();
 
-        std::advance(begin, thread * size / threads);
-        std::advance(end, (thread + 1) * size / threads);
+        std::advance(begin, stream * size / num_streams);
+        std::advance(end, (stream + 1) * size / num_streams);
 
-        res.emplace_back(std::make_shared<StripeLogBlockInputStream>(column_names_set, *this, settings.max_read_buffer_size, index, begin, end));
+        res.emplace_back(std::make_shared<StripeLogBlockInputStream>(
+            column_names_set, *this, context.getSettingsRef().max_read_buffer_size, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -291,7 +267,7 @@ BlockOutputStreamPtr StorageStripeLog::write(
 
 bool StorageStripeLog::checkData() const
 {
-    Poco::ScopedReadRWLock lock(const_cast<Poco::RWLock &>(rwlock));
+    std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
 }
 

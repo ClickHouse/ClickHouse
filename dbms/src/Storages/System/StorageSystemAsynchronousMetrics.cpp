@@ -16,27 +16,21 @@ StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const std::st
     : name(name_),
     columns
     {
-        {"metric",         std::make_shared<DataTypeString>()},
-        {"value",        std::make_shared<DataTypeFloat64>()},
+        {"metric", std::make_shared<DataTypeString>()},
+        {"value", std::make_shared<DataTypeFloat64>()},
     },
     async_metrics(async_metrics_)
 {
 }
 
-StoragePtr StorageSystemAsynchronousMetrics::create(const std::string & name_, const AsynchronousMetrics & async_metrics_)
-{
-    return make_shared(name_, async_metrics_);
-}
-
 
 BlockInputStreams StorageSystemAsynchronousMetrics::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

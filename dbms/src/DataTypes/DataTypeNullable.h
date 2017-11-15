@@ -11,13 +11,17 @@ namespace DB
 class DataTypeNullable final : public IDataType
 {
 public:
-    DataTypeNullable(DataTypePtr nested_data_type_);
+    static constexpr bool is_parametric = true;
+
+    DataTypeNullable(const DataTypePtr & nested_data_type_);
     std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
+    const char * getFamilyName() const override { return "Nullable"; }
     bool isNullable() const override { return true; }
 
     bool isNumeric() const override { return nested_data_type->isNumeric(); }    /// TODO Absolutely wrong.
     bool isNumericNotNullable() const override { return false; }
     bool behavesAsNumber() const override { return nested_data_type->behavesAsNumber(); }    /// TODO Absolutely wrong.
+    bool canBeInsideNullable() const override { return false; }
 
     DataTypePtr clone() const override { return std::make_shared<DataTypeNullable>(nested_data_type->clone()); }
 
@@ -45,14 +49,12 @@ public:
       */
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-        bool force_quoting_64bit_integers) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
     Field getDefault() const override { return Null(); }
 

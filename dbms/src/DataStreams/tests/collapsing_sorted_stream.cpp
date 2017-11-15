@@ -75,7 +75,7 @@ try
     //CollapsingSortedBlockInputStream collapsed(inputs, descr, "Sign", 1048576);
     CollapsingFinalBlockInputStream collapsed(inputs, descr, "Sign");
 
-    Context context;
+    Context context = Context::createGlobal();
     WriteBufferFromFileDescriptor out_buf(STDERR_FILENO);
     BlockOutputStreamPtr output = context.getOutputFormat("TabSeparated", out_buf, block1);
 

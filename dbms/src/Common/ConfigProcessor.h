@@ -29,7 +29,7 @@ using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
 class ConfigProcessor
 {
 public:
-    using Substitutions = std::vector<std::pair<std::string, std::string> >;
+    using Substitutions = std::vector<std::pair<std::string, std::string>>;
 
     /// Set log_to_console to true if the logging subsystem is not initialized yet.
     ConfigProcessor(bool throw_on_bad_incl = false, bool log_to_console = false, const Substitutions & substitutions = Substitutions());

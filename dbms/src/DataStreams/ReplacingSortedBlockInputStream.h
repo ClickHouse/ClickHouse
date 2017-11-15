@@ -16,8 +16,8 @@ class ReplacingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
     ReplacingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_,
-        const String & version_column_, size_t max_block_size_)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
+        const String & version_column_, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
+        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_),
         version_column(version_column_)
     {
     }
@@ -61,7 +61,9 @@ private:
 
     UInt64 max_version = 0;        /// Max version for current primary key.
 
-    template<class TSortCursor>
+    PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
+
+    template <typename TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     /// Output into result the rows for current primary key.

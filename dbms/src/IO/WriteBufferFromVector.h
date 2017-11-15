@@ -11,10 +11,10 @@
 namespace DB
 {
 
-/** Инициализируется вектором. Пишет данные в него. Когда вектор закончится - увеличивает его размер в два раза.
-  * CharType - char или unsigned char.
+/** Initialized by vector. Writes data to it. When the vector is finished, it doubles its size.
+  * CharType - char or unsigned char.
   */
-template <typename VectorType = std::vector<char> >
+template <typename VectorType = std::vector<char>>
 class WriteBufferFromVector : public WriteBuffer
 {
 private:
@@ -24,7 +24,7 @@ private:
     {
         size_t old_size = vector.size();
         vector.resize(old_size * 2);
-        internal_buffer = Buffer(reinterpret_cast<Position>(&vector[old_size]), reinterpret_cast<Position>(&*vector.end()));
+        internal_buffer = Buffer(reinterpret_cast<Position>(&vector[old_size]), reinterpret_cast<Position>(vector.data() + vector.size()));
         working_buffer = internal_buffer;
     }
 

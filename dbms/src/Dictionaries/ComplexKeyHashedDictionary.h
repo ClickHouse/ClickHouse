@@ -3,11 +3,11 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <atomic>
 #include <memory>
 #include <tuple>
@@ -15,6 +15,7 @@
 
 namespace DB
 {
+
 
 class ComplexKeyHashedDictionary final : public IDictionaryBase
 {
@@ -33,19 +34,19 @@ public:
 
     std::string getTypeName() const override { return "ComplexKeyHashed"; }
 
-    std::size_t getBytesAllocated() const override { return bytes_allocated; }
+    size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override { return 1.0; }
 
-    std::size_t getElementCount() const override { return element_count; }
+    size_t getElementCount() const override { return element_count; }
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
     bool isCached() const override { return false; }
 
-    DictionaryPtr clone() const override { return std::make_unique<ComplexKeyHashedDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<ComplexKeyHashedDictionary>(*this); }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
@@ -65,7 +66,7 @@ public:
 
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
         PaddedPODArray<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -80,12 +81,12 @@ public:
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
         ColumnString * out) const;
 
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
         const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -100,12 +101,12 @@ public:
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
         const ColumnString * const def, ColumnString * const out) const;
 
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,\
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
         const TYPE def, PaddedPODArray<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -120,10 +121,12 @@ public:
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types,
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
         const String & def, ColumnString * const out) const;
 
-    void has(const ConstColumnPlainPtrs & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
+    void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
+
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value> using ContainerType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
@@ -163,14 +166,14 @@ private:
     template <typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsNumber(
         const Attribute & attribute,
-        const ConstColumnPlainPtrs & key_columns,
+        const Columns & key_columns,
         ValueSetter && set_value,
         DefaultGetter && get_default) const;
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
         const Attribute & attribute,
-        const ConstColumnPlainPtrs & key_columns,
+        const Columns & key_columns,
         ValueSetter && set_value,
         DefaultGetter && get_default) const;
 
@@ -183,10 +186,15 @@ private:
     const Attribute & getAttribute(const std::string & attribute_name) const;
 
     static StringRef placeKeysInPool(
-        const std::size_t row, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool);
+        const size_t row, const Columns & key_columns, StringRefs & keys, Arena & pool);
 
     template <typename T>
-    void has(const Attribute & attribute, const ConstColumnPlainPtrs & key_columns, PaddedPODArray<UInt8> & out) const;
+    void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
+
+    std::vector<StringRef> getKeys() const;
+
+    template <typename T>
+    std::vector<StringRef> getKeys(const Attribute & attribute) const;
 
     const std::string name;
     const DictionaryStructure dict_struct;
@@ -195,14 +203,14 @@ private:
     const bool require_nonempty;
     const std::string key_description{dict_struct.getKeyDescription()};
 
-    std::map<std::string, std::size_t> attribute_index_by_name;
+    std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
     Arena keys_pool;
 
-    std::size_t bytes_allocated = 0;
-    std::size_t element_count = 0;
-    std::size_t bucket_count = 0;
-    mutable std::atomic<std::size_t> query_count{0};
+    size_t bytes_allocated = 0;
+    size_t element_count = 0;
+    size_t bucket_count = 0;
+    mutable std::atomic<size_t> query_count{0};
 
     std::chrono::time_point<std::chrono::system_clock> creation_time;
 

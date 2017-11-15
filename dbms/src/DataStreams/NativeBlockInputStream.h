@@ -2,7 +2,7 @@
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/MarkInCompressedFile.h>
-
+#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -60,8 +60,7 @@ struct IndexForNativeFormat
 class NativeBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    /** If a non-zero server_revision is specified, additional block information may be expected and read,
-      * depending on what is supported for the specified revision.
+    /** If a non-zero server_revision is specified, additional block information may be expected and read.
       *
       * `index` is not required parameter. If set, only parts of columns specified in the index will be read.
       */
@@ -80,7 +79,7 @@ public:
         return res.str();
     }
 
-    static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows);
+    static void readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
 
 protected:
     Block readImpl() override;
@@ -96,6 +95,10 @@ private:
 
     /// If an index is specified, then `istr` must be CompressedReadBufferFromFile.
     CompressedReadBufferFromFile * istr_concrete;
+
+    PODArray<double> avg_value_size_hints;
+
+    void updateAvgValueSizeHints(const Block & block);
 };
 
 }

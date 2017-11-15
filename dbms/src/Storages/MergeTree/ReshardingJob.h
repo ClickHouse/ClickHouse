@@ -21,7 +21,7 @@ public:
     ReshardingJob(const std::string & serialized_job);
 
     ReshardingJob(const std::string & database_name_, const std::string & table_name_,
-        const std::string & partition_, const WeightedZooKeeperPaths & paths_,
+        const std::string & partition_id_, const WeightedZooKeeperPaths & paths_,
         const ASTPtr & sharding_key_expr_, const std::string & coordinator_id_);
 
     ReshardingJob(const ReshardingJob &) = delete;
@@ -42,7 +42,7 @@ public:
 public:
     std::string database_name;
     std::string table_name;
-    std::string partition;
+    std::string partition_id;
     std::string job_name;
     WeightedZooKeeperPaths paths;
     ASTPtr sharding_key_expr;

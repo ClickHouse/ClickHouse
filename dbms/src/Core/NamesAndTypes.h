@@ -4,6 +4,7 @@
 #include <list>
 #include <string>
 #include <set>
+#include <initializer_list>
 
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
@@ -36,7 +37,13 @@ using NamesAndTypes = std::vector<NameAndTypePair>;
 class NamesAndTypesList : public std::list<NameAndTypePair>
 {
 public:
-    using std::list<NameAndTypePair>::list;
+    NamesAndTypesList() {}
+
+    NamesAndTypesList(std::initializer_list<NameAndTypePair> init) : std::list<NameAndTypePair>(init) {}
+
+    template <typename Iterator>
+    NamesAndTypesList(Iterator begin, Iterator end) : std::list<NameAndTypePair>(begin, end) {}
+
 
     void readText(ReadBuffer & buf);
     void writeText(WriteBuffer & buf) const;

@@ -1,71 +1,20 @@
+#include <Common/TypeList.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/Aggregator.h>
-
 #include <AggregateFunctions/AggregateFunctionCount.h>
-#include <AggregateFunctions/AggregateFunctionSum.h>
-#include <AggregateFunctions/AggregateFunctionAvg.h>
-#include <AggregateFunctions/AggregateFunctionsMinMaxAny.h>
-#include <AggregateFunctions/AggregateFunctionsArgMinMax.h>
-#include <AggregateFunctions/AggregateFunctionUniq.h>
-#include <AggregateFunctions/AggregateFunctionUniqUpTo.h>
-#include <AggregateFunctions/AggregateFunctionGroupArray.h>
-#include <AggregateFunctions/AggregateFunctionGroupUniqArray.h>
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
-#include <AggregateFunctions/AggregateFunctionQuantileTiming.h>
-#include <AggregateFunctions/AggregateFunctionIf.h>
-#include <AggregateFunctions/AggregateFunctionArray.h>
-#include <AggregateFunctions/AggregateFunctionState.h>
-#include <AggregateFunctions/AggregateFunctionMerge.h>
-#include <AggregateFunctions/AggregateFunctionNull.h>
 
 
 namespace DB
 {
 
 
-/** Шаблон цикла агрегации, позволяющий сгенерировать специализированный вариант для конкретной комбинации агрегатных функций.
-  * Отличается от обычного тем, что вызовы агрегатных функций должны инлайниться, а цикл обновления агрегатных функций должен развернуться.
+/** An aggregation loop template that allows you to generate a custom variant for a specific combination of aggregate functions.
+  * It differs from the usual one in that calls to aggregate functions should be inlined, and the update loop of the aggregate functions should be unrolled.
   *
-  * Так как возможных комбинаций слишком много, то не представляется возможным сгенерировать их все заранее.
-  * Этот шаблон предназначен для того, чтобы инстанцировать его в рантайме,
-  *  путём запуска компилятора, компиляции shared library и использования её с помощью dlopen.
+  * Since there are too many possible combinations, it is not possible to generate them all in advance.
+  * This template is intended to instantiate it in runtime,
+  *  by running the compiler, compiling shared library, and using it with `dlopen`.
   */
-
-
-/** Список типов - для удобного перечисления агрегатных функций.
-  */
-template <typename... TTail>
-struct TypeList
-{
-    static constexpr size_t size = 0;
-
-    template <size_t I>
-    using At = std::nullptr_t;
-
-    template <typename Func, size_t index = 0>
-    static void forEach(Func && func)
-    {
-    }
-};
-
-
-template <typename THead, typename... TTail>
-struct TypeList<THead, TTail...>
-{
-    using Head = THead;
-    using Tail = TypeList<TTail...>;
-
-    static constexpr size_t size = 1 + sizeof...(TTail);
-
-    template <size_t I>
-    using At = typename std::template conditional<I == 0, Head, typename Tail::template At<I - 1>>::type;
-
-    template <typename Func, size_t index = 0>
-    static void ALWAYS_INLINE forEach(Func && func)
-    {
-        func.template operator()<Head, index>();
-        Tail::template forEach<Func, index + 1>(std::forward<Func>(func));
-    }
-};
 
 
 struct AggregateFunctionsUpdater
@@ -132,10 +81,10 @@ void AggregateFunctionsCreator::operator()()
 
     try
     {
-        /** Может возникнуть исключение при нехватке памяти.
-            * Для того, чтобы потом всё правильно уничтожилось, "откатываем" часть созданных состояний.
-            * Код не очень удобный.
-            */
+        /** An exception may occur if there is a shortage of memory.
+          * To ensure that everything is properly destroyed, we "roll back" some of the created states.
+          * The code is not very convenient.
+          */
         func->create(aggregate_data + offsets_of_aggregate_states[column_num]);
     }
     catch (...)
@@ -186,27 +135,27 @@ void NO_INLINE Aggregator::executeSpecializedCase(
     StringRefs & keys,
     AggregateDataPtr overflow_row) const
 {
-    /// Для всех строчек.
+    /// For all rows.
     typename Method::iterator it;
     typename Method::Key prev_key;
     for (size_t i = 0; i < rows; ++i)
     {
-        bool inserted;            /// Вставили новый ключ, или такой ключ уже был?
-        bool overflow = false;    /// Новый ключ не поместился в хэш-таблицу из-за no_more_keys.
+        bool inserted;            /// Inserted a new key, or was this key already?
+        bool overflow = false;    /// New key did not fit in the hash table because of no_more_keys.
 
-        /// Получаем ключ для вставки в хэш-таблицу.
+        /// Get the key to insert into the hash table.
         typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
 
-        if (!no_more_keys)    /// Вставляем.
+        if (!no_more_keys)    /// Insert.
         {
-            /// Оптимизация для часто повторяющихся ключей.
+            /// Optimization for frequently repeating keys.
             if (!Method::no_consecutive_keys_optimization)
             {
                 if (i != 0 && key == prev_key)
                 {
                     AggregateDataPtr value = Method::getAggregateData(it->second);
 
-                    /// Добавляем значения в агрегатные функции.
+                    /// Add values into aggregate functions.
                     AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
                         aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i, aggregates_pool));
 
@@ -221,21 +170,21 @@ void NO_INLINE Aggregator::executeSpecializedCase(
         }
         else
         {
-            /// Будем добавлять только если ключ уже есть.
+            /// Add only if the key already exists.
             inserted = false;
             it = method.data.find(key);
             if (method.data.end() == it)
                 overflow = true;
         }
 
-        /// Если ключ не поместился, и данные не надо агрегировать в отдельную строку, то делать нечего.
+        /// If the key does not fit, and the data does not need to be aggregated in a separate row, then there's nothing to do.
         if (no_more_keys && overflow && !overflow_row)
         {
             method.onExistingKey(key, keys, *aggregates_pool);
             continue;
         }
 
-        /// Если вставили новый ключ - инициализируем состояния агрегатных функций, и возможно, что-нибудь связанное с ключом.
+        /// If a new key is inserted, initialize the states of the aggregate functions, and possibly some stuff related to the key.
         if (inserted)
         {
             AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
@@ -255,7 +204,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 
         AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
 
-        /// Добавляем значения в агрегатные функции.
+        /// Add values into the aggregate functions.
         AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
             aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i, aggregates_pool));
     }
@@ -270,10 +219,10 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
     AggregateColumns & aggregate_columns,
     Arena * arena) const
 {
-    /// Оптимизация в случае единственной агрегатной функции count.
+    /// Optimization in the case of a single aggregate function `count`.
     AggregateFunctionCount * agg_count = params.aggregates_size == 1
         ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-        : NULL;
+        : nullptr;
 
     if (agg_count)
         agg_count->addDelta(res, rows);
@@ -290,25 +239,25 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
 }
 
 
-/** Основной код компилируется с помощью gcc 5.
-  * Но SpecializedAggregator компилируется с помощью clang 3.6 в .so-файл.
-  * Это делается потому что gcc не удаётся заставить инлайнить функции,
-  *  которые были девиртуализированы, в конкретном случае, и производительность получается ниже.
-  * А также clang проще распространять для выкладки на серверы.
+/** The main code is compiled with gcc 7.
+  * But SpecializedAggregator is compiled using clang 6 into the .so file.
+  * This is done because gcc can not get functions inlined,
+  *  which were de-virtualized, in a particular case, and the performance is lower.
+  * And also it's easier to distribute clang for deploy to the servers.
   *
-  * После перехода с gcc 4.8 и gnu++1x на gcc 4.9 и gnu++1y (а затем на gcc 5),
-  *  при dlopen стала возникать ошибка: undefined symbol: __cxa_pure_virtual
+  * After switching from gcc 4.8 and gnu++1x to gcc 4.9 and gnu++1y (and then to gcc 5),
+  *  an error occurred with `dlopen`: undefined symbol: __cxa_pure_virtual
   *
-  * Скорее всего, это происходит из-за изменившейся версии этого символа:
-  *  gcc создаёт в .so символ
+  * Most likely, this is due to the changed version of this symbol:
+  *  gcc creates a symbol in .so
   *   U __cxa_pure_virtual@@CXXABI_1.3
-  *  а clang создаёт символ
+  *  but clang creates a symbol
   *   U __cxa_pure_virtual
   *
-  * Но нам не принципиально, как будет реализована функция __cxa_pure_virtual,
-  *  потому что она не вызывается при нормальной работе программы,
-  *  а если вызывается - то программа и так гарантированно глючит.
+  * But it does not matter for us how the __cxa_pure_virtual function will be implemented,
+  *  because it is not called during normal program execution,
+  *  and if called - then the program is guaranteed buggy.
   *
-  * Поэтому, мы можем обойти проблему таким образом:
+  * Therefore, we can work around the problem this way
   */
 extern "C" void __attribute__((__visibility__("default"), __noreturn__)) __cxa_pure_virtual() { abort(); };

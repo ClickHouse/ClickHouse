@@ -4,7 +4,9 @@ Queries
 CREATE DATABASE
 ~~~~~~~~~~~~~~~
 Creates the 'db_name' database.
-::
+
+.. code-block:: sql
+
     CREATE DATABASE [IF NOT EXISTS] db_name
 
 A database is just a directory for tables.
@@ -13,8 +15,10 @@ If "IF NOT EXISTS" is included, the query won't return an error if the database 
 CREATE TABLE
 ~~~~~~~~~~~~
 The ``CREATE TABLE`` query can have several forms.
-::
-    CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name
+
+.. code-block:: sql
+
+    CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
     (
         name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
         name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -25,11 +29,15 @@ Creates a table named 'name' in the 'db' database or the current database if 'db
 
 A column description is ``name type`` in the simplest case. For example: ``RegionID UInt32``.
 Expressions can also be defined for default values (see below).
-::
+
+.. code-block:: sql
+
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the 'db2.name2' table.
-::
+
+.. code-block:: sql
+
     CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 
 Creates a table with a structure like the result of the ``SELECT`` query, with the 'engine' engine, and fills it with data from SELECT.
@@ -37,7 +45,7 @@ Creates a table with a structure like the result of the ``SELECT`` query, with t
 In all cases, if IF NOT EXISTS is specified, the query won't return an error if the table already exists. In this case, the query won't do anything.
 
 Default values
-"""""""""""""""""""""
+""""""""""""""
 The column description can specify an expression for a default value, in one of the following ways:
 ``DEFAULT expr``, ``MATERIALIZED expr``, ``ALIAS expr``.
 Example: ``URLDomain String DEFAULT domain(URL)``.
@@ -73,7 +81,7 @@ If you add a new column to a table but later change its default expression, the 
 It is not possible to set default values for elements in nested data structures.
 
 Temporary tables
-"""""""""""""""""
+""""""""""""""""
 In all cases, if TEMPORARY is specified, a temporary table will be created. Temporary tables have the following characteristics:
 - Temporary tables disappear when the session ends, including if the connection is lost.
 - A temporary table is created with the Memory engine. The other table engines are not supported.
@@ -83,28 +91,49 @@ In all cases, if TEMPORARY is specified, a temporary table will be created. Temp
 
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed (GLOBAL) IN. For more information, see the appropriate sections.
 
+Distributed DDL queries (ON CLUSTER section)
+""""""""""""""""""""""""""""""""""""""""""""
+
+Queries ``CREATE``, ``DROP``, ``ALTER``, ``RENAME`` support distributed execution on cluster.
+For example, the following query creates ``Distributed`` table ``all_hits`` for each host of the cluster ``cluster``:
+
+.. code-block:: sql
+
+    CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
+
+To correctly execute such queries you need to have equal definitions of the cluster on each host (you can use :ref:`ZooKeeper substitutions <configuration_files>` to syncronize configs on hosts) and connection to ZooKeeper quorum.
+Local version of the query will be eventually executed on each host of the cluster, even if some hosts are temporary unavaiable; on each host queries are executed stictly sequentually.
+At the moment, ``ALTER`` queries for replicated tables are not supported yet.
+
 CREATE VIEW
-~~~~~~~~~~~~
-``CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [ENGINE = engine] [POPULATE] AS SELECT ...``
+~~~~~~~~~~~
+``CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...``
 
 Creates a view. There are two types of views: normal and MATERIALIZED.
 
 Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
 
 As an example, assume you've created a view:
-::
+
+.. code-block:: sql
+
     CREATE VIEW view AS SELECT ...
+
 and written a query:
-::
+
+.. code-block:: sql
+
     SELECT a, b, c FROM view
     
 This query is fully equivalent to using the subquery:
-::
+
+.. code-block:: sql
+
     SELECT a, b, c FROM (SELECT ...)
 
 Materialized views store data transformed by the corresponding SELECT query.
 
-When creating a materialized view, you can specify ENGINE - the table engine for storing data. By default, it uses the same engine as for the table that the SELECT query is made from.
+When creating a materialized view, you have to either specify ENGINE - the table engine for storing data, or target table for materialized results. By default, it uses the same engine as for the table that the SELECT query is made from.
 
 A materialized view is arranged as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
 
@@ -113,6 +142,7 @@ If you specify POPULATE, the existing table data is inserted in the view when cr
 The SELECT query can contain DISTINCT, GROUP BY, ORDER BY, LIMIT ... Note that the corresponding conversions are performed independently on each block of inserted data. For example, if GROUP BY is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an ENGINE that independently performs data aggregation, such as SummingMergeTree.
 
 The execution of ALTER queries on materialized views has not been fully developed, so they might be inconvenient.
+If the materialized view uses a ``TO [db.]name`` to specify a target table, it is possible to DETACH the view, ALTER the target table, and ATTACH the view again.
 
 Views look the same as normal tables. For example, they are listed in the result of the SHOW TABLES query.
 
@@ -125,26 +155,38 @@ The query is exactly the same as CREATE, except
 - The query doesn't create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server.
 After executing an ATTACH query, the server will know about the existence of the table.
 
+If the table has been previously detached and it's structure is known, it's possible to use shorthand form and omit structure definition:
+
+.. code-block:: sql
+
+    ATTACH TABLE [IF NOT EXISTS] [db.]name
+
 This query is used when starting the server. The server stores table metadata as files with ATTACH queries, which it simply runs at launch (with the exception of system tables, which are explicitly created on the server).
 
 DROP
 ~~~~
 This query has two types: ``DROP DATABASE`` and ``DROP TABLE``.
-::
-    DROP DATABASE [IF EXISTS] db
+
+.. code-block:: sql
+
+    DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 
 Deletes all tables inside the 'db' database, then deletes the 'db' database itself.
 If IF EXISTS is specified, it doesn't return an error if the database doesn't exist.
-::
-    DROP TABLE [IF EXISTS] [db.]name
+
+.. code-block:: sql
+
+    DROP TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Deletes the table.
-If IF EXISTS is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
+If ``IF EXISTS`` is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
 
 DETACH
 ~~~~~~
 Deletes information about the table from the server. The server stops knowing about the table's existence.
-::
+
+.. code-block:: sql
+
     DETACH TABLE [IF EXISTS] [db.]name
 
 This does not delete the table's data or metadata. On the next server launch, the server will read the metadata and find out about the table again. Similarly, a "detached" table can be re-attached using the ATTACH query (with the exception of system tables, which do not have metadata stored for them).
@@ -154,25 +196,31 @@ There is no DETACH DATABASE query.
 RENAME
 ~~~~~~
 Renames one or more tables.
-::
-    RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 
- All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
- 
+.. code-block:: sql
+
+    RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
+
+All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
+
 ALTER
 ~~~~~
-The ALTER query is only supported for *MergeTree type tables, as well as for Merge and Distributed types. The query has several variations.
+The ALTER query is only supported for \*MergeTree type tables, as well as for Merge and Distributed types. The query has several variations.
 
 Column manipulations
 """"""""""""""""""""""""
-Lets you change the table structure. 
-::
-    ALTER TABLE [db].name ADD|DROP|MODIFY COLUMN ...
+Lets you change the table structure.
+
+.. code-block:: sql
+
+    ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|MODIFY COLUMN ...
 
 In the query, specify a list of one or more comma-separated actions. Each action is an operation on a column.
 
 The following actions are supported:
-::
+
+.. code-block:: sql
+
     ADD COLUMN name [type] [default_expr] [AFTER name_after]
 
 Adds a new column to the table with the specified name, type, and default expression (see the section "Default expressions"). If you specify 'AFTER name_after' (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, 'name_after' can be the name of a column that is added in one of the previous actions.
@@ -223,7 +271,7 @@ For tables that don't store data themselves (Merge and Distributed), ALTER just 
 The ALTER query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All ALTER queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
 Manipulations with partitions and parts
-""""""""""""""""""""""""""""""""""
+"""""""""""""""""""""""""""""""""""""""
 Only works for tables in the MergeTree family. The following operations are available:
 
 * ``DETACH PARTITION`` - Move a partition to the 'detached' directory and forget it.
@@ -239,7 +287,9 @@ A partition in a table is data for a single calendar month. This is determined b
 A "part" in the table is part of the data from a single partition, sorted by the primary key.
 
 You can use the ``system.parts`` table to view the set of table parts and partitions:
-::
+
+.. code-block:: text
+
     SELECT * FROM system.parts WHERE active
 
 ``active`` - Only count active parts. Inactive parts are, for example, source parts remaining after merging to a larger part - these parts are deleted approximately 10 minutes after merging.
@@ -248,7 +298,9 @@ Another way to view a set of parts and partitions is to go into the directory wi
 The directory with data is
 /var/lib/clickhouse/data/database/table/,
 where /var/lib/clickhouse/ is the path to ClickHouse data, 'database' is the database name, and 'table' is the table name. Example:
-::
+
+.. code-block:: bash
+
     $ ls -l /var/lib/clickhouse/data/test/visits/
     total 48
     drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_2_2_0
@@ -259,11 +311,11 @@ where /var/lib/clickhouse/ is the path to ClickHouse data, 'database' is the dat
 Here ``20140317_20140323_2_2_0``, ``20140317_20140323_4_4_0`` - are directories of parts.
 
 Let's look at the name of the first part: ``20140317_20140323_2_2_0``.
- * ``20140317`` - minimum date of part data
- * ``20140323`` - maximum date of part data .. |br| raw:: html
- * ``2`` - minimum number of the data block .. |br| raw:: html
- * ``2`` - maximum number of the data block .. |br| raw:: html
- * ``0`` - part level - depth of the merge tree that formed it
+* ``20140317`` - minimum date of part data
+* ``20140323`` - maximum date of part data
+* ``2`` - minimum number of the data block
+* ``2`` - maximum number of the data block
+* ``0`` - part level, depth of the merge tree that formed it
 
 Each part corresponds to a single partition and contains data for a single month.
 201403 - The partition name. A partition is a set of parts for a single month.
@@ -271,8 +323,10 @@ Each part corresponds to a single partition and contains data for a single month
 On an operating server, you can't manually change the set of parts or their data on the file system, since the server won't know about it. For non-replicated tables, you can do this when the server is stopped, but we don't recommended it. For replicated tables, the set of parts can't be changed in any case.
 
 The 'detached' directory contains parts that are not used by the server - detached from the table using the ALTER ... DETACH query. Parts that are damaged are also moved to this directory, instead of deleting them. You can add, delete, or modify the data in the 'detached' directory at any time - the server won't know about this until you make the ALTER TABLE ... ATTACH query.
-::
-ALTER TABLE [db.]table DETACH PARTITION 'name'
+
+.. code-block:: sql
+
+    ALTER TABLE [db.]table DETACH PARTITION 'name'
 
 Move all data for partitions named 'name' to the 'detached' directory and forget about them.
 The partition name is specified in YYYYMM format. It can be indicated in single quotes or without them.
@@ -280,11 +334,15 @@ The partition name is specified in YYYYMM format. It can be indicated in single 
 After the query is executed, you can do whatever you want with the data in the 'detached' directory — delete it from the file system, or just leave it.
 
 The query is replicated - data will be moved to the 'detached' directory and forgotten on all replicas. The query can only be sent to a leader replica. To find out if a replica is a leader, perform SELECT to the 'system.replicas' system table. Alternatively, it is easier to make a query on all replicas, and all except one will throw an exception.
-::
+
+.. code-block:: sql
+
     ALTER TABLE [db.]table DROP PARTITION 'name'
 
 Similar to the DETACH operation. Deletes data from the table. Data parts will be tagged as inactive and will be completely deleted in approximately 10 minutes. The query is replicated - data will be deleted on all replicas.
-::
+
+.. code-block:: sql
+
     ALTER TABLE [db.]table ATTACH PARTITION|PART 'name'
 
 Adds data to the table from the 'detached' directory.
@@ -294,7 +352,9 @@ It is possible to add data for an entire partition or a separate part. For a par
 The query is replicated. Each replica checks whether there is data in the 'detached' directory. If there is data, it checks the integrity, verifies that it matches the data on the server that initiated the query, and then adds it if everything is correct. If not, it downloads data from the query requestor replica, or from another replica where the data has already been added.
 
 So you can put data in the 'detached' directory on one replica, and use the ALTER ... ATTACH query to add it to the table on all replicas.
-::
+
+.. code-block:: sql
+
     ALTER TABLE [db.]table FREEZE PARTITION 'name'
 
 Creates a local backup of one or multiple partitions. The name can be the full name of the partition (for example, 201403), or its prefix (for example, 2014) - then the backup will be created for all the corresponding partitions.
@@ -320,6 +380,7 @@ As an alternative, you can manually copy data from the ``/var/lib/clickhouse/dat
 ``ALTER TABLE ... FREEZE PARTITION`` only copies data, not table metadata. To make a backup of table metadata, copy the file  ``/var/lib/clickhouse/metadata/database/table.sql``
 
 To restore from a backup:
+
 * Use the CREATE query to create the table if it doesn't exist. The query can be taken from an .sql file (replace ATTACH in it with CREATE).
 * Copy data from the ``data/database/table/`` directory inside the backup to the ``/var/lib/clickhouse/data/database/table/detached/`` directory.
 * Run ``ALTER TABLE ... ATTACH PARTITION YYYYMM``queries where ``YYYYMM`` is the month, for every month.
@@ -328,13 +389,15 @@ In this way, data from the backup will be added to the table.
 Restoring from a backup doesn't require stopping the server.
 
 Backups and replication
-"""""""""""""""""""
+"""""""""""""""""""""""
 Replication provides protection from device failures. If all data disappeared on one of your replicas, follow the instructions in the "Restoration after failure" section to restore it.
 
 For protection from device failures, you must use replication. For more information about replication, see the section "Data replication".
 
 Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data). For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in /var/lib/clickhouse/shadow/).
-::
+
+.. code-block:: sql
+
   ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'
 
 This query only works for replicatable tables.
@@ -351,7 +414,7 @@ Before downloading, the system checks that the partition exists and the table st
 The ALTER ... FETCH PARTITION query is not replicated. The partition will be downloaded to the 'detached' directory only on the local server. Note that if after this you use the ALTER TABLE ... ATTACH query to add data to the table, the data will be added on all replicas (on one of the replicas it will be added from the 'detached' directory, and on the rest it will be loaded from neighboring replicas).
 
 Synchronicity of ALTER queries
-"""""""""""""""""""""""""""
+""""""""""""""""""""""""""""""
 For non-replicatable tables, all ALTER queries are performed synchronously. For replicatable tables, the query just adds instructions for the appropriate actions to ZooKeeper, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
 For ``ALTER ... ATTACH|DETACH|DROP`` queries, you can use the ``'replication_alter_partitions_sync'`` setting to set up waiting.
@@ -463,10 +526,8 @@ SET
 Lets you set the 'param' setting to 'value'. You can also make all the settings from the specified settings profile in a single query. To do this, specify 'profile' as the setting name. For more information, see the section "Settings". The setting is made for the session, or for the server (globally) if GLOBAL is specified.
 When making a global setting, the setting is not applied to sessions already running, including the current session. It will only be used for new sessions.
 
-Settings made using SET GLOBAL have a lower priority compared with settings made in the config file in the user profile. In other words, user settings can't be overridden by SET GLOBAL.
-
-When the server is restarted, global settings made using SET GLOBAL are lost.
-To make settings that persist after a server restart, you can only use the server's config file. (This can't be done using a SET query.)
+When the server is restarted, settings made using SET are lost.
+To make settings that persist after a server restart, you can only use the server's config file.
 
 OPTIMIZE
 ~~~~~~~~
@@ -476,7 +537,7 @@ OPTIMIZE
     OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]
 
 Asks the table engine to do something for optimization.
-Supported only by *MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
+Supported only by \*MergeTree engines, in which this query initializes a non-scheduled merge of data parts.
 If ``PARTITION`` is specified, then only specified partition will be optimized.
 If ``FINAL`` is specified, then optimization will be performed even if data inside the partition already optimized (i. e. all data is in single part).
 
@@ -582,7 +643,7 @@ SAMPLE clause
 """""""""""""
 
 The SAMPLE clause allows for approximated query processing.
-Approximated query processing is only supported by MergeTree* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
+Approximated query processing is only supported by MergeTree\* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
 
 SAMPLE has the format ``SAMPLE k``, where 'k' is a decimal number from 0 to 1, or ``SAMPLE n``, where 'n' is a sufficiently large integer.
 
@@ -623,7 +684,7 @@ Allows executing JOIN with an array or nested data structure. The intent is simi
 
 ARRAY JOIN is essentially INNER JOIN with an array. Example:
 
-.. code-block:: sql
+.. code-block:: text
 
     :) CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory
 
@@ -684,6 +745,8 @@ An alias can be specified for an array in the ARRAY JOIN clause. In this case, a
     FROM arrays_test
     ARRAY JOIN arr AS a
 
+.. code-block:: text
+
     ┌─s─────┬─arr─────┬─a─┐
     │ Hello │ [1,2]   │ 1 │
     │ Hello │ [1,2]   │ 2 │
@@ -697,7 +760,7 @@ An alias can be specified for an array in the ARRAY JOIN clause. In this case, a
 Multiple arrays of the same size can be comma-separated in the ARRAY JOIN clause. In this case, JOIN is performed with them simultaneously (the direct sum, not the direct product).
 Example:
 
-.. code-block:: sql
+.. code-block:: text
 
     :) SELECT s, arr, a, num, mapped FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped
 
@@ -733,7 +796,7 @@ Example:
 
 ARRAY JOIN also works with nested data structures. Example:
 
-.. code-block:: sql
+.. code-block:: text
 
     :) CREATE TABLE nested_test (s String, nest Nested(x UInt8, y UInt32)) ENGINE = Memory
 
@@ -788,7 +851,7 @@ ARRAY JOIN also works with nested data structures. Example:
 
 When specifying names of nested data structures in ARRAY JOIN, the meaning is the same as ARRAY JOIN with all the array elements that it consists of. Example:
 
-.. code-block:: sql
+.. code-block:: text
 
     :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x, nest.y
 
@@ -816,6 +879,8 @@ This variation also makes sense:
     FROM nested_test
     ARRAY JOIN `nest.x`
 
+.. code-block:: text
+
     ┌─s─────┬─nest.x─┬─nest.y─────┐
     │ Hello │      1 │ [10,20]    │
     │ Hello │      2 │ [10,20]    │
@@ -836,6 +901,8 @@ An alias may be used for a nested data structure, in order to select either the 
     FROM nested_test
     ARRAY JOIN nest AS n
 
+.. code-block:: text
+
     ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
     │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
     │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
@@ -855,6 +922,8 @@ Example of using the arrayEnumerate function:
     SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
     FROM nested_test
     ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
+
+.. code-block:: text
 
     ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
     │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
@@ -880,7 +949,7 @@ The normal JOIN, which is not related to ARRAY JOIN described above.
 
 Performs joins with data from the subquery. At the beginning of query execution, the subquery specified after JOIN is run, and its result is saved in memory. Then it is read from the "left" table specified in the FROM clause, and while it is being read, for each of the read rows from the "left" table, rows are selected from the subquery results table (the "right" table) that meet the condition for matching the values of the columns specified in USING.
 
-The table name can be specified instead of a subquery. This is equivalent to the 'SELECT * FROM table' subquery, except in a special case when the table has the Join engine - an array prepared for joining.
+The table name can be specified instead of a subquery. This is equivalent to the ``SELECT * FROM table`` subquery, except in a special case when the table has the Join engine - an array prepared for joining.
 
 All columns that are not needed for the JOIN are deleted from the subquery.
 
@@ -935,6 +1004,8 @@ Example:
     ORDER BY hits DESC
     LIMIT 10
 
+.. code-block:: text
+
     ┌─CounterID─┬───hits─┬─visits─┐
     │   1143050 │ 523264 │  13665 │
     │    731962 │ 475698 │ 102716 │
@@ -980,7 +1051,7 @@ It makes sense to use PREWHERE if there are filtration conditions that are not s
 
 For example, it is useful to write PREWHERE for queries that extract a large number of columns, but that only have filtration for a few columns.
 
-PREWHERE is only supported by *MergeTree tables.
+PREWHERE is only supported by \*MergeTree tables.
 
 A query may simultaneously specify PREWHERE and WHERE. In this case, PREWHERE precedes WHERE.
 
@@ -1030,7 +1101,7 @@ GROUP BY is not supported for array columns.
 A constant can't be specified as arguments for aggregate functions. Example: sum(1). Instead of this, you can get rid of the constant. Example: ``count()``.
 
 WITH TOTALS modifier
-^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^
 
 If the WITH TOTALS modifier is specified, another row will be calculated. This row will have key columns containing default values (zeros or empty lines), and columns of aggregate functions with the values calculated across all the rows (the "total" values).
 
@@ -1056,7 +1127,7 @@ If 'max_rows_to_group_by' and 'group_by_overflow_mode = 'any'' are not used, all
 You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause. In this case, the respective total values are combined.
 
 external memory GROUP BY
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 It is possible to turn on spilling temporary data to disk to limit memory consumption during the execution of GROUP BY. Value of ``max_bytes_before_external_group_by`` setting determines the maximum memory consumption before temporary data is dumped to the file system. If it is 0 (the default value), the feature is turned off.
 
@@ -1071,7 +1142,7 @@ If external aggregation is turned on and total memory consumption was less than 
 If you have an ORDER BY clause with some small LIMIT after a GROUP BY, then ORDER BY will not consume significant amount of memory. But if no LIMIT is provided, don't forget to turn on external sorting (``max_bytes_before_external_sort``).
 
 LIMIT N BY modifier
-^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^
 
 LIMIT ``N`` BY ``COLUMNS`` allows you to restrict top ``N`` rows per each group of ``COLUMNS``. ``LIMIT N BY`` is unrelated to ``LIMIT`` clause. Key for ``LIMIT N BY`` could contain arbitrary number of columns or expressions.
 
@@ -1241,6 +1312,8 @@ Example:
     GROUP BY EventDate
     ORDER BY EventDate ASC
 
+.. code-block:: text
+
     ┌──EventDate─┬────ratio─┐
     │ 2014-03-17 │        1 │
     │ 2014-03-18 │ 0.807696 │
@@ -1251,11 +1324,11 @@ Example:
     │ 2014-03-23 │ 0.648416 │
     └────────────┴──────────┘
 
-- for each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
+For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
 A subquery in the IN clause is always run just one time on a single server. There are no dependent subqueries.
 
 Distributed subqueries
-"""""""""""""""""""""""""
+""""""""""""""""""""""
 
 There are two versions of INs with subqueries (and for JOINs): the regular ``IN`` / ``JOIN``, and ``GLOBAL IN`` / ``GLOBAL JOIN``. They differ in how they are run for distributed query processing.
 
@@ -1308,6 +1381,7 @@ To correct how the query works when data is spread randomly across the cluster s
 This query will be sent to all remote servers as
 
 .. code-block:: sql
+
     SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 
 Each of the remote servers will start running the subquery. Since the subquery uses a distributed table, each remote server will re-send the subquery to every remote server, as
@@ -1349,7 +1423,7 @@ This is more optimal than using the normal IN. However, keep the following point
 It also makes sense to specify a local table in the GLOBAL IN clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
 
 Extreme values
-""""""""""""""""""""""
+""""""""""""""
 
 In addition to results, you can also get minimum and maximum values for the results columns. To do this, set the 'extremes' setting to '1'. Minimums and maximums are calculated for numeric types, dates, and dates with times. For other columns, the default values are output.
 
@@ -1360,7 +1434,7 @@ In JSON* formats, the extreme values are output in a separate 'extremes' field. 
 Extreme values are calculated for rows that have passed through LIMIT. However, when using 'LIMIT offset, size', the rows before 'offset' are included in 'extremes'. In stream requests, the result may also include a small number of rows that passed through LIMIT.
 
 Notes
-"""""""""
+"""""
 
 The GROUP BY and ORDER BY clauses do not support positional arguments. This contradicts MySQL, but conforms to standard SQL.
 For example, ``'GROUP BY 1, 2'`` will be interpreted as grouping by constants (i.e. aggregation of all rows into one).

@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <atomic>
 #include <functional>
+#include <Common/ActionBlocker.h>
+
 
 namespace DB
 {
@@ -20,6 +22,23 @@ class MergeTreeDataMerger
 public:
     using CancellationHook = std::function<void()>;
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &)>;
+
+    struct FuturePart
+    {
+        String name;
+        MergeTreePartInfo part_info;
+        MergeTreeData::DataPartsVector parts;
+
+        const MergeTreePartition & getPartition() const { return parts.front()->partition; }
+
+        FuturePart() = default;
+        explicit FuturePart(MergeTreeData::DataPartsVector parts_)
+        {
+            assign(std::move(parts_));
+        }
+
+        void assign(MergeTreeData::DataPartsVector parts_);
+    };
 
 public:
     MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
@@ -44,21 +63,19 @@ public:
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
     bool selectPartsToMerge(
-        MergeTreeData::DataPartsVector & what,
-        String & merged_name,
+        FuturePart & future_part,
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge);
 
     /** Select all the parts in the specified partition for merge, if possible.
-      * final - choose to merge even a single part - that is, allow to measure one part "with itself".
+      * final - choose to merge even a single part - that is, allow to merge one part "with itself".
       */
     bool selectAllPartsToMergeWithinPartition(
-        MergeTreeData::DataPartsVector & what,
-        String & merged_name,
+        FuturePart & future_part,
         size_t available_disk_space,
         const AllowedMergingPredicate & can_merge,
-        DayNum_t partition,
+        const String & partition_id,
         bool final);
 
     /** Merge the parts.
@@ -72,13 +89,13 @@ public:
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
-        MergeTreeData::DataPartsVector & parts, const String & merged_name, MergeListEntry & merge_entry,
+        const FuturePart & future_part,
+        MergeListEntry & merge_entry,
         size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
-        MergeTreeData::DataPartsVector & parts,
         MergeTreeData::MutableDataPartPtr & new_data_part,
-        const String & merged_name,
+        const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
     /** Reshards the specified partition.
@@ -93,51 +110,25 @@ public:
 private:
     /** Select all parts belonging to the same partition.
       */
-    MergeTreeData::DataPartsVector selectAllPartsFromPartition(DayNum_t partition);
-
-    /** Temporarily cancel merges.
-      */
-    class BlockerImpl
-    {
-    public:
-        BlockerImpl(MergeTreeDataMerger * merger_) : merger(merger_)
-        {
-            ++merger->cancelled;
-        }
-
-        ~BlockerImpl()
-        {
-            --merger->cancelled;
-        }
-    private:
-        MergeTreeDataMerger * merger;
-    };
+    MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
 public:
-    /** Cancel all merges. All currently running 'mergeParts' methods will throw exception soon.
-      * All new calls to 'mergeParts' will throw exception till all 'Blocker' objects will be destroyed.
+    /** Is used to cancel all merges. On cancel() call all currently running 'mergeParts' methods will throw exception soon.
+      * All new calls to 'mergeParts' will throw exception till all 'BlockHolder' objects will be destroyed.
       */
-    using Blocker = std::unique_ptr<BlockerImpl>;
-    Blocker cancel() { return std::make_unique<BlockerImpl>(this); }
-
-    /** Cancel all merges forever.
-      */
-    void cancelForever() { ++cancelled; }
-
-    bool isCancelled() const { return cancelled > 0; }
-
-public:
+    ActionBlocker merges_blocker;
 
     enum class MergeAlgorithm
     {
-        Horizontal,    /// per-row merge of all columns
+        Horizontal, /// per-row merge of all columns
         Vertical    /// per-row merge of PK columns, per-column gather for non-PK columns
     };
 
 private:
 
-    MergeAlgorithm chooseMergeAlgorithm(const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, MergedRowSources & rows_sources_to_alloc, bool deduplicate) const;
+    MergeAlgorithm chooseMergeAlgorithm(
+            const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
+            size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate) const;
 
 private:
     MergeTreeData & data;
@@ -149,8 +140,6 @@ private:
     time_t disk_space_warning_time = 0;
 
     CancellationHook cancellation_hook;
-
-    std::atomic<int> cancelled {0};
 
     void abortReshardPartitionIfRequested();
 };

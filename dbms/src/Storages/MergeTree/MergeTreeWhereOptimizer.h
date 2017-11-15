@@ -3,16 +3,15 @@
 #include <memory>
 #include <unordered_map>
 #include <set>
+#include <boost/noncopyable.hpp>
 #include <Core/Block.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace Poco { class Logger; }
 
 namespace DB
 {
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class ASTSelectQuery;
 class ASTFunction;
@@ -30,14 +29,14 @@ using IdentifierNameSet = std::set<std::string>;
  *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE, if only
  *  its relative size (summary column size divided by query column size) is less than `max_columns_relative_size`.
  */
-class MergeTreeWhereOptimizer
+class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
-    MergeTreeWhereOptimizer(const MergeTreeWhereOptimizer&) = delete;
-    MergeTreeWhereOptimizer& operator=(const MergeTreeWhereOptimizer&) = delete;
-
     MergeTreeWhereOptimizer(
-        ASTPtr & query, const Context & context, const MergeTreeData & data, const Names & column_names,
+        SelectQueryInfo & query_info,
+        const Context & context,
+        const MergeTreeData & data,
+        const Names & column_names,
         Poco::Logger * log);
 
 private:
@@ -49,7 +48,7 @@ private:
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
-    std::size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const;
+    size_t getIdentifiersColumnSize(const IdentifierNameSet & identifiers) const;
 
     bool isConditionGood(const IAST * condition) const;
 
@@ -78,9 +77,10 @@ private:
     const string_set_t primary_key_columns;
     const string_set_t table_columns;
     const Block block_with_constants;
+    const PreparedSets & prepared_sets;
     Poco::Logger * log;
-    std::unordered_map<std::string, std::size_t> column_sizes{};
-    std::size_t total_column_size{};
+    std::unordered_map<std::string, size_t> column_sizes{};
+    size_t total_column_size{};
     NameSet array_joined_names;
 };
 

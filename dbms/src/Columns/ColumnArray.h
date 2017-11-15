@@ -2,7 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
-
+#include <Core/Defines.h>
 
 namespace DB
 {
@@ -48,7 +48,7 @@ public:
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
-    size_t allocatedSize() const override;
+    size_t allocatedBytes() const override;
     ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
     ColumnPtr convertToFullColumnIfConst() const override;
     void getExtremes(Field & min, Field & max) const override;
@@ -79,6 +79,11 @@ public:
     {
         return scatterImpl<ColumnArray>(num_columns, selector);
     }
+
+    /// Creates and returns a column with array sizes.
+    ColumnPtr getLengthsColumn() const;
+
+    void gather(ColumnGathererStream & gatherer_stream) override;
 
 private:
     ColumnPtr data;

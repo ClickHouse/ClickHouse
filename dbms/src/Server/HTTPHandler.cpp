@@ -1,7 +1,13 @@
+#include <chrono>
 #include <iomanip>
 
-#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/File.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/NetException.h>
+
+#include <ext/scope_guard.h>
 
 #include <Common/ExternalTable.h>
 #include <Common/StringUtils.h>
@@ -27,6 +33,9 @@
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
+#include <Common/typeid_cast.h>
+
+#include <Poco/Net/HTTPStream.h>
 
 #include "HTTPHandler.h"
 
@@ -73,7 +82,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_USER;
     extern const int WRONG_PASSWORD;
     extern const int REQUIRED_PASSWORD;
+
+    extern const int INVALID_SESSION_TIMEOUT;
+    extern const int HTTP_LENGTH_REQUIRED;
 }
+
 
 static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code)
 {
@@ -115,9 +128,37 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
     else if (exception_code == ErrorCodes::SOCKET_TIMEOUT ||
              exception_code == ErrorCodes::CANNOT_OPEN_FILE)
         return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+    else if (exception_code == ErrorCodes::HTTP_LENGTH_REQUIRED)
+        return HTTPResponse::HTTP_LENGTH_REQUIRED;
 
     return HTTPResponse::HTTP_INTERNAL_SERVER_ERROR;
 }
+
+
+static std::chrono::steady_clock::duration parseSessionTimeout(
+    const Poco::Util::AbstractConfiguration & config,
+    const HTMLForm & params)
+{
+    unsigned session_timeout = config.getInt("default_session_timeout", 60);
+
+    if (params.has("session_timeout"))
+    {
+        unsigned max_session_timeout = config.getUInt("max_session_timeout", 3600);
+        std::string session_timeout_str = params.get("session_timeout");
+
+        ReadBufferFromString buf(session_timeout_str);
+        if (!tryReadIntText(session_timeout, buf) || !buf.eof())
+            throw Exception("Invalid session timeout: '" + session_timeout_str + "'", ErrorCodes::INVALID_SESSION_TIMEOUT);
+
+        if (session_timeout > max_session_timeout)
+            throw Exception("Session timeout '" + session_timeout_str + "' is larger than max_session_timeout: " + toString(max_session_timeout)
+                + ". Maximum session timeout could be modified in configuration file.",
+                ErrorCodes::INVALID_SESSION_TIMEOUT);
+    }
+
+    return std::chrono::seconds(session_timeout);
+}
+
 
 void HTTPHandler::pushDelayedResults(Output & used_output)
 {
@@ -153,11 +194,12 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
 }
 
 
-HTTPHandler::HTTPHandler(Server & server_)
+HTTPHandler::HTTPHandler(IServer & server_)
     : server(server_)
     , log(&Logger::get("HTTPHandler"))
 {
 }
+
 
 void HTTPHandler::processQuery(
     Poco::Net::HTTPServerRequest & request,
@@ -176,29 +218,77 @@ void HTTPHandler::processQuery(
     if (!query_param.empty())
         query_param += '\n';
 
+    /// The user and password can be passed by headers (similar to X-Auth-*),
+    /// which is used by load balancers to pass authentication information.
+    std::string user = request.get("X-ClickHouse-User", "");
+    std::string password = request.get("X-ClickHouse-Key", "");
+    std::string quota_key = request.get("X-ClickHouse-Quota", "");
 
-    /// User name and password can be passed using query parameters or using HTTP Basic auth (both methods are insecure).
-    /// The user and password can be passed by headers (similar to X-Auth-*), which is used by load balancers to pass authentication information
-    std::string user = request.get("X-ClickHouse-User", params.get("user", "default"));
-    std::string password = request.get("X-ClickHouse-Key", params.get("password", ""));
-
-    if (request.hasCredentials())
+    if (user.empty() && password.empty() && quota_key.empty())
     {
-        Poco::Net::HTTPBasicCredentials credentials(request);
+        /// User name and password can be passed using query parameters
+        /// or using HTTP Basic auth (both methods are insecure).
+        if (request.hasCredentials())
+        {
+            Poco::Net::HTTPBasicCredentials credentials(request);
 
-        user = credentials.getUsername();
-        password = credentials.getPassword();
+            user = credentials.getUsername();
+            password = credentials.getPassword();
+        }
+        else
+        {
+            user = params.get("user", "default");
+            password = params.get("password", "");
+        }
+
+        quota_key = params.get("quota_key", "");
+    }
+    else
+    {
+        /// It is prohibited to mix different authorization schemes.
+        if (request.hasCredentials()
+            || params.has("user")
+            || params.has("password")
+            || params.has("quota_key"))
+        {
+            throw Exception("Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods simultaneously", ErrorCodes::REQUIRED_PASSWORD);
+        }
     }
 
-    std::string quota_key = request.get("X-ClickHouse-Quota", params.get("quota_key", ""));
     std::string query_id = params.get("query_id", "");
 
-    Context context = *server.global_context;
-    context.setGlobalContext(*server.global_context);
+    const auto & config = server.config();
+
+    Context context = server.context();
+    context.setGlobalContext(server.context());
 
     context.setUser(user, password, request.clientAddress(), quota_key);
     context.setCurrentQueryId(query_id);
 
+    /// The user could specify session identifier and session timeout.
+    /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
+
+    std::shared_ptr<Context> session;
+    String session_id;
+    std::chrono::steady_clock::duration session_timeout;
+    bool session_is_set = params.has("session_id");
+
+    if (session_is_set)
+    {
+        session_id = params.get("session_id");
+        session_timeout = parseSessionTimeout(config, params);
+        std::string session_check = params.get("session_check", "");
+
+        session = context.acquireSession(session_id, session_timeout, session_check == "1");
+
+        context = *session;
+        context.setSessionContext(*session);
+    }
+
+    SCOPE_EXIT({
+        if (session_is_set)
+            session->releaseSession(session_id, session_timeout);
+    });
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
@@ -236,8 +326,11 @@ void HTTPHandler::processQuery(
     size_t buffer_size_http = DBMS_DEFAULT_BUFFER_SIZE;
     size_t buffer_size_memory = (buffer_size_total > buffer_size_http) ? buffer_size_total : 0;
 
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
+
     used_output.out = std::make_shared<WriteBufferFromHTTPServerResponse>(
-        response, client_supports_http_compression, http_response_compression_method, buffer_size_http);
+        request, response, keep_alive_timeout,
+        client_supports_http_compression, http_response_compression_method, buffer_size_http);
     if (internal_compression)
         used_output.out_maybe_compressed = std::make_shared<CompressedWriteBuffer>(*used_output.out);
     else
@@ -370,8 +463,11 @@ void HTTPHandler::processQuery(
     auto readonly_before_query = limits.readonly;
 
     NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query"
+        "buffer_size", "wait_end_of_query",
+        "session_id", "session_timeout", "session_check"
     };
+
+    const Settings & settings = context.getSettingsRef();
 
     for (auto it = params.begin(); it != params.end(); ++it)
     {
@@ -389,18 +485,20 @@ void HTTPHandler::processQuery(
         else
         {
             /// All other query parameters are treated as settings.
+            String value;
+            /// Setting is skipped if value wasn't changed.
+            if (!settings.tryGet(it->first, value) || it->second != value)
+            {
+                if (readonly_before_query == 1)
+                    throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
 
-            if (readonly_before_query == 1)
-                throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
+                if (readonly_before_query && it->first == "readonly")
+                    throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
 
-            if (readonly_before_query && it->first == "readonly")
-                throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
-
-            context.setSetting(it->first, it->second);
+                context.setSetting(it->first, it->second);
+            }
         }
     }
-
-    const Settings & settings = context.getSettingsRef();
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.
@@ -465,7 +563,8 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
         /// to avoid reading part of the current request body in the next request.
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
             && response.getKeepAlive()
-            && !request.stream().eof())
+            && !request.stream().eof()
+            && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED)
         {
             request.stream().ignore(std::numeric_limits<std::streamsize>::max());
         }
@@ -539,6 +638,13 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
         HTMLForm params(request);
         with_stacktrace = params.getParsed<bool>("stacktrace", false);
+
+        /// Workaround. Poco does not detect 411 Length Required case.
+        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() &&
+            !request.hasContentLength())
+        {
+            throw Exception("There is neither Transfer-Encoding header nor Content-Length header", ErrorCodes::HTTP_LENGTH_REQUIRED);
+        }
 
         processQuery(request, params, response, used_output);
         LOG_INFO(log, "Done processing query");

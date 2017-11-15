@@ -3,7 +3,9 @@ system.processes
 
 This system table is used for implementing the ``SHOW PROCESSLIST`` query.
 Columns:
-::
+
+.. code-block:: text
+
   user String              - Name of the user who made the request. For distributed query processing, this is the user who helped the requestor server send the query to this server, not the user who made the distributed request on the requestor server.
 
   address String           - The IP address the request was made from. The same for distributed processing.

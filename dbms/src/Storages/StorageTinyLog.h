@@ -2,43 +2,28 @@
 
 #include <map>
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Poco/File.h>
 
 #include <Storages/IStorage.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Core/Defines.h>
 
 
 namespace DB
 {
 
-/** Implements a repository that is suitable for small pieces of the log.
+/** Implements a table engine that is suitable for small chunks of the log.
   * It differs from StorageLog in the absence of mark files.
   */
-class StorageTinyLog : private ext::shared_ptr_helper<StorageTinyLog>, public IStorage
+class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageTinyLog>;
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
 
 public:
-    /** hook the table with the appropriate name, along the appropriate path (with / at the end),
-      *  (the correctness of names and paths is not verified)
-      *  consisting of the specified columns.
-      * If not specified `attach` - create a directory if it does not exist.
-      */
-    static StoragePtr create(
-        const std::string & path_,
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        bool attach,
-        size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
-
     std::string getName() const override { return "TinyLog"; }
     std::string getTableName() const override { return name; }
 
@@ -46,12 +31,11 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const SelectQueryInfo & query_info,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
@@ -83,6 +67,9 @@ private:
 
     Logger * log;
 
+    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+
+protected:
     StorageTinyLog(
         const std::string & path_,
         const std::string & name_,
@@ -91,9 +78,7 @@ private:
         const NamesAndTypesList & alias_columns_,
         const ColumnDefaults & column_defaults_,
         bool attach,
-        size_t max_compress_block_size_);
-
-    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+        size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
 };
 
 }

@@ -1,1 +1,0 @@
-яндекс, open-source, big data, clickhouse, columnar database, olap, базы данных, структуры данных, веб-аналитика, c++

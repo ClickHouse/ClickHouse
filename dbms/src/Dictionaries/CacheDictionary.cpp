@@ -1,6 +1,9 @@
 #include <functional>
+#include <sstream>
+#include <memory>
 #include <Columns/ColumnsNumber.h>
-#include <Dictionaries/CacheDictionary.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnString.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
 #include <Common/HashTable/Hash.h>
@@ -8,9 +11,13 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <ext/size.hpp>
-#include <ext/range.hpp>
-#include <ext/map.hpp>
+#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Dictionaries/CacheDictionary.h>
+#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <ext/size.h>
+#include <ext/range.h>
+#include <ext/map.h>
 
 
 namespace ProfileEvents
@@ -41,10 +48,11 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 
-inline UInt64 CacheDictionary::getCellIdx(const Key id) const
+inline size_t CacheDictionary::getCellIdx(const Key id) const
 {
     const auto hash = intHash64(id);
     const auto idx = hash & size_overlap_mask;
@@ -54,13 +62,13 @@ inline UInt64 CacheDictionary::getCellIdx(const Key id) const
 
 CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStructure & dict_struct,
     DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime,
-    const std::size_t size)
+    const size_t size)
     : name{name}, dict_struct(dict_struct),
         source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
         size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))},
         size_overlap_mask{this->size - 1},
         cells{this->size},
-        rnd_engine{randomSeed()}
+        rnd_engine(randomSeed())
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{
@@ -79,7 +87,7 @@ void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<K
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-    getItemsNumber<UInt64>(*hierarchical_attribute, ids, out, [&] (const std::size_t) { return null_value; });
+    getItemsNumber<UInt64>(*hierarchical_attribute, ids, out, [&] (const size_t) { return null_value; });
 }
 
 
@@ -126,6 +134,11 @@ void CacheDictionary::isInImpl(
             }
             /// Found ancestor
             else if (parents[parents_idx] == getAt(ancestor_ids, parents_idx))
+            {
+                out[out_idx] = 1;
+            }
+            /// Loop detected
+            else if (children[new_children_idx] == parents[parents_idx])
             {
                 out[out_idx] = 1;
             }
@@ -209,7 +222,7 @@ void CacheDictionary::get##TYPE(const std::string & attribute_name, const Padded
     \
     const auto null_value = std::get<TYPE>(attribute.null_values);\
     \
-    getItemsNumber<TYPE>(attribute, ids, out, [&] (const std::size_t) { return null_value; });\
+    getItemsNumber<TYPE>(attribute, ids, out, [&] (const size_t) { return null_value; });\
 }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -233,7 +246,7 @@ void CacheDictionary::getString(const std::string & attribute_name, const Padded
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
-    getItemsString(attribute, ids, out, [&] (const std::size_t) { return null_value; });
+    getItemsString(attribute, ids, out, [&] (const size_t) { return null_value; });
 }
 
 #define DECLARE(TYPE)\
@@ -247,7 +260,7 @@ void CacheDictionary::get##TYPE(\
             name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
             ErrorCodes::TYPE_MISMATCH};\
     \
-    getItemsNumber<TYPE>(attribute, ids, out, [&] (const std::size_t row) { return def[row]; });\
+    getItemsNumber<TYPE>(attribute, ids, out, [&] (const size_t row) { return def[row]; });\
 }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -271,7 +284,7 @@ void CacheDictionary::getString(
             name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
             ErrorCodes::TYPE_MISMATCH};
 
-    getItemsString(attribute, ids, out, [&] (const std::size_t row) { return def->getDataAt(row); });
+    getItemsString(attribute, ids, out, [&] (const size_t row) { return def->getDataAt(row); });
 }
 
 #define DECLARE(TYPE)\
@@ -284,7 +297,7 @@ void CacheDictionary::get##TYPE(\
             name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
             ErrorCodes::TYPE_MISMATCH};\
     \
-    getItemsNumber<TYPE>(attribute, ids, out, [&] (const std::size_t) { return def; });\
+    getItemsNumber<TYPE>(attribute, ids, out, [&] (const size_t) { return def; });\
 }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -308,7 +321,7 @@ void CacheDictionary::getString(
             name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
             ErrorCodes::TYPE_MISMATCH};
 
-    getItemsString(attribute, ids, out, [&] (const std::size_t) { return StringRef{def}; });
+    getItemsString(attribute, ids, out, [&] (const size_t) { return StringRef{def}; });
 }
 
 
@@ -355,7 +368,7 @@ CacheDictionary::FindResult CacheDictionary::findCellIdx(const Key & id, const C
 void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const
 {
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-    std::unordered_map<Key, std::vector<std::size_t>> outdated_ids;
+    std::unordered_map<Key, std::vector<size_t>> outdated_ids;
 
     size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
 
@@ -402,10 +415,14 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
         [] (auto & pair) { return pair.first; });
 
     /// request new values
-    update(required_ids, [&] (const auto id, const auto) {
+    update(required_ids,
+    [&] (const auto id, const auto)
+    {
         for (const auto row : outdated_ids[id])
             out[row] = true;
-    }, [&] (const auto id, const auto) {
+    },
+    [&] (const auto id, const auto)
+    {
         for (const auto row : outdated_ids[id])
             out[row] = false;
     });
@@ -414,11 +431,11 @@ void CacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8>
 
 void CacheDictionary::createAttributes()
 {
-    const auto size = dict_struct.attributes.size();
-    attributes.reserve(size);
+    const auto attributes_size = dict_struct.attributes.size();
+    attributes.reserve(attributes_size);
 
     bytes_allocated += size * sizeof(CellMetadata);
-    bytes_allocated += size * sizeof(attributes.front());
+    bytes_allocated += attributes_size * sizeof(attributes.front());
 
     for (const auto & attribute : dict_struct.attributes)
     {
@@ -540,7 +557,7 @@ void CacheDictionary::getItemsNumberImpl(
     DefaultGetter && get_default) const
 {
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-    std::unordered_map<Key, std::vector<std::size_t>> outdated_ids;
+    std::unordered_map<Key, std::vector<size_t>> outdated_ids;
     auto & attribute_array = std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
     const auto rows = ext::size(ids);
 
@@ -594,18 +611,19 @@ void CacheDictionary::getItemsNumberImpl(
         [] (auto & pair) { return pair.first; });
 
     /// request new values
-    update(required_ids, [&] (const auto id, const auto cell_idx)
-        {
-            const auto attribute_value = attribute_array[cell_idx];
+    update(required_ids,
+    [&] (const auto id, const auto cell_idx)
+    {
+        const auto attribute_value = attribute_array[cell_idx];
 
-            for (const auto row : outdated_ids[id])
-                out[row] = attribute_value;
-        },
-        [&] (const auto id, const auto cell_idx)
-        {
-            for (const auto row : outdated_ids[id])
-                out[row] = get_default(row);
-        });
+        for (const auto row : outdated_ids[id])
+            out[row] = attribute_value;
+    },
+    [&] (const auto id, const auto cell_idx)
+    {
+        for (const auto row : outdated_ids[id])
+            out[row] = get_default(row);
+    });
 }
 
 template <typename DefaultGetter>
@@ -663,11 +681,11 @@ void CacheDictionary::getItemsString(
     out->getOffsets().resize_assume_reserved(0);
 
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
-    std::unordered_map<Key, std::vector<std::size_t>> outdated_ids;
+    std::unordered_map<Key, std::vector<size_t>> outdated_ids;
     /// we are going to store every string separately
     std::unordered_map<Key, String> map;
 
-    std::size_t total_length = 0;
+    size_t total_length = 0;
     size_t cache_expired = 0, cache_not_found = 0, cache_hit = 0;
     {
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
@@ -715,12 +733,16 @@ void CacheDictionary::getItemsString(
         std::transform(std::begin(outdated_ids), std::end(outdated_ids), std::begin(required_ids),
             [] (auto & pair) { return pair.first; });
 
-        update(required_ids, [&] (const auto id, const auto cell_idx) {
+        update(required_ids,
+        [&] (const auto id, const auto cell_idx)
+        {
             const auto attribute_value = attribute_array[cell_idx];
 
             map[id] = String{attribute_value};
             total_length += (attribute_value.size + 1) * outdated_ids[id].size();
-        }, [&] (const auto id, const auto cell_idx) {
+        },
+        [&] (const auto id, const auto cell_idx)
+        {
             for (const auto row : outdated_ids[id])
                 total_length += get_default(row).size + 1;
         });
@@ -740,14 +762,16 @@ void CacheDictionary::getItemsString(
 
 template <typename PresentIdHandler, typename AbsentIdHandler>
 void CacheDictionary::update(
-    const std::vector<Key> & requested_ids, PresentIdHandler && on_cell_updated,
+    const std::vector<Key> & requested_ids,
+    PresentIdHandler && on_cell_updated,
     AbsentIdHandler && on_id_not_found) const
 {
     std::unordered_map<Key, UInt8> remaining_ids{requested_ids.size()};
     for (const auto id : requested_ids)
         remaining_ids.insert({ id, 0 });
 
-    std::uniform_int_distribution<UInt64> distribution{
+    std::uniform_int_distribution<UInt64> distribution
+    {
         dict_lifetime.min_sec,
         dict_lifetime.max_sec
     };
@@ -773,7 +797,8 @@ void CacheDictionary::update(
             const auto & ids = id_column->getData();
 
             /// cache column pointers
-            const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (const auto & i) {
+            const auto column_ptrs = ext::map<std::vector>(ext::range(0, attributes.size()), [&block] (size_t i)
+            {
                 return block.safeGetByPosition(i + 1).column.get();
             });
 
@@ -945,5 +970,34 @@ CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & a
 
     return attributes[it->second];
 }
+
+bool CacheDictionary::isEmptyCell(const UInt64 idx) const
+{
+    return (idx != zero_cell_idx && cells[idx].id == 0) || (cells[idx].data
+        == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t()));
+}
+
+PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
+{
+    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
+
+    PaddedPODArray<Key> array;
+    for (size_t idx = 0; idx < cells.size(); ++idx)
+    {
+        auto & cell = cells[idx];
+        if (!isEmptyCell(idx) && !cells[idx].isDefault())
+        {
+            array.push_back(cell.id);
+        }
+    }
+    return array;
+}
+
+BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+{
+    using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
+    return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);
+}
+
 
 }

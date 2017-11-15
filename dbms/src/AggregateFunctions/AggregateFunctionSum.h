@@ -15,22 +15,20 @@ namespace DB
 template <typename T>
 struct AggregateFunctionSumData
 {
-    T sum;
-
-    AggregateFunctionSumData() : sum(0) {}
+    T sum{};
 };
 
 
 /// Counts the sum of the numbers.
-template <typename T>
-class AggregateFunctionSum final : public IUnaryAggregateFunction<AggregateFunctionSumData<typename NearestFieldType<T>::Type>, AggregateFunctionSum<T> >
+template <typename T, typename TResult = T>
+class AggregateFunctionSum final : public IUnaryAggregateFunction<AggregateFunctionSumData<TResult>, AggregateFunctionSum<T, TResult>>
 {
 public:
     String getName() const override { return "sum"; }
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeNumber<typename NearestFieldType<T>::Type>>();
+        return std::make_shared<DataTypeNumber<TResult>>();
     }
 
     void setArgument(const DataTypePtr & argument)
@@ -63,8 +61,10 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnVector<typename NearestFieldType<T>::Type> &>(to).getData().push_back(this->data(place).sum);
+        static_cast<ColumnVector<TResult> &>(to).getData().push_back(this->data(place).sum);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

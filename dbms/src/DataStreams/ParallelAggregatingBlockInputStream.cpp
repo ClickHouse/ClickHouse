@@ -16,7 +16,7 @@ namespace DB
 
 
 ParallelAggregatingBlockInputStream::ParallelAggregatingBlockInputStream(
-    BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end,
+    const BlockInputStreams & inputs, const BlockInputStreamPtr & additional_input_at_end,
     const Aggregator::Params & params_, bool final_, size_t max_threads_, size_t temporary_data_merge_threads_)
     : params(params_), aggregator(params),
     final(final_), max_threads(std::min(inputs.size(), max_threads_)), temporary_data_merge_threads(temporary_data_merge_threads_),
@@ -139,9 +139,8 @@ void ParallelAggregatingBlockInputStream::Handler::onFinishThread(size_t thread_
         if (data.isConvertibleToTwoLevel())
             data.convertToTwoLevel();
 
-        size_t rows = data.sizeWithoutOverflowRow();
-        if (rows)
-            parent.aggregator.writeToTemporaryFile(data, rows);
+        if (data.size())
+            parent.aggregator.writeToTemporaryFile(data);
     }
 }
 
@@ -156,9 +155,8 @@ void ParallelAggregatingBlockInputStream::Handler::onFinish()
             if (data->isConvertibleToTwoLevel())
                 data->convertToTwoLevel();
 
-            size_t rows = data->sizeWithoutOverflowRow();
-            if (rows)
-                parent.aggregator.writeToTemporaryFile(*data, rows);
+            if (data->size())
+                parent.aggregator.writeToTemporaryFile(*data);
         }
     }
 }

@@ -1,8 +1,13 @@
+Trivial case
 2
 A
 A\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
 [1,2]
 ['A','B']
+[]
+[]
+
+Numeric branches
 1
 3
 1
@@ -6763,6 +6768,7 @@ A\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
 3
 1
 2
+Numeric array branches
 [1,2]
 [3,3]
 [1,2]
@@ -13523,6 +13529,7 @@ A\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
 [3,3]
 [1,2]
 [2,3]
+String branches
 ABC
 B
 CD
@@ -16083,6 +16090,7 @@ foo
 foo
 foo
 foo
+String array branches
 ['ABCDE','ABCDEF']
 ['B','BC']
 ['CDE','CDEF']
@@ -18643,6 +18651,7 @@ foo
 ['foo','bar']
 ['foo','bar']
 ['foo','bar']
+Miscellaneous
 11225	Москва
 20273	Москва
 213	Мир

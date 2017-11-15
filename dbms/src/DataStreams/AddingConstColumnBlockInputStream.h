@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Columns/ColumnConst.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 namespace DB
@@ -9,14 +8,14 @@ namespace DB
 
 /** Adds a materialized const column to the block with a specified value.
   */
-template <typename ColumnType>
+template <typename T>
 class AddingConstColumnBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     AddingConstColumnBlockInputStream(
         BlockInputStreamPtr input_,
         DataTypePtr data_type_,
-        ColumnType value_,
+        T value_,
         String column_name_)
         : data_type(data_type_), value(value_), column_name(column_name_)
     {
@@ -38,14 +37,14 @@ protected:
         Block res = children.back()->read();
         if (!res)
             return res;
-        ColumnPtr column_ptr = ColumnConst<ColumnType>(res.rows(), value, data_type).convertToFullColumn();
-        res.insert({column_ptr, data_type, column_name});
+
+        res.insert({data_type->createConstColumn(res.rows(), value)->convertToFullColumnIfConst(), data_type, column_name});
         return res;
     }
 
 private:
     DataTypePtr data_type;
-    ColumnType value;
+    T value;
     String column_name;
 };
 

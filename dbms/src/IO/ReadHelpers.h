@@ -4,6 +4,7 @@
 #include <cstring>
 #include <limits>
 #include <algorithm>
+#include <iterator>
 
 #include <type_traits>
 
@@ -14,15 +15,16 @@
 #include <common/exp10.h>
 
 #include <Core/Types.h>
-#include <Core/StringRef.h>
+#include <Core/UUID.h>
+#include <common/StringRef.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/Arena.h>
+#include <Common/UInt128.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
-#include <city.h>
 
 #define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
 
@@ -34,7 +36,10 @@ namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /// Helper functions for formatted input.
@@ -61,21 +66,6 @@ inline char parseEscapeSequence(char c)
             return '\0';
         default:
             return c;
-    }
-}
-
-inline char unhex(char c)
-{
-    switch (c)
-    {
-        case '0' ... '9':
-            return c - '0';
-        case 'a' ... 'f':
-            return c - 'a' + 10;
-        case 'A' ... 'F':
-            return c - 'A' + 10;
-        default:
-            return 0;
     }
 }
 
@@ -258,7 +248,12 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 if (std::is_signed<T>::value)
                     negative = true;
                 else
-                    return ReturnType(false);
+                {
+                    if (throw_exception)
+                        throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    else
+                        return ReturnType(false);
+                }
                 break;
             case '0':
             case '1':
@@ -349,14 +344,14 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
         x = -x;
 }
 
-template<typename T>
+template <typename T>
 void tryReadIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     return readIntTextUnsafe<T, false>(x, buf);
 }
 
 
-template <bool throw_exception, class ExcepFun, class NoExcepFun, class... Args>
+template <bool throw_exception, typename ExcepFun, typename NoExcepFun, typename... Args>
 bool exceptionPolicySelector(ExcepFun && excep_f, NoExcepFun && no_excep_f, Args &&... args)
 {
     if (throw_exception)
@@ -487,30 +482,33 @@ ReturnType readFloatTextImpl(T & x, ReadBuffer & buf)
     return ReturnType(true);
 }
 
-template <class T>
+template <typename T>
 inline bool tryReadFloatText(T & x, ReadBuffer & buf)
 {
     return readFloatTextImpl<T, bool>(x, buf);
 }
 
-template <class T>
+template <typename T>
 inline void readFloatText(T & x, ReadBuffer & buf)
 {
     readFloatTextImpl<T, void>(x, buf);
 }
 
-/// rough; all until '\n' or '\t'
+/// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
 
 void readEscapedString(String & s, ReadBuffer & buf);
 
 void readQuotedString(String & s, ReadBuffer & buf);
+void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readDoubleQuotedString(String & s, ReadBuffer & buf);
+void readDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readJSONString(String & s, ReadBuffer & buf);
 
 void readBackQuotedString(String & s, ReadBuffer & buf);
+void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
 
@@ -536,13 +534,13 @@ void readStringInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readQuotedStringInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readDoubleQuotedStringInto(Vector & s, ReadBuffer & buf);
 
-template <typename Vector>
+template <bool enable_sql_style_quoting, typename Vector>
 void readBackQuotedStringInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
@@ -551,8 +549,15 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter = ',');
 
+/// ReturnType is either bool or void. If bool, the function will return false instead of throwing an exception.
+template <typename Vector, typename ReturnType = void>
+ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf);
+
 template <typename Vector>
-void readJSONStringInto(Vector & s, ReadBuffer & buf);
+bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
+{
+    return readJSONStringInto<Vector, bool>(s, buf);
+}
 
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullSink
@@ -561,38 +566,70 @@ struct NullSink
     void push_back(char) {};
 };
 
+void parseUUID(const UInt8 * src36, UInt8 * dst16);
+void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 
-/// In YYYY-MM-DD format
-inline void readDateText(DayNum_t & date, ReadBuffer & buf)
-{
-    char s[10];
-    size_t size = buf.read(s, 10);
-    if (10 != size)
-    {
-        s[size] = 0;
-        throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
-    }
+template <typename IteratorSrc, typename IteratorDst>
+void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 
-    UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-    UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
-    UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 
-    date = DateLUT::instance().makeDayNum(year, month, day);
-}
+void readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 
+/// In YYYY-MM-DD format.
+/// For convenience, Month and Day parts can have single digit instead of two digits.
+/// Any separators other than '-' are supported.
 inline void readDateText(LocalDate & date, ReadBuffer & buf)
 {
-    char s[10];
-    size_t size = buf.read(s, 10);
-    if (10 != size)
+    /// Optimistic path, when whole value is in buffer.
+    if (buf.position() + 10 <= buf.buffer().end())
+    {
+        UInt16 year = (buf.position()[0] - '0') * 1000 + (buf.position()[1] - '0') * 100 + (buf.position()[2] - '0') * 10 + (buf.position()[3] - '0');
+        buf.position() += 5;
+
+        UInt8 month = buf.position()[0] - '0';
+        if (isNumericASCII(buf.position()[1]))
+        {
+            month = month * 10 + buf.position()[1] - '0';
+            buf.position() += 3;
+        }
+        else
+            buf.position() += 2;
+
+        UInt8 day = buf.position()[0] - '0';
+        if (isNumericASCII(buf.position()[1]))
+        {
+            day = day * 10 + buf.position()[1] - '0';
+            buf.position() += 2;
+        }
+        else
+            buf.position() += 1;
+
+        date = LocalDate(year, month, day);
+    }
+    else
+        readDateTextFallback(date, buf);
+}
+
+inline void readDateText(DayNum_t & date, ReadBuffer & buf)
+{
+    LocalDate local_date;
+    readDateText(local_date, buf);
+    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
+}
+
+
+inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
+{
+    char s[36];
+    size_t size = buf.read(s, 36);
+
+    if (size != 36)
     {
         s[size] = 0;
-        throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
+        throw Exception(std::string("Cannot parse uuid ") + s, ErrorCodes::CANNOT_PARSE_UUID);
     }
 
-    date.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
-    date.month((s[5] - '0') * 10 + (s[6] - '0'));
-    date.day((s[8] - '0') * 10 + (s[9] - '0'));
+    parseUUID(reinterpret_cast<const UInt8 *>(s), std::reverse_iterator<UInt8 *>(reinterpret_cast<UInt8 *>(&uuid) + 16));
 }
 
 
@@ -602,10 +639,10 @@ inline T parse(const char * data, size_t size);
 
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
-/** In YYYY-MM-DD hh:mm:ss format, according to current time zone.
+/** In YYYY-MM-DD hh:mm:ss format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     /** Read 10 characters, that could represent unix timestamp.
       * Only unix timestamp of 5-10 characters is supported.
@@ -613,9 +650,9 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
       * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
       */
 
-    /// Optimistic path, when whole value are in buffer.
+    /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
-    if (s + 19 < buf.buffer().end())
+    if (s + 19 <= buf.buffer().end())
     {
         if (s[4] < '0' || s[4] > '9')
         {
@@ -640,6 +677,11 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
     }
     else
         readDateTimeTextFallback(datetime, buf, date_lut);
+}
+
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
+{
+    readDateTimeText(datetime, buf, DateLUT::instance());
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
@@ -667,9 +709,10 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
-inline void readBinary(String & x,     ReadBuffer & buf) { readStringBinary(x, buf); }
-inline void readBinary(uint128 & x,    ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(LocalDate & x,     ReadBuffer & buf)     { readPODBinary(x, buf); }
+inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
+inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
@@ -682,11 +725,18 @@ template <typename T>
 inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
 readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
-inline void readText(bool & x,         ReadBuffer & buf) { readBoolText(x, buf); }
-inline void readText(String & x,     ReadBuffer & buf) { readEscapedString(x, buf); }
-inline void readText(LocalDate & x,     ReadBuffer & buf) { readDateText(x, buf); }
+inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
+inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
+inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
-
+inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
+inline void readText(UInt128 & x, ReadBuffer & buf)
+{
+    /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
+     *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
+     */
+    throw Exception("UInt128 cannot be read as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
 
 /// Generic methods to read value in text format,
 ///  possibly in single quotes (only for data types that use quotes in VALUES format of INSERT statement in SQL).
@@ -694,7 +744,7 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-inline void readQuoted(String & x,     ReadBuffer & buf) { readQuotedString(x, buf); }
+inline void readQuoted(String & x, ReadBuffer & buf) { readQuotedString(x, buf); }
 
 inline void readQuoted(LocalDate & x, ReadBuffer & buf)
 {
@@ -716,7 +766,7 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readDoubleQuoted(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-inline void readDoubleQuoted(String & x,     ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
+inline void readDoubleQuoted(String & x, ReadBuffer & buf) { readDoubleQuotedString(x, buf); }
 
 inline void readDoubleQuoted(LocalDate & x, ReadBuffer & buf)
 {
@@ -733,7 +783,7 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
 }
 
 
-/// CSV, for numbers, dates, datetimes: quotes are optional, no special escaping rules.
+/// CSV, for numbers, dates: quotes are optional, no special escaping rules.
 template <typename T>
 inline void readCSVSimple(T & x, ReadBuffer & buf)
 {
@@ -751,14 +801,37 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
         assertChar(maybe_quote, buf);
 }
 
+inline void readDateTimeCSV(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    char maybe_quote = *buf.position();
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        ++buf.position();
+
+    readDateTimeText(datetime, buf, date_lut);
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        assertChar(maybe_quote, buf);
+}
+
 template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { readCSVString(x, buf, delimiter); }
-inline void readCSV(LocalDate & x,     ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-
+inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(UInt128 & x, ReadBuffer & buf)
+{
+    /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
+     *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
+     */
+    throw Exception("UInt128 cannot be read as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
 
 template <typename T>
 void readBinary(std::vector<T> & x, ReadBuffer & buf)

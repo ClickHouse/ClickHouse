@@ -13,29 +13,22 @@ namespace DB
 
 /// Parse database.table or table.
 static bool parseDatabaseAndTable(
-    ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, IParser::Pos end, IParser::Pos & max_parsed_pos, Expected & expected)
+    ASTRenameQuery::Table & db_and_table, IParser::Pos & pos, Expected & expected)
 {
     ParserIdentifier name_p;
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_dot(".");
+    ParserToken s_dot(TokenType::Dot);
 
     ASTPtr database;
     ASTPtr table;
 
-    ws.ignore(pos, end);
-
-    if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+    if (!name_p.parse(pos, table, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+    if (s_dot.ignore(pos, expected))
     {
         database = table;
-        if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
-
-        ws.ignore(pos, end);
     }
 
     db_and_table.database = database ? typeid_cast<const ASTIdentifier &>(*database).name : "";
@@ -45,46 +38,41 @@ static bool parseDatabaseAndTable(
 }
 
 
-bool ParserRenameQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_rename("RENAME", true, true);
-    ParserString s_table("TABLE", true, true);
-    ParserString s_to("TO", true, true);
-    ParserString s_comma(",");
+    ParserKeyword s_rename_table("RENAME TABLE");
+    ParserKeyword s_to("TO");
+    ParserToken s_comma(TokenType::Comma);
 
-    ws.ignore(pos, end);
-
-    if (!s_rename.ignore(pos, end, max_parsed_pos, expected))
-        return false;
-
-    ws.ignore(pos, end);
-
-    if (!s_table.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_rename_table.ignore(pos, expected))
         return false;
 
     ASTRenameQuery::Elements elements;
 
     while (true)
     {
-        ws.ignore(pos, end);
-
-        if (!elements.empty() && !s_comma.ignore(pos, end))
+        if (!elements.empty() && !s_comma.ignore(pos))
             break;
-
-        ws.ignore(pos, end);
 
         elements.push_back(ASTRenameQuery::Element());
 
-        if (!parseDatabaseAndTable(elements.back().from, pos, end, max_parsed_pos, expected)
-            || !s_to.ignore(pos, end)
-            || !parseDatabaseAndTable(elements.back().to, pos, end, max_parsed_pos, expected))
+        if (!parseDatabaseAndTable(elements.back().from, pos, expected)
+            || !s_to.ignore(pos)
+            || !parseDatabaseAndTable(elements.back().to, pos, expected))
+            return false;
+    }
+
+    String cluster_str;
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
     }
 
     auto query = std::make_shared<ASTRenameQuery>(StringRange(begin, pos));
+    query->cluster = cluster_str;
     node = query;
 
     query->elements = elements;

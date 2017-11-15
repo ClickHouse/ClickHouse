@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
@@ -12,13 +12,9 @@ class Context;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
-class StorageSystemReplicas : private ext::shared_ptr_helper<StorageSystemReplicas>, public IStorage
+class StorageSystemReplicas : public ext::shared_ptr_helper<StorageSystemReplicas>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemReplicas>;
-
 public:
-    static StoragePtr create(const std::string & name_);
-
     std::string getName() const override { return "SystemReplicas"; }
     std::string getTableName() const override { return name; }
 
@@ -26,17 +22,17 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const SelectQueryInfo & query_info,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
 private:
     const std::string name;
     NamesAndTypesList columns;
 
+protected:
     StorageSystemReplicas(const std::string & name_);
 };
 

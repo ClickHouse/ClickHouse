@@ -1,8 +1,8 @@
 #include <Analyzers/CollectTables.h>
 #include <Analyzers/CollectAliases.h>
+#include <Analyzers/ExecuteTableFunctions.h>
 #include <Analyzers/AnalyzeResultOfQuery.h>
 #include <Interpreters/Context.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -11,6 +11,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -49,20 +50,20 @@ static CollectTables::TableInfo processOrdinaryTable(const ASTPtr & ast_database
 }
 
 
-static CollectTables::TableInfo processTableFunction(const ASTPtr & ast_table_function, Context & context)
+static CollectTables::TableInfo processTableFunction(const ASTPtr & ast_table_function, const ExecuteTableFunctions & table_functions)
 {
     const ASTFunction & function = typeid_cast<const ASTFunction &>(*ast_table_function);
+
+    IAST::Hash ast_hash = ast_table_function->getTreeHash();
+
+    auto it = table_functions.tables.find(ast_hash);
+    if (table_functions.tables.end() == it)
+        throw Exception("Table function " + function.name + " was not executed in advance.", ErrorCodes::LOGICAL_ERROR);
 
     CollectTables::TableInfo res;
     res.node = ast_table_function;
     res.alias = function.tryGetAlias();
-
-    /// Obtain table function
-    TableFunctionPtr table_function_ptr = context.getTableFunctionFactory().get(function.name, context);
-    /// Execute it and store result
-    /// TODO Avoid double execution of table functions during type inference in subqueries.
-    /// TODO Avoid double execution of same table functions.
-    res.storage = table_function_ptr->execute(ast_table_function, context);
+    res.storage = it->second;
     return res;
 }
 
@@ -78,10 +79,10 @@ static CollectTables::TableInfo processNoTables(const Context & context)
 }
 
 
-static CollectTables::TableInfo processSubquery(ASTPtr & ast_subquery, Context & context)
+static CollectTables::TableInfo processSubquery(ASTPtr & ast_subquery, const Context & context, ExecuteTableFunctions & table_functions)
 {
     AnalyzeResultOfQuery analyzer;
-    analyzer.process(typeid_cast<ASTSubquery &>(*ast_subquery).children.at(0), context);
+    analyzer.process(typeid_cast<ASTSubquery &>(*ast_subquery).children.at(0), context, table_functions);
 
     CollectTables::TableInfo res;
     res.node = ast_subquery;
@@ -91,7 +92,7 @@ static CollectTables::TableInfo processSubquery(ASTPtr & ast_subquery, Context &
 }
 
 
-void CollectTables::process(ASTPtr & ast, Context & context, const CollectAliases & aliases)
+void CollectTables::process(ASTPtr & ast, const Context & context, const CollectAliases & aliases, ExecuteTableFunctions & table_functions)
 {
     const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get());
     if (!select)
@@ -120,11 +121,11 @@ void CollectTables::process(ASTPtr & ast, Context & context, const CollectAliase
         }
         else if (table_expression.table_function)
         {
-            tables.emplace_back(processTableFunction(table_expression.table_function, context));
+            tables.emplace_back(processTableFunction(table_expression.table_function, table_functions));
         }
         else if (table_expression.subquery)
         {
-            tables.emplace_back(processSubquery(table_expression.subquery, context));
+            tables.emplace_back(processSubquery(table_expression.subquery, context, table_functions));
         }
         else
             throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);

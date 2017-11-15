@@ -4,6 +4,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/NaNUtils.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/FormatSettingsJSON.h>
 
 
 namespace DB
@@ -23,13 +25,13 @@ void DataTypeNumberBase<T>::serializeTextEscaped(const IColumn & column, size_t 
 
 
 template <typename T>
-static void readTextUnsafeIfIntegral(typename std::enable_if<std::is_integral<T>::value, T>::type & x, ReadBuffer & istr)
+static void readTextUnsafeIfIntegral(typename std::enable_if<std::is_integral<T>::value && std::is_arithmetic<T>::value, T>::type & x, ReadBuffer & istr)
 {
     readIntTextUnsafe(x, istr);
 }
 
 template <typename T>
-static void readTextUnsafeIfIntegral(typename std::enable_if<!std::is_integral<T>::value, T>::type & x, ReadBuffer & istr)
+static void readTextUnsafeIfIntegral(typename std::enable_if<!std::is_integral<T>::value || !std::is_arithmetic<T>::value, T>::type & x, ReadBuffer & istr)
 {
     readText(x, istr);
 }
@@ -61,19 +63,48 @@ void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer &
     deserializeText<T>(column, istr);
 }
 
+
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
+static inline typename std::enable_if<std::is_floating_point<T>::value, void>::type writeDenormalNumber(T x, WriteBuffer & ostr)
 {
-    const bool need_quote = std::is_integral<T>::value && (sizeof(T) == 8) && force_quoting_64bit_integers;
+    if (std::signbit(x))
+    {
+        if (isNaN(x))
+            writeCString("-nan", ostr);
+        else
+            writeCString("-inf", ostr);
+    }
+    else
+    {
+        if (isNaN(x))
+            writeCString("nan", ostr);
+        else
+            writeCString("inf", ostr);
+    }
+}
+
+template <typename T>
+static inline typename std::enable_if<!std::is_floating_point<T>::value, void>::type writeDenormalNumber(T x, WriteBuffer & ostr) {}
+
+
+template <typename T>
+void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
+{
+    auto x = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+    bool is_finite = isFinite(x);
+
+    const bool need_quote = (std::is_integral<T>::value && (sizeof(T) == 8) && settings.force_quoting_64bit_integers)
+        || (settings.output_format_json_quote_denormals && !is_finite);
 
     if (need_quote)
         writeChar('"', ostr);
 
-    auto x = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
-    if (isFinite(x))
+    if (is_finite)
         writeText(x, ostr);
-    else
+    else if (!settings.output_format_json_quote_denormals)
         writeCString("null", ostr);
+    else
+        writeDenormalNumber(x, ostr);
 
     if (need_quote)
         writeChar('"', ostr);
@@ -82,9 +113,6 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
 template <typename T>
 void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
-    static constexpr bool is_uint8 = std::is_same<T, UInt8>::value;
-    static constexpr bool is_int8 = std::is_same<T, Int8>::value;
-
     bool has_quote = false;
     if (!istr.eof() && *istr.position() == '"')        /// We understand the number both in quotes and without.
     {
@@ -104,6 +132,9 @@ void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     else
     {
+        static constexpr bool is_uint8 = std::is_same<T, UInt8>::value;
+        static constexpr bool is_int8 = std::is_same<T, Int8>::value;
+
         if (is_uint8 || is_int8)
         {
             // extra conditions to parse true/false strings into 1/0
@@ -209,18 +240,13 @@ ColumnPtr DataTypeNumberBase<T>::createColumn() const
     return std::make_shared<ColumnVector<T>>();
 }
 
-template <typename T>
-ColumnPtr DataTypeNumberBase<T>::createConstColumn(size_t size, const Field & field) const
-{
-    return std::make_shared<ColumnConst<FieldType>>(size, get<typename NearestFieldType<FieldType>::Type>(field));
-}
-
 
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class DataTypeNumberBase<UInt8>;
 template class DataTypeNumberBase<UInt16>;
 template class DataTypeNumberBase<UInt32>;
 template class DataTypeNumberBase<UInt64>;
+template class DataTypeNumberBase<UInt128>;
 template class DataTypeNumberBase<Int8>;
 template class DataTypeNumberBase<Int16>;
 template class DataTypeNumberBase<Int32>;

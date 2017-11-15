@@ -1,26 +1,29 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 
 
 namespace DB
 {
 
+class Context;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
-/** Проверить, существует ли таблица. Вернуть одну строку с одним столбцом result типа UInt8 со значением 0 или 1.
+
+/** Check that table exists. Return single row with single column "result" of type UInt8 and value 0 or 1.
   */
 class InterpreterExistsQuery : public IInterpreter
 {
 public:
-    InterpreterExistsQuery(ASTPtr query_ptr_, Context & context_)
+    InterpreterExistsQuery(const ASTPtr & query_ptr_, const Context & context_)
         : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
-    Context context;
+    const Context & context;
 
     Block getSampleBlock();
     BlockInputStreamPtr executeImpl();

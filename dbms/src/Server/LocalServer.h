@@ -34,17 +34,11 @@ private:
     std::string getInitialCreateTableQuery();
 
     void tryInitPath();
-
     void applyOptions();
-
     void attachSystemTables();
-
     void processQueries();
-
     void setupUsers();
-
     void displayHelp();
-
     void handleHelp(const std::string & name, const std::string & value);
 
 protected:

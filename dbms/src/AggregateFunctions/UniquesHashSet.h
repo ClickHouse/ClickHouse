@@ -44,18 +44,18 @@
   */
 
 /// The maximum degree of buffer size before the values are discarded
-#define UNIQUES_HASH_MAX_SIZE_DEGREE             17
+#define UNIQUES_HASH_MAX_SIZE_DEGREE 17
 
 /// The maximum number of elements before the values are discarded
-#define UNIQUES_HASH_MAX_SIZE                     (1 << (UNIQUES_HASH_MAX_SIZE_DEGREE - 1))
+#define UNIQUES_HASH_MAX_SIZE (1ULL << (UNIQUES_HASH_MAX_SIZE_DEGREE - 1))
 
 /** The number of least significant bits used for thinning. The remaining high-order bits are used to determine the position in the hash table.
   * (high-order bits are taken because the younger bits will be constant after dropping some of the values)
   */
-#define UNIQUES_HASH_BITS_FOR_SKIP             (32 - UNIQUES_HASH_MAX_SIZE_DEGREE)
+#define UNIQUES_HASH_BITS_FOR_SKIP (32 - UNIQUES_HASH_MAX_SIZE_DEGREE)
 
 /// Initial buffer size degree
-#define UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE     4
+#define UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE 4
 
 
 /** This hash function is not the most optimal, but UniquesHashSet states counted with it,
@@ -71,15 +71,15 @@ struct UniquesHashSetDefaultHash
 
 
 template <typename Hash = UniquesHashSetDefaultHash>
-class UniquesHashSet : private HashTableAllocatorWithStackMemory<(1 << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>
+class UniquesHashSet : private HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>
 {
 private:
     using Value_t = UInt64;
     using HashValue_t = UInt32;
-    using Allocator = HashTableAllocatorWithStackMemory<(1 << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
+    using Allocator = HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
 
-    UInt32 m_size;            /// Number of elements
-    UInt8 size_degree;        /// The size of the table as a power of 2
+    UInt32 m_size;          /// Number of elements
+    UInt8 size_degree;      /// The size of the table as a power of 2
     UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
     bool has_zero;          /// The hash table contains an element with a hash value of 0.
 
@@ -92,7 +92,7 @@ private:
 
     void alloc(UInt8 new_size_degree)
     {
-        buf = reinterpret_cast<HashValue_t *>(Allocator::alloc((1 << new_size_degree) * sizeof(buf[0])));
+        buf = reinterpret_cast<HashValue_t *>(Allocator::alloc((1ULL << new_size_degree) * sizeof(buf[0])));
         size_degree = new_size_degree;
     }
 
@@ -105,10 +105,10 @@ private:
         }
     }
 
-    inline size_t buf_size() const                        { return 1 << size_degree; }
-    inline size_t max_fill() const                        { return 1 << (size_degree - 1); }
-    inline size_t mask() const                            { return buf_size() - 1; }
-    inline size_t place(HashValue_t x) const             { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
+    inline size_t buf_size() const           { return 1ULL << size_degree; }
+    inline size_t max_fill() const           { return 1ULL << (size_degree - 1); }
+    inline size_t mask() const               { return buf_size() - 1; }
+    inline size_t place(HashValue_t x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
 
     /// The value is divided by 2 ^ skip_degree
     inline bool good(HashValue_t hash) const
@@ -157,7 +157,7 @@ private:
             new_size_degree = size_degree + 1;
 
         /// Expand the space.
-        buf = reinterpret_cast<HashValue_t *>(Allocator::realloc(buf, old_size * sizeof(buf[0]), (1 << new_size_degree) * sizeof(buf[0])));
+        buf = reinterpret_cast<HashValue_t *>(Allocator::realloc(buf, old_size * sizeof(buf[0]), (1ULL << new_size_degree) * sizeof(buf[0])));
         size_degree = new_size_degree;
 
         /** Now some items may need to be moved to a new location.
@@ -327,12 +327,12 @@ public:
         if (0 == skip_degree)
             return m_size;
 
-        size_t res = m_size * (1 << skip_degree);
+        size_t res = m_size * (1ULL << skip_degree);
 
         /** Pseudo-random remainder - in order to be not visible,
           * that the number is divided by the power of two.
           */
-        res += (intHashCRC32(m_size) & ((1 << skip_degree) - 1));
+        res += (intHashCRC32(m_size) & ((1ULL << skip_degree) - 1));
 
         /** Correction of a systematic error due to collisions during hashing in UInt32.
           * `fixed_res(res)` formula
@@ -435,7 +435,7 @@ public:
         if (rhs_size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
 
-        if ((1U << size_degree) < rhs_size)
+        if ((1ULL << size_degree) < rhs_size)
         {
             UInt8 new_size_degree = std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(rhs_size - 1)) + 2);
             resize(new_size_degree);

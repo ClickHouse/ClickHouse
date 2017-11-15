@@ -3,6 +3,7 @@
 #include <Common/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -162,14 +163,18 @@ template <bool positive>
 struct ColumnString::less
 {
     const ColumnString & parent;
-    less(const ColumnString & parent_) : parent(parent_) {}
+    explicit less(const ColumnString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        int res = strcmp(
-            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(lhs)]),
-            reinterpret_cast<const char *>(&parent.chars[parent.offsetAt(rhs)]));
+        size_t left_len = parent.sizeAt(lhs);
+        size_t right_len = parent.sizeAt(rhs);
 
-        return positive ? (res < 0) : (res > 0);
+        int res = memcmp(&parent.chars[parent.offsetAt(lhs)], &parent.chars[parent.offsetAt(rhs)], std::min(left_len, right_len));
+
+        if (res != 0)
+            return positive ? (res < 0) : (res > 0);
+        else
+            return positive ? (left_len < right_len) : (left_len > right_len);
     }
 };
 
@@ -243,6 +248,12 @@ ColumnPtr ColumnString::replicate(const Offsets_t & replicate_offsets) const
 }
 
 
+void ColumnString::gather(ColumnGathererStream & gatherer)
+{
+    gatherer.gather(*this);
+}
+
+
 void ColumnString::reserve(size_t n)
 {
     offsets.reserve(n);
@@ -254,6 +265,27 @@ void ColumnString::getExtremes(Field & min, Field & max) const
 {
     min = String();
     max = String();
+
+    size_t col_size = size();
+
+    if (col_size == 0)
+        return;
+
+    size_t min_idx = 0;
+    size_t max_idx = 0;
+
+    less<true> less_op(*this);
+
+    for (size_t i = 1; i < col_size; ++i)
+    {
+        if (less_op(i, min_idx))
+            min_idx = i;
+        else if (less_op(max_idx, i))
+            max_idx = i;
+    }
+
+    get(min_idx, min);
+    get(max_idx, max);
 }
 
 

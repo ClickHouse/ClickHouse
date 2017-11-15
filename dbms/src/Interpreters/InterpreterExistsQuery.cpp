@@ -5,7 +5,9 @@
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterExistsQuery.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -23,7 +25,7 @@ BlockIO InterpreterExistsQuery::execute()
 
 Block InterpreterExistsQuery::getSampleBlock()
 {
-    return {{ std::make_shared<ColumnConstUInt8>(0, 0), std::make_shared<DataTypeUInt8>(), "result" }};
+    return {{ nullptr, std::make_shared<DataTypeUInt8>(), "result" }};
 }
 
 
@@ -33,7 +35,7 @@ BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
     bool res = context.isTableExist(ast.database, ast.table);
 
     return std::make_shared<OneBlockInputStream>(Block{{
-        std::make_shared<ColumnConstUInt8>(1, res),
+        std::make_shared<ColumnUInt8>(1, res),
         std::make_shared<DataTypeUInt8>(),
         "result" }});
 }

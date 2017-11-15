@@ -5,7 +5,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
-#include <Functions/NumberTraits.h>
+#include <Functions/FunctionHelpers.h>
+#include <DataTypes/NumberTraits.h>
 #include <Interpreters/ExpressionActions.h>
 
 
@@ -38,10 +39,7 @@ public:
         return true;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -68,10 +66,7 @@ public:
         return 2;
     }
 
-    bool hasSpecialSupportForNulls() const override
-    {
-        return true;
-    }
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 

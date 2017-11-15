@@ -11,17 +11,37 @@ var connect = require('gulp-connect');
 var run = require('gulp-run');
 
 var outputDir = 'public';
-var docsDir = '../docs/build/docs';
+var docsDir = '../docs';
 
 var paths = {
-    htmls: ['*.html', '!reference_ru.html', '!reference_en.html'],
-    reference: ['reference_ru.html', 'reference_en.html'],
-    docs: [docsDir + '/**'],
-    scripts: ['*.js', '!gulpfile.js'],
-    styles: ['*.css'],
-    images: ['*.png', '*.ico'],
+    htmls: [
+        '**/*.html',
+        '!deprecated/reference_ru.html',
+        '!deprecated/reference_en.html',
+        '!node_modules/**/*.html',
+        '!presentations/**/*.html',
+        '!public/**/*.html'],
+    reference: ['deprecated/reference_ru.html', 'deprecated/reference_en.html'],
+    docs: [docsDir + '/build/docs/**/*'],
+    docstxt: ['docs/**/*.txt'],
+    scripts: [
+        '**/*.js',
+        '!gulpfile.js',
+        '!node_modules/**/*.js',
+        '!presentations/**/*.js',
+        '!public/**/*.js'],
+    styles: [
+        '**/*.css',
+        '!node_modules/**/*.css',
+        '!presentations/**/*.css',
+        '!public/**/*.css'],
+    images: [
+        '**/*.{jpg,jpeg,png,svg,ico}',
+        '!node_modules/**/*.{jpg,jpeg,png,svg,ico}',
+        '!presentations/**/*.{jpg,jpeg,png,svg,ico}',
+        '!public/**/*.{jpg,jpeg,png,svg,ico}'],
     robotstxt: ['robots.txt'],
-    presentations: ['../doc/presentations/**']
+    presentations: ['presentations/**/*']
 };
 
 gulp.task('clean', function () {
@@ -31,62 +51,67 @@ gulp.task('clean', function () {
 gulp.task('reference', [], function () {
     return gulp.src(paths.reference)
         .pipe(minifyInline())
-        .pipe(gulp.dest(outputDir))
-        .pipe(connect.reload())
+        .pipe(gulp.dest(outputDir + '/deprecated'))
 });
 
 gulp.task('docs', [], function () {
     run('cd ' + docsDir + '; make');
     return gulp.src(paths.docs)
+        .pipe(gulp.dest(outputDir + '/../docs'))
+});
+
+gulp.task('docstxt', ['docs'], function () {
+    return gulp.src(paths.docstxt)
         .pipe(gulp.dest(outputDir + '/docs'))
-        .pipe(connect.reload())
 });
 
 gulp.task('presentations', [], function () {
     return gulp.src(paths.presentations)
         .pipe(gulp.dest(outputDir + '/presentations'))
-        .pipe(connect.reload())
 });
 
 gulp.task('robotstxt', [], function () {
     return gulp.src(paths.robotstxt)
         .pipe(gulp.dest(outputDir))
-        .pipe(connect.reload())
 });
 
-gulp.task('htmls', ['reference', 'docs', 'robotstxt', 'presentations'], function () {
+gulp.task('htmls', ['docs', 'docstxt'], function () {
     return gulp.src(paths.htmls)
         .pipe(htmlmin({collapseWhitespace: true}))
         .pipe(minifyInline())
         .pipe(gulp.dest(outputDir))
-        .pipe(connect.reload())
 });
 
-gulp.task('scripts', [], function () {
+gulp.task('sourcemaps', ['docs'], function () {
     return gulp.src(paths.scripts)
         .pipe(sourcemaps.init())
         .pipe(uglify())
         .pipe(sourcemaps.write())
         .pipe(gulp.dest(outputDir))
-        .pipe(connect.reload())
 });
 
-gulp.task('styles', [], function () {
-    return gulp.src(paths.styles)
-        .pipe(cleanCss())
+gulp.task('scripts', ['docs'], function () {
+    return gulp.src(paths.scripts)
+        .pipe(uglify())
         .pipe(gulp.dest(outputDir))
-        .pipe(connect.reload())
 });
 
-gulp.task('images', [], function () {
+gulp.task('styles', ['docs'], function () {
+    return gulp.src(paths.styles)
+        .pipe(cleanCss({inline: ['none']}))
+        .pipe(gulp.dest(outputDir))
+});
+
+gulp.task('images', ['docs'], function () {
     return gulp.src(paths.images)
         .pipe(imagemin({optimizationLevel: 9}))
         .pipe(gulp.dest(outputDir))
-        .pipe(connect.reload())
 });
 
 gulp.task('watch', function () {
     gulp.watch(paths.htmls, ['htmls']);
+    gulp.watch(paths.docs, ['docs']);
+    gulp.watch(paths.reference, ['reference']);
     gulp.watch(paths.scripts, ['scripts']);
     gulp.watch(paths.images, ['images']);
 });
@@ -100,6 +125,6 @@ gulp.task('connect', function() {
     })
 });
 
-gulp.task('build', ['htmls', 'scripts', 'styles', 'images']);
+gulp.task('build', ['htmls', 'robotstxt', 'reference', 'scripts', 'styles', 'images', 'presentations']);
 
-gulp.task('default', ['build', 'watch', 'connect']);
+gulp.task('default', ['build', 'connect']);

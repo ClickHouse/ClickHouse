@@ -4,8 +4,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <numeric>
 #include <vector>
 #include <string>
@@ -42,13 +43,7 @@ std::string toString(const AttributeUnderlyingType type);
 
 
 /// Min and max lifetimes for a dictionary or it's entry
-struct DictionaryLifetime final
-{
-    UInt64 min_sec;
-    UInt64 max_sec;
-
-    DictionaryLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-};
+using DictionaryLifetime = ExternalLoadableLifetime;
 
 
 /** Holds the description of a single dictionary attribute:
@@ -95,7 +90,7 @@ struct DictionaryStructure final
     void validateKeyTypes(const DataTypes & key_types) const;
     std::string getKeyDescription() const;
     bool isKeySizeFixed() const;
-    std::size_t getKeySize() const;
+    size_t getKeySize() const;
 
 private:
     std::vector<DictionaryAttribute> getAttributes(

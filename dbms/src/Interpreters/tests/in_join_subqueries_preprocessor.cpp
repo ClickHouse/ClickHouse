@@ -1,4 +1,4 @@
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
@@ -10,6 +10,7 @@
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Common/typeid_cast.h>
 
 #include <iostream>
 #include <vector>
@@ -27,16 +28,9 @@ namespace DB
 
 
 /// Simplified version of the StorageDistributed class.
-class StorageDistributedFake : private ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
+class StorageDistributedFake : public ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
-friend class ext::shared_ptr_helper<StorageDistributedFake>;
-
 public:
-    static DB::StoragePtr create(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
-    {
-        return make_shared(remote_database_, remote_table_, shard_count_);
-    }
-
     std::string getName() const override { return "DistributedFake"; }
     bool isRemote() const override { return true; }
     size_t getShardCount() const { return shard_count; }
@@ -46,7 +40,7 @@ public:
     std::string getTableName() const override { return ""; }
     const DB::NamesAndTypesList & getColumnsListImpl() const override { return names_and_types; }
 
-private:
+protected:
     StorageDistributedFake(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
         : remote_database(remote_database_), remote_table(remote_table_), shard_count(shard_count_)
     {
@@ -70,7 +64,7 @@ public:
         if (!table.isRemote())
             return false;
 
-        const StorageDistributedFake * distributed = typeid_cast<const StorageDistributedFake *>(&table);
+        const StorageDistributedFake * distributed = dynamic_cast<const StorageDistributedFake *>(&table);
         if (!distributed)
             return false;
 
@@ -80,7 +74,7 @@ public:
     std::pair<std::string, std::string>
     getRemoteDatabaseAndTableName(const DB::IStorage & table) const override
     {
-        const StorageDistributedFake & distributed = typeid_cast<const StorageDistributedFake &>(table);
+        const StorageDistributedFake & distributed = dynamic_cast<const StorageDistributedFake &>(table);
         return { distributed.getRemoteDatabaseName(), distributed.getRemoteTableName() };
     }
 };
@@ -100,7 +94,7 @@ using TestEntries = std::vector<TestEntry>;
 using TestResult = std::pair<bool, std::string>;
 
 TestResult check(const TestEntry & entry);
-bool parse(DB::ASTPtr  & ast, const std::string & query);
+bool parse(DB::ASTPtr & ast, const std::string & query);
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs);
 void reorder(DB::IAST * ast);
 
@@ -1173,7 +1167,7 @@ TestResult check(const TestEntry & entry)
 {
     try
     {
-        DB::Context context;
+        DB::Context context = DB::Context::createGlobal();
 
         auto storage_distributed_visits = StorageDistributedFake::create("remote_db", "remote_visits", entry.shard_count);
         auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);

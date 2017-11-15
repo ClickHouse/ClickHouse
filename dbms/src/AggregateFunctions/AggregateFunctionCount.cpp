@@ -7,7 +7,7 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types)
+AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     return std::make_shared<AggregateFunctionCount>();
 }

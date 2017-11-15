@@ -6,14 +6,22 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnString.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 
 
 namespace DB
 {
-/** Функции работы со строками:
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+/** String functions
   *
   * length, empty, notEmpty,
   * concat, substring, lower, upper, reverse
@@ -26,11 +34,11 @@ namespace DB
   * s, c1, c2        -> s:        substring, substringUTF8
   * s, c1, c2, s2    -> s:        replace, replaceUTF8
   *
-  * Функции поиска строк и регулярных выражений расположены отдельно.
-  * Функции работы с URL расположены отдельно.
-  * Функции кодирования строк, конвертации в другие типы расположены отдельно.
+  * The search functions for strings and regular expressions are located separately.
+  * URL functions are located separately.
+  * String encoding functions, converting to other types are located separately.
   *
-  * Функции length, empty, notEmpty, reverse также работают с массивами.
+  * The functions length, empty, notEmpty, reverse also work with arrays.
   */
 
 
@@ -48,7 +56,7 @@ inline UInt8 xor_or_identity<false>(const UInt8 c, const int)
 
 /// It is caller's responsibility to ensure the presence of a valid cyrillic sequence in array
 template <bool to_lower>
-inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * const src_end, UInt8 *& dst)
+inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
 {
     if (src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
     {
@@ -89,10 +97,10 @@ inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * const src_end, 
 }
 
 
-/** Если строка содержит текст в кодировке UTF-8 - перевести его в нижний (верхний) регистр.
-  * Замечание: предполагается, что после перевода символа в другой регистр,
-  *  длина его мультибайтовой последовательности в UTF-8 не меняется.
-  * Иначе - поведение не определено.
+/** If the string contains UTF-8 encoded text, convert it to the lower (upper) case.
+  * Note: It is assumed that after the character is converted to another case,
+  *  the length of its multibyte sequence in UTF-8 does not change.
+  * Otherwise, the behavior is undefined.
   */
 template <char not_case_lower_bound,
     char not_case_upper_bound,
@@ -111,7 +119,7 @@ struct LowerUpperUTF8Impl
 
     /** Converts a single code point starting at `src` to desired case, storing result starting at `dst`.
      *    `src` and `dst` are incremented by corresponding sequence lengths. */
-    static void toCase(const UInt8 *& src, const UInt8 * const src_end, UInt8 *& dst);
+    static void toCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst);
 
 private:
     static constexpr auto ascii_upper_bound = '\x7f';
@@ -140,6 +148,7 @@ public:
     {
         return 1;
     }
+
     bool isInjective(const Block &) override
     {
         return is_injective;
@@ -147,38 +156,33 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]) && !typeid_cast<const DataTypeFixedString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return arguments[0]->clone();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        const ColumnPtr column = block.safeGetByPosition(arguments[0]).column;
-        if (const ColumnString * col = typeid_cast<const ColumnString *>(&*column))
+        const ColumnPtr column = block.getByPosition(arguments[0]).column;
+        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
             std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
             Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
         }
-        else if (const ColumnFixedString * col = typeid_cast<const ColumnFixedString *>(&*column))
+        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = std::make_shared<ColumnFixedString>(col->getN());
-            block.safeGetByPosition(result).column = col_res;
+            block.getByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
-        }
-        else if (const ColumnConstString * col = typeid_cast<const ColumnConstString *>(&*column))
-        {
-            String res;
-            Impl::constant(col->getData(), res);
-            auto col_res = std::make_shared<ColumnConstString>(col->size(), res);
-            block.safeGetByPosition(result).column = col_res;
         }
         else
             throw Exception(
-                "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
@@ -193,8 +197,7 @@ struct NameUpperUTF8
 };
 
 
-typedef FunctionStringToString<LowerUpperUTF8Impl<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>, NameLowerUTF8>
-    FunctionLowerUTF8;
-typedef FunctionStringToString<LowerUpperUTF8Impl<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>, NameUpperUTF8>
-    FunctionUpperUTF8;
+using FunctionLowerUTF8 = FunctionStringToString<LowerUpperUTF8Impl<'A', 'Z', Poco::Unicode::toLower, UTF8CyrillicToCase<true>>, NameLowerUTF8>;
+using FunctionUpperUTF8 = FunctionStringToString<LowerUpperUTF8Impl<'a', 'z', Poco::Unicode::toUpper, UTF8CyrillicToCase<false>>, NameUpperUTF8>;
+
 }

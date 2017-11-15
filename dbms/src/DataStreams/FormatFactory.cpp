@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -23,13 +24,18 @@
 #include <DataStreams/XMLRowOutputStream.h>
 #include <DataStreams/TSKVRowOutputStream.h>
 #include <DataStreams/TSKVRowInputStream.h>
-#include <DataStreams/PrettyCompactMonoBlockOutputStream.h>
 #include <DataStreams/ODBCDriverBlockOutputStream.h>
 #include <DataStreams/CSVRowInputStream.h>
 #include <DataStreams/CSVRowOutputStream.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/FormatFactory.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
+#include <DataTypes/FormatSettingsJSON.h>
+#if USE_CAPNP
+#include <DataStreams/CapnProtoRowInputStream.h>
+#endif
 
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -92,6 +98,18 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     {
         return wrap_row_stream(std::make_shared<JSONEachRowRowInputStream>(buf, sample, settings.input_format_skip_unknown_fields));
     }
+#if USE_CAPNP
+    else if (name == "CapnProto")
+    {
+        std::vector<String> tokens;
+        auto schema_and_root = settings.format_schema.toString();
+        boost::split(tokens, schema_and_root, boost::is_any_of(":"));
+        if (tokens.size() != 2)
+            throw Exception("Format CapnProto requires 'format_schema' setting to have schema_file:root_object format, e.g. 'schema.capnp:Message'");
+
+        return wrap_row_stream(std::make_shared<CapnProtoRowInputStream>(buf, sample, tokens[0], tokens[1]));
+    }
+#endif
     else if (name == "TabSeparatedRaw"
         || name == "TSVRaw"
         || name == "BlockTabSeparated"
@@ -121,6 +139,7 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     const Block & sample, const Context & context)
 {
     const Settings & settings = context.getSettingsRef();
+    FormatSettingsJSON json_settings(settings.output_format_json_quote_64bit_integers, settings.output_format_json_quote_denormals);
 
     if (name == "Native")
         return std::make_shared<NativeBlockOutputStream>(buf);
@@ -145,7 +164,12 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     else if (name == "PrettyCompact")
         return std::make_shared<PrettyCompactBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);
     else if (name == "PrettyCompactMonoBlock")
-        return std::make_shared<PrettyCompactMonoBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);
+    {
+        BlockOutputStreamPtr dst = std::make_shared<PrettyCompactBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);
+        auto res = std::make_shared<SquashingBlockOutputStream>(dst, settings.output_format_pretty_max_rows, 0);
+        res->disableFlush();
+        return res;
+    }
     else if (name == "PrettySpace")
         return std::make_shared<PrettySpaceBlockOutputStream>(buf, false, settings.output_format_pretty_max_rows, context);
     else if (name == "PrettyNoEscapes")
@@ -163,14 +187,14 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     else if (name == "Values")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf));
     else if (name == "JSON")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(buf, sample,
-            settings.output_format_write_statistics, settings.output_format_json_quote_64bit_integers));
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(
+            buf, sample, settings.output_format_write_statistics, json_settings));
     else if (name == "JSONCompact")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(buf, sample,
-            settings.output_format_write_statistics, settings.output_format_json_quote_64bit_integers));
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(
+            buf, sample, settings.output_format_write_statistics, json_settings));
     else if (name == "JSONEachRow")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(buf, sample,
-            settings.output_format_json_quote_64bit_integers));
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(
+            buf, sample, json_settings));
     else if (name == "XML")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<XMLRowOutputStream>(buf, sample,
             settings.output_format_write_statistics));

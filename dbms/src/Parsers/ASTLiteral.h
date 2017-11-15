@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/** Литерал (атомарный) - число, строка, NULL
+/** Literal (atomic) - number, string, NULL
   */
 class ASTLiteral : public ASTWithAlias
 {
@@ -18,9 +18,7 @@ public:
     ASTLiteral() = default;
     ASTLiteral(const StringRange range_, const Field & value_) : ASTWithAlias(range_), value(value_) {}
 
-    String getColumnName() const override;
-
-    /** Получить текст, который идентифицирует этот элемент. */
+    /** Get the text that identifies this element. */
     String getID() const override { return "Literal_" + applyVisitor(FieldVisitorDump(), value); }
 
     ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }
@@ -30,6 +28,7 @@ protected:
     {
         settings.ostr << applyVisitor(FieldVisitorToString(), value);
     }
+    String getColumnNameImpl() const override;
 };
 
 }

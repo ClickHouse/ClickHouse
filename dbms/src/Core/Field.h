@@ -6,6 +6,7 @@
 #include <functional>
 
 #include <Common/Exception.h>
+#include <Common/UInt128.h>
 #include <Core/Types.h>
 #include <common/strong_typedef.h>
 
@@ -36,8 +37,8 @@ STRONG_TYPEDEF(TupleBackend, Tuple); /// Array and Tuple are different types wit
   *  is not generalized,
   *  but somewhat more efficient, and simpler.
   *
-  * Used to represent a unit value of one of several types in the RAM.
-  * Warning! Preferably, instead of single values, store the pieces of the columns. See Column.h
+  * Used to represent a single value of one of several types in memory.
+  * Warning! Prefer to use chunks of columns instead of single values. See Column.h
   */
 class Field
 {
@@ -51,6 +52,7 @@ public:
             UInt64  = 1,
             Int64   = 2,
             Float64 = 3,
+            UInt128 = 4,
 
             /// Non-POD types.
 
@@ -67,6 +69,7 @@ public:
             {
                 case Null:    return "Null";
                 case UInt64:  return "UInt64";
+                case UInt128: return "UInt128";
                 case Int64:   return "Int64";
                 case Float64: return "Float64";
                 case String:  return "String";
@@ -205,6 +208,24 @@ public:
         return *ptr;
     };
 
+    template <typename T> bool tryGet(T & result)
+    {
+        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        if (which != requested)
+            return false;
+        result = get<T>();
+        return true;
+    }
+
+    template <typename T> bool tryGet(T & result) const
+    {
+        const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
+        if (which != requested)
+            return false;
+        result = get<T>();
+        return true;
+    }
+
     template <typename T> T & safeGet()
     {
         const Types::Which requested = TypeToEnum<typename std::decay<T>::type>::value;
@@ -233,6 +254,7 @@ public:
         {
             case Types::Null:    return false;
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
+            case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
             case Types::Int64:   return get<Int64>()   < rhs.get<Int64>();
             case Types::Float64: return get<Float64>() < rhs.get<Float64>();
             case Types::String:  return get<String>()  < rhs.get<String>();
@@ -260,11 +282,13 @@ public:
         {
             case Types::Null:    return true;
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
+            case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
             case Types::Int64:   return get<Int64>()   <= rhs.get<Int64>();
             case Types::Float64: return get<Float64>() <= rhs.get<Float64>();
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
+
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -286,10 +310,11 @@ public:
             case Types::Null:    return true;
             case Types::UInt64:
             case Types::Int64:
-            case Types::Float64: return get<UInt64>() == rhs.get<UInt64>();
-            case Types::String:  return get<String>() == rhs.get<String>();
-            case Types::Array:   return get<Array>()  == rhs.get<Array>();
-            case Types::Tuple:   return get<Tuple>()  == rhs.get<Tuple>();
+            case Types::Float64: return get<UInt64>()  == rhs.get<UInt64>();
+            case Types::String:  return get<String>()  == rhs.get<String>();
+            case Types::Array:   return get<Array>()   == rhs.get<Array>();
+            case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
+            case Types::UInt128: return get<UInt128>() == rhs.get<UInt128>();
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -304,7 +329,7 @@ public:
 private:
     static const size_t storage_size = std::max({
         DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        sizeof(Null), sizeof(UInt64), sizeof(Int64), sizeof(Float64), sizeof(String), sizeof(Array), sizeof(Tuple)});
+        sizeof(Null), sizeof(UInt64), sizeof(UInt128), sizeof(Int64), sizeof(Float64), sizeof(String), sizeof(Array), sizeof(Tuple)});
 
     char storage[storage_size] __attribute__((aligned(8)));
     Types::Which which;
@@ -337,6 +362,7 @@ private:
         {
             case Types::Null:    f(field.template get<Null>());    return;
             case Types::UInt64:  f(field.template get<UInt64>());  return;
+            case Types::UInt128: f(field.template get<UInt128>()); return;
             case Types::Int64:   f(field.template get<Int64>());   return;
             case Types::Float64: f(field.template get<Float64>()); return;
             case Types::String:  f(field.template get<String>());  return;
@@ -418,6 +444,7 @@ private:
 
 template <> struct Field::TypeToEnum<Null>    { static const Types::Which value = Types::Null; };
 template <> struct Field::TypeToEnum<UInt64>  { static const Types::Which value = Types::UInt64; };
+template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };
 template <> struct Field::TypeToEnum<Int64>   { static const Types::Which value = Types::Int64; };
 template <> struct Field::TypeToEnum<Float64> { static const Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String>  { static const Types::Which value = Types::String; };
@@ -426,6 +453,7 @@ template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value 
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
+template <> struct Field::EnumToType<Field::Types::UInt128> { using Type = UInt128; };
 template <> struct Field::EnumToType<Field::Types::Int64>   { using Type = Int64; };
 template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float64; };
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
@@ -468,6 +496,7 @@ template <> struct NearestFieldType<UInt8>   { using Type = UInt64; };
 template <> struct NearestFieldType<UInt16>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt32>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt64>  { using Type = UInt64; };
+template <> struct NearestFieldType<UInt128> { using Type = UInt128; };
 template <> struct NearestFieldType<Int8>    { using Type = Int64; };
 template <> struct NearestFieldType<Int16>   { using Type = Int64; };
 template <> struct NearestFieldType<Int32>   { using Type = Int64; };

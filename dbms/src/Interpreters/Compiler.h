@@ -1,7 +1,8 @@
 #pragma once
 
-#include <dlfcn.h>
+#include <boost/core/noncopyable.hpp>
 
+#include <iostream>
 #include <string>
 #include <mutex>
 #include <functional>
@@ -13,62 +14,23 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
-#include <Common/ThreadPool.h>
-
+#include <Common/SharedLibrary.h>
+#include <common/ThreadPool.h>
 
 namespace DB
 {
 
-
-/** Позволяет открыть динамическую библиотеку и получить из неё указатель на функцию.
-  */
-class SharedLibrary : private boost::noncopyable
-{
-public:
-    SharedLibrary(const std::string & path)
-    {
-        handle = dlopen(path.c_str(), RTLD_LAZY);
-        if (!handle)
-            throw Exception(std::string("Cannot dlopen: ") + dlerror());
-    }
-
-    ~SharedLibrary()
-    {
-        if (handle && dlclose(handle))
-            std::terminate();
-    }
-
-    template <typename Func>
-    Func get(const std::string & name)
-    {
-        dlerror();
-
-        Func res = reinterpret_cast<Func>(dlsym(handle, name.c_str()));
-
-        if (char * error = dlerror())
-            throw Exception(std::string("Cannot dlsym: ") + error);
-
-        return res;
-    }
-
-private:
-    void * handle;
-};
-
-using SharedLibraryPtr = std::shared_ptr<SharedLibrary>;
-
-
-/** Позволяет скомпилировать кусок кода, использующий заголовочные файлы сервера, в динамическую библиотеку.
-  * Ведёт статистику вызовов, и инициирует компиляцию только на N-ый по счёту вызов для одного ключа.
-  * Компиляция выполняется асинхронно, в отдельных потоках, если есть свободные потоки.
-  * NOTE: Нет очистки устаревших и ненужных результатов.
+/** Lets you compile a piece of code that uses the server's header files into the dynamic library.
+  * Conducts statistic of calls, and initiates compilation only on the N-th call for one key.
+  * Compilation is performed asynchronously, in separate threads, if there are free threads.
+  * NOTE: There is no cleaning of obsolete and unnecessary results.
   */
 class Compiler
 {
 public:
-    /** path - путь к директории с временными файлами - результатами компиляции.
-      * Результаты компиляции сохраняются при перезапуске сервера,
-      *  но используют в качестве части ключа номер ревизии. То есть, устаревают при обновлении сервера.
+    /** path - path to the directory with temporary files - the results of the compilation.
+      * The compilation results are saved when the server is restarted,
+      *  but use the revision number as part of the key. That is, they become obsolete when the server is updated.
       */
     Compiler(const std::string & path_, size_t threads);
     ~Compiler();
@@ -78,13 +40,13 @@ public:
     using CodeGenerator = std::function<std::string()>;
     using ReadyCallback = std::function<void(SharedLibraryPtr&)>;
 
-    /** Увеличить счётчик для заданного ключа key на единицу.
-      * Если результат компиляции уже есть (уже открыт, или есть файл с библиотекой),
-      *  то вернуть готовую SharedLibrary.
-      * Иначе, если min_count_to_compile == 0, то инициировать компиляцию в том же потоке, дождаться её, и вернуть результат.
-      * Иначе, если счётчик достиг min_count_to_compile,
-      *  инициировать компиляцию в отдельном потоке, если есть свободные потоки, и вернуть nullptr.
-      * Иначе вернуть nullptr.
+    /** Increase the counter for the given key `key` by one.
+      * If the compilation result already exists (already open, or there is a file with the library),
+      *  then return ready SharedLibrary.
+      * Otherwise, if min_count_to_compile == 0, then initiate the compilation in the same thread, wait for it, and return the result.
+      * Otherwise, if the counter has reached min_count_to_compile,
+      *  initiate compilation in a separate thread, if there are free threads, and return nullptr.
+      * Otherwise, return nullptr.
       */
     SharedLibraryPtr getOrCount(
         const std::string & key,
@@ -101,13 +63,13 @@ private:
     const std::string path;
     ThreadPool pool;
 
-    /// Количество вызовов функции getOrCount.
+    /// Number of calls to `getOrCount`.
     Counts counts;
 
-    /// Скомпилированные и открытые библиотеки. Или nullptr для библиотек в процессе компиляции.
+    /// Compiled and open libraries. Or nullptr for libraries in the compilation process.
     Libraries libraries;
 
-    /// Скомпилированные файлы, оставшиеся от предыдущих запусков, но ещё не открытые.
+    /// Compiled files remaining from previous runs, but not yet open.
     Files files;
 
     std::mutex mutex;

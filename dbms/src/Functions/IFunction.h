@@ -3,9 +3,9 @@
 #include <memory>
 
 #include <Core/Names.h>
+#include <Core/Field.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/IDataType.h>
 
 
@@ -15,38 +15,35 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 struct ExpressionAction;
 
 
-/** Интерфейс для обычных функций.
-  * Обычные функции - это функции, которые не меняют количество строк в таблице,
-  *  и результат работы которых для каждой строчки не зависит от других строк.
+/** Interface for normal functions.
+  * Normal functions are functions that do not change the number of rows in the table,
+  *  and the result of which for each row does not depend on other rows.
   *
-  * Функция может принимать произвольное количество аргументов; возвращает ровно одно значение.
-  * Тип результата зависит от типов и количества аргументов.
+  * A function can take an arbitrary number of arguments; returns exactly one value.
+  * The type of the result depends on the type and number of arguments.
   *
-  * Функция диспетчеризуется для целого блока. Это позволяет производить всевозможные проверки редко,
-  *  и делать основную работу в виде эффективного цикла.
+  * The function is dispatched for the whole block. This allows you to perform all kinds of checks rarely,
+  *  and do the main job as an efficient loop.
   *
-  * Функция применяется к одному или нескольким столбцам блока, и записывает свой результат,
-  *  добавляя новый столбец к блоку. Функция не модифицирует свои агрументы.
+  * The function is applied to one or more columns of the block, and writes its result,
+  *  adding a new column to the block. The function does not modify its arguments.
   */
 class IFunction
 {
 public:
-    /** Наследник IFunction должен реализовать:
+    /** The successor of IFunction must implement:
       * - getName
-      * - либо getReturnType, либо getReturnTypeAndPrerequisites
-      * - одну из перегрузок execute.
+      * - either getReturnType, or getReturnTypeAndPrerequisites
+      * - one of the overloads of `execute`.
       */
 
-    /// Получить основное имя функции.
+    /// Get the main function name.
     virtual String getName() const = 0;
 
     /// Override and return true if function could take different number of arguments.
@@ -97,8 +94,8 @@ public:
       */
     virtual bool isDeterministicInScopeOfQuery() { return true; }
 
-    /// Получить тип результата по типам аргументов. Если функция неприменима для данных аргументов - кинуть исключение.
-    /// Перегрузка для тех, кому не нужны prerequisites и значения константных аргументов. Снаружи не вызывается.
+    /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
+    /// Overloading for those who do not need prerequisites and values of constant arguments. Not called from outside.
     DataTypePtr getReturnType(const DataTypes & arguments) const;
 
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const
@@ -106,11 +103,11 @@ public:
         throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Получить тип результата по типам аргументов и значениям константных аргументов.
-      * Если функция неприменима для данных аргументов - кинуть исключение.
-      * Еще можно вернуть описание дополнительных столбцов, которые требуются для выполнения функции.
-      * Для неконстантных столбцов arguments[i].column = nullptr.
-      * Осмысленные типы элементов в out_prerequisites: APPLY_FUNCTION, ADD_COLUMN.
+    /** Get the result type by argument types and constant argument values.
+      * If the function does not apply to these arguments, throw an exception.
+      * You can also return a description of the additional columns that are required to perform the function.
+      * For non-constant columns `arguments[i].column = nullptr`.
+      * Meaningful element types in out_prerequisites: APPLY_FUNCTION, ADD_COLUMN.
       */
     void getReturnTypeAndPrerequisites(
         const ColumnsWithTypeAndName & arguments,
@@ -138,12 +135,12 @@ public:
         throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    /// Выполнить функцию над блоком. Замечание: может вызываться одновременно из нескольких потоков, для одного объекта.
-    /// Перегрузка для тех, кому не нужны prerequisites. Снаружи не вызывается.
+    /// Execute the function on the block. Note: can be called simultaneously from several threads, for one object.
+    /// Overloading for those who do not need `prerequisites`. Not called from outside.
     void execute(Block & block, const ColumnNumbers & arguments, size_t result);
 
-    /// Выполнить функцию над блоком. Замечание: может вызываться одновременно из нескольких потоков, для одного объекта.
-    /// prerequisites идут в том же порядке, что и out_prerequisites, полученные из getReturnTypeAndPrerequisites.
+    /// Execute the function above the block. Note: can be called simultaneously from several threads, for one object.
+    /// `prerequisites` go in the same order as `out_prerequisites` obtained from getReturnTypeAndPrerequisites.
     void execute(Block & block, const ColumnNumbers & arguments, const ColumnNumbers & prerequisites, size_t result);
 
     virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -156,29 +153,46 @@ public:
         executeImpl(block, arguments, result);
     }
 
-    /// Returns true if the function implementation directly handles the arguments
-    /// that correspond to nullable columns and null columns.
-    virtual bool hasSpecialSupportForNulls() const { return false; }
+    /** Default implementation in presense of Nullable arguments or NULL constants as arguments is the following:
+      *  if some of arguments are NULL constants then return NULL constant,
+      *  if some of arguments are Nullable, then execute function as usual for block,
+      *   where Nullable columns are substituted with nested columns (they have arbitary values in rows corresponding to NULL value)
+      *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
+      */
+    virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** Позволяет узнать, является ли функция монотонной в некотором диапазоне значений.
-      * Это используется для работы с индексом в сортированном куске данных.
-      * И позволяет использовать индекс не только, когда написано, например date >= const, но и, например, toMonth(date) >= 11.
-      * Всё это рассматривается только для функций одного аргумента.
+    /** If the function have non-zero number of arguments,
+      *  and if all arguments are constant, that we could automatically provide default implementation:
+      *  arguments are converted to ordinary columns with single value, then function is executed as usual,
+      *  and then the result is converted to constant column.
+      */
+    virtual bool useDefaultImplementationForConstants() const { return false; }
+
+    /** Some arguments could remain constant during this implementation.
+      */
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
+
+    /** Lets you know if the function is monotonic in a range of values.
+      * This is used to work with the index in a sorted chunk of data.
+      * And allows to use the index not only when it is written, for example `date >= const`, but also, for example, `toMonth(date) >= 11`.
+      * All this is considered only for functions of one argument.
       */
     virtual bool hasInformationAboutMonotonicity() const { return false; }
 
-    /// Свойство монотонности на некотором диапазоне.
+    /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
-        bool is_monotonic = false;    /// Является ли функция монотонной (неубывающей или невозрастающей).
-        bool is_positive = true;    /// true, если функция неубывающая, false, если невозрастающая. Если is_monotonic = false, то не важно.
+        bool is_monotonic = false;    /// Is the function monotonous (nondecreasing or nonincreasing).
+        bool is_positive = true;    /// true if the function is nondecreasing, false, if notincreasing. If is_monotonic = false, then it does not matter.
+        bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
 
-        Monotonicity(bool is_monotonic_ = false, bool is_positive_ = true)
-            : is_monotonic(is_monotonic_), is_positive(is_positive_) {}
+        Monotonicity(bool is_monotonic_ = false, bool is_positive_ = true, bool is_always_monotonic_ = false)
+            : is_monotonic(is_monotonic_), is_positive(is_positive_), is_always_monotonic(is_always_monotonic_) {}
     };
 
-    /** Получить информацию о монотонности на отрезке значений. Вызывайте только если hasInformationAboutMonotonicity.
-      * В качестве одного из аргументов может быть передан NULL. Это значит, что соответствующий диапазон неограничен слева или справа.
+    /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
+      * NULL can be passed as one of the arguments. This means that the corresponding range is unlimited on the left or on the right.
       */
     virtual Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
     {
@@ -186,42 +200,6 @@ public:
     }
 
     virtual ~IFunction() {}
-
-protected:
-    /// Returns the copy of a given block in which each column specified in
-    /// the "arguments" parameter is replaced with its respective nested
-    /// column if it is nullable.
-    static Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args);
-    /// Similar function as above. Additionally transform the result type if needed.
-    static Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size_t result);
-
-private:
-    /// Strategy to apply when executing a function.
-    enum Strategy
-    {
-        /// Merely perform the function on its columns.
-        DIRECTLY_EXECUTE = 0,
-        /// If at least one argument is nullable, call the function implementation
-        /// with a block in which nullable columns that correspond to function arguments
-        /// have been replaced with their respective nested columns. Subsequently, the
-        /// result column is wrapped into a nullable column.
-        PROCESS_NULLABLE_COLUMNS,
-        /// If at least one argument is NULL, return NULL.
-        RETURN_NULL
-    };
-
-private:
-    /// Choose the strategy for performing the function.
-    Strategy chooseStrategy(const Block & block, const ColumnNumbers & args);
-
-    /// If required by the specified strategy, process the given block, then
-    /// return the processed block. Otherwise return an empty block.
-    Block preProcessBlock(Strategy strategy, const Block & block, const ColumnNumbers & args,
-        size_t result);
-
-    /// If required by the specified strategy, post-process the result column.
-    void postProcessResult(Strategy strategy, Block & block, const Block & processed_block,
-        const ColumnNumbers & args, size_t result);
 };
 
 

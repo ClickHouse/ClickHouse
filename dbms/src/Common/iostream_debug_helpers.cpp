@@ -9,6 +9,8 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Storages/IStorage.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Parsers/IAST.h>
 
 std::ostream & operator<<(std::ostream & stream, const DB::IBlockInputStream & what)
 {
@@ -62,7 +64,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::Block & what)
 {
     stream << "Block("
            << "size = " << what.getColumns().size()
-           << ")";
+           << "){" << what.dumpStructure() << "}";
     return stream;
 }
 
@@ -79,3 +81,48 @@ std::ostream & operator<<(std::ostream & stream, const DB::IColumn & what)
            << ")";
     return stream;
 }
+
+std::ostream & operator<<(std::ostream & stream, const DB::Connection::Packet & what)
+{
+    stream << "Connection::Packet("
+        << "type = " << what.type;
+        // types description: Core/Protocol.h
+    if (what.exception)
+        stream << "exception = " << what.exception.get();
+    // TODO: profile_info
+    stream << ") {" << what.block << "}";
+    return stream;
+}
+
+std::ostream & operator<<(std::ostream & stream, const DB::SubqueryForSet & what)
+{
+    stream << "SubqueryForSet(source = " << what.source
+    << ", source_sample = " <<  what.source_sample
+    // TODO: << ", set = " <<  what.set << ", join = " <<  what.join
+    << ", table = " << what.table
+    << ")";
+    return stream;
+}
+
+std::ostream & operator<<(std::ostream & stream, const DB::IAST & what)
+{
+    stream << "IAST("
+           << "query_string = " << what.query_string
+           <<"){";
+    what.dumpTree(stream);
+    stream << "}";
+    return stream;
+}
+
+std::ostream & operator<<(std::ostream & stream, const DB::ExpressionAnalyzer & what)
+{
+    stream << "ExpressionAnalyzer{"
+           << "hasAggregation="<<what.hasAggregation()
+           << ", RequiredColumns=" << what.getRequiredColumns()
+           << ", SubqueriesForSet=" << what.getSubqueriesForSets()
+           << ", ExternalTables=" << what.getExternalTables()
+           // TODO
+           << "}";
+    return stream;
+}
+

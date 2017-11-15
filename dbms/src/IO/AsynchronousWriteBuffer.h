@@ -4,7 +4,7 @@
 
 #include <vector>
 
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <IO/WriteBuffer.h>
 
 
@@ -12,17 +12,17 @@ namespace DB
 {
 
 
-/** Записывает данные асинхронно с помощью двойной буферизации.
+/** Writes data asynchronously using double buffering.
   */
 class AsynchronousWriteBuffer : public WriteBuffer
 {
 private:
-    WriteBuffer & out;                /// Основной буфер, отвечает за запись данных.
-    std::vector<char> memory;        /// Кусок памяти для дублирования буфера.
-    ThreadPool pool;                /// Для асинхронной записи данных.
-    bool started;                    /// Была ли запущена асинхронная запись данных.
+    WriteBuffer & out;               /// The main buffer, responsible for writing data.
+    std::vector <char> memory;       /// A piece of memory for duplicating the buffer.
+    ThreadPool pool;                 /// For asynchronous data writing.
+    bool started;                    /// Has an asynchronous data write started?
 
-    /// Менять местами основной и дублирующий буферы.
+    /// Swap the main and duplicate buffers.
     void swapBuffers()
     {
         buffer().swap(out.buffer());
@@ -41,14 +41,14 @@ private:
 
         swapBuffers();
 
-        /// Данные будут записываться в отельном потоке.
+        /// The data will be written in separate stream.
         pool.schedule([this] { thread(); });
     }
 
 public:
     AsynchronousWriteBuffer(WriteBuffer & out_) : WriteBuffer(nullptr, 0), out(out_), memory(out.buffer().size()), pool(1), started(false)
     {
-        /// Данные пишутся в дублирующий буфер.
+        /// Data is written to the duplicate buffer.
         set(memory.data(), memory.size());
     }
 
@@ -68,7 +68,7 @@ public:
         }
     }
 
-    /// То, что выполняется в отдельном потоке
+    /// That is executed in a separate thread
     void thread()
     {
         out.next();

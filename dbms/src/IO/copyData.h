@@ -11,18 +11,18 @@ class ReadBuffer;
 class WriteBuffer;
 
 
-/** Копирует данные из ReadBuffer в WriteBuffer, все что есть.
+/** Copies data from ReadBuffer to WriteBuffer, all that is.
   */
 void copyData(ReadBuffer & from, WriteBuffer & to);
 
-/** Копирует bytes байт из ReadBuffer в WriteBuffer. Если нет bytes байт, то кидает исключение.
+/** Copies `bytes` bytes from ReadBuffer to WriteBuffer. If there are no `bytes` bytes, then throws an exception.
   */
 void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes);
 
-/** То же самое, с условием на остановку.
+/** The same, with the condition to cancel.
   */
-void copyData(ReadBuffer & from, WriteBuffer & to, std::atomic<bool> & is_cancelled);
-void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, std::atomic<bool> & is_cancelled);
+void copyData(ReadBuffer & from, WriteBuffer & to, std::atomic<int> & is_cancelled);
+void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, std::atomic<int> & is_cancelled);
 
 void copyData(ReadBuffer & from, WriteBuffer & to, std::function<void()> cancellation_hook);
 void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, std::function<void()> cancellation_hook);

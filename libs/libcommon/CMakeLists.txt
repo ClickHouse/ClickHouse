@@ -1,8 +1,3 @@
-include_directories (include)
-include_directories (BEFORE ${ClickHouse_SOURCE_DIR}/contrib/libcctz/include)
-
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_include.cmake)
-
 if (APPLE)
     if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
         set (APPLE_SIERRA_OR_NEWER 1)
@@ -19,6 +14,7 @@ if (APPLE)
         src/apple_rt.cpp
         include/common/apple_rt.h
     )
+    target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
 endif ()
 
 add_library (common
@@ -26,10 +22,12 @@ add_library (common
     src/DateLUTImpl.cpp
     src/exp10.cpp
     src/JSON.cpp
+    src/getMemoryAmount.cpp
+    src/ThreadPool.cpp
+    src/iostream_debug_helpers.cpp
 
     include/common/ApplicationServerExt.h
     include/common/Types.h
-    include/common/MetrikaTypes.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h
     include/common/LocalDate.h
@@ -39,20 +37,23 @@ add_library (common
     include/common/likely.h
     include/common/logger_useful.h
     include/common/MultiVersion.h
-    include/common/singleton.h
     include/common/strong_typedef.h
     include/common/JSON.h
+    include/common/getMemoryAmount.h
+    include/common/ThreadPool.h
+    include/common/iostream_debug_helpers.h
 
-    include/ext/bit_cast.hpp
-    include/ext/collection_cast.hpp
-    include/ext/enumerate.hpp
-    include/ext/function_traits.hpp
-    include/ext/identity.hpp
-    include/ext/map.hpp
-    include/ext/range.hpp
-    include/ext/scope_guard.hpp
-    include/ext/size.hpp
-    include/ext/unlock_guard.hpp
+    include/ext/bit_cast.h
+    include/ext/collection_cast.h
+    include/ext/enumerate.h
+    include/ext/function_traits.h
+    include/ext/identity.h
+    include/ext/map.h
+    include/ext/range.h
+    include/ext/scope_guard.h
+    include/ext/size.h
+    include/ext/unlock_guard.h
+    include/ext/singleton.h
 
     ${CONFIG_COMMON}
 )
@@ -74,17 +75,32 @@ else ()
     message (STATUS "Disabling libtcmalloc for valgrind better analysis")
 endif ()
 
+if (GLIBC_COMPATIBILITY)
+    set (GLIBC_COMPATIBILITY_LIBRARIES glibc-compatibility)
+endif ()
+
+if (USE_INTERNAL_MEMCPY)
+    set (MEMCPY_LIBRARIES memcpy)
+endif ()
+
 find_package (Threads)
+
+target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
+target_include_directories (common BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
+target_include_directories (common PUBLIC ${COMMON_INCLUDE_DIR})
 
 target_link_libraries (
     common
     pocoext
-    cctz
+    ${CITYHASH_LIBRARIES}
+    ${CCTZ_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARIES})
+    ${RT_LIBRARIES}
+    ${GLIBC_COMPATIBILITY_LIBRARIES}
+    ${MEMCPY_LIBRARIES})
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

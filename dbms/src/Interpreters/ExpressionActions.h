@@ -32,7 +32,7 @@ class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 
-/** Действие над блоком.
+/** Action on the block.
   */
 struct ExpressionAction
 {
@@ -45,16 +45,16 @@ public:
 
         APPLY_FUNCTION,
 
-        /** Заменяет указанные столбцы с массивами на столбцы с элементами.
-            * Размножает значения в остальных столбцах по количеству элементов в массивах.
-            * Массивы должны быть параллельными (иметь одинаковые длины).
+        /** Replaces the specified columns with arrays into columns with elements.
+            * Duplicates the values in the remaining columns by the number of elements in the arrays.
+            * Arrays must be parallel (have the same lengths).
             */
         ARRAY_JOIN,
 
         /// INNER|LEFT JOIN.
         JOIN,
 
-        /// Переупорядочить и переименовать столбцы, удалить лишние. Допускаются одинаковые имена столбцов в результате.
+        /// Reorder and rename the columns, delete the extra ones. The same column names are allowed in the result.
         PROJECT,
     };
 
@@ -84,7 +84,7 @@ public:
     /// For PROJECT.
     NamesWithAliases projection;
 
-    /// Если result_name_ == "", в качестве имени используется "имя_функции(аргументы через запятую)".
+    /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
         const FunctionPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
@@ -96,8 +96,8 @@ public:
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_);
 
-    /// Какие столбцы нужны, чтобы выполнить это действие.
-    /// Если этот Action еще не добавлен в ExpressionActions, возвращаемый список может быть неполным, потому что не учтены prerequisites.
+    /// Which columns necessary to perform this action.
+    /// If this `Action` is not already added to `ExpressionActions`, the returned list may be incomplete, because `prerequisites` are not taken into account.
     Names getNeededColumns() const;
 
     std::string toString() const;
@@ -112,7 +112,7 @@ private:
 };
 
 
-/** Содержит последовательность действий над блоком.
+/** Contains a sequence of actions on the block.
   */
 class ExpressionActions
 {
@@ -126,7 +126,7 @@ public:
             sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
     }
 
-    /// Для константных столбцов в input_columns_ могут содержаться сами столбцы.
+    /// For constant columns the columns themselves can be contained in `input_columns_`.
     ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Settings & settings_)
         : settings(settings_)
     {
@@ -137,40 +137,40 @@ public:
         }
     }
 
-    /// Добавить входной столбец.
-    /// Название столбца не должно совпадать с названиями промежуточных столбцов, возникающих при вычислении выражения.
-    /// В выражении не должно быть действий PROJECT.
+    /// Add the input column.
+    /// The name of the column must not match the names of the intermediate columns that occur when evaluating the expression.
+    /// The expression must not have any PROJECT actions.
     void addInput(const ColumnWithTypeAndName & column);
     void addInput(const NameAndTypePair & column);
 
     void add(const ExpressionAction & action);
 
-    /// Кладет в out_new_columns названия новых столбцов
-    ///  (образовавшихся в результате добавляемого действия и его rerequisites).
+    /// Adds new column names to out_new_columns
+    ///  (formed as a result of the added action and its prerequisites).
     void add(const ExpressionAction & action, Names & out_new_columns);
 
-    /// Добавляет в начало удаление всех лишних столбцов.
+    /// Adds to the beginning the removal of all extra columns.
     void prependProjectInput();
 
-    /// Добавить в начало указанное действие типа ARRAY JOIN. Поменять соответствующие входные типы на массивы.
-    /// Если в списке ARRAY JOIN есть неизвестные столбцы, взять их типы из sample_block, а сразу после ARRAY JOIN удалить.
+    /// Add the specified ARRAY JOIN action to the beginning. Change the appropriate input types to arrays.
+    /// If there are unknown columns in the ARRAY JOIN list, take their types from sample_block, and immediately after ARRAY JOIN remove them.
     void prependArrayJoin(const ExpressionAction & action, const Block & sample_block);
 
-    /// Если последнее действие - ARRAY JOIN, и оно не влияет на столбцы из required_columns, выбросить и вернуть его.
-    /// Поменять соответствующие выходные типы на массивы.
+    /// If the last action is ARRAY JOIN, and it does not affect the columns from required_columns, discard and return it.
+    /// Change the corresponding output types to arrays.
     bool popUnusedArrayJoin(const Names & required_columns, ExpressionAction & out_action);
 
-    /// - Добавляет действия для удаления всех столбцов, кроме указанных.
-    /// - Убирает неиспользуемые входные столбцы.
-    /// - Может как-нибудь оптимизировать выражение.
-    /// - Не переупорядочивает столбцы.
-    /// - Не удаляет "неожиданные" столбцы (например, добавленные функциями).
-    /// - Если output_columns пуст, оставляет один произвольный столбец (чтобы не потерялось количество строк в блоке).
+    /// - Adds actions to delete all but the specified columns.
+    /// - Removes unused input columns.
+    /// - Can somehow optimize the expression.
+    /// - Does not reorder the columns.
+    /// - Does not remove "unexpected" columns (for example, added by functions).
+    /// - If output_columns is empty, leaves one arbitrary column (so that the number of rows in the block is not lost).
     void finalize(const Names & output_columns);
 
     const Actions & getActions() const { return actions; }
 
-    /// Получить список входных столбцов.
+    /// Get a list of input columns.
     Names getRequiredColumns() const
     {
         Names names;
@@ -181,15 +181,15 @@ public:
 
     const NamesAndTypesList & getRequiredColumnsWithTypes() const { return input_columns; }
 
-    /// Выполнить выражение над блоком. Блок должен содержать все столбцы , возвращаемые getRequiredColumns.
+    /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
     void execute(Block & block) const;
 
-    /** Выполнить выражение над блоком тотальных значений.
-      * Почти не отличается от execute. Разница лишь при выполнении JOIN-а.
+    /** Execute the expression on the block of total values.
+      * Almost the same as `execute`. The difference is only when JOIN is executed.
       */
     void executeOnTotals(Block & block) const;
 
-    /// Получить блок-образец, содержащий имена и типы столбцов результата.
+    /// Obtain a sample block that contains the names and types of result columns.
     const Block & getSampleBlock() const { return sample_block; }
 
     std::string getID() const;
@@ -208,27 +208,27 @@ private:
 
     void checkLimits(Block & block) const;
 
-    /// Добавляет сначала все prerequisites, потом само действие.
-    /// current_names - столбцы, prerequisites которых сейчас обрабатываются.
+    /// Adds all `prerequisites` first, then the action itself.
+    /// current_names - columns whose `prerequisites` are currently being processed.
     void addImpl(ExpressionAction action, NameSet & current_names, Names & new_names);
 
-    /// Попробовать что-нибудь улучшить, не меняя списки входных и выходных столбцов.
+    /// Try to improve something without changing the lists of input and output columns.
     void optimize();
-    /// Переместить все arrayJoin как можно ближе к концу.
+    /// Move all arrayJoin as close as possible to the end.
     void optimizeArrayJoin();
 };
 
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 
-/** Последовательность преобразований над блоком.
-  * Предполагается, что результат каждого шага подается на вход следующего шага.
-  * Используется для выполнения некоторых частей запроса по отдельности.
+/** The sequence of transformations over the block.
+  * It is assumed that the result of each step is fed to the input of the next step.
+  * Used to execute parts of the query individually.
   *
-  * Например, можно составить цепочку из двух шагов:
-  *     1) вычислить выражение в секции WHERE,
-  *     2) вычислить выражение в секции SELECT,
-  *  и между двумя шагами делать фильтрацию по значению в секции WHERE.
+  * For example, you can create a chain of two steps:
+  *     1) evaluate the expression in the WHERE clause,
+  *     2) calculate the expression in the SELECT section,
+  * and between the two steps do the filtering by value in the WHERE clause.
   */
 struct ExpressionActionsChain
 {
@@ -237,7 +237,7 @@ struct ExpressionActionsChain
         ExpressionActionsPtr actions;
         Names required_output;
 
-        Step(ExpressionActionsPtr actions_ = nullptr, Names required_output_ = Names())
+        Step(const ExpressionActionsPtr & actions_ = nullptr, const Names & required_output_ = Names())
             : actions(actions_), required_output(required_output_) {}
     };
 

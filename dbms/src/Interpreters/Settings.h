@@ -16,7 +16,7 @@ namespace DB
   */
 struct Settings
 {
-    /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in С++14.
+    /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
     /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
     Settings() {}
 
@@ -45,7 +45,7 @@ struct Settings
     M(SettingUInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256)) \
     /** The maximum number of threads to execute the request. By default, it is determined automatically. */ \
     M(SettingMaxThreads, max_threads, 0) \
-    /** The maximum size of the buffer to read from the file system. */ \
+    /** The maximum size of the buffer to read from the filesystem. */ \
     M(SettingUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE) \
     /** The maximum number of connections for distributed processing of one query (should be greater than max_threads). */ \
     M(SettingUInt64, max_distributed_connections, DEFAULT_MAX_DISTRIBUTED_CONNECTIONS) \
@@ -78,6 +78,9 @@ struct Settings
     \
     /** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
     M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
+    \
+    /** Should StorageDistributed DirectoryMonitors try to batch individual inserts into bigger ones. */ \
+    M(SettingBool, distributed_directory_monitor_batch_inserts, false) \
     \
     /** Allows disabling WHERE to PREWHERE optimization in SELECT queries from MergeTree */ \
     M(SettingBool, optimize_move_to_prewhere, true) \
@@ -145,7 +148,7 @@ struct Settings
     M(SettingBool, force_index_by_date, 0) \
     M(SettingBool, force_primary_key, 0) \
     \
-    /** In the INSERT query with specified columns, fill in the default values ​​only for columns with explicit DEFAULTs. */ \
+    /** In the INSERT query with specified columns, fill in the default values only for columns with explicit DEFAULTs. */ \
     M(SettingBool, strict_insert_defaults, 0) \
     \
     /** If the maximum size of mark_cache is exceeded, delete only records older than mark_cache_min_lifetime seconds. */ \
@@ -159,6 +162,9 @@ struct Settings
     \
     /** Allows you to select the method of data compression when writing */ \
     M(SettingCompressionMethod, network_compression_method, CompressionMethod::LZ4) \
+    \
+    /** Allows you to select the level of ZSTD compression */ \
+    M(SettingInt64, network_zstd_compression_level, 1) \
     \
     /** Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities. */ \
     M(SettingUInt64, priority, 0) \
@@ -180,6 +186,9 @@ struct Settings
     /** The maximum number of concurrent requests per user. */ \
     M(SettingUInt64, max_concurrent_queries_for_user, 0) \
     \
+    /** For INSERT queries in the replicated table, specifies that deduplication of insertings blocks should be preformed */ \
+    M(SettingBool, insert_deduplicate, true) \
+    \
     /** For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled. */ \
     M(SettingUInt64, insert_quorum, 0) \
     M(SettingMilliseconds, insert_quorum_timeout, 600000) \
@@ -188,18 +197,15 @@ struct Settings
     M(SettingUInt64, select_sequential_consistency, 0) \
     /** The maximum number of different shards and the maximum number of replicas of one shard in the `remote` function. */ \
     M(SettingUInt64, table_function_remote_max_addresses, 1000) \
-    /** Maximum number of threads for distributed processing of one query */ \
-    M(SettingUInt64, max_distributed_processing_threads, 8) \
-    \
     /** Settings to reduce the number of threads in case of slow reads. */ \
     /** Pay attention only to readings that took at least that much time. */ \
-    M(SettingMilliseconds,     read_backoff_min_latency_ms, 1000) \
+    M(SettingMilliseconds, read_backoff_min_latency_ms, 1000) \
     /** Count events when the bandwidth is less than that many bytes per second. */ \
-    M(SettingUInt64,         read_backoff_max_throughput, 1048576) \
+    M(SettingUInt64, read_backoff_max_throughput, 1048576) \
     /** Do not pay attention to the event, if the previous one has passed less than a certain amount of time. */ \
-    M(SettingMilliseconds,     read_backoff_min_interval_between_events_ms, 1000) \
+    M(SettingMilliseconds, read_backoff_min_interval_between_events_ms, 1000) \
     /** The number of events after which the number of threads will be reduced. */ \
-    M(SettingUInt64,         read_backoff_min_events, 2) \
+    M(SettingUInt64, read_backoff_min_events, 2) \
     \
     /** For testing of `exception safety` - throw an exception every time you allocate memory with the specified probability. */ \
     M(SettingFloat, memory_tracker_fault_probability, 0.) \
@@ -232,6 +238,9 @@ struct Settings
     \
     /** Controls quoting of 64-bit integers in JSON output format. */ \
     M(SettingBool, output_format_json_quote_64bit_integers, true) \
+    \
+    /** Enables "+nan", "-nan", "+inf", "-inf" outputs in JSON output format. */ \
+    M(SettingBool, output_format_json_quote_denormals, false) \
     \
     /** Rows limit for Pretty formats. */ \
     M(SettingUInt64, output_format_pretty_max_rows, 10000) \
@@ -271,11 +280,36 @@ struct Settings
      * Zero means do not take delay into account. \
      */ \
     \
-    M(SettingUInt64, max_replica_delay_for_distributed_queries, 0) \
+    M(SettingUInt64, max_replica_delay_for_distributed_queries, 300) \
    /** Suppose max_replica_delay_for_distributed_queries is set and all replicas for the queried table are stale. \
      * If this setting is enabled, the query will be performed anyway, otherwise the error will be reported. \
      */ \
-    M(SettingBool, fallback_to_stale_replicas_for_distributed_queries, 1)
+    M(SettingBool, fallback_to_stale_replicas_for_distributed_queries, 1) \
+    /** For development and testing purposes only still */ \
+    M(SettingBool, distributed_ddl_allow_replicated_alter, 0) \
+    /** Limit on max column size in block while reading. Helps to decrease cache misses count. \
+      * Should be close to L2 cache size. */ \
+    M(SettingUInt64, preferred_max_column_in_block_size_bytes, 0) \
+    \
+    /** If setting is enabled, insert query into distributed waits until data will be sent to all nodes in cluster. \
+     */ \
+    M(SettingBool, insert_distributed_sync, false) \
+    /** Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. \
+     *  Zero value means no timeout. \
+     */ \
+    M(SettingUInt64, insert_distributed_timeout, 0) \
+    /* Timeout for DDL query responses from all hosts in cluster. Negative value means infinite. */ \
+    M(SettingInt64, distributed_ddl_task_timeout, 120) \
+    \
+    /** If true, allow parameters of storage engines such as partitioning expression, primary key, etc. \
+      * to be set not in the engine parameters but as separate clauses (PARTITION BY, ORDER BY...) \
+      * Enable this setting to allow custom MergeTree partitions. \
+      */ \
+    M(SettingBool, experimental_allow_extended_storage_definition_syntax, false) \
+    /* Timeout for flushing data from streaming storages. */ \
+    M(SettingMilliseconds, stream_flush_interval_ms, DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS) \
+    /* Schema identifier (used by schema-based formats) */ \
+    M(SettingString, format_schema, "")
 
 
     /// Possible limits for query execution.
@@ -299,6 +333,11 @@ struct Settings
 
     /// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
     void set(const String & name, const String & value);
+
+    /// Get setting by name. Converts value to String.
+    String get(const String & name) const;
+
+    bool tryGet(const String & name, String & value) const;
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
       * The profile can also be set using the `set` functions, like the profile setting.

@@ -8,12 +8,12 @@
 namespace DB
 {
 
-/** Создать объект для чтения данных из файла.
-  * estimated_size - количество байтов, которые надо читать
-  * aio_threshold - минимальное количество байт для асинхронных операций чтения
+/** Create an object to read data from a file.
+  * estimated_size - the number of bytes to read
+  * aio_threshold - the minimum number of bytes for asynchronous reads
   *
-  * Если aio_threshold = 0 или estimated_size < aio_threshold, операции чтения выполняются синхронно.
-  * В противном случае операции чтения выполняются асинхронно.
+  * If aio_threshold = 0 or estimated_size < aio_threshold, read operations are executed synchronously.
+  * Otherwise, the read operations are performed asynchronously.
   */
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(const std::string & filename_,
         size_t estimated_size,

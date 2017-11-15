@@ -1,25 +1,26 @@
 #include <DataStreams/NullableAdapterBlockInputStream.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/isConvertableTypes.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-
-extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
-extern const int TYPE_MISMATCH;
-
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int TYPE_MISMATCH;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 NullableAdapterBlockInputStream::NullableAdapterBlockInputStream(
-    BlockInputStreamPtr input_,
+    const BlockInputStreamPtr & input,
     const Block & in_sample_, const Block & out_sample_)
 {
     buildActions(in_sample_, out_sample_);
-    children.push_back(input_);
+    children.push_back(input);
 }
 
 String NullableAdapterBlockInputStream::getID() const
@@ -51,7 +52,7 @@ Block NullableAdapterBlockInputStream::readImpl()
                 const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
                 const auto & null_map = nullable_col.getNullMap();
-                bool has_nulls = std::any_of(null_map.begin(), null_map.end(), [](UInt8 val){ return val == 1; });
+                bool has_nulls = !memoryIsZero(null_map.data(), null_map.size());
 
                 if (has_nulls)
                     throw Exception{"Cannot insert NULL value into non-nullable column",
@@ -78,7 +79,7 @@ Block NullableAdapterBlockInputStream::readImpl()
             case NONE:
             {
                 if (rename[i])
-                    res.insert({elem.column, elem.type, rename[i].value()});
+                    res.insert({elem.column, elem.type, *rename[i]});
                 else
                     res.insert(elem);
                 break;
@@ -94,6 +95,9 @@ void NullableAdapterBlockInputStream::buildActions(
     const Block & out_sample)
 {
     size_t in_size = in_sample.columns();
+
+    if (out_sample.columns() != in_size)
+        throw Exception("Number of columns in INSERT SELECT doesn't match", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
 
     actions.reserve(in_size);
     rename.reserve(in_size);

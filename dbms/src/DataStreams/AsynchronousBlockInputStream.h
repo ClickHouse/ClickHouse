@@ -5,7 +5,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 #include <Common/MemoryTracker.h>
 
 
@@ -28,9 +28,9 @@ namespace DB
 class AsynchronousBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    AsynchronousBlockInputStream(BlockInputStreamPtr in_)
+    AsynchronousBlockInputStream(const BlockInputStreamPtr & in)
     {
-        children.push_back(in_);
+        children.push_back(in);
     }
 
     String getName() const override { return "Asynchronous"; }
@@ -115,7 +115,7 @@ protected:
             return res;
 
         /// Start the next block calculation
-        block = Block();
+        block.clear();
         next();
 
         return res;

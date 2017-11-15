@@ -2,7 +2,7 @@
 
 #include <mutex>
 #include <thread>
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -25,20 +25,19 @@ class Context;
   * The buffer is a set of num_shards blocks.
   * When writing, select the block number by the remainder of the `ThreadNumber` division by `num_shards` (or one of the others),
   *  and add rows to the corresponding block.
-  * When using a block, it is blocked by some mutex. If during write the corresponding block is already occupied
-  *  - try to block the next block clockwise, and so no more than `num_shards` times (further blocked).
+  * When using a block, it is locked by some mutex. If during write the corresponding block is already occupied
+  *  - try to lock the next block in a round-robin fashion, and so no more than `num_shards` times (then wait for lock).
   * Thresholds are checked on insertion, and, periodically, in the background thread (to implement time thresholds).
   * Thresholds act independently for each shard. Each shard can be flushed independently of the others.
   * If a block is inserted into the table, which itself exceeds the max-thresholds, it is written directly to the subordinate table without buffering.
   * Thresholds can be exceeded. For example, if max_rows = 1 000 000, the buffer already had 500 000 rows,
-  *  and a part of 800,000 lines is added, then there will be 1 300 000 rows in the buffer, and then such a block will be written to the subordinate table
+  *  and a part of 800 000 rows is added, then there will be 1 300 000 rows in the buffer, and then such a block will be written to the subordinate table.
   *
-  * When you destroy a Buffer type table and when you quit, all data is discarded.
+  * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer : private ext::shared_ptr_helper<StorageBuffer>, public IStorage
+class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageBuffer>;
 friend class BufferBlockInputStream;
 friend class BufferBlockOutputStream;
 
@@ -51,17 +50,6 @@ public:
         size_t bytes;   /// The number of (uncompressed) bytes in the block.
     };
 
-    /** num_shards - the level of internal parallelism (the number of independent buffers)
-      * The buffer is reset if all minimum thresholds or at least one of the maximum thresholds are exceeded.
-      */
-    static StoragePtr create(const std::string & name_, NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        Context & context_,
-        size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-        const String & destination_database_, const String & destination_table_);
-
     std::string getName() const override { return "Buffer"; }
     std::string getTableName() const override { return name; }
 
@@ -69,18 +57,18 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const SelectQueryInfo & query_info,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    /// Resets all buffers to the subordinate table.
+    void startup() override;
+    /// Flush all buffers into the subordinate table and stop background thread.
     void shutdown() override;
-    bool optimize(const String & partition, bool final, bool deduplicate, const Settings & settings) override;
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
 
@@ -123,14 +111,6 @@ private:
     /// Resets data by timeout.
     std::thread flush_thread;
 
-    StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        Context & context_,
-        size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-        const String & destination_database_, const String & destination_table_);
-
     void flushAllBuffers(bool check_thresholds = true);
     /// Reset the buffer. If check_thresholds is set - resets only if thresholds are exceeded.
     void flushBuffer(Buffer & buffer, bool check_thresholds);
@@ -141,6 +121,18 @@ private:
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
     void flushThread();
+
+protected:
+    /** num_shards - the level of internal parallelism (the number of independent buffers)
+      * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
+      */
+    StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        Context & context_,
+        size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
+        const String & destination_database_, const String & destination_table_);
 };
 
 }

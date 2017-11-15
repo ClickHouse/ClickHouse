@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -6,15 +7,25 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ConcatReadBuffer.h>
+#include <Parsers/IAST.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
-DataTypeNullable::DataTypeNullable(DataTypePtr nested_data_type_)
+
+DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
     : nested_data_type{nested_data_type_}
 {
+    if (!nested_data_type->canBeInsideNullable())
+        throw Exception("Nested type " + nested_data_type->getName() + " cannot be inside Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
 void DataTypeNullable::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -101,7 +112,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
     if (*istr.position() != '\\')
     {
         safeDeserialize(column,
-            [&istr] { return false; },
+            [] { return false; },
             [this, &istr] (IColumn & nested) { nested_data_type->deserializeTextEscaped(nested, istr); } );
     }
     else
@@ -192,16 +203,14 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
         nested_data_type->serializeText(*col.getNestedColumn(), row_num, ostr);
 }
 
-void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr,
-    bool force_quoting_64bit_integers) const
+void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
         writeCString("null", ostr);
     else
-        nested_data_type->serializeTextJSON(*col.getNestedColumn(), row_num, ostr,
-            force_quoting_64bit_integers);
+        nested_data_type->serializeTextJSON(*col.getNestedColumn(), row_num, ostr, settings);
 }
 
 void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
@@ -227,15 +236,21 @@ ColumnPtr DataTypeNullable::createColumn() const
     return std::make_shared<ColumnNullable>(new_col, std::make_shared<ColumnUInt8>());
 }
 
-ColumnPtr DataTypeNullable::createConstColumn(size_t size, const Field & field) const
-{
-    if (field.isNull())
-        return std::make_shared<ColumnNull>(size, Null(), clone());
 
-    /// Actually we return non-const column, because we cannot create const column, corresponding to Nullable type, but with non-NULL value.
-    return std::make_shared<ColumnNullable>(
-        nested_data_type->createConstColumn(size, field)->convertToFullColumnIfConst(),
-        std::make_shared<ColumnUInt8>(size, 0));
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (arguments->children.size() != 1)
+        throw Exception("Nullable data type family must have exactly one argument - nested type", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
+
+    return std::make_shared<DataTypeNullable>(nested_type);
+}
+
+
+void registerDataTypeNullable(DataTypeFactory & factory)
+{
+    factory.registerDataType("Nullable", create);
 }
 
 }

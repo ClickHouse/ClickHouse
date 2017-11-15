@@ -23,7 +23,7 @@ struct AggregateFunctionAvgData
 
 /// Calculates arithmetic mean of numbers.
 template <typename T>
-class AggregateFunctionAvg final : public IUnaryAggregateFunction<AggregateFunctionAvgData<typename NearestFieldType<T>::Type>, AggregateFunctionAvg<T> >
+class AggregateFunctionAvg final : public IUnaryAggregateFunction<AggregateFunctionAvgData<typename NearestFieldType<T>::Type>, AggregateFunctionAvg<T>>
 {
 public:
     String getName() const override { return "avg"; }
@@ -70,6 +70,8 @@ public:
         static_cast<ColumnFloat64 &>(to).getData().push_back(
             static_cast<Float64>(this->data(place).sum) / this->data(place).count);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

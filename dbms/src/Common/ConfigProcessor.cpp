@@ -10,15 +10,11 @@
 #include <Poco/DOM/Comment.h>
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <zkutil/ZooKeeperNodeCache.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
+#include <Common/StringUtils.h>
 
 using namespace Poco::XML;
 
-
-static bool endsWith(const std::string & s, const std::string & suffix)
-{
-    return s.size() >= suffix.size() && s.substr(s.size() - suffix.size()) == suffix;
-}
 
 /// Extracts from a string the first encountered number consisting of at least two digits.
 static std::string numberFromHost(const std::string & s)
@@ -27,7 +23,7 @@ static std::string numberFromHost(const std::string & s)
     {
         std::string res;
         size_t j = i;
-        while (j < s.size() && isdigit(s[j]))
+        while (j < s.size() && isNumericASCII(s[j]))
             res += s[j++];
         if (res.size() >= 2)
         {
@@ -79,7 +75,7 @@ using NodeListPtr = Poco::AutoPtr<Poco::XML::NodeList>;
 static ElementIdentifier getElementIdentifier(Node * element)
 {
     NamedNodeMapPtr attrs = element->attributes();
-    std::vector<std::pair<std::string, std::string> > attrs_kv;
+    std::vector<std::pair<std::string, std::string>> attrs_kv;
     for (size_t i = 0; i < attrs->length(); ++i)
     {
         Node * node = attrs->item(i);
@@ -329,7 +325,7 @@ void ConfigProcessor::doIncludesRecursive(
                     return nullptr;
 
                 /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                zk_document = dom_parser.parseString("<from_zk>" + contents.value() + "</from_zk>");
+                zk_document = dom_parser.parseString("<from_zk>" + *contents + "</from_zk>");
                 return getRootNode(zk_document.get());
             };
 

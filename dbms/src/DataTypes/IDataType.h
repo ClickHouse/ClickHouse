@@ -3,7 +3,6 @@
 #include <memory>
 
 #include <Core/Field.h>
-#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -13,6 +12,10 @@ class ReadBuffer;
 class WriteBuffer;
 
 class IDataType;
+struct FormatSettingsJSON;
+
+class IColumn;
+using ColumnPtr = std::shared_ptr<IColumn>;
 
 using DataTypePtr = std::shared_ptr<IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
@@ -20,12 +23,23 @@ using DataTypes = std::vector<DataTypePtr>;
 
 /** Properties of data type.
   * Contains methods for serialization/deserialization.
+  * Implementations of this interface represent a data type (example: UInt8)
+  *  or parapetric family of data types (example: Array(...)).
   */
 class IDataType
 {
 public:
+    /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
+    /// Example: DataTypeString is not parametric: thus all instances of DataTypeString are the same SQL type.
+    /// Example: DataTypeFixedString is parametric: different instances of DataTypeFixedString may be different SQL types.
+    /// Place it in descendants:
+    /// static constexpr bool is_parametric = false;
+
     /// Name of data type (examples: UInt64, Array(String)).
-    virtual std::string getName() const = 0;
+    virtual String getName() const = 0;
+
+    /// Name of data type family (example: FixedString, Array).
+    virtual const char * getFamilyName() const = 0;
 
     /// Is this type the null type? TODO Move this method to separate "traits" classes.
     virtual bool isNull() const { return false; }
@@ -45,6 +59,9 @@ public:
 
     /// If this data type cannot appear in table declaration - only for intermediate values of calculations.
     virtual bool notForTables() const { return false; }
+
+    /// If this data type cannot be wrapped in Nullable data type.
+    virtual bool canBeInsideNullable() const { return true; }
 
     virtual DataTypePtr clone() const = 0;
 
@@ -115,7 +132,7 @@ public:
     /** Text serialization intended for using in JSON format.
       * force_quoting_64bit_integers parameter forces to brace UInt64 and Int64 types into quotes.
       */
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const = 0;
+    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
 
     /** Text serialization for putting into the XML format.
@@ -131,12 +148,17 @@ public:
 
     /** Create constant column for corresponding type, with specified size and value.
       */
-    virtual ColumnPtr createConstColumn(size_t size, const Field & field) const = 0;
+    virtual ColumnPtr createConstColumn(size_t size, const Field & field) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.
       */
     virtual Field getDefault() const = 0;
+
+    /** Directly insert default value into a column. Default implementation use method IColumn::insertDefault.
+      * This should be overriden if data type default value differs from column default value (example: Enum data types).
+      */
+    virtual void insertDefaultInto(IColumn & column) const;
 
     /// For fixed-size types, return size of value in bytes. For other data types, return some approximate size just for estimation.
     virtual size_t getSizeOfField() const
@@ -151,6 +173,9 @@ public:
     }
 
     virtual ~IDataType() {}
+
+    /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
+    static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 };
 
 

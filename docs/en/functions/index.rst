@@ -1,30 +1,29 @@
 Functions
-=======
+=========
 
-There are at least* two types of functions - regular functions (they are just called "functions") and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function doesn't depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
+There are at least\* two types of functions - regular functions (they are just called "functions") and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function doesn't depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
 
 In this section we discuss regular functions. For aggregate functions, see the section "Aggregate functions".
-* - There is a third type of function that the 'arrayJoin' function belongs to; table functions can also be mentioned separately.
 
+\* - there is a third type of function that the 'arrayJoin' function belongs to; table functions can also be mentioned separately.
 
 
 .. toctree::
     :glob:
 
     *
-    */index
 
 
 Strong typing
-~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~
 In contrast to standard SQL, ClickHouse has strong typing. In other words, it doesn't make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
 
 Common subexpression elimination
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 All expressions in a query that have the same AST (the same record or same result of syntactic parsing) are considered to have identical values. Such expressions are concatenated and executed once. Identical subqueries are also eliminated this way.
 
 Types of results
-~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~
 All functions return a single return as the result (not several values, and not zero values). The type of result is usually defined only by the types of arguments, not by the values. Exceptions are the tupleElement function (the a.N operator), and the toFixedString function.
 
 Constants
@@ -37,25 +36,25 @@ A constant expression is also considered a constant (for example, the right half
 Functions can be implemented in different ways for constant and non-constant arguments (different code is executed). But the results for a constant and for a true column containing only the same value should match each other.
 
 Immutability
-~~~~~~~~~~~~~~
+~~~~~~~~~~~~
 
 Functions can't change the values of their arguments - any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
 
 
 Error handling
-~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~
 
 Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
 
 
 Evaluation of argument expressions
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 In almost all programming languages, one of the arguments might not be evaluated for certain operators. This is usually for the operators ``&&``, ``||``, ``?:``.
 But in ClickHouse, arguments of functions (operators) are always evaluated. This is because entire parts of columns are evaluated at once, instead of calculating each row separately.
 
 Performing functions for distributed query processing
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For distributed query processing, as many stages of query processing as possible are performed on remote servers, and the rest of the stages (merging intermediate results and everything after that) are performed on the requestor server.
 

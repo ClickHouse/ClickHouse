@@ -14,27 +14,27 @@
 namespace DB
 {
 
-/** Вложенная таблица. Например, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
+/** A nested table. For example, Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
   */
 class ParserNestedTable : public IParserBase
 {
 protected:
     const char * getName() const { return "nested table"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Параметрический тип или Storage. Например:
- *         FixedString(10) или
- *         Partitioned(Log, ChunkID) или
+/** Parametric type or Storage. For example:
+ *         FixedString(10) or
+ *         Partitioned(Log, ChunkID) or
  *         Nested(UInt32 CounterID, FixedString(2) UserAgentMajor)
-  * Результат парсинга - ASTFunction с параметрами или без.
-  */
+ * Result of parsing - ASTFunction with or without parameters.
+ */
 class ParserIdentifierWithParameters : public IParserBase
 {
 protected:
     const char * getName() const { return "identifier with parameters"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
@@ -45,43 +45,41 @@ class ParserIdentifierWithOptionalParameters : public IParserBase
 {
 protected:
     const char * getName() const { return "identifier with optional parameters"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 class ParserTypeInCastExpression : public ParserIdentifierWithOptionalParameters
 {
 protected:
     const char * getName() const { return "type in cast expression"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-template <class NameParser>
+template <typename NameParser>
 class IParserNameTypePair : public IParserBase
 {
 protected:
     const char * getName() const { return "name and type pair"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-/** Имя и тип через пробел. Например, URL String. */
+/** The name and type are separated by a space. For example, URL String. */
 using ParserNameTypePair = IParserNameTypePair<ParserIdentifier>;
-/** Имя и тип через пробел. Имя может содержать точку. Например, Hits.URL String. */
+/** Name and type separated by a space. The name can contain a dot. For example, Hits.URL String. */
 using ParserCompoundNameTypePair = IParserNameTypePair<ParserCompoundIdentifier>;
 
-template <class NameParser>
-bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+template <typename NameParser>
+bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
-    ParserWhiteSpaceOrComments ws_parser;
 
     Pos begin = pos;
 
     ASTPtr name, type;
-    if (name_parser.parse(pos, end, name, max_parsed_pos, expected)
-        && ws_parser.ignore(pos, end, max_parsed_pos, expected)
-        && type_parser.parse(pos, end, type, max_parsed_pos, expected))
+    if (name_parser.parse(pos, name, expected)
+        && type_parser.parse(pos, type, expected))
     {
         auto name_type_pair = std::make_shared<ASTNameTypePair>(StringRange(begin, pos));
         name_type_pair->name = typeid_cast<const ASTIdentifier &>(*name).name;
@@ -94,57 +92,53 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & nod
     return false;
 }
 
-/** Список столбцов.  */
+/** List of columns. */
 class ParserNameTypePairList : public IParserBase
 {
 protected:
     const char * getName() const { return "name and type pair list"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-template <class NameParser>
+template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
 protected:
     const char * getName() const { return "column declaration"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
 using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundIdentifier>;
 
-template <class NameParser>
-bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+template <typename NameParser>
+bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_default{"DEFAULT", true, true};
-    ParserString s_materialized{"MATERIALIZED", true, true};
-    ParserString s_alias{"ALIAS", true, true};
+    ParserKeyword s_default{"DEFAULT"};
+    ParserKeyword s_materialized{"MATERIALIZED"};
+    ParserKeyword s_alias{"ALIAS"};
     ParserTernaryOperatorExpression expr_parser;
 
     const auto begin = pos;
 
     /// mandatory column name
     ASTPtr name;
-    if (!name_parser.parse(pos, end, name, max_parsed_pos, expected))
+    if (!name_parser.parse(pos, name, expected))
         return false;
-
-    ws.ignore(pos, end, max_parsed_pos, expected);
 
     /** column name should be followed by type name if it
       *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS}
       */
     ASTPtr type;
     const auto fallback_pos = pos;
-    if (!s_default.check(pos, end, expected, max_parsed_pos) &&
-        !s_materialized.check(pos, end, expected, max_parsed_pos) &&
-        !s_alias.check(pos, end, expected, max_parsed_pos))
+    if (!s_default.check(pos, expected) &&
+        !s_materialized.check(pos, expected) &&
+        !s_alias.check(pos, expected))
     {
-        if (type_parser.parse(pos, end, type, max_parsed_pos, expected))
-            ws.ignore(pos, end, max_parsed_pos, expected);
+        type_parser.parse(pos, type, expected);
     }
     else
         pos = fallback_pos;
@@ -152,17 +146,15 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, Pos end, ASTPtr 
     /// parse {DEFAULT, MATERIALIZED, ALIAS}
     String default_specifier;
     ASTPtr default_expression;
-    const auto pos_before_specifier = pos;
-    if (s_default.ignore(pos, end, max_parsed_pos, expected) ||
-        s_materialized.ignore(pos, end, max_parsed_pos, expected) ||
-        s_alias.ignore(pos, end, max_parsed_pos, expected))
+    Pos pos_before_specifier = pos;
+    if (s_default.ignore(pos, expected) ||
+        s_materialized.ignore(pos, expected) ||
+        s_alias.ignore(pos, expected))
     {
-        default_specifier = Poco::toUpper(std::string{pos_before_specifier, pos});
+        default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
 
         /// should be followed by an expression
-        ws.ignore(pos, end, max_parsed_pos, expected);
-
-        if (!expr_parser.parse(pos, end, default_expression, max_parsed_pos, expected))
+        if (!expr_parser.parse(pos, default_expression, expected))
             return false;
     }
     else if (!type)
@@ -191,20 +183,20 @@ class ParserColumnDeclarationList : public IParserBase
 {
 protected:
     const char * getName() const { return "column declaration list"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** ENGINE = name. */
-class ParserEngine : public IParserBase
+/** ENGINE = name [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTINGS name = value, ...] */
+class ParserStorage : public IParserBase
 {
 protected:
-    const char * getName() const { return "ENGINE"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    const char * getName() const { return "storage definition"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Запрос типа такого:
+/** Query like this:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name
   * (
   *     name1 type1,
@@ -212,23 +204,23 @@ protected:
   *     ...
   * ) ENGINE = engine
   *
-  * Или:
+  * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
   *
-  * Или:
+  * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name AS ENGINE = engine SELECT ...
   *
-  * Или:
+  * Or:
   * CREATE|ATTACH DATABASE db [ENGINE = engine]
   *
-  * Или:
-  * CREATE|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [ENGINE = engine] [POPULATE] AS SELECT ...
+  * Or:
+  * CREATE|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
   */
 class ParserCreateQuery : public IParserBase
 {
 protected:
     const char * getName() const { return "CREATE TABLE or ATTACH TABLE query"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 }

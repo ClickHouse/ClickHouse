@@ -12,7 +12,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/ExternalDictionaries.h>
-#include <ext/map.hpp>
+#include <ext/map.h>
 #include <mutex>
 
 namespace DB
@@ -39,16 +39,11 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 {
 }
 
-StoragePtr StorageSystemDictionaries::create(const std::string & name)
-{
-    return make_shared(name);
-}
 
 BlockInputStreams StorageSystemDictionaries::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned)
@@ -81,16 +76,17 @@ BlockInputStreams StorageSystemDictionaries::read(
     ColumnWithTypeAndName col_source{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "source"};
 
     const auto & external_dictionaries = context.getExternalDictionaries();
-    const std::lock_guard<std::mutex> lock{external_dictionaries.dictionaries_mutex};
+    auto objects_map = external_dictionaries.getObjectsMap();
+    const auto & dictionaries = objects_map.get();
 
-    for (const auto & dict_info : external_dictionaries.dictionaries)
+    for (const auto & dict_info : dictionaries)
     {
         col_name.column->insert(dict_info.first);
         col_origin.column->insert(dict_info.second.origin);
 
-        if (dict_info.second.dict)
+        if (dict_info.second.loadable)
         {
-            const auto dict_ptr = dict_info.second.dict->get();
+            const auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(dict_info.second.loadable);
 
             col_type.column->insert(dict_ptr->getTypeName());
 
@@ -103,12 +99,12 @@ BlockInputStreams StorageSystemDictionaries::read(
             col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
                 return attr.type->getName();
             }));
-            col_bytes_allocated.column->insert(dict_ptr->getBytesAllocated());
-            col_query_count.column->insert(dict_ptr->getQueryCount());
+            col_bytes_allocated.column->insert(static_cast<UInt64>(dict_ptr->getBytesAllocated()));
+            col_query_count.column->insert(static_cast<UInt64>(dict_ptr->getQueryCount()));
             col_hit_rate.column->insert(dict_ptr->getHitRate());
-            col_element_count.column->insert(dict_ptr->getElementCount());
+            col_element_count.column->insert(static_cast<UInt64>(dict_ptr->getElementCount()));
             col_load_factor.column->insert(dict_ptr->getLoadFactor());
-            col_creation_time.column->insert(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime()));
+            col_creation_time.column->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime())));
             col_source.column->insert(dict_ptr->getSource()->toString());
         }
         else

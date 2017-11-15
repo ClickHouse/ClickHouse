@@ -27,7 +27,7 @@ public:
     }
 
     BlockInputStreamPtr loadKeys(
-        const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override
+        const Columns & key_columns, const std::vector<size_t> & requested_rows) override
     {
         throw Exception{"Method loadKeys is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }

@@ -20,9 +20,11 @@ struct CollectTables;
   *
   * SELECT elem FROM t ARRAY JOIN array AS elem            elem -> array
   * SELECT n.elem FROM t ARRAY JOIN nested AS n            n -> nested
-  * SELECT array FROM t ARRAY JOIN array                array -> array
+  * SELECT array FROM t ARRAY JOIN array                   array -> array
   * SELECT nested.elem FROM t ARRAY JOIN nested            nested -> nested
   * SELECT elem FROM t ARRAY JOIN [1, 2, 3] AS elem        elem -> [1, 2, 3]
+  *
+  * Does not analyze arrayJoin functions.
   */
 struct AnalyzeArrayJoins
 {

@@ -61,6 +61,17 @@ static void skipColonDelimeter(ReadBuffer & istr)
 bool JSONEachRowRowInputStream::read(Block & block)
 {
     skipWhitespaceIfAny(istr);
+    
+    /// We consume ;, or \n before scanning a new row, instead scanning to next row at the end.
+    /// The reason is that if we want an exact number of rows read with LIMIT x 
+    /// from a streaming table engine with text data format, like File or Kafka
+    /// then seeking to next ;, or \n would trigger reading of an extra row at the end.
+    
+    /// Semicolon is added for convenience as it could be used at end of INSERT query.
+    if (!istr.eof() && (*istr.position() == ',' || *istr.position() == ';'))
+        ++istr.position();
+
+    skipWhitespaceIfAny(istr);
     if (istr.eof())
         return false;
 
@@ -120,17 +131,18 @@ bool JSONEachRowRowInputStream::read(Block & block)
         read_columns[index] = true;
 
         auto & col = block.getByPosition(index);
-        col.type.get()->deserializeTextJSON(*col.column.get(), istr);
+        col.type->deserializeTextJSON(*col.column, istr);
     }
-
-    skipWhitespaceIfAny(istr);
-    if (!istr.eof() && *istr.position() == ',')
-        ++istr.position();
 
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < columns; ++i)
+    {
         if (!read_columns[i])
-            block.getByPosition(i).column.get()->insertDefault();
+        {
+            ColumnWithTypeAndName & elem = block.getByPosition(i);
+            elem.type->insertDefaultInto(*elem.column);
+        }
+    }
 
     return true;
 }

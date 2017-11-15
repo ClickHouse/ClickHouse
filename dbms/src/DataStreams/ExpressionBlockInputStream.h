@@ -19,7 +19,7 @@ private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 public:
-    ExpressionBlockInputStream(BlockInputStreamPtr input_, ExpressionActionsPtr expression_);
+    ExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_);
 
     String getName() const override;
     String getID() const override;

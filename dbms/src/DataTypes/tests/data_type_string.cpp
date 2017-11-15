@@ -5,8 +5,8 @@
 
 #include <Common/Stopwatch.h>
 
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 
@@ -35,8 +35,7 @@ try
             offsets[i] = (i + 1) * size;
         }
 
-        std::ofstream ostr("test");
-        WriteBufferFromOStream out_buf(ostr);
+        WriteBufferFromFile out_buf("test");
 
         stopwatch.restart();
         data_type.serializeBinaryBulk(*column, out_buf, 0, 0);
@@ -48,8 +47,7 @@ try
     {
         std::shared_ptr<ColumnString> column = std::make_shared<ColumnString>();
 
-        std::ifstream istr("test");
-        ReadBufferFromIStream in_buf(istr);
+        ReadBufferFromFile in_buf("test");
 
         stopwatch.restart();
         data_type.deserializeBinaryBulk(*column, in_buf, n, 0);

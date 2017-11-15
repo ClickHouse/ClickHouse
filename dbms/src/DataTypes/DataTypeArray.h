@@ -19,12 +19,24 @@ private:
     DataTypePtr offsets;
 
 public:
-    DataTypeArray(DataTypePtr nested_);
-    DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_);
+    static constexpr bool is_parametric = true;
+
+    DataTypeArray(const DataTypePtr & nested_);
+    DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_);
 
     std::string getName() const override
     {
         return "Array(" + nested->getName() + ")";
+    }
+
+    const char * getFamilyName() const override
+    {
+        return "Array";
+    }
+
+    bool canBeInsideNullable() const override
+    {
+        return false;
     }
 
     DataTypePtr clone() const override
@@ -46,7 +58,7 @@ public:
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -76,19 +88,12 @@ public:
     void deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
-    Field getDefault() const override
-    {
-        return Array();
-    }
+    Field getDefault() const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
     const DataTypeTraits::EnrichedDataTypePtr & getEnrichedNestedType() const { return enriched_nested; }
     const DataTypePtr & getOffsetsType() const { return offsets; }
-
-    /// Returns the data type found at the most nested level.
-    const DataTypePtr & getMostNestedType() const;
 };
 
 }

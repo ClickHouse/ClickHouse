@@ -1,6 +1,9 @@
 # https://software.intel.com/sites/landingpage/IntrinsicsGuide/
 
 include (CheckCXXSourceCompiles)
+include (CMakePushCheckState)
+
+cmake_push_check_state ()
 
 # gcc -dM -E -mno-sse2 - < /dev/null | sort > gcc-dump-nosse2
 # gcc -dM -E -msse2 - < /dev/null | sort > gcc-dump-sse2
@@ -54,10 +57,10 @@ check_cxx_source_compiles("
     }
 " HAVE_POPCNT)
 
-if (HAVE_POPCNT AND NOT AARCH64)
+if (HAVE_POPCNT AND NOT ARCH_AARCH64)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
 endif ()
 
-set (CMAKE_REQUIRED_FLAGS "")
+cmake_pop_check_state ()
 
 # TODO: add here sse3 test if you want use it

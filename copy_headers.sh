@@ -16,19 +16,32 @@
 # sudo ./copy_headers.sh . /usr/share/clickhouse/headers/
 
 SOURCE_PATH=${1:-.}
-DST=${2:-$SOURCE_PATH/../headers};
+DST=${2:-$SOURCE_PATH/../headers}
+BUILD_PATH=${3:-$SOURCE_PATH/build}
 
 PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
-# Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
+if [[ -z $CLANG ]]; then
+    CLANG="clang"
+fi
 
-for src_file in $(clang -M -xc++ -std=gnu++1y -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
-    $(cat "$SOURCE_PATH/build/include_directories.txt") \
-    "$SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h" |
+START_HEADERS=$(echo \
+    $BUILD_PATH/dbms/src/Common/config_version.h \
+    $SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h \
+    $SOURCE_PATH/dbms/src/AggregateFunctions/AggregateFunction*.h)
+
+# Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
+# The latter options are the same that are added while building packages.
+
+for src_file in $(echo | $CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC -fstack-protector -D_FORTIFY_SOURCE=2 \
+    $(cat "$BUILD_PATH/include_directories.txt") \
+    $(echo $START_HEADERS | sed -r -e 's/[^ ]+/-include \0/g') \
+    - |
     tr -d '\\' |
-    sed -r -e 's/^\w+\.o://');
+    sed -r -e 's/^-\.o://');
 do
     dst_file=$src_file;
+    dst_file=$(echo $dst_file | sed -r -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
     mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done
@@ -37,7 +50,7 @@ done
 # Копируем больше заголовочных файлов с интринсиками, так как на серверах, куда будут устанавливаться
 #  заголовочные файлы, будет использоваться опция -march=native.
 
-for i in $(ls -1 $(clang -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep '/lib/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
+for i in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep '/lib/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
 do
     cp "$i" "$DST/$i";
 done

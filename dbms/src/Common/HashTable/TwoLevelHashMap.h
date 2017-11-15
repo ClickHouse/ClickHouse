@@ -19,7 +19,7 @@ public:
     using mapped_type = typename Cell::Mapped;
     using value_type = typename Cell::value_type;
 
-    using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator> >::TwoLevelHashTable;
+    using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator>>::TwoLevelHashTable;
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
     {

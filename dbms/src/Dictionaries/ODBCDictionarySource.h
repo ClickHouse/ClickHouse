@@ -41,7 +41,7 @@ public:
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(
-        const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override;
+        const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -52,6 +52,9 @@ public:
     std::string toString() const override;
 
 private:
+    // execute invalidate_query. expects single cell in result
+    std::string doInvalidateQuery(const std::string & request) const;
+
     Poco::Logger * log;
 
     const DictionaryStructure dict_struct;
@@ -62,6 +65,8 @@ private:
     std::shared_ptr<Poco::Data::SessionPool> pool = nullptr;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
+    std::string invalidate_query;
+    mutable std::string invalidate_query_response;
 
     using PocoSessionPoolConstructor = std::function<std::shared_ptr<Poco::Data::SessionPool>()>;
 

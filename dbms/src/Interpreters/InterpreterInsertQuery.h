@@ -10,17 +10,17 @@ namespace DB
 {
 
 
-/** Интерпретирует запрос INSERT.
+/** Interprets the INSERT query.
   */
 class InterpreterInsertQuery : public IInterpreter
 {
 public:
     InterpreterInsertQuery(const ASTPtr & query_ptr_, const Context & context_);
 
-    /** Подготовить запрос к выполнению. Вернуть потоки блоков
-      * - поток, в который можно писать данные для выполнения запроса, если INSERT;
-      * - поток, из которого можно читать результат выполнения запроса, если SELECT и подобные;
-      * Или ничего, если запрос INSERT SELECT (самодостаточный запрос - не принимает входные данные, не отдаёт результат).
+    /** Prepare a request for execution. Return block streams
+      * - the stream into which you can write data to execute the query, if INSERT;
+      * - the stream from which you can read the result of the query, if SELECT and similar;
+      * Or nothing if the request INSERT SELECT (self-sufficient query - does not accept the input data, does not return the result).
       */
     BlockIO execute() override;
 
@@ -30,7 +30,7 @@ private:
     Block getSampleBlock();
 
     ASTPtr query_ptr;
-    Context context;
+    const Context & context;
 };
 
 

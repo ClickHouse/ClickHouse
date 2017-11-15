@@ -14,6 +14,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <Poco/File.h>
 
 
@@ -331,7 +332,7 @@ void MergeTreePartChecker::checkDataPart(
             Columns tmp_columns(key_size);
 
             for (size_t j = 0; j < key_size; ++j)
-                tmp_columns[j] = primary_key_data_types[j].get()->createColumn();
+                tmp_columns[j] = primary_key_data_types[j]->createColumn();
 
             while (!hashing_buf.eof())
             {
@@ -340,7 +341,7 @@ void MergeTreePartChecker::checkDataPart(
 
                 ++marks_in_primary_key;
                 for (size_t j = 0; j < key_size; ++j)
-                    primary_key_data_types[j].get()->deserializeBinary(*tmp_columns[j].get(), hashing_buf);
+                    primary_key_data_types[j]->deserializeBinary(*tmp_columns[j].get(), hashing_buf);
             }
         }
         else

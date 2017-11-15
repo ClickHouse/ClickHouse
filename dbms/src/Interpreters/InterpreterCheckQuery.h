@@ -1,15 +1,17 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
 
+class Context;
+
 class InterpreterCheckQuery : public IInterpreter
 {
 public:
-    InterpreterCheckQuery(ASTPtr query_ptr_, Context & context_);
+    InterpreterCheckQuery(const ASTPtr & query_ptr_, const Context & context_);
     BlockIO execute() override;
 
 private:
@@ -17,7 +19,7 @@ private:
 
 private:
     ASTPtr query_ptr;
-    Context context;
+    const Context & context;
     Block result;
 };
 

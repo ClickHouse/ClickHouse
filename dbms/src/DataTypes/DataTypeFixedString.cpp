@@ -6,10 +6,16 @@
 #include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
+
+#include <Parsers/IAST.h>
+#include <Parsers/ASTLiteral.h>
+
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -19,6 +25,8 @@ namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
 
@@ -155,11 +163,11 @@ void DataTypeFixedString::serializeTextQuoted(const IColumn & column, size_t row
 
 void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readQuotedStringInto(data, istr); });
+    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
 }
 
 
-void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const
+void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
     writeJSONString(pos, pos + n, ostr);
@@ -198,9 +206,22 @@ ColumnPtr DataTypeFixedString::createColumn() const
 }
 
 
-ColumnPtr DataTypeFixedString::createConstColumn(size_t size, const Field & field) const
+static DataTypePtr create(const ASTPtr & arguments)
 {
-    return std::make_shared<ColumnConstString>(size, get<const String &>(field), clone());
+    if (arguments->children.size() != 1)
+        throw Exception("FixedString data type family must have exactly one argument - size in bytes", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    const ASTLiteral * argument = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.get<UInt64>() == 0)
+        throw Exception("FixedString data type family must have a number (positive integer) as its argument", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+
+    return std::make_shared<DataTypeFixedString>(argument->value.get<UInt64>());
+}
+
+
+void registerDataTypeFixedString(DataTypeFactory & factory)
+{
+    factory.registerDataType("FixedString", create);
 }
 
 }

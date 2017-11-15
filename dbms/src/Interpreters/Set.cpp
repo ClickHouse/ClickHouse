@@ -5,11 +5,12 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/typeid_cast.h>
+
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -81,7 +82,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
         /// Obtain a key to insert to the set
         typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 
-        typename Method::Data::iterator it = method.data.find(key);
+        typename Method::Data::iterator it;
         bool inserted;
         method.data.emplace(key, it, inserted);
 
@@ -93,7 +94,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
 bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 {
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     size_t keys_size = block.columns();
     ConstColumnPlainPtrs key_columns;
@@ -179,18 +180,22 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 
     if (!checkSetSizeLimits())
     {
-        if (overflow_mode == OverflowMode::THROW)
-            throw Exception("IN-set size exceeded."
-                " Rows: " + toString(data.getTotalRowCount()) +
-                ", limit: " + toString(max_rows) +
-                ". Bytes: " + toString(data.getTotalByteCount()) +
-                ", limit: " + toString(max_bytes) + ".",
-                ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        switch (overflow_mode)
+        {
+            case OverflowMode::THROW:
+                throw Exception("IN-set size exceeded."
+                    " Rows: " + toString(data.getTotalRowCount()) +
+                    ", limit: " + toString(max_rows) +
+                    ". Bytes: " + toString(data.getTotalByteCount()) +
+                    ", limit: " + toString(max_bytes) + ".",
+                    ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 
-        if (overflow_mode == OverflowMode::BREAK)
-            return false;
+            case OverflowMode::BREAK:
+                return false;
 
-        throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+            default:
+                throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+        }
     }
 
     return true;
@@ -296,7 +301,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     ColumnUInt8::Container_t & vec_res = res->getData();
     vec_res.resize(block.safeGetByPosition(0).column->size());
 
-    Poco::ScopedReadRWLock lock(rwlock);
+    std::shared_lock<std::shared_mutex> lock(rwlock);
 
     /// If the set is empty.
     if (data_types.empty())

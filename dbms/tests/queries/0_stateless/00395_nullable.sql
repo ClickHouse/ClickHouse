@@ -6,87 +6,97 @@ SELECT 1 + NULL;
 SELECT abs(NULL);
 SELECT NULL + NULL;
 
+/* MergeTree engine */
+
+DROP TABLE IF EXISTS test.test1;
+CREATE TABLE test.test1(
+col1 UInt64, col2 Nullable(UInt64),
+col3 String, col4 Nullable(String),
+col5 Array(UInt64), col6 Array(Nullable(UInt64)),
+col7 Array(String), col8 Array(Nullable(String)),
+d Date) Engine = MergeTree(d, (col1, d), 8192);
+
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+SELECT * FROM test.test1 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
+
+
 /* Memory engine */
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(
-col1 Nullable(UInt64), col2 UInt64,
-col3 Nullable(Array(UInt64)), col4 Array(UInt64),
-col5 Nullable(String), col6 String,
-col7 Nullable(Array(String)), col8 Array(String),
-col9 Array(Nullable(UInt64)), col10 Array(Nullable(String))) Engine = Memory;
+col1 UInt64, col2 Nullable(UInt64),
+col3 String, col4 Nullable(String),
+col5 Array(UInt64), col6 Array(Nullable(UInt64)),
+col7 Array(String), col8 Array(Nullable(String)),
+d Date) Engine = Memory;
 
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (NULL, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, NULL, [1], 'a', 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], NULL, 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', NULL, ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [NULL], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], [NULL]);
-SELECT col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 FROM test.test1 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8,col9,col10 ASC;
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+SELECT * FROM test.test1 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
 
 /* TinyLog engine */
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(
-col1 Nullable(UInt64), col2 UInt64,
-col3 Nullable(Array(UInt64)), col4 Array(UInt64),
-col5 Nullable(String), col6 String,
-col7 Nullable(Array(String)), col8 Array(String),
-col9 Array(Nullable(UInt64)), col10 Array(Nullable(String))) Engine = TinyLog;
+col1 UInt64, col2 Nullable(UInt64),
+col3 String, col4 Nullable(String),
+col5 Array(UInt64), col6 Array(Nullable(UInt64)),
+col7 Array(String), col8 Array(Nullable(String)),
+d Date) Engine = TinyLog;
 
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (NULL, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, NULL, [1], 'a', 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], NULL, 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', NULL, ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [NULL], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], [NULL]);
-SELECT col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 FROM test.test1 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8,col9,col10 ASC;
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+SELECT * FROM test.test1 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
 
 /* Log engine */
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(
-col1 Nullable(UInt64), col2 UInt64,
-col3 Nullable(Array(UInt64)), col4 Array(UInt64),
-col5 Nullable(String), col6 String,
-col7 Nullable(Array(String)), col8 Array(String),
-col9 Array(Nullable(UInt64)), col10 Array(Nullable(String))) Engine = Log;
+col1 UInt64, col2 Nullable(UInt64),
+col3 String, col4 Nullable(String),
+col5 Array(UInt64), col6 Array(Nullable(UInt64)),
+col7 Array(String), col8 Array(Nullable(String)),
+d Date) Engine = Log;
 
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (NULL, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, NULL, [1], 'a', 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], NULL, 'a', ['a'], ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', NULL, ['a'], [1], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [NULL], ['a']);
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], [NULL]);
-SELECT col1, col2, col3, col4, col5, col6, col7, col8, col9, col10 FROM test.test1 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8,col9,col10 ASC;
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+SELECT * FROM test.test1 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
 
-/* MergeTree engine */
+/* StripeLog engine */
 
 DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(
-col1 Nullable(UInt64), col2 UInt64,
-col3 Nullable(Array(UInt64)), col4 Array(UInt64),
-col5 Nullable(String), col6 String,
-col7 Nullable(Array(String)), col8 Array(String),
-col9 Array(Nullable(UInt64)), col10 Array(Nullable(String)),
-col11 Date) Engine = MergeTree(col11, (col2, col11), 8192);
+col1 UInt64, col2 Nullable(UInt64),
+col3 String, col4 Nullable(String),
+col5 Array(UInt64), col6 Array(Nullable(UInt64)),
+col7 Array(String), col8 Array(Nullable(String)),
+d Date) Engine = StripeLog;
 
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10,col11) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], ['a'], '1970-01-01');
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10,col11) VALUES (NULL, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], ['a'], '1970-01-01');
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10,col11) VALUES (1, 1, NULL, [1], 'a', 'a', ['a'], ['a'], [1], ['a'], '1970-01-01');
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10,col11) VALUES (1, 1, [1], [1], NULL, 'a', ['a'], ['a'], [1], ['a'], '1970-01-01');
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10,col11) VALUES (1, 1, [1], [1], 'a', 'a', NULL, ['a'], [1], ['a'], '1970-01-01');
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10,col11) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [NULL], ['a'], '1970-01-01');
-INSERT INTO test.test1(col1,col2,col3,col4,col5,col6,col7,col8,col9,col10,col11) VALUES (1, 1, [1], [1], 'a', 'a', ['a'], ['a'], [1], [NULL], '1970-01-01');
-SELECT col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11 FROM test.test1 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8,col9,col10,col11 ASC;
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, NULL, 'a', 'a', [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', NULL, [1], [1], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [NULL], ['a'], ['a'], '2000-01-01');
+INSERT INTO test.test1 VALUES (1, 1, 'a', 'a', [1], [1], ['a'], [NULL], '2000-01-01');
+SELECT * FROM test.test1 ORDER BY col1,col2,col3,col4,col5,col6,col7,col8 ASC;
+
 
 /* Insert with expression */
 
 DROP TABLE IF EXISTS test.test1;
-CREATE TABLE test.test1(col1 Nullable(Array(UInt64))) Engine=Memory;
+CREATE TABLE test.test1(col1 Array(Nullable(UInt64))) Engine=Memory;
 INSERT INTO test.test1(col1) VALUES ([1+1]);
 SELECT col1 FROM test.test1 ORDER BY col1 ASC;
 
@@ -144,8 +154,6 @@ SELECT multiIf(NULL, NULL, NULL);
 
 SELECT multiIf(1, 'A', 1, NULL, 'DEF');
 SELECT multiIf(1, toFixedString('A', 16), 1, NULL, toFixedString('DEF', 16));
-SELECT multiIf(1, [1,2], 1, NULL, [5,6]);
-SELECT multiIf(1, ['A', 'B'], 1, NULL, ['E', 'F']);
 
 SELECT multiIf(NULL, 2, 1, 3, 4);
 SELECT multiIf(1, 2, NULL, 3, 4);
@@ -457,23 +465,6 @@ INSERT INTO test.test1(col1,col2,col3,col4) VALUES(NULL, 3, NULL, 'ACDEFBGH');
 SELECT col1, col2, col3, count() FROM test.test1 GROUP BY col1, col2, col3 ORDER BY col1, col2, col3;
 
 DROP TABLE IF EXISTS test.test1;
-CREATE TABLE test.test1(col1 Nullable(Array(UInt8)), col2 String) ENGINE=TinyLog;
-INSERT INTO test.test1(col1,col2) VALUES([0], 'ABCDEFGH');
-INSERT INTO test.test1(col1,col2) VALUES([0], 'BACDEFGH');
-INSERT INTO test.test1(col1,col2) VALUES([1], 'BCADEFGH');
-INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDAEFGH');
-INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEAFGH');
-INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEFAGH');
-INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEFGAH');
-INSERT INTO test.test1(col1,col2) VALUES([1], 'BCDEFGHA');
-INSERT INTO test.test1(col1,col2) VALUES([1], 'ACBDEFGH');
-INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDBEFGH');
-INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEBFGH');
-INSERT INTO test.test1(col1,col2) VALUES(NULL, 'ACDEFBGH');
-
-SELECT col1, count() FROM test.test1 GROUP BY col1 ORDER BY col1;
-
-DROP TABLE IF EXISTS test.test1;
 CREATE TABLE test.test1(col1 Array(Nullable(UInt8)), col2 String) ENGINE=TinyLog;
 INSERT INTO test.test1(col1,col2) VALUES([0], 'ABCDEFGH');
 INSERT INTO test.test1(col1,col2) VALUES([0], 'BACDEFGH');
@@ -489,21 +480,3 @@ INSERT INTO test.test1(col1,col2) VALUES([NULL], 'ACDEBFGH');
 INSERT INTO test.test1(col1,col2) VALUES([NULL], 'ACDEFBGH');
 
 SELECT col1, count() FROM test.test1 GROUP BY col1 ORDER BY col1;
-
-DROP TABLE IF EXISTS test.test1;
-CREATE TABLE test.test1(col1 Nullable(Array(UInt8)), col2 Array(Nullable(UInt8)), col3 String) ENGINE=TinyLog;
-INSERT INTO test.test1(col1,col2,col3) VALUES([0], [0], 'ABCDEFGH');
-INSERT INTO test.test1(col1,col2,col3) VALUES([0], [0], 'BACDEFGH');
-INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCADEFGH');
-INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDAEFGH');
-INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDEAFGH');
-INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDEFAGH');
-INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDEFGAH');
-INSERT INTO test.test1(col1,col2,col3) VALUES([1], [1], 'BCDEFGHA');
-INSERT INTO test.test1(col1,col2,col3) VALUES([1], [NULL], 'ACBDEFGH');
-INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [1], 'ACDBEFGH');
-INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [NULL], 'ACDEBFGH');
-INSERT INTO test.test1(col1,col2,col3) VALUES(NULL, [NULL], 'ACDEFBGH');
-
-SELECT col1, col2, count() FROM test.test1 GROUP BY col1, col2 ORDER BY col1, col2;
-SELECT DISTINCT col1, col2 FROM test.test1 ORDER BY col1, col2;

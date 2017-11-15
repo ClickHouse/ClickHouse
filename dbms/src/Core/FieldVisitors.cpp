@@ -15,41 +15,37 @@ namespace DB
 template <typename T>
 static inline String formatQuoted(T x)
 {
-    String res;
-    WriteBufferFromString wb(res);
+    WriteBufferFromOwnString wb;
     writeQuoted(x, wb);
-    return res;
+    return wb.str();
 }
 
 template <typename T>
 static inline String formatQuotedWithPrefix(T x, const char * prefix)
 {
-    String res;
-    WriteBufferFromString wb(res);
+    WriteBufferFromOwnString wb;
     wb.write(prefix, strlen(prefix));
     writeQuoted(x, wb);
-    return res;
+    return wb.str();
 }
 
 
-String FieldVisitorDump::operator() (const Null     & x) const { return "NULL"; }
-String FieldVisitorDump::operator() (const UInt64     & x) const { return formatQuotedWithPrefix(x, "UInt64_"); }
-String FieldVisitorDump::operator() (const Int64     & x) const { return formatQuotedWithPrefix(x, "Int64_"); }
-String FieldVisitorDump::operator() (const Float64     & x) const { return formatQuotedWithPrefix(x, "Float64_"); }
+String FieldVisitorDump::operator() (const Null & x) const { return "NULL"; }
+String FieldVisitorDump::operator() (const UInt64 & x) const { return formatQuotedWithPrefix(x, "UInt64_"); }
+String FieldVisitorDump::operator() (const Int64 & x) const { return formatQuotedWithPrefix(x, "Int64_"); }
+String FieldVisitorDump::operator() (const Float64 & x) const { return formatQuotedWithPrefix(x, "Float64_"); }
 
 
 String FieldVisitorDump::operator() (const String & x) const
 {
-    String res;
-    WriteBufferFromString wb(res);
+    WriteBufferFromOwnString wb;
     writeQuoted(x, wb);
-    return res;
+    return wb.str();
 }
 
 String FieldVisitorDump::operator() (const Array & x) const
 {
-    String res;
-    WriteBufferFromString wb(res);
+    WriteBufferFromOwnString wb;
 
     wb.write("Array_[", 7);
     for (auto it = x.begin(); it != x.end(); ++it)
@@ -60,14 +56,13 @@ String FieldVisitorDump::operator() (const Array & x) const
     }
     writeChar(']', wb);
 
-    return res;
+    return wb.str();
 }
 
 String FieldVisitorDump::operator() (const Tuple & x_def) const
 {
     auto & x = x_def.t;
-    String res;
-    WriteBufferFromString wb(res);
+    WriteBufferFromOwnString wb;
 
     wb.write("Tuple_(", 7);
     for (auto it = x.begin(); it != x.end(); ++it)
@@ -78,7 +73,7 @@ String FieldVisitorDump::operator() (const Tuple & x_def) const
     }
     writeChar(')', wb);
 
-    return res;
+    return wb.str();
 }
 
 
@@ -104,17 +99,16 @@ static String formatFloat(const Float64 x)
 }
 
 
-String FieldVisitorToString::operator() (const Null     & x) const { return "NULL"; }
-String FieldVisitorToString::operator() (const UInt64     & x) const { return formatQuoted(x); }
-String FieldVisitorToString::operator() (const Int64     & x) const { return formatQuoted(x); }
-String FieldVisitorToString::operator() (const Float64     & x) const { return formatFloat(x); }
-String FieldVisitorToString::operator() (const String     & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const Null & x) const { return "NULL"; }
+String FieldVisitorToString::operator() (const UInt64 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const Int64 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const Float64 & x) const { return formatFloat(x); }
+String FieldVisitorToString::operator() (const String & x) const { return formatQuoted(x); }
 
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
-    String res;
-    WriteBufferFromString wb(res);
+    WriteBufferFromOwnString wb;
 
     writeChar('[', wb);
     for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
@@ -125,14 +119,13 @@ String FieldVisitorToString::operator() (const Array & x) const
     }
     writeChar(']', wb);
 
-    return res;
+    return wb.str();
 }
 
 String FieldVisitorToString::operator() (const Tuple & x_def) const
 {
     auto & x = x_def.t;
-    String res;
-    WriteBufferFromString wb(res);
+    WriteBufferFromOwnString wb;
 
     writeChar('(', wb);
     for (auto it = x.begin(); it != x.end(); ++it)
@@ -143,7 +136,7 @@ String FieldVisitorToString::operator() (const Tuple & x_def) const
     }
     writeChar(')', wb);
 
-    return res;
+    return wb.str();
 }
 
 
@@ -195,40 +188,5 @@ void FieldVisitorHash::operator() (const Array & x) const
     for (const auto & elem : x)
         applyVisitor(*this, elem);
 }
-
-
-UInt64 stringToDateOrDateTime(const String & s)
-{
-    if (s.size() == strlen("YYYY-MM-DD"))
-        return stringToDate(s);
-    else
-        return stringToDateTime(s);
-}
-
-
-DayNum_t stringToDate(const String & s)
-{
-    ReadBufferFromString in(s);
-    DayNum_t date{};
-
-    readDateText(date, in);
-    if (!in.eof())
-        throw Exception("String is too long for Date: " + s);
-
-    return date;
-}
-
-UInt64 stringToDateTime(const String & s)
-{
-    ReadBufferFromString in(s);
-    time_t date_time{};
-
-    readDateTimeText(date_time, in);
-    if (!in.eof())
-        throw Exception("String is too long for DateTime: " + s);
-
-    return UInt64(date_time);
-}
-
 
 }

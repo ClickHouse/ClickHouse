@@ -50,7 +50,7 @@ void ReplicatedMergeTreeRestartingThread::run()
     constexpr auto retry_period_ms = 10 * 1000;
 
     /// The frequency of checking expiration of session in ZK.
-    Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period * 1000;
+    Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
     /// Periodicity of checking lag of replica.
     if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
@@ -82,7 +82,7 @@ void ReplicatedMergeTreeRestartingThread::run()
                     partialShutdown();
                 }
 
-                while (true)
+                while (!need_stop)
                 {
                     try
                     {
@@ -106,13 +106,16 @@ void ReplicatedMergeTreeRestartingThread::run()
                     break;
                 }
 
+                if (need_stop)
+                    break;
+
                 if (storage.is_readonly)
                     CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
                 storage.is_readonly = false;
                 first_time = false;
             }
 
-            time_t current_time = time(0);
+            time_t current_time = time(nullptr);
             if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage.data.settings.check_delay_period))
             {
                 /// Find out lag of replicas.
@@ -157,24 +160,22 @@ void ReplicatedMergeTreeRestartingThread::run()
 
     try
     {
-        storage.endpoint_holder->cancel();
-        storage.endpoint_holder = nullptr;
+        storage.data_parts_exchange_endpoint_holder->cancelForever();
+        storage.data_parts_exchange_endpoint_holder = nullptr;
 
-        storage.disk_space_monitor_endpoint_holder->cancel();
+        storage.disk_space_monitor_endpoint_holder->cancelForever();
         storage.disk_space_monitor_endpoint_holder = nullptr;
 
-        storage.sharded_partition_uploader_endpoint_holder->cancel();
+        storage.sharded_partition_uploader_endpoint_holder->cancelForever();
         storage.sharded_partition_uploader_endpoint_holder = nullptr;
 
-        storage.remote_query_executor_endpoint_holder->cancel();
+        storage.remote_query_executor_endpoint_holder->cancelForever();
         storage.remote_query_executor_endpoint_holder = nullptr;
 
-        storage.remote_part_checker_endpoint_holder->cancel();
+        storage.remote_part_checker_endpoint_holder->cancelForever();
         storage.remote_part_checker_endpoint_holder = nullptr;
 
-        storage.merger.cancelForever();
-        if (storage.unreplicated_merger)
-            storage.unreplicated_merger->cancelForever();
+        storage.merger.merges_blocker.cancelForever();
 
         partialShutdown();
 
@@ -199,12 +200,13 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         activateReplica();
         updateQuorumIfWeHavePart();
 
-        storage.leader_election = std::make_shared<zkutil::LeaderElection>(
-            storage.zookeeper_path + "/leader_election",
-            *storage.current_zookeeper,     /// current_zookeeper lives for the lifetime of leader_election,
-                                            ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
-            [this] { storage.becomeLeader(); CurrentMetrics::add(CurrentMetrics::LeaderReplica); },
-            storage.replica_name);
+        if (storage.data.settings.replicated_can_become_leader)
+            storage.leader_election = std::make_shared<zkutil::LeaderElection>(
+                storage.zookeeper_path + "/leader_election",
+                *storage.current_zookeeper,     /// current_zookeeper lives for the lifetime of leader_election,
+                                                ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
+                [this] { storage.becomeLeader(); CurrentMetrics::add(CurrentMetrics::LeaderReplica); },
+                storage.replica_name);
 
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
@@ -213,9 +215,9 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.shutdown_event.reset();
 
         storage.queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, &storage);
+        storage.part_check_thread.start();
         storage.alter_thread = std::make_unique<ReplicatedMergeTreeAlterThread>(storage);
         storage.cleanup_thread = std::make_unique<ReplicatedMergeTreeCleanupThread>(storage);
-        storage.part_check_thread.start();
 
         if (!storage.queue_task_handle)
             storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
@@ -225,7 +227,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     }
     catch (...)
     {
-        storage.replica_is_active_node     = nullptr;
+        storage.replica_is_active_node  = nullptr;
         storage.leader_election         = nullptr;
 
         try
@@ -365,6 +367,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.merge_selecting_event.set();
     storage.queue_updating_event->set();
     storage.alter_query_event->set();
+    storage.cleanup_thread_event.set();
     storage.replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");

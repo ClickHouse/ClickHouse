@@ -52,20 +52,14 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 {
 }
 
-StoragePtr StorageSystemProcesses::create(const std::string & name_)
-{
-    return make_shared(name_);
-}
-
 
 BlockInputStreams StorageSystemProcesses::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -97,11 +91,11 @@ BlockInputStreams StorageSystemProcesses::read(
         block.getByPosition(i++).column->insert(process.client_info.http_user_agent);
         block.getByPosition(i++).column->insert(process.client_info.quota_key);
         block.getByPosition(i++).column->insert(process.elapsed_seconds);
-        block.getByPosition(i++).column->insert(process.read_rows);
-        block.getByPosition(i++).column->insert(process.read_bytes);
-        block.getByPosition(i++).column->insert(process.total_rows);
-        block.getByPosition(i++).column->insert(process.written_rows);
-        block.getByPosition(i++).column->insert(process.written_bytes);
+        block.getByPosition(i++).column->insert(UInt64(process.read_rows));
+        block.getByPosition(i++).column->insert(UInt64(process.read_bytes));
+        block.getByPosition(i++).column->insert(UInt64(process.total_rows));
+        block.getByPosition(i++).column->insert(UInt64(process.written_rows));
+        block.getByPosition(i++).column->insert(UInt64(process.written_bytes));
         block.getByPosition(i++).column->insert(process.memory_usage);
         block.getByPosition(i++).column->insert(process.query);
     }

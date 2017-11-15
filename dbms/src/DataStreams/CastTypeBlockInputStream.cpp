@@ -93,7 +93,7 @@ void CastTypeBlockInputStream::initialize(const Block & src_block)
         /// Force conversion if source and destination types is different.
         if (!ref_column.type->equals(*src_column.type))
         {
-            ColumnWithTypeAndName res_type_name_column(std::make_shared<ColumnConstString>(1, ref_column.type->getName()), std::make_shared<DataTypeString>(), "");
+            ColumnWithTypeAndName res_type_name_column(DataTypeString().createConstColumn(1, ref_column.type->getName()), std::make_shared<DataTypeString>(), "");
             ColumnWithTypeAndName res_blank_column(nullptr, ref_column.type->clone(), src_column.name);
 
             /// Prepares function to execution

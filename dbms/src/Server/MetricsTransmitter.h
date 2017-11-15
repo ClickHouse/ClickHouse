@@ -10,7 +10,10 @@
 
 namespace DB
 {
+
 class AsynchronousMetrics;
+class Context;
+
 
 /**    Automatically sends
   * - difference of ProfileEvents;
@@ -21,8 +24,12 @@ class AsynchronousMetrics;
 class MetricsTransmitter
 {
 public:
-    MetricsTransmitter(const AsynchronousMetrics & async_metrics, const std::string & config_name)
-        : async_metrics{async_metrics}, config_name{config_name}
+    MetricsTransmitter(Context & context_,
+                       const AsynchronousMetrics & async_metrics_,
+                       const std::string & config_name_)
+        : context(context_)
+        , async_metrics(async_metrics_)
+        , config_name(config_name_)
     {
     }
     ~MetricsTransmitter();
@@ -30,6 +37,8 @@ public:
 private:
     void run();
     void transmit(std::vector<ProfileEvents::Count> & prev_counters);
+
+    Context & context;
 
     const AsynchronousMetrics & async_metrics;
     const std::string config_name;
@@ -43,4 +52,5 @@ private:
     static constexpr auto current_metrics_path_prefix = "ClickHouse.Metrics.";
     static constexpr auto asynchronous_metrics_path_prefix = "ClickHouse.AsynchronousMetrics.";
 };
+
 }

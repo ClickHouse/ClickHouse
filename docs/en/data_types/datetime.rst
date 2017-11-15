@@ -5,7 +5,7 @@ Date with time. Stored in four bytes as a Unix timestamp (unsigned). Allows stor
 
 
 Time zones
-~~~~~~~~~~~~~
+~~~~~~~~~~
 
 The date with time is converted from text (divided into component parts) to binary and back, using the system's time zone at the time the client or server starts. In text format, information about daylight savings is lost.
 

@@ -3,6 +3,10 @@
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Exception.h>
 
+static inline const char* ifNotEmpty(const char* s)
+{
+    return s && *s ? s : nullptr;
+}
 
 namespace mysqlxx
 {
@@ -24,7 +28,7 @@ Connection::Connection()
 {
     is_connected = false;
 
-    /// Инициализация библиотеки.
+    /// MySQL library initialization.
     LibrarySingleton::instance();
 }
 
@@ -34,12 +38,16 @@ Connection::Connection(
     const char* user,
     const char* password,
     unsigned port,
+    const char * socket,
+    const char* ssl_ca,
+    const char* ssl_cert,
+    const char* ssl_key,
     unsigned timeout,
     unsigned rw_timeout)
     : driver(std::make_unique<MYSQL>())
 {
     is_connected = false;
-    connect(db, server, user, password, port, timeout, rw_timeout);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout);
 }
 
 Connection::Connection(const std::string & config_name)
@@ -60,19 +68,23 @@ void Connection::connect(const char* db,
     const char* user,
     const char* password,
     unsigned port,
+    const char * socket,
+    const char* ssl_ca,
+    const char* ssl_cert,
+    const char* ssl_key,
     unsigned timeout,
     unsigned rw_timeout)
 {
     if (is_connected)
         disconnect();
 
-    /// Инициализация библиотеки.
+    /// MySQL library initialization.
     LibrarySingleton::instance();
 
     if (!mysql_init(driver.get()))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Установим таймауты
+    /// Set timeouts.
     if (mysql_options(driver.get(), MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<const char *>(&timeout)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
@@ -82,20 +94,22 @@ void Connection::connect(const char* db,
     if (mysql_options(driver.get(), MYSQL_OPT_WRITE_TIMEOUT, reinterpret_cast<const char *>(&rw_timeout)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /** Включаем возможность использовать запрос LOAD DATA LOCAL INFILE с серверами,
-      *  которые были скомпилированы без опции --enable-local-infile.
-      */
+    /// Enables ability to use query LOAD DATA LOCAL INFILE with servers were compiled without --enable-local-infile option.
     if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    if (!mysql_real_connect(driver.get(), server, user, password, db, port, nullptr, driver->client_flag))
+    /// Specifies particular ssl key and certificate if it needs
+    if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Установим кодировки по умолчанию - UTF-8.
+    if (!mysql_real_connect(driver.get(), server, user, password, db, port, ifNotEmpty(socket), driver->client_flag))
+        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+
+    /// Sets UTF-8 as default encoding.
     if (mysql_set_character_set(driver.get(), "UTF8"))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Установим автоматический реконнект
+    /// Enables auto-reconnect.
     my_bool reconnect = true;
     if (mysql_options(driver.get(), MYSQL_OPT_RECONNECT, reinterpret_cast<const char *>(&reconnect)))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));

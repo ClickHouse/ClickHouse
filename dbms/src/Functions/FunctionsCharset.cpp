@@ -4,11 +4,13 @@
 #include <Functions/IFunction.h>
 #include <Functions/ObjectPool.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
-#include <ext/range.hpp>
+#include <Common/typeid_cast.h>
+#include <ext/range.h>
 
 #include <unicode/ucnv.h>
 
@@ -22,6 +24,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_CREATE_CHARSET_CONVERTER;
     extern const int CANNOT_CONVERT_CHARSET;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -41,7 +44,7 @@ private:
     {
         UConverter * impl;
 
-        Converter(const String & charset)
+        explicit Converter(const String & charset)
         {
             UErrorCode status = U_ZERO_ERROR;
             impl = ucnv_open(charset.data(), &status);
@@ -166,12 +169,15 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (size_t i : ext::range(0, 3))
-            if (!typeid_cast<const DataTypeString *>(&*arguments[i]))
+            if (!checkDataType<DataTypeString>(&*arguments[i]))
                 throw Exception("Illegal type " + arguments[i]->getName() + " of argument of function " + getName()
                     + ", must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -180,31 +186,21 @@ public:
         const ColumnWithTypeAndName & arg_charset_to = block.getByPosition(arguments[2]);
         ColumnWithTypeAndName & res = block.getByPosition(result);
 
-        const ColumnConstString * col_charset_from = typeid_cast<const ColumnConstString *>(arg_charset_from.column.get());
-        const ColumnConstString * col_charset_to = typeid_cast<const ColumnConstString *>(arg_charset_to.column.get());
+        const ColumnConst * col_charset_from = checkAndGetColumnConstStringOrFixedString(arg_charset_from.column.get());
+        const ColumnConst * col_charset_to = checkAndGetColumnConstStringOrFixedString(arg_charset_to.column.get());
 
         if (!col_charset_from || !col_charset_to)
             throw Exception("2nd and 3rd arguments of function " + getName() + " (source charset and destination charset) must be constant strings.",
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        String charset_from = col_charset_from->getData();
-        String charset_to = col_charset_to->getData();
+        String charset_from = col_charset_from->getValue<String>();
+        String charset_to = col_charset_to->getValue<String>();
 
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(arg_from.column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arg_from.column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());
             res.column = col_to;
-        }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(arg_from.column.get()))
-        {
-            auto full_column_holder = col_from->cloneResized(1)->convertToFullColumnIfConst();
-            const ColumnString * col_from_full = static_cast<const ColumnString *>(full_column_holder.get());
-
-            auto col_to_full = std::make_shared<ColumnString>();
-            convert(charset_from, charset_to, col_from_full->getChars(), col_from_full->getOffsets(), col_to_full->getChars(), col_to_full->getOffsets());
-
-            res.column = std::make_shared<ColumnConstString>(col_from->size(), (*col_to_full)[0].get<String>(), res.type);
         }
         else
             throw Exception("Illegal column passed as first argument of function " + getName() + " (must be ColumnString).",

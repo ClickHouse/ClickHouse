@@ -84,10 +84,12 @@ class StorageFileBlockInputStream : public IProfilingBlockInputStream
 public:
 
     StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
-        : storage(storage_), lock(storage.rwlock, storage.use_table_fd)
+        : storage(storage_)
     {
         if (storage.use_table_fd)
         {
+            storage.rwlock.lock();
+
             /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
             ///  and add ability to seek unseekable files, but cache sync isn't supported.
 
@@ -106,10 +108,20 @@ public:
         }
         else
         {
+            storage.rwlock.lock_shared();
+
             read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
         }
 
         reader = FormatFactory().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+    }
+
+    ~StorageFileBlockInputStream() override
+    {
+        if (storage.use_table_fd)
+            storage.rwlock.unlock();
+        else
+            storage.rwlock.unlock_shared();
     }
 
     String getName() const override
@@ -146,7 +158,6 @@ public:
 
 private:
     StorageFile & storage;
-    Poco::ScopedRWLock lock;
     Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
     BlockInputStreamPtr reader;
@@ -155,12 +166,11 @@ private:
 
 BlockInputStreams StorageFile::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
-    unsigned threads)
+    unsigned num_streams)
 {
     return BlockInputStreams(1, std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size));
 }
@@ -170,7 +180,7 @@ class StorageFileBlockOutputStream : public IBlockOutputStream
 {
 public:
 
-    StorageFileBlockOutputStream(StorageFile & storage_)
+    explicit StorageFileBlockOutputStream(StorageFile & storage_)
         : storage(storage_), lock(storage.rwlock)
     {
         if (storage.use_table_fd)
@@ -212,7 +222,7 @@ public:
 
 private:
     StorageFile & storage;
-    Poco::ScopedWriteRWLock lock;
+    std::unique_lock<std::shared_mutex> lock;
     std::unique_ptr<WriteBufferFromFileDescriptor> write_buf;
     BlockOutputStreamPtr writer;
 };
@@ -236,7 +246,7 @@ void StorageFile::rename(const String & new_path_to_db, const String & new_datab
     if (!is_db_table)
         throw Exception("Can't rename table '" + table_name + "' binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    Poco::ScopedWriteRWLock lock(rwlock);
+    std::unique_lock<std::shared_mutex> lock(rwlock);
 
     std::string path_new = getTablePath(new_path_to_db, new_table_name, format_name);
     Poco::File(Poco::Path(path_new).parent()).createDirectories();

@@ -7,8 +7,9 @@ services:
   client:
     image: yandex/clickhouse-client
     build: docker/client
-    network_mode: host
+    command: ['--host', 'server']
   server:
     image: yandex/clickhouse-server
     build: docker/server
-    network_mode: host
+    ports:
+      - 8123:8123

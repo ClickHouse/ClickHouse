@@ -18,7 +18,7 @@ class BlockInputStreamFromRowInputStream : public IProfilingBlockInputStream
 public:
     /** sample_ - block with zero rows, that structure describes how to interpret values */
     BlockInputStreamFromRowInputStream(
-        RowInputStreamPtr row_input_,
+        const RowInputStreamPtr & row_input_,
         const Block & sample_,
         size_t max_block_size_,
         UInt64 allow_errors_num_,

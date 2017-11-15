@@ -1,5 +1,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
+#include <Common/typeid_cast.h>
 
 #include <IO/ConcatReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
@@ -60,7 +61,17 @@ static String joinLines(const String & query)
 /// Log query into text log (not into system table).
 static void logQuery(const String & query, const Context & context)
 {
-    LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString() << ") " << joinLines(query));
+    const auto & current_query_id = context.getClientInfo().current_query_id;
+    const auto & initial_query_id = context.getClientInfo().initial_query_id;
+    const auto & current_user = context.getClientInfo().current_user;
+
+    LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
+    << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
+    << ", query_id: " << current_query_id
+    << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
+    << ") "
+    << joinLines(query)
+    );
 }
 
 
@@ -120,28 +131,35 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
 
 
 static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
-    IParser::Pos begin,
-    IParser::Pos end,
+    const char * begin,
+    const char * end,
     Context & context,
     bool internal,
     QueryProcessingStage::Enum stage)
 {
     ProfileEvents::increment(ProfileEvents::Query);
-    time_t current_time = time(0);
+    time_t current_time = time(nullptr);
 
     const Settings & settings = context.getSettingsRef();
 
-    ParserQuery parser;
+    ParserQuery parser(end);
     ASTPtr ast;
     size_t query_size;
-    size_t max_query_size = settings.max_query_size;
+
+    /// Don't limit the size of internal queries.
+    size_t max_query_size = 0;
+    if (!internal)
+        max_query_size = settings.max_query_size;
 
     try
     {
+        /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "");
 
         /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-        query_size = ast->range.second - ast->range.first;
+        if (!(begin <= ast->range.first && ast->range.second <= end))
+            throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
+        query_size = ast->range.second - begin;
 
         if (max_query_size && query_size > max_query_size)
             throw Exception("Query is too large (" + toString(query_size) + ")."
@@ -149,9 +167,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
-        /// Anyway log query.
         if (!internal)
         {
+            /// Anyway log the query.
             String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
             logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
             onExceptionBeforeStart(query, context, current_time);
@@ -247,7 +265,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElement::QUERY_FINISH;
 
-                elem.event_time = time(0);
+                elem.event_time = time(nullptr);
                 elem.query_duration_ms = elapsed_seconds * 1000;
 
                 elem.read_rows = process_list_elem->progress_in.rows;
@@ -299,7 +317,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
 
-                elem.event_time = time(0);
+                elem.event_time = time(nullptr);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception = getCurrentExceptionMessage(false);
 
@@ -417,7 +435,7 @@ void executeQuery(
 
                 const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
                 out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                out_buf = &out_file_buf.value();
+                out_buf = &*out_file_buf;
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)

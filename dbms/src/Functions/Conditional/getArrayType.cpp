@@ -1,9 +1,10 @@
 #include <Functions/Conditional/getArrayType.h>
 #include <Functions/Conditional/CondException.h>
 #include <Functions/Conditional/common.h>
-#include <Functions/DataTypeTraits.h>
+#include <DataTypes/DataTypeTraits.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -16,8 +17,7 @@ namespace
 
 std::string dumpArgTypes(const DataTypes & args)
 {
-    std::string out;
-    WriteBufferFromString buf{out};
+    WriteBufferFromOwnString buf;
 
     bool is_first = true;
     for (size_t i = 0; i < args.size(); ++i)
@@ -29,10 +29,7 @@ std::string dumpArgTypes(const DataTypes & args)
 
         writeString(args[i]->getName(), buf);
     }
-
-    buf.next();
-
-    return out;
+    return buf.str();
 }
 
 /// Forward declarations.
@@ -58,16 +55,16 @@ public:
             || ResultDataTypeDeducer<TType, DataTypeFloat32>::execute(args, i, type_res)
             || ResultDataTypeDeducer<TType, DataTypeFloat64>::execute(args, i, type_res)
             || ResultDataTypeDeducer<TType, DataTypeNull>::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt8> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt16> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt64> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt8> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt16> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt64> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeFloat32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<TType, Nullable<DataTypeFloat64> >::execute(args, i, type_res)))
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt8>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt16>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeUInt64>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt8>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt16>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeInt64>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeFloat32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<TType, Nullable<DataTypeFloat64>>::execute(args, i, type_res)))
             throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
     }
 };
@@ -91,7 +88,7 @@ struct TypeChecker
     {
         if (arg->isNullable())
             return false;
-        return typeid_cast<const TType *>(arg.get()) != nullptr;
+        return typeid_cast<const TType *>(arg.get());
     }
 };
 
@@ -105,7 +102,7 @@ struct TypeChecker<Nullable<TType>>
 
         const DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*arg);
         const IDataType * nested_type = nullable_type.getNestedType().get();
-        return typeid_cast<const TType *>(nested_type) != nullptr;
+        return typeid_cast<const TType *>(nested_type);
     }
 };
 
@@ -165,16 +162,16 @@ public:
             || ResultDataTypeDeducer<Void, DataTypeFloat32>::execute(args, i, type_res)
             || ResultDataTypeDeducer<Void, DataTypeFloat64>::execute(args, i, type_res)
             || ResultDataTypeDeducer<Void, DataTypeNull>::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt8> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt16> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt64> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt8> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt16> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt64> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeFloat32> >::execute(args, i, type_res)
-            || ResultDataTypeDeducer<Void, Nullable<DataTypeFloat64> >::execute(args, i, type_res)))
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt8>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt16>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeUInt64>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt8>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt16>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeInt64>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeFloat32>>::execute(args, i, type_res)
+            || ResultDataTypeDeducer<Void, Nullable<DataTypeFloat64>>::execute(args, i, type_res)))
             throw CondException{CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE, toString(i)};
     }
 };

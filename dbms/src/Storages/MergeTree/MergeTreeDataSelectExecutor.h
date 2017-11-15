@@ -22,12 +22,11 @@ public:
       */
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const SelectQueryInfo & query_info,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
-        unsigned threads,
+        unsigned num_streams,
         size_t * inout_part_index,    /// If not nullptr, from this counter values are taken for the virtual column _part_index.
         Int64 max_block_number_to_read) const;
 
@@ -36,9 +35,9 @@ private:
 
     Logger * log;
 
-    BlockInputStreams spreadMarkRangesAmongThreads(
+    BlockInputStreams spreadMarkRangesAmongStreams(
         RangesInDataParts parts,
-        size_t threads,
+        size_t num_streams,
         const Names & column_names,
         size_t max_block_size,
         bool use_uncompressed_cache,
@@ -47,9 +46,8 @@ private:
         const Names & virt_columns,
         const Settings & settings) const;
 
-    BlockInputStreams spreadMarkRangesAmongThreadsFinal(
+    BlockInputStreams spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts parts,
-        size_t threads,
         const Names & column_names,
         size_t max_block_size,
         bool use_uncompressed_cache,

@@ -1,9 +1,5 @@
 #pragma once
 
-#ifdef USE_QUICKLZ
-    struct qlz_state_decompress;
-#endif
-
 #include <Common/PODArray.h>
 
 
@@ -20,16 +16,10 @@ class CompressedReadBufferBase
 protected:
     ReadBuffer * compressed_in;
 
-    /// If 'compressed_in' buffer has whole compressed block - than use it. Otherwise copy parts of data to 'own_compressed_buffer'.
+    /// If 'compressed_in' buffer has whole compressed block - then use it. Otherwise copy parts of data to 'own_compressed_buffer'.
     PODArray<char> own_compressed_buffer;
     /// Points to memory, holding compressed block.
     char * compressed_buffer = nullptr;
-
-#ifdef USE_QUICKLZ
-    std::unique_ptr<qlz_state_decompress> qlz_state;
-#else
-    void * fixed_size_padding = nullptr;    /// ABI compatibility for USE_QUICKLZ
-#endif
 
     /// Don't checksum on decompressing.
     bool disable_checksum = false;

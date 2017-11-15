@@ -1,6 +1,7 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterUseQuery.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

@@ -1,10 +1,11 @@
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-#include <Columns/ColumnConst.h>
+#include <cmath>
+
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <DataStreams/VerticalRowOutputStream.h>
+#include <Common/UTF8Helpers.h>
 
 
 namespace DB
@@ -16,25 +17,24 @@ VerticalRowOutputStream::VerticalRowOutputStream(
 {
     size_t columns = sample.columns();
 
-    using Widths_t = std::vector<size_t>;
-    Widths_t name_widths(columns);
+    using Widths = std::vector<size_t>;
+    Widths name_widths(columns);
     size_t max_name_width = 0;
 
-    FunctionPtr visible_width_func = FunctionFactory::instance().get("visibleWidth", context);
+    String serialized_value;
 
     for (size_t i = 0; i < columns; ++i)
     {
+        /// Note that number of code points is just a rough approximation of visible string width.
+        const String & name = sample.getByPosition(i).name;
+
         {
-            Block block_with_name
-            {
-                { std::make_shared<ColumnConstString>(1, sample.getByPosition(i).name), std::make_shared<DataTypeString>(), "name" },
-                { nullptr, std::make_shared<DataTypeUInt64>(), "width" }
-            };
-
-            visible_width_func->execute(block_with_name, {0}, 1);
-
-            name_widths[i] = (*block_with_name.getByPosition(1).column)[0].get<UInt64>();
+            /// We need to obtain length in escaped form.
+            WriteBufferFromString out(serialized_value);
+            writeEscapedString(name, out);
         }
+
+        name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
 
         if (name_widths[i] > max_name_width)
             max_name_width = name_widths[i];
@@ -152,7 +152,7 @@ void VerticalRowOutputStream::writeSpecialRow(const Block & block, size_t row_nu
             writeFieldDelimiter();
 
         auto & col = block.getByPosition(i);
-        writeField(*col.column.get(), *col.type.get(), row_num);
+        writeField(*col.column, *col.type, row_num);
     }
 }
 

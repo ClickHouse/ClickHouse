@@ -4,7 +4,7 @@
 #include <Dictionaries/MySQLBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <vector>
 
 
@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 MySQLBlockInputStream::MySQLBlockInputStream(
     const mysqlxx::PoolWithFailover::Entry & entry, const std::string & query_str, const Block & sample_block,
-    const std::size_t max_block_size)
+    const size_t max_block_size)
     : entry{entry}, query{this->entry->query(query_str)}, result{query.use()},
         max_block_size{max_block_size}
 {
@@ -76,9 +76,9 @@ Block MySQLBlockInputStream::readImpl()
     /// cache pointers returned by the calls to getByPosition
     std::vector<IColumn *> columns(block.columns());
     for (const auto i : ext::range(0, columns.size()))
-        columns[i] = block.safeGetByPosition(i).column.get();
+        columns[i] = block.getByPosition(i).column.get();
 
-    std::size_t num_rows = 0;
+    size_t num_rows = 0;
     while (row)
     {
         for (const auto idx : ext::range(0, row.size()))

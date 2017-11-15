@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <AggregateFunctions/AggregateFunctionMerge.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

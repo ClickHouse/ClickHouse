@@ -1,9 +1,15 @@
-#include "InterserverIOHTTPHandler.h"
-#include <Interpreters/InterserverIOHandler.h>
-#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
+
+#include <common/logger_useful.h>
+
+#include <Common/HTMLForm.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/WriteBufferFromHTTPServerResponse.h>
+#include <Interpreters/InterserverIOHandler.h>
 
+#include "InterserverIOHTTPHandler.h"
 
 namespace DB
 {
@@ -30,9 +36,12 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
     ReadBufferFromIStream body(request.stream());
 
-    WriteBufferFromHTTPServerResponse out(response);
+    const auto & config = server.config();
+    unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
 
-    auto endpoint = server.global_context->getInterserverIOHandler().getEndpoint(endpoint_name);
+    WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
+
+    auto endpoint = server.context().getInterserverIOHandler().getEndpoint(endpoint_name);
 
     if (compress)
     {

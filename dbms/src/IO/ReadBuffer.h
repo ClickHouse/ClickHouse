@@ -17,34 +17,34 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-/** Простой абстрактный класс для буферизованного чтения данных (последовательности char) откуда-нибудь.
-  * В отличие от std::istream, предоставляет доступ к внутреннему буферу,
-  *  а также позволяет вручную управлять позицией внутри буфера.
+/** A simple abstract class for buffered data reading (char sequences) from somewhere.
+  * Unlike std::istream, it provides access to the internal buffer,
+  *  and also allows you to manually manage the position inside the buffer.
   *
-  * Замечание! Используется char *, а не const char *
-  *  (для того, чтобы можно было вынести общий код в BufferBase, а также для того, чтобы можно было заполнять буфер новыми данными).
-  * Это вызывает неудобства - например, при использовании ReadBuffer для чтения из куска памяти const char *,
-  *  приходится использовать const_cast.
+  * Note! `char *`, not `const char *` is used
+  *  (so that you can take out the common code into BufferBase, and also so that you can fill the buffer in with new data).
+  * This causes inconveniences - for example, when using ReadBuffer to read from a chunk of memory const char *,
+  *  you have to use const_cast.
   *
-  * Наследники должны реализовать метод nextImpl().
+  * successors must implement the nextImpl() method.
   */
 class ReadBuffer : public BufferBase
 {
 public:
-    /** Создаёт буфер и устанавливает кусок доступных данных для чтения нулевого размера,
-      *  чтобы при первой попытке чтения вызвалась функция next() для загрузки в буфер новой порции данных.
+    /** Creates a buffer and sets a piece of available data to read to zero size,
+      *  so that the next() function is called to load the new data portion into the buffer at the first try.
       */
     ReadBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) { working_buffer.resize(0); }
 
-    /** Используется, если буфер уже заполнен данными, которые можно читать.
-      *  (в этом случае, передайте 0 в качестве offset)
+    /** Used when the buffer is already full of data that can be read.
+      *  (in this case, pass 0 as an offset)
       */
     ReadBuffer(Position ptr, size_t size, size_t offset) : BufferBase(ptr, size, offset) {}
 
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
-    /** прочитать следующие данные и заполнить ими буфер; переместить позицию в начало;
-      * вернуть false в случае конца, true иначе; кинуть исключение, если что-то не так
+    /** read next data and fill a buffer with it; set position to the beginning;
+      * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong
       */
     bool next()
     {
@@ -68,12 +68,12 @@ public:
     virtual ~ReadBuffer() {}
 
 
-    /** В отличие от std::istream, возвращает true, если все данные были прочитаны
-      *  (а не в случае, если была попытка чтения после конца).
-      * Если на данный момент позиция находится на конце буфера, то вызывает метод next().
-      * То есть, имеет побочный эффект - если буфер закончился, то обновляет его и переносит позицию в начало.
+    /** Unlike std::istream, it returns true if all data was read
+      *  (and not in case there was an attempt to read after the end).
+      * If at the moment the position is at the end of the buffer, it calls the next() method.
+      * That is, it has a side effect - if the buffer is over, then it updates it and set the position to the beginning.
       *
-      * При попытке чтения после конца, следует кидать исключение.
+      * Try to read after the end should throw an exception.
       */
     bool ALWAYS_INLINE eof()
     {
@@ -101,7 +101,7 @@ public:
             throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
     }
 
-    /// Можно было бы назвать этот метод ignore, а ignore назвать ignoreStrict.
+    /// You could call this method `ignore`, and `ignore` call `ignoreStrict`.
     size_t tryIgnore(size_t n)
     {
         size_t bytes_ignored = 0;
@@ -116,7 +116,7 @@ public:
         return bytes_ignored;
     }
 
-    /** Читает столько, сколько есть, не больше n байт. */
+    /** Reads as many as there are, no more than n bytes. */
     size_t read(char * to, size_t n)
     {
         size_t bytes_copied = 0;
@@ -132,18 +132,18 @@ public:
         return bytes_copied;
     }
 
-    /** Читает n байт, если есть меньше - кидает исключение. */
+    /** Reads n bytes, if there are less - throws an exception. */
     void readStrict(char * to, size_t n)
     {
         if (n != read(to, n))
             throw Exception("Cannot read all data", ErrorCodes::CANNOT_READ_ALL_DATA);
     }
 
-    /** Метод, который может быть более эффективно реализован в наследниках, в случае чтения достаточно больших блоков.
-      * Реализация может читать данные сразу в to, без лишнего копирования, если в to есть достаточно места для работы.
-      * Например, CompressedReadBuffer может разжимать данные сразу в to, если весь разжатый блок туда помещается.
-      * По-умолчанию - то же, что и read.
-      * Для маленьких чтений использовать не нужно.
+    /** A method that can be more efficiently implemented in successors, in the case of reading large enough blocks.
+      * The implementation can read data directly into `to`, without superfluous copying, if in `to` there is enough space for work.
+      * For example, a CompressedReadBuffer can decompress the data directly into `to`, if the entire decompressed block fits there.
+      * By default - the same as read.
+      * Don't use for small reads.
       */
     virtual size_t readBig(char * to, size_t n)
     {
@@ -151,13 +151,13 @@ public:
     }
 
 protected:
-    /// Количество игнорируемых байт с начальной позиции буфера working_buffer.
+    /// The number of bytes to ignore from the initial position of `working_buffer` buffer.
     size_t working_buffer_offset = 0;
 
 private:
-    /** Прочитать следующие данные и заполнить ими буфер.
-      * Вернуть false в случае конца, true иначе.
-      * Кинуть исключение, если что-то не так.
+    /** Read the next data and fill a buffer with it.
+      * Return `false` in case of the end, `true` otherwise.
+      * Throw an exception if something is wrong.
       */
     virtual bool nextImpl() { return false; };
 };

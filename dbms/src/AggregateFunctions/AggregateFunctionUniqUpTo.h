@@ -5,8 +5,10 @@
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnsNumber.h>
-
+#include <IO/ReadHelpers.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -107,15 +109,26 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
     {
         /// Keep in mind that calculations are approximate.
         StringRef value = column.getDataAt(row_num);
-        insert(CityHash64(value.data, value.size), threshold);
+        insert(CityHash_v1_0_2::CityHash64(value.data, value.size), threshold);
     }
 };
 
+template <>
+struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UInt64>
+{
+    void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
+    {
+        UInt128 value = static_cast<const ColumnVector<UInt128> &>(column).getData()[row_num];
+        SipHash hash;
+        hash.update(reinterpret_cast<const char *>(&value), sizeof(value));
+        insert(hash.get64(), threshold);
+    }
+};
 
 constexpr UInt8 uniq_upto_max_threshold = 100;
 
 template <typename T>
-class AggregateFunctionUniqUpTo final : public IUnaryAggregateFunction<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T> >
+class AggregateFunctionUniqUpTo final : public IUnaryAggregateFunction<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>
 {
 private:
     UInt8 threshold = 5;    /// Default value if the parameter is not specified.
@@ -175,6 +188,8 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -255,6 +270,8 @@ public:
     }
 
     IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

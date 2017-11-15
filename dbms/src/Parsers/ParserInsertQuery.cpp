@@ -21,137 +21,100 @@ namespace ErrorCodes
 }
 
 
-bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected)
+bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos begin = pos;
 
-    ParserWhiteSpaceOrComments ws;
-    ParserString s_insert("INSERT", true, true);
-    ParserString s_into("INTO", true, true);
-    ParserString s_dot(".");
-    ParserString s_id("ID");
-    ParserString s_eq("=");
-    ParserStringLiteral id_p;
-    ParserString s_values("VALUES", true, true);
-    ParserString s_format("FORMAT", true, true);
-    ParserString s_select("SELECT", true, true);
-    ParserString s_lparen("(");
-    ParserString s_rparen(")");
+    ParserKeyword s_insert_into("INSERT INTO");
+    ParserToken s_dot(TokenType::Dot);
+    ParserKeyword s_values("VALUES");
+    ParserKeyword s_format("FORMAT");
+    ParserKeyword s_select("SELECT");
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
-    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserString>(","), false);
+    ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
 
     ASTPtr database;
     ASTPtr table;
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
-    ASTPtr id;
     /// Insertion data
     const char * data = nullptr;
 
-    ws.ignore(pos, end);
-
-    /// INSERT INTO
-    if (!s_insert.ignore(pos, end, max_parsed_pos, expected)
-        || !ws.ignore(pos, end)
-        || !s_into.ignore(pos, end, max_parsed_pos, expected))
+    if (!s_insert_into.ignore(pos, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
+    if (!name_p.parse(pos, table, expected))
         return false;
 
-    ws.ignore(pos, end);
-
-    if (s_dot.ignore(pos, end, max_parsed_pos, expected))
+    if (s_dot.ignore(pos, expected))
     {
         database = table;
-        if (!name_p.parse(pos, end, table, max_parsed_pos, expected))
-            return false;
-
-        ws.ignore(pos, end);
-    }
-
-    ws.ignore(pos, end);
-
-    if (s_id.ignore(pos, end, max_parsed_pos, expected))
-    {
-        if (!s_eq.ignore(pos, end, max_parsed_pos, expected))
-            return false;
-
-        ws.ignore(pos, end);
-
-        if (!id_p.parse(pos, end, id, max_parsed_pos, expected))
+        if (!name_p.parse(pos, table, expected))
             return false;
     }
-
-    ws.ignore(pos, end);
 
     /// Is there a list of columns
-    if (s_lparen.ignore(pos, end, max_parsed_pos, expected))
+    if (s_lparen.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-
-        if (!columns_p.parse(pos, end, columns, max_parsed_pos, expected))
+        if (!columns_p.parse(pos, columns, expected))
             return false;
 
-        ws.ignore(pos, end);
-
-        if (!s_rparen.ignore(pos, end, max_parsed_pos, expected))
+        if (!s_rparen.ignore(pos, expected))
             return false;
     }
-
-    ws.ignore(pos, end);
 
     Pos before_select = pos;
 
     /// VALUES or FORMAT or SELECT
-    if (s_values.ignore(pos, end, max_parsed_pos, expected))
+    if (s_values.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
-        data = pos;
-        pos = end;
+        data = pos->begin;
     }
-    else if (s_format.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_format.ignore(pos, expected))
     {
-        ws.ignore(pos, end);
+        auto name_pos = pos;
 
-        if (!name_p.parse(pos, end, format, max_parsed_pos, expected))
+        if (!name_p.parse(pos, format, expected))
             return false;
 
-        /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
-        ParserWhiteSpaceOrComments ws_without_nl(false);
+        data = name_pos->end;
 
-        ws_without_nl.ignore(pos, end);
-        if (pos != end && *pos == ';')
+        if (data < end && *data == ';')
             throw Exception("You have excessive ';' symbol before data for INSERT.\n"
-                "Example:\n\n"
-                "INSERT INTO t (x, y) FORMAT TabSeparated\n"
-                "1\tHello\n"
-                "2\tWorld\n"
-                "\n"
-                "Note that there is no ';' in first line.", ErrorCodes::SYNTAX_ERROR);
+                                    "Example:\n\n"
+                                    "INSERT INTO t (x, y) FORMAT TabSeparated\n"
+                                    ";\tHello\n"
+                                    "2\tWorld\n"
+                                    "\n"
+                                    "Note that there is no ';' just after format name, "
+                                    "you need to put at least one whitespace symbol before the data.", ErrorCodes::SYNTAX_ERROR);
 
-        if (pos != end && *pos == '\n')
-            ++pos;
+        while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
+            ++data;
 
-        data = pos;
-        pos = end;
+        /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
+
+        if (data < end && *data == '\r')
+            ++data;
+
+        if (data < end && *data == '\n')
+            ++data;
     }
-    else if (s_select.ignore(pos, end, max_parsed_pos, expected))
+    else if (s_select.ignore(pos, expected))
     {
         pos = before_select;
         ParserSelectQuery select_p;
-        select_p.parse(pos, end, select, max_parsed_pos, expected);
+        select_p.parse(pos, select, expected);
     }
     else
     {
-        expected = "VALUES or FORMAT or SELECT";
         return false;
     }
 
-    auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, data ? data : pos));
+    auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, pos));
     node = query;
 
     if (database)
@@ -159,15 +122,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_p
 
     query->table = typeid_cast<ASTIdentifier &>(*table).name;
 
-    if (id)
-        query->insert_id = safeGet<const String &>(typeid_cast<ASTLiteral &>(*id).value);
-
     if (format)
         query->format = typeid_cast<ASTIdentifier &>(*format).name;
 
     query->columns = columns;
     query->select = select;
-    query->data = data != end ? data : NULL;
+    query->data = data != end ? data : nullptr;
     query->end = end;
 
     if (columns)

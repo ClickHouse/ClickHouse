@@ -2,15 +2,13 @@ option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library inste
 
 if (NOT USE_INTERNAL_ZLIB_LIBRARY)
     find_package (ZLIB)
-    if (ZLIB_FOUND)
-        include_directories (${ZLIB_INCLUDE_DIRS})
-    endif ()
 endif ()
 
 if (NOT ZLIB_FOUND)
     set (USE_INTERNAL_ZLIB_LIBRARY 1)
-    set (ZLIB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng")
-    include_directories (BEFORE ${ZLIB_INCLUDE_DIR})
+    set (ZLIB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libzlib-ng" "${ClickHouse_BINARY_DIR}/contrib/libzlib-ng") # generated zconf.h
+    set (ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDE_DIR}) # for poco
+    set (ZLIB_FOUND 1) # for poco
     if (USE_STATIC_LIBRARIES)
         set (ZLIB_LIBRARIES zlibstatic)
     else ()

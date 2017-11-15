@@ -27,10 +27,11 @@ namespace ErrorCodes
 class Throttler
 {
 public:
-    Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_)
-        : max_speed(max_speed_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_) {}
+    Throttler(size_t max_speed_, size_t limit_, const char * limit_exceeded_exception_message_,
+              const std::shared_ptr<Throttler> & parent = nullptr)
+        : max_speed(max_speed_), limit(limit_), limit_exceeded_exception_message(limit_exceeded_exception_message_), parent(parent) {}
 
-    void add(size_t amount)
+    void add(const size_t amount)
     {
         size_t new_count;
         UInt64 elapsed_ns = 0;
@@ -70,6 +71,9 @@ public:
                 nanosleep(&sleep_ts, nullptr);    /// NOTE Returns early in case of a signal. This is considered normal.
             }
         }
+
+        if (parent)
+            parent->add(amount);
     }
 
 private:
@@ -79,6 +83,9 @@ private:
     const char * limit_exceeded_exception_message = nullptr;
     Stopwatch watch {CLOCK_MONOTONIC_COARSE};
     std::mutex mutex;
+
+    /// Used to implement a hierarchy of throttlers
+    std::shared_ptr<Throttler> parent;
 };
 
 

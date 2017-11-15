@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsComparison.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

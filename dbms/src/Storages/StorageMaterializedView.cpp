@@ -1,11 +1,17 @@
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTIdentifier.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/VirtualColumnFactory.h>
+
+#include <Common/typeid_cast.h>
+#include "StorageReplicatedMergeTree.h"
 
 
 namespace DB
@@ -14,77 +20,104 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 
-StoragePtr StorageMaterializedView::create(
-    const String & table_name_,
-    const String & database_name_,
-    Context & context_,
-    ASTPtr & query_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    bool attach_)
+static void extractDependentTable(const ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
-    return ext::shared_ptr_helper<StorageMaterializedView>::make_shared(
-        table_name_, database_name_, context_, query_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_, attach_
-    );
+    auto query_table = query.table();
+
+    if (!query_table)
+        return;
+
+    if (auto ast_id = typeid_cast<const ASTIdentifier *>(query_table.get()))
+    {
+        auto query_database = query.database();
+
+        if (!query_database)
+            throw Exception("Logical error while creating StorageMaterializedView."
+                " Could not retrieve database name from select query.",
+                DB::ErrorCodes::LOGICAL_ERROR);
+
+        select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
+        select_table_name = ast_id->name;
+    }
+    else if (auto ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
+    {
+        extractDependentTable(*ast_select, select_database_name, select_table_name);
+    }
+    else
+        throw Exception("Logical error while creating StorageMaterializedView."
+            " Could not retrieve table name from select query.",
+            DB::ErrorCodes::LOGICAL_ERROR);
 }
+
 
 StorageMaterializedView::StorageMaterializedView(
     const String & table_name_,
     const String & database_name_,
-    Context & context_,
-    ASTPtr & query_,
+    Context & local_context,
+    const ASTCreateQuery & query,
     NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
     bool attach_)
-    : StorageView{table_name_, database_name_, context_, query_, columns_, materialized_columns_, alias_columns_, column_defaults_}
+    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
+    database_name(database_name_), global_context(local_context.getGlobalContext()), columns(columns_)
 {
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
+    if (!query.select)
+        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    auto inner_table_name = getInnerTableName();
+    if (!query.storage && query.to_table.empty())
+        throw Exception(
+            "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
+            ErrorCodes::INCORRECT_QUERY);
+
+    extractDependentTable(*query.select, select_database_name, select_table_name);
+
+    if (!select_table_name.empty())
+        global_context.addDependency(
+            DatabaseAndTableName(select_database_name, select_table_name),
+            DatabaseAndTableName(database_name, table_name));
+
+    // If the destination table is not set, use inner table
+    if (!query.to_table.empty())
+    {
+        target_database_name = query.to_database;
+        target_table_name = query.to_table;
+    }
+    else
+    {
+        target_database_name = database_name;
+        target_table_name = ".inner." + table_name;
+        has_inner_table = true;
+    }
+
+    inner_query = query.select->ptr();
 
     /// If there is an ATTACH request, then the internal table must already be connected.
-    if (!attach_)
+    if (!attach_ && has_inner_table)
     {
-        /// We will create a query to create an internal repository.
+        /// We will create a query to create an internal table.
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
-        manual_create_query->database = database_name;
-        manual_create_query->table = inner_table_name;
-        manual_create_query->columns = create.columns;
-        manual_create_query->children.push_back(manual_create_query->columns);
-
-        /// If you do not specify a storage type in the query, try retrieving it from SELECT query.
-        if (!create.inner_storage)
-        {
-            /// TODO also try to extract `params` to create a repository
-            auto func = std::make_shared<ASTFunction>();
-            func->name = context.getTable(select_database_name, select_table_name)->getName();
-            manual_create_query->storage = func;
-        }
-        else
-            manual_create_query->storage = create.inner_storage;
-
-        manual_create_query->children.push_back(manual_create_query->storage);
+        manual_create_query->database = target_database_name;
+        manual_create_query->table = target_table_name;
+        manual_create_query->set(manual_create_query->columns, query.columns->ptr());
+        manual_create_query->set(manual_create_query->storage, query.storage->ptr());
 
         /// Execute the query.
         try
         {
-            InterpreterCreateQuery create_interpreter(manual_create_query, context);
+            InterpreterCreateQuery create_interpreter(manual_create_query, local_context);
             create_interpreter.execute();
         }
         catch (...)
         {
-            /// In case of any error we should remove dependency to the view
-            /// which was added in the constructor of StorageView.
+            /// In case of any error we should remove dependency to the view.
             if (!select_table_name.empty())
-                context.getGlobalContext().removeDependency(
+                global_context.removeDependency(
                     DatabaseAndTableName(select_database_name, select_table_name),
                     DatabaseAndTableName(database_name, table_name));
 
@@ -95,64 +128,56 @@ StorageMaterializedView::StorageMaterializedView(
 
 NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
 {
-    auto type = VirtualColumnFactory::tryGetType(column_name);
-    if (type)
-        return NameAndTypePair(column_name, type);
-
-    return getRealColumn(column_name);
+    return getTargetTable()->getColumn(column_name);
 }
 
 bool StorageMaterializedView::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
+    return getTargetTable()->hasColumn(column_name);
 }
 
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
-    return getInnerTable()->read(column_names, query, context, settings, processed_stage, max_block_size, threads);
+    return getTargetTable()->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
 {
-    return getInnerTable()->write(query, settings);
+    return getTargetTable()->write(query, settings);
 }
 
 void StorageMaterializedView::drop()
 {
-    context.getGlobalContext().removeDependency(
+    global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
         DatabaseAndTableName(database_name, table_name));
 
-    auto inner_table_name = getInnerTableName();
-
-    if (context.tryGetTable(database_name, inner_table_name))
+    if (has_inner_table && global_context.tryGetTable(target_database_name, target_table_name))
     {
-        /// We create and execute `drop` query for internal repository.
+        /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
-        drop_query->database = database_name;
-        drop_query->table = inner_table_name;
+        drop_query->database = target_database_name;
+        drop_query->table = target_table_name;
         ASTPtr ast_drop_query = drop_query;
-        InterpreterDropQuery drop_interpreter(ast_drop_query, context);
+        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
     }
 }
 
-bool StorageMaterializedView::optimize(const String & partition, bool final, bool deduplicate, const Settings & settings)
+bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
-    return getInnerTable()->optimize(partition, final, deduplicate, settings);
+    return getTargetTable()->optimize(query, partition, final, deduplicate, context);
 }
 
-StoragePtr StorageMaterializedView::getInnerTable() const
+StoragePtr StorageMaterializedView::getTargetTable() const
 {
-    return context.getTable(database_name, getInnerTableName());
+    return global_context.getTable(target_database_name, target_table_name);
 }
-
 
 }

@@ -20,6 +20,7 @@ public:
         const MergeTreeData::DataPartPtr & owned_data_part,
         size_t max_block_size_rows,
         size_t preferred_block_size_bytes,
+        size_t preferred_max_column_in_block_size_bytes,
         Names column_names,
         const MarkRanges & mark_ranges,
         bool use_uncompressed_cache,
@@ -57,7 +58,7 @@ private:
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
     /// Forbids to change columns list of the part during reading
-    std::unique_ptr<Poco::ScopedReadRWLock> part_columns_lock;
+    std::shared_lock<std::shared_mutex> part_columns_lock;
 
     /// Mark ranges we should read (in ascending order)
     MarkRanges all_mark_ranges;
@@ -67,6 +68,8 @@ private:
     bool check_columns;
     String path;
     bool is_first_task = true;
+
+    Logger * log = &Logger::get("MergeTreeBlockInputStream");
 };
 
 }

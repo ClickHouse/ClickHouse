@@ -1144,11 +1144,6 @@ UInt64 rdtsc()
 
 int main(int argc, char ** argv)
 {
-/*    std::string s(' ', 20);
-    DB::WriteBufferFromString wb(s);
-    DB::Faster::writeIntText(DB::parse<UInt64>(argv[1]), wb);
-    std::cerr << s << std::endl;*/
-
     try
     {
         using T = UInt8;

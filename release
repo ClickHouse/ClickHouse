@@ -1,15 +1,21 @@
 #!/bin/bash
 
+set -e
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd $CURDIR
 
 source "./release_lib.sh"
 
-CONTROL=debian/control
-CHLOG=debian/changelog
-CHDATE=$(LC_ALL=C date -R | sed -e 's/,/\\,/g') # Replace comma to '\,'
+DEB_CC=gcc-7
+DEB_CXX=g++-7
 
+CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
+
+if [ -z "$REVISION" ] ; then
+    get_revision_author
+fi
 
 while [[ $1 == --* ]]
 do
@@ -33,9 +39,6 @@ do
     fi
 done
 
-if [ -z "$REVISION" ] ; then
-    get_revision_author
-fi
 
 # Build options
 if [ -n "$SANITIZER" ]
@@ -58,12 +61,14 @@ if [ -z "$THREAD_COUNT" ] ; then
     THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo`
 fi
 
-CMAKE_FLAGS_ADD+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE"
+CMAKE_FLAGS+=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DUSE_EMBEDDED_COMPILER=1"
 
 REVISION+=$VERSION_POSTFIX
 echo -e "\nCurrent revision is $REVISION"
 
-gen_changelog "$REVISION" "$CHDATE" "$AUTHOR" "$CHLOG"
+gen_changelog "$REVISION" "" "$AUTHOR" ""
 
 # Build (only binary packages).
-debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT -e DEB_CC -e DEB_CXX -e CMAKE_FLAGS_ADD="$CMAKE_FLAGS_ADD" -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
+debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT \
+    -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
+    -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}

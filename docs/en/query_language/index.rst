@@ -1,5 +1,5 @@
 Query language
-==========
+==============
 
 .. toctree::
     :glob:

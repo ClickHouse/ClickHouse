@@ -15,7 +15,7 @@ endif
 # Internal variables.
 PAPEROPT_a4     = -D latex_paper_size=a4
 PAPEROPT_letter = -D latex_paper_size=letter
-ALLSPHINXOPTS   = $(SPHINXOPTS) en
+ALLSPHINXOPTS   = $(SPHINXOPTS) ru
 # the i18n builder cannot share the environment and doctrees with the others
 I18NSPHINXOPTS  = $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) ru
 
@@ -24,8 +24,8 @@ I18NSPHINXOPTS  = $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) ru
 default:
 	$(SPHINXBUILD) -b html $(SPHINXOPTS) ru $(BUILDDIR)/docs/ru
 	$(SPHINXBUILD) -b html $(SPHINXOPTS) en $(BUILDDIR)/docs/en
-	SPHINX_TEMPLATES=../_singlehtml_templates $(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) ru $(BUILDDIR)/docs/ru/single
-	SPHINX_TEMPLATES=../_singlehtml_templates $(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) en $(BUILDDIR)/docs/en/single
+	$(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) ru $(BUILDDIR)/docs/ru/single
+	$(SPHINXBUILD) -b singlehtml $(SPHINXOPTS) en $(BUILDDIR)/docs/en/single
 
 help:
 	@echo "Please use \`make <target>' where <target> is one of"

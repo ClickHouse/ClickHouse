@@ -1,21 +1,19 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
+#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
-#include <Common/ClickHouseRevision.h>
-#include <Poco/Net/IPAddress.h>
-#include <array>
 
 
 namespace DB
 {
+
 Block PartLogElement::createBlock()
 {
     return
@@ -35,7 +33,6 @@ Block PartLogElement::createBlock()
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),    "merged_from"},
   };
 }
-
 
 void PartLogElement::appendToBlock(Block & block) const
 {
@@ -59,6 +56,20 @@ void PartLogElement::appendToBlock(Block & block) const
     block.getByPosition(i++).column->insert(merged_from_array);
 }
 
+void PartLog::addNewPart(const MergeTreeDataPart & part, double elapsed)
+{
+    PartLogElement elem;
+    elem.event_time = time(nullptr);
 
+    elem.event_type = PartLogElement::NEW_PART;
+    elem.size_in_bytes = part.size_in_bytes;
+    elem.duration_ms = elapsed / 1000000;
+
+    elem.database_name = part.storage.getDatabaseName();
+    elem.table_name = part.storage.getTableName();
+    elem.part_name = part.name;
+
+    add(elem);
+}
 
 }

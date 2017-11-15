@@ -3,6 +3,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
+#include <city.h>
 
 #define DBMS_DEFAULT_HASHING_BLOCK_SIZE 2048ULL
 
@@ -10,10 +11,12 @@
 namespace DB
 {
 
-template <class Buffer>
+template <typename Buffer>
 class IHashingBuffer : public BufferWithOwnMemory<Buffer>
 {
 public:
+    using uint128 = CityHash_v1_0_2::uint128;
+
     IHashingBuffer<Buffer>(size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
         : BufferWithOwnMemory<Buffer>(block_size_), block_pos(0), block_size(block_size_), state(0, 0)
     {
@@ -22,18 +25,18 @@ public:
     uint128 getHash()
     {
         if (block_pos)
-            return CityHash128WithSeed(&BufferWithOwnMemory<Buffer>::memory[0], block_pos, state);
+            return CityHash_v1_0_2::CityHash128WithSeed(&BufferWithOwnMemory<Buffer>::memory[0], block_pos, state);
         else
             return state;
     }
 
     void append(DB::BufferBase::Position data)
     {
-        state = CityHash128WithSeed(data, block_size, state);
+        state = CityHash_v1_0_2::CityHash128WithSeed(data, block_size, state);
     }
 
-    /// вычисление хэша зависит от разбиения по блокам
-    /// поэтому нужно вычислить хэш от n полных кусочков и одного неполного
+    /// computation of the hash depends on the partitioning of blocks
+    /// so you need to compute a hash of n complete pieces and one incomplete
     void calculateHash(DB::BufferBase::Position data, size_t len);
 
 protected:
@@ -42,8 +45,8 @@ protected:
     uint128 state;
 };
 
-/** Вычисляет хеш от записываемых данных и передает их в указанный WriteBuffer.
-  * В качестве основного буфера используется буфер вложенного WriteBuffer.
+/** Computes the hash from the data to write and passes it to the specified WriteBuffer.
+  * The buffer of the nested WriteBuffer is used as the main buffer.
   */
 class HashingWriteBuffer : public IHashingBuffer<WriteBuffer>
 {
@@ -68,7 +71,7 @@ public:
         size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
         : IHashingBuffer<DB::WriteBuffer>(block_size_), out(out_)
     {
-        out.next(); /// Если до нас в out что-то уже писали, не дадим остаткам этих данных повлиять на хеш.
+        out.next(); /// If something has already been written to `out` before us, we will not let the remains of this data affect the hash.
         working_buffer = out.buffer();
         pos = working_buffer.begin();
         state = uint128(0, 0);
@@ -81,9 +84,3 @@ public:
     }
 };
 }
-
-
-std::string uint128ToString(uint128 data);
-
-std::ostream & operator<<(std::ostream & os, const uint128 & data);
-std::istream & operator>>(std::istream & is, uint128 & data);

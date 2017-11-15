@@ -10,26 +10,26 @@ namespace DB
 {
 
 
-/** Записать UInt64 в формате переменной длины (base128) NOTE Only up to 2^63 - 1 are supported.*/
+/** Write UInt64 in variable length format (base128) NOTE Only up to 2^63 - 1 are supported. */
 void writeVarUInt(UInt64 x, std::ostream & ostr);
 void writeVarUInt(UInt64 x, WriteBuffer & ostr);
 char * writeVarUInt(UInt64 x, char * ostr);
 
 
-/** Прочитать UInt64, записанный в формате переменной длины (base128) */
+/** Read UInt64, written in variable length format (base128) */
 void readVarUInt(UInt64 & x, std::istream & istr);
 void readVarUInt(UInt64 & x, ReadBuffer & istr);
 const char * readVarUInt(UInt64 & x, const char * istr, size_t size);
 
 
-/** Получить длину UInt64 в формате VarUInt */
+/** Get the length of UInt64 in VarUInt format */
 size_t getLengthOfVarUInt(UInt64 x);
 
-/** Получить длину Int64 в формате VarInt */
+/** Get the Int64 length in VarInt format */
 size_t getLengthOfVarInt(Int64 x);
 
 
-/** Записать Int64 в формате переменной длины (base128) */
+/** Write Int64 in variable length format (base128) */
 template <typename OUT>
 inline void writeVarInt(Int64 x, OUT & ostr)
 {
@@ -42,7 +42,7 @@ inline char * writeVarInt(Int64 x, char * ostr)
 }
 
 
-/** Прочитать Int64, записанный в формате переменной длины (base128) */
+/** Read Int64, written in variable length format (base128) */
 template <typename IN>
 inline void readVarInt(Int64 & x, IN & istr)
 {
@@ -73,7 +73,7 @@ inline const char * readVarT(UInt64 & x, const char * istr, size_t size) { retur
 inline const char * readVarT(Int64 & x, const char * istr, size_t size) { return readVarInt(x, istr, size); }
 
 
-/// Для [U]Int32, [U]Int16.
+/// For [U]Int32, [U]Int16, size_t.
 
 inline void readVarUInt(UInt32 & x, ReadBuffer & istr)
 {
@@ -100,6 +100,15 @@ inline void readVarInt(Int16 & x, ReadBuffer & istr)
 {
     Int64 tmp;
     readVarInt(tmp, istr);
+    x = tmp;
+}
+
+template <typename T>
+inline typename std::enable_if<!std::is_same<T, UInt64>::value, void>::type
+readVarUInt(T & x, ReadBuffer & istr)
+{
+    UInt64 tmp;
+    readVarUInt(tmp, istr);
     x = tmp;
 }
 

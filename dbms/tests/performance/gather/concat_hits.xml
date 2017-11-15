@@ -1,0 +1,38 @@
+<test>
+    <name>concat_hits</name>
+    <type>loop</type>
+
+    <stop_conditions>
+        <all_of>
+            <iterations>5</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+        </all_of>
+        <any_of>
+            <iterations>50</iterations>
+            <total_time_ms>60000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <main_metric>
+        <min_time/>
+    </main_metric>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, URL))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, SearchPhrase))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(MobilePhoneModel, SearchPhrase))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, 'Hello'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat('World', SearchPhrase))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(MobilePhoneModel, 'Hello'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(PageCharset, 'a'))</query>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, URL, URL))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, SearchPhrase, MobilePhoneModel))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(URL, 'Hello', URL))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat('Hello', SearchPhrase, 'World'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat(MobilePhoneModel, 'Hello', PageCharset))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(concat('a', PageCharset, 'b'))</query>
+</test>

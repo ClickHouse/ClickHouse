@@ -27,7 +27,7 @@ add_executable (sorting_stream sorting_stream.cpp ${SRCS})
 target_link_libraries (sorting_stream dbms)
 
 add_executable (aggregating_stream aggregating_stream.cpp ${SRCS})
-target_link_libraries (aggregating_stream dbms)
+target_link_libraries (aggregating_stream dbms clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
 
 add_executable (union_stream union_stream.cpp ${SRCS})
 target_link_libraries (union_stream dbms clickhouse_storages_system)
@@ -43,6 +43,3 @@ target_link_libraries (fork_streams dbms clickhouse_storages_system)
 
 add_executable (glue_streams glue_streams.cpp ${SRCS})
 target_link_libraries (glue_streams dbms)
-
-add_executable (json_streams json_streams.cpp ${SRCS})
-target_link_libraries (json_streams dbms)

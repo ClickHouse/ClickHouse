@@ -11,17 +11,25 @@
 #include <signal.h>
 #include <cxxabi.h>
 #include <execinfo.h>
+
+#if USE_UNWIND
+    #define UNW_LOCAL_ONLY
+    #include <libunwind.h>
+#endif
+
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
 #define _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
+
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
+#include <sstream>
 #include <memory>
 #include <Poco/Observer.h>
 #include <Poco/Logger.h>
@@ -64,6 +72,8 @@ using Poco::Path;
 using Poco::Message;
 using Poco::Util::AbstractConfiguration;
 
+
+constexpr char BaseDaemon::DEFAULT_GRAPHITE_CONFIG_NAME[];
 
 /** Для передачи информации из обработчика сигнала для обработки в другом потоке.
   * Если при получении сигнала надо делать что-нибудь серьёзное (например, вывести сообщение в лог),
@@ -151,10 +161,16 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
+thread_local bool already_signal_handled = false;
+
 /** Обработчик некоторых сигналов. Выводит информацию в лог (если получится).
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (already_signal_handled)
+        return;
+    already_signal_handled = true;
+
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
@@ -174,6 +190,30 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
 static bool already_printed_stack_trace = false;
 
+#if USE_UNWIND
+size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
+{
+    if (already_printed_stack_trace)
+        return 0;
+
+    unw_cursor_t cursor;
+
+    if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) < 0)
+        return 0;
+
+    size_t i = 0;
+    for (; i < max_frames; ++i)
+    {
+        unw_word_t ip;
+        unw_get_reg(&cursor, UNW_REG_IP, &ip);
+        out_frames[i] = reinterpret_cast<void*>(ip);
+        if (!unw_step(&cursor))
+            break;
+    }
+
+    return i;
+}
+#endif
 
 /** Получает информацию через pipe.
   * При получении сигнала HUP / USR1 закрывает лог-файлы.
@@ -189,9 +229,9 @@ public:
         StopThread = -2
     };
 
-    SignalListener(BaseDaemon & daemon_)
-    : log(&Logger::get("BaseDaemon"))
-    , daemon(daemon_)
+    explicit SignalListener(BaseDaemon & daemon_)
+        : log(&Logger::get("BaseDaemon"))
+        , daemon(daemon_)
     {
     }
 
@@ -293,13 +333,20 @@ private:
 
         static const int max_frames = 50;
         void * frames[max_frames];
-        int frames_size = backtrace(frames, max_frames);
 
-        if (frames_size >= 2)
+#if USE_UNWIND
+        int frames_size = backtraceLibUnwind(frames, max_frames, context);
+
+        if (frames_size)
         {
-            /// Overwrite sigaction with caller's address
-            if (caller_address && (frames_size < 3 || caller_address != frames[2]))
-                frames[1] = caller_address;
+#else
+        /// No libunwind means no backtrace, because we are in a different thread from the one where the signal happened.
+        /// So at least print the function where the signal happened.
+        if (caller_address)
+        {
+            frames[0] = caller_address;
+            int frames_size = 1;
+#endif
 
             char ** symbols = backtrace_symbols(frames, frames_size);
 
@@ -310,7 +357,7 @@ private:
             }
             else
             {
-                for (int i = 1; i < frames_size; ++i)
+                for (int i = 0; i < frames_size; ++i)
                 {
                     /// Делаем demangling имён. Имя находится в скобках, до символа '+'.
 
@@ -355,11 +402,11 @@ private:
   */
 static void terminate_handler()
 {
-    static __thread bool terminating = false;
+    static thread_local bool terminating = false;
     if (terminating)
     {
         abort();
-        return;
+        return; /// Just for convenience.
     }
 
     terminating = true;
@@ -477,7 +524,10 @@ void BaseDaemon::reloadConfiguration()
     std::string log_command_line_option = config().getString("logger.log", "");
     config_path = config().getString("config-file", "config.xml");
     loaded_config = ConfigProcessor(false, true).loadConfig(config_path, /* allow_zk_includes = */ true);
-    config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    if (last_configuration != nullptr)
+        config().removeConfiguration(last_configuration);
+    last_configuration = loaded_config.configuration.duplicate();
+    config().add(last_configuration, PRIO_DEFAULT, false);
     log_to_console = !config().getBool("application.runAsDaemon", false) && log_command_line_option.empty();
 }
 
@@ -645,7 +695,7 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
-void BaseDaemon::initialize(Application& self)
+void BaseDaemon::initialize(Application & self)
 {
     task_manager.reset(new Poco::TaskManager);
     ServerApplication::initialize(self);
@@ -692,6 +742,18 @@ void BaseDaemon::initialize(Application& self)
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
+    }
+
+    /// This must be done before creation of any files (including logs).
+    if (config().has("umask"))
+    {
+        std::string umask_str = config().getString("umask");
+        mode_t umask_num = 0;
+        std::stringstream stream;
+        stream << umask_str;
+        stream >> std::oct >> umask_num;
+
+        umask(umask_num);
     }
 
     std::string log_path = config().getString("logger.log", "");
@@ -749,6 +811,13 @@ void BaseDaemon::initialize(Application& self)
 
     /// Ставим terminate_handler
     std::set_terminate(terminate_handler);
+
+    /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
+    {
+        sigset_t sig_set;
+        if (sigemptyset(&sig_set) || sigaddset(&sig_set, SIGPIPE) || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
+            throw Poco::Exception("Cannot block signal.");
+    }
 
     /// Ставим обработчики сигналов
     auto add_signal_handler =

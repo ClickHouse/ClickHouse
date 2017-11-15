@@ -1,5 +1,5 @@
 Logical functions
-------------------
+-----------------
 
 Logical functions accept any numeric types, but return a UInt8 number equal to 0 or 1.
 
@@ -12,8 +12,8 @@ or, OR operator
 ~~~~~~~~~~~~~~~
 
 not, NOT operator
-~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
 
 xor
-~~~~~~~~~~~~~~~
+~~~
 

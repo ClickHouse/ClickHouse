@@ -1,0 +1,14 @@
+#include <Functions/register@FUNCTION@.h>
+
+#include <Functions/FunctionFactory.h>
+#include <Functions/Functions@FUNCTION_AREA@.h>
+
+namespace DB
+{
+
+void register@FUNCTION@(FunctionFactory & factory)
+{
+    factory.registerFunction<@FUNCTION@>();
+}
+
+}

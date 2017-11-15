@@ -1,17 +1,24 @@
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromVector.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 
 /** Function for an unusual conversion to a string:
     *
@@ -39,18 +46,20 @@ public:
     {
         const IDataType * type = &*arguments[0];
 
-        if (!typeid_cast<const DataTypeUInt8 *>(type) &&
-            !typeid_cast<const DataTypeUInt16 *>(type) &&
-            !typeid_cast<const DataTypeUInt32 *>(type) &&
-            !typeid_cast<const DataTypeUInt64 *>(type) &&
-            !typeid_cast<const DataTypeInt8 *>(type) &&
-            !typeid_cast<const DataTypeInt16 *>(type) &&
-            !typeid_cast<const DataTypeInt32 *>(type) &&
-            !typeid_cast<const DataTypeInt64 *>(type))
+        if (!checkDataType<DataTypeUInt8>(type) &&
+            !checkDataType<DataTypeUInt16>(type) &&
+            !checkDataType<DataTypeUInt32>(type) &&
+            !checkDataType<DataTypeUInt64>(type) &&
+            !checkDataType<DataTypeInt8>(type) &&
+            !checkDataType<DataTypeInt16>(type) &&
+            !checkDataType<DataTypeInt32>(type) &&
+            !checkDataType<DataTypeInt64>(type))
             throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
@@ -62,9 +71,9 @@ public:
             ||    executeType<Int16>(block, arguments, result)
             ||    executeType<Int32>(block, arguments, result)
             ||    executeType<Int64>(block, arguments, result)))
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 
 private:
@@ -87,10 +96,10 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -108,16 +117,6 @@ private:
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
-        }
-        else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
-        {
-            std::string res;
-            {
-                WriteBufferFromString buf(res);
-                writeBitmask<T>(col_from->getData(), buf);
-            }
-
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), res);
         }
         else
         {
@@ -152,6 +151,8 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (!(    executeType<UInt8>(block, arguments, result)
@@ -164,7 +165,7 @@ public:
             ||    executeType<Int64>(block, arguments, result)
             ||    executeType<Float32>(block, arguments, result)
             ||    executeType<Float64>(block, arguments, result)))
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -173,10 +174,10 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (const ColumnVector<T> * col_from = typeid_cast<const ColumnVector<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnString>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
@@ -194,10 +195,6 @@ private:
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
-        }
-        else if (const ColumnConst<T> * col_from = typeid_cast<const ColumnConst<T> *>(block.safeGetByPosition(arguments[0]).column.get()))
-        {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(col_from->size(), formatReadableSizeWithBinarySuffix(col_from->getData()));
         }
         else
         {

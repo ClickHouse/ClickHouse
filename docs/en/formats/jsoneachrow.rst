@@ -3,7 +3,9 @@ JSONEachRow
 
 If put in SELECT query, displays data in newline delimited JSON (JSON objects separated by \\n character) format.
 If put in INSERT query, expects this kind of data as input.
-::
+
+.. code-block:: text
+
   {"SearchPhrase":"","count()":"8267016"}
   {"SearchPhrase":"bathroom interior","count()":"2166"}
   {"SearchPhrase":"yandex","count()":"1655"}

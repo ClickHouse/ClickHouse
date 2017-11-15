@@ -26,11 +26,11 @@ namespace ErrorCodes
 }
 
 
-/** Одна настройка какого-либо типа.
-  * Хранит внутри себя значение, а также флаг - было ли значение изменено.
-  * Это сделано, чтобы можно было отправлять на удалённые серверы только изменённые (или явно указанные в конфиге) значения.
-  * То есть, если настройка не была указана в конфиге и не была изменена динамически, то она не отправляется на удалённый сервер,
-  *  и удалённый сервер будет использовать своё значение по-умолчанию.
+/** One setting for any type.
+  * Stores a value within itself, as well as a flag - whether the value was changed.
+  * This is done so that you can send to the remote servers only changed settings (or explicitly specified in the config) values.
+  * That is, if the configuration was not specified in the config and was not dynamically changed, it is not sent to the remote server,
+  *  and the remote server will use its default value.
   */
 
 template <typename IntType>
@@ -83,9 +83,9 @@ using SettingInt64 = SettingInt<Int64>;
 using SettingBool = SettingUInt64;
 
 
-/** В отличие от SettingUInt64, поддерживает значение 'auto' - количество процессорных ядер без учёта SMT.
-  * Значение 0 так же воспринимается как auto.
-  * При сериализации, auto записывается так же, как 0.
+/** Unlike SettingUInt64, supports the value of 'auto' - the number of processor cores without taking into account SMT.
+  * A value of 0 is also treated as auto.
+  * When serializing, `auto` is written in the same way as 0.
   */
 struct SettingMaxThreads
 {
@@ -100,7 +100,7 @@ struct SettingMaxThreads
 
     String toString() const
     {
-        /// Вместо значения auto выводим актуальное значение, чтобы его было легче посмотреть.
+        /// Instead of the `auto` value, we output the actual value to make it easier to see.
         return DB::toString(value);
     }
 
@@ -151,7 +151,7 @@ struct SettingMaxThreads
         return res;
     }
 
-    /// Выполняется один раз за всё время. Выполняется из одного потока.
+    /// Executed once for all time. Executed from one thread.
     UInt64 getAutoValueImpl() const
     {
         return getNumberOfPhysicalCPUCores();
@@ -167,7 +167,7 @@ struct SettingSeconds
     SettingSeconds(UInt64 seconds = 0) : value(seconds, 0) {}
 
     operator Poco::Timespan() const { return value; }
-    SettingSeconds & operator= (Poco::Timespan x) { set(x); return *this; }
+    SettingSeconds & operator= (const Poco::Timespan & x) { set(x); return *this; }
 
     Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
 
@@ -176,7 +176,7 @@ struct SettingSeconds
         return DB::toString(totalSeconds());
     }
 
-    void set(Poco::Timespan x)
+    void set(const Poco::Timespan & x)
     {
         value = x;
         changed = true;
@@ -219,7 +219,7 @@ struct SettingMilliseconds
     SettingMilliseconds(UInt64 milliseconds = 0) : value(milliseconds * 1000) {}
 
     operator Poco::Timespan() const { return value; }
-    SettingMilliseconds & operator= (Poco::Timespan x) { set(x); return *this; }
+    SettingMilliseconds & operator= (const Poco::Timespan & x) { set(x); return *this; }
 
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
 
@@ -228,7 +228,7 @@ struct SettingMilliseconds
         return DB::toString(totalMilliseconds());
     }
 
-    void set(Poco::Timespan x)
+    void set(const Poco::Timespan & x)
     {
         value = x;
         changed = true;
@@ -323,12 +323,12 @@ struct SettingFloat
 
 enum class LoadBalancing
 {
-    /// среди реплик с минимальным количеством ошибок выбирается случайная
+    /// among replicas with a minimum number of errors selected randomly
     RANDOM = 0,
-    /// среди реплик с минимальным количеством ошибок выбирается реплика
-    /// с минимальным количеством отличающихся символов в имени реплики и имени локального хоста
+    /// a replica is selected among the replicas with the minimum number of errors
+    /// with the minimum number of distinguished characters in the replica name and local hostname
     NEAREST_HOSTNAME,
-    /// реплики перебираются строго по порядку; количество ошибок не имеет значение
+    /// replicas are walked through strictly in order; the number of errors does not matter
     IN_ORDER,
 };
 
@@ -390,16 +390,16 @@ struct SettingLoadBalancing
 };
 
 
-/// Какие строки включать в TOTALS.
+/// Which rows should be included in TOTALS.
 enum class TotalsMode
 {
-    BEFORE_HAVING            = 0, /// Считать HAVING по всем прочитанным строкам;
-                                 ///  включая не попавшие в max_rows_to_group_by
-                                 ///  и не прошедшие HAVING после группировки.
-    AFTER_HAVING_INCLUSIVE    = 1, /// Считать по всем строкам, кроме не прошедших HAVING;
-                                 ///  то есть, включать в TOTALS все строки, не прошедшие max_rows_to_group_by.
-    AFTER_HAVING_EXCLUSIVE    = 2, /// Включать только строки, прошедшие и max_rows_to_group_by, и HAVING.
-    AFTER_HAVING_AUTO        = 3, /// Автоматически выбирать между INCLUSIVE и EXCLUSIVE,
+    BEFORE_HAVING            = 0, /// Count HAVING for all read rows;
+                                  ///  including those not in max_rows_to_group_by
+                                  ///  and have not passed HAVING after grouping.
+    AFTER_HAVING_INCLUSIVE    = 1, /// Count on all rows except those that have not passed HAVING;
+                                   ///  that is, to include in TOTALS all the rows that did not pass max_rows_to_group_by.
+    AFTER_HAVING_EXCLUSIVE    = 2, /// Include only the rows that passed and max_rows_to_group_by, and HAVING.
+    AFTER_HAVING_AUTO         = 3, /// Automatically select between INCLUSIVE and EXCLUSIVE,
 };
 
 struct SettingTotalsMode
@@ -465,13 +465,13 @@ struct SettingTotalsMode
     }
 };
 
-/// Что делать, если ограничение превышено.
+/// What to do if the limit is exceeded.
 enum class OverflowMode
 {
-    THROW     = 0,    /// Кинуть исключение.
-    BREAK     = 1,    /// Прервать выполнение запроса, вернуть что есть.
-    ANY        = 2,    /** Только для GROUP BY: не добавлять новые строки в набор,
-                        * но продолжать агрегировать для ключей, успевших попасть в набор.
+    THROW     = 0,    /// Throw exception.
+    BREAK     = 1,    /// Abort query execution, return what is.
+    ANY       = 2,    /** Only for GROUP BY: do not add new rows to the set,
+                        * but continue to aggregate for keys that are already in the set.
                         */
 };
 
@@ -556,14 +556,6 @@ struct SettingCompressionMethod
 
     static CompressionMethod getCompressionMethod(const String & s)
     {
-        if (s == "quicklz")
-        {
-        #ifdef USE_QUICKLZ
-            return CompressionMethod::QuickLZ;
-        #else
-            throw Exception("QuickLZ compression method is disabled", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-        #endif
-        }
         if (s == "lz4")
             return CompressionMethod::LZ4;
         if (s == "lz4hc")
@@ -571,14 +563,14 @@ struct SettingCompressionMethod
         if (s == "zstd")
             return CompressionMethod::ZSTD;
 
-        throw Exception("Unknown compression method: '" + s + "', must be one of 'quicklz', 'lz4', 'lz4hc', 'zstd'", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+        throw Exception("Unknown compression method: '" + s + "', must be one of 'lz4', 'lz4hc', 'zstd'", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
     }
 
     String toString() const
     {
-        const char * strings[] = { "quicklz", "lz4", "lz4hc", "zstd" };
+        const char * strings[] = { nullptr, "lz4", "lz4hc", "zstd" };
 
-        if (value < CompressionMethod::QuickLZ || value > CompressionMethod::ZSTD)
+        if (value < CompressionMethod::LZ4 || value > CompressionMethod::ZSTD)
             throw Exception("Unknown compression method", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
 
         return strings[static_cast<size_t>(value)];
@@ -613,13 +605,13 @@ struct SettingCompressionMethod
     }
 };
 
-/// Настройка для выполнения распределённых подзапросов внутри секций IN или JOIN.
+/// The setting for executing distributed subqueries inside IN or JOIN sections.
 enum class DistributedProductMode
 {
-    DENY = 0,    /// Запретить
-    LOCAL,        /// Конвертировать в локальный запрос
-    GLOBAL,        /// Конвертировать в глобальный запрос
-    ALLOW        /// Разрешить
+    DENY = 0,    /// Disable
+    LOCAL,       /// Convert to local query
+    GLOBAL,      /// Convert to global query
+    ALLOW        /// Enable
 };
 
 struct SettingDistributedProductMode
@@ -680,11 +672,11 @@ struct SettingDistributedProductMode
     }
 };
 
-/// Способ выполнения глобальных распределённых подзапросов.
+/// Method for executing global distributed subqueries.
 enum class GlobalSubqueriesMethod
 {
-    PUSH     = 0,    /// Отправлять данные подзапроса на все удалённые серверы.
-    PULL     = 1,    /// Удалённые серверы будут скачивать данные подзапроса с сервера-инициатора.
+    PUSH     = 0,    /// Send the subquery data to all remote servers.
+    PULL     = 1,    /// Remote servers will download the subquery data from the initiating server.
 };
 
 struct SettingGlobalSubqueriesMethod

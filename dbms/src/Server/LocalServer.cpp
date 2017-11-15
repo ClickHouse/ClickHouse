@@ -15,6 +15,7 @@
 #include <Common/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
@@ -23,6 +24,7 @@
 #include "StatusFile.h"
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -251,9 +253,9 @@ try
         config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
     }
 
-    context = std::make_unique<Context>();
+    context = std::make_unique<Context>(Context::createGlobal());
     context->setGlobalContext(*context);
-    context->setApplicationType(Context::ApplicationType::LOCAL_SERVER);
+    context->setApplicationType(Context::ApplicationType::LOCAL);
     tryInitPath();
 
     applyOptions();
@@ -268,6 +270,7 @@ try
 
     registerFunctions();
     registerAggregateFunctions();
+    registerTableFunctions();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -309,11 +312,15 @@ try
     if (!path.empty())
     {
         LOG_DEBUG(log, "Loading metadata from " << path);
+        loadMetadataSystem(*context);
+        attachSystemTables();
         loadMetadata(*context);
         LOG_DEBUG(log, "Loaded metadata.");
     }
-
-    attachSystemTables();
+    else
+    {
+        attachSystemTables();
+    }
 
     processQueries();
 
@@ -346,10 +353,9 @@ catch (const Exception & e)
 
 inline String getQuotedString(const String & s)
 {
-    String res;
-    WriteBufferFromString buf(res);
+    WriteBufferFromOwnString buf;
     writeQuotedString(s, buf);
-    return res;
+    return buf.str();
 }
 
 
@@ -386,7 +392,7 @@ void LocalServer::attachSystemTables()
         context->addDatabase("system", system_database);
     }
 
-    attachSystemTablesLocal(system_database);
+    attachSystemTablesLocal(*system_database);
 }
 
 

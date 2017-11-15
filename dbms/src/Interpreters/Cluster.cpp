@@ -1,9 +1,12 @@
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DNSCache.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/SimpleCache.h>
 #include <Common/StringUtils.h>
 #include <IO/HexWriteBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <openssl/sha.h>
@@ -17,15 +20,16 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int LOGICAL_ERROR;
     extern const int SHARD_HAS_NO_CONNECTIONS;
+    extern const int SYNTAX_ERROR;
 }
 
 namespace
 {
 
 /// Default shard weight.
-static constexpr int default_weight = 1;
+static constexpr UInt32 default_weight = 1;
 
-inline bool isLocal(const Cluster::Address & address)
+inline bool isLocal(const Cluster::Address & address, UInt16 clickhouse_port)
 {
     ///    If there is replica, for which:
     /// - its port is the same that the server is listening;
@@ -37,40 +41,18 @@ inline bool isLocal(const Cluster::Address & address)
     /// Also, replica is considered non-local, if it has default database set
     ///  (only reason is to avoid query rewrite).
 
-    return address.default_database.empty() && isLocalAddress(address.resolved_address);
+    return address.default_database.empty() && isLocalAddress(address.resolved_address, clickhouse_port);
 }
 
-inline std::string addressToDirName(const Cluster::Address & address)
-{
-    return
-        escapeForFileName(address.user) +
-        (address.password.empty() ? "" : (':' + escapeForFileName(address.password))) + '@' +
-        escapeForFileName(address.resolved_address.host().toString()) + ':' +
-        std::to_string(address.resolved_address.port()) +
-        (address.default_database.empty() ? "" : ('#' + escapeForFileName(address.default_database)));
-}
-
-/// To cache DNS requests.
-Poco::Net::SocketAddress resolveSocketAddressImpl1(const String & host, UInt16 port)
-{
-    return Poco::Net::SocketAddress(host, port);
-}
-
-Poco::Net::SocketAddress resolveSocketAddressImpl2(const String & host_and_port)
-{
-    return Poco::Net::SocketAddress(host_and_port);
-}
 
 Poco::Net::SocketAddress resolveSocketAddress(const String & host, UInt16 port)
 {
-    static SimpleCache<decltype(resolveSocketAddressImpl1), &resolveSocketAddressImpl1> cache;
-    return cache(host, port);
+    return Poco::Net::SocketAddress(DNSCache::instance().resolveHost(host), port);
 }
 
 Poco::Net::SocketAddress resolveSocketAddress(const String & host_and_port)
 {
-    static SimpleCache<decltype(resolveSocketAddressImpl2), &resolveSocketAddressImpl2> cache;
-    return cache(host_and_port);
+    return DNSCache::instance().resolveHostAndPort(host_and_port);
 }
 
 }
@@ -79,22 +61,23 @@ Poco::Net::SocketAddress resolveSocketAddress(const String & host_and_port)
 
 Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
+    UInt16 clickhouse_port = config.getInt("tcp_port", 0);
+
     host_name = config.getString(config_prefix + ".host");
-    port = config.getInt(config_prefix + ".port");
+    port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
     resolved_address = resolveSocketAddress(host_name, port);
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
+    is_local = isLocal(*this, clickhouse_port);
 }
 
 
-Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_)
+Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port)
     : user(user_), password(password_)
 {
-    UInt16 default_port = Poco::Util::Application::instance().config().getInt("tcp_port", 0);
-
     /// It's like that 'host_port_' string contains port. If condition is met, it doesn't necessarily mean that port exists (example: [::]).
-    if ((nullptr != strchr(host_port_.c_str(), ':')) || !default_port)
+    if ((nullptr != strchr(host_port_.c_str(), ':')) || !clickhouse_port)
     {
         resolved_address = resolveSocketAddress(host_port_);
         host_name = host_port_.substr(0, host_port_.find(':'));
@@ -102,11 +85,50 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
     }
     else
     {
-        resolved_address = resolveSocketAddress(host_port_, default_port);
+        resolved_address = resolveSocketAddress(host_port_, clickhouse_port);
         host_name = host_port_;
-        port = default_port;
+        port = clickhouse_port;
     }
+    is_local = isLocal(*this, clickhouse_port);
 }
+
+
+String Cluster::Address::toString() const
+{
+    return toString(host_name, port);
+}
+
+String Cluster::Address::toString(const String & host_name, UInt16 port)
+{
+    return escapeForFileName(host_name) + ':' + DB::toString(port);
+}
+
+String Cluster::Address::readableString() const
+{
+    return host_name + ':' + DB::toString(port);
+}
+
+void Cluster::Address::fromString(const String & host_port_string, String & host_name, UInt16 & port)
+{
+    auto pos = host_port_string.find_last_of(':');
+    if (pos == std::string::npos)
+        throw Exception("Incorrect <host>:<port> format " + host_port_string, ErrorCodes::SYNTAX_ERROR);
+
+    host_name = unescapeForFileName(host_port_string.substr(0, pos));
+    port = parse<UInt16>(host_port_string.substr(pos + 1));
+}
+
+
+String Cluster::Address::toStringFull() const
+{
+    return
+        escapeForFileName(user) +
+        (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' +
+        escapeForFileName(resolved_address.host().toString()) + ':' +
+        std::to_string(resolved_address.port()) +
+        (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)));
+}
+
 
 /// Implementation of Clusters class
 
@@ -178,10 +200,10 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
         {
             /// Shard without replicas.
 
+            Addresses addresses;
+
             const auto & prefix = config_prefix + key;
             const auto weight = config.getInt(prefix + ".weight", default_weight);
-            if (weight == 0)
-                continue;
 
             addresses.emplace_back(config, prefix);
             addresses.back().replica_num = 1;
@@ -191,17 +213,16 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
             info.shard_num = current_shard_num;
             info.weight = weight;
 
-            if (isLocal(address))
+            if (address.is_local)
                 info.local_addresses.push_back(address);
             else
             {
-                info.dir_names.push_back(addressToDirName(address));
                 ConnectionPoolPtrs pools;
                 pools.push_back(std::make_shared<ConnectionPool>(
                     settings.distributed_connections_pool_size,
                     address.host_name, address.port, address.resolved_address,
                     address.default_database, address.user, address.password,
-                    "server", Protocol::Compression::Enable,
+                    "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
                     saturate(settings.connect_timeout, settings.limits.max_execution_time),
                     saturate(settings.receive_timeout, settings.limits.max_execution_time),
                     saturate(settings.send_timeout, settings.limits.max_execution_time)));
@@ -210,8 +231,11 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                         std::move(pools), settings.load_balancing, settings.connections_with_failover_max_tries);
             }
 
-            slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+            if (weight)
+                slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+
             shards_info.push_back(info);
+            addresses_with_failover.push_back(addresses);
         }
         else if (startsWith(key, "shard"))
         {
@@ -225,16 +249,12 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
             UInt32 current_replica_num = 1;
 
             const auto & partial_prefix = config_prefix + key + ".";
-            const auto weight = config.getInt(partial_prefix + ".weight", default_weight);
-            if (weight == 0)
-                continue;
+            const auto weight = config.getUInt(partial_prefix + ".weight", default_weight);
 
-            const auto internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
+            bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
-            /** in case of internal_replication we will be appending names to
-             *  the first element of vector; otherwise we will just .emplace_back
-             */
-            std::vector<std::string> dir_names{};
+            /// in case of internal_replication we will be appending names to dir_name_for_internal_replication
+            std::string dir_name_for_internal_replication;
 
             auto first = true;
             for (const auto & replica_key : replica_keys)
@@ -248,18 +268,16 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                     replica_addresses.back().replica_num = current_replica_num;
                     ++current_replica_num;
 
-                    if (!isLocal(replica_addresses.back()))
+                    if (!replica_addresses.back().is_local)
                     {
                         if (internal_replication)
                         {
-                            auto dir_name = addressToDirName(replica_addresses.back());
+                            auto dir_name = replica_addresses.back().toStringFull();
                             if (first)
-                                dir_names.emplace_back(std::move(dir_name));
+                                dir_name_for_internal_replication = dir_name;
                             else
-                                dir_names.front() += "," + dir_name;
+                                dir_name_for_internal_replication += "," + dir_name;
                         }
-                        else
-                            dir_names.emplace_back(addressToDirName(replica_addresses.back()));
 
                         if (first) first = false;
                     }
@@ -275,7 +293,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
             for (const auto & replica : replica_addresses)
             {
-                if (isLocal(replica))
+                if (replica.is_local)
                     shard_local_addresses.push_back(replica);
                 else
                 {
@@ -283,7 +301,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port, replica.resolved_address,
                         replica.default_database, replica.user, replica.password,
-                        "server", Protocol::Compression::Enable,
+                        "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
                         saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
                         saturate(settings.receive_timeout, settings.limits.max_execution_time),
                         saturate(settings.send_timeout, settings.limits.max_execution_time)));
@@ -295,24 +313,27 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                 shard_pool = std::make_shared<ConnectionPoolWithFailover>(
                         std::move(replicas), settings.load_balancing, settings.connections_with_failover_max_tries);
 
-            slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
-            shards_info.push_back({std::move(dir_names), current_shard_num, weight, shard_local_addresses, shard_pool});
+            if (weight)
+                slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
+
+            shards_info.push_back({std::move(dir_name_for_internal_replication), current_shard_num, weight,
+                shard_local_addresses, shard_pool, internal_replication});
         }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
-        if (!addresses_with_failover.empty() && !addresses.empty())
-            throw Exception("There must be either 'node' or 'shard' elements in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
         ++current_shard_num;
     }
+
+    if (addresses_with_failover.empty())
+        throw Exception("There must be either 'node' or 'shard' elements in config", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
     initMisc();
 }
 
 
 Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password)
+                 const String & username, const String & password, UInt16 clickhouse_port)
 {
     UInt32 current_shard_num = 1;
 
@@ -320,7 +341,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (auto & replica : shard)
-            current.emplace_back(replica, username, password);
+            current.emplace_back(replica, username, password, clickhouse_port);
 
         addresses_with_failover.emplace_back(current);
 
@@ -333,7 +354,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
                 settings.distributed_connections_pool_size,
                 replica.host_name, replica.port, replica.resolved_address,
                 replica.default_database, replica.user, replica.password,
-                "server", Protocol::Compression::Enable,
+                "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
                 saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
                 saturate(settings.receive_timeout, settings.limits.max_execution_time),
                 saturate(settings.send_timeout, settings.limits.max_execution_time)));
@@ -394,12 +415,7 @@ void Cluster::calculateHashOfAddresses()
 {
     std::vector<std::string> elements;
 
-    if (!addresses.empty())
-    {
-        for (const auto & address : addresses)
-            elements.push_back(address.host_name + ":" + toString(address.port));
-    }
-    else if (!addresses_with_failover.empty())
+    if (!addresses_with_failover.empty())
     {
         for (const auto & addresses : addresses_with_failover)
         {
@@ -438,8 +454,6 @@ std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
 Cluster::Cluster(const Cluster & from, size_t index)
     : shards_info{from.shards_info[index]}
 {
-    if (!from.addresses.empty())
-        addresses.emplace_back(from.addresses[index]);
     if (!from.addresses_with_failover.empty())
         addresses_with_failover.emplace_back(from.addresses_with_failover[index]);
 

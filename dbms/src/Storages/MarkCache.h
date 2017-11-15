@@ -48,12 +48,12 @@ public:
 
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
-        hash.get128(key.first, key.second);
+        hash.get128(key.low, key.high);
 
         return key;
     }
 
-    template<typename LoadFunc>
+    template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
         auto result = Base::getOrSet(key, load);

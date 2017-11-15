@@ -15,7 +15,7 @@ try
 {
     using namespace DB;
 
-    StoragePtr table = StorageSystemNumbers::create("Numbers");
+    StoragePtr table = StorageSystemNumbers::create("numbers", false);
 
     Names column_names;
     column_names.push_back("number");
@@ -29,7 +29,7 @@ try
 
     QueryProcessingStage::Enum stage;
 
-    LimitBlockInputStream input(table->read(column_names, 0, Context{}, Settings(), stage, 10)[0], 10, 96);
+    LimitBlockInputStream input(table->read(column_names, {}, Context::createGlobal(), stage, 10, 1)[0], 10, 96);
     RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
     BlockOutputStreamFromRowOutputStream output(output_);
 

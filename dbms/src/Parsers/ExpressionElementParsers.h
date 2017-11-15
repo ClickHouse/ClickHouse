@@ -11,49 +11,49 @@ class ParserArray : public IParserBase
 {
 protected:
     const char * getName() const { return "array"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Если в скобках выражение из одного элемента - возвращает в node этот элемент;
-  *  или если в скобках - подзапрос SELECT - то возвращает в node этот подзапрос;
-  *  иначе возвращает функцию tuple от содержимого скобок.
+/** If in parenthesis an expression from one element - returns this element in `node`;
+  *  or if there is a SELECT subquery in parenthesis, then this subquery returned in `node`;
+  *  otherwise returns `tuple` function from the contents of brackets.
   */
 class ParserParenthesisExpression : public IParserBase
 {
 protected:
     const char * getName() const { return "parenthesized expression"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Подзапрос SELECT в скобках.
+/** The SELECT subquery is in parenthesis.
   */
 class ParserSubquery : public IParserBase
 {
 protected:
     const char * getName() const { return "SELECT subquery"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Идентификатор, например, x_yz123 или `something special`
+/** An identifier, for example, x_yz123 or `something special`
   */
 class ParserIdentifier : public IParserBase
 {
 protected:
     const char * getName() const { return "identifier"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Идентификатор, возможно, содержащий точку, например, x_yz123 или `something special` или Hits.EventTime
+/** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime
   */
 class ParserCompoundIdentifier : public IParserBase
 {
 protected:
     const char * getName() const { return "compound identifier"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
@@ -62,7 +62,7 @@ class ParserAsterisk : public IParserBase
 {
 protected:
     const char * getName() const { return "asterisk"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
@@ -72,21 +72,21 @@ class ParserQualifiedAsterisk : public IParserBase
 {
 protected:
     const char * getName() const { return "qualified asterisk"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Функция, например, f(x, y + 1, g(z)).
-  * Или агрегатная функция: sum(x + f(y)), corr(x, y). По синтаксису - такая же, как обычная функция.
-  * Или параметрическая агрегатная функция: quantile(0.9)(x + y).
-  *  Синтаксис - две пары круглых скобок вместо одной. Первая - для параметров, вторая - для аргументов.
-  * Для функций может быть указан модификатор DISTINCT, например count(DISTINCT x, y).
+/** A function, for example, f(x, y + 1, g(z)).
+  * Or an aggregate function: sum(x + f(y)), corr(x, y). The syntax is the same as the usual function.
+  * Or a parametric aggregate function: quantile(0.9)(x + y).
+  *  Syntax - two pairs of parentheses instead of one. The first is for parameters, the second for arguments.
+  * For functions, the DISTINCT modifier can be specified, for example, count(DISTINCT x, y).
   */
 class ParserFunction : public IParserBase
 {
 protected:
     const char * getName() const { return "function"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 class ParserCastExpression : public IParserBase
@@ -96,7 +96,7 @@ class ParserCastExpression : public IParserBase
 
 protected:
     const char * getName() const override { return name; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 
@@ -106,7 +106,7 @@ class ParserNull : public IParserBase
 {
 protected:
     const char * getName() const { return "NULL"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
@@ -116,7 +116,7 @@ class ParserNumber : public IParserBase
 {
 protected:
     const char * getName() const { return "number"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 /** Unsigned integer, used in right hand side of tuple access operator (x.1).
@@ -125,7 +125,7 @@ class ParserUnsignedInteger : public IParserBase
 {
 protected:
     const char * getName() const { return "unsigned integer"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
@@ -135,35 +135,35 @@ class ParserStringLiteral : public IParserBase
 {
 protected:
     const char * getName() const { return "string literal"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Массив литералов.
-  * Массивы могут распарситься и как применение оператора [].
-  * Но парсинг всего массива как целой константы серьёзно ускоряет анализ выражений в случае очень больших массивов.
-  * Мы пробуем распарсить массив как массив литералов сначала (fast path),
-  *  а если не получилось (когда массив состоит из сложных выражений) - парсим как применение оператора [] (slow path).
+/** An array of literals.
+  * Arrays can also be parsed as an application of [] operator.
+  * But parsing the whole array as a whole constant seriously speeds up the analysis of expressions in the case of very large arrays.
+  * We try to parse the array as an array of literals first (fast path),
+  *  and if it did not work out (when the array consists of complex expressions) - parse as an application of [] operator (slow path).
   */
 class ParserArrayOfLiterals : public IParserBase
 {
 protected:
     const char * getName() const { return "array"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Литерал - одно из: NULL, UInt64, Int64, Float64, String.
+/** The literal is one of: NULL, UInt64, Int64, Float64, String.
   */
 class ParserLiteral : public IParserBase
 {
 protected:
     const char * getName() const { return "literal"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Алиас - идентификатор, перед которым идёт AS. Например: AS x_yz123.
+/** The alias is the identifier before which `AS` comes. For example: AS x_yz123.
   */
 struct ParserAliasBase
 {
@@ -180,7 +180,7 @@ protected:
     bool allow_alias_without_as_keyword;
 
     const char * getName() const { return "alias"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
@@ -193,30 +193,32 @@ using ParserAlias = ParserAliasImpl<ParserIdentifier>;
 using ParserCastExpressionAlias = ParserAliasImpl<ParserTypeInCastExpression>;
 
 
-/** Элемент выражения - одно из: выражение в круглых скобках, массив, литерал, функция, идентификатор, звёздочка.
+/** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
   */
 class ParserExpressionElement : public IParserBase
 {
 protected:
     const char * getName() const { return "element of expression"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 
-/** Элемент выражения, возможно, с алиасом, если уместно.
+/** An expression element, possibly with an alias, if appropriate.
   */
 template <typename ParserAlias>
 class ParserWithOptionalAliasImpl : public IParserBase
 {
 public:
-    ParserWithOptionalAliasImpl(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_)
-        : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
+    ParserWithOptionalAliasImpl(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_, bool prefer_alias_to_column_name_ = false)
+    : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_),
+      prefer_alias_to_column_name(prefer_alias_to_column_name_) {}
 protected:
     ParserPtr elem_parser;
     bool allow_alias_without_as_keyword;
+    bool prefer_alias_to_column_name;
 
     const char * getName() const { return "element of expression with optional alias"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 extern template class ParserWithOptionalAliasImpl<ParserAlias>;
@@ -234,16 +236,16 @@ class ParserOrderByElement : public IParserBase
 {
 protected:
     const char * getName() const { return "element of ORDER BY expression"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-/** Путь шарда в ZooKeeper вместе с весом.
+/** The path of the shard in ZooKeeper along with the weight.
   */
 class ParserWeightedZooKeeperPath : public IParserBase
 {
 protected:
     const char * getName() const { return "weighted ZooKeeper path"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 }

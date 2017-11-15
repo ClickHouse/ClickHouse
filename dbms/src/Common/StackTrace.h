@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <vector>
 
 #define STACK_TRACE_MAX_DEPTH 32
 

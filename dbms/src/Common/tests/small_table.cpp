@@ -28,13 +28,10 @@ int main(int argc, char ** argv)
         for (auto x : cont)
             std::cerr << x << std::endl;
 
-        std::string dump;
-        {
-            DB::WriteBufferFromString wb(dump);
-            cont.writeText(wb);
-        }
+        DB::WriteBufferFromOwnString wb;
+        cont.writeText(wb);
 
-        std::cerr << "dump: " << dump << std::endl;
+        std::cerr << "dump: " << wb.str() << std::endl;
     }
 
     {
@@ -47,26 +44,20 @@ int main(int argc, char ** argv)
         for (auto x : cont)
             std::cerr << x.first << " -> " << x.second << std::endl;
 
-        std::string dump;
-        {
-            DB::WriteBufferFromString wb(dump);
-            cont.writeText(wb);
-        }
+        DB::WriteBufferFromOwnString wb;
+        cont.writeText(wb);
 
-        std::cerr << "dump: " << dump << std::endl;
+        std::cerr << "dump: " << wb.str() << std::endl;
     }
 
     {
         using Cont = SmallSet<DB::UInt128, 16>;
         Cont cont;
 
-        std::string dump;
-        {
-            DB::WriteBufferFromString wb(dump);
-            cont.write(wb);
-        }
+        DB::WriteBufferFromOwnString wb;
+        cont.write(wb);
 
-        std::cerr << "dump: " << dump << std::endl;
+        std::cerr << "dump: " << wb.str() << std::endl;
     }
 
     return 0;

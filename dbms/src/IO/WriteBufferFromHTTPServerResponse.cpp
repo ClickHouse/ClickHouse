@@ -27,10 +27,11 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
         if (add_cors_header)
             response.set("Access-Control-Allow-Origin", "*");
 
-        setResponseDefaultHeaders(response);
+        setResponseDefaultHeaders(response, keep_alive_timeout);
 
 #if POCO_CLICKHOUSE_PATCH
-        std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
+        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+            std::tie(response_header_ostr, response_body_ostr) = response.beginSend();
 #endif
     }
 }
@@ -42,16 +43,24 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
     {
         headers_finished_sending = true;
 
+        if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
+        {
 #if POCO_CLICKHOUSE_PATCH
-        /// Send end of headers delimiter.
-        if (response_header_ostr)
-            *response_header_ostr << "\r\n" << std::flush;
+            /// Send end of headers delimiter.
+            if (response_header_ostr)
+                *response_header_ostr << "\r\n" << std::flush;
 #else
-        /// Newline autosent by response.send()
-        /// if nothing to send in body:
-        if (!response_body_ostr)
-            response_body_ostr = &(response.send());
+            /// Newline autosent by response.send()
+            /// if nothing to send in body:
+            if (!response_body_ostr)
+                response_body_ostr = &(response.send());
 #endif
+        }
+        else
+        {
+            if (!response_body_ostr)
+                response_body_ostr = &(response.send());
+        }
     }
 }
 
@@ -63,7 +72,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 
         startSendHeaders();
 
-        if (!out)
+        if (!out && request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
         {
             if (compress)
             {
@@ -93,8 +102,8 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 #endif
 
                 out_raw.emplace(*response_body_ostr);
-                deflating_buf.emplace(out_raw.value(), compression_method, compression_level, working_buffer.size(), working_buffer.begin());
-                out = &deflating_buf.value();
+                deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
+                out = &*deflating_buf;
             }
             else
             {
@@ -103,7 +112,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 #endif
 
                 out_raw.emplace(*response_body_ostr, working_buffer.size(), working_buffer.begin());
-                out = &out_raw.value();
+                out = &*out_raw;
             }
         }
 
@@ -111,18 +120,27 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 
     }
 
-    out->position() = position();
-    out->next();
+    if (out)
+    {
+        out->position() = position();
+        out->next();
+    }
 }
 
 
 WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
+    Poco::Net::HTTPServerRequest & request_,
     Poco::Net::HTTPServerResponse & response_,
+    unsigned keep_alive_timeout_,
     bool compress_,
     ZlibCompressionMethod compression_method_,
     size_t size)
-    : BufferWithOwnMemory<WriteBuffer>(size), response(response_),
-    compress(compress_), compression_method(compression_method_)
+    : BufferWithOwnMemory<WriteBuffer>(size)
+    , request(request_)
+    , response(response_)
+    , keep_alive_timeout(keep_alive_timeout_)
+    , compress(compress_)
+    , compression_method(compression_method_)
 {
 }
 
@@ -144,14 +162,11 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         /// Send all common headers before our special progress headers.
         startSendHeaders();
 
-        std::string progress_string;
-        {
-            WriteBufferFromString progress_string_writer(progress_string);
-            accumulated_progress.writeJSON(progress_string_writer);
-        }
+        WriteBufferFromOwnString progress_string_writer;
+        accumulated_progress.writeJSON(progress_string_writer);
 
 #if POCO_CLICKHOUSE_PATCH
-        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string << "\r\n" << std::flush;
+        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
 #endif
     }
 }

@@ -26,24 +26,32 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
 
 void ReplicatedMergeTreePartCheckThread::start()
 {
-    need_stop = false;
-    thread = std::thread([this] { run(); });
+    std::lock_guard<std::mutex> lock(start_stop_mutex);
+
+    if (need_stop)
+        need_stop = false;
+    else
+        thread = std::thread([this] { run(); });
 }
 
 
 void ReplicatedMergeTreePartCheckThread::stop()
 {
-    need_stop = true;
-    wakeup_event.set();
+    std::lock_guard<std::mutex> lock(start_stop_mutex);
 
+    need_stop = true;
     if (thread.joinable())
+    {
+        wakeup_event.set();
         thread.join();
+        need_stop = false;
+    }
 }
 
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> lock(parts_mutex);
 
     if (parts_set.count(name))
         return;
@@ -56,7 +64,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> lock(parts_mutex);
     return parts_set.size();
 }
 
@@ -78,25 +86,35 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     }
 
     /// If the part is not in ZooKeeper, we'll check if it's at least somewhere.
-    ActiveDataPartSet::Part part_info;
-    ActiveDataPartSet::parsePartName(part_name, part_info);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.data.format_version);
 
-    /** The logic is this:
+    /** The logic is as follows:
         * - if some live or inactive replica has such a part, or a part covering it
         *   - it is Ok, nothing is needed, it is then downloaded when processing the queue, when the replica comes to life;
         *   - or, if the replica never comes to life, then the administrator will delete or create a new replica with the same address and see everything from the beginning;
         * - if no one has such part or a part covering it, then
-        *   - if someone has all the constituent parts, then we will do nothing - it simply means that other replicas have not yet completed merge
-        *   - if no one has all the constituent parts, then agree the part forever lost,
-        *     and remove the entry from the replication queue.
+        *   - if there are two smaller parts, one with the same min block and the other with the same
+        *     max block, we hope that all parts in between are present too and the needed part
+        *     will appear on other replicas as a result of a merge.
+        *   - otherwise, consider the part lost and delete the entry from the queue.
+        *
+        *   Note that this logic is not perfect - some part in the interior may be missing and the
+        *   needed part will never appear. But precisely determining whether the part will appear as
+        *   a result of a merge is complicated - we can't just check if all block numbers covered
+        *   by the missing part are present somewhere (because gaps between blocks are possible)
+        *   and to determine the constituent parts of the merge we need to query the replication log
+        *   (both the common log and the queues of the individual replicas) and then, if the
+        *   constituent parts are in turn not found, solve the problem recursively for them.
+        *
+        *   Considering the part lost when it is not in fact lost is very dangerous because it leads
+        *   to divergent replicas and intersecting parts. So we err on the side of caution
+        *   and don't delete the queue entry when in doubt.
         */
 
-    LOG_WARNING(log, "Checking if anyone has part covering " << part_name << ".");
+    LOG_WARNING(log, "Checking if anyone has a part covering " << part_name << ".");
 
-    bool found = false;
-
-    size_t part_length_in_blocks = part_info.right + 1 - part_info.left;
-    std::vector<char> found_blocks(part_length_in_blocks);
+    bool found_part_with_the_same_min_block = false;
+    bool found_part_with_the_same_max_block = false;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
     for (const String & replica : replicas)
@@ -104,49 +122,42 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         Strings parts = zookeeper->getChildren(storage.zookeeper_path + "/replicas/" + replica + "/parts");
         for (const String & part_on_replica : parts)
         {
-            if (part_on_replica == part_name || ActiveDataPartSet::contains(part_on_replica, part_name))
+            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.data.format_version);
+
+            if (part_on_replica_info.contains(part_info))
             {
-                found = true;
-                LOG_WARNING(log, "Found part " << part_on_replica << " on " << replica);
-                break;
+                LOG_WARNING(log, "Found part " << part_on_replica << " on " << replica << " that covers the missing part " << part_name);
+                return;
             }
 
-            if (ActiveDataPartSet::contains(part_name, part_on_replica))
+            if (part_info.contains(part_on_replica_info))
             {
-                ActiveDataPartSet::Part part_on_replica_info;
-                ActiveDataPartSet::parsePartName(part_on_replica, part_on_replica_info);
+                if (part_on_replica_info.min_block == part_info.min_block)
+                    found_part_with_the_same_min_block = true;
+                if (part_on_replica_info.max_block == part_info.max_block)
+                    found_part_with_the_same_max_block = true;
 
-                for (auto block_num = part_on_replica_info.left; block_num <= part_on_replica_info.right; ++block_num)
-                    found_blocks.at(block_num - part_info.left) = 1;
+                if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
+                {
+                    LOG_WARNING(log,
+                        "Found parts with the same min block and with the same max block as the missing part "
+                        << part_name << ". Hoping that it will eventually appear as a result of a merge.");
+                    return;
+                }
             }
         }
-        if (found)
-            break;
     }
 
-    if (found)
-    {
-        /// On some live or dead replica there is a necessary part or part covering it.
-        return;
-    }
-
-    size_t num_found_blocks = 0;
-    for (auto found_block : found_blocks)
-        num_found_blocks += (found_block == 1);
-
-    if (num_found_blocks == part_length_in_blocks)
-    {
-        /// On a set of live or dead lines, there are all parts from which you can compound the desired part. We will do nothing.
-        LOG_WARNING(log, "Found all blocks for missing part " << part_name << ". Will wait for them to be merged.");
-        return;
-    }
-
-    /// No one has such a part.
-    LOG_ERROR(log, "No replica has part covering " << part_name);
-
-    if (num_found_blocks != 0)
-        LOG_WARNING(log, "When looking for smaller parts, that is covered by " << part_name
-            << ", we found just " << num_found_blocks << " of " << part_length_in_blocks << " blocks.");
+    /// No one has such a part and the merge is impossible.
+    String not_found_msg;
+    if (found_part_with_the_same_min_block)
+        not_found_msg = "a smaller part with the same max block.";
+    else if (found_part_with_the_same_min_block)
+        not_found_msg = "a smaller part with the same min block.";
+    else
+        not_found_msg = "smaller parts with either the same min block or the same max block.";
+    LOG_ERROR(log, "No replica has part covering " << part_name
+              << " and a merge is impossible: we didn't find " << not_found_msg);
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
@@ -178,24 +189,19 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
       * NOTE It is possible to also add a condition if the entry in the queue is very old.
       */
 
+    size_t part_length_in_blocks = part_info.max_block + 1 - part_info.min_block;
     if (part_length_in_blocks > 1000)
     {
         LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too much blocks (" << part_length_in_blocks << ")");
         return;
     }
 
-    if (part_info.left <= RESERVED_BLOCK_NUMBERS)
+    const String & partition_id = part_info.partition_id;
+    for (auto i = part_info.min_block; i <= part_info.max_block; ++i)
     {
-        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part is one of first in partition");
-        return;
-    }
-
-    const auto partition_str = part_name.substr(0, 6);
-    for (auto i = part_info.left; i <= part_info.right; ++i)
-    {
-        zookeeper->createIfNotExists(storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_str, "");
+        zookeeper->createIfNotExists(storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id, "");
         AbandonableLockInZooKeeper::createAbandonedIfNotExists(
-            storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_str + "/block-" + padIndex(i),
+            storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(i),
             *zookeeper);
     }
 }
@@ -217,7 +223,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     else if (part->name == part_name)
     {
         auto zookeeper = storage.getZooKeeper();
-        auto table_lock = storage.lockStructure(false);
+        auto table_lock = storage.lockStructure(false, __PRETTY_FUNCTION__);
 
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
         if (zookeeper->exists(storage.replica_path + "/parts/" + part_name))
@@ -278,7 +284,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
         {
             /// TODO You need to make sure that the part is still checked after a while.
             /// Otherwise, it's possible that the part was not added to ZK,
-            ///  but remained in the file system and in a number of active parts.
+            ///  but remained in the filesystem and in a number of active parts.
             /// And then for a long time (before restarting), the data on the replicas will be different.
 
             LOG_TRACE(log, "Young part " << part_name
@@ -303,14 +309,14 @@ void ReplicatedMergeTreePartCheckThread::run()
     {
         try
         {
-            time_t current_time = time(0);
+            time_t current_time = time(nullptr);
 
             /// Take part from the queue for verification.
             PartsToCheckQueue::iterator selected = parts_queue.end();    /// end from std::list is not get invalidated
             time_t min_check_time = std::numeric_limits<time_t>::max();
 
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::lock_guard<std::mutex> lock(parts_mutex);
 
                 if (parts_queue.empty())
                 {
@@ -356,7 +362,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
             /// Remove the part from check queue.
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::lock_guard<std::mutex> lock(parts_mutex);
 
                 if (parts_queue.empty())
                 {

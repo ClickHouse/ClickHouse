@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/ReshardingWorker.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -27,10 +28,10 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ClusterProxy/Query.h>
-#include <Interpreters/ClusterProxy/SelectQueryConstructor.h>
-#include <Interpreters/ClusterProxy/DescribeQueryConstructor.h>
-#include <Interpreters/ClusterProxy/AlterQueryConstructor.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/DescribeStreamFactory.h>
+#include <Interpreters/ClusterProxy/AlterStreamFactory.h>
 
 #include <Core/Field.h>
 
@@ -60,8 +61,8 @@ namespace
 /// Creates a copy of query, changes database and table names.
 ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 {
-    auto modified_query_ast = query->clone();
-    typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
+    auto modified_query_ast = typeid_cast<const ASTSelectQuery &>(*query).cloneFirstSelect();
+    modified_query_ast->replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
@@ -122,13 +123,17 @@ void initializeFileNamesIncrement(const std::string & path, SimpleIncrement & in
 }
 
 
+/// For destruction of std::unique_ptr of type that is incomplete in class definition.
+StorageDistributed::~StorageDistributed() = default;
+
+
 StorageDistributed::StorageDistributed(
     const std::string & name_,
     NamesAndTypesListPtr columns_,
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
-    Context & context_,
+    const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
     : name(name_), columns(columns_),
@@ -138,8 +143,6 @@ StorageDistributed::StorageDistributed(
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
-    createDirectoryMonitors();
-    initializeFileNamesIncrement(path, file_names_increment);
 }
 
 
@@ -152,7 +155,7 @@ StorageDistributed::StorageDistributed(
     const String & remote_database_,
     const String & remote_table_,
     const String & cluster_name_,
-    Context & context_,
+    const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
@@ -163,46 +166,20 @@ StorageDistributed::StorageDistributed(
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(name) + '/'))
 {
-    createDirectoryMonitors();
-    initializeFileNamesIncrement(path, file_names_increment);
 }
 
 
-StoragePtr StorageDistributed::create(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
-    const String & remote_database_,
-    const String & remote_table_,
-    const String & cluster_name_,
-    Context & context_,
-    const ASTPtr & sharding_key_,
-    const String & data_path_)
-{
-    return make_shared(
-        name_, columns_,
-        materialized_columns_, alias_columns_, column_defaults_,
-        remote_database_, remote_table_,
-        cluster_name_, context_,
-        sharding_key_, data_path_
-    );
-}
-
-
-StoragePtr StorageDistributed::create(
+StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & name_,
     NamesAndTypesListPtr columns_,
     const String & remote_database_,
     const String & remote_table_,
     ClusterPtr & owned_cluster_,
-    Context & context_)
+    const Context & context_)
 {
-    auto res = make_shared(
+    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
         name_, columns_, remote_database_,
-        remote_table_, String{}, context_
-    );
+        remote_table_, String{}, context_);
 
     res->owned_cluster = owned_cluster_;
 
@@ -212,14 +189,15 @@ StoragePtr StorageDistributed::create(
 
 BlockInputStreams StorageDistributed::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned num_streams)
 {
     auto cluster = getCluster();
+
+    const Settings & settings = context.getSettingsRef();
 
     size_t result_size = (cluster->getRemoteShardCount() * settings.max_parallel_replicas) + cluster->getLocalShardCount();
 
@@ -228,28 +206,18 @@ BlockInputStreams StorageDistributed::read(
         : QueryProcessingStage::WithMergeableState;
 
     const auto & modified_query_ast = rewriteSelectQuery(
-        query, remote_database, remote_table);
+        query_info.query, remote_database, remote_table);
 
     Tables external_tables;
 
     if (settings.global_subqueries_method == GlobalSubqueriesMethod::PUSH)
         external_tables = context.getExternalTables();
 
-    /// Disable multiplexing of shards if there is an ORDER BY without GROUP BY.
-    //const ASTSelectQuery & ast = *(static_cast<const ASTSelectQuery *>(modified_query_ast.get()));
+    ClusterProxy::SelectStreamFactory select_stream_factory(
+        processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
 
-    /** The functionality of shard_multiplexing is not completed - turn it off.
-      * (Because connecting to different shards within a single thread is not done in parallel.)
-      * For more information, see https: //███████████.yandex-team.ru/METR-18300
-      */
-    //bool enable_shard_multiplexing = !(ast.order_expression_list && !ast.group_expression_list);
-    bool enable_shard_multiplexing = false;
-
-    ClusterProxy::SelectQueryConstructor select_query_constructor(
-            processed_stage,  QualifiedTableName{remote_database, remote_table}, external_tables);
-
-    return ClusterProxy::Query{select_query_constructor, cluster, modified_query_ast,
-        context, settings, enable_shard_multiplexing}.execute();
+    return ClusterProxy::executeQuery(
+            select_stream_factory, cluster, modified_query_ast, context, settings);
 }
 
 
@@ -268,7 +236,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Setti
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster);
+        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings.insert_distributed_sync, settings.insert_distributed_timeout);
 }
 
 
@@ -278,7 +246,7 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
     params.apply(*columns, materialized_columns, alias_columns, column_defaults);
 
     context.getDatabase(database_name)->alterTable(
@@ -287,18 +255,25 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 }
 
 
+void StorageDistributed::startup()
+{
+    createDirectoryMonitors();
+    initializeFileNamesIncrement(path, file_names_increment);
+}
+
+
 void StorageDistributed::shutdown()
 {
-    directory_monitors.clear();
+    cluster_nodes_data.clear();
 }
 
 
 void StorageDistributed::reshardPartitions(
     const ASTPtr & query, const String & database_name,
-    const Field & first_partition, const Field & last_partition,
+    const ASTPtr & partition,
     const WeightedZooKeeperPaths & weighted_zookeeper_paths,
     const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-    Context & context)
+    const Context & context)
 {
     auto & resharding_worker = context.getReshardingWorker();
     if (!resharding_worker.isStarted())
@@ -347,10 +322,8 @@ void StorageDistributed::reshardPartitions(
         ASTAlterQuery::Parameters & parameters = alter_query.parameters.back();
 
         parameters.type = ASTAlterQuery::RESHARD_PARTITION;
-        if (!first_partition.isNull())
-            parameters.partition = std::make_shared<ASTLiteral>(StringRange(), first_partition);
-        if (!last_partition.isNull())
-            parameters.last_partition = std::make_shared<ASTLiteral>(StringRange(), last_partition);
+        if (partition)
+            parameters.partition = partition->clone();
 
         ASTPtr expr_list = std::make_shared<ASTExpressionList>();
         for (const auto & entry : weighted_zookeeper_paths)
@@ -369,16 +342,10 @@ void StorageDistributed::reshardPartitions(
 
         resharding_worker.registerQuery(coordinator_id, queryToString(alter_query_ptr));
 
-        /** The functionality of shard_multiplexing is not completed - turn it off.
-        * (Because connecting to different shards within a single thread is not done in parallel.)
-        * For more information, see https: //███████████.yandex-team.ru/METR-18300
-        */
-        bool enable_shard_multiplexing = false;
+        ClusterProxy::AlterStreamFactory alter_stream_factory;
 
-        ClusterProxy::AlterQueryConstructor alter_query_constructor;
-
-        BlockInputStreams streams = ClusterProxy::Query{alter_query_constructor, cluster, alter_query_ptr,
-            context, context.getSettingsRef(), enable_shard_multiplexing}.execute();
+        BlockInputStreams streams = ClusterProxy::executeQuery(
+                alter_stream_factory, cluster, alter_query_ptr, context, context.getSettingsRef());
 
         /// This callback is called if an exception has occurred while attempting to read
         /// a block from a shard. This is to avoid a potential deadlock if other shards are
@@ -448,16 +415,10 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
     describe_query.database = remote_database;
     describe_query.table = remote_table;
 
-    /** The functionality of shard_multiplexing is not completed - turn it off.
-      * (Because connecting connections to different shards within a single thread is not done in parallel.)
-      * For more information, see https: //███████████.yandex-team.ru/METR-18300
-      */
-    bool enable_shard_multiplexing = false;
+    ClusterProxy::DescribeStreamFactory describe_stream_factory;
 
-    ClusterProxy::DescribeQueryConstructor describe_query_constructor;
-
-    return ClusterProxy::Query{describe_query_constructor, cluster, describe_query_ptr,
-        context, settings, enable_shard_multiplexing}.execute();
+    return ClusterProxy::executeQuery(
+            describe_stream_factory, cluster, describe_query_ptr, context, settings);
 }
 
 
@@ -475,13 +436,6 @@ bool StorageDistributed::hasColumn(const String & column_name) const
     return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
 }
 
-
-void StorageDistributed::createDirectoryMonitor(const std::string & name)
-{
-    directory_monitors.emplace(name, std::make_unique<StorageDistributedDirectoryMonitor>(*this, name));
-}
-
-
 void StorageDistributed::createDirectoryMonitors()
 {
     if (path.empty())
@@ -493,14 +447,20 @@ void StorageDistributed::createDirectoryMonitors()
     boost::filesystem::directory_iterator end;
     for (auto it = begin; it != end; ++it)
         if (it->status().type() == boost::filesystem::directory_file)
-            createDirectoryMonitor(it->path().filename().string());
+            requireDirectoryMonitor(it->path().filename().string());
 }
 
 
 void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
-    if (!directory_monitors.count(name))
-        createDirectoryMonitor(name);
+    cluster_nodes_data[name].requireDirectoryMonitor(name, *this);
+}
+
+ConnectionPoolPtr StorageDistributed::requireConnectionPool(const std::string & name)
+{
+    auto & node_data = cluster_nodes_data[name];
+    node_data.requireConnectionPool(name, *this);
+    return node_data.conneciton_pool;
 }
 
 size_t StorageDistributed::getShardCount() const
@@ -512,6 +472,19 @@ size_t StorageDistributed::getShardCount() const
 ClusterPtr StorageDistributed::getCluster() const
 {
     return (owned_cluster) ? owned_cluster : context.getCluster(cluster_name);
+}
+
+void StorageDistributed::ClusterNodeData::requireConnectionPool(const std::string & name, const StorageDistributed & storage)
+{
+    if (!conneciton_pool)
+        conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, storage);
+}
+
+void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::string & name, StorageDistributed & storage)
+{
+    requireConnectionPool(name, storage);
+    if (!directory_monitor)
+        directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
 }
 
 }

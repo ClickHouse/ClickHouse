@@ -3,18 +3,11 @@
 namespace DB
 {
 
-LimitByBlockInputStream::LimitByBlockInputStream(BlockInputStreamPtr input_, size_t group_size_, Names columns_)
-    : columns_names(columns_)
+LimitByBlockInputStream::LimitByBlockInputStream(const BlockInputStreamPtr & input, size_t group_size_, const Names & columns)
+    : columns_names(columns)
     , group_size(group_size_)
 {
-    children.push_back(input_);
-}
-
-String LimitByBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "LimitBy(" << this << ")";
-    return res.str();
+    children.push_back(input);
 }
 
 Block LimitByBlockInputStream::readImpl()
@@ -40,7 +33,7 @@ Block LimitByBlockInputStream::readImpl()
             for (auto & column : column_ptrs)
                 column->updateHashWithValue(i, hash);
 
-            hash.get128(key.first, key.second);
+            hash.get128(key.low, key.high);
 
             if (keys_counts[key]++ < group_size)
             {

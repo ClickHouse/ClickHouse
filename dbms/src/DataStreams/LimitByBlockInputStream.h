@@ -18,11 +18,9 @@ namespace DB
 class LimitByBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    LimitByBlockInputStream(BlockInputStreamPtr input_, size_t group_size_, Names columns_);
+    LimitByBlockInputStream(const BlockInputStreamPtr & input, size_t group_size_, const Names & columns);
 
     String getName() const override { return "LimitBy"; }
-
-    String getID() const override;
 
 protected:
     Block readImpl() override;

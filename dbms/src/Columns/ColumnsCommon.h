@@ -11,6 +11,9 @@ namespace DB
 /// Counts how many bytes of `filt` are greater than zero.
 size_t countBytesInFilter(const IColumn::Filter & filt);
 
+/// Returns true, if the memory contains only zeros.
+bool memoryIsZero(const void * data, size_t size);
+
 
 /// The general implementation of `filter` function for ColumnArray and ColumnString.
 template <typename T>

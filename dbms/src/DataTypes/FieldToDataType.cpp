@@ -6,9 +6,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeNull.h>
 #include <Common/Exception.h>
-#include <ext/size.hpp>
+#include <ext/size.h>
 
 
 namespace DB
@@ -83,6 +84,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
     bool has_float = false;
     bool has_tuple = false;
     bool has_null = false;
+    bool has_uint128 = false;
     int max_bits = 0;
     int max_signed_bits = 0;
     int max_unsigned_bits = 0;
@@ -127,6 +129,11 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
                 max_bits = std::max(max_signed_bits, max_bits);
                 break;
             }
+            case Field::Types::UInt128:
+            {
+                has_uint128 = true;
+                break;
+            }
             case Field::Types::Float64:
             {
                 has_float = true;
@@ -166,6 +173,9 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 
     if (has_string)
         return wrap_into_array(std::make_shared<DataTypeString>());
+
+    if (has_uint128)
+        return wrap_into_array(std::make_shared<DataTypeUInt128>());
 
     if (has_float && max_bits == 64)
         throw Exception("Incompatible types Float64 and UInt64/Int64 of elements of array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -235,8 +245,7 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
 
     if (has_null)
     {
-        /// Special case: an array of NULLs is represented as an array
-        /// of Nullable(UInt8) because ColumnNull is actually ColumnConst<Null>.
+        /// Special case: an array of NULLs is represented as an array of Nullable(UInt8).
         return wrap_into_array(std::make_shared<DataTypeUInt8>());
     }
 

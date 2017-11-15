@@ -2,9 +2,10 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
+#include <Common/typeid_cast.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
-#include <ext/scope_guard.hpp>
+#include <ext/scope_guard.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
 
@@ -23,6 +24,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
 }
 
 namespace DataPartsExchange
@@ -45,7 +47,7 @@ std::string Service::getId(const std::string & node_id) const
 
 void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response)
 {
-    if (is_cancelled)
+    if (blocker.isCancelled())
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
     String part_name = params.get("part");
@@ -75,7 +77,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
     try
     {
-        auto storage_lock = owned_storage->lockStructure(false);
+        auto storage_lock = owned_storage->lockStructure(false, __PRETTY_FUNCTION__);
 
         MergeTreeData::DataPartPtr part;
 
@@ -87,7 +89,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
         else
             part = findPart(part_name);
 
-        Poco::ScopedReadRWLock part_lock(part->columns_lock);
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
@@ -118,15 +120,15 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
 
             ReadBufferFromFile file_in(path);
             HashingWriteBuffer hashing_out(out);
-            copyData(file_in, hashing_out, is_cancelled);
+            copyData(file_in, hashing_out, blocker.getCounter());
 
-            if (is_cancelled)
+            if (blocker.isCancelled())
                 throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
             if (hashing_out.count() != size)
                 throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
 
-            writeBinary(hashing_out.getHash(), out);
+            writePODBinary(hashing_out.getHash(), out);
 
             if (file_name != "checksums.txt" &&
                 file_name != "columns.txt")
@@ -142,23 +144,26 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::ABORTED)
-            typeid_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
+        if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
+            dynamic_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
         throw;
     }
     catch (...)
     {
-        typeid_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
+        dynamic_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
         throw;
     }
 }
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
-    MergeTreeData::DataPartPtr part = data.getPartIfExists(name);
+    /// It is important to include PreCommitted parts here
+    /// Because part could be actually committed into ZooKeeper, but response from ZooKeeper to the server could be delayed
+    auto part = data.getPartIfExists(name, {MergeTreeDataPart::State::PreCommitted, MergeTreeDataPart::State::Committed});
     if (part)
         return part;
-    throw Exception("No part " + name + " in table");
+
+    throw Exception("No part " + name + " in table", ErrorCodes::NO_SUCH_DATA_PART);
 }
 
 MergeTreeData::DataPartPtr Service::findShardedPart(const String & name, size_t shard_no)
@@ -177,14 +182,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     bool to_detached)
 {
     return fetchPartImpl(part_name, replica_path, host, port, "", to_detached);
-}
-
-MergeTreeData::MutableDataPartPtr Fetcher::fetchShardedPart(
-    const InterserverIOEndpointLocation & location,
-    const String & part_name,
-    size_t shard_no)
-{
-    return fetchPartImpl(part_name, location.name, location.host, location.port, toString(shard_no), true);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
@@ -210,19 +207,20 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
     ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 
-    String full_part_name = String(to_detached ? "detached/" : "") + "tmp_" + part_name;
-    String part_path = data.getFullPath() + full_part_name + "/";
-    Poco::File part_file(part_path);
+    static const String TMP_PREFIX = "tmp_fetch_";
+    String relative_part_path = String(to_detached ? "detached/" : "") + TMP_PREFIX + part_name;
+    String absolute_part_path = data.getFullPath() + relative_part_path + "/";
+    Poco::File part_file(absolute_part_path);
 
     if (part_file.exists())
-        throw Exception("Directory " + part_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+        throw Exception("Directory " + absolute_part_path + " already exists.", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedFetch};
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data);
-    new_data_part->name = full_part_name;
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name);
+    new_data_part->relative_path = relative_part_path;
     new_data_part->is_temp = true;
 
     size_t files;
@@ -236,11 +234,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
         readStringBinary(file_name, in);
         readBinary(file_size, in);
 
-        WriteBufferFromFile file_out(part_path + file_name);
+        WriteBufferFromFile file_out(absolute_part_path + file_name);
         HashingWriteBuffer hashing_out(file_out);
-        copyData(in, hashing_out, file_size, is_cancelled);
+        copyData(in, hashing_out, file_size, blocker.getCounter());
 
-        if (is_cancelled)
+        if (blocker.isCancelled())
         {
             /// NOTE The is_cancelled flag also makes sense to check every time you read over the network, performing a poll with a not very large timeout.
             /// And now we check it only between read chunks (in the `copyData` function).
@@ -248,11 +246,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
             throw Exception("Fetching of part was cancelled", ErrorCodes::ABORTED);
         }
 
-        uint128 expected_hash;
-        readBinary(expected_hash, in);
+        MergeTreeDataPartChecksum::uint128 expected_hash;
+        readPODBinary(expected_hash, in);
 
         if (expected_hash != hashing_out.getHash())
-            throw Exception("Checksum mismatch for file " + part_path + file_name + " transferred from " + replica_path);
+            throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path);
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt")
@@ -261,12 +259,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
 
     assertEOF(in);
 
-    ActiveDataPartSet::parsePartName(part_name, *new_data_part);
-    new_data_part->modification_time = time(0);
-    new_data_part->loadColumns(true);
-    new_data_part->loadChecksums(true);
-    new_data_part->loadIndex();
-    new_data_part->is_sharded = false;
+    new_data_part->modification_time = time(nullptr);
+    new_data_part->loadColumnsChecksumsIndexes(true, false);
     new_data_part->checksums.checkEqual(checksums, false);
 
     return new_data_part;

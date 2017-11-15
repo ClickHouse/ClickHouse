@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/ReshardingJob.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/createBlockSelector.h>
@@ -18,12 +19,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-ShardedBlockWithDateInterval::ShardedBlockWithDateInterval(const Block & block_,
-    size_t shard_no_, UInt16 min_date_, UInt16 max_date_)
-    : block(block_), shard_no(shard_no_), min_date(min_date_), max_date(max_date_)
-{
-}
-
 MergeTreeSharder::MergeTreeSharder(MergeTreeData & data_, const ReshardingJob & job_)
     : data(data_), job(job_), log(&Logger::get(data.getLogName() + " (Sharder)")),
     sharding_key_expr(ExpressionAnalyzer(job.sharding_key_expr, data.context, nullptr, data.getColumnsList()).getActions(false)),
@@ -36,9 +31,9 @@ MergeTreeSharder::MergeTreeSharder(MergeTreeData & data_, const ReshardingJob & 
     }
 }
 
-ShardedBlocksWithDateIntervals MergeTreeSharder::shardBlock(const Block & block)
+BlocksWithShardNum MergeTreeSharder::shardBlock(const Block & block)
 {
-    ShardedBlocksWithDateIntervals res;
+    BlocksWithShardNum res;
 
     const auto num_cols = block.columns();
 
@@ -65,16 +60,10 @@ ShardedBlocksWithDateIntervals MergeTreeSharder::shardBlock(const Block & block)
             splitted_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(splitted_columns[shard_idx]);
     }
 
-    for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
+    for (size_t shard_no = 0; shard_no < num_shards; ++shard_no)
     {
-        if (splitted_blocks[shard_idx].rows())
-        {
-            /// Get min and max date.
-            Field min_date;
-            Field max_date;
-            typeid_cast<const ColumnUInt16 &>(*splitted_blocks[shard_idx].getByName(data.date_column_name).column).getExtremes(min_date, max_date);
-            res.emplace_back(splitted_blocks[shard_idx], shard_idx, get<UInt64>(min_date), get<UInt64>(max_date));
-        }
+        if (splitted_blocks[shard_no].rows())
+            res.emplace_back(std::move(splitted_blocks[shard_no]), shard_no);
     }
 
     return res;

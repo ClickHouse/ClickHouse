@@ -3,7 +3,6 @@
 #include <set>
 
 #include <Core/Block.h>
-#include <Core/NamesAndTypes.h>
 #include <Parsers/IAST.h>
 
 
@@ -11,6 +10,7 @@ namespace DB
 {
 
 class Context;
+class NamesAndTypesList;
 
 
 namespace VirtualColumnUtils
@@ -30,10 +30,10 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 /// Leave in the block only the rows that fit under the WHERE clause and the PREWHERE clause of the query.
 /// Only elements of the outer conjunction are considered, depending only on the columns present in the block.
 /// Returns true if at least one row is discarded.
-bool filterBlockWithQuery(ASTPtr query, Block & block, const Context & context);
+bool filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context);
 
 /// Extract from the input stream a set of `name` column values
-template<typename T1>
+template <typename T1>
 std::multiset<T1> extractSingleValueFromBlock(const Block & block, const String & name)
 {
     std::multiset<T1> res;

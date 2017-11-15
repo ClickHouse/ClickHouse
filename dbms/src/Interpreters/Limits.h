@@ -98,6 +98,8 @@ struct Limits
     M(SettingUInt64, max_network_bandwidth, 0) \
     /** The maximum number of bytes to receive or transmit over the network, as part of the query. */ \
     M(SettingUInt64, max_network_bytes, 0) \
+    /** The maximum speed of data exchange over the network for the user in bytes per second. 0 - not bounded. */ \
+    M(SettingUInt64, max_network_bandwidth_for_user, 0)
 
 #define DECLARE(TYPE, NAME, DEFAULT) \
     TYPE NAME {DEFAULT};
@@ -169,6 +171,19 @@ struct Limits
         return true;
 
     #undef TRY_SET
+    }
+
+    bool tryGet(const String & name, String & value) const
+    {
+    #define TRY_GET(TYPE, NAME, DEFAULT) \
+        else if (name == #NAME) { value = NAME.toString(); return true; }
+
+        if (false) {}
+        APPLY_FOR_LIMITS(TRY_GET)
+
+        return false;
+
+    #undef TRY_GET
     }
 
 private:

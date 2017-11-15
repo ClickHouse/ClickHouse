@@ -12,11 +12,11 @@ namespace DB
   */
 struct MarkRange
 {
-    std::size_t begin;
-    std::size_t end;
+    size_t begin;
+    size_t end;
 
     MarkRange() = default;
-    MarkRange(const std::size_t begin, const std::size_t end) : begin{begin}, end{end} {}
+    MarkRange(const size_t begin, const size_t end) : begin{begin}, end{end} {}
 };
 
 using MarkRanges = std::vector<MarkRange>;

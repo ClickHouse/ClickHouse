@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
-#include <zkutil/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <boost/program_options.hpp>
 
 

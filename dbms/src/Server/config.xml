@@ -8,15 +8,18 @@
         <count>10</count>
     </logger>
 
-
     <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
 
+    <!-- For HTTPS and SSL over native protocol. -->
     <!--
     <https_port>8443</https_port>
+    <tcp_ssl_port>9440</tcp_ssl_port>
     -->
-    <!-- Used only with https_port. Full ssl options list: https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
+
+    <!-- Used with https_port and tcp_ssl_port. Full ssl options list: https://github.com/yandex/ClickHouse/blob/master/contrib/libpoco/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
-        <server>
+        <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
             <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
             <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
@@ -28,7 +31,8 @@
             <disableProtocols>sslv2,sslv3</disableProtocols>
             <preferServerCiphers>true</preferServerCiphers>
         </server>
-        <client>
+
+        <client> <!-- Used for connecting to https dictionary source -->
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>
@@ -45,8 +49,6 @@
     <!--
     <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
-
-    <tcp_port>9000</tcp_port>
 
     <!-- Port for communication between replicas. Used for data exchange. -->
     <interserver_http_port>9009</interserver_http_port>
@@ -111,13 +113,31 @@
 
          Time zone is specified as identifier from IANA time zone database, like UTC or Africa/Abidjan.
          If not specified, system time zone at server startup is used.
+
+         Please note, that server could display time zone alias instead of specified name.
+         Example: W-SU is an alias for Europe/Moscow and Zulu is an alias for UTC.
     -->
     <!-- <timezone>Europe/Moscow</timezone> -->
+
+    <!-- You can specify umask here (see "man umask"). Server will apply it on startup.
+         Number is always parsed as octal. Default umask is 027 (other users cannot read logs, data files, etc; group can only read).
+    -->
+    <!-- <umask>022</umask> -->
 
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.yandex/reference_en.html#Distributed
       -->
-    <remote_servers incl="clickhouse_remote_servers" />
+    <remote_servers incl="clickhouse_remote_servers" >
+        <!-- Test only shard config for testing distributed storage -->
+        <test_shard_localhost>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_shard_localhost>
+    </remote_servers>
 
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
@@ -143,6 +163,12 @@
     <!-- Reloading interval for embedded dictionaries, in seconds. Default: 3600. -->
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 
+
+    <!-- Maximum session timeout, in seconds. Default: 3600. -->
+    <max_session_timeout>3600</max_session_timeout>
+
+    <!-- Default session timeout, in seconds. Default: 60. -->
+    <default_session_timeout>60</default_session_timeout>
 
     <!-- Sending data to Graphite for monitoring. Several sections can be defined. -->
     <!--
@@ -239,6 +265,13 @@
     <resharding>
         <task_queue_path>/clickhouse/task_queue</task_queue_path>
     </resharding>
+
+    <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
+         Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
+    <distributed_ddl>
+        <!-- Path in ZooKeeper to queue with DDL queries -->
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
 
     <!-- Settings to fine tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--

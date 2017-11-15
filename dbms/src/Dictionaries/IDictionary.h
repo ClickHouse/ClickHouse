@@ -1,51 +1,47 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Core/StringRef.h>
+#include <Interpreters/IExternalLoadable.h>
+#include <common/StringRef.h>
+#include <Core/Names.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <memory>
 #include <chrono>
+#include <Dictionaries/IDictionarySource.h>
 
 namespace DB
 {
 
-class IDictionarySource;
-
 struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
-struct DictionaryLifetime;
 struct DictionaryStructure;
 class ColumnString;
 
+class IBlockInputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
-struct IDictionaryBase
+
+struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
 
-    virtual std::exception_ptr getCreationException() const = 0;
-
-    virtual std::string getName() const = 0;
-
     virtual std::string getTypeName() const = 0;
 
-    virtual std::size_t getBytesAllocated() const = 0;
+    virtual size_t getBytesAllocated() const = 0;
 
-    virtual std::size_t getQueryCount() const = 0;
+    virtual size_t getQueryCount() const = 0;
 
     virtual double getHitRate() const = 0;
 
-    virtual std::size_t getElementCount() const = 0;
+    virtual size_t getElementCount() const = 0;
 
     virtual double getLoadFactor() const = 0;
 
     virtual bool isCached() const = 0;
-    virtual DictionaryPtr clone() const = 0;
 
     virtual const IDictionarySource * getSource() const = 0;
-
-    virtual const DictionaryLifetime & getLifetime() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
 
@@ -53,7 +49,25 @@ struct IDictionaryBase
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
-    virtual ~IDictionaryBase() = default;
+    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
+
+    bool supportUpdates() const override { return !isCached(); }
+
+    bool isModified() const override
+    {
+        auto source = getSource();
+        return source && source->isModified();
+    }
+
+    std::shared_ptr<IDictionaryBase> shared_from_this()
+    {
+        return std::static_pointer_cast<IDictionaryBase>(IExternalLoadable::shared_from_this());
+    }
+
+    std::shared_ptr<const IDictionaryBase> shared_from_this() const
+    {
+        return std::static_pointer_cast<const IDictionaryBase>(IExternalLoadable::shared_from_this());
+    }
 };
 
 

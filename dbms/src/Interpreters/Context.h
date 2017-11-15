@@ -1,13 +1,17 @@
 #pragma once
 
+#include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <thread>
 
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
-#include <IO/CompressedStream.h>
+#include <IO/CompressionSettings.h>
 
 
 namespace Poco
@@ -29,10 +33,9 @@ namespace DB
 
 struct ContextShared;
 class QuotaForIntervals;
-class TableFunctionFactory;
-class AggregateFunctionFactory;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
+class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
 class ReshardingWorker;
@@ -51,6 +54,7 @@ class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
+class DDLWorker;
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
@@ -61,21 +65,23 @@ class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
+struct SystemLogs;
+using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 
 
-/// (имя базы данных, имя таблицы)
+/// (database name, table name)
 using DatabaseAndTableName = std::pair<String, String>;
 
-/// Таблица -> множество таблиц-представлений, которые деляют SELECT из неё.
+/// Table -> set of table-views that make SELECT from it.
 using ViewDependencies = std::map<DatabaseAndTableName, std::set<DatabaseAndTableName>>;
 using Dependencies = std::vector<DatabaseAndTableName>;
 
 
-/** Набор известных объектов, которые могут быть использованы в запросе.
-  * Состоит из разделяемой части (всегда общей для всех сессий и запросов)
-  *  и копируемой части (которая может быть своей для каждой сессии или запроса).
+/** A set of known objects that can be used in the query.
+  * Consists of a shared part (always common to all sessions and queries)
+  *  and copied part (which can be its own for each session or query).
   *
-  * Всё инкапсулировано для всяких проверок и блокировок.
+  * Everything is encapsulated for all sorts of checks and locks.
   */
 class Context
 {
@@ -85,24 +91,33 @@ private:
 
     ClientInfo client_info;
 
-    std::shared_ptr<QuotaForIntervals> quota;    /// Current quota. By default - empty quota, that have no limits.
+    std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
-    Settings settings;                            /// Setting for query execution.
+    Settings settings;                                  /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
-    ProgressCallback progress_callback;            /// Callback for tracking progress of query execution.
-    ProcessListElement * process_list_elem = nullptr;    /// For tracking total resource usage for query.
+    ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
+    ProcessListElement * process_list_elem = nullptr;   /// For tracking total resource usage for query.
 
-    String default_format;    /// Format, used when server formats data by itself and if query does not have FORMAT specification.
+    String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
-    Tables external_tables;                    /// Temporary tables.
+    Tables external_tables;                 /// Temporary tables.
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
-    Context * global_context = nullptr;        /// Global context or nullptr. Could be equal to this.
+    Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
+    SystemLogsPtr system_logs;              /// Used to log queries and operations on parts
+
+    UInt64 session_close_cycle = 0;
+    bool session_is_used = false;
 
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
-public:
+    /// Use copy constructor or createGlobal() instead
     Context();
+
+public:
+    /// Create initial Context with ContextShared and etc.
+    static Context createGlobal();
+
     ~Context();
 
     String getPath() const;
@@ -114,16 +129,22 @@ public:
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
-    /** Забрать список пользователей, квот и профилей настроек из этого конфига.
-      * Список пользователей полностью заменяется.
-      * Накопленные значения у квоты не сбрасываются, если квота не удалена.
+    /// Global application configuration settings.
+    void setConfig(const ConfigurationPtr & config);
+    ConfigurationPtr getConfig() const;
+    Poco::Util::AbstractConfiguration & getConfigRef() const;
+
+    /** Take the list of users, quotas and configuration profiles from this config.
+      * The list of users is completely replaced.
+      * The accumulated quota values are not reset if the quota is not deleted.
       */
     void setUsersConfig(const ConfigurationPtr & config);
-
     ConfigurationPtr getUsersConfig();
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
+    /// Compute and set actual user settings, client_info.current_user should be set
+    void calculateUserSettings();
 
     ClientInfo & getClientInfo() { return client_info; };
     const ClientInfo & getClientInfo() const { return client_info; };
@@ -135,14 +156,14 @@ public:
     void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     Dependencies getDependencies(const String & database_name, const String & table_name) const;
 
-    /// Проверка существования таблицы/БД. database может быть пустой - в этом случае используется текущая БД.
+    /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;
     void assertTableExists(const String & database_name, const String & table_name) const;
 
-    /** Параметр check_database_access_rights существует, чтобы не проверить повторно права доступа к БД,
-      * когда assertTableDoesnExist или assertDatabaseExists вызывается внутри другой функции, которая уже
-      * сделала эту проверку.
+    /** The parameter check_database_access_rights exists to not check the permissions of the database again,
+      * when assertTableDoesntExist or assertDatabaseExists is called inside another function that already
+      * made this check.
       */
     void assertTableDoesntExist(const String & database_name, const String & table_name, bool check_database_acccess_rights = true) const;
     void assertDatabaseExists(const String & database_name, bool check_database_acccess_rights = true) const;
@@ -153,15 +174,16 @@ public:
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
-    void addExternalTable(const String & table_name, StoragePtr storage);
+    void addExternalTable(const String & table_name, const StoragePtr & storage);
+    StoragePtr tryRemoveExternalTable(const String & table_name);
 
     void addDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(const String & database_name);
 
-    /// Получить объект, который защищает таблицу от одновременного выполнения нескольких DDL операций.
-    /// Если такой объект уже есть - кидается исключение.
+    /// Get an object that protects the table from concurrently executing multiple DDL operations.
+    /// If such an object already exists, an exception is thrown.
     std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table, const String & message) const;
-    /// Если таблица уже есть - возвращается nullptr, иначе создаётся guard.
+    /// If the table already exists, it returns nullptr, otherwise guard is created.
     std::unique_ptr<DDLGuard> getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const;
 
     String getCurrentDatabase() const;
@@ -169,7 +191,7 @@ public:
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
 
-    String getDefaultFormat() const;    /// Если default_format не задан - возвращается некоторый глобальный формат по-умолчанию.
+    String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);
 
     const Macros & getMacros() const;
@@ -180,31 +202,35 @@ public:
 
     Limits getLimits() const;
 
-    /// Установить настройку по имени.
+    /// Set a setting by name.
     void setSetting(const String & name, const Field & value);
 
-    /// Установить настройку по имени. Прочитать значение в текстовом виде из строки (например, из конфига, или из параметра URL).
+    /// Set a setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
     void setSetting(const String & name, const std::string & value);
 
-    const TableFunctionFactory & getTableFunctionFactory() const;
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
+    const ExternalModels & getExternalModels() const;
+    EmbeddedDictionaries & getEmbeddedDictionaries();
+    ExternalDictionaries & getExternalDictionaries();
+    ExternalModels & getExternalModels();
     void tryCreateEmbeddedDictionaries() const;
     void tryCreateExternalDictionaries() const;
+    void tryCreateExternalModels() const;
 
-    /// Форматы ввода-вывода.
+    /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const;
     BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
 
-    /// Как другие серверы могут обратиться к этому для скачивания реплицируемых данных.
+    /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
     std::pair<String, UInt16> getInterserverIOAddress() const;
-    /// Порт, который сервер слушает для выполнения SQL-запросов.
+    /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
-    /// Получить запрос на CREATE таблицы.
+    /// Get query for the CREATE table.
     ASTPtr getCreateQuery(const String & database_name, const String & table_name) const;
 
     const DatabasePtr getDatabase(const String & database_name) const;
@@ -215,65 +241,79 @@ public:
     const Databases getDatabases() const;
     Databases getDatabases();
 
+    std::shared_ptr<Context> acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const;
+    void releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout);
+
+    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
+    std::chrono::steady_clock::duration closeSessions() const;
 
     /// For methods below you may need to acquire a lock by yourself.
     std::unique_lock<Poco::Mutex> getLock() const;
 
     const Context & getSessionContext() const;
     Context & getSessionContext();
+    bool hasSessionContext() const { return session_context != nullptr; }
 
     const Context & getGlobalContext() const;
     Context & getGlobalContext();
+    bool hasGlobalContext() const { return global_context != nullptr; }
 
-    void setSessionContext(Context & context_)                                { session_context = &context_; }
-    void setGlobalContext(Context & context_)                                { global_context = &context_; }
+    void setSessionContext(Context & context_)                                  { session_context = &context_; }
+    void setGlobalContext(Context & context_)                                   { global_context = &context_; }
 
     const Settings & getSettingsRef() const { return settings; };
     Settings & getSettingsRef() { return settings; };
 
 
     void setProgressCallback(ProgressCallback callback);
-    /// Используется в InterpreterSelectQuery, чтобы передать его в IProfilingBlockInputStream.
+    /// Used in InterpreterSelectQuery to pass it to the IProfilingBlockInputStream.
     ProgressCallback getProgressCallback() const;
 
-    /** Устанавливается в executeQuery и InterpreterSelectQuery. Затем используется в IProfilingBlockInputStream,
-      *  чтобы обновлять и контролировать информацию об общем количестве потраченных на запрос ресурсов.
+    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IProfilingBlockInputStream,
+      *  to update and monitor information about the total number of resources spent for the query.
       */
     void setProcessListElement(ProcessListElement * elem);
-    /// Может вернуть nullptr, если запрос не был вставлен в ProcessList.
-    ProcessListElement * getProcessListElement();
+    /// Can return nullptr if the query was not inserted into the ProcessList.
+    ProcessListElement * getProcessListElement() const;
 
-    /// Список всех запросов.
+    /// List all queries.
     ProcessList & getProcessList();
     const ProcessList & getProcessList() const;
 
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    /// Создать кэш разжатых блоков указанного размера. Это можно сделать только один раз.
+    void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
+    /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
+    std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
+    /// Has ready or expired ZooKeeper
+    bool hasZooKeeper() const;
+
+    /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(size_t max_size_in_bytes);
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
+    void dropUncompressedCache() const;
 
-    void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
-    /// Если в момент вызова текущая сессия просрочена, синхронно создает и возвращает новую вызовом startNewSession().
-    std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
-
-    /// Создать кэш засечек указанного размера. Это можно сделать только один раз.
+    /// Create a cache of marks of specified size. This can be done only once.
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
+    void dropMarkCache() const;
+
+    /** Clear the caches of the uncompressed blocks and marks.
+      * This is usually done when renaming tables, changing the type of columns, deleting a table.
+      *  - since caches are linked to file names, and become incorrect.
+      *  (when deleting a table - it is necessary, since in its place another can appear)
+      * const - because the change in the cache is not considered significant.
+      */
+    void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
 
     void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
-    ReshardingWorker & getReshardingWorker();
+    ReshardingWorker & getReshardingWorker() const;
 
-    /** Очистить кэши разжатых блоков и засечек.
-      * Обычно это делается при переименовании таблиц, изменении типа столбцов, удалении таблицы.
-      *  - так как кэши привязаны к именам файлов, и становятся некорректными.
-      *  (при удалении таблицы - нужно, так как на её месте может появиться другая)
-      * const - потому что изменение кэша не считается существенным.
-      */
-    void resetCaches() const;
+    void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
+    DDLWorker & getDDLWorker() const;
 
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
@@ -282,26 +322,29 @@ public:
 
     Compiler & getCompiler();
     QueryLog & getQueryLog();
-    std::shared_ptr<PartLog> getPartLog();
+
+    /// Returns an object used to log opertaions with parts if it possible.
+    /// Provide table name to make required cheks.
+    PartLog * getPartLog(const String & database, const String & table);
     const MergeTreeSettings & getMergeTreeSettings();
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
     void checkTableCanBeDropped(const String & database, const String & table, size_t table_size);
 
-    /// Позволяет выбрать метод сжатия по условиям, описанным в конфигурационном файле.
-    CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;
+    /// Lets you select the compression settings according to the conditions described in the configuration file.
+    CompressionSettings chooseCompressionSettings(size_t part_size, double part_size_ratio) const;
 
-    /// Получить аптайм сервера в секундах.
+    /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
 
     void shutdown();
 
     enum class ApplicationType
     {
-        SERVER,            /// The program is run as clickhouse-server daemon (default behavior)
-        CLIENT,            /// clickhouse-client
-        LOCAL_SERVER    /// clickhouse-local
+        SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
+        CLIENT,         /// clickhouse-client
+        LOCAL           /// clickhouse-local
     };
 
     ApplicationType getApplicationType() const;
@@ -311,17 +354,26 @@ public:
     String getDefaultProfileName() const;
     void setDefaultProfileName(const String & name);
 
+    /// User name and session identifier. Named sessions are local to users.
+    using SessionKey = std::pair<String, String>;
+
 private:
-    /** Проверить, имеет ли текущий клиент доступ к заданной базе данных.
-      * Если доступ запрещён, кинуть исключение.
-      * NOTE: Этот метод надо всегда вызывать при захваченном мьютексе shared->mutex.
+    /** Check if the current client has access to the specified database.
+      * If access is denied, throw an exception.
+      * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
       */
     void checkDatabaseAccessRights(const std::string & database_name) const;
 
-    const EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
-    const ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+    EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
+    ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+    ExternalModels & getExternalModelsImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
+
+    SessionKey getSessionKey(const String & session_id) const;
+
+    /// Session will be closed after specified timeout.
+    void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
 };
 
 
@@ -341,6 +393,27 @@ private:
     Map & map;
     Map::iterator it;
     std::mutex & mutex;
+};
+
+
+class SessionCleaner
+{
+public:
+    SessionCleaner(Context & context_)
+        : context{context_}
+    {
+    }
+    ~SessionCleaner();
+
+private:
+    void run();
+
+    Context & context;
+
+    std::mutex mutex;
+    std::condition_variable cond;
+    std::atomic<bool> quit{false};
+    std::thread thread{&SessionCleaner::run, this};
 };
 
 }

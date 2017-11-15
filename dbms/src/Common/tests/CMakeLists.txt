@@ -29,6 +29,7 @@ add_executable (int_hashes_perf int_hashes_perf.cpp AvalancheTest.cpp Random.cpp
 target_link_libraries (int_hashes_perf dbms)
 
 add_executable (simple_cache simple_cache.cpp)
+target_include_directories (simple_cache PRIVATE ${DBMS_INCLUDE_DIR})
 target_link_libraries (simple_cache common)
 
 add_executable (compact_array compact_array.cpp)
@@ -57,3 +58,7 @@ target_link_libraries (array_cache dbms)
 
 add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving dbms)
+
+add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
+target_include_directories (integer_hash_tables_and_hashes BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_link_libraries (integer_hash_tables_and_hashes dbms)

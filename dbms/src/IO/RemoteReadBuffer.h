@@ -10,7 +10,7 @@
 namespace DB
 {
 
-/** Позволяет читать файл с удалённого сервера через riod.
+/** Allows you to read a file from a remote server via riod.
   */
 class RemoteReadBuffer : public ReadBuffer
 {
@@ -51,7 +51,7 @@ public:
         return true;
     }
 
-    /// Вернуть список имен файлов в директории.
+    /// Return the list of file names in the directory.
     static std::vector<std::string> listFiles(
         const std::string & host,
         int port,

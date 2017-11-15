@@ -18,11 +18,17 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
+
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /** Calculates quantile for time in milliseconds, less than 30 seconds.
   * If the value is greater than 30 seconds, the value is set to 30 seconds.
@@ -785,7 +791,7 @@ public:
 
 
 template <typename ArgumentFieldType>
-class AggregateFunctionQuantileTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTiming<ArgumentFieldType> >
+class AggregateFunctionQuantileTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantileTiming<ArgumentFieldType>>
 {
 private:
     double level;
@@ -837,6 +843,8 @@ public:
     {
         static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -897,6 +905,8 @@ public:
     {
         static_cast<ColumnFloat32 &>(to).getData().push_back(this->data(place).getFloat(level));
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -905,7 +915,7 @@ public:
   * Returns an array of results.
   */
 template <typename ArgumentFieldType>
-class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType> >
+class AggregateFunctionQuantilesTiming final : public IUnaryAggregateFunction<QuantileTiming, AggregateFunctionQuantilesTiming<ArgumentFieldType>>
 {
 private:
     QuantileLevels<double> levels;
@@ -965,6 +975,8 @@ public:
 
         this->data(place).getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -1031,6 +1043,8 @@ public:
 
         this->data(place).getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

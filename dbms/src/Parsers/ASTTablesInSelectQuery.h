@@ -112,7 +112,7 @@ struct ASTArrayJoin : public IAST
 {
     enum class Kind
     {
-        Inner,    /// If array is empty, row will not present (default).
+        Inner,   /// If array is empty, row will not present (default).
         Left,    /// If array is empty, leave row with default values instead of array elements.
     };
 
@@ -134,9 +134,9 @@ struct ASTTablesInSelectQueryElement : public IAST
     /** For first element of list, either table_expression or array_join element could be non-nullptr.
       * For former elements, either table_join and table_expression are both non-nullptr, or array_join is non-nullptr.
       */
-    ASTPtr table_join;            /// How to JOIN a table, if table_expression is non-nullptr.
-    ASTPtr table_expression;    /// Table.
-    ASTPtr array_join;            /// Arrays to JOIN.
+    ASTPtr table_join;       /// How to JOIN a table, if table_expression is non-nullptr.
+    ASTPtr table_expression; /// Table.
+    ASTPtr array_join;       /// Arrays to JOIN.
 
     using IAST::IAST;
     String getID() const override { return "TablesInSelectQueryElement"; }

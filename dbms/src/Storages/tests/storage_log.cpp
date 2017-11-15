@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
+#include <Common/typeid_cast.h>
 
 
 int main(int argc, char ** argv)
@@ -24,7 +25,9 @@ try
     names_and_types->push_back(NameAndTypePair("a", std::make_shared<DataTypeUInt64>()));
     names_and_types->push_back(NameAndTypePair("b", std::make_shared<DataTypeUInt8>()));
 
-    StoragePtr table = StorageLog::create("./", "test", names_and_types);
+    StoragePtr table = StorageLog::create("./", "test", names_and_types,
+        NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+    table->startup();
 
     /// write into it
     {
@@ -66,7 +69,7 @@ try
 
         QueryProcessingStage::Enum stage;
 
-        BlockInputStreamPtr in = table->read(column_names, 0, Context{}, Settings(), stage)[0];
+        BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
 
         Block sample;
         {

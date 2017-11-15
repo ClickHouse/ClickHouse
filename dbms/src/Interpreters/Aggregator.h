@@ -8,11 +8,11 @@
 
 #include <common/logger_useful.h>
 
-#include <Core/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 #include <DataStreams/IBlockInputStream.h>
 
@@ -39,23 +39,23 @@ namespace ErrorCodes
 class IBlockOutputStream;
 
 
-/** Разные структуры данных, которые могут использоваться для агрегации
-  * Для эффективности, сами данные для агрегации кладутся в пул.
-  * Владение данными (состояний агрегатных функций) и пулом
-  *  захватывается позднее - в функции convertToBlocks, объектом ColumnAggregateFunction.
+/** Different data structures that can be used for aggregation
+  * For efficiency, the aggregation data itself is put into the pool.
+  * Data and pool ownership (states of aggregate functions)
+  *  is acquired later - in `convertToBlocks` function, by the ColumnAggregateFunction object.
   *
-  * Большинство структур данных существует в двух вариантах: обычном и двухуровневом (TwoLevel).
-  * Двухуровневая хэш-таблица работает чуть медленнее при маленьком количестве различных ключей,
-  *  но при большом количестве различных ключей лучше масштабируется, так как позволяет
-  *  распараллелить некоторые операции (слияние, пост-обработку) естественным образом.
+  * Most data structures exist in two versions: normal and two-level (TwoLevel).
+  * A two-level hash table works a little slower with a small number of different keys,
+  *  but with a large number of different keys scales better, because it allows
+  *  parallelize some operations (merging, post-processing) in a natural way.
   *
-  * Чтобы обеспечить эффективную работу в большом диапазоне условий,
-  *  сначала используются одноуровневые хэш-таблицы,
-  *  а при достижении количеством различных ключей достаточно большого размера,
-  *  они конвертируются в двухуровневые.
+  * To ensure efficient work over a wide range of conditions,
+  *  first single-level hash tables are used,
+  *  and when the number of different keys is large enough,
+  *  they are converted to two-level ones.
   *
-  * PS. Существует много различных подходов к эффективной реализации параллельной и распределённой агрегации,
-  *  лучшим образом подходящих для разных случаев, и этот подход - всего лишь один из них, выбранный по совокупности причин.
+  * PS. There are many different approaches to the effective implementation of parallel and distributed aggregation,
+  *  best suited for different cases, and this approach is just one of them, chosen for a combination of reasons.
   */
 
 using AggregatedDataWithoutKey = AggregateDataPtr;
@@ -88,8 +88,8 @@ using AggregatedDataWithKeys128Hash64 = HashMap<UInt128, AggregateDataPtr, UInt1
 using AggregatedDataWithKeys256Hash64 = HashMap<UInt256, AggregateDataPtr, UInt256Hash>;
 
 
-/// Для случая, когда есть один числовой ключ.
-template <typename FieldType, typename TData>    /// UInt8/16/32/64 для любых типов соответствующей битности.
+/// For the case where there is one numeric key.
+template <typename FieldType, typename TData>    /// UInt8/16/32/64 for any type with corresponding bit width.
 struct AggregationMethodOneNumber
 {
     using Data = TData;
@@ -105,51 +105,51 @@ struct AggregationMethodOneNumber
     template <typename Other>
     AggregationMethodOneNumber(const Other & other) : data(other.data) {}
 
-    /// Для использования одного Method в разных потоках, используйте разные State.
+    /// To use one `Method` in different threads, use different `State`.
     struct State
     {
         const FieldType * vec;
 
-        /** Вызывается в начале обработки каждого блока.
-          * Устанавливает переменные, необходимые для остальных методов, вызываемых во внутренних циклах.
+        /** Called at the start of each block processing.
+          * Sets the variables needed for the other methods called in internal loops.
           */
         void init(ConstColumnPlainPtrs & key_columns)
         {
             vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
         }
 
-        /// Достать из ключевых столбцов ключ для вставки в хэш-таблицу.
+        /// Get the key from the key columns for insertion into the hash table.
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,    /// Ключевые столбцы.
-            size_t keys_size,                            /// Количество ключевых столбцов.
-            size_t i,                    /// Из какой строки блока достать ключ.
-            const Sizes & key_sizes,    /// Если ключи фиксированной длины - их длины. Не используется в методах агрегации по ключам переменной длины.
-            StringRefs & keys,            /// Сюда могут быть записаны ссылки на данные ключей в столбцах. Они могут быть использованы в дальнейшем.
+            const ConstColumnPlainPtrs & key_columns,    /// Key columns.
+            size_t keys_size,                            /// Number of key columns.
+            size_t i,                     /// From which row of the block, get the key.
+            const Sizes & key_sizes,      /// If the keys of a fixed length - their lengths. It is not used in aggregation methods for variable length keys.
+            StringRefs & keys,            /// Here references to key data in columns can be written. They can be used in the future.
             Arena & pool) const
         {
             return unionCastToUInt64(vec[i]);
         }
     };
 
-    /// Из значения в хэш-таблице получить AggregateDataPtr.
+    /// From the value in the hash table, get AggregateDataPtr.
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    /** Разместить дополнительные данные, если это необходимо, в случае, когда в хэш-таблицу был вставлен новый ключ.
+    /** Place additional data, if necessary, in case a new key was inserted into the hash table.
       */
     static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
     {
     }
 
-    /** Действие, которое нужно сделать, если ключ не новый. Например, откатить выделение памяти в пуле.
+    /** The action to be taken if the key is not new. For example, roll back the memory allocation in the pool.
       */
     static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
 
-    /** Не использовать оптимизацию для идущих подряд ключей.
+    /** Do not use optimization for consecutive keys.
       */
     static const bool no_consecutive_keys_optimization = false;
 
-    /** Вставить ключ из хэш-таблицы в столбцы.
+    /** Insert the key from the hash table into columns.
       */
     static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
     {
@@ -158,7 +158,7 @@ struct AggregationMethodOneNumber
 };
 
 
-/// Для случая, когда есть один строковый ключ.
+/// For the case where there is one string key.
 template <typename TData>
 struct AggregationMethodString
 {
@@ -221,7 +221,7 @@ struct AggregationMethodString
 };
 
 
-/// Для случая, когда есть один строковый ключ фиксированной длины.
+/// For the case where there is one fixed-length string key.
 template <typename TData>
 struct AggregationMethodFixedString
 {
@@ -378,7 +378,7 @@ protected:
 
 }
 
-/// Для случая, когда все ключи фиксированной длины, и они помещаются в N (например, 128) бит.
+/// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
 template <typename TData, bool has_nullable_keys_ = false>
 struct AggregationMethodKeysFixed
 {
@@ -487,7 +487,7 @@ struct AggregationMethodKeysFixed
 };
 
 
-/// Агрегирует по конкатенации ключей. (При этом, строки, содержащие нули посередине, могут склеиться.)
+/// Aggregates by key concatenation. (In this case, strings containing zeros in the middle can stick together.)
 template <typename TData>
 struct AggregationMethodConcat
 {
@@ -534,7 +534,7 @@ struct AggregationMethodConcat
         pool.rollback(key.size + keys.size() * sizeof(keys[0]));
     }
 
-    /// Если ключ уже был, то он удаляется из пула (затирается), и сравнить с ним следующий ключ уже нельзя.
+    /// If the key already was, then it is removed from the pool (overwritten), and the next key can not be compared with it.
     static const bool no_consecutive_keys_optimization = true;
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
@@ -546,14 +546,14 @@ private:
     /// Insert the values of the specified keys into the corresponding columns.
     static void insertKeyIntoColumnsImpl(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
     {
-        /// См. функцию extractKeysAndPlaceInPoolContiguous.
+        /// See function extractKeysAndPlaceInPoolContiguous.
         const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
 
         if (unlikely(0 == value.first.size))
         {
-            /** Исправление, если все ключи - пустые массивы. Для них в хэш-таблицу записывается StringRef нулевой длины, но с ненулевым указателем.
-                * Но при вставке в хэш-таблицу, такой StringRef оказывается равен другому ключу нулевой длины,
-                *  у которого указатель на данные может быть любым мусором и использовать его нельзя.
+            /** Fix if all keys are empty arrays. For them, a zero-length StringRef is written to the hash table, but with a non-zero pointer.
+                * But when inserted into a hash table, this StringRef occurs equal to another key of zero length,
+                *  whose data pointer can be any garbage and can not be used.
                 */
             for (size_t i = 0; i < keys_size; ++i)
                 key_columns[i]->insertDefault();
@@ -567,11 +567,11 @@ private:
 };
 
 
-/** Агрегирует по конкатенации сериализованных значений ключей.
-  * Похож на AggregationMethodConcat, но подходит, например, для массивов строк или нескольких массивов.
-  * Сериализованное значение отличается тем, что позволяет однозначно его десериализовать, имея только позицию, с которой оно начинается.
-  * То есть, например, для строк, оно содержит сначала сериализованную длину строки, а потом байты.
-  * Поэтому, при агрегации по нескольким строкам, неоднозначностей не возникает.
+/** Aggregates by concatenating serialized key values.
+  * Similar to AggregationMethodConcat, but it is suitable, for example, for arrays of strings or multiple arrays.
+  * The serialized value differs in that it uniquely allows to deserialize it, having only the position with which it starts.
+  * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
+  * Therefore, when aggregating by several strings, there is no ambiguity.
   */
 template <typename TData>
 struct AggregationMethodSerialized
@@ -619,7 +619,7 @@ struct AggregationMethodSerialized
         pool.rollback(key.size);
     }
 
-    /// Если ключ уже был, то он удаляется из пула (затирается), и сравнить с ним следующий ключ уже нельзя.
+    /// If the key already was, it is removed from the pool (overwritten), and the next key can not be compared with it.
     static const bool no_consecutive_keys_optimization = true;
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
@@ -631,7 +631,7 @@ struct AggregationMethodSerialized
 };
 
 
-/// Для остальных случаев. Агрегирует по 128 битному хэшу от ключа.
+/// For other cases. Aggregates by 128-bit hash from the key.
 template <typename TData>
 struct AggregationMethodHashed
 {
@@ -690,33 +690,33 @@ class Aggregator;
 
 struct AggregatedDataVariants : private boost::noncopyable
 {
-    /** Работа с состояниями агрегатных функций в пуле устроена следующим (неудобным) образом:
-      * - при агрегации, состояния создаются в пуле с помощью функции IAggregateFunction::create (внутри - placement new произвольной структуры);
-      * - они должны быть затем уничтожены с помощью IAggregateFunction::destroy (внутри - вызов деструктора произвольной структуры);
-      * - если агрегация завершена, то, в функции Aggregator::convertToBlocks, указатели на состояния агрегатных функций
-      *   записываются в ColumnAggregateFunction; ColumnAggregateFunction "захватывает владение" ими, то есть - вызывает destroy в своём деструкторе.
-      * - если при агрегации, до вызова Aggregator::convertToBlocks вылетело исключение,
-      *   то состояния агрегатных функций всё-равно должны быть уничтожены,
-      *   иначе для сложных состояний (наприемер, AggregateFunctionUniq), будут утечки памяти;
-      * - чтобы, в этом случае, уничтожить состояния, в деструкторе вызывается метод Aggregator::destroyAggregateStates,
-      *   но только если переменная aggregator (см. ниже) не nullptr;
-      * - то есть, пока вы не передали владение состояниями агрегатных функций в ColumnAggregateFunction, установите переменную aggregator,
-      *   чтобы при возникновении исключения, состояния были корректно уничтожены.
+    /** Working with states of aggregate functions in the pool is arranged in the following (inconvenient) way:
+      * - when aggregating, states are created in the pool using IAggregateFunction::create (inside - `placement new` of arbitrary structure);
+      * - they must then be destroyed using IAggregateFunction::destroy (inside - calling the destructor of arbitrary structure);
+      * - if aggregation is complete, then, in the Aggregator::convertToBlocks function, pointers to the states of aggregate functions
+      *   are written to ColumnAggregateFunction; ColumnAggregateFunction "acquires ownership" of them, that is - calls `destroy` in its destructor.
+      * - if during the aggregation, before call to Aggregator::convertToBlocks, an exception was thrown,
+      *   then the states of aggregate functions must still be destroyed,
+      *   otherwise, for complex states (eg, AggregateFunctionUniq), there will be memory leaks;
+      * - in this case, to destroy states, the destructor calls Aggregator::destroyAggregateStates method,
+      *   but only if the variable aggregator (see below) is not nullptr;
+      * - that is, until you transfer ownership of the aggregate function states in the ColumnAggregateFunction, set the variable `aggregator`,
+      *   so that when an exception occurs, the states are correctly destroyed.
       *
-      * PS. Это можно исправить, сделав пул, который знает о том, какие состояния агрегатных функций и в каком порядке в него уложены, и умеет сам их уничтожать.
-      * Но это вряд ли можно просто сделать, так как в этот же пул планируется класть строки переменной длины.
-      * В этом случае, пул не сможет знать, по каким смещениям хранятся объекты.
+      * PS. This can be corrected by making a pool that knows about which states of aggregate functions and in which order are put in it, and knows how to destroy them.
+      * But this can hardly be done simply because it is planned to put variable-length strings into the same pool.
+      * In this case, the pool will not be able to know with what offsets objects are stored.
       */
     Aggregator * aggregator = nullptr;
 
-    size_t keys_size;    /// Количество ключей NOTE нужно ли это поле?
-    Sizes key_sizes;    /// Размеры ключей, если ключи фиксированной длины
+    size_t keys_size;    /// Number of keys. NOTE do we need this field?
+    Sizes key_sizes;     /// Dimensions of keys, if keys of fixed length
 
-    /// Пулы для состояний агрегатных функций. Владение потом будет передано в ColumnAggregateFunction.
+    /// Pools for states of aggregate functions. Ownership will be later transferred to ColumnAggregateFunction.
     Arenas aggregates_pools;
-    Arena * aggregates_pool;    /// Пул, который сейчас используется для аллокации.
+    Arena * aggregates_pool;    /// The pool that is currently used for allocation.
 
-    /** Специализация для случая, когда ключи отсутствуют, и для ключей, не попавших в max_rows_to_group_by.
+    /** Specialization for the case when there are no keys, and for keys not fitted into max_rows_to_group_by.
       */
     AggregatedDataWithoutKey without_key = nullptr;
 
@@ -757,7 +757,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>>        nullable_keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>>        nullable_keys256_two_level;
 
-    /// В этом и подобных макросах, вариант without_key не учитывается.
+    /// In this and similar macros, the option without_key is not considered.
     #define APPLY_FOR_AGGREGATED_VARIANTS(M) \
         M(key8,                    false) \
         M(key16,                false) \
@@ -827,7 +827,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         type = type_;
     }
 
-    /// Количество строк (разных ключей).
+    /// Number of rows (different keys).
     size_t size() const
     {
         switch (type)
@@ -845,7 +845,7 @@ struct AggregatedDataVariants : private boost::noncopyable
         }
     }
 
-    /// Размер без учёта строчки, в которую записываются данные для расчёта TOTALS.
+    /// The size without taking into account the row in which data is written for the calculation of TOTALS.
     size_t sizeWithoutOverflowRow() const
     {
         switch (type)
@@ -959,52 +959,52 @@ struct AggregatedDataVariants : private boost::noncopyable
 using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
 using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 
-/** Как считаются "тотальные" значения при наличии WITH TOTALS?
-  * (Более подробно смотрите в TotalsHavingBlockInputStream.)
+/** How are "total" values calculated with WITH TOTALS?
+  * (For more details, see TotalsHavingBlockInputStream.)
   *
-  * В случае отсутствия group_by_overflow_mode = 'any', данные агрегируются как обычно, но состояния агрегатных функций не финализируются.
-  * Позже, состояния агрегатных функций для всех строк (прошедших через HAVING) мерджатся в одну - это и будет TOTALS.
+  * In the absence of group_by_overflow_mode = 'any', the data is aggregated as usual, but the states of the aggregate functions are not finalized.
+  * Later, the aggregate function states for all rows (passed through HAVING) are merged into one - this will be TOTALS.
   *
-  * В случае наличия group_by_overflow_mode = 'any', данные агрегируются как обычно, кроме ключей, не поместившихся в max_rows_to_group_by.
-  * Для этих ключей, данные агрегируются в одну дополнительную строку - далее см. под названиями overflow_row, overflows...
-  * Позже, состояния агрегатных функций для всех строк (прошедших через HAVING) мерджатся в одну,
-  *  а также к ним прибавляется или не прибавляется (в зависимости от настройки totals_mode) также overflow_row - это и будет TOTALS.
+  * If there is group_by_overflow_mode = 'any', the data is aggregated as usual, except for the keys that did not fit in max_rows_to_group_by.
+  * For these keys, the data is aggregated into one additional row - see below under the names `overflow_row`, `overflows`...
+  * Later, the aggregate function states for all rows (passed through HAVING) are merged into one,
+  *  also overflow_row is added or not added (depending on the totals_mode setting) also - this will be TOTALS.
   */
 
 
-/** Агрегирует источник блоков.
+/** Aggregates the source of the blocks.
   */
 class Aggregator
 {
 public:
     struct Params
     {
-        /// Что считать.
+        /// What to count.
         Names key_names;
-        ColumnNumbers keys;            /// Номера столбцов - вычисляются позже.
+        ColumnNumbers keys;            /// The column numbers are computed later.
         AggregateDescriptions aggregates;
         size_t keys_size;
         size_t aggregates_size;
 
-        /// Настройки приближённого вычисления GROUP BY.
-        const bool overflow_row;    /// Нужно ли класть в AggregatedDataVariants::without_key агрегаты для ключей, не попавших в max_rows_to_group_by.
+        /// The settings of approximate calculation of GROUP BY.
+        const bool overflow_row;    /// Do we need to put into AggregatedDataVariants::without_key aggregates for keys that are not in max_rows_to_group_by.
         const size_t max_rows_to_group_by;
         const OverflowMode group_by_overflow_mode;
 
-        /// Для динамической компиляции.
+        /// For dynamic compilation.
         Compiler * compiler;
         const UInt32 min_count_to_compile;
 
-        /// Настройки двухуровневой агрегации (используется для большого количества ключей).
-        /** При каком количестве ключей или размере состояния агрегации в байтах,
-          *  начинает использоваться двухуровневая агрегация. Достаточно срабатывания хотя бы одного из порогов.
-          * 0 - соответствующий порог не задан.
+        /// Two-level aggregation settings (used for a large number of keys).
+        /** With how many keys or the size of the aggregation state in bytes,
+          *  two-level aggregation begins to be used. Enough to reach of at least one of the thresholds.
+          * 0 - the corresponding threshold is not specified.
           */
         const size_t group_by_two_level_threshold;
         const size_t group_by_two_level_threshold_bytes;
 
-        /// Настройки для сброса временных данных в файловую систему (внешняя агрегация).
-        const size_t max_bytes_before_external_group_by;        /// 0 - не использовать внешнюю агрегацию.
+        /// Settings to flush temporary data to the filesystem (external aggregation).
+        const size_t max_bytes_before_external_group_by;        /// 0 - do not use external aggregation.
         const std::string tmp_path;
 
         Params(
@@ -1024,11 +1024,11 @@ public:
             keys_size = key_names.size();
         }
 
-        /// Только параметры, имеющие значение при мердже.
+        /// Only parameters that matter during merge.
         Params(const Names & key_names_, const AggregateDescriptions & aggregates_, bool overflow_row_)
             : Params(key_names_, aggregates_, overflow_row_, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, "") {}
 
-        /// Вычислить номера столбцов в keys и aggregates.
+        /// Compute the column numbers in `keys` and `aggregates`.
         void calculateColumnNumbers(const Block & block);
     };
 
@@ -1038,39 +1038,41 @@ public:
     {
     }
 
-    /// Агрегировать источник. Получить результат в виде одной из структур данных.
-    void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
+    /// Aggregate the source. Get the result in the form of one of the data structures.
+    void execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result);
 
     using AggregateColumns = std::vector<ConstColumnPlainPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container_t *>;
     using AggregateFunctionsPlainPtrs = std::vector<IAggregateFunction *>;
 
-    /// Обработать один блок. Вернуть false, если обработку следует прервать (при group_by_overflow_mode = 'break').
+    /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(Block & block, AggregatedDataVariants & result,
-        ConstColumnPlainPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Передаются, чтобы не создавать их заново на каждый блок
-        Sizes & key_sizes, StringRefs & keys,                                        /// - передайте соответствующие объекты, которые изначально пустые.
+        ConstColumnPlainPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+        Sizes & key_sizes, StringRefs & keys,                                        /// - pass the corresponding objects that are initially empty.
         bool & no_more_keys);
 
-    /** Преобразовать структуру данных агрегации в блок.
-      * Если overflow_row = true, то агрегаты для строк, не попавших в max_rows_to_group_by, кладутся в первый блок.
+    /** Convert the aggregation data structure into a block.
+      * If overflow_row = true, then aggregates for rows that are not included in max_rows_to_group_by are put in the first block.
       *
-      * Если final = false, то в качестве столбцов-агрегатов создаются ColumnAggregateFunction с состоянием вычислений,
-      *  которые могут быть затем объединены с другими состояниями (для распределённой обработки запроса).
-      * Если final = true, то в качестве столбцов-агрегатов создаются столбцы с готовыми значениями.
+      * If final = false, then ColumnAggregateFunction is created as the aggregation columns with the state of the calculations,
+      *  which can then be combined with other states (for distributed query processing).
+      * If final = true, then columns with ready values are created as aggregate columns.
       */
     BlocksList convertToBlocks(AggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
 
-    /** Объединить несколько структур данных агрегации и выдать результат в виде потока блоков.
+    /** Merge several aggregation data structures and output the result as a block stream.
       */
     std::unique_ptr<IBlockInputStream> mergeAndConvertToBlocks(ManyAggregatedDataVariants & data_variants, bool final, size_t max_threads) const;
 
-    /** Объединить поток частично агрегированных блоков в одну структуру данных.
-      * (Доагрегировать несколько блоков, которые представляют собой результат независимых агрегаций с удалённых серверов.)
+    /** Merge the stream of partially aggregated blocks into one data structure.
+      * (Pre-aggregate several blocks that represent the result of independent aggregations from remote servers.)
       */
-    void mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads);
+    void mergeStream(const BlockInputStreamPtr & stream, AggregatedDataVariants & result, size_t max_threads);
 
-    /** Объединить несколько частично агрегированных блоков в один.
-      */
+    /// Merge several partially aggregated blocks into one.
+    /// Precondition: for all blocks block.info.is_overflows flag must be the same.
+    /// (either all blocks are from overflow data or none blocks are).
+    /// The resulting block has the same value of is_overflows flag.
     Block mergeBlocks(BlocksList & blocks, bool final);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
@@ -1080,15 +1082,15 @@ public:
 
     using CancellationHook = std::function<bool()>;
 
-    /** Установить функцию, которая проверяет, можно ли прервать текущую задачу.
+    /** Set a function that checks whether the current task can be aborted.
       */
     void setCancellationHook(const CancellationHook cancellation_hook);
 
-    /// Для IBlockInputStream.
+    /// For IBlockInputStream.
     String getID() const;
 
-    /// Для внешней агрегации.
-    void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t rows);
+    /// For external aggregation.
+    void writeToTemporaryFile(AggregatedDataVariants & data_variants);
 
     bool hasTemporaryFiles() const { return !temporary_files.empty(); }
 
@@ -1116,14 +1118,14 @@ protected:
 
     AggregateFunctionsPlainPtrs aggregate_functions;
 
-    /** Данный массив служит для двух целей.
+    /** This array serves two purposes.
       *
-      * 1. Аргументы функции собраны рядом, и их не нужно собирать из разных мест. Также массив сделан zero-terminated.
-      * Внутренний цикл (для случая without_key) получается почти в два раза компактнее; прирост производительности около 30%.
+      * 1. Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
+      * The inner loop (for the case without_key) is almost twice as compact; performance gain of about 30%.
       *
-      * 2. Вызов по указателю на функцию лучше, чем виртуальный вызов, потому что в случае виртуального вызова,
-      *  GCC 5.1.2 генерирует код, который на каждой итерации цикла заново грузит из памяти в регистр адрес функции
-      *  (значение по смещению в таблице виртуальных функций).
+      * 2. Calling a function by pointer is better than a virtual call, because in the case of a virtual call,
+      *  GCC 5.1.2 generates code that, at each iteration of the loop, reloads the function address from memory into the register
+      *  (the offset value in the virtual function table).
       */
     struct AggregateFunctionInstruction
     {
@@ -1135,14 +1137,14 @@ protected:
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
 
-    Sizes offsets_of_aggregate_states;    /// Смещение до n-ой агрегатной функции в строке из агрегатных функций.
-    size_t total_size_of_aggregate_states = 0;    /// Суммарный размер строки из агрегатных функций.
+    Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
+    size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
     bool all_aggregates_has_trivial_destructor = false;
 
-    /// Сколько было использовано оперативки для обработки запроса до начала обработки первого блока.
+    /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
 
-    /// Для инициализации от первого блока при конкуррентном использовании.
+    /// To initialize from the first block when used concurrently.
     bool initialized = false;
     std::mutex mutex;
 
@@ -1150,56 +1152,56 @@ protected:
 
     Logger * log = &Logger::get("Aggregator");
 
-    /** Динамически скомпилированная библиотека для агрегации, если есть.
-      * Смысл динамической компиляции в том, чтобы специализировать код
-      *  под конкретный список агрегатных функций.
-      * Это позволяет развернуть цикл по созданию и обновлению состояний агрегатных функций,
-      *  а также использовать вместо виртуальных вызовов inline-код.
+    /** Dynamically compiled library for aggregation, if any.
+      * The meaning of dynamic compilation is to specialize code
+      *  for a specific list of aggregate functions.
+      * This allows you to expand the loop to create and update states of aggregate functions,
+      *  and also use inline-code instead of virtual calls.
       */
     struct CompiledData
     {
         SharedLibraryPtr compiled_aggregator;
 
-        /// Получены с помощью dlsym. Нужно ещё сделать reinterpret_cast в указатель на функцию.
+        /// Obtained with dlsym. It is still necessary to make reinterpret_cast to the function pointer.
         void * compiled_method_ptr = nullptr;
         void * compiled_two_level_method_ptr = nullptr;
     };
-    /// shared_ptr - чтобы передавать в callback, который может пережить Aggregator.
+    /// shared_ptr - to pass into a callback, that can survive Aggregator.
     std::shared_ptr<CompiledData> compiled_data { new CompiledData };
 
     bool compiled_if_possible = false;
     void compileIfPossible(AggregatedDataVariants::Type type);
 
-    /// Возвращает true, если можно прервать текущую задачу.
+    /// Returns true if you can abort the current task.
     CancellationHook isCancelled;
 
-    /// Для внешней агрегации.
+    /// For external aggregation.
     TemporaryFiles temporary_files;
 
-    /** Если заданы только имена столбцов (key_names, а также aggregates[i].column_name), то вычислить номера столбцов.
-      * Сформировать блок - пример результата. Он используется в методах convertToBlocks, mergeAndConvertToBlocks.
+    /** If only the column names (key_names, and also aggregates[i].column_name) are specified, then calculate the column numbers.
+      * Generate block - sample of the result. It is used in the convertToBlocks, mergeAndConvertToBlocks methods.
       */
     void initialize(const Block & block);
 
-    /** Установить блок - пример результата,
-      *  только если он ещё не был установлен.
+    /** Set the block - sample of the result,
+      *  only if it has not already been set.
       */
     void setSampleBlock(const Block & block);
 
-    /** Выбрать способ агрегации на основе количества и типов ключей. */
+    /** Select the aggregation method based on the number and types of keys. */
     AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes) const;
 
-    /** Создать состояния агрегатных функций для одного ключа.
+    /** Create states of aggregate functions for one key.
       */
     void createAggregateStates(AggregateDataPtr & aggregate_data) const;
 
-    /** Вызвать методы destroy для состояний агрегатных функций.
-      * Используется в обработчике исключений при агрегации, так как RAII в данном случае не применим.
+    /** Call `destroy` methods for states of aggregate functions.
+      * Used in the exception handler for aggregation, since RAII in this case is not applicable.
       */
     void destroyAllAggregateStates(AggregatedDataVariants & result);
 
 
-    /// Обработать один блок данных, агрегировать данные в хэш-таблицу.
+    /// Process one data block, aggregate the data into a hash table.
     template <typename Method>
     void executeImpl(
         Method & method,
@@ -1212,7 +1214,7 @@ protected:
         bool no_more_keys,
         AggregateDataPtr overflow_row) const;
 
-    /// Специализация для конкретного значения no_more_keys.
+    /// Specialization for a particular value no_more_keys.
     template <bool no_more_keys, typename Method>
     void executeImplCase(
         Method & method,
@@ -1225,7 +1227,7 @@ protected:
         StringRefs & keys,
         AggregateDataPtr overflow_row) const;
 
-    /// Для случая, когда нет ключей (всё агрегировать в одну строку).
+    /// For case when there are no keys (all aggregate into one row).
     void executeWithoutKeyImpl(
         AggregatedDataWithoutKey & res,
         size_t rows,
@@ -1240,7 +1242,7 @@ protected:
         const String & path);
 
 public:
-    /// Шаблоны, инстанцирующиеся путём динамической компиляции кода - см. SpecializedAggregator.h
+    /// Templates that are instantiated by dynamic code compilation - see SpecializedAggregator.h
 
     template <typename Method, typename AggregateFunctionsList>
     void executeSpecialized(
@@ -1274,14 +1276,14 @@ public:
         Arena * arena) const;
 
 protected:
-    /// Слить данные из хэш-таблицы src в dst.
+    /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataImpl(
         Table & table_dst,
         Table & table_src,
         Arena * arena) const;
 
-    /// Слить данные из хэш-таблицы src в dst, но только для ключей, которые уже есть в dst. В остальных случаях, слить данные в overflows.
+    /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
     template <typename Method, typename Table>
     void mergeDataNoMoreKeysImpl(
         Table & table_dst,
@@ -1289,7 +1291,7 @@ protected:
         Table & table_src,
         Arena * arena) const;
 
-    /// То же самое, но игнорирует остальные ключи.
+    /// Same, but ignores the rest of the keys.
     template <typename Method, typename Table>
     void mergeDataOnlyExistingKeysImpl(
         Table & table_dst,
@@ -1343,8 +1345,8 @@ protected:
         bool final,
         size_t bucket) const;
 
-    BlocksList prepareBlocksAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
-    BlocksList prepareBlocksAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
+    Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
+    Block prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final, ThreadPool * thread_pool) const;
 
     template <typename Method>
@@ -1400,17 +1402,17 @@ protected:
         AggregatedDataVariants & result) const;
 
 
-    /** Проверяет ограничения на максимальное количество ключей для агрегации.
-      * Если оно превышено, то, в зависимости от group_by_overflow_mode, либо
-      * - кидает исключение;
-      * - возвращает false, что говорит о том, что выполнение нужно прервать;
-      * - выставляет переменную no_more_keys в true.
+    /** Checks constraints on the maximum number of keys for aggregation.
+      * If it is exceeded, then, depending on the group_by_overflow_mode, either
+      * - throws an exception;
+      * - returns false, which means that execution must be aborted;
+      * - sets the variable no_more_keys to true.
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
 };
 
 
-/** Достать вариант агрегации по его типу. */
+/** Get the aggregation variant by its type. */
 template <typename Method> Method & getDataVariant(AggregatedDataVariants & variants);
 
 #define M(NAME, IS_TWO_LEVEL) \

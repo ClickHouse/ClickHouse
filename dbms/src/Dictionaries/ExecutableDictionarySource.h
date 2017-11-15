@@ -28,7 +28,7 @@ public:
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(
-        const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows) override;
+        const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -47,10 +47,5 @@ private:
     Block sample_block;
     const Context & context;
 };
-
-void idsToBuffer(const Context & context, const std::string & format, Block & sample_block, WriteBuffer & out_stream,
-    const std::vector<UInt64> & ids);
-void columnsToBuffer(const Context & context, const std::string & format, Block & sample_block, WriteBuffer & out_buffer,
-    const DictionaryStructure & dict_struct, const ConstColumnPlainPtrs & key_columns, const std::vector<std::size_t> & requested_rows);
 
 }

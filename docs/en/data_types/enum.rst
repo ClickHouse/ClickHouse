@@ -5,9 +5,11 @@ Enum8 or Enum16. A set of enumerated string values that are stored as Int8 or In
 
 Example:
 
-::
-  Enum8('hello' = 1, 'world' = 2)
-- This data type has two possible values - 'hello' and 'world'.
+.. code-block:: sql
+
+    Enum8('hello' = 1, 'world' = 2)
+
+This data type has two possible values - 'hello' and 'world'.
 
 The numeric values must be within -128..127 for ``Enum8`` and -32768..32767 for ``Enum16``. Every member of the enum must also have different numbers. The empty string is a valid value. The numbers do not need to be sequential and can be in any order. The order does not matter.
 

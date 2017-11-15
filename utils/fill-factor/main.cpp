@@ -9,8 +9,8 @@
 #include <Poco/NumberParser.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 
-/** Считает количество нулей в файле.
-  * Выводит "заполненность" файла - отношение количества ненулевых байт к ожидаемому количеству ненулевых байт в файле со случайными байтами.
+/** Counts number of 0 in a file.
+  * Outputs "fullness" of file - ration of non-0 bytes to the expected number of non-0 bytes in file with random bytes.
   */
 
 int main(int argc, char ** argv)

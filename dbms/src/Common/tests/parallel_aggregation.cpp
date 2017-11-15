@@ -16,7 +16,7 @@
 #include <IO/CompressedReadBuffer.h>
 
 #include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
+#include <common/ThreadPool.h>
 
 
 using Key = UInt64;
@@ -53,14 +53,14 @@ struct __attribute__((__aligned__(64))) AlignedSmallLock : public SmallLock
 using Mutex = std::mutex;
 
 
-/*typedef HashTableWithSmallLocks<
+/*using MapSmallLocks = HashTableWithSmallLocks<
     Key,
     HashTableCellWithLock<
         Key,
-        HashMapCell<Key, Value, DefaultHash<Key> > >,
+        HashMapCell<Key, Value, DefaultHash<Key>> >,
     DefaultHash<Key>,
     HashTableGrower<21>,
-    HashTableAllocator> MapSmallLocks;*/
+    HashTableAllocator>;*/
 
 
 void aggregate1(Map & map, Source::const_iterator begin, Source::const_iterator end)

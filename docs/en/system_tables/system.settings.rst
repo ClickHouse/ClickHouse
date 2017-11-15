@@ -4,7 +4,9 @@ system.settings
 Contains information about settings that are currently in use (i.e. used for executing the query you are using to read from the system.settings table).
 
 Columns:
-::
+
+.. code-block:: text
+
   name String   - Setting name.
   value String  - Setting value.
   changed UInt8 - Whether the setting was explicitly defined in the config or explicitly changed.
@@ -16,6 +18,8 @@ Example:
   SELECT *
   FROM system.settings
   WHERE changed
+
+.. code-block:: text
   
   ┌─name───────────────────┬─value───────┬─changed─┐
   │ max_threads            │ 8           │       1 │

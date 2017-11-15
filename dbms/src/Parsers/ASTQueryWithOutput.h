@@ -15,7 +15,9 @@ public:
     ASTPtr format;
 
     ASTQueryWithOutput() = default;
-    ASTQueryWithOutput(const StringRange range_) : IAST(range_) {}
+    explicit ASTQueryWithOutput(const StringRange range_) : IAST(range_) {}
+
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override final;
 
 protected:
     /// NOTE: call this helper at the end of the clone() method of descendant class.
@@ -23,12 +25,10 @@ protected:
 
     /// Format only the query part of the AST (without output options).
     virtual void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
-
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override final;
 };
 
 
-/// Объявляет класс-наследник ASTQueryWithOutput с реализованными методами getID и clone.
+/// Declares the class-successor of ASTQueryWithOutput with implemented methods getID and clone.
 #define DEFINE_AST_QUERY_WITH_OUTPUT(Name, ID, Query) \
 class Name : public ASTQueryWithOutput \
 { \

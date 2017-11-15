@@ -16,20 +16,20 @@ struct Settings;
 class ASTFunction;
 class ASTSelectQuery;
 
-/** Этот класс предоставляет функции для оптимизации логических выражений внутри запросов.
+/** This class provides functions for optimizing boolean expressions within queries.
   *
-  * Для простоты назовём однородной OR-цепочой любое выражение имеющее следующую структуру:
+  * For simplicity, we call a homogeneous OR-chain any expression having the following structure:
   * expr = x1 OR ... OR expr = xN
-  * где expr - произвольное выражение и x1, ..., xN - литералы одного типа
+  * where `expr` is an arbitrary expression and x1, ..., xN are literals of the same type
   */
 class LogicalExpressionsOptimizer final
 {
 public:
-    /// Конструктор. Принимает корень DAG запроса.
+    /// Constructor. Accepts the root of the query DAG.
     LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const Settings & settings_);
 
-    /** Заменить все довольно длинные однородные OR-цепочки expr = x1 OR ... OR expr = xN
-      * на выражения expr IN (x1, ..., xN).
+    /** Replace all rather long homogeneous OR-chains expr = x1 OR ... OR expr = xN
+      * on the expressions `expr` IN (x1, ..., xN).
       */
     void perform();
 
@@ -37,7 +37,7 @@ public:
     LogicalExpressionsOptimizer & operator=(const LogicalExpressionsOptimizer &) = delete;
 
 private:
-    /** Функция OR с выражением.
+    /** The OR function with the expression.
     */
     struct OrWithExpression
     {
@@ -60,27 +60,27 @@ private:
     using DisjunctiveEqualityChain = DisjunctiveEqualityChainsMap::value_type;
 
 private:
-    /** Собрать информация про все равенства входящие в цепочки OR (не обязательно однородные).
-      * Эта информация сгруппирована по выражению, которое стоит в левой части равенства.
+    /** Collect information about all the equations in the OR chains (not necessarily homogeneous).
+      * This information is grouped by the expression that is on the left side of the equation.
       */
     void collectDisjunctiveEqualityChains();
 
-    /** Проверить, что множество равенств expr = x1, ..., expr = xN выполняет два следующих требования:
-      * 1. Оно не слишком маленькое
-      * 2. x1, ... xN имеют один и тот же тип
+    /** Check that the set of equalities expr = x1, ..., expr = xN fulfills the following two requirements:
+      * 1. It's not too small
+      * 2. x1, ... xN have the same type
       */
     bool mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const;
 
-    /// Вставить выражение IN в OR-цепочку.
+    /// Insert the IN expression into the OR chain.
     void addInExpression(const DisjunctiveEqualityChain & chain);
 
-    /// Удалить равенства, которые были заменены выражениями IN.
+    /// Delete the equalities that were replaced by the IN expressions.
     void cleanupOrExpressions();
 
-    /// Удалить выражения OR, которые имеют только один операнд.
+    /// Delete OR expressions that have only one operand.
     void fixBrokenOrExpressions();
 
-    /// Восстановить исходный порядок столбцов после оптимизации.
+    /// Restore the original column order after optimization.
     void reorderColumns();
 
 private:
@@ -91,13 +91,13 @@ private:
 private:
     ASTSelectQuery * select_query;
     const Settings & settings;
-    /// Информация про OR-цепочки внутри запроса.
+    /// Information about the OR-chains inside the query.
     DisjunctiveEqualityChainsMap disjunctive_equality_chains_map;
-    /// Количество обработанных OR-цепочек.
+    /// Number of processed OR-chains.
     size_t processed_count = 0;
-    /// Родители функций OR.
+    /// Parents of OR functions.
     FunctionParentMap or_parent_map;
-    /// Позиция каждого столбца.
+    /// The position of each column.
     ColumnToPosition column_to_position;
     /// Set of nodes, that was visited.
     std::unordered_set<void *> visited_nodes;

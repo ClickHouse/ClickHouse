@@ -46,7 +46,7 @@ int main(int argc, char ** argv)
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
 
-        Context context;
+        Context context = Context::createGlobal();
         NamesAndTypesList columns
         {
             {"x", std::make_shared<DataTypeInt16>()},

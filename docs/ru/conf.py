@@ -11,10 +11,18 @@
 #
 # All configuration values have a default; values that are commented out
 # serve to show the default.
+from __future__ import unicode_literals
 
 import collections
 import os
 import sys
+
+from recommonmark.parser import CommonMarkParser
+from recommonmark.transform import AutoStructify
+
+source_parsers = {
+    '.md': CommonMarkParser,
+}
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -40,7 +48,7 @@ templates_path = [
 ]
 
 # The suffix of source filenames.
-source_suffix = '.rst'
+source_suffix = [ '.rst', '.md' ]
 
 # The encoding of source files.
 #source_encoding = 'utf-8-sig'
@@ -49,8 +57,8 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'ClickHouse'
-copyright = u'2016–2017 Yandex LLC'
+project = 'ClickHouse'
+copyright = '2016–2017 Yandex LLC'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -120,11 +128,15 @@ html_theme_options = {
     'head_font_family': font_family,
     'caption_font_family': font_family,
     'show_powered_by': False,
+    'body_text': '#000',
+    'link': '#08f',
+    'link_hover': 'red',
     'extra_nav_links': collections.OrderedDict([
-        (u'Documentation in English', '/docs/en/'),
-        (u'Документация на одной странице', '/docs/ru/single/'),
-        (u'Главная страница сайта', '/'),
-        (u'GitHub', 'https://github.com/yandex/ClickHouse'),
+        ('Switch to English <img id="svg-flag" src="/docs/ru/_static/en.svg" width="20" height="12" />', '#en'),
+        ('Документация на одной странице', '/docs/ru/single/'),
+        ('Главная страница сайта', '/'),
+        ('Исходный код', 'https://github.com/yandex/ClickHouse'),
+        ('Редактировать страницу', '#edit'),
     ])
 }
 
@@ -169,9 +181,9 @@ html_static_path = ['../_static']
 html_sidebars = {
     '**': [
         'about.html',
+        'searchbox.html',
         'navigation.html',
         'relations.html',
-        'searchbox.html',
     ]
 }
 
@@ -226,8 +238,8 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-  ('index', 'ClickHouse.tex', u'ClickHouse Documentation',
-   u'Yandex LLC', 'manual'),
+  ('index', 'ClickHouse.tex', 'ClickHouse Documentation',
+   'Yandex LLC', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -256,8 +268,8 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'clickhouse', u'ClickHouse Documentation',
-     [u'Yandex LLC'], 1)
+    ('index', 'clickhouse', 'ClickHouse Documentation',
+     ['Yandex LLC'], 1)
 ]
 
 # If true, show URL addresses after external links.
@@ -270,8 +282,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-  ('index', 'ClickHouse', u'ClickHouse Documentation',
-   u'Yandex LLC', 'ClickHouse', 'One line description of project.',
+  ('index', 'ClickHouse', 'ClickHouse Documentation',
+   'Yandex LLC', 'ClickHouse', 'One line description of project.',
    'Miscellaneous'),
 ]
 
@@ -286,3 +298,14 @@ texinfo_documents = [
 
 # If true, do not generate a @detailmenu in the "Top" node's menu.
 #texinfo_no_detailmenu = False
+
+def add_filters(app):
+    import json
+    app.builder.templates.environment.filters[str('escapejs')] = lambda x: json.dumps(unicode(x))
+
+def setup(app):
+    app.add_javascript('custom.js')
+    app.connect(str('builder-inited'), add_filters)
+    app.add_config_value('recommonmark_config', {'enable_eval_rst': True}, True)
+    app.add_transform(AutoStructify)
+    

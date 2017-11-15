@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Poco/RWLock.h>
+#include <shared_mutex>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
@@ -313,14 +313,14 @@ public:
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
-        M(key8)             \
-        M(key16)             \
-        M(key32)             \
-        M(key64)             \
-        M(key_string)         \
-        M(key_fixed_string) \
-        M(keys128)             \
-        M(keys256)             \
+        M(key8)                        \
+        M(key16)                       \
+        M(key32)                       \
+        M(key64)                       \
+        M(key_string)                  \
+        M(key_fixed_string)            \
+        M(keys128)                     \
+        M(keys256)                     \
         M(hashed)
 
     enum class Type
@@ -338,15 +338,15 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-        std::unique_ptr<HashMap<UInt8, Mapped, TrivialHash, HashTableFixedGrower<8>>>     key8;
+        std::unique_ptr<HashMap<UInt8, Mapped, TrivialHash, HashTableFixedGrower<8>>>   key8;
         std::unique_ptr<HashMap<UInt16, Mapped, TrivialHash, HashTableFixedGrower<16>>> key16;
         std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>                     key32;
         std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>                     key64;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                         key_string;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                         key_fixed_string;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
         std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>                     keys256;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                     hashed;
+        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
     };
 
     using MapsAny = MapsTemplate<WithUsedFlag<false, RowRef>>;
@@ -406,7 +406,7 @@ private:
       *  and StorageJoin only calls these two methods.
       * That's why another methods are not guarded.
       */
-    mutable Poco::RWLock rwlock;
+    mutable std::shared_mutex rwlock;
 
     void init(Type type_);
 

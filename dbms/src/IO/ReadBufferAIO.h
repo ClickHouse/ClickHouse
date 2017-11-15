@@ -21,7 +21,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/** Класс для асинхронного чтения данных.
+/** Class for asynchronous data reading.
   */
 class ReadBufferAIO : public ReadBufferFromFileBase
 {
@@ -43,64 +43,64 @@ private:
     bool nextImpl() override;
     ///
     off_t doSeek(off_t off, int whence) override;
-    /// Синхронно читать данные.
+    /// Synchronously read the data.
     void synchronousRead();
-    /// Получить данные от асинхронного запроса.
+    /// Get data from an asynchronous request.
     void receive();
-    /// Игнорировать данные от асинхронного запроса.
+    /// Ignore data from an asynchronous request.
     void skip();
-    /// Ждать окончания текущей асинхронной задачи.
+    /// Wait for the end of the current asynchronous task.
     bool waitForAIOCompletion();
-    /// Подготовить запрос.
+    /// Prepare the request.
     void prepare();
-    /// Подготовить к чтению дублирующий буфер содержащий данные от
-    /// последнего запроса.
+    /// Prepare for reading a duplicate buffer containing data from
+    /// of the last request.
     void finalize();
 
 private:
-    /// Буфер для асинхронных операций чтения данных.
+    /// Buffer for asynchronous data read operations.
     BufferWithOwnMemory<ReadBuffer> fill_buffer;
 
-    /// Описание асинхронного запроса на чтение.
+    /// Description of the asynchronous read request.
     iocb request{};
     std::future<ssize_t> future_bytes_read;
 
     const std::string filename;
 
-    /// Максимальное количество байтов, которое можно прочитать.
+    /// The maximum number of bytes that can be read.
     size_t max_bytes_read = std::numeric_limits<size_t>::max();
-    /// Количество запрашиваемых байтов.
+    /// Number of bytes requested.
     size_t requested_byte_count = 0;
-    /// Количество прочитанных байт при последнем запросе.
+    /// The number of bytes read at the last request.
     ssize_t bytes_read = 0;
-    /// Итоговое количество прочитанных байтов.
+    /// The total number of bytes read.
     size_t total_bytes_read = 0;
 
-    /// Позиция первого непрочитанного байта в файле.
+    /// The position of the first unread byte in the file.
     off_t first_unread_pos_in_file = 0;
 
-    /// Начальная позиция выровненного региона диска, из которого читаются данные.
+    /// The starting position of the aligned region of the disk from which the data is read.
     off_t region_aligned_begin = 0;
-    /// Левое смещение для выравнения региона диска.
+    /// Left offset to align the region of the disk.
     size_t region_left_padding = 0;
-    /// Размер выровненного региона диска.
+    /// The size of the aligned region of the disk.
     size_t region_aligned_size = 0;
 
-    /// Файловый дескриптор для чтения.
+    /// The file descriptor for read.
     int fd = -1;
 
-    /// Буфер, в который пишутся полученные данные.
+    /// The buffer to which the received data is written.
     Position buffer_begin = nullptr;
 
-    /// Асинхронная операция чтения ещё не завершилась.
+    /// The asynchronous read operation is not yet completed.
     bool is_pending_read = false;
-    /// Конец файла достигнут.
+    /// The end of the file is reached.
     bool is_eof = false;
-    /// Был отправлен хоть один запрос на чтение.
+    /// At least one read request was sent.
     bool is_started = false;
-    /// Является ли операция асинхронной?
+    /// Is the operation asynchronous?
     bool is_aio = false;
-    /// Асинхронная операция завершилась неудачно?
+    /// Did the asynchronous operation fail?
     bool aio_failed = false;
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForRead};

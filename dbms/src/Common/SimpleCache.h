@@ -3,7 +3,7 @@
 #include <map>
 #include <tuple>
 #include <mutex>
-#include <ext/function_traits.hpp>
+#include <ext/function_traits.h>
 
 
 /** The simplest cache for a free function.
@@ -51,5 +51,11 @@ public:
         }
 
         return res;
+    }
+
+    void drop()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        cache.clear();
     }
 };

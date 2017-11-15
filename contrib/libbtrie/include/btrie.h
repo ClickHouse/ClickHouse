@@ -13,7 +13,12 @@ extern "C" {
  */
 
 #define BTRIE_NULL   (uintptr_t) -1
-#define MAX_PAGES    1024 * 16
+
+#if !defined(BTRIE_MAX_PAGES)
+/// 54 ip per page. 8 bytes memory per page when empty
+#define BTRIE_MAX_PAGES    1024 * 2048  /// 128m ips , ~16mb ram when empty
+// #define BTRIE_MAX_PAGES    1024 * 65535 /// 4g ips (whole ipv4), ~512mb ram when empty
+#endif
 
 typedef struct btrie_node_s btrie_node_t;
 
@@ -36,7 +41,7 @@ typedef struct btrie_s {
      * memory pool.
      * memory management(esp free) will be so easy by using this facility.
      */
-    char             *pools[MAX_PAGES];
+    char             *pools[BTRIE_MAX_PAGES];
     size_t            len;
 } btrie_t;
 

@@ -15,8 +15,8 @@ extern const int ILLEGAL_COLUMN;
 
 void PrettyCompactBlockOutputStream::writeHeader(
     const Block & block,
-    const Widths_t & max_widths,
-    const Widths_t & name_widths)
+    const Widths & max_widths,
+    const Widths & name_widths)
 {
     /// Names
     writeCString("┌─", ostr);
@@ -25,7 +25,7 @@ void PrettyCompactBlockOutputStream::writeHeader(
         if (i != 0)
             writeCString("─┬─", ostr);
 
-        const ColumnWithTypeAndName & col = block.safeGetByPosition(i);
+        const ColumnWithTypeAndName & col = block.getByPosition(i);
 
         if (col.type->isNumeric())
         {
@@ -53,30 +53,31 @@ void PrettyCompactBlockOutputStream::writeHeader(
     writeCString("─┐\n", ostr);
 }
 
-void PrettyCompactBlockOutputStream::writeBottom(const Widths_t & max_widths)
+void PrettyCompactBlockOutputStream::writeBottom(const Widths & max_widths)
 {
     /// Create delimiters
     std::stringstream bottom_separator;
 
-    bottom_separator         << "└";
+    bottom_separator << "└";
     for (size_t i = 0; i < max_widths.size(); ++i)
     {
         if (i != 0)
-            bottom_separator         << "┴";
+            bottom_separator << "┴";
 
         for (size_t j = 0; j < max_widths[i] + 2; ++j)
-            bottom_separator         << "─";
+            bottom_separator << "─";
     }
-    bottom_separator         << "┘\n";
+    bottom_separator << "┘\n";
 
     writeString(bottom_separator.str(), ostr);
 }
 
 void PrettyCompactBlockOutputStream::writeRow(
-    size_t row_id,
+    size_t row_num,
     const Block & block,
-    const Widths_t & max_widths,
-    const Widths_t & name_widths)
+    const WidthsPerColumn & widths,
+    const Widths & max_widths,
+    const Widths & name_widths)
 {
     size_t columns = max_widths.size();
 
@@ -87,50 +88,31 @@ void PrettyCompactBlockOutputStream::writeRow(
         if (j != 0)
             writeCString(" │ ", ostr);
 
-        const ColumnWithTypeAndName & col = block.safeGetByPosition(j);
-
-        if (col.type->isNumeric())
-        {
-            size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[row_id]);
-            for (size_t k = 0; k < max_widths[j] - width; ++k)
-                writeChar(' ', ostr);
-
-            col.type->serializeTextEscaped(*col.column.get(), row_id, ostr);
-        }
-        else
-        {
-            col.type->serializeTextEscaped(*col.column.get(), row_id, ostr);
-
-            size_t width = get<UInt64>((*block.safeGetByPosition(columns + j).column)[row_id]);
-            for (size_t k = 0; k < max_widths[j] - width; ++k)
-                writeChar(' ', ostr);
-        }
+        writeValueWithPadding(block.getByPosition(j), row_num, widths[j].empty() ? max_widths[j] : widths[j][row_num], max_widths[j]);
     }
 
     writeCString(" │\n", ostr);
 }
 
-void PrettyCompactBlockOutputStream::write(const Block & block_)
+void PrettyCompactBlockOutputStream::write(const Block & block)
 {
     if (total_rows >= max_rows)
     {
-        total_rows += block_.rows();
+        total_rows += block.rows();
         return;
     }
 
-    /// We will insert columns here with the calculated values of visible lengths.
-    Block block = block_;
-
     size_t rows = block.rows();
 
-    Widths_t max_widths;
-    Widths_t name_widths;
-    calculateWidths(block, max_widths, name_widths);
+    WidthsPerColumn widths;
+    Widths max_widths;
+    Widths name_widths;
+    calculateWidths(block, widths, max_widths, name_widths);
 
     writeHeader(block, max_widths, name_widths);
 
     for (size_t i = 0; i < rows && total_rows + i < max_rows; ++i)
-        writeRow(i, block, max_widths, name_widths);
+        writeRow(i, block, widths, max_widths, name_widths);
 
     writeBottom(max_widths);
 

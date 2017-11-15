@@ -16,7 +16,9 @@ This may be just one server address. The server address is host:port, or just th
 Note: As an exception, when specifying an IPv6 address, the port is required.
 
 Examples:
-::
+
+.. code-block:: text
+
   example01-01-1
   example01-01-1:9000
   localhost
@@ -27,16 +29,22 @@ Examples:
 Multiple addresses can be comma-separated. In this case, the query goes to all the specified addresses (like to shards with different data) and uses distributed processing.
 
 Example:
-::
+
+.. code-block:: text
+
   example01-01-1,example01-02-1
 
 Part of the expression can be specified in curly brackets. The previous example can be written as follows:
-::
+
+.. code-block:: text
+
   example01-0{1,2}-1
 
 Curly brackets can contain a range of numbers separated by two dots (non-negative integers). In this case, the range is expanded to a set of values that generate shard addresses. If the first number starts with zero, the values are formed with the same zero alignment.
 The previous example can be written as follows:
-::
+
+.. code-block:: text
+
   example01-{01..02}-1
 
 If you have multiple pairs of curly brackets, it generates the direct product of the corresponding sets.
@@ -44,7 +52,9 @@ If you have multiple pairs of curly brackets, it generates the direct product of
 Addresses and fragments in curly brackets can be separated by the pipe (|) symbol. In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. The replicas are evaluated in the order currently set in the 'load_balancing' setting.
 
 Example:
-::
+
+.. code-block:: text
+
   example01-{01..02}-{1|2}
 
 This example specifies two shards that each have two replicas.

@@ -1,6 +1,7 @@
 #include <Common/Collator.h>
 
 #include <Common/config.h>
+
 #if USE_ICU
     #pragma GCC diagnostic push
     #ifdef __APPLE__
@@ -9,7 +10,10 @@
     #include <unicode/ucol.h>
     #pragma GCC diagnostic pop
 #else
-    #pragma GCC diagnostic ignored "-Wunused-private-field"
+    #if __clang__
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wunused-private-field"
+    #endif
 #endif
 
 #include <Common/Exception.h>

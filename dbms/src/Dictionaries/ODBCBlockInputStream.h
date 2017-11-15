@@ -20,7 +20,7 @@ class ODBCBlockInputStream final : public IProfilingBlockInputStream
 public:
     ODBCBlockInputStream(
         Poco::Data::Session && session, const std::string & query_str, const Block & sample_block,
-        const std::size_t max_block_size);
+        const size_t max_block_size);
 
     String getName() const override { return "ODBC"; }
 
@@ -39,8 +39,10 @@ private:
     Poco::Data::RecordSet result;
     Poco::Data::RecordSet::Iterator iterator;
 
-    const std::size_t max_block_size;
+    const size_t max_block_size;
     ExternalResultDescription description;
+
+    Poco::Logger * log;
 };
 
 }

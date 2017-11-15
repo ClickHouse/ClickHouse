@@ -26,6 +26,8 @@ private:
     Array parameters;
 
 public:
+    static constexpr bool is_parametric = true;
+
     DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
         : function(function_), argument_types(argument_types_), parameters(parameters_)
     {
@@ -35,6 +37,8 @@ public:
     AggregateFunctionPtr getFunction() const { return function; }
 
     std::string getName() const override;
+
+    const char * getFamilyName() const override { return "AggregateFunction"; }
 
     DataTypePtr getReturnType() const { return function->getReturnType(); };
     DataTypes getArgumentsDataTypes() const { return argument_types; }
@@ -54,14 +58,13 @@ public:
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
 
     ColumnPtr createColumn() const override;
-    ColumnPtr createConstColumn(size_t size, const Field & field) const override;
 
     Field getDefault() const override;
 };

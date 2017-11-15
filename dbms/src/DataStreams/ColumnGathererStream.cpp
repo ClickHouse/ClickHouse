@@ -1,5 +1,6 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <iomanip>
 
 
@@ -11,13 +12,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int EMPTY_DATA_PASSED;
     extern const int RECEIVED_EMPTY_DATA;
 }
 
-ColumnGathererStream::ColumnGathererStream(const BlockInputStreams & source_streams, const String & column_name_,
-                                           const MergedRowSources & row_source_, size_t block_preferred_size_)
-    : name(column_name_), row_source(row_source_), block_preferred_size(block_preferred_size_), log(&Logger::get("ColumnGathererStream"))
+ColumnGathererStream::ColumnGathererStream(
+        const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
+        size_t block_preferred_size_)
+    : name(column_name_), row_sources_buf(row_sources_buf_)
+    , block_preferred_size(block_preferred_size_), log(&Logger::get("ColumnGathererStream"))
 {
     if (source_streams.empty())
         throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);
@@ -49,8 +53,14 @@ void ColumnGathererStream::init()
         Block & block = sources.back().block;
 
         /// Sometimes MergeTreeReader injects additional column with partitioning key
-        if (block.columns() > 2 || !block.has(name))
-            throw Exception("Block should have 1 or 2 columns and contain column with requested name", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+        if (block.columns() > 2)
+            throw Exception(
+                    "Block should have 1 or 2 columns, but contains " + toString(block.columns()),
+                    ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+        if (!block.has(name))
+            throw Exception(
+                    "Not found column `" + name + "' in block.",
+                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
         if (i == 0)
         {
@@ -68,71 +78,19 @@ void ColumnGathererStream::init()
 Block ColumnGathererStream::readImpl()
 {
     /// Special case: single source and there are no skipped rows
-    if (children.size() == 1 && row_source.size() == 0)
+    if (children.size() == 1 && row_sources_buf.eof())
         return children[0]->read();
 
     /// Initialize first source blocks
     if (sources.empty())
         init();
 
-    if (pos_global_start >= row_source.size())
+    if (!source_to_fully_copy && row_sources_buf.eof())
         return Block();
 
-    Block block_res{column.cloneEmpty()};
-    IColumn & column_res = *block_res.getByPosition(0).column;
-
-    size_t global_size = row_source.size();
-    size_t curr_block_preferred_size = std::min(global_size - pos_global_start,  block_preferred_size);
-    column_res.reserve(curr_block_preferred_size);
-
-    size_t pos_global = pos_global_start;
-    while (pos_global < global_size && column_res.size() < curr_block_preferred_size)
-    {
-        auto source_data = row_source[pos_global].getData();
-        bool source_skip = row_source[pos_global].getSkipFlag();
-        auto source_num = row_source[pos_global].getSourceNum();
-        Source & source = sources[source_num];
-
-        if (source.pos >= source.size) /// Fetch new block from source_num part
-        {
-            fetchNewBlock(source, source_num);
-        }
-
-        /// Consecutive optimization. TODO: precompute lens
-        size_t len = 1;
-        size_t max_len = std::min(global_size - pos_global, source.size - source.pos); // interval should be in the same block
-        for (; len < max_len && source_data == row_source[pos_global + len].getData(); ++len);
-
-        if (!source_skip)
-        {
-            /// Whole block could be produced via copying pointer from current block
-            if (source.pos == 0 && source.size == len)
-            {
-                /// If current block already contains data, return it. We will be here again on next read() iteration.
-                if (column_res.size() != 0)
-                    break;
-
-                block_res.getByPosition(0).column = source.block.getByName(name).column;
-                source.pos += len;
-                pos_global += len;
-                break;
-            }
-            else if (len == 1)
-            {
-                column_res.insertFrom(*source.column, source.pos);
-            }
-            else
-            {
-                column_res.insertRangeFrom(*source.column, source.pos, len);
-            }
-        }
-
-        source.pos += len;
-        pos_global += len;
-    }
-    pos_global_start = pos_global;
-
-    return block_res;
+    output_block = Block{column.cloneEmpty()};
+    output_block.getByPosition(0).column->gather(*this);
+    return std::move(output_block);
 }
 
 
@@ -160,13 +118,21 @@ void ColumnGathererStream::fetchNewBlock(Source & source, size_t source_num)
 void ColumnGathererStream::readSuffixImpl()
 {
     const BlockStreamProfileInfo & profile_info = getProfileInfo();
+
+    /// Don't print info for small parts (< 10M rows)
+    if (profile_info.rows < 10000000)
+        return;
+
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
-    LOG_DEBUG(log, std::fixed << std::setprecision(2)
+    std::stringstream speed;
+    if (seconds)
+        speed << ", " << profile_info.rows / seconds << " rows/sec., "
+            << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.";
+    LOG_TRACE(log, std::fixed << std::setprecision(2)
         << "Gathered column " << name
         << " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
-        << " in " << seconds << " sec., "
-        << profile_info.rows / seconds << " rows/sec., "
-        << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.");
+        << " in " << seconds << " sec."
+        << speed.str());
 }
 
 }

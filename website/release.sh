@@ -2,7 +2,6 @@
 set -ex
 BASE_DIR=$(dirname $(readlink -f $0))
 cd "${BASE_DIR}"
-gulp build
 IMAGE="clickhouse/website"
 if [[ -z "$1" ]]
 then
@@ -12,11 +11,17 @@ else
 fi
 FULL_NAME="${IMAGE}:${TAG}"
 REMOTE_NAME="registry.yandex.net/${FULL_NAME}"
+DOCKER_HASH="$2"
 if [[ -z "$1" ]]
 then
+    git clone --recursive https://github.com/yandex/clickhouse-presentations.git presentations || true
+    git --work-tree=$(readlink -f presentations) --git-dir=$(readlink -f presentations)/.git pull
+    gulp clean
+    gulp build
     docker build -t "${FULL_NAME}" "${BASE_DIR}"
     docker tag "${FULL_NAME}" "${REMOTE_NAME}"
-    docker push "${REMOTE_NAME}"
+    DOCKER_HASH=$(docker push "${REMOTE_NAME}" | tail -1 | awk '{print $3;}')
+    docker rmi "${FULL_NAME}"
 fi
 
 QLOUD_ENDPOINT="https://platform.yandex-team.ru/api/v1"
@@ -28,7 +33,7 @@ else
     QLOUD_ENV="${QLOUD_PROJECT}.prod"
 fi
 QLOUD_COMPONENT="${QLOUD_ENV}.nginx"
-QLOUD_VERSION=$(curl -v -H "Authorization: OAuth ${QLOUD_TOKEN}" "${QLOUD_ENDPOINT}/environment/status/${QLOUD_ENV}" | python -c "import json; import sys; print json.loads(sys.stdin.read()).get('version')")
-curl -v -H "Authorization: OAuth ${QLOUD_TOKEN}" -H "Content-Type: application/json" --data "{\"repository\": \"${REMOTE_NAME}\"}" "${QLOUD_ENDPOINT}/component/${QLOUD_COMPONENT}/${QLOUD_VERSION}/deploy" > /dev/null
+QLOUD_VERSION=$(curl -f -v -H "Authorization: OAuth ${QLOUD_TOKEN}" "${QLOUD_ENDPOINT}/environment/status/${QLOUD_ENV}" | python -c "import json; import sys; print json.loads(sys.stdin.read()).get('version')")
+curl -f -v -H "Authorization: OAuth ${QLOUD_TOKEN}" -H "Content-Type: application/json" --data "{\"repository\": \"${REMOTE_NAME}\", \"hash\": \"${DOCKER_HASH}\"}" "${QLOUD_ENDPOINT}/component/${QLOUD_COMPONENT}/${QLOUD_VERSION}/deploy" > /dev/null
 
-echo ">>> Successfully deployed ${TAG} to ${QLOUD_ENV} <<<"
+echo ">>> Successfully deployed ${TAG} ${DOCKER_HASH} to ${QLOUD_ENV} <<<"

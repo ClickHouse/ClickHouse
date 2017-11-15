@@ -30,7 +30,7 @@ struct ExternalResultDescription
     Block sample_block;
     std::vector<ValueType> types;
     std::vector<std::string> names;
-    ConstColumnPlainPtrs sample_columns;
+    Columns sample_columns;
 
     void init(const Block & sample_block_);
 };

@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/randomSeed.h>
@@ -12,24 +13,29 @@
 namespace DB
 {
 
-/** Функции генерации псевдослучайных чисел.
-  * Функция может быть вызвана без аргументов или с одним аргументом.
-  * Аргумент игнорируется и служит лишь для того, чтобы несколько вызовов одной функции считались разными и не склеивались.
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+/** Pseudo-random number generation functions.
+  * The function can be called without arguments or with one argument.
+  * The argument is ignored and only serves to ensure that several calls to one function are considered different and do not stick together.
   *
-  * Пример:
-  * SELECT rand(), rand() - выдаст два одинаковых столбца.
-  * SELECT rand(1), rand(2) - выдаст два разных столбца.
+  * Example:
+  * SELECT rand(), rand() - will output two identical columns.
+  * SELECT rand(1), rand(2) - will output two different columns.
   *
-  * Некриптографические генераторы:
+  * Non-cryptographic generators:
   *
   * rand   - linear congruental generator 0 .. 2^32 - 1.
-  * rand64 - комбинирует несколько значений rand, чтобы получить значения из диапазона 0 .. 2^64 - 1.
+  * rand64 - combines several rand values to get values from the range 0 .. 2^64 - 1.
   *
-  * randConstant - служебная функция, выдаёт константный столбец со случайным значением.
+  * randConstant - service function, produces a constant column with a random value.
   *
-  * В качестве затравки используют время.
-  * Замечание: переинициализируется на каждый блок.
-  * Это значит, что таймер должен быть достаточного разрешения, чтобы выдавать разные значения на каждый блок.
+  * The time is used as the seed.
+  * Note: it is reinitialized for each block.
+  * This means that the timer must be of sufficient resolution to give different values to each block.
   */
 
 namespace detail
@@ -42,11 +48,11 @@ namespace detail
 
     struct LinearCongruentialGenerator
     {
-        /// Константы из man lrand48_r.
+        /// Constants from `man lrand48_r`.
         static constexpr UInt64 a = 0x5DEECE66D;
         static constexpr UInt64 c = 0xB;
 
-        /// А эта - из head -c8 /dev/urandom | xxd -p
+        /// And this is from `head -c8 /dev/urandom | xxd -p`
         UInt64 current = 0x09826f4a081cee35ULL;
 
         LinearCongruentialGenerator() {}
@@ -64,30 +70,26 @@ namespace detail
         }
     };
 
-    void seed(LinearCongruentialGenerator & generator, intptr_t additional_seed)
-    {
-        generator.seed(intHash64(randomSeed() ^ intHash64(additional_seed)));
-    }
+    void seed(LinearCongruentialGenerator & generator, intptr_t additional_seed);
 }
 
 struct RandImpl
 {
     using ReturnType = UInt32;
 
-    static void execute(PaddedPODArray<ReturnType> & res)
+    static void execute(ReturnType * output, size_t size)
     {
         detail::LinearCongruentialGenerator generator0;
         detail::LinearCongruentialGenerator generator1;
         detail::LinearCongruentialGenerator generator2;
         detail::LinearCongruentialGenerator generator3;
 
-        detail::seed(generator0, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator1, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(&res[0]));
+        detail::seed(generator0, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(output));
+        detail::seed(generator1, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(output));
+        detail::seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(output));
+        detail::seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(output));
 
-        size_t size = res.size();
-        ReturnType * pos = &res[0];
+        ReturnType * pos = output;
         ReturnType * end = pos + size;
         ReturnType * end4 = pos + size / 4 * 4;
 
@@ -112,35 +114,9 @@ struct Rand64Impl
 {
     using ReturnType = UInt64;
 
-    static void execute(PaddedPODArray<ReturnType> & res)
+    static void execute(ReturnType * output, size_t size)
     {
-        detail::LinearCongruentialGenerator generator0;
-        detail::LinearCongruentialGenerator generator1;
-        detail::LinearCongruentialGenerator generator2;
-        detail::LinearCongruentialGenerator generator3;
-
-        detail::seed(generator0, 0xfb4121280b2ab902ULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator1, 0x0121cf76df39c673ULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator2, 0x17ae86e3a19a602fULL + reinterpret_cast<intptr_t>(&res[0]));
-        detail::seed(generator3, 0x8b6e16da7e06d622ULL + reinterpret_cast<intptr_t>(&res[0]));
-
-        size_t size = res.size();
-        ReturnType * pos = &res[0];
-        ReturnType * end = pos + size;
-        ReturnType * end2 = pos + size / 2 * 2;
-
-        while (pos < end2)
-        {
-            pos[0] = (static_cast<UInt64>(generator0.next()) << 32) | generator1.next();
-            pos[1] = (static_cast<UInt64>(generator2.next()) << 32) | generator3.next();
-            pos += 2;
-        }
-
-        while (pos < end)
-        {
-            pos[0] = (static_cast<UInt64>(generator0.next()) << 32) | generator1.next();
-            ++pos;
-        }
+        RandImpl::execute(reinterpret_cast<RandImpl::ReturnType *>(output), size * 2);
     }
 };
 
@@ -177,13 +153,13 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         auto col_to = std::make_shared<ColumnVector<ToType>>();
-        block.safeGetByPosition(result).column = col_to;
+        block.getByPosition(result).column = col_to;
 
         typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
 
         size_t size = block.rows();
         vec_to.resize(size);
-        Impl::execute(vec_to);
+        Impl::execute(&vec_to[0], vec_to.size());
     }
 };
 
@@ -194,7 +170,7 @@ class FunctionRandomConstant : public IFunction
 private:
     using ToType = typename Impl::ReturnType;
 
-    /// Значение одно для разных блоков.
+    /// The value is one for different blocks.
     bool is_initialized = false;
     ToType value;
 
@@ -226,21 +202,21 @@ public:
         {
             is_initialized = true;
             typename ColumnVector<ToType>::Container_t vec_to(1);
-            Impl::execute(vec_to);
+            Impl::execute(&vec_to[0], vec_to.size());
             value = vec_to[0];
         }
 
-        block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(block.rows(), value);
+        block.getByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(block.rows(), toField(value));
     }
 };
 
 
 struct NameRand         { static constexpr auto name = "rand"; };
-struct NameRand64         { static constexpr auto name = "rand64"; };
+struct NameRand64       { static constexpr auto name = "rand64"; };
 struct NameRandConstant { static constexpr auto name = "randConstant"; };
 
-using FunctionRand = FunctionRandom<RandImpl,    NameRand> ;
-using FunctionRand64 = FunctionRandom<Rand64Impl,    NameRand64>;
+using FunctionRand = FunctionRandom<RandImpl, NameRand> ;
+using FunctionRand64 = FunctionRandom<Rand64Impl, NameRand64>;
 using FunctionRandConstant = FunctionRandomConstant<RandImpl, NameRandConstant>;
 
 

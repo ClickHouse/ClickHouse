@@ -10,7 +10,7 @@
 #include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -18,6 +18,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Common/setThreadName.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -51,6 +52,21 @@ namespace DB
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1024
 
 class Context;
+class QueryLog;
+class PartLog;
+
+
+/// System logs should be destroyed in destructor of last Context and before tables,
+///  because SystemLog destruction makes insert query while flushing data into underlying tables
+struct SystemLogs
+{
+    ~SystemLogs();
+
+    std::unique_ptr<QueryLog> query_log;    /// Used to log queries.
+    std::unique_ptr<PartLog> part_log;      /// Used to log operations with parts
+};
+
+
 
 
 template <typename LogElement>
@@ -70,7 +86,7 @@ public:
         Context & context_,
         const String & database_name_,
         const String & table_name_,
-        const String & engine_,
+        const String & storage_def_,
         size_t flush_interval_milliseconds_);
 
     ~SystemLog();
@@ -89,8 +105,8 @@ private:
     Context & context;
     const String database_name;
     const String table_name;
+    const String storage_def;
     StoragePtr table;
-    const String engine;
     const size_t flush_interval_milliseconds;
 
     using QueueItem = std::pair<bool, LogElement>;        /// First element is shutdown flag for thread.
@@ -126,10 +142,10 @@ template <typename LogElement>
 SystemLog<LogElement>::SystemLog(Context & context_,
     const String & database_name_,
     const String & table_name_,
-    const String & engine_,
+    const String & storage_def_,
     size_t flush_interval_milliseconds_)
     : context(context_),
-    database_name(database_name_), table_name(table_name_), engine(engine_),
+    database_name(database_name_), table_name(table_name_), storage_def(storage_def_),
     flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
@@ -186,6 +202,7 @@ void SystemLog<LogElement>::threadFunction()
                 if (element.first)
                 {
                     /// Shutdown.
+                    /// NOTE: MergeTree engine can write data even it is already in shutdown state.
                     flush();
                     break;
                 }
@@ -224,7 +241,7 @@ void SystemLog<LogElement>::flush()
         Block block = LogElement::createBlock();
         for (const LogElement & elem : data)
             elem.appendToBlock(block);
-        
+
         /// Clear queue early, because insertion to the table could lead to generation of more log entrites
         ///  and pushing them to already full queue will lead to deadlock.
         data.clear();
@@ -267,7 +284,7 @@ void SystemLog<LogElement>::prepareTable()
 
         if (!blocksHaveEqualStructure(actual, expected))
         {
-            /// Переименовываем существующую таблицу.
+            /// Rename the existing table.
             int suffix = 0;
             while (context.isTableExist(database_name, table_name + "_" + toString(suffix)))
                 ++suffix;
@@ -293,7 +310,7 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, context).execute();
 
-            /// Нужная таблица будет создана.
+            /// The required table will be created.
             table = nullptr;
         }
         else
@@ -302,7 +319,7 @@ void SystemLog<LogElement>::prepareTable()
 
     if (!table)
     {
-        /// Создаём таблицу.
+        /// Create the table.
         LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
 
         auto create = std::make_shared<ASTCreateQuery>();
@@ -311,11 +328,13 @@ void SystemLog<LogElement>::prepareTable()
         create->table = table_name;
 
         Block sample = LogElement::createBlock();
-        create->columns = InterpreterCreateQuery::formatColumns(sample.getColumnsList());
+        create->set(create->columns, InterpreterCreateQuery::formatColumns(sample.getColumnsList()));
 
-        ParserFunction engine_parser;
-
-        create->storage = parseQuery(engine_parser, engine.data(), engine.data() + engine.size(), "ENGINE to create table for" + LogElement::name());
+        ParserStorage storage_parser;
+        ASTPtr storage_ast = parseQuery(
+            storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
+            "Storage to create table for " + LogElement::name());
+        create->set(create->storage, storage_ast);
 
         InterpreterCreateQuery(create, context).execute();
 

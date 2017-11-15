@@ -12,10 +12,6 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "INSERT INTO " << (settings.hilite ? hilite_none : "")
     << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
 
-    if (!insert_id.empty())
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ID = " << (settings.hilite ? hilite_none : "")
-        << std::quoted(insert_id, '\'');
-
     if (columns)
     {
         settings.ostr << " (";

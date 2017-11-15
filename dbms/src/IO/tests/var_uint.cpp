@@ -8,8 +8,32 @@
 #include <Poco/HexBinaryEncoder.h>
 
 
+static void parse_trash_string_as_uint_must_fail(const std::string & str)
+{
+    using namespace DB;
+
+    unsigned x = 0xFF;
+
+    try
+    {
+        x = parse<unsigned>(str);
+    }
+    catch (...)
+    {
+        /// Ok
+        return;
+    }
+
+    std::cerr << "Parsing must fail, but finished sucessfully x=" << x;
+    exit(-1);
+}
+
+
 int main(int argc, char ** argv)
 {
+    parse_trash_string_as_uint_must_fail("trash");
+    parse_trash_string_as_uint_must_fail("-1");
+
     if (argc != 2)
     {
         std::cerr << "Usage: " << std::endl

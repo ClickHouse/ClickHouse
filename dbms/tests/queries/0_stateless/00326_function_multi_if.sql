@@ -1,13 +1,16 @@
 
-/* Trivial case */
+SELECT 'Trivial case';
 
 SELECT multiIf(1, 2, 1, 3, 4);
 SELECT multiIf(1, 'A', 1, 'BC', 'DEF');
 SELECT multiIf(1, toFixedString('A', 16), 1, toFixedString('BC', 16), toFixedString('DEF', 16));
 SELECT multiIf(1, [1,2], 1, [3,4], [5,6]);
 SELECT multiIf(1, ['A', 'B'], 1, ['C', 'D'], ['E', 'F']);
+SELECT multiIf(rand() % 2 = 0, emptyArrayString(), emptyArrayString());
+SELECT multiIf(rand() % 2 = 0, emptyArrayUInt8(), emptyArrayUInt8());
+SELECT multiIf(rand() % 2 = 0, '', '');
 
-/* Numeric branches */
+SELECT 'Numeric branches';
 
 SELECT multiIf((number % 2) = 0, toInt8(1), (number % 3) = 0, toInt8(2), toInt8(3)) FROM system.numbers LIMIT 10;
 SELECT multiIf((number % 2) = 0, toInt8(1), (number % 3) = 0, toInt8(2), toInt16(3)) FROM system.numbers LIMIT 10;
@@ -686,7 +689,7 @@ SELECT multiIf((number % 2) = 0, toFloat64(1), (number % 3) = 0, toFloat64(2), t
 SELECT multiIf((number % 2) = 0, toFloat64(1), (number % 3) = 0, toFloat64(2), toFloat32(3)) FROM system.numbers LIMIT 10;
 SELECT multiIf((number % 2) = 0, toFloat64(1), (number % 3) = 0, toFloat64(2), toFloat64(3)) FROM system.numbers LIMIT 10;
 
-/* Numeric array branches */
+SELECT 'Numeric array branches';
 
 SELECT multiIf((number % 2) = 0, [toInt8(1), toInt8(2)], (number % 3) = 0, [toInt8(2), toInt8(3)], [toInt8(3), toInt8(3)]) FROM system.numbers LIMIT 10;
 SELECT multiIf((number % 2) = 0, [toInt8(1), toInt8(2)], (number % 3) = 0, [toInt8(2), toInt8(3)], [toInt16(3), toInt16(3)]) FROM system.numbers LIMIT 10;
@@ -1365,7 +1368,7 @@ SELECT multiIf((number % 2) = 0, [toFloat64(1), toFloat64(2)], (number % 3) = 0,
 SELECT multiIf((number % 2) = 0, [toFloat64(1), toFloat64(2)], (number % 3) = 0, [toFloat64(2), toFloat64(3)], [toFloat32(3), toFloat32(3)]) FROM system.numbers LIMIT 10;
 SELECT multiIf((number % 2) = 0, [toFloat64(1), toFloat64(2)], (number % 3) = 0, [toFloat64(2), toFloat64(3)], [toFloat64(3), toFloat64(3)]) FROM system.numbers LIMIT 10;
 
-/* String branches */
+SELECT 'String branches';
 
 DROP TABLE IF EXISTS test.multi_if_check;
 CREATE TABLE test.multi_if_check(col1 UInt64, col2 String, col3 String, col4 String) ENGINE=TinyLog;
@@ -1639,7 +1642,7 @@ SELECT multiIf(1, 'foo', 1, 'bar', 'baz') FROM test.multi_if_check;
 
 DROP TABLE IF EXISTS test.multi_if_check;
 
-/* String array branches */
+SELECT 'String array branches';
 
 CREATE TABLE test.multi_if_check(col1 UInt64, col2 String, col3 String, col4 String, col5 String, col6 String, col7 String) ENGINE=TinyLog;
 INSERT INTO test.multi_if_check(col1, col2, col3, col4, col5, col6, col7) VALUES(1, 'A', 'AB', 'ABC', 'ABCD', 'ABCDE', 'ABCDEF');
@@ -1912,7 +1915,7 @@ SELECT multiIf(1, ['foo', 'bar'], 1, ['foo', 'bar'], ['foo', 'bar']) FROM test.m
 
 DROP TABLE IF EXISTS test.multi_if_check;
 
-/* Miscellaneous */
+SELECT 'Miscellaneous';
 
 CREATE TABLE test.multi_if_check(col1 UInt64) ENGINE=TinyLog;
 INSERT INTO test.multi_if_check(col1) VALUES (11225),(20273),(213),(240),(12),(187),(29252);

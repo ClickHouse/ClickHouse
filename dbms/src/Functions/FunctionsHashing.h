@@ -9,6 +9,7 @@
 #include <Poco/ByteOrder.h>
 
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
@@ -24,30 +25,37 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/Hash.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 
-#include <ext/range.hpp>
+#include <ext/range.h>
 
 
 namespace DB
 {
 
-/** Функции хэширования.
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+
+/** Hashing functions.
   *
-  * Половинка MD5:
-  * halfMD5:     String -> UInt64
+  * halfMD5: String -> UInt64
   *
-  * Более быстрая криптографическая хэш-функция:
-  * sipHash64:  String -> UInt64
+  * A faster cryptographic hash function:
+  * sipHash64: String -> UInt64
   *
-  * Быстрая некриптографическая хэш функция для строк:
+  * Fast non-cryptographic hash function for strings:
   * cityHash64: String -> UInt64
   *
-  * Некриптографический хеш от кортежа значений любых типов (использует cityHash64 для строк и intHash64 для чисел):
-  * cityHash64:  any* -> UInt64
+  * A non-cryptographic hash from a tuple of values of any types (uses cityHash64 for strings and intHash64 for numbers):
+  * cityHash64: any* -> UInt64
   *
-  * Быстрая некриптографическая хэш функция от любого целого числа:
-  * intHash32:    number -> UInt32
-  * intHash64:  number -> UInt64
+  * Fast non-cryptographic hash function from any integer:
+  * intHash32: number -> UInt32
+  * intHash64: number -> UInt64
   *
   */
 
@@ -66,7 +74,7 @@ struct HalfMD5Impl
         MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         MD5_Final(buf.char_data, &ctx);
 
-        return Poco::ByteOrder::flipBytes(buf.uint64_data);        /// Совместимость с существующим кодом.
+        return Poco::ByteOrder::flipBytes(buf.uint64_data);        /// Compatibility with existing code.
     }
 };
 
@@ -151,7 +159,7 @@ struct IntHash32Impl
 
     static UInt32 apply(UInt64 x)
     {
-        /// seed взят из /dev/urandom. Он позволяет избежать нежелательных зависимостей с хэшами в разных структурах данных.
+        /// seed is taken from /dev/urandom. It allows you to avoid undesirable dependencies with hashes in different data structures.
         return intHash32<0x75D9543DE018BF45ULL>(x);
     }
 };
@@ -183,19 +191,21 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt64>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnUInt64>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
             const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
@@ -208,14 +218,8 @@ public:
                     reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
-        {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(
-                col_from->size(),
-                Impl::apply(col_from->getData().data(), col_from->getData().size()));
-        }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -238,19 +242,21 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!typeid_cast<const DataTypeString *>(&*arguments[0]))
+        if (!checkDataType<DataTypeString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeFixedString>(Impl::length);
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnFixedString>(Impl::length);
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
             const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
@@ -264,20 +270,8 @@ public:
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
                     &chars_to[i * Impl::length]);
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(block.safeGetByPosition(arguments[0]).column.get()))
-        {
-            const auto & data = col_from->getData();
-
-            String hash(Impl::length, 0);
-            Impl::apply(data.data(), data.size(), reinterpret_cast<unsigned char *>(&hash[0]));
-
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstString>(
-                col_from->size(),
-                hash,
-                std::make_shared<DataTypeFixedString>(Impl::length));
-        }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -297,10 +291,10 @@ private:
     template <typename FromType>
     void executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (ColumnVector<FromType> * col_from = typeid_cast<ColumnVector<FromType> *>(block.safeGetByPosition(arguments[0]).column.get()))
+        if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = std::make_shared<ColumnVector<ToType>>();
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
             typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
@@ -310,12 +304,8 @@ private:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::apply(vec_from[i]);
         }
-        else if (ColumnConst<FromType> * col_from = typeid_cast<ColumnConst<FromType> *>(block.safeGetByPosition(arguments[0]).column.get()))
-        {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConst<ToType>>(col_from->size(), Impl::apply(col_from->getData()));
-        }
         else
-            throw Exception("Illegal column " + block.safeGetByPosition(arguments[0]).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + Name::name,
                 ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -337,22 +327,24 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        IDataType * from_type = block.safeGetByPosition(arguments[0]).type.get();
+        IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
-        if      (typeid_cast<const DataTypeUInt8 *        >(from_type)) executeType<UInt8    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeUInt16 *    >(from_type)) executeType<UInt16>(block, arguments, result);
-        else if (typeid_cast<const DataTypeUInt32 *    >(from_type)) executeType<UInt32>(block, arguments, result);
-        else if (typeid_cast<const DataTypeUInt64 *    >(from_type)) executeType<UInt64>(block, arguments, result);
-        else if (typeid_cast<const DataTypeInt8 *        >(from_type)) executeType<Int8    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeInt16 *        >(from_type)) executeType<Int16    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeInt32 *        >(from_type)) executeType<Int32    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeInt64 *        >(from_type)) executeType<Int64    >(block, arguments, result);
-        else if (typeid_cast<const DataTypeDate *        >(from_type)) executeType<UInt16>(block, arguments, result);
-        else if (typeid_cast<const DataTypeDateTime *    >(from_type)) executeType<UInt32>(block, arguments, result);
+        if      (checkDataType<DataTypeUInt8>(from_type)) executeType<UInt8>(block, arguments, result);
+        else if (checkDataType<DataTypeUInt16>(from_type)) executeType<UInt16>(block, arguments, result);
+        else if (checkDataType<DataTypeUInt32>(from_type)) executeType<UInt32>(block, arguments, result);
+        else if (checkDataType<DataTypeUInt64>(from_type)) executeType<UInt64>(block, arguments, result);
+        else if (checkDataType<DataTypeInt8>(from_type)) executeType<Int8>(block, arguments, result);
+        else if (checkDataType<DataTypeInt16>(from_type)) executeType<Int16>(block, arguments, result);
+        else if (checkDataType<DataTypeInt32>(from_type)) executeType<Int32>(block, arguments, result);
+        else if (checkDataType<DataTypeInt64>(from_type)) executeType<Int64>(block, arguments, result);
+        else if (checkDataType<DataTypeDate>(from_type)) executeType<UInt16>(block, arguments, result);
+        else if (checkDataType<DataTypeDateTime>(from_type)) executeType<UInt32>(block, arguments, result);
         else
-            throw Exception("Illegal type " + block.safeGetByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 };
@@ -371,8 +363,8 @@ template <>
 UInt64 toInteger<Float64>(Float64 x);
 
 
-/** Используются хэш-функции под названием CityHash, FarmHash, MetroHash.
-  * В связи с этим, этот шаблон назван со словами NeighbourhoodHash.
+/** We use hash functions called CityHash, FarmHash, MetroHash.
+  * In this regard, this template is named with the words `NeighborhoodHash`.
   */
 template <typename Impl>
 class FunctionNeighbourhoodHash64 : public IFunction
@@ -385,7 +377,7 @@ private:
     template <typename FromType, bool first>
     void executeIntType(const IColumn * column, ColumnUInt64::Container_t & vec_to)
     {
-        if (const ColumnVector<FromType> * col_from = typeid_cast<const ColumnVector<FromType> *>(column))
+        if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
         {
             const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
             size_t size = vec_from.size();
@@ -398,9 +390,9 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
             }
         }
-        else if (const ColumnConst<FromType> * col_from = typeid_cast<const ColumnConst<FromType> *>(column))
+        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
         {
-            const UInt64 hash = IntHash64Impl::apply(toInteger(col_from->getData()));
+            const UInt64 hash = IntHash64Impl::apply(toInteger(col_from->template getValue<FromType>()));
             size_t size = vec_to.size();
             if (first)
             {
@@ -421,7 +413,7 @@ private:
     template <bool first>
     void executeString(const IColumn * column, ColumnUInt64::Container_t & vec_to)
     {
-        if (const ColumnString * col_from = typeid_cast<const ColumnString *>(column))
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
             const typename ColumnString::Chars_t & data = col_from->getChars();
             const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
@@ -438,7 +430,7 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
             }
         }
-        else if (const ColumnFixedString * col_from = typeid_cast<const ColumnFixedString *>(column))
+        else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
         {
             const typename ColumnString::Chars_t & data = col_from->getChars();
             size_t n = col_from->getN();
@@ -452,9 +444,10 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
             }
         }
-        else if (const ColumnConstString * col_from = typeid_cast<const ColumnConstString *>(column))
+        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(column))
         {
-            const UInt64 hash = Impl::Hash64(col_from->getData().data(), col_from->getData().size());
+            String value = col_from->getValue<String>().data();
+            const UInt64 hash = Impl::Hash64(value.data(), value.size());
             const size_t size = vec_to.size();
             if (first)
             {
@@ -477,9 +470,9 @@ private:
     template <bool first>
     void executeArray(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to)
     {
-        const IDataType * nested_type = &*typeid_cast<const DataTypeArray *>(type)->getNestedType();
+        const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
 
-        if (const ColumnArray * col_from = typeid_cast<const ColumnArray *>(column))
+        if (const ColumnArray * col_from = checkAndGetColumn<ColumnArray>(column))
         {
             const IColumn * nested_column = &col_from->getData();
             const ColumnArray::Offsets_t & offsets = col_from->getOffsets();
@@ -505,9 +498,9 @@ private:
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], vec_temp[j]));
             }
         }
-        else if (const ColumnConstArray * col_from = typeid_cast<const ColumnConstArray *>(column))
+        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnArray>(column))
         {
-            /// NOTE: тут, конечно, можно обойтись без материалиации столбца.
+            /// NOTE: here, of course, you can do without the materialization of the column.
             ColumnPtr full_column = col_from->convertToFullColumn();
             executeArray<first>(type, &*full_column, vec_to);
         }
@@ -520,23 +513,23 @@ private:
     template <bool first>
     void executeAny(const IDataType * from_type, const IColumn * icolumn, ColumnUInt64::Container_t & vec_to)
     {
-        if      (typeid_cast<const DataTypeUInt8 *        >(from_type)) executeIntType<UInt8,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeUInt16 *        >(from_type)) executeIntType<UInt16,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeUInt32 *        >(from_type)) executeIntType<UInt32,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeUInt64 *        >(from_type)) executeIntType<UInt64,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeInt8 *        >(from_type)) executeIntType<Int8,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeInt16 *        >(from_type)) executeIntType<Int16,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeInt32 *        >(from_type)) executeIntType<Int32,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeInt64 *        >(from_type)) executeIntType<Int64,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeEnum8 *        >(from_type)) executeIntType<Int8,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeEnum16 *        >(from_type)) executeIntType<Int16,        first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeDate *        >(from_type)) executeIntType<UInt16,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeDateTime *    >(from_type)) executeIntType<UInt32,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeFloat32 *    >(from_type)) executeIntType<Float32,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeFloat64 *    >(from_type)) executeIntType<Float64,    first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeString *        >(from_type)) executeString    <            first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeFixedString *>(from_type)) executeString    <            first>(icolumn, vec_to);
-        else if (typeid_cast<const DataTypeArray *        >(from_type)) executeArray    <            first>(from_type, icolumn, vec_to);
+        if      (checkDataType<DataTypeUInt8>(from_type)) executeIntType<UInt8, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeUInt16>(from_type)) executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeUInt32>(from_type)) executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeUInt64>(from_type)) executeIntType<UInt64, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt8>(from_type)) executeIntType<Int8, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt16>(from_type)) executeIntType<Int16, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt32>(from_type)) executeIntType<Int32, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt64>(from_type)) executeIntType<Int64, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeEnum8>(from_type)) executeIntType<Int8, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeEnum16>(from_type)) executeIntType<Int16, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeDate>(from_type)) executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeDateTime>(from_type)) executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeFloat32>(from_type)) executeIntType<Float32, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeFloat64>(from_type)) executeIntType<Float64, first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeString>(from_type)) executeString<first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeFixedString>(from_type)) executeString<first>(icolumn, vec_to);
+        else if (checkDataType<DataTypeArray>(from_type)) executeArray<first>(from_type, icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -554,9 +547,9 @@ private:
                 executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
             }
         }
-        else if (const ColumnConstTuple * tuple = typeid_cast<const ColumnConstTuple *>(column))
+        else if (const ColumnConst * tuple = checkAndGetColumnConst<ColumnTuple>(column))
         {
-            ColumnPtr tuple_of_constants = tuple->convertToTupleOfConstants();
+            ColumnPtr tuple_of_constants = convertConstTupleToTupleOfConstants(*tuple);
             executeForArgument(type, tuple_of_constants.get(), vec_to, is_first);
         }
         else
@@ -588,14 +581,14 @@ public:
     {
         size_t rows = block.rows();
         auto col_to = std::make_shared<ColumnUInt64>(rows);
-        block.safeGetByPosition(result).column = col_to;
+        block.getByPosition(result).column = col_to;
 
         ColumnUInt64::Container_t & vec_to = col_to->getData();
 
         if (arguments.empty())
         {
             /// Constant random number from /dev/urandom is used as a hash value of empty list of arguments.
-            vec_to.assign(rows, 0xe28dbde7fe22e41c);
+            vec_to.assign(rows, static_cast<UInt64>(0xe28dbde7fe22e41c));
         }
 
         /// The function supports arbitary number of arguments of arbitary types.
@@ -603,7 +596,7 @@ public:
         bool is_first_argument = true;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            const ColumnWithTypeAndName & col = block.safeGetByPosition(arguments[i]);
+            const ColumnWithTypeAndName & col = block.getByPosition(arguments[i]);
             executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
         }
 
@@ -627,32 +620,32 @@ public:
 
 struct URLHashImpl
 {
-    static UInt64 apply(const char * data, const std::size_t size)
+    static UInt64 apply(const char * data, const size_t size)
     {
         /// do not take last slash, '?' or '#' character into account
         if (size > 0 && (data[size - 1] == '/' || data[size - 1] == '?' || data[size - 1] == '#'))
-            return CityHash64(data, size - 1);
+            return CityHash_v1_0_2::CityHash64(data, size - 1);
 
-        return CityHash64(data, size);
+        return CityHash_v1_0_2::CityHash64(data, size);
     }
 };
 
 
 struct URLHierarchyHashImpl
 {
-    static std::size_t findLevelLength(const UInt64 level, const char * begin, const char * const end)
+    static size_t findLevelLength(const UInt64 level, const char * begin, const char * end)
     {
         auto pos = begin;
 
-        /// Распарсим всё, что идёт до пути
+        /// Let's parse everything that goes before the path
 
-        /// Предположим, что протокол уже переведён в нижний регистр.
+        /// Suppose that the protocol has already been changed to lowercase.
         while (pos < end && ((*pos > 'a' && *pos < 'z') || (*pos > '0' && *pos < '9')))
             ++pos;
 
-        /** Будем вычислять иерархию только для URL-ов, в которых есть протокол, и после него идут два слеша.
-        *    (http, file - подходят, mailto, magnet - не подходят), и после двух слешей ещё хоть что-нибудь есть
-        *    Для остальных просто вернём полный URL как единственный элемент иерархии.
+        /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
+        *    (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
+        *    For the rest, simply return the full URL as the only element of the hierarchy.
         */
         if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
         {
@@ -660,7 +653,7 @@ struct URLHierarchyHashImpl
             return 0 == level ? pos - begin : 0;
         }
 
-        /// Доменом для простоты будем считать всё, что после протокола и двух слешей, до следующего слеша или до ? или до #
+        /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or before `?` or `#`
         while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
             ++pos;
 
@@ -674,7 +667,7 @@ struct URLHierarchyHashImpl
 
         while (current_level != level && pos < end)
         {
-            /// Идём до следующего / или ? или #, пропуская все те, что вначале.
+            /// We go to the next `/` or `?` or `#`, skipping all at the beginning.
             while (pos < end && (*pos == '/' || *pos == '?' || *pos == '#'))
                 ++pos;
             if (pos == end)
@@ -691,7 +684,7 @@ struct URLHierarchyHashImpl
         return current_level == level ? pos - begin : 0;
     }
 
-    static UInt64 apply(const UInt64 level, const char * data, const std::size_t size)
+    static UInt64 apply(const UInt64 level, const char * data, const size_t size)
     {
         return URLHashImpl::apply(data, findLevelLength(level, data, data + size));
     }
@@ -716,35 +709,35 @@ public:
             throw Exception{
                 "Number of arguments for function " + getName() + " doesn't match: passed " +
                     toString(arg_count) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
-            };
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto first_arg = arguments.front().get();
-        if (!typeid_cast<const DataTypeString *>(first_arg))
+        if (!checkDataType<DataTypeString>(first_arg))
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (arg_count == 2)
         {
             const auto second_arg = arguments.back().get();
-            if (!typeid_cast<const DataTypeUInt8 *>(second_arg) &&
-                !typeid_cast<const DataTypeUInt16 *>(second_arg) &&
-                !typeid_cast<const DataTypeUInt32 *>(second_arg) &&
-                !typeid_cast<const DataTypeUInt64 *>(second_arg) &&
-                !typeid_cast<const DataTypeInt8 *>(second_arg) &&
-                !typeid_cast<const DataTypeInt16 *>(second_arg) &&
-                !typeid_cast<const DataTypeInt32 *>(second_arg) &&
-                !typeid_cast<const DataTypeInt64 *>(second_arg))
+            if (!checkDataType<DataTypeUInt8>(second_arg) &&
+                !checkDataType<DataTypeUInt16>(second_arg) &&
+                !checkDataType<DataTypeUInt32>(second_arg) &&
+                !checkDataType<DataTypeUInt64>(second_arg) &&
+                !checkDataType<DataTypeInt8>(second_arg) &&
+                !checkDataType<DataTypeInt16>(second_arg) &&
+                !checkDataType<DataTypeInt32>(second_arg) &&
+                !checkDataType<DataTypeInt64>(second_arg))
                 throw Exception{
                     "Illegal type " + second_arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-                };
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<DataTypeUInt64>();
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
@@ -755,19 +748,19 @@ public:
         else if (arg_count == 2)
             executeTwoArgs(block, arguments, result);
         else
-            throw std::logic_error{"got into IFunction::execute with unexpected number of arguments"};
+            throw Exception{"got into IFunction::execute with unexpected number of arguments", ErrorCodes::LOGICAL_ERROR};
     }
 
 private:
-    void executeSingleArg(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
+    void executeSingleArg(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
-        const auto col_untyped = block.safeGetByPosition(arguments.front()).column.get();
+        const auto col_untyped = block.getByPosition(arguments.front()).column.get();
 
-        if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
+        if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
             const auto col_to = std::make_shared<ColumnUInt64>(size);
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
@@ -778,36 +771,29 @@ private:
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
         }
-        else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
-        {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(
-                col_from->size(),
-                URLHashImpl::apply(col_from->getData().data(), col_from->getData().size()));
-        }
         else
             throw Exception{
-                "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() +
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() +
                 " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 
-    void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const std::size_t result) const
+    void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
-        const auto level_col = block.safeGetByPosition(arguments.back()).column.get();
+        const auto level_col = block.getByPosition(arguments.back()).column.get();
         if (!level_col->isConst())
             throw Exception{
                 "Second argument of function " + getName() + " must be an integral constant",
-                ErrorCodes::ILLEGAL_COLUMN
-            };
+                ErrorCodes::ILLEGAL_COLUMN};
 
         const auto level = level_col->get64(0);
 
-        const auto col_untyped = block.safeGetByPosition(arguments.front()).column.get();
-        if (const auto col_from = typeid_cast<const ColumnString *>(col_untyped))
+        const auto col_untyped = block.getByPosition(arguments.front()).column.get();
+        if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
             const auto col_to = std::make_shared<ColumnUInt64>(size);
-            block.safeGetByPosition(result).column = col_to;
+            block.getByPosition(result).column = col_to;
 
             const auto & chars = col_from->getChars();
             const auto & offsets = col_from->getOffsets();
@@ -818,33 +804,27 @@ private:
                     reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
                     i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
         }
-        else if (const auto col_from = typeid_cast<const ColumnConstString *>(col_untyped))
-        {
-            block.safeGetByPosition(result).column = std::make_shared<ColumnConstUInt64>(
-                col_from->size(),
-                URLHierarchyHashImpl::apply(level, col_from->getData().data(), col_from->getData().size()));
-        }
         else
             throw Exception{
-                "Illegal column " + block.safeGetByPosition(arguments[0]).column->getName() +
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() +
                 " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 };
 
 
-struct NameHalfMD5             { static constexpr auto name = "halfMD5"; };
-struct NameSipHash64        { static constexpr auto name = "sipHash64"; };
-struct NameIntHash32         { static constexpr auto name = "intHash32"; };
-struct NameIntHash64         { static constexpr auto name = "intHash64"; };
+struct NameHalfMD5   { static constexpr auto name = "halfMD5"; };
+struct NameSipHash64 { static constexpr auto name = "sipHash64"; };
+struct NameIntHash32 { static constexpr auto name = "intHash32"; };
+struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
 struct ImplCityHash64
 {
     static constexpr auto name = "cityHash64";
-    using uint128_t = uint128;
+    using uint128_t = CityHash_v1_0_2::uint128;
 
-    static auto Hash128to64(const uint128_t & x) { return ::Hash128to64(x); }
-    static auto Hash64(const char * const s, const std::size_t len) { return CityHash64(s, len); }
+    static auto Hash128to64(const uint128_t & x) { return CityHash_v1_0_2::Hash128to64(x); }
+    static auto Hash64(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
 };
 
 struct ImplFarmHash64
@@ -853,16 +833,16 @@ struct ImplFarmHash64
     using uint128_t = farmhash::uint128_t;
 
     static auto Hash128to64(const uint128_t & x) { return farmhash::Hash128to64(x); }
-    static auto Hash64(const char * const s, const std::size_t len) { return farmhash::Hash64(s, len); }
+    static auto Hash64(const char * s, const size_t len) { return farmhash::Hash64(s, len); }
 };
 
 struct ImplMetroHash64
 {
     static constexpr auto name = "metroHash64";
-    using uint128_t = uint128;
+    using uint128_t = CityHash_v1_0_2::uint128;
 
-    static auto Hash128to64(const uint128_t & x) { return ::Hash128to64(x); }
-    static auto Hash64(const char * const s, const std::size_t len)
+    static auto Hash128to64(const uint128_t & x) { return CityHash_v1_0_2::Hash128to64(x); }
+    static auto Hash64(const char * s, const size_t len)
     {
         union {
             UInt64 u64;

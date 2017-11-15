@@ -1,5 +1,5 @@
 arrayJoin function
----------------
+------------------
 This is a very unusual function.
 
 Normal functions don't change a set of rows, but just change the values in each row (map). Aggregate functions compress a set of rows (fold or reduce).
@@ -22,7 +22,9 @@ Example:
       arrayJoin([1, 2, 3] AS src) AS dst,
       'Hello',
       src
-  
+
+.. code-block:: text
+
   ┌─dst─┬─\'Hello\'─┬─src─────┐
   │   1 │ Hello     │ [1,2,3] │
   │   2 │ Hello     │ [1,2,3] │

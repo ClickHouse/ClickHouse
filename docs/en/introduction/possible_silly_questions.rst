@@ -1,8 +1,8 @@
 Possible silly questions
------------------------
+------------------------
 
-1. Why not to use systems like map-reduce?
-"""""""""""""""""""
+Why not to use systems like MapReduce?
+""""""""""""""""""""""""""""""""""""""
 
 Systems like map-reduce are distributed computing systems, where the reduce phase is performed using distributed sorting.
 Regarding this aspect, map-reduce is similar to other systems like YAMR, Hadoop, YT.

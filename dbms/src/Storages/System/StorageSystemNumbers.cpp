@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
 
@@ -48,35 +49,40 @@ private:
 };
 
 
-StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_)
-    : name(name_), columns{{"number", std::make_shared<DataTypeUInt64>()}}, multithreaded(multithreaded_)
+StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_)
+    : name(name_), columns{{"number", std::make_shared<DataTypeUInt64>()}}, multithreaded(multithreaded_), limit(limit_)
 {
-}
-
-StoragePtr StorageSystemNumbers::create(const std::string & name_, bool multithreaded_)
-{
-    return make_shared(name_, multithreaded_);
 }
 
 
 BlockInputStreams StorageSystemNumbers::read(
     const Names & column_names,
-    ASTPtr query,
+    const SelectQueryInfo & query_info,
     const Context & context,
-    const Settings & settings,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    unsigned threads)
+    size_t max_block_size,
+    unsigned num_streams)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    if (!multithreaded)
-        threads = 1;
+    if (limit && limit < max_block_size)
+    {
+        max_block_size = std::min(max_block_size, limit);
+        multithreaded = false;
+    }
 
-    BlockInputStreams res(threads);
-    for (size_t i = 0; i < threads; ++i)
-        res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, i * max_block_size, threads * max_block_size);
+    if (!multithreaded)
+        num_streams = 1;
+
+    BlockInputStreams res(num_streams);
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, i * max_block_size, num_streams * max_block_size);
+
+        if (limit)  /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
+            res[i] = std::make_shared<LimitBlockInputStream>(res[i], limit * (i + 1) / num_streams - limit * i / num_streams, 0);
+    }
 
     return res;
 }

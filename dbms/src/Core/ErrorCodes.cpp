@@ -253,7 +253,7 @@ namespace ErrorCodes
     extern const int INVALID_NESTED_NAME = 245;
     extern const int CORRUPTED_DATA = 246;
     extern const int INCORRECT_MARK = 247;
-    extern const int INVALID_PARTITION_NAME = 248;
+    extern const int INVALID_PARTITION_VALUE = 248;
     extern const int NOT_ENOUGH_BLOCK_NUMBERS = 250;
     extern const int NO_SUCH_REPLICA = 251;
     extern const int TOO_MUCH_PARTS = 252;
@@ -373,6 +373,19 @@ namespace ErrorCodes
     extern const int BAD_CAST = 368;
     extern const int ALL_REPLICAS_ARE_STALE = 369;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES = 370;
+    extern const int INCONSISTENT_CLUSTER_DEFINITION = 371;
+    extern const int SESSION_NOT_FOUND = 372;
+    extern const int SESSION_IS_LOCKED = 373;
+    extern const int INVALID_SESSION_TIMEOUT = 374;
+    extern const int CANNOT_DLOPEN = 375;
+    extern const int CANNOT_PARSE_UUID = 376;
+    extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE = 377;
+    extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS = 378;
+    extern const int UNKNOWN_STATUS_OF_DISTRIBUTED_DDL_TASK = 379;
+    extern const int CANNOT_KILL = 380;
+    extern const int HTTP_LENGTH_REQUIRED = 381;
+    extern const int CANNOT_LOAD_CATBOOST_MODEL = 382;
+    extern const int CANNOT_APPLY_CATBOOST_MODEL = 383;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

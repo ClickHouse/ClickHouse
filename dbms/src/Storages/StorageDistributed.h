@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Common/SimpleIncrement.h>
@@ -25,33 +25,21 @@ class StorageDistributedDirectoryMonitor;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed : private ext::shared_ptr_helper<StorageDistributed>, public IStorage
+class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
-    friend class ext::shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
 
 public:
-    static StoragePtr create(
-        const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const String & remote_database_,    /// database on remote servers.
-        const String & remote_table_,        /// The name of the table on the remote servers.
-        const String & cluster_name,
-        Context & context_,
-        const ASTPtr & sharding_key_,
-        const String & data_path_);
+    ~StorageDistributed() override;
 
-    static StoragePtr create(
+    static StoragePtr createWithOwnCluster(
         const std::string & name_,            /// The name of the table.
         NamesAndTypesListPtr columns_,        /// List of columns.
         const String & remote_database_,      /// database on remote servers.
         const String & remote_table_,         /// The name of the table on the remote servers.
         ClusterPtr & owned_cluster_,
-        Context & context_);
+        const Context & context_);
 
     std::string getName() const override { return "Distributed"; }
     std::string getTableName() const override { return name; }
@@ -68,12 +56,11 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const SelectQueryInfo & query_info,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
@@ -83,14 +70,15 @@ public:
     /// the structure of the sub-table is not checked
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
+    void startup() override;
     void shutdown() override;
 
     void reshardPartitions(
         const ASTPtr & query, const String  & database_name,
-        const Field & first_partition, const Field & last_partition,
+        const ASTPtr & partition,
         const WeightedZooKeeperPaths & weighted_zookeeper_paths,
         const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        Context & context) override;
+        const Context & context) override;
 
     /// From each replica, get a description of the corresponding local table.
     BlockInputStreams describe(const Context & context, const Settings & settings);
@@ -103,42 +91,14 @@ public:
     std::string getRemoteTableName() const { return remote_table; }
     std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
 
-private:
-    StorageDistributed(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
-
-    StorageDistributed(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
-
-
-    /// create directory monitor thread by subdirectory name
-    void createDirectoryMonitor(const std::string & name);
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors();
-    /// ensure directory monitor creation
+    /// ensure directory monitor thread creation by subdirectory name
     void requireDirectoryMonitor(const std::string & name);
+    /// ensure connection pool creation and return it
+    ConnectionPoolPtr requireConnectionPool(const std::string & name);
 
     ClusterPtr getCluster() const;
-
-    /// Get monotonically increasing string to name files with data to be written to remote servers.
-    String getMonotonicFileName();
 
 
     String name;
@@ -160,10 +120,44 @@ private:
     String sharding_key_column_name;
     String path;    /// Can be empty if data_path_ is empty. In this case, a directory for the data to be sent is not created.
 
-    std::unordered_map<std::string, std::unique_ptr<StorageDistributedDirectoryMonitor>> directory_monitors;
+    struct ClusterNodeData
+    {
+        std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
+        ConnectionPoolPtr conneciton_pool;
+
+        /// Creates connection_pool if not exists.
+        void requireConnectionPool(const std::string & name, const StorageDistributed & storage);
+        /// Creates directory_monitor if not exists.
+        void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage);
+    };
+    std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
+
+protected:
+    StorageDistributed(
+        const std::string & name_,
+        NamesAndTypesListPtr columns_,
+        const String & remote_database_,
+        const String & remote_table_,
+        const String & cluster_name_,
+        const Context & context_,
+        const ASTPtr & sharding_key_ = nullptr,
+        const String & data_path_ = String{});
+
+    StorageDistributed(
+        const std::string & name_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        const String & remote_database_,
+        const String & remote_table_,
+        const String & cluster_name_,
+        const Context & context_,
+        const ASTPtr & sharding_key_ = nullptr,
+        const String & data_path_ = String{});
 };
 
 }

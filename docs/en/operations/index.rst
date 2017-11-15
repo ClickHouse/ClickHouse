@@ -1,0 +1,8 @@
+Operations
+==========
+
+.. toctree::
+    :glob:
+
+    *
+    */index

@@ -1,5 +1,6 @@
 #include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -8,6 +9,16 @@ namespace DB
 
 void ReplacingSortedBlockInputStream::insertRow(ColumnPlainPtrs & merged_columns, size_t & merged_rows)
 {
+    if (out_row_sources_buf)
+    {
+        /// true flag value means "skip row"
+        current_row_sources.back().setSkipFlag(false);
+
+        out_row_sources_buf->write(reinterpret_cast<const char *>(current_row_sources.data()),
+                                   current_row_sources.size() * sizeof(RowSourcePart));
+        current_row_sources.resize(0);
+    }
+
     ++merged_rows;
     for (size_t i = 0; i < num_columns; ++i)
         merged_columns[i]->insertFrom(*selected_row.columns[i], selected_row.row_num);
@@ -47,7 +58,7 @@ Block ReplacingSortedBlockInputStream::readImpl()
 }
 
 
-template<class TSortCursor>
+template <typename TSortCursor>
 void ReplacingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
@@ -86,6 +97,10 @@ void ReplacingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, st
             insertRow(merged_columns, merged_rows);
             current_key.swap(next_key);
         }
+
+        /// Initially, skip all rows. Unskip last on insert.
+        if (out_row_sources_buf)
+            current_row_sources.emplace_back(current.impl->order, true);
 
         /// A non-strict comparison, since we select the last row for the same version values.
         if (version >= max_version)

@@ -3,6 +3,9 @@
 *\#
 .tramp_history
 
+# vim cache files
+*.swp
+
 # auto generated files
 *.logrt
 
@@ -32,6 +35,11 @@ cmake_install.cmake
 CTestTestfile.cmake
 *.a
 *.o
+cmake-build-*
+
+# Python cache
+*.pyc
+__pycache__
 
 # ignore generated files
 *-metrika-yandex
@@ -184,6 +192,7 @@ config-9001.xml
 *-preprocessed.xml
 
 core
+!core/
 vgcore*
 
 *.deb
@@ -192,7 +201,6 @@ vgcore*
 *.changes
 build-stamp
 configure-stamp
-debian/changelog
 debian/*.debhelper.log
 debian/*.debhelper
 debian/*.substvars
@@ -223,3 +231,4 @@ config-preprocessed.xml
 # Gulp dependencies used to minify website
 node_modules
 public
+website/docs

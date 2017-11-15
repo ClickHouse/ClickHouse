@@ -16,7 +16,7 @@ namespace DB
   * During this for each group of consecutive identical values of the primary key (the columns by which the data is sorted),
   * merges them into one row. When merging, the data is pre-aggregated - merge of states of aggregate functions,
   * corresponding to a one value of the primary key. For columns that are not part of the primary key and which do not have the AggregateFunction type,
-  * when merged, the first random value is selected.
+  * when merged, the first value is selected.
   */
 class AggregatingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
@@ -70,12 +70,12 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     /** Extract all states of aggregate functions and merge them with the current group.
       */
-    template <class TSortCursor>
+    template <typename TSortCursor>
     void addRow(TSortCursor & cursor);
 };
 

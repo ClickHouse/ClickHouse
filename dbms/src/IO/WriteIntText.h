@@ -8,7 +8,7 @@
 #include <Core/Types.h>
 #include <IO/WriteBuffer.h>
 
-/// 20 цифр или 19 цифр и знак
+/// 20 digits or 19 digits and a sign
 #define WRITE_HELPERS_MAX_INT_WIDTH 20U
 
 
@@ -17,14 +17,14 @@ namespace DB
 
 namespace detail
 {
-    /** Смотрите:
+    /** See:
       * https://github.com/localvoid/cxx-benchmark-itoa
       * http://www.slideshare.net/andreialexandrescu1/three-optimization-tips-for-c-15708507
       * http://vimeo.com/55639112
       */
 
 
-    /// Обычный способ, если в буфере не хватает места, чтобы там поместилось любое число.
+    /// The usual way, if there is not enough space in the buffer for any number to fit there.
     template <typename T>
     void writeUIntTextFallback(T x, WriteBuffer & buf)
     {
@@ -52,9 +52,9 @@ namespace detail
     }
 
 
-    /** Подсчёт количества десятичных цифр в числе.
-      * Хорошо работает для неравномерного распределения чисел, которое обычно бывает.
-      * Если большинство чисел длинные, то лучше работал бы branchless код с инструкцией bsr и хитрым преобразованием.
+    /** Count the number of decimal digits in the number.
+      * Works well for nonuniform distribution of numbers, which usually happens.
+      * If most of the numbers are long, then a "branchless" code with a `bsr` instruction and a smart conversion would work better.
       */
     template <typename T>
     UInt32 digits10(T x)
@@ -91,10 +91,10 @@ namespace detail
     }
 
 
-    /** Преобразует по две цифры за итерацию.
-      * Хорошо работает для неравномерного распределения чисел, которое обычно бывает.
-      * Если большинство чисел длинные, и если не жалко кэш, то лучше работал бы вариант
-      *  с большой таблицей и четырьмя цифрами за итерацию.
+    /** Converts two digits per iteration.
+      * Works well for the nonuniform distribution of numbers, which usually happens.
+      * If most of the numbers are long, and if you do care about the cache, then the variant
+      *  with a large table and four digits per iteration.
       */
     template <typename T>
     UInt32 writeUIntText(T x, char * dst)
@@ -138,7 +138,7 @@ namespace detail
     }
 
 
-    /** Если в буфере есть достаточно места - вызывает оптимизированный вариант, иначе - обычный вариант.
+    /** If there is enough space in the buffer - calls an optimized version, otherwise - the normal version.
       */
     template <typename T>
     void writeUIntText(T x, WriteBuffer & buf)
@@ -150,12 +150,12 @@ namespace detail
     }
 
 
-    /** Обёртка для знаковых чисел.
+    /** Wrapper for signed numbers.
       */
     template <typename T>
     void writeSIntText(T x, WriteBuffer & buf)
     {
-        /// Особый случай для самого маленького отрицательного числа
+        /// A special case for the smallest negative number
         if (unlikely(x == std::numeric_limits<T>::min()))
         {
             if (sizeof(x) == 1)

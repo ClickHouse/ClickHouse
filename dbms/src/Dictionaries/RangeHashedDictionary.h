@@ -5,7 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
-#include <ext/range.hpp>
+#include <ext/range.h>
 #include <atomic>
 #include <memory>
 #include <tuple>
@@ -29,19 +29,19 @@ public:
 
     std::string getTypeName() const override { return "RangeHashed"; }
 
-    std::size_t getBytesAllocated() const override { return bytes_allocated; }
+    size_t getBytesAllocated() const override { return bytes_allocated; }
 
-    std::size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override { return 1.0; }
 
-    std::size_t getElementCount() const override { return element_count; }
+    size_t getElementCount() const override { return element_count; }
 
     double getLoadFactor() const override { return static_cast<double>(element_count) / bucket_count; }
 
     bool isCached() const override { return false; }
 
-    DictionaryPtr clone() const override { return std::make_unique<RangeHashedDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<RangeHashedDictionary>(*this); }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
@@ -78,6 +78,8 @@ public:
     void getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
         ColumnString * out) const;
+
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     struct Range : std::pair<UInt16, UInt16>
@@ -166,19 +168,26 @@ private:
 
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
+    void getIdsAndDates(PaddedPODArray<Key> & ids,
+                        PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const;
+
+    template <typename T>
+    void getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
+                        PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const;
+
     const std::string name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const bool require_nonempty;
 
-    std::map<std::string, std::size_t> attribute_index_by_name;
+    std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
 
-    std::size_t bytes_allocated = 0;
-    std::size_t element_count = 0;
-    std::size_t bucket_count = 0;
-    mutable std::atomic<std::size_t> query_count{0};
+    size_t bytes_allocated = 0;
+    size_t element_count = 0;
+    size_t bucket_count = 0;
+    mutable std::atomic<size_t> query_count{0};
 
     std::chrono::time_point<std::chrono::system_clock> creation_time;
 

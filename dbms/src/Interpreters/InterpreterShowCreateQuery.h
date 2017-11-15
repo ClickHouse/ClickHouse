@@ -1,26 +1,29 @@
 #pragma once
 
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 
 
 namespace DB
 {
 
+class Context;
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
 
-/** Вернуть одну строку с одним столбцом statement типа String с текстом запроса, создающего указанную таблицу.
-    */
+
+/** Return single row with single column "statement" of type String with text of query to CREATE specified table.
+  */
 class InterpreterShowCreateQuery : public IInterpreter
 {
 public:
-    InterpreterShowCreateQuery(ASTPtr query_ptr_, Context & context_)
+    InterpreterShowCreateQuery(const ASTPtr & query_ptr_, const Context & context_)
         : query_ptr(query_ptr_), context(context_) {}
 
     BlockIO execute() override;
 
 private:
     ASTPtr query_ptr;
-    Context context;
+    const Context & context;
 
     Block getSampleBlock();
     BlockInputStreamPtr executeImpl();

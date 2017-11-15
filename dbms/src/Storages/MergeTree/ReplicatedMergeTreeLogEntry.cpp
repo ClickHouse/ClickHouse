@@ -1,8 +1,9 @@
-#include <zkutil/Types.h>
+#include <Common/ZooKeeper/Types.h>
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -38,13 +39,11 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << new_part_name;
             break;
 
-        case ATTACH_PART:
-            out << "attach\n";
-            if (attach_unreplicated)
-                out << "unreplicated\n";
-            else
-                out << "detached\n";
-            out << source_part_name << "\ninto\n" << new_part_name;
+        case CLEAR_COLUMN:
+            out << "clear_column\n"
+                << escape << column_name
+                << "\nfrom\n"
+                << new_part_name;
             break;
 
         default:
@@ -109,17 +108,20 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         detach = type_str == "detach";
         in >> new_part_name;
     }
+    else if (type_str == "clear_column")
+    {
+        type = CLEAR_COLUMN;
+        in >> escape >> column_name >> "\nfrom\n" >> new_part_name;
+    }
     else if (type_str == "attach")
     {
+        /// Obsolete. TODO: Remove after half year.
         type = ATTACH_PART;
         String source_type;
         in >> source_type;
-        if (source_type == "unreplicated")
-            attach_unreplicated = true;
-        else if (source_type == "detached")
-            attach_unreplicated = false;
-        else
-            throw Exception("Bad format: expected 'unreplicated' or 'detached', found '" + source_type + "'", ErrorCodes::CANNOT_PARSE_TEXT);
+        if (source_type != "detached")
+            throw Exception("Bad format: expected 'detached', found '" + source_type + "'", ErrorCodes::CANNOT_PARSE_TEXT);
+        String source_part_name;
         in >> "\n" >> source_part_name >> "\ninto\n" >> new_part_name;
     }
 
@@ -132,12 +134,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
 String ReplicatedMergeTreeLogEntryData::toString() const
 {
-    String s;
-    {
-        WriteBufferFromString out(s);
-        writeText(out);
-    }
-    return s;
+    WriteBufferFromOwnString out;
+    writeText(out);
+    return out.str();
 }
 
 ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const zkutil::Stat & stat)

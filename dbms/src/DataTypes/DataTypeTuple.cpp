@@ -3,14 +3,22 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Parsers/IAST.h>
 
-#include <ext/map.hpp>
-#include <ext/enumerate.hpp>
-#include <ext/range.hpp>
+#include <ext/map.h>
+#include <ext/enumerate.h>
+#include <ext/range.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int EMPTY_DATA_PASSED;
+}
+
 
 std::string DataTypeTuple::getName() const
 {
@@ -27,12 +35,12 @@ std::string DataTypeTuple::getName() const
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
-    return *static_cast<ColumnTuple &>(column).getData().getByPosition(idx).column.get();
+    return *static_cast<ColumnTuple &>(column).getData().getByPosition(idx).column;
 }
 
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
-    return *static_cast<const ColumnTuple &>(column).getData().getByPosition(idx).column.get();
+    return *static_cast<const ColumnTuple &>(column).getData().getByPosition(idx).column;
 }
 
 
@@ -60,7 +68,7 @@ void DataTypeTuple::serializeBinary(const IColumn & column, size_t row_num, Writ
 
 
 template <typename F>
-static void deserializeSafe(const DataTypes & elems, IColumn & column, ReadBuffer & istr, F && impl)
+static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
 {
     /// We use the assumption that tuples of zero size do not exist.
     size_t old_size = extractElementColumn(column, 0).size();
@@ -85,7 +93,7 @@ static void deserializeSafe(const DataTypes & elems, IColumn & column, ReadBuffe
 
 void DataTypeTuple::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    deserializeSafe(elems, column, istr, [&]
+    addElementSafe(elems, column, [&]
     {
         for (const auto & i : ext::range(0, ext::size(elems)))
             elems[i]->deserializeBinary(extractElementColumn(column, i), istr);
@@ -109,7 +117,7 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr) const
     const size_t size = elems.size();
     assertChar('(', istr);
 
-    deserializeSafe(elems, column, istr, [&]
+    addElementSafe(elems, column, [&]
     {
         for (const auto i : ext::range(0, size))
         {
@@ -144,14 +152,14 @@ void DataTypeTuple::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) c
     deserializeText(column, istr);
 }
 
-void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, bool force_quoting_64bit_integers) const
+void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
 {
     writeChar('[', ostr);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         if (i != 0)
             writeChar(',', ostr);
-        elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr, force_quoting_64bit_integers);
+        elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr, settings);
     }
     writeChar(']', ostr);
 }
@@ -161,7 +169,7 @@ void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr) con
     const size_t size = elems.size();
     assertChar('[', istr);
 
-    deserializeSafe(elems, column, istr, [&]
+    addElementSafe(elems, column, [&]
     {
         for (const auto i : ext::range(0, size))
         {
@@ -200,7 +208,7 @@ void DataTypeTuple::serializeTextCSV(const IColumn & column, size_t row_num, Wri
 
 void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-    deserializeSafe(elems, column, istr, [&]
+    addElementSafe(elems, column, [&]
     {
         const size_t size = elems.size();
         for (const auto i : ext::range(0, size))
@@ -227,7 +235,7 @@ void DataTypeTuple::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, s
 {
     ColumnTuple & real_column = static_cast<ColumnTuple &>(column);
     for (size_t i = 0, size = elems.size(); i < size; ++i)
-        NativeBlockInputStream::readData(*elems[i], *real_column.getData().safeGetByPosition(i).column, istr, limit);
+        NativeBlockInputStream::readData(*elems[i], *real_column.getData().safeGetByPosition(i).column, istr, limit, avg_value_size_hint);
 }
 
 ColumnPtr DataTypeTuple::createColumn() const
@@ -243,14 +251,39 @@ ColumnPtr DataTypeTuple::createColumn() const
     return std::make_shared<ColumnTuple>(tuple_block);
 }
 
-ColumnPtr DataTypeTuple::createConstColumn(size_t size, const Field & field) const
-{
-    return std::make_shared<ColumnConstTuple>(size, get<const Tuple &>(field), std::make_shared<DataTypeTuple>(elems));
-}
-
 Field DataTypeTuple::getDefault() const
 {
     return Tuple(ext::map<TupleBackend>(elems, [] (const DataTypePtr & elem) { return elem->getDefault(); }));
+}
+
+void DataTypeTuple::insertDefaultInto(IColumn & column) const
+{
+    addElementSafe(elems, column, [&]
+    {
+        for (const auto & i : ext::range(0, ext::size(elems)))
+            elems[i]->insertDefaultInto(extractElementColumn(column, i));
+    });
+}
+
+
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (arguments->children.empty())
+        throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
+
+    DataTypes nested_types;
+    nested_types.reserve(arguments->children.size());
+
+    for (const ASTPtr & child : arguments->children)
+        nested_types.emplace_back(DataTypeFactory::instance().get(child));
+
+    return std::make_shared<DataTypeTuple>(nested_types);
+}
+
+
+void registerDataTypeTuple(DataTypeFactory & factory)
+{
+    factory.registerDataType("Tuple", create);
 }
 
 }

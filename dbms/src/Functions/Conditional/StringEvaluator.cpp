@@ -2,6 +2,7 @@
 #include <Functions/Conditional/common.h>
 #include <Functions/Conditional/NullMapBuilder.h>
 #include <Functions/Conditional/CondSource.h>
+#include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -11,6 +12,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Types.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -66,17 +68,13 @@ using StringSources = std::vector<StringSourcePtr>;
 class ConstStringSource final : public StringSource
 {
 public:
-    ConstStringSource(const std::string & str_, size_t size_, size_t index_)
-        : str{str_}, size{size_}, index{index_},
-        type{static_cast<UInt64>(StringType::CONSTANT | ((size > 0) ? StringType::FIXED : 0))}
+    ConstStringSource(StringRef str_, size_t index_, bool is_fixed)
+        : str{str_}, index{index_},
+        type{StringType::CONSTANT}
     {
+        if (is_fixed)
+            type |= StringType::FIXED;
     }
-
-    ConstStringSource(const ConstStringSource &) = delete;
-    ConstStringSource & operator=(const ConstStringSource &) = delete;
-
-    ConstStringSource(ConstStringSource &&) = default;
-    ConstStringSource & operator=(ConstStringSource &&) = default;
 
     UInt64 getType() const override
     {
@@ -90,20 +88,20 @@ public:
     StringChunk get() const override
     {
         StringChunk chunk;
-        chunk.pos_begin = reinterpret_cast<const unsigned char *>(str.data());
-        chunk.pos_end = chunk.pos_begin + str.size();
+        chunk.pos_begin = reinterpret_cast<const StringChunk::value_type *>(str.data);
+        chunk.pos_end = chunk.pos_begin + str.size;
         chunk.type = type;
         return chunk;
     }
 
     inline size_t getSize() const override
     {
-        return size;
+        return str.size;
     }
 
     inline size_t getDataSize() const override
     {
-        return str.length();
+        return str.size;
     }
 
     inline size_t getIndex() const override
@@ -112,8 +110,7 @@ public:
     }
 
 private:
-    const std::string & str;
-    size_t size;
+    StringRef str;
     size_t index;
     UInt64 type;
 };
@@ -124,15 +121,9 @@ class FixedStringSource final : public StringSource
 {
 public:
     FixedStringSource(const ColumnFixedString::Chars_t & data_, size_t size_, size_t index_)
-        : data{data_}, size{size_}, index{index_}
+        : data(data_), size(size_), index(index_)
     {
     }
-
-    FixedStringSource(const FixedStringSource &) = delete;
-    FixedStringSource & operator=(const FixedStringSource &) = delete;
-
-    FixedStringSource(FixedStringSource &&) = default;
-    FixedStringSource & operator=(FixedStringSource &&) = default;
 
     UInt64 getType() const override
     {
@@ -183,15 +174,9 @@ class VarStringSource final : public StringSource
 public:
     VarStringSource(const ColumnString::Chars_t & data_,
         const ColumnString::Offsets_t & offsets_, size_t index_)
-        : data{data_}, offsets{offsets_}, index{index_}
+        : data(data_), offsets(offsets_), index(index_)
     {
     }
-
-    VarStringSource(const VarStringSource &) = delete;
-    VarStringSource & operator=(const VarStringSource &) = delete;
-
-    VarStringSource(VarStringSource &&) = default;
-    VarStringSource & operator=(VarStringSource &&) = default;
 
     UInt64 getType() const override
     {
@@ -250,16 +235,10 @@ class FixedStringSink : public StringSink
 {
 public:
     FixedStringSink(ColumnFixedString::Chars_t & data_, size_t size_, size_t data_size_)
-        : data{data_}, size{size_}
+        : data(data_), size(size_)
     {
         data.reserve(data_size_);
     }
-
-    FixedStringSink(const FixedStringSink &) = delete;
-    FixedStringSink & operator=(const FixedStringSink &) = delete;
-
-    FixedStringSink(FixedStringSink &&) = default;
-    FixedStringSink & operator=(FixedStringSink &&) = default;
 
     void store(const StringChunk & chunk) override
     {
@@ -288,17 +267,11 @@ class VarStringSink : public StringSink
 public:
     VarStringSink(ColumnString::Chars_t & data_, ColumnString::Offsets_t & offsets_,
         size_t data_size_, size_t offsets_size_)
-        : data{data_}, offsets{offsets_}
+        : data(data_), offsets(offsets_)
     {
         offsets.resize(offsets_size_);
         data.reserve(data_size_);
     }
-
-    VarStringSink(const VarStringSink &) = delete;
-    VarStringSink & operator=(const VarStringSink &) = delete;
-
-    VarStringSink(VarStringSink &&) = default;
-    VarStringSink & operator=(VarStringSink &&) = delete;
 
     void store(const StringChunk & chunk) override
     {
@@ -353,8 +326,6 @@ CondSources createConds(const Block & block, const ColumnNumbers & args)
     return conds;
 }
 
-const std::string null_string;
-
 
 /// Create accessors for branch values.
 bool createStringSources(StringSources & sources, const Block & block,
@@ -362,35 +333,22 @@ bool createStringSources(StringSources & sources, const Block & block,
 {
     auto append_source = [&](size_t i)
     {
-        const IColumn * col = block.safeGetByPosition(args[i]).column.get();
-        const ColumnString * var_col = typeid_cast<const ColumnString *>(col);
-        const ColumnFixedString * fixed_col = typeid_cast<const ColumnFixedString *>(col);
-        const ColumnConstString * const_col = typeid_cast<const ColumnConstString *>(col);
+        const IColumn * col = block.getByPosition(args[i]).column.get();
+        const ColumnString * var_col = checkAndGetColumn<ColumnString>(col);
+        const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(col);
+
+        const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(col);
 
         StringSourcePtr source;
 
-        if (col->isNull())
-            source = std::make_unique<ConstStringSource>(null_string, 1, args[i]);
-        else if (var_col != nullptr)
+        if (var_col)
             source = std::make_unique<VarStringSource>(var_col->getChars(),
                 var_col->getOffsets(), args[i]);
-        else if (fixed_col != nullptr)
+        else if (fixed_col)
             source = std::make_unique<FixedStringSource>(fixed_col->getChars(),
                 fixed_col->getN(), args[i]);
-        else if (const_col != nullptr)
-        {
-            /// If we actually have a fixed string, get its capacity.
-            size_t size = 0;
-            const IDataType * data_type = const_col->getDataType().get();
-            if (data_type != nullptr)
-            {
-                const DataTypeFixedString * fixed = typeid_cast<const DataTypeFixedString *>(data_type);
-                if (fixed != nullptr)
-                    size = fixed->getN();
-            }
-
-            source = std::make_unique<ConstStringSource>(const_col->getData(), size, args[i]);
-        }
+        else if (const_col)
+            source = std::make_unique<ConstStringSource>(const_col->getDataAt(0), args[i], checkColumnConst<ColumnFixedString>(col));
         else
             return false;
 
@@ -427,19 +385,7 @@ size_t computeResultSize(const StringSources & sources, size_t row_count)
             throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
     }
 
-    if (max_var > 0)
-    {
-        if (max_fixed > 0)
-            return std::max(max_var, max_fixed + row_count);
-        else
-            return max_var;
-    }
-    else if (max_fixed > 0)
-        return max_fixed;
-    else if (max_const > 0)
-        return (max_const + 1) * row_count;
-    else
-        throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
+    return std::max(max_var, std::max(max_fixed + row_count, (max_const + 1) * row_count));
 }
 
 /// Updates a fixed or variable string sink.
@@ -486,11 +432,8 @@ public:
 };
 
 /// Sink type-specific handler of multiIf.
-template <bool hasFixedSources>
-class Performer;
 
-template <>
-class Performer<true>
+class PerformerForFixedStrings
 {
 public:
     static void execute(const StringSources & sources, const CondSources & conds,
@@ -518,13 +461,12 @@ private:
         size_t first_data_size = sources[0]->getDataSize();
 
         auto col_res = std::make_shared<ColumnFixedString>(first_size);
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
         return FixedStringSink{col_res->getChars(), first_size, first_data_size};
     }
 };
 
-template <>
-class Performer<false>
+class PerformerForAnyStrings
 {
 public:
     static void execute(const StringSources & sources, const CondSources & conds,
@@ -545,7 +487,7 @@ private:
         size_t data_size = computeResultSize(sources, row_count);
 
         std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-        block.safeGetByPosition(result).column = col_res;
+        block.getByPosition(result).column = col_res;
         return VarStringSink{col_res->getChars(), col_res->getOffsets(),
             data_size, offsets_size};
     }
@@ -574,9 +516,9 @@ bool StringEvaluator::perform(Block & block, const ColumnNumbers & args, size_t 
     }
 
     if (has_only_fixed_sources)
-        Performer<true>::execute(sources, conds, row_count, block, args, result, builder);
+        PerformerForFixedStrings::execute(sources, conds, row_count, block, args, result, builder);
     else
-        Performer<false>::execute(sources, conds, row_count, block, args, result, builder);
+        PerformerForAnyStrings::execute(sources, conds, row_count, block, args, result, builder);
 
     return true;
 }

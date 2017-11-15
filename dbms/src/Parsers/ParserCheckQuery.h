@@ -4,14 +4,14 @@
 
 namespace DB
 {
-/** Запрос вида
+/** Query of form
  * CHECK [TABLE] [database.]table
  */
 class ParserCheckQuery : public IParserBase
 {
 protected:
     const char * getName() const { return "ALTER query"; }
-    bool parseImpl(Pos & pos, Pos end, ASTPtr & node, Pos & max_parsed_pos, Expected & expected);
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
 }

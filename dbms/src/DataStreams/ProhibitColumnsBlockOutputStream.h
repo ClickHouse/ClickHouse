@@ -7,12 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-}
-
-
 /// Throws exception on encountering prohibited column in block
 class ProhibitColumnsBlockOutputStream : public IBlockOutputStream
 {
@@ -33,6 +27,5 @@ private:
     BlockOutputStreamPtr output;
     NamesAndTypesList columns;
 };
-
 
 }

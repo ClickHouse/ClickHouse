@@ -9,23 +9,25 @@
 namespace DB
 {
 
-/// Cluster содержит пулы соединений до каждого из узлов
-/// С локальными узлами соединение не устанавливается, а выполяется запрос напрямую.
-/// Поэтому храним только количество локальных узлов
-/// В конфиге кластер включает в себя узлы <node> или <shard>
+/// Cluster contains connection pools to each node
+/// With the local nodes, the connection is not established, but the request is executed directly.
+/// Therefore we store only the number of local nodes
+/// In the config, the cluster includes nodes <node> or <shard>
 class Cluster
 {
 public:
     Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name);
 
-    /// Построить кластер по именам шардов и реплик. Локальные обрабатываются так же как удаленные.
+    /// Construct a cluster by the names of shards and replicas. Local are treated as well as remote ones.
+    /// 'clickhouse_port' - port that this server instance listen for queries.
+    /// This parameter is needed only to check that some address is local (points to ourself).
     Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-            const String & username, const String & password);
+            const String & username, const String & password, UInt16 clickhouse_port);
 
     Cluster(const Cluster &) = delete;
     Cluster & operator=(const Cluster &) = delete;
 
-    /// используеться для выставления ограничения на размер таймаута
+    /// is used to set a limit on the size of the timeout
     static Poco::Timespan saturate(const Poco::Timespan & v, const Poco::Timespan & limit);
 
 public:
@@ -55,9 +57,24 @@ public:
         String password;
         String default_database;    /// this database is selected when no database is specified for Distributed table
         UInt32 replica_num;
+        bool is_local;
 
+        Address() = default;
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-        Address(const String & host_port_, const String & user_, const String & password_);
+        Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port);
+
+        /// Returns 'escaped_host_name:port'
+        String toString() const;
+
+        /// Returns 'host_name:port'
+        String readableString() const;
+
+        static String toString(const String & host_name, UInt16 port);
+
+        static void fromString(const String & host_port_string, String & host_name, UInt16 & port);
+
+        /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
+        String toStringFull() const;
     };
 
     using Addresses = std::vector<Address>;
@@ -69,22 +86,24 @@ public:
         bool isLocal() const { return !local_addresses.empty(); }
         bool hasRemoteConnections() const { return pool != nullptr; }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
+        bool hasInternalReplication() const { return has_internal_replication; }
 
     public:
-        /// contains names of directories for asynchronous write to StorageDistributed
-        std::vector<std::string> dir_names;
-        UInt32 shard_num;    /// Номер шарда, начиная с 1.
-        int weight;
+        /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
+        std::string dir_name_for_internal_replication;
+        /// Number of the shard, the indexation begins with 1
+        UInt32 shard_num;
+        UInt32 weight;
         Addresses local_addresses;
         ConnectionPoolWithFailoverPtr pool;
+        bool has_internal_replication;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;
 
     String getHashOfAddresses() const { return hash_of_addresses; }
     const ShardsInfo & getShardsInfo() const { return shards_info; }
-    const Addresses & getShardsAddresses() const { return addresses; }
-    const AddressesWithFailover & getShardsWithFailoverAddresses() const { return addresses_with_failover; }
+    const AddressesWithFailover & getShardsAddresses() const { return addresses_with_failover; }
 
     const ShardInfo & getAnyShardInfo() const
     {
@@ -93,21 +112,21 @@ public:
         return shards_info.front();
     }
 
-    /// Количество удалённых шардов.
+    /// The number of remote shards.
     size_t getRemoteShardCount() const { return remote_shard_count; }
 
-    /// Количество узлов clickhouse сервера, расположенных локально
-    /// к локальным узлам обращаемся напрямую.
+    /// The number of clickhouse nodes located locally
+    /// we access the local nodes directly.
     size_t getLocalShardCount() const { return local_shard_count; }
 
-    /// Количество всех шардов.
+    /// The number of all shards.
     size_t getShardCount() const { return shards_info.size(); }
 
-    /// Получить подкластер, состоящий из одного шарда - index по счёту (с нуля) шарда данного кластера.
+    /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
 private:
-    using SlotToShard = std::vector<size_t>;
+    using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
 
 public:
@@ -121,21 +140,19 @@ private:
     /// on tables that have the distributed engine.
     void calculateHashOfAddresses();
 
-    /// Для реализации getClusterWithSingleShard.
+    /// For getClusterWithSingleShard implementation.
     Cluster(const Cluster & from, size_t index);
 
     String hash_of_addresses;
-    /// Описание шардов кластера.
+    /// Description of the cluster shards.
     ShardsInfo shards_info;
-    /// Любой удалённый шард.
+    /// Any remote shard.
     ShardInfo * any_remote_shard_info = nullptr;
 
-    /// Непустым является либо addresses, либо addresses_with_failover.
-    /// Размер и порядок элементов в соответствующем массиве соответствует shards_info.
+    /// Non-empty is either addresses or addresses_with_failover.
+    /// The size and order of the elements in the corresponding array corresponds to shards_info.
 
-    /// Массив шардов. Каждый шард - адреса одного сервера.
-    Addresses addresses;
-    /// Массив шардов. Для каждого шарда - массив адресов реплик (серверов, считающихся идентичными).
+    /// An array of shards. For each shard, an array of replica addresses (servers that are considered identical).
     AddressesWithFailover addresses_with_failover;
 
     size_t remote_shard_count = 0;

@@ -10,6 +10,7 @@ namespace DB
 
 class Context;
 struct CollectAliases;
+struct ExecuteTableFunctions;
 class WriteBuffer;
 
 
@@ -18,13 +19,11 @@ class WriteBuffer;
   *
   * For ordinary tables, determine database and table name, obtain and keep StoragePtr.
   * For subqueries, determine result structure. This requires analysis of subquery, such as type inference.
-  * For table functions, execute them to obtain resulting StoragePtr.
-  *
-  * NOTE: We assume, that execution of table functions is cheap, as we do it during analysis.
+  * For table functions, grab them from prepared ExecuteTableFunctions object.
   */
 struct CollectTables
 {
-    void process(ASTPtr & ast, Context & context, const CollectAliases & aliases);
+    void process(ASTPtr & ast, const Context & context, const CollectAliases & aliases, ExecuteTableFunctions & table_functions);
 
     enum class Kind
     {

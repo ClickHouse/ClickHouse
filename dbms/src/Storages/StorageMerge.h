@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.hpp>
+#include <ext/shared_ptr_helper.h>
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
@@ -12,30 +12,13 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge : private ext::shared_ptr_helper<StorageMerge>, public IStorage
+class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMerge>;
-
 public:
-    static StoragePtr create(
-        const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
-        const String & source_database_,      /// In which database to look for source tables.
-        const String & table_name_regexp_,    /// Regex names of source tables.
-        const Context & context_);            /// Known tables.
-
-    static StoragePtr create(
-        const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const String & source_database_,    /// In which database to look for source tables.
-        const String & table_name_regexp_,    /// Regex names of source tables.
-        const Context & context_);            /// Known tables.
-
     std::string getName() const override { return "Merge"; }
     std::string getTableName() const override { return name; }
+
+    bool isRemote() const override;
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
@@ -49,12 +32,11 @@ public:
 
     BlockInputStreams read(
         const Names & column_names,
-        ASTPtr query,
+        const SelectQueryInfo & query_info,
         const Context & context,
-        const Settings & settings,
         QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
-        unsigned threads = 1) override;
+        size_t max_block_size,
+        unsigned num_streams) override;
 
     void drop() override {}
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
@@ -70,13 +52,13 @@ private:
     OptimizedRegularExpression table_name_regexp;
     const Context & context;
 
-    StorageMerge(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const String & source_database_,
-        const String & table_name_regexp_,
-        const Context & context_);
+    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockPtr>>;
 
+    StorageListWithLocks getSelectedTables() const;
+
+    Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
+
+protected:
     StorageMerge(
         const std::string & name_,
         NamesAndTypesListPtr columns_,
@@ -86,12 +68,6 @@ private:
         const String & source_database_,
         const String & table_name_regexp_,
         const Context & context_);
-
-    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockPtr>>;
-
-    StorageListWithLocks getSelectedTables() const;
-
-    Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
 };
 
 }

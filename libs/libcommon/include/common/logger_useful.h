@@ -17,46 +17,46 @@ using Poco::Logger;
     if ((logger)->trace()) {\
     std::stringstream oss_internal_rare;    \
     oss_internal_rare << message; \
-    (logger)->trace(oss_internal_rare.str());}} while(0)
+    (logger)->trace(oss_internal_rare.str());}} while(false)
 
 #define LOG_DEBUG(logger, message) do { \
     if ((logger)->debug()) {\
     std::stringstream oss_internal_rare;    \
     oss_internal_rare << message; \
-    (logger)->debug(oss_internal_rare.str());}} while(0)
+    (logger)->debug(oss_internal_rare.str());}} while(false)
 
 #define LOG_INFO(logger, message) do { \
     if ((logger)->information()) {\
     std::stringstream oss_internal_rare;    \
     oss_internal_rare << message; \
-    (logger)->information(oss_internal_rare.str());}} while(0)
+    (logger)->information(oss_internal_rare.str());}} while(false)
 
 #define LOG_NOTICE(logger, message) do { \
     if ((logger)->notice()) {\
     std::stringstream oss_internal_rare;    \
     oss_internal_rare << message; \
-    (logger)->notice(oss_internal_rare.str());}} while(0)
+    (logger)->notice(oss_internal_rare.str());}} while(false)
 
 #define LOG_WARNING(logger, message) do { \
     if ((logger)->warning()) {\
     std::stringstream oss_internal_rare;    \
     oss_internal_rare << message; \
-    (logger)->warning(oss_internal_rare.str());}} while(0)
+    (logger)->warning(oss_internal_rare.str());}} while(false)
 
 #define LOG_ERROR(logger, message) do { \
     if ((logger)->error()) {\
     std::stringstream oss_internal_rare;    \
     oss_internal_rare << message; \
-    (logger)->error(oss_internal_rare.str());}} while(0)
+    (logger)->error(oss_internal_rare.str());}} while(false)
 
 #define LOG_CRITICAL(logger, message) do { \
     if ((logger)->critical()) {\
     std::stringstream oss_internal_rare;    \
     oss_internal_rare << message; \
-    (logger)->critical(oss_internal_rare.str());}} while(0)
+    (logger)->critical(oss_internal_rare.str());}} while(false)
 
 #define LOG_FATAL(logger, message) do { \
     if ((logger)->fatal()) {\
     std::stringstream oss_internal_rare;    \
     oss_internal_rare << message; \
-    (logger)->fatal(oss_internal_rare.str());}} while(0)
+    (logger)->fatal(oss_internal_rare.str());}} while(false)

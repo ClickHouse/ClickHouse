@@ -1,21 +1,24 @@
 #pragma once
 
+#include <Poco/Net/TCPServerConnection.h>
+
+#include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
+#include <Core/Progress.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataStreams/BlockIO.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <DataStreams/BlockIO.h>
-#include <Common/Stopwatch.h>
-#include <Common/CurrentMetrics.h>
-#include <Core/Progress.h>
-#include "Server.h"
 
+#include "IServer.h"
 
 namespace CurrentMetrics
 {
     extern const Metric TCPConnection;
 }
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -28,7 +31,7 @@ struct QueryState
     String query_id;
 
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete;
-    Protocol::Compression::Enum compression = Protocol::Compression::Disable;
+    Protocol::Compression compression = Protocol::Compression::Disable;
 
     /// From where to read data for INSERT.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
@@ -71,18 +74,20 @@ struct QueryState
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    TCPHandler(Server & server_, const Poco::Net::StreamSocket & socket_)
-        : Poco::Net::TCPServerConnection(socket_), server(server_),
-        log(&Logger::get("TCPHandler")), client_revision(0),
-        connection_context(*server.global_context), query_context(connection_context)
+    TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+        : Poco::Net::TCPServerConnection(socket_)
+        , server(server_)
+        , log(&Poco::Logger::get("TCPHandler"))
+        , connection_context(server.context())
+        , query_context(server.context())
     {
     }
 
     void run();
 
 private:
-    Server & server;
-    Logger * log;
+    IServer & server;
+    Poco::Logger * log;
 
     String client_name;
     UInt64 client_version_major = 0;
@@ -142,6 +147,5 @@ private:
     /// This function is called from different threads.
     void updateProgress(const Progress & value);
 };
-
 
 }
