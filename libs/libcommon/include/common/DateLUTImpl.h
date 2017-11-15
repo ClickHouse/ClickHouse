@@ -59,6 +59,9 @@ private:
     /// Year number after DATE_LUT_MIN_YEAR -> day num for start of year.
     DayNum_t years_lut[DATE_LUT_YEARS];
 
+    /// Year number after DATE_LUT_MIN_YEAR * month number starting at zero -> day num for first day of month
+    DayNum_t years_months_lut[DATE_LUT_YEARS * 12];
+
     /// UTC offset at beginning of the Unix epoch. The same as unix timestamp of 1970-01-01 00:00:00 local time.
     time_t offset_at_start_of_epoch;
     bool offset_is_whole_number_of_hours_everytime;
@@ -350,8 +353,8 @@ public:
     {
         if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
             return DayNum_t(0);
-        DayNum_t any_day_of_month(years_lut[year - DATE_LUT_MIN_YEAR] + 31 * (month - 1));
-        return DayNum_t(any_day_of_month - toDayOfMonth(any_day_of_month) + day_of_month);
+
+        return DayNum_t(years_months_lut[(year - DATE_LUT_MIN_YEAR) * 12 + month - 1] + day_of_month - 1);
     }
 
     inline time_t makeDate(UInt16 year, UInt8 month, UInt8 day_of_month) const
