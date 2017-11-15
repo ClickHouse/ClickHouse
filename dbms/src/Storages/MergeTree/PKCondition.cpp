@@ -512,7 +512,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
     /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of primary key,
-      *  or itself, wrapped in a chain of possibly-monotone functions,
+      *  or itself, wrapped in a chain of possibly-monotonic functions,
       *  or constant expression - number.
       */
     Field const_value;
@@ -525,7 +525,7 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
             return false;
 
         DataTypePtr key_expr_type;    /// Type of expression containing primary key column
-        size_t key_arg_pos;            /// Position of argument with primary key column (non-const argument)
+        size_t key_arg_pos;           /// Position of argument with primary key column (non-const argument)
         size_t key_column_num;        /// Number of a primary key column (inside sort_descr array)
         RPNElement::MonotonicFunctionsChain chain;
         bool is_set_const = false;
