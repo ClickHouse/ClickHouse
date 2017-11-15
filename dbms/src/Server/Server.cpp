@@ -264,6 +264,11 @@ int Server::main(const std::vector<std::string> & args)
     global_context->setDefaultProfileName(default_profile_name);
     global_context->setSetting("profile", default_profile_name);
 
+    /// Set path for format schema files
+    auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
+    global_context->setFormatSchemaPath(format_schema_path.path() + "/");
+    format_schema_path.createDirectories();
+
     LOG_INFO(log, "Loading metadata.");
     loadMetadataSystem(*global_context);
     /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)

@@ -2669,7 +2669,8 @@ static String getFakePartNameCoveringPartRange(
 }
 
 
-String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(const String & partition_id)
+String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(
+    const String & partition_id, Int64 * out_min_block, Int64 * out_max_block)
 {
     /// Even if there is no data in the partition, you still need to mark the range for deletion.
     /// - Because before executing DETACH, tasks for downloading parts to this partition can be executed.
@@ -2695,6 +2696,11 @@ String StorageReplicatedMergeTree::getFakePartNameCoveringAllPartsInPartition(co
         return {};
 
     --right;
+
+    if (out_min_block)
+        *out_min_block = left;
+    if (out_max_block)
+        *out_max_block = right;
     return getFakePartNameCoveringPartRange(data.format_version, partition_id, left, right);
 }
 
@@ -2740,6 +2746,8 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 {
     assertNotReadonly();
 
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+
     if (!is_leader_node)
     {
         sendRequestToLeaderReplica(query, context.getSettingsRef());
@@ -2747,13 +2755,18 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
     }
 
     String partition_id = data.getPartitionIDFromQuery(partition, context);
-    String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id);
+
+    Int64 min_block = 0;
+    Int64 max_block = 0;
+    String fake_part_name = getFakePartNameCoveringAllPartsInPartition(partition_id, &min_block, &max_block);
 
     if (fake_part_name.empty())
     {
         LOG_INFO(log, "Will not drop partition " << partition_id << ", it is empty.");
         return;
     }
+
+    clearBlocksInPartition(*zookeeper, partition_id, min_block, max_block);
 
     /** Forbid to choose the parts to be deleted for merging.
       * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
@@ -2773,7 +2786,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
     entry.detach = detach;
     entry.create_time = time(nullptr);
 
-    String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+    String log_znode_path = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     /// If necessary, wait until the operation is performed on itself or on all replicas.
@@ -4034,6 +4047,58 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
             it_first_node_in_batch = it_next;
         }
     }
+}
+
+
+void StorageReplicatedMergeTree::clearBlocksInPartition(
+    zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num)
+{
+    Strings blocks;
+    if (ZOK != zookeeper.tryGetChildren(zookeeper_path + "/blocks", blocks))
+        throw Exception(zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
+    String partition_prefix = partition_id + "_";
+    std::vector<std::pair<String, zkutil::ZooKeeper::TryGetFuture>> get_futures;
+    for (const String & block_id : blocks)
+    {
+        if (startsWith(block_id, partition_prefix))
+        {
+            String path = zookeeper_path + "/blocks/" + block_id;
+            get_futures.emplace_back(path, zookeeper.asyncTryGet(path));
+        }
+    }
+
+    std::vector<std::pair<String, zkutil::ZooKeeper::TryRemoveFuture>> to_delete_futures;
+    for (auto & pair : get_futures)
+    {
+        const String & path = pair.first;
+        zkutil::ZooKeeper::ValueAndStatAndExists result = pair.second.get();
+
+        if (!result.exists)
+            continue;
+
+        ReadBufferFromString buf(result.value);
+        Int64 block_num = 0;
+        bool parsed = tryReadIntText(block_num, buf) && buf.eof();
+        if (!parsed || (min_block_num <= block_num && block_num <= max_block_num))
+            to_delete_futures.emplace_back(path, zookeeper.asyncTryRemove(path));
+    }
+
+    for (auto & pair : to_delete_futures)
+    {
+        const String & path = pair.first;
+        int32_t rc = pair.second.get();
+        if (rc == ZNOTEMPTY)
+        {
+             /// Can happen if there are leftover block nodes with children created by previous server versions.
+            zookeeper.removeRecursive(path);
+        }
+        else if (rc != ZOK)
+            LOG_WARNING(log,
+                "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
+    }
+
+    LOG_TRACE(log, "Deleted " << to_delete_futures.size() << " deduplication block IDs in partition ID " << partition_id);
 }
 
 

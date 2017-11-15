@@ -289,7 +289,7 @@ private:
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
 
-    /// Streams
+    /// Threads.
 
     /// A thread that keeps track of the updates in the logs of all replicas and loads them into the queue.
     std::thread queue_updating_thread;
@@ -455,14 +455,18 @@ private:
     void assertNotReadonly() const;
 
     /// The name of an imaginary part covering all parts in the specified partition (at the call moment).
-    /// Returns empty string if partition is empty.
-    String getFakePartNameCoveringAllPartsInPartition(const String & partition_id);
+    /// Returns empty string if the partition doesn't exist yet.
+    String getFakePartNameCoveringAllPartsInPartition(
+        const String & partition_id, Int64 * out_min_block = nullptr, Int64 * out_max_block = nullptr);
 
     /// Check for a node in ZK. If it is, remember this information, and then immediately answer true.
     std::unordered_set<std::string> existing_nodes_cache;
     std::mutex existing_nodes_cache_mutex;
     bool existsNodeCached(const std::string & path);
 
+    /// Remove block IDs from `blocks/` in ZooKeeper for the given partition ID in the given block number range.
+    void clearBlocksInPartition(
+        zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
 
     /// Resharding.
     struct ReplicaSpaceInfo

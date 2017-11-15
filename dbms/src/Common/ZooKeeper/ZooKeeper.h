@@ -325,8 +325,14 @@ public:
 
 
     using RemoveFuture = Future<void, int>;
-    RemoveFuture asyncRemove(const std::string & path);
+    RemoveFuture asyncRemove(const std::string & path, int32_t version = -1);
 
+    /// Doesn't throw in the following cases:
+    /// * The node doesn't exist
+    /// * The versions do not match
+    /// * The node has children
+    using TryRemoveFuture = Future<int32_t, int>;
+    TryRemoveFuture asyncTryRemove(const std::string & path, int32_t version = -1);
 
     struct OpResultsAndCode
     {

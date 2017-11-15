@@ -241,8 +241,8 @@ public:
 private:
     bool isIPv4Mapped(const unsigned char * address) const
     {
-        return (*reinterpret_cast<const UInt64 *>(&address[0]) == 0) &&
-            ((*reinterpret_cast<const UInt64 *>(&address[8]) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
+        return (*reinterpret_cast<const UInt64 *>(address) == 0) &&
+            ((*reinterpret_cast<const UInt64 *>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
     }
 
     void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
@@ -686,8 +686,8 @@ public:
 private:
     void mapIPv4ToIPv6(UInt32 in, unsigned char * buf) const
     {
-        *reinterpret_cast<UInt64 *>(&buf[0]) = 0;
-        *reinterpret_cast<UInt64 *>(&buf[8]) = 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32);
+        *reinterpret_cast<UInt64 *>(buf) = 0;
+        *reinterpret_cast<UInt64 *>(buf + 8) = 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32);
     }
 };
 

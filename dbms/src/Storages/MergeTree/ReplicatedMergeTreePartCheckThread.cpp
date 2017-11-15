@@ -192,7 +192,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     size_t part_length_in_blocks = part_info.max_block + 1 - part_info.min_block;
     if (part_length_in_blocks > 1000)
     {
-        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too much blocks (" << part_length_in_blocks << ")");
+        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too many blocks (" << part_length_in_blocks << ")");
         return;
     }
 
