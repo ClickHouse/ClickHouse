@@ -581,7 +581,7 @@ void readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 inline void readDateText(LocalDate & date, ReadBuffer & buf)
 {
     /// Optimistic path, when whole value is in buffer.
-    if (buf.position() + 10 < buf.buffer().end())
+    if (buf.position() + 10 <= buf.buffer().end())
     {
         UInt16 year = (buf.position()[0] - '0') * 1000 + (buf.position()[1] - '0') * 100 + (buf.position()[2] - '0') * 10 + (buf.position()[3] - '0');
         buf.position() += 5;
@@ -652,7 +652,7 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
 
     /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
-    if (s + 19 < buf.buffer().end())
+    if (s + 19 <= buf.buffer().end())
     {
         if (s[4] < '0' || s[4] > '9')
         {
