@@ -1,4 +1,5 @@
 #include "ClusterCopier.h"
+#include "StatusFile.h"
 #include <boost/program_options.hpp>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Logger.h>
@@ -53,6 +54,9 @@
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Poco/FileChannel.h>
+#include <Poco/SplitterChannel.h>
+#include <Poco/Util/HelpFormatter.h>
 
 
 namespace DB
@@ -649,14 +653,14 @@ public:
                 continue;
 
             /// An optimization: first of all, try to process all partitions of the local shards
-            for (const TaskShardPtr & shard : task_table.local_shards)
-            {
-                for (auto & task_partition : shard->partitions)
-                {
-                    LOG_DEBUG(log, "Processing partition " << task_partition.first << " for local shard " << shard->numberInCluster());
-                    processPartitionTask(task_partition.second);
-                }
-            }
+//            for (const TaskShardPtr & shard : task_table.local_shards)
+//            {
+//                for (auto & task_partition : shard->partitions)
+//                {
+//                    LOG_DEBUG(log, "Processing partition " << task_partition.first << " for local shard " << shard->numberInCluster());
+//                    processPartitionTask(task_partition.second);
+//                }
+//            }
 
             /// Then check and copy all shards until the whole partition is copied
             for (const auto & partition_with_shards : task_table.partition_to_shards)
@@ -664,6 +668,11 @@ public:
                 const String & partition_name = partition_with_shards.first;
                 const TasksShard & shards_with_partition = partition_with_shards.second;
                 bool is_done;
+
+                size_t num_tries = 0;
+                constexpr size_t max_tries = 10;
+
+                Stopwatch watch;
 
                 do
                 {
@@ -694,9 +703,16 @@ public:
                         is_done = false;
                     }
 
-                    if (!is_done && num_successful_shards == 0)
+                    if (!is_done)
                         std::this_thread::sleep_for(default_sleep_time);
-                } while (!is_done);
+
+                    ++num_tries;
+                } while (!is_done && num_tries < max_tries);
+
+                if (!is_done)
+                    throw Exception("Too many retries while copying partition", ErrorCodes::UNFINISHED);
+                else
+                    LOG_INFO(log, "It took " << watch.elapsedSeconds() << " seconds to copy partition " << partition_name);
             }
         }
     }
@@ -1395,52 +1411,86 @@ private:
 };
 
 
-class ClusterCopierApp : public Poco::Util::Application
+class ClusterCopierApp : public Poco::Util::ServerApplication
 {
 public:
 
     void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
+
+        is_help = config().has("help");
+        if (is_help)
+            return;
+
+        // <hostname>#<pid>_<start_timestamp>
+        process_id = std::to_string(Poco::Process::id()) + "_" + std::to_string(Poco::Timestamp().epochTime());
+        host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
+        process_path = Poco::Path(Poco::Path::current() + "/clickhouse-copier_" + process_id).absolute().toString();
+        Poco::File(process_path).createDirectories();
+
+        config_xml_path = config().getString("config-file");
+        task_path = config().getString("task-path");
+        log_level = config().getString("log-level", "debug");
+
+        setupLogging();
     }
 
-    void init(int argc, char ** argv)
+    void handleHelp(const std::string & name, const std::string & value)
     {
-        /// Poco's program options are quite buggy, use boost's one
-        namespace po = boost::program_options;
+        Poco::Util::HelpFormatter helpFormatter(options());
+        helpFormatter.setCommand(commandName());
+        helpFormatter.setHeader("Copies tables from one cluster to another");
+        helpFormatter.setUsage("--config-file <config-file> --task-path <task-path>");
+        helpFormatter.format(std::cerr);
 
-        po::options_description options_desc("Allowed options");
-        options_desc.add_options()
-            ("help", "produce this help message")
-            ("config-file,c", po::value<std::string>(&config_xml)->required(), "path to config file with ZooKeeper config")
-            ("task-path,p", po::value<std::string>(&task_path)->required(), "path to task in ZooKeeper")
-            ("log-level", po::value<std::string>(&log_level)->default_value("debug"), "log level");
+        stopOptionsProcessing();
+    }
 
-        po::positional_options_description positional_desc;
-        positional_desc.add("config-file", 1);
-        positional_desc.add("task-path", 1);
+    void defineOptions(Poco::Util::OptionSet & options) override
+    {
+        options.addOption(Poco::Util::Option("config-file", "c", "path to config file with ZooKeeper config", true)
+                               .argument("config-file").binding("config-file"));
+        options.addOption(Poco::Util::Option("task-path", "p", "path to task in ZooKeeper")
+                               .argument("task-path").binding("task-path"));
+        options.addOption(Poco::Util::Option("log-level", "", "log level").binding("log-level"));
 
-        po::variables_map options;
-        po::store(po::command_line_parser(argc, argv).options(options_desc).positional(positional_desc).run(), options);
+        using Me = std::decay_t<decltype(*this)>;
+        options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
+                              .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
+    }
 
-        if (options.count("help"))
+    void setupLogging()
+    {
+        Poco::AutoPtr<Poco::SplitterChannel> split_channel(new Poco::SplitterChannel);
+
+        Poco::AutoPtr<Poco::FileChannel> log_file_channel(new Poco::FileChannel);
+        log_file_channel->setProperty("path", process_path + "/log.log");
+        split_channel->addChannel(log_file_channel);
+        log_file_channel->open();
+
+        if (!config().getBool("application.runAsService", false))
         {
-            std::cerr << "Copies tables from one cluster to another" << std::endl;
-            std::cerr << "Usage: clickhouse copier <config-file> <task-path>" << std::endl;
-            std::cerr << options_desc << std::endl;
-            return;
+            Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
+            split_channel->addChannel(console_channel);
+            console_channel->open();
         }
 
-        po::notify(options);
+        Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter);
+        formatter->setProperty("pattern", "%L%Y-%m-%d %H:%M:%S.%i <%p> %s: %t");
+        Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter));
+        formatting_channel->setChannel(split_channel);
+        split_channel->open();
 
-        if (config_xml.empty() || !Poco::File(config_xml).exists())
-            throw Exception("ZooKeeper configuration file " + config_xml + " doesn't exist", ErrorCodes::BAD_ARGUMENTS);
-
-        setupLogging(log_level);
+        Poco::Logger::root().setChannel(formatting_channel);
+        Poco::Logger::root().setLevel(log_level);
     }
 
     int main(const std::vector<std::string> & args) override
     {
+        if (is_help)
+            return 0;
+
         try
         {
             mainImpl();
@@ -1458,18 +1508,15 @@ public:
 
     void mainImpl()
     {
-        /// Hostname # pid _ start_time
-        process_id = std::to_string(Poco::Process::id()) + "_" + std::to_string(Poco::Timestamp().epochTime());
-        host_id = escapeForFileName(getFQDNOrHostName()) + '#' + process_id;
-        String clickhouse_path = Poco::Path::current() + "/" + process_id;
-
-        ConfigurationPtr zookeeper_configuration(new Poco::Util::XMLConfiguration(config_xml));
+        ConfigurationPtr zookeeper_configuration(new Poco::Util::XMLConfiguration(config_xml_path));
         auto log = &logger();
+
+        StatusFile status_file(process_path + "/status");
 
         LOG_INFO(log, "Starting clickhouse-copier ("
             << "id " << process_id << ", "
             << "host_id " << host_id << ", "
-            << "path " << clickhouse_path << ", "
+            << "path " << process_path << ", "
             << "revision " << ClickHouseRevision::get() << ")");
 
         auto context = std::make_unique<Context>(Context::createGlobal());
@@ -1477,7 +1524,7 @@ public:
 
         context->setGlobalContext(*context);
         context->setApplicationType(Context::ApplicationType::LOCAL);
-        context->setPath(clickhouse_path);
+        context->setPath(process_path);
 
         registerFunctions();
         registerAggregateFunctions();
@@ -1497,20 +1544,12 @@ public:
 
 private:
 
-    static void setupLogging(const std::string & log_level = "debug")
-    {
-        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel);
-        Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter);
-        formatter->setProperty("pattern", "%L%Y-%m-%d %H:%M:%S.%i <%p> %s: %t");
-        Poco::AutoPtr<Poco::FormattingChannel> formatting_channel(new Poco::FormattingChannel(formatter, channel));
-        Poco::Logger::root().setChannel(formatting_channel);
-        Poco::Logger::root().setLevel(log_level);
-    }
-
-    std::string config_xml;
+    std::string config_xml_path;
     std::string task_path;
-    std::string log_level = "error";
+    std::string log_level = "debug";
+    bool is_help = false;
 
+    std::string process_path;
     std::string process_id;
     std::string host_id;
 };
@@ -1523,8 +1562,7 @@ int mainEntryClickHouseClusterCopier(int argc, char ** argv)
     try
     {
         DB::ClusterCopierApp app;
-        app.init(argc, argv);
-        return app.run();
+        return app.run(argc, argv);
     }
     catch (...)
     {
