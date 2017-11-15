@@ -945,10 +945,10 @@ void BaseDaemon::PID::seed(const std::string & file_)
                 pid_t pid = 0;
                 in >> pid;
                 if (pid && is_pid_running(pid))
-                    throw Poco::Exception("Pid file exists and program running with pid=" + std::to_string(pid) + ", should not start daemon.");
+                    throw Poco::Exception("Pid file exists and program running with pid = " + std::to_string(pid) + ", should not start daemon.");
             }
         }
-        LOG_INFO(&logger(), "Old pid file exists, removing.");
+        std::cerr << "Old pid file exists (pid = " << pid << "), removing.";
         poco_file.remove();
     }
 
