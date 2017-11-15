@@ -3,6 +3,7 @@
 #include <Common/Stopwatch.h>
 #include <common/Types.h>
 #include <common/ThreadPool.h>
+#include <common/thread_local.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <thread>
@@ -23,8 +24,8 @@ TEST(Common, RWLockFIFO_1)
 
     static auto fifo_lock = RWLockFIFO::create();
 
-    static thread_local std::random_device rd;
-    static thread_local pcg64 gen(rd());
+    static THREAD_LOCAL std::random_device rd;
+    static THREAD_LOCAL pcg64 gen(rd());
 
     auto func = [&] (size_t threads, int round) {
         for (int  i = 0; i < cycles; ++i)
@@ -85,8 +86,8 @@ TEST(Common, RWLockFIFO_Recursive)
 
     static auto fifo_lock = RWLockFIFO::create();
 
-    static thread_local std::random_device rd;
-    static thread_local pcg64 gen(rd());
+    static THREAD_LOCAL std::random_device rd;
+    static THREAD_LOCAL pcg64 gen(rd());
 
     std::thread t1([&] () {
         for (int i = 0; i < 2 * cycles; ++i)
