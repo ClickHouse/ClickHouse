@@ -80,10 +80,10 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     {
         own_compressed_buffer.resize(size_compressed);
         compressed_buffer = &own_compressed_buffer[0];
-        compressed_in->readStrict(&compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
+        compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
     }
 
-    if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(&compressed_buffer[0], size_compressed))
+    if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(compressed_buffer, size_compressed))
         throw Exception("Checksum doesn't match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
     return size_compressed + sizeof(checksum);
@@ -99,14 +99,14 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
 
     if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
     {
-        if (LZ4_decompress_fast(&compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], to, size_decompressed) < 0)
+        if (LZ4_decompress_fast(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed) < 0)
             throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
     }
     else if (method == static_cast<UInt8>(CompressionMethodByte::ZSTD))
     {
         size_t res = ZSTD_decompress(
             to, size_decompressed,
-            &compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], size_compressed_without_checksum - COMPRESSED_BLOCK_HEADER_SIZE);
+            compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed_without_checksum - COMPRESSED_BLOCK_HEADER_SIZE);
 
         if (ZSTD_isError(res))
             throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);
