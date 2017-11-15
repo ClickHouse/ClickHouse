@@ -130,7 +130,8 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             } hash_value;
             hash.get128(hash_value.bytes);
 
-            /// We take the hash from the data as ID. That is, do not insert the same data twice.
+            /// We add the hash from the data and partition identifier to deduplication ID.
+            /// That is, do not insert the same data to the same partition twice.
             block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
             LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << block.rows() << " rows");
