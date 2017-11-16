@@ -922,10 +922,10 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
             );
 }
 
-bool is_pid_running(pid_t pid)
+bool isPidRunning(pid_t pid)
 {
-    if (0 == kill(pid, 0))
-        return 1; // Process exists
+    if (getpgid(pid) >= 0)
+        return 1;
     return 0;
 }
 
@@ -944,7 +944,7 @@ void BaseDaemon::PID::seed(const std::string & file_)
             if (in.good())
             {
                 in >> pid_read;
-                if (pid_read && is_pid_running(pid_read))
+                if (pid_read && isPidRunning(pid_read))
                     throw Poco::Exception("Pid file exists and program running with pid = " + std::to_string(pid_read) + ", should not start daemon.");
             }
         }
