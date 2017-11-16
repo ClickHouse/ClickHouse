@@ -12,6 +12,7 @@ DEB_CXX=${DEB_CXX:=g++-7}
 
 CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
+DEBUILD_NODEPS_OPTIONS="-d"
 
 if [ -z "$REVISION" ] ; then
     get_revision_author
@@ -23,8 +24,8 @@ do
         TEST='yes'
         VERSION_POSTFIX+=-test
         shift
-    elif [[ $1 == '--ignore-deps' ]]; then
-        DEBUILD_NODEPS_OPTIONS="-d"
+    elif [[ $1 == '--check-build-dependencies' ]]; then
+        DEBUILD_NODEPS_OPTIONS=""
         shift
     elif [[ $1 == '--version' ]]; then
         gen_revision_author
