@@ -3,7 +3,13 @@ if (CMAKE_SYSTEM MATCHES "FreeBSD" OR ARCH_32)
 else ()
     option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_UNBUNDLED})
 endif ()
-option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc" ON)
+
+if (CMAKE_SYSTEM MATCHES "FreeBSD")
+    option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc" OFF)
+else ()
+    option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc" ON)
+endif ()
+
 option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc" OFF)
 
 if (ENABLE_LIBTCMALLOC)

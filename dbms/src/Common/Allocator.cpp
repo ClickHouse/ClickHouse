@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <sys/mman.h>
 
+#include <common/mremap.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -114,7 +115,6 @@ void Allocator<clear_memory_>::free(void * buf, size_t size)
 template <bool clear_memory_>
 void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new_size, size_t alignment)
 {
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
     if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
     {
         CurrentMemoryTracker::realloc(old_size, new_size);
@@ -131,28 +131,13 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
     {
         CurrentMemoryTracker::realloc(old_size, new_size);
 
-        buf = mremap(buf, old_size, new_size, MREMAP_MAYMOVE);
+        // On apple and freebsd self-implemented mremap used (common/mremap.h)
+        buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == buf)
             DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
 
         /// No need for zero-fill, because mmap guarantees it.
     }
-#else
-    // TODO: We need to use mmap/calloc on Apple too.
-    if ((old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT) ||
-        (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD))
-    {
-        CurrentMemoryTracker::realloc(old_size, new_size);
-
-        buf = ::realloc(buf, new_size);
-
-        if (nullptr == buf)
-            DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-        if (clear_memory)
-            memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
-    }
-#endif
     else
     {
         void * new_buf = alloc(new_size, alignment);
