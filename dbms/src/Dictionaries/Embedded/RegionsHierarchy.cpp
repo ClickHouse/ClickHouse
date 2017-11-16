@@ -77,7 +77,7 @@ void RegionsHierarchy::reload()
         }
         DB::assertChar('\n', in);
 
-        if (read_region_id <= 0 || read_type < 0)
+        if (read_region_id <= 0)
             continue;
 
         RegionID region_id = read_region_id;
