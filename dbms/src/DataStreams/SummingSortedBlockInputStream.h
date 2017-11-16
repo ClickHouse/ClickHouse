@@ -116,7 +116,7 @@ private:
     /// If force_insertion=true, then the row will be inserted even if it is "zero"
     void insertCurrentRowIfNeeded(ColumnPlainPtrs & merged_columns, bool force_insertion);
 
-    /// Returns true is merge result is not empty
+    /// Returns true if merge result is not empty
     template <typename TSortCursor>
     bool mergeMap(const MapDescription & map, Row & row, TSortCursor & cursor);
 
