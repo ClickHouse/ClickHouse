@@ -1,4 +1,3 @@
-
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -18,6 +17,7 @@ void * mremap(
 
     if (!(flags & MREMAP_MAYMOVE))
     {
+        errno = ENOMEM;
         return nullptr;
     }
 
