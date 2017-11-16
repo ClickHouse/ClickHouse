@@ -108,15 +108,15 @@ void RegionsHierarchy::reload()
         types[region_id] = type;
     }
 
-    new_parents        .resize(max_region_id + 1);
-    new_city        .resize(max_region_id + 1);
-    new_country        .resize(max_region_id + 1);
-    new_area        .resize(max_region_id + 1);
-    new_district    .resize(max_region_id + 1);
+    new_parents      .resize(max_region_id + 1);
+    new_city         .resize(max_region_id + 1);
+    new_country      .resize(max_region_id + 1);
+    new_area         .resize(max_region_id + 1);
+    new_district     .resize(max_region_id + 1);
     new_continent    .resize(max_region_id + 1);
     new_top_continent.resize(max_region_id + 1);
-    new_populations .resize(max_region_id + 1);
-    new_depths        .resize(max_region_id + 1);
+    new_populations  .resize(max_region_id + 1);
+    new_depths       .resize(max_region_id + 1);
     types            .resize(max_region_id + 1);
 
     /// prescribe the cities and countries for the regions

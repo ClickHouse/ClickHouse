@@ -17,7 +17,7 @@ Install required compilers, tools, libraries
 
 .. code-block:: bash
 
-    brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext homebrew/dupes/zlib readline boost --cc=gcc-6
+    brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext homebrew/dupes/zlib readline boost --cc=gcc-7
 
 
 Checkout ClickHouse sources
@@ -42,7 +42,7 @@ Build ClickHouse
 
     mkdir build
     cd build
-    cmake .. -DCMAKE_CXX_COMPILER=`which g++-6` -DCMAKE_C_COMPILER=`which gcc-6`
+    cmake .. -DCMAKE_CXX_COMPILER=`which g++-7` -DCMAKE_C_COMPILER=`which gcc-7`
     make -j `sysctl -n hw.ncpu`
     cd ..
 
