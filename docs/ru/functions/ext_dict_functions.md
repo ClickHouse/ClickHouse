@@ -13,6 +13,8 @@
 
 ### dictGetDate, dictGetDateTime
 
+### dictGetUUID
+
 ### dictGetString
 `dictGetT('dict_name', 'attr_name', id)`
 - получить из словаря dict_name значение атрибута attr_name по ключу id.

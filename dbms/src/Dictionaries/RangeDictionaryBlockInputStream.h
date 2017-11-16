@@ -182,6 +182,9 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
             case AttributeUnderlyingType::UInt64:
                 GET_COLUMN_FORM_ATTRIBUTE(UInt64);
                 break;
+            case AttributeUnderlyingType::UInt128:
+                GET_COLUMN_FORM_ATTRIBUTE(UInt128);
+                break;
             case AttributeUnderlyingType::Int8:
                 GET_COLUMN_FORM_ATTRIBUTE(Int8);
                 break;

@@ -86,6 +86,7 @@ public:
     DECLARE(UInt16)
     DECLARE(UInt32)
     DECLARE(UInt64)
+    DECLARE(UInt128)
     DECLARE(Int8)
     DECLARE(Int16)
     DECLARE(Int32)
@@ -104,6 +105,7 @@ public:
     DECLARE(UInt16)
     DECLARE(UInt32)
     DECLARE(UInt64)
+    DECLARE(UInt128)
     DECLARE(Int8)
     DECLARE(Int16)
     DECLARE(Int32)
@@ -123,6 +125,7 @@ public:
     DECLARE(UInt16)
     DECLARE(UInt32)
     DECLARE(UInt64)
+    DECLARE(UInt128)
     DECLARE(Int8)
     DECLARE(Int16)
     DECLARE(Int32)
@@ -169,11 +172,13 @@ private:
         AttributeUnderlyingType type;
         std::tuple<
             UInt8, UInt16, UInt32, UInt64,
+            UInt128,
             Int8, Int16, Int32, Int64,
             Float32, Float64,
             String> null_values;
         std::tuple<
             ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
+            ContainerPtrType<UInt128>,
             ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
             ContainerPtrType<Float32>, ContainerPtrType<Float64>,
             ContainerPtrType<StringRef>> arrays;

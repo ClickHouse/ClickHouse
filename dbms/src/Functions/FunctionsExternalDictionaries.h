@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 
 #include <Common/typeid_cast.h>
 
@@ -757,6 +758,7 @@ DECLARE_DICT_GET_TRAITS(Float32, DataTypeFloat32)
 DECLARE_DICT_GET_TRAITS(Float64, DataTypeFloat64)
 DECLARE_DICT_GET_TRAITS(UInt16, DataTypeDate)
 DECLARE_DICT_GET_TRAITS(UInt32, DataTypeDateTime)
+DECLARE_DICT_GET_TRAITS(UInt128, DataTypeUUID)
 #undef DECLARE_DICT_GET_TRAITS
 
 template <typename DataType>
@@ -1074,6 +1076,7 @@ using FunctionDictGetFloat32 = FunctionDictGet<DataTypeFloat32>;
 using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64>;
 using FunctionDictGetDate = FunctionDictGet<DataTypeDate>;
 using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime>;
+using FunctionDictGetUUID = FunctionDictGet<DataTypeUUID>;
 
 
 template <typename DataType>
@@ -1331,6 +1334,7 @@ using FunctionDictGetFloat32OrDefault = FunctionDictGetOrDefault<DataTypeFloat32
 using FunctionDictGetFloat64OrDefault = FunctionDictGetOrDefault<DataTypeFloat64>;
 using FunctionDictGetDateOrDefault = FunctionDictGetOrDefault<DataTypeDate>;
 using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTime>;
+using FunctionDictGetUUIDOrDefault = FunctionDictGetOrDefault<DataTypeUUID>;
 
 
 /// Functions to work with hierarchies.

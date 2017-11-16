@@ -30,7 +30,7 @@ private:
 
 public:
     WriteBufferFromVector(VectorType & vector_)
-        : WriteBuffer(reinterpret_cast<Position>(&vector_[0]), vector_.size()), vector(vector_)
+        : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_)
     {
         if (vector.empty())
         {
