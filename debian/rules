@@ -23,8 +23,8 @@ CMAKE_FLAGS += -DENABLE_TESTS=0
 
 DEB_CLANG ?= $(shell which clang-6.0 || which clang-5.0 || which clang-4.0 || which clang || which clang-3.9 || which clang-3.8)
 
-#DEB_CC ?= gcc-6
-#DEB_CXX ?= g++-6
+#DEB_CC ?= gcc-7
+#DEB_CXX ?= g++-7
 
 ifdef DEB_CXX
     DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
