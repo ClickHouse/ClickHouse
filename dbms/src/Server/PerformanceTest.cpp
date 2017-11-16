@@ -304,6 +304,7 @@ struct Stats
     size_t number_of_bytes_speed_info_batches = 0;
 
     bool ready = false; // check if a query wasn't interrupted by SIGINT
+    String exception;
 
     String getStatisticByName(const String & statistic_name)
     {
@@ -908,14 +909,16 @@ private:
 
         if (test_config->has("substitutions"))
         {
-            if (queries.size() > 1)
-                throw DB::Exception("Only one query is allowed when using substitutions");
-
             /// Make "subconfig" of inner xml block
             ConfigurationPtr substitutions_view(test_config->createView("substitutions"));
             constructSubstitutions(substitutions_view, substitutions);
 
-            queries = formatQueries(queries[0], substitutions);
+            auto queries_pre_format = queries;
+            queries.clear();
+            for (const auto & query : queries_pre_format) {
+                auto formatted = formatQueries(query, substitutions);
+                queries.insert(queries.end(), formatted.begin(), formatted.end());
+            }
         }
 
         if (!test_config->has("type"))
@@ -1044,6 +1047,7 @@ private:
             Stats & statistics = statistics_by_run[run_index];
 
             statistics.clear();
+           try {
             execute(query, statistics, stop_conditions);
 
             if (exec_type == ExecutionType::Loop)
@@ -1057,6 +1061,9 @@ private:
                     execute(query, statistics, stop_conditions);
                 }
             }
+           } catch (const DB::Exception & e) {
+                statistics.exception = e.what() + String(", ") + e.displayText();
+           }
 
             if (!gotSIGINT)
             {
@@ -1251,6 +1258,8 @@ public:
                 JSONString runJSON;
 
                 runJSON.set("query", queries[query_index]);
+                if (!statistics.exception.empty())
+                    runJSON.set("exception", statistics.exception);
 
                 if (substitutions_maps.size())
                 {
