@@ -45,8 +45,8 @@ private:
     /// Read up to the end.
     bool finished = false;
 
-    /// Columns with which numbers should be summed.
-    Names column_names_to_sum;    /// If set, it is converted to column_numbers_to_sum when initialized.
+    /// Columns with which values should be summed.
+    Names column_names_to_sum;    /// If set, it is converted to column_numbers_to_aggregate when initialized.
     ColumnNumbers column_numbers_not_to_aggregate;
 
     /** A table can have nested tables that are treated in a special way.
