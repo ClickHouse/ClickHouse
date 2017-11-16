@@ -1047,23 +1047,26 @@ private:
             Stats & statistics = statistics_by_run[run_index];
 
             statistics.clear();
-           try {
-            execute(query, statistics, stop_conditions);
-
-            if (exec_type == ExecutionType::Loop)
+            try
             {
-                for (size_t iteration = 1; !gotSIGINT; ++iteration)
-                {
-                    stop_conditions.reportIterations(iteration);
-                    if (stop_conditions.areFulfilled())
-                        break;
+                execute(query, statistics, stop_conditions);
 
-                    execute(query, statistics, stop_conditions);
+                if (exec_type == ExecutionType::Loop)
+                {
+                    for (size_t iteration = 1; !gotSIGINT; ++iteration)
+                    {
+                        stop_conditions.reportIterations(iteration);
+                        if (stop_conditions.areFulfilled())
+                            break;
+
+                        execute(query, statistics, stop_conditions);
+                    }
                 }
             }
-           } catch (const DB::Exception & e) {
+            catch (const DB::Exception & e)
+            {
                 statistics.exception = e.what() + String(", ") + e.displayText();
-           }
+            }
 
             if (!gotSIGINT)
             {
