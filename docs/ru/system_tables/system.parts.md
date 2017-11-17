@@ -1,13 +1,13 @@
 system.parts
 ============
 
-Содержит информацию о кусках таблиц семейства [MergeTree](../../table_engines/mergetree.html#table_engines-mergetree).
+Содержит информацию о кусках таблиц семейства [MergeTree](../table_engines/mergetree.md#table_engines-mergetree).
 
 Каждая строка описывает один кусок данных.
 
 Столбцы:
 
-- partition (String) - Имя партиции. Формат YYYYMM. Что такое партиция можно узнать из описания запроса [ALTER](../../query_language/queries.html#query_language_queries_alter).
+- partition (String) - Имя партиции. Формат YYYYMM. Что такое партиция можно узнать из описания запроса [ALTER](../query_language/queries.md#query_language_queries_alter).
 - name (String) - Имя куска.
 - active (UInt8) - Признак активности. Если кусок активен, то он используется таблице, в противном случает он будет удален. Неактивные куски остаются после слияний.
 - marks (UInt64) - Количество засечек. Чтобы получить примерное количество строк в куске, умножьте ``marks`` на гранулированность индекса (обычно 8192).
