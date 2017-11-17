@@ -38,6 +38,7 @@ class ExternalDictionaries;
 class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
+class BackgroundSchedulePool;
 class ReshardingWorker;
 class MergeList;
 class Cluster;
@@ -308,6 +309,7 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
+    BackgroundSchedulePool & getSchedulePool();
 
     void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
     ReshardingWorker & getReshardingWorker() const;
