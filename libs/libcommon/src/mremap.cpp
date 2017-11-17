@@ -1,8 +1,8 @@
-
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <sys/mman.h>
+#include <errno.h>
 #include <common/mremap.h>
 
 #if defined(MREMAP_FIXED)
@@ -18,6 +18,7 @@ void * mremap(
 
     if (!(flags & MREMAP_MAYMOVE))
     {
+        errno = ENOMEM;
         return nullptr;
     }
 
