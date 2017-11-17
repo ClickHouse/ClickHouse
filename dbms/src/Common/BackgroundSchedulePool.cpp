@@ -67,19 +67,20 @@ bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
 }
 
 
-bool BackgroundSchedulePool::TaskInfo::pause(bool value)
+void BackgroundSchedulePool::TaskInfo::pause()
 {
     Guard g(lock);
 
-    if (removed == value)
-        return false;
+    if (removed)
+        return;
+    invalidate();
+}
 
-    if (value)
-        invalidate();
-    else
-        removed = false;
 
-    return true;
+void BackgroundSchedulePool::TaskInfo::resume()
+{
+    Guard g(lock);
+    removed = false;
 }
 
 
