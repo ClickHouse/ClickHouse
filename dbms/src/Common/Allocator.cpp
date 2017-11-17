@@ -115,7 +115,11 @@ void Allocator<clear_memory_>::free(void * buf, size_t size)
 template <bool clear_memory_>
 void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new_size, size_t alignment)
 {
-    if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
+    if (old_size == new_size)
+    {
+        /// nothing to do.
+    }
+    else if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
     {
         CurrentMemoryTracker::realloc(old_size, new_size);
 
@@ -124,7 +128,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
         if (nullptr == buf)
             DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
-        if (clear_memory)
+        if (clear_memory && new_size > old_size)
             memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
     }
     else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
@@ -137,6 +141,14 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
             DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
 
         /// No need for zero-fill, because mmap guarantees it.
+    }
+    else if (old_size >= MMAP_THRESHOLD && new_size < MMAP_THRESHOLD)
+    {
+        void * new_buf = alloc(new_size, alignment);
+        memcpy(new_buf, buf, new_size);
+        if (0 != munmap(buf, old_size))
+            DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(old_size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
+        buf = new_buf;
     }
     else
     {
