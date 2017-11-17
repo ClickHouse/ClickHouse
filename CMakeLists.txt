@@ -4,20 +4,20 @@ cmake_minimum_required (VERSION 2.8)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # Require at least gcc 6
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
-        message (FATAL_ERROR "GCC version must be at least 6! For example, if GCC 6 is available under gcc-6, g++-6 names, do the following: export CC=gcc-6 CXX=g++-6; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
+    # Require at least gcc 7
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
+        message (FATAL_ERROR "GCC version must be at least 7! For example, if GCC 7 is available under gcc-7, g++-7 names, do the following: export CC=gcc-7 CXX=g++-7; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Require at least clang 3.8
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
-        message (FATAL_ERROR "Clang version must be at least 3.8! Recommended 4+")
+    # Require at least clang 3.9
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.9)
+        message (FATAL_ERROR "Clang version must be at least 3.9! Recommended 4+")
     endif ()
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4)
         message (WARNING "Compilation has only been tested with Clang 4+")
     endif ()
 else ()
-    message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 4+ and GCC 6+.")
+    message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 4+ and GCC 7+.")
 endif ()
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
@@ -170,7 +170,13 @@ if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
-set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
+set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer")
+if (SAN_DEBUG)
+    set (SAN_FLAGS "${SAN_FLAGS} -O0")
+else ()
+    set (SAN_FLAGS "${SAN_FLAGS} -O3")
+endif ()
+
 set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
 set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
 set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} ${SAN_FLAGS} -fsanitize=undefined")
