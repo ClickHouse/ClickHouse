@@ -354,6 +354,10 @@ public:
     String getDefaultProfileName() const;
     void setDefaultProfileName(const String & name);
 
+    /// Base path for format schemas
+    String getFormatSchemaPath() const;
+    void setFormatSchemaPath(const String & path);
+
     /// User name and session identifier. Named sessions are local to users.
     using SessionKey = std::pair<String, String>;
 

@@ -133,6 +133,7 @@ struct ContextShared
     mutable std::unique_ptr<CompressionSettingsSelector> compression_settings_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
+    String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
 
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
@@ -1564,6 +1565,16 @@ String Context::getDefaultProfileName() const
 void Context::setDefaultProfileName(const String & name)
 {
     shared->default_profile_name = name;
+}
+
+String Context::getFormatSchemaPath() const
+{
+    return shared->format_schema_path;
+}
+
+void Context::setFormatSchemaPath(const String & path)
+{
+    shared->format_schema_path = path;
 }
 
 

@@ -1263,7 +1263,7 @@ struct IsFiniteImpl
                  & 0b0111111111110000000000000000000000000000000000000000000000000000)
                 != 0b0111111111110000000000000000000000000000000000000000000000000000;
         else
-            return false;
+            return true;
     }
 };
 
@@ -1500,7 +1500,7 @@ struct FunctionRunningDifferenceName<true>
 template <>
 struct FunctionRunningDifferenceName<false>
 {
-    static constexpr auto name = "runningIncome";
+    static constexpr auto name = "runningDifferenceStartingWithFirstValue";
 };
 
 /** Calculate difference of consecutive values in block.

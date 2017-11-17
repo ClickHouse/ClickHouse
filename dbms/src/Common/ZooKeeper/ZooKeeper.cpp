@@ -902,7 +902,7 @@ ZooKeeper::GetChildrenFuture ZooKeeper::asyncGetChildren(const std::string & pat
     return future;
 }
 
-ZooKeeper::RemoveFuture ZooKeeper::asyncRemove(const std::string & path)
+ZooKeeper::RemoveFuture ZooKeeper::asyncRemove(const std::string & path, int32_t version)
 {
     RemoveFuture future {
         [path] (int rc)
@@ -912,11 +912,41 @@ ZooKeeper::RemoveFuture ZooKeeper::asyncRemove(const std::string & path)
         }};
 
     int32_t code = zoo_adelete(
-        impl, path.c_str(), -1,
+        impl, path.c_str(), version,
         [] (int rc, const void * data)
         {
             RemoveFuture::TaskPtr owned_task =
                 std::move(const_cast<RemoveFuture::TaskPtr &>(*static_cast<const RemoveFuture::TaskPtr *>(data)));
+            (*owned_task)(rc);
+        },
+        future.task.get());
+
+    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
+    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+    if (code != ZOK)
+        throw KeeperException(code, path);
+
+    return future;
+}
+
+ZooKeeper::TryRemoveFuture ZooKeeper::asyncTryRemove(const std::string & path, int32_t version)
+{
+    TryRemoveFuture future {
+        [path] (int rc)
+        {
+            if (rc != ZOK && rc != ZNONODE && rc != ZBADVERSION && rc != ZNOTEMPTY)
+                throw KeeperException(rc, path);
+
+            return rc;
+        }};
+
+    int32_t code = zoo_adelete(
+        impl, path.c_str(), version,
+        [] (int rc, const void * data)
+        {
+            TryRemoveFuture::TaskPtr owned_task =
+                std::move(const_cast<TryRemoveFuture::TaskPtr &>(*static_cast<const TryRemoveFuture::TaskPtr *>(data)));
             (*owned_task)(rc);
         },
         future.task.get());
