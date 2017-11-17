@@ -38,7 +38,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DNSCache.h>
+#include <Common/DNSCache.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <Parsers/ASTCreateQuery.h>
