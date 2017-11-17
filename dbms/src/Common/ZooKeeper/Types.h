@@ -5,6 +5,7 @@
 #include <vector>
 #include <zookeeper.h>
 #include <Poco/Event.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace zkutil
@@ -149,6 +150,7 @@ namespace CreateMode
 }
 
 using EventPtr = std::shared_ptr<Poco::Event>;
+using TaskHandlePtr = DB::BackgroundSchedulePool::TaskHandle;
 
 class ZooKeeper;
 

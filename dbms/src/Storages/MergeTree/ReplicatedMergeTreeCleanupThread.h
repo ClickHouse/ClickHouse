@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/ZooKeeper/Types.h>
 #include <common/logger_useful.h>
+#include <Common/BackgroundSchedulePool.h>
 #include <thread>
 #include <map>
 
@@ -19,13 +20,14 @@ class ReplicatedMergeTreeCleanupThread
 {
 public:
     ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
-
     ~ReplicatedMergeTreeCleanupThread();
+
+    void schedule() {task_handle->schedule();}
 
 private:
     StorageReplicatedMergeTree & storage;
     Logger * log;
-    std::thread thread;
+    BackgroundSchedulePool::TaskHandle task_handle;
 
     void run();
     void iterate();
