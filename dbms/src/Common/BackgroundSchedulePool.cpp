@@ -212,7 +212,7 @@ void BackgroundSchedulePool::threadFunction()
 
         if (notification)
         {
-            TaskNotification & task_notification = static_cast<TaskNotification &>(notification.get());
+            TaskNotification & task_notification = static_cast<TaskNotification &>(*notification);
             task_notification.execute();
         }
     }
