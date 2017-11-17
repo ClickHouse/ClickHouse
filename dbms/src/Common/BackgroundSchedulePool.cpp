@@ -1,4 +1,3 @@
-
 #include <Common/BackgroundSchedulePool.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentMetrics.h>
@@ -13,27 +12,25 @@ namespace CurrentMetrics
     extern const Metric MemoryTrackingInBackgroundSchedulePool;
 }
 
-namespace DB {
+namespace DB
+{
 
-const int32_t kSlowExecutionThresholdMs = 50;
 
-//TaskNotification
+// TaskNotification
 
 class TaskNotification final : public Poco::Notification
 {
 public:
-
     explicit TaskNotification(const BackgroundSchedulePool::TaskHandle & task) : task_(task) {}
     void execute() {task_->execute();}
 
 private:
-
     BackgroundSchedulePool::TaskHandle task_;
 };
 
-//BackgroundSchedulePool::TaskInfo
+// BackgroundSchedulePool::TaskInfo
 
-BackgroundSchedulePool::TaskInfo::TaskInfo(BackgroundSchedulePool & pool, const std::string& name, const Task & function):
+BackgroundSchedulePool::TaskInfo::TaskInfo(BackgroundSchedulePool & pool, const std::string & name, const Task & function):
     name_(name),
     pool_(pool),
     function_(function),
@@ -48,7 +45,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 
     scheduled_ = true;
 
-    if(iterator_ != pool_.delayed_tasks_.end())
+    if (iterator_ != pool_.delayed_tasks_.end())
         pool_.cancelDelayedTask(shared_from_this());
 
     pool_.queue_.enqueueNotification(new TaskNotification(shared_from_this()));
@@ -70,10 +67,10 @@ bool BackgroundSchedulePool::TaskInfo::pause(bool value)
 {
     Guard g(lock_);
 
-    if(removed_ == value)
+    if (removed_ == value)
         return false;
 
-    if(value)
+    if (value)
         invalidate();
     else
         removed_ = false;
@@ -83,14 +80,14 @@ bool BackgroundSchedulePool::TaskInfo::pause(bool value)
 
 void BackgroundSchedulePool::TaskInfo::invalidate()
 {
-    if(removed_)
+    if (removed_)
         return;
 
     Guard g(lock_);
     removed_ = true;
     scheduled_ = false;
 
-    if(iterator_ != pool_.delayed_tasks_.end())
+    if (iterator_ != pool_.delayed_tasks_.end())
         pool_.cancelDelayedTask(shared_from_this());
 }
 
@@ -110,11 +107,14 @@ void BackgroundSchedulePool::TaskInfo::execute()
 
     auto diff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 
-    if(diff_ms >= kSlowExecutionThresholdMs)
+    /// If the task is executed longer than specified time, it will be logged.
+    static const int32_t slow_execution_threshold_ms = 50;
+
+    if (diff_ms >= slow_execution_threshold_ms)
         LOG_INFO(&Logger::get("BackgroundSchedulePool"), "executing " << name_ << " tooked: "<< diff_ms << " ms");
 }
 
-//BackgroundSchedulePool
+// BackgroundSchedulePool
 
 BackgroundSchedulePool::BackgroundSchedulePool(size_t size) :
     size_(size)
@@ -164,7 +164,7 @@ void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle& task, size_t 
     {
         std::lock_guard<std::mutex> lock(delayed_tasks_lock_);
 
-        if(task->iterator_ != delayed_tasks_.end())
+        if (task->iterator_ != delayed_tasks_.end())
             delayed_tasks_.erase(task->iterator_);
 
         task->iterator_ = delayed_tasks_.emplace(current_time+(ms*1000), task);
@@ -196,9 +196,9 @@ void BackgroundSchedulePool::threadFunction()
     {
         Poco::AutoPtr<Poco::Notification> notification(queue_.waitDequeueNotification());
 
-        if(notification)
+        if (notification)
         {
-            TaskNotification* pn = dynamic_cast<TaskNotification*>(notification.get());
+            TaskNotification * pn = dynamic_cast<TaskNotification*>(notification.get());
             pn->execute();
         }
     }
