@@ -62,3 +62,6 @@ target_link_libraries (space_saving dbms)
 add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
 target_include_directories (integer_hash_tables_and_hashes BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_link_libraries (integer_hash_tables_and_hashes dbms)
+
+add_executable (allocactor allocator.cpp)
+target_link_libraries (allocactor dbms)
