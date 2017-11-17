@@ -18,6 +18,17 @@ namespace DB
 
 class TaskNotification;
 
+
+/** Execute a function at a specific point in time.
+  * Basically all tasks are added in a queue and precessed by worker threads.
+  *
+  * The most important difference between this and BackgroundProcessingPool
+  *  is that we have the guarantee that the same function is not executed from many workers in the same time.
+  *
+  * The usage scenario: instead starting a separate thread for each task,
+  *  register a task in BackgroundSchedulePool and when you need to run the task,
+  *  call schedule or scheduleAfter(duration) method.
+  */
 class BackgroundSchedulePool
 {
 public:
