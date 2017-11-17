@@ -3,6 +3,10 @@
 
     <type>once</type>
 
+    <tags>
+        <tag>long</tag>
+    </tags>
+
     <stop_conditions>
         <any_of>
             <average_speed_not_changing_for_ms>10000</average_speed_not_changing_for_ms>
@@ -27,7 +31,7 @@
                <value>toDayOfWeek</value>
                <value>toDayOfMonth</value>
                <value>toMonth</value>
-               <value>toQuarter</value>
+               <!--value>toQuarter</value-->
                <value>toYear</value>
 
                <value>toStartOfMinute</value>
@@ -61,7 +65,7 @@
                <value>toDayOfWeek</value>
                <value>toDayOfMonth</value>
                <value>toMonth</value>
-               <value>toQuarter</value>
+               <!--value>toQuarter</value-->
                <value>toYear</value>
 
                <value>toStartOfDay</value>
