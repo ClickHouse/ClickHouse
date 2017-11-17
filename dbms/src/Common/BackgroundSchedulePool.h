@@ -19,7 +19,7 @@ namespace DB
 class TaskNotification;
 
 
-/** Execute a function at a specific point in time.
+/** Executes functions scheduled at a specific point in time.
   * Basically all tasks are added in a queue and precessed by worker threads.
   *
   * The most important difference between this and BackgroundProcessingPool
@@ -44,7 +44,6 @@ public:
 
         bool schedule();
         bool scheduleAfter(size_t ms);
-        bool removed() const { return removed_; }
         bool pause(bool value);
 
     private:
@@ -56,13 +55,13 @@ public:
         void invalidate();
         void execute();
 
-        std::recursive_mutex lock_;
-        std::atomic<bool> removed_ {false};
-        std::string name_;
-        bool scheduled_ = false;
-        BackgroundSchedulePool & pool_;
-        Task function_;
-        Tasks::iterator iterator_;
+        std::recursive_mutex lock;
+        std::atomic<bool> removed {false};
+        std::string name;
+        bool scheduled = false;
+        BackgroundSchedulePool & pool;
+        Task function;
+        Tasks::iterator iterator;
     };
 
     BackgroundSchedulePool(size_t size);
@@ -70,7 +69,7 @@ public:
 
     TaskHandle addTask(const std::string & name, const Task & task);
     void removeTask(const TaskHandle & task);
-    size_t getNumberOfThreads() const { return size_;}
+    size_t getNumberOfThreads() const { return size; }
 
 private:
     using Threads = std::vector<std::thread>;
@@ -80,17 +79,17 @@ private:
     void scheduleDelayedTask(const TaskHandle & task, size_t ms);
     void cancelDelayedTask(const TaskHandle & task);
 
-    const size_t size_;
-    std::atomic<bool> shutdown_ {false};
-    Threads threads_;
-    Poco::NotificationQueue queue_;
+    const size_t size;
+    std::atomic<bool> shutdown {false};
+    Threads threads;
+    Poco::NotificationQueue queue;
 
     // delayed notifications
 
-    std::condition_variable wake_event_;
-    std::mutex delayed_tasks_lock_;
-    std::thread delayed_thread_;
-    Tasks delayed_tasks_;
+    std::condition_variable wake_event;
+    std::mutex delayed_tasks_lock;
+    std::thread delayed_thread;
+    Tasks delayed_tasks;
 };
 
 using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;

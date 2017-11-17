@@ -21,89 +21,90 @@ namespace DB
 class TaskNotification final : public Poco::Notification
 {
 public:
-    explicit TaskNotification(const BackgroundSchedulePool::TaskHandle & task) : task_(task) {}
-    void execute() {task_->execute();}
+    explicit TaskNotification(const BackgroundSchedulePool::TaskHandle & task) : task(task) {}
+    void execute() { task->execute(); }
 
 private:
-    BackgroundSchedulePool::TaskHandle task_;
+    BackgroundSchedulePool::TaskHandle task;
 };
+
 
 // BackgroundSchedulePool::TaskInfo
 
 BackgroundSchedulePool::TaskInfo::TaskInfo(BackgroundSchedulePool & pool, const std::string & name, const Task & function):
-    name_(name),
-    pool_(pool),
-    function_(function),
-    iterator_(pool.delayed_tasks_.end()) {}
+    name(name),
+    pool(pool),
+    function(function),
+    iterator(pool.delayed_tasks.end()) {}
 
 bool BackgroundSchedulePool::TaskInfo::schedule()
 {
-    Guard g(lock_);
+    Guard g(lock);
 
-    if (removed_ || scheduled_)
+    if (removed || scheduled)
         return false;
 
-    scheduled_ = true;
+    scheduled = true;
 
-    if (iterator_ != pool_.delayed_tasks_.end())
-        pool_.cancelDelayedTask(shared_from_this());
+    if (iterator != pool.delayed_tasks.end())
+        pool.cancelDelayedTask(shared_from_this());
 
-    pool_.queue_.enqueueNotification(new TaskNotification(shared_from_this()));
+    pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
     return true;
 }
 
 bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
 {
-    Guard g(lock_);
+    Guard g(lock);
 
-    if (removed_ || scheduled_)
+    if (removed || scheduled)
         return false;
 
-    pool_.scheduleDelayedTask(shared_from_this(), ms);
+    pool.scheduleDelayedTask(shared_from_this(), ms);
     return true;
 }
 
 bool BackgroundSchedulePool::TaskInfo::pause(bool value)
 {
-    Guard g(lock_);
+    Guard g(lock);
 
-    if (removed_ == value)
+    if (removed == value)
         return false;
 
     if (value)
         invalidate();
     else
-        removed_ = false;
+        removed = false;
 
     return true;
 }
 
 void BackgroundSchedulePool::TaskInfo::invalidate()
 {
-    if (removed_)
+    if (removed)
         return;
 
-    Guard g(lock_);
-    removed_ = true;
-    scheduled_ = false;
+    Guard g(lock);
+    removed = true;
+    scheduled = false;
 
-    if (iterator_ != pool_.delayed_tasks_.end())
-        pool_.cancelDelayedTask(shared_from_this());
+    if (iterator != pool.delayed_tasks.end())
+        pool.cancelDelayedTask(shared_from_this());
 }
 
 void BackgroundSchedulePool::TaskInfo::execute()
 {
-    Guard g(lock_);
+    Guard g(lock);
 
-    if (removed_)
+    if (removed)
         return;
 
-    scheduled_ = false;
+    scheduled = false;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundSchedulePoolTask};
 
     auto start = std::chrono::steady_clock::now();
 
-    function_();
+    function();
 
     auto diff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 
@@ -111,34 +112,35 @@ void BackgroundSchedulePool::TaskInfo::execute()
     static const int32_t slow_execution_threshold_ms = 50;
 
     if (diff_ms >= slow_execution_threshold_ms)
-        LOG_INFO(&Logger::get("BackgroundSchedulePool"), "executing " << name_ << " tooked: "<< diff_ms << " ms");
+        LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Executing " << name << " took: " << diff_ms << " ms");
 }
 
 // BackgroundSchedulePool
 
 BackgroundSchedulePool::BackgroundSchedulePool(size_t size) :
-    size_(size)
+    size(size)
 {
     LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
 
-    threads_.resize(size);
-    for (auto & thread : threads_)
+    threads.resize(size);
+    for (auto & thread : threads)
         thread = std::thread([this] { threadFunction(); });
 
-    delayed_thread_ = std::thread([this] { delayExecutionThreadFunction(); });
+    delayed_thread = std::thread([this] { delayExecutionThreadFunction(); });
 }
 
 BackgroundSchedulePool::~BackgroundSchedulePool()
 {
     try
     {
-        shutdown_ = true;
-        wake_event_.notify_all();
-        queue_.wakeUpAll();
+        shutdown = true;
+        wake_event.notify_all();
+        queue.wakeUpAll();
 
-        delayed_thread_.join();
+        delayed_thread.join();
 
-        for (std::thread & thread : threads_)
+        LOG_TRACE(&Logger::get("BackgroundSchedulePool"), "Waiting for threads to finish.");
+        for (std::thread & thread : threads)
             thread.join();
     }
     catch (...)
@@ -147,7 +149,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
     }
 }
 
-BackgroundSchedulePool::TaskHandle BackgroundSchedulePool::addTask(const std::string& name, const Task & task)
+BackgroundSchedulePool::TaskHandle BackgroundSchedulePool::addTask(const std::string & name, const Task & task)
 {
     return std::make_shared<TaskInfo>(*this, name, task);
 }
@@ -157,31 +159,31 @@ void BackgroundSchedulePool::removeTask(const TaskHandle & task)
     task->invalidate();
 }
 
-void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle& task, size_t ms)
+void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t ms)
 {
     Poco::Timestamp current_time;
 
     {
-        std::lock_guard<std::mutex> lock(delayed_tasks_lock_);
+        std::lock_guard<std::mutex> lock(delayed_tasks_lock);
 
-        if (task->iterator_ != delayed_tasks_.end())
-            delayed_tasks_.erase(task->iterator_);
+        if (task->iterator != delayed_tasks.end())
+            delayed_tasks.erase(task->iterator);
 
-        task->iterator_ = delayed_tasks_.emplace(current_time+(ms*1000), task);
+        task->iterator = delayed_tasks.emplace(current_time + (ms * 1000), task);
     }
 
-    wake_event_.notify_all();
+    wake_event.notify_all();
 }
 
-void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle& task)
+void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task)
 {
     {
-        std::lock_guard<std::mutex> lock(delayed_tasks_lock_);
-        delayed_tasks_.erase(task->iterator_);
-        task->iterator_ = delayed_tasks_.end();
+        std::lock_guard<std::mutex> lock(delayed_tasks_lock);
+        delayed_tasks.erase(task->iterator);
+        task->iterator = delayed_tasks.end();
     }
 
-    wake_event_.notify_all();
+    wake_event.notify_all();
 }
 
 void BackgroundSchedulePool::threadFunction()
@@ -192,9 +194,9 @@ void BackgroundSchedulePool::threadFunction()
     memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
     current_memory_tracker = &memory_tracker;
 
-    while (!shutdown_)
+    while (!shutdown)
     {
-        Poco::AutoPtr<Poco::Notification> notification(queue_.waitDequeueNotification());
+        Poco::AutoPtr<Poco::Notification> notification(queue.waitDequeueNotification());
 
         if (notification)
         {
@@ -206,41 +208,42 @@ void BackgroundSchedulePool::threadFunction()
     current_memory_tracker = nullptr;
 }
 
+
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName("BackgroundSchedulePoolDelay");
 
-    while (!shutdown_)
+    while (!shutdown)
     {
         Poco::Timestamp min_time;
         TaskHandle task;
 
         {
-            std::lock_guard<std::mutex> lock(delayed_tasks_lock_);
+            std::lock_guard<std::mutex> lock(delayed_tasks_lock);
 
-            if (!delayed_tasks_.empty())
+            if (!delayed_tasks.empty())
             {
-                auto t = delayed_tasks_.begin();
+                auto t = delayed_tasks.begin();
                 min_time = t->first;
                 task = t->second;
             }
         }
 
-        if (shutdown_)
+        if (shutdown)
             break;
 
         if (!task)
         {
-            std::unique_lock<std::mutex> lock(delayed_tasks_lock_);
-            wake_event_.wait(lock);
+            std::unique_lock<std::mutex> lock(delayed_tasks_lock);
+            wake_event.wait(lock);
             continue;
         }
 
         Poco::Timestamp current_time;
         if (min_time > current_time)
         {
-            std::unique_lock<std::mutex> lock(delayed_tasks_lock_);
-            wake_event_.wait_for(lock, std::chrono::microseconds(min_time - current_time));
+            std::unique_lock<std::mutex> lock(delayed_tasks_lock);
+            wake_event.wait_for(lock, std::chrono::microseconds(min_time - current_time));
         }
         else
         {
