@@ -40,6 +40,7 @@ if (LINE_EDITING_LIBS AND READLINE_INCLUDE_DIR)
     include (CheckCXXSourceRuns)
 
     set (CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${LINE_EDITING_LIBS})
+    set (CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES} ${READLINE_INCLUDE_DIR})
     check_cxx_source_runs ("
         #include <stdio.h>
         #include <readline/readline.h>

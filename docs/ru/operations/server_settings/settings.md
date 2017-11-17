@@ -68,7 +68,7 @@ default_database
 
 База данных по умолчанию.
 
-Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/queries.html#query_language_queries_show_databases).
+Перечень баз данных можно получить запросом [SHOW DATABASES](../query_language/queries.md#query_language_queries_show_databases).
 
 **Пример**
 
@@ -103,7 +103,7 @@ dictionaries_config
 -   Указывается абсолютным или относительно конфигурационного файла сервера.
 -   Может содержать wildcard-ы \* и ?.
 
-Смотрите также "[Внешние словари](../../../dicts/external_dicts.html#dicts-external_dicts)".
+Смотрите также "[Внешние словари](../../dicts/external_dicts.md#dicts-external_dicts)".
 
 **Пример**
 
@@ -129,6 +129,21 @@ dictionaries_lazy_load
 ```xml
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
+
+<a name="server_settings-format_schema_path"></a>
+
+format_schema_path
+==================
+
+Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../formats/capnproto.md#format_capnproto).
+
+**Пример**
+
+```xml
+  <!-- Directory containing schema files for various input formats. -->
+  <format_schema_path>format_schemas/</format_schema_path>
+```
+
 
 <a name="server_settings-graphite"></a>
 
@@ -172,7 +187,7 @@ graphite_rollup
 
 Настройка прореживания данных для Graphite.
 
-Подробнее читайте в разделе [GraphiteMergeTree](../../../table_engines/graphitemergetree.html#table_engines-graphitemergetree).
+Подробнее читайте в разделе [GraphiteMergeTree](../../table_engines/graphitemergetree.md#table_engines-graphitemergetree).
 
 **Пример**
 
@@ -237,7 +252,7 @@ include_from
 
 Путь к файлу с подстановками.
 
-Подробности смотрите в разделе "[Конфигурационный файлы](../../configuration_files.html#configuration_files)".
+Подробности смотрите в разделе "[Конфигурационный файлы](../configuration_files.md#configuration_files)".
 
 **Пример**
 
@@ -338,7 +353,7 @@ macros
 
 Можно не указывать, если реплицируемых таблицы не используются.
 
-Подробнее смотрите в разделе "[Создание реплицируемых таблиц](../../../table_engines/replication.html#table_engines-replication-creation_of_rep_tables)".
+Подробнее смотрите в разделе "[Создание реплицируемых таблиц](../../table_engines/replication.md#table_engines-replication-creation_of_rep_tables)".
 
 **Пример**
 
@@ -351,7 +366,7 @@ macros
 mark_cache_size
 =================
 
-Приблизительный размер (в байтах) кеша "засечек", используемых движками таблиц семейства [MergeTree](../../../table_engines/mergetree.html#table_engines-mergetree).
+Приблизительный размер (в байтах) кеша "засечек", используемых движками таблиц семейства [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree).
 
 Кеш общий для сервера, память выделяется по мере необходимости. Кеш не может быть меньше, чем 5368709120.
 
@@ -411,7 +426,7 @@ max_table_size_to_drop
 
 Ограничение на удаление таблиц.
 
-Если размер таблицы семейства [MergeTree](../../../table_engines/mergetree.html#table_engines-mergetree) превышает `max_table_size_to_drop` (в байтах), то ее нельзя удалить запросом DROP.
+Если размер таблицы семейства [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) превышает `max_table_size_to_drop` (в байтах), то ее нельзя удалить запросом DROP.
 
 Если таблицу все же необходимо удалить, не перезапуская при этом сервер ClickHouse, то необходимо создать файл `<clickhouse-path>/flags/force_drop_table` и выполнить запрос DROP.
 
@@ -430,7 +445,7 @@ max_table_size_to_drop
 merge_tree
 ===========
 
-Тонкая настройка таблиц семейства [MergeTree](../../../table_engines/mergetree.html#table_engines-mergetree).
+Тонкая настройка таблиц семейства [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree).
 
 Подробнее смотрите в заголовочном файле MergeTreeSettings.h.
 
@@ -509,7 +524,7 @@ openSSL
 part_log
 =========
 
-Логгирование событий, связанных с данными типа [MergeTree](../../../table_engines/mergetree.html#table_engines-mergetree). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
+Логгирование событий, связанных с данными типа [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
 Запросы логгируются не в отдельный файл, а в таблицу ClickHouse.
 
@@ -595,7 +610,7 @@ remote_servers
 
 Конфигурация кластеров, которые использует движок таблиц Distributed.
 
-Пример настройки смотрите в разделе "[Движки таблиц/Distributed](../../../table_engines/distributed.html#table_engines-distributed)".
+Пример настройки смотрите в разделе "[Движки таблиц/Distributed](../../table_engines/distributed.md#table_engines-distributed)".
 
 **Пример**
 
@@ -603,7 +618,7 @@ remote_servers
 <remote_servers incl="clickhouse_remote_servers" />
 ```
 
-Значение атрибута `incl` смотрите в разделе "[Конфигурационные файлы](../../configuration_files.html#configuration_files)".
+Значение атрибута `incl` смотрите в разделе "[Конфигурационные файлы](../configuration_files.md#configuration_files)".
 
 <a name="server_settings-resharding"></a>
 
@@ -612,7 +627,7 @@ resharding
 
 Путь в ZooKeeper к очереди задач.
 
-Подробнее читайте в разделе "[Перешардирование](../../../table_engines/resharding.html#table_engines-resharding)".
+Подробнее читайте в разделе "[Перешардирование](../../table_engines/resharding.md#table_engines-resharding)".
 
 **Пример**
 
@@ -676,9 +691,9 @@ tmp_path
 uncompressed_cache_size
 =========================
 
-Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../../table_engines/mergetree.html#table_engines-mergetree).
+Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree).
 
-Кеш единый для сервера. Память выделяется по-требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../../settings/settings.html#settings-use_uncompressed_cache).
+Кеш единый для сервера. Память выделяется по-требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md#settings-use_uncompressed_cache).
 
 Несжатый кеш выгодно использовать для очень коротких запросов в отдельных случаях.
 
@@ -717,7 +732,7 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 Параметр можно не указывать, если реплицированные таблицы не используются.
 
-Подробно читайте в разделе "[Репликация](../../../table_engines/replication.html#table_engines-replication)".
+Подробно читайте в разделе "[Репликация](../../table_engines/replication.md#table_engines-replication)".
 
 **Пример**
 
