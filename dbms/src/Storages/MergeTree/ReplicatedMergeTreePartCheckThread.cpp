@@ -35,7 +35,7 @@ void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard<std::mutex> lock(start_stop_mutex);
     need_stop = false;
-    task_handle->pause(false);
+    task_handle->resume();
     task_handle->schedule();
 }
 
@@ -46,7 +46,7 @@ void ReplicatedMergeTreePartCheckThread::stop()
 
     std::lock_guard<std::mutex> lock(start_stop_mutex);
     need_stop = true;
-    task_handle->pause(true);
+    task_handle->pause();
 }
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)

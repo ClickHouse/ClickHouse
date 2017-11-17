@@ -48,8 +48,8 @@ public:
         /// Schedule for execution after specified delay.
         bool scheduleAfter(size_t ms);
 
-
-        bool pause(bool value);
+        void pause();
+        void resume();
 
     private:
         using Guard = std::lock_guard<std::recursive_mutex>;
