@@ -567,9 +567,9 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 -   Значения, вычисляемые из `DEFAULT` выражений, указанных в определении таблицы.
 -   Нули и пустые строки, если `DEFAULT` не определены.
 
-Если [strict_insert_defaults=1](../../operations/settings/settings.html#settings-strict_insert_defaults), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
+Если [strict_insert_defaults=1](../operations/settings/settings.md#settings-strict_insert_defaults), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
 
-В INSERT можно передавать данные любого [формата](../../formats/index.html#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
+В INSERT можно передавать данные любого [формата](../formats/index.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
 
 ```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
@@ -591,7 +591,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-С помощью консольного клиента или HTTP интерфейса можно вставлять данные отдельно от запроса. Как это сделать, читайте в разделе "[Интерфейсы](../../interfaces/index.html#interfaces)".
+С помощью консольного клиента или HTTP интерфейса можно вставлять данные отдельно от запроса. Как это сделать, читайте в разделе "[Интерфейсы](../interfaces/index.md#interfaces)".
 
 Вставка результатов `SELECT`
 ============================
@@ -1363,7 +1363,7 @@ ORDER BY EventDate ASC
 
 <div class="admonition attention">
 
-Помните, что алгоритмы, описанные ниже, могут работать иначе в зависимости от [настройки](../../operations/settings/settings.html#settings-distributed_product_mode) `distributed_product_mode`.
+Помните, что алгоритмы, описанные ниже, могут работать иначе в зависимости от [настройки](../operations/settings/settings.md#settings-distributed_product_mode) `distributed_product_mode`.
 
 </div>
 
