@@ -212,7 +212,8 @@ public:
 
     inline UInt8 daysInMonth(UInt16 year, UInt8 month) const
     {
-        auto any_day_of_month = years_lut[year - DATE_LUT_MIN_YEAR] + 31 * (month - 1);
+        /// 32 makes arithmetic more simple.
+        auto any_day_of_month = years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1);
         return lut[any_day_of_month].days_in_month;
     }
 
