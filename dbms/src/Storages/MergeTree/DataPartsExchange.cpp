@@ -202,8 +202,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
         {"part", part_name},
         {"shard", shard_no},
         {"compress", "false"}
-    }
-    );
+    });
 
     ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 

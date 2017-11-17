@@ -34,9 +34,9 @@ ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
 void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard<std::mutex> lock(start_stop_mutex);
-	need_stop = false;
-	task_handle->pause(false);
-	task_handle->schedule();
+    need_stop = false;
+    task_handle->pause(false);
+    task_handle->schedule();
 }
 
 void ReplicatedMergeTreePartCheckThread::stop()
@@ -303,7 +303,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
 void ReplicatedMergeTreePartCheckThread::run()
 {
-    if(need_stop)
+    if (need_stop)
         return;
 
     try

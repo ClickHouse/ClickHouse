@@ -65,7 +65,7 @@ ReplicatedMergeTreeRestartingThread::~ReplicatedMergeTreeRestartingThread()
 
 void ReplicatedMergeTreeRestartingThread::run()
 {
-    if(need_stop)
+    if (need_stop)
         return;
 
     try
@@ -88,7 +88,7 @@ void ReplicatedMergeTreeRestartingThread::run()
                 partialShutdown();
             }
 
-            if(!startup_completed)
+            if (!startup_completed)
             {
                 try
                 {

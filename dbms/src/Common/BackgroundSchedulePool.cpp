@@ -37,6 +37,7 @@ BackgroundSchedulePool::TaskInfo::TaskInfo(BackgroundSchedulePool & pool, const 
     function(function),
     iterator(pool.delayed_tasks.end()) {}
 
+
 bool BackgroundSchedulePool::TaskInfo::schedule()
 {
     Guard g(lock);
@@ -53,6 +54,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
     return true;
 }
 
+
 bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
 {
     Guard g(lock);
@@ -63,6 +65,7 @@ bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
     pool.scheduleDelayedTask(shared_from_this(), ms);
     return true;
 }
+
 
 bool BackgroundSchedulePool::TaskInfo::pause(bool value)
 {
@@ -79,6 +82,7 @@ bool BackgroundSchedulePool::TaskInfo::pause(bool value)
     return true;
 }
 
+
 void BackgroundSchedulePool::TaskInfo::invalidate()
 {
     if (removed)
@@ -91,6 +95,7 @@ void BackgroundSchedulePool::TaskInfo::invalidate()
     if (iterator != pool.delayed_tasks.end())
         pool.cancelDelayedTask(shared_from_this());
 }
+
 
 void BackgroundSchedulePool::TaskInfo::execute()
 {
@@ -115,6 +120,7 @@ void BackgroundSchedulePool::TaskInfo::execute()
         LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Executing " << name << " took: " << diff_ms << " ms");
 }
 
+
 // BackgroundSchedulePool
 
 BackgroundSchedulePool::BackgroundSchedulePool(size_t size) :
@@ -128,6 +134,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size) :
 
     delayed_thread = std::thread([this] { delayExecutionThreadFunction(); });
 }
+
 
 BackgroundSchedulePool::~BackgroundSchedulePool()
 {
@@ -149,15 +156,18 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
     }
 }
 
+
 BackgroundSchedulePool::TaskHandle BackgroundSchedulePool::addTask(const std::string & name, const Task & task)
 {
     return std::make_shared<TaskInfo>(*this, name, task);
 }
 
+
 void BackgroundSchedulePool::removeTask(const TaskHandle & task)
 {
     task->invalidate();
 }
+
 
 void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t ms)
 {
@@ -175,6 +185,7 @@ void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t
     wake_event.notify_all();
 }
 
+
 void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task)
 {
     {
@@ -185,6 +196,7 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task)
 
     wake_event.notify_all();
 }
+
 
 void BackgroundSchedulePool::threadFunction()
 {

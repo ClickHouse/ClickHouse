@@ -209,7 +209,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
-	initMergeSelectSession();
+    initMergeSelectSession();
     merge_selecting_handle = context_.getSchedulePool().addTask("StorageReplicatedMergeTree", [this] { mergeSelectingThread(); });
 
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
@@ -1547,8 +1547,8 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
 void StorageReplicatedMergeTree::queueUpdatingThread()
 {
-	//most probably this check is not relevant
-    if(shutdown_called)
+    //most probably this check is not relevant
+    if (shutdown_called)
         return;
 
     if (!queue_update_in_progress)
@@ -1812,7 +1812,7 @@ void StorageReplicatedMergeTree::initMergeSelectSession()
 
 void StorageReplicatedMergeTree::mergeSelectingThread()
 {
-    if(shutdown_called || !is_leader_node)
+    if (shutdown_called || !is_leader_node)
         return;
 
     bool success = false;

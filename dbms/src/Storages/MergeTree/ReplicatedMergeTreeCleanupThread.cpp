@@ -17,8 +17,8 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
     : storage(storage_),
     log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)"))
 {
-	task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeCleanupThread", [this]{ run(); });
-	task_handle->schedule();
+    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeCleanupThread", [this]{ run(); });
+    task_handle->schedule();
 }
 
 ReplicatedMergeTreeCleanupThread::~ReplicatedMergeTreeCleanupThread()
