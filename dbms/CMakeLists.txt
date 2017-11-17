@@ -94,6 +94,8 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 
 list(REMOVE_ITEM dbms_common_io_sources
     src/Common/StringUtils.cpp)
+list(REMOVE_ITEM dbms_common_io_headers
+    src/Common/StringUtils.h)
 
 if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
     list(REMOVE_ITEM dbms_common_io_headers
@@ -149,11 +151,13 @@ endif()
 
 target_link_libraries (dbms_common_io
     common
+    string_utils
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
     ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
+    ${Poco_Net_LIBRARY}
 )
 
 target_link_libraries (dbms
@@ -161,7 +165,6 @@ target_link_libraries (dbms
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}
     ${METROHASH_LIBRARIES}
-    string_utils
     ${ZLIB_LIBRARIES}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
