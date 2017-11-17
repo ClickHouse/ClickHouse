@@ -212,8 +212,8 @@ void BackgroundSchedulePool::threadFunction()
 
         if (notification)
         {
-            TaskNotification * pn = dynamic_cast<TaskNotification*>(notification.get());
-            pn->execute();
+            TaskNotification & task_notification = static_cast<TaskNotification &>(notification.get());
+            task_notification.execute();
         }
     }
 
