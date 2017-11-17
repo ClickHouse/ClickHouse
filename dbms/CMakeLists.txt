@@ -183,7 +183,7 @@ if (Poco_MongoDB_FOUND)
 endif()
 
 if (Poco_NetSSL_FOUND)
-    target_link_libraries (dbms ${Poco_NetSSL_LIBRARY})
+    target_link_libraries (dbms_common_io ${Poco_NetSSL_LIBRARY})
 endif()
 
 target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
