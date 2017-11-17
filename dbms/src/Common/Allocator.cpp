@@ -57,7 +57,7 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
     if (size >= MMAP_THRESHOLD)
     {
         if (alignment > MMAP_MIN_ALIGNMENT)
-            throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating " 
+            throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating "
                 + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
 
         buf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -148,7 +148,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
         memcpy(new_buf, buf, new_size);
         if (0 != munmap(buf, old_size))
         {
-            free(new_buf);
+            ::free(new_buf);
             DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(old_size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
         }
         buf = new_buf;
