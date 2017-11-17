@@ -200,7 +200,7 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task)
 
 void BackgroundSchedulePool::threadFunction()
 {
-    setThreadName("BackgroundSchedulePool");
+    setThreadName("BackgrSchedPool");
 
     MemoryTracker memory_tracker;
     memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
@@ -223,7 +223,7 @@ void BackgroundSchedulePool::threadFunction()
 
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
-    setThreadName("BackgroundSchedulePoolDelay");
+    setThreadName("BckSchPoolDelay");
 
     while (!shutdown)
     {
