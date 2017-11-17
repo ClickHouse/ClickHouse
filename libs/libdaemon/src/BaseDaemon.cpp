@@ -29,6 +29,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <memory>
 #include <Poco/Observer.h>
@@ -921,11 +922,35 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
             );
 }
 
+bool isPidRunning(pid_t pid)
+{
+    if (getpgid(pid) >= 0)
+        return 1;
+    return 0;
+}
 
 void BaseDaemon::PID::seed(const std::string & file_)
 {
     /// переведём путь в абсолютный
-    file = Poco::Path(file_).absolute().toString();
+    auto file_path = Poco::Path(file_).absolute();
+    file = file_path.toString();
+    Poco::File poco_file(file);
+
+    if (poco_file.exists())
+    {
+        pid_t pid_read = 0;
+        {
+            std::ifstream in(file);
+            if (in.good())
+            {
+                in >> pid_read;
+                if (pid_read && isPidRunning(pid_read))
+                    throw Poco::Exception("Pid file exists and program running with pid = " + std::to_string(pid_read) + ", should not start daemon.");
+            }
+        }
+        std::cerr << "Old pid file exists (with pid = " << pid_read << "), removing." << std::endl;
+        poco_file.remove();
+    }
 
     int fd = open(file.c_str(),
         O_CREAT | O_EXCL | O_WRONLY,
