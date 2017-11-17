@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <sys/mman.h>
+#include <errno.h>
 #include <common/mremap.h>
 
 #if defined(MREMAP_FIXED)
