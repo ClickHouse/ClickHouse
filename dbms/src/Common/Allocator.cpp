@@ -147,7 +147,10 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
         void * new_buf = alloc(new_size, alignment);
         memcpy(new_buf, buf, new_size);
         if (0 != munmap(buf, old_size))
+        {
+            free(new_buf);
             DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(old_size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
+        }
         buf = new_buf;
     }
     else
