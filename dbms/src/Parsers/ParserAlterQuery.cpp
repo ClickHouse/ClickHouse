@@ -97,7 +97,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (s_after.ignore(pos, expected))
             {
-                if(!parser_name.parse(pos, params.column, expected))
+                if (!parser_name.parse(pos, params.column, expected))
                     return false;
             }
 

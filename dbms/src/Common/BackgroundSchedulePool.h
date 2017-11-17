@@ -42,8 +42,13 @@ public:
     public:
         TaskInfo(BackgroundSchedulePool & pool, const std::string & name, const Task & function);
 
+        /// Schedule for execution as soon as possible (if not already scheduled).
         bool schedule();
+
+        /// Schedule for execution after specified delay.
         bool scheduleAfter(size_t ms);
+
+
         bool pause(bool value);
 
     private:
