@@ -209,7 +209,7 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
         const DateLUTImpl * time_zone = nullptr;
 
         /// For argument of DateTime type, second argument with time zone could be specified.
-        if (std::is_same<FromDataType, DataTypeDateTime>::value)
+        if constexpr (std::is_same<FromDataType, DataTypeDateTime>::value)
             time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1);
 
         if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
@@ -221,7 +221,14 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
             ColumnString::Chars_t & data_to = col_to->getChars();
             ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
-            data_to.resize(size * 2);
+
+            if constexpr (std::is_same<FromDataType, DataTypeDate>::value)
+                data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
+            else if constexpr (std::is_same<FromDataType, DataTypeDateTime>::value)
+                data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
+            else
+                data_to.resize(size * 3);   /// Arbitary
+
             offsets_to.resize(size);
 
             WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);

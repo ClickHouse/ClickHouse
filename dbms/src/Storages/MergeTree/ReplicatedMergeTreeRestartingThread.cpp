@@ -168,18 +168,6 @@ void ReplicatedMergeTreeRestartingThread::completeShutdown()
         storage.data_parts_exchange_endpoint_holder->cancelForever();
         storage.data_parts_exchange_endpoint_holder = nullptr;
 
-        storage.disk_space_monitor_endpoint_holder->cancelForever();
-        storage.disk_space_monitor_endpoint_holder = nullptr;
-
-        storage.sharded_partition_uploader_endpoint_holder->cancelForever();
-        storage.sharded_partition_uploader_endpoint_holder = nullptr;
-
-        storage.remote_query_executor_endpoint_holder->cancelForever();
-        storage.remote_query_executor_endpoint_holder = nullptr;
-
-        storage.remote_part_checker_endpoint_holder->cancelForever();
-        storage.remote_part_checker_endpoint_holder = nullptr;
-
         storage.merger.merges_blocker.cancelForever();
 
         partialShutdown();

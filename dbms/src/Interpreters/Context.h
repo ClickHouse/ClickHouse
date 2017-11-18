@@ -39,7 +39,6 @@ class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
 class BackgroundSchedulePool;
-class ReshardingWorker;
 class MergeList;
 class Cluster;
 class Compiler;
@@ -310,9 +309,6 @@ public:
 
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundSchedulePool & getSchedulePool();
-
-    void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
-    ReshardingWorker & getReshardingWorker() const;
 
     void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;

@@ -12,7 +12,6 @@ namespace DB
 
 class MergeListEntry;
 class MergeProgressCallback;
-struct ReshardingJob;
 
 
 /** Can select the parts to merge and merge them.
@@ -98,12 +97,6 @@ public:
         const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
-    /** Reshards the specified partition.
-      */
-    MergeTreeData::PerShardDataParts reshardPartition(
-        const ReshardingJob & job,
-        DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
-
     /// The approximate amount of disk space needed for merge. With a surplus.
     static size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
 
@@ -140,8 +133,6 @@ private:
     time_t disk_space_warning_time = 0;
 
     CancellationHook cancellation_hook;
-
-    void abortReshardPartitionIfRequested();
 };
 
 
