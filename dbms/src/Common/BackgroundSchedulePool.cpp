@@ -41,7 +41,7 @@ BackgroundSchedulePool::TaskInfo::TaskInfo(BackgroundSchedulePool & pool, const 
 
 bool BackgroundSchedulePool::TaskInfo::schedule()
 {
-    Guard g(lock);
+    std::lock_guard lock(mutex);
 
     if (removed || scheduled)
         return false;
@@ -58,7 +58,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 
 bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
 {
-    Guard g(lock);
+    std::lock_guard lock(mutex);
 
     if (removed || scheduled)
         return false;
@@ -76,7 +76,7 @@ void BackgroundSchedulePool::TaskInfo::pause()
 
 void BackgroundSchedulePool::TaskInfo::resume()
 {
-    Guard g(lock);
+    std::lock_guard lock(mutex);
     removed = false;
 }
 
@@ -86,7 +86,7 @@ void BackgroundSchedulePool::TaskInfo::invalidate()
     if (removed)
         return;
 
-    Guard g(lock);
+    std::lock_guard lock(mutex);
     removed = true;
     scheduled = false;
 
@@ -97,7 +97,7 @@ void BackgroundSchedulePool::TaskInfo::invalidate()
 
 void BackgroundSchedulePool::TaskInfo::execute()
 {
-    Guard g(lock);
+    std::lock_guard lock(mutex);
 
     if (removed)
         return;
@@ -170,7 +170,7 @@ void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t
     Poco::Timestamp current_time;
 
     {
-        std::lock_guard<std::mutex> lock(delayed_tasks_lock);
+        std::lock_guard lock(delayed_tasks_lock);
 
         if (task->iterator != delayed_tasks.end())
             delayed_tasks.erase(task->iterator);
@@ -185,7 +185,7 @@ void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t
 void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task)
 {
     {
-        std::lock_guard<std::mutex> lock(delayed_tasks_lock);
+        std::lock_guard lock(delayed_tasks_lock);
         delayed_tasks.erase(task->iterator);
         task->iterator = delayed_tasks.end();
     }
@@ -225,7 +225,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         TaskHandle task;
 
         {
-            std::lock_guard<std::mutex> lock(delayed_tasks_lock);
+            std::lock_guard lock(delayed_tasks_lock);
 
             if (!delayed_tasks.empty())
             {
@@ -240,7 +240,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
         if (!task)
         {
-            std::unique_lock<std::mutex> lock(delayed_tasks_lock);
+            std::unique_lock lock(delayed_tasks_lock);
             wakeup_event.wait(lock);
             continue;
         }
@@ -248,7 +248,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         Poco::Timestamp current_time;
         if (min_time > current_time)
         {
-            std::unique_lock<std::mutex> lock(delayed_tasks_lock);
+            std::unique_lock lock(delayed_tasks_lock);
             wakeup_event.wait_for(lock, std::chrono::microseconds(min_time - current_time));
         }
         else
