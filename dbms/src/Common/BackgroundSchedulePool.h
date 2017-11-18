@@ -53,15 +53,13 @@ public:
         void resume();
 
     private:
-        using Guard = std::lock_guard<std::recursive_mutex>;
-
         friend class TaskNotification;
         friend class BackgroundSchedulePool;
 
         void invalidate();
         void execute();
 
-        std::recursive_mutex lock;
+        std::mutex mutex;
         std::atomic<bool> removed {false};
         std::string name;
         bool scheduled = false;
