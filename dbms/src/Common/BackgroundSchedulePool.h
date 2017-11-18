@@ -43,6 +43,7 @@ public:
         TaskInfo(BackgroundSchedulePool & pool, const std::string & name, const Task & function);
 
         /// Schedule for execution as soon as possible (if not already scheduled).
+        /// If the task was already scheduled with delay, the delay will be ignored.
         bool schedule();
 
         /// Schedule for execution after specified delay.
@@ -66,7 +67,11 @@ public:
         bool scheduled = false;
         BackgroundSchedulePool & pool;
         Task function;
+
+        /// If the task is scheduled with delay, points to element of delayed_tasks. Otherwise, set to delayed_tasks.end().
         Tasks::iterator iterator;
+
+        bool isScheduledWithDelay() const { return iterator == pool.delayed_tasks.end(); }
     };
 
     BackgroundSchedulePool(size_t size);
@@ -81,19 +86,26 @@ private:
 
     void threadFunction();
     void delayExecutionThreadFunction();
+
+    /// Schedule task for execution after specified delay from now.
     void scheduleDelayedTask(const TaskHandle & task, size_t ms);
+
+    /// Remove task, that was scheduled with delay, from schedule.
     void cancelDelayedTask(const TaskHandle & task);
 
+    /// Number for worker threads.
     const size_t size;
     std::atomic<bool> shutdown {false};
     Threads threads;
     Poco::NotificationQueue queue;
 
-    // delayed notifications
+    /// Delayed notifications.
 
-    std::condition_variable wake_event;
+    std::condition_variable wakeup_event;
     std::mutex delayed_tasks_lock;
+    /// Thread waiting for next delayed task.
     std::thread delayed_thread;
+    /// Tasks ordered by scheduled time.
     Tasks delayed_tasks;
 };
 

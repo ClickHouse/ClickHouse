@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
 #include <common/logger_useful.h>
 #include <chrono>
 
@@ -47,7 +48,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 
     scheduled = true;
 
-    if (iterator != pool.delayed_tasks.end())
+    if (isScheduledWithDelay())
         pool.cancelDelayedTask(shared_from_this());
 
     pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
@@ -69,10 +70,6 @@ bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
 
 void BackgroundSchedulePool::TaskInfo::pause()
 {
-    Guard g(lock);
-
-    if (removed)
-        return;
     invalidate();
 }
 
@@ -93,7 +90,7 @@ void BackgroundSchedulePool::TaskInfo::invalidate()
     removed = true;
     scheduled = false;
 
-    if (iterator != pool.delayed_tasks.end())
+    if (isScheduledWithDelay())
         pool.cancelDelayedTask(shared_from_this());
 }
 
@@ -108,24 +105,22 @@ void BackgroundSchedulePool::TaskInfo::execute()
     scheduled = false;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundSchedulePoolTask};
 
-    auto start = std::chrono::steady_clock::now();
-
+    Stopwatch watch;
     function();
-
-    auto diff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    UInt64 milliseconds = watch.elapsedMilliseconds();
 
     /// If the task is executed longer than specified time, it will be logged.
     static const int32_t slow_execution_threshold_ms = 50;
 
-    if (diff_ms >= slow_execution_threshold_ms)
-        LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Executing " << name << " took: " << diff_ms << " ms");
+    if (milliseconds >= slow_execution_threshold_ms)
+        LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Executing " << name << " took " << milliseconds << " ms.");
 }
 
 
 // BackgroundSchedulePool
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size) :
-    size(size)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size)
+    : size(size)
 {
     LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
 
@@ -142,7 +137,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
     try
     {
         shutdown = true;
-        wake_event.notify_all();
+        wakeup_event.notify_all();
         queue.wakeUpAll();
 
         delayed_thread.join();
@@ -183,7 +178,7 @@ void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t
         task->iterator = delayed_tasks.emplace(current_time + (ms * 1000), task);
     }
 
-    wake_event.notify_all();
+    wakeup_event.notify_all();
 }
 
 
@@ -195,7 +190,7 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task)
         task->iterator = delayed_tasks.end();
     }
 
-    wake_event.notify_all();
+    wakeup_event.notify_all();
 }
 
 
@@ -209,9 +204,7 @@ void BackgroundSchedulePool::threadFunction()
 
     while (!shutdown)
     {
-        Poco::AutoPtr<Poco::Notification> notification(queue.waitDequeueNotification());
-
-        if (notification)
+        if (Poco::AutoPtr<Poco::Notification> notification = queue.waitDequeueNotification())
         {
             TaskNotification & task_notification = static_cast<TaskNotification &>(*notification);
             task_notification.execute();
@@ -248,7 +241,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         if (!task)
         {
             std::unique_lock<std::mutex> lock(delayed_tasks_lock);
-            wake_event.wait(lock);
+            wakeup_event.wait(lock);
             continue;
         }
 
@@ -256,7 +249,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         if (min_time > current_time)
         {
             std::unique_lock<std::mutex> lock(delayed_tasks_lock);
-            wake_event.wait_for(lock, std::chrono::microseconds(min_time - current_time));
+            wakeup_event.wait_for(lock, std::chrono::microseconds(min_time - current_time));
         }
         else
         {
