@@ -51,9 +51,6 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
         throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
     String part_name = params.get("part");
-    String shard_str = params.get("shard");
-
-    bool send_sharded_part = !shard_str.empty();
 
     static std::atomic_uint total_sends {0};
 
@@ -79,15 +76,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
     {
         auto storage_lock = owned_storage->lockStructure(false, __PRETTY_FUNCTION__);
 
-        MergeTreeData::DataPartPtr part;
-
-        if (send_sharded_part)
-        {
-            size_t shard_no = std::stoul(shard_str);
-            part = findShardedPart(part_name, shard_no);
-        }
-        else
-            part = findPart(part_name);
+        MergeTreeData::DataPartPtr part = findPart(part_name);
 
         std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
@@ -106,12 +95,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body
         {
             String file_name = it.first;
 
-            String path;
-
-            if (send_sharded_part)
-                path = data.getFullPath() + "reshard/" + shard_str + "/" + part_name + "/" + file_name;
-            else
-                path = data.getFullPath() + part_name + "/" + file_name;
+            String path = data.getFullPath() + part_name + "/" + file_name;
 
             UInt64 size = Poco::File(path).getSize();
 
@@ -166,30 +150,11 @@ MergeTreeData::DataPartPtr Service::findPart(const String & name)
     throw Exception("No part " + name + " in table", ErrorCodes::NO_SUCH_DATA_PART);
 }
 
-MergeTreeData::DataPartPtr Service::findShardedPart(const String & name, size_t shard_no)
-{
-    MergeTreeData::DataPartPtr part = data.getShardedPartIfExists(name, shard_no);
-    if (part)
-        return part;
-    throw Exception("No part " + name + " in table");
-}
-
 MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & part_name,
     const String & replica_path,
     const String & host,
     int port,
-    bool to_detached)
-{
-    return fetchPartImpl(part_name, replica_path, host, port, "", to_detached);
-}
-
-MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
-    const String & part_name,
-    const String & replica_path,
-    const String & host,
-    int port,
-    const String & shard_no,
     bool to_detached)
 {
     Poco::URI uri;
@@ -200,7 +165,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPartImpl(
     {
         {"endpoint", getEndpointId(replica_path)},
         {"part", part_name},
-        {"shard", shard_no},
         {"compress", "false"}
     }
     );
