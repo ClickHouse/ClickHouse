@@ -17,10 +17,6 @@
 #include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
-#include <Storages/MergeTree/RemoteDiskSpaceMonitor.h>
-#include <Storages/MergeTree/ShardedPartitionUploader.h>
-#include <Storages/MergeTree/RemoteQueryExecutor.h>
-#include <Storages/MergeTree/RemotePartChecker.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -144,13 +140,6 @@ public:
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
-    void reshardPartitions(
-        const ASTPtr & query, const String & database_name,
-        const ASTPtr & partition,
-        const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-        const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        const Context & context) override;
-
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
     void drop() override;
@@ -217,10 +206,6 @@ private:
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
 
-    friend class ReshardingWorker;
-    friend class ShardedPartitionUploader::Client;
-    friend class ShardedPartitionUploader::Service;
-
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
 
@@ -259,10 +244,6 @@ private:
     std::mutex leader_node_mutex;
 
     InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
-    InterserverIOEndpointHolderPtr disk_space_monitor_endpoint_holder;
-    InterserverIOEndpointHolderPtr sharded_partition_uploader_endpoint_holder;
-    InterserverIOEndpointHolderPtr remote_query_executor_endpoint_holder;
-    InterserverIOEndpointHolderPtr remote_part_checker_endpoint_holder;
 
     MergeTreeData data;
     MergeTreeDataSelectExecutor reader;
@@ -276,12 +257,7 @@ private:
     std::atomic<time_t> last_queue_update_start_time{0};
     std::atomic<time_t> last_queue_update_finish_time{0};
 
-
     DataPartsExchange::Fetcher fetcher;
-    RemoteDiskSpaceMonitor::Client disk_space_monitor_client;
-    ShardedPartitionUploader::Client sharded_partition_uploader_client;
-    RemoteQueryExecutor::Client remote_query_executor_client;
-    RemotePartChecker::Client remote_part_checker_client;
 
     zkutil::LeaderElectionPtr leader_election;
 
@@ -477,28 +453,6 @@ private:
     /// Remove block IDs from `blocks/` in ZooKeeper for the given partition ID in the given block number range.
     void clearBlocksInPartition(
         zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
-
-    /// Resharding.
-    struct ReplicaSpaceInfo
-    {
-        long double factor = 0.0;
-        size_t available_size = 0;
-    };
-
-    using ReplicaToSpaceInfo = std::map<std::string, ReplicaSpaceInfo>;
-
-    /** Checks that the structures of the local and replicated tables are the same.
-      */
-    void enforceShardsConsistency(const WeightedZooKeeperPaths & weighted_zookeeper_paths);
-
-    /** Get information about free space on replicas + additional information
-      * for the function checkSpaceForResharding.
-      */
-    ReplicaToSpaceInfo gatherReplicaSpaceInfo(const WeightedZooKeeperPaths & weighted_zookeeper_paths);
-
-    /** Checks that there is enough free space locally and on all replicas.
-      */
-    bool checkSpaceForResharding(const ReplicaToSpaceInfo & replica_to_space_info, size_t partition_size) const;
 
 protected:
     StorageReplicatedMergeTree(
