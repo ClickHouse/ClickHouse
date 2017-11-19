@@ -19,9 +19,12 @@ ClickHouse:
 
 .. code-block:: xml
 
-  <dictionaries>
+  <yandex>
       <comment>Необязательный элемент с любым содержимым. Игнорируется сервером ClickHouse.</comment>
-  
+
+      <!-- Необязательный элемент, файл с подстановками -->
+      <include_from>/etc/metrika.xml</include_from>
+      
       <dictionary>
           <!-- Конфигурация словаря -->
       </dictionary>
@@ -31,9 +34,9 @@ ClickHouse:
       <dictionary>
           <!-- Конфигурация словаря -->
       </dictionary>
-  </dictionaries>
+  </yandex>
 
-В одном файле можно :ref:`сконфигурировать <dicts-external_dicts_dict>` произвольное количество словарей. Формат файла сохраняется даже если словарь один (т.е. ``<dictionaries><dictionary> <!--configuration--> </dictionary></dictionaries>``).
+В одном файле можно :ref:`сконфигурировать <dicts-external_dicts_dict>` произвольное количество словарей. Формат файла сохраняется даже если словарь один (т.е. ``<yandex><dictionary> <!--configuration--> </dictionary></yandex>``).
 
 Смотрите также ":ref:`ext_dict_functions`" .
 
