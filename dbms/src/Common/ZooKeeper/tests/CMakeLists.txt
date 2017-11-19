@@ -1,20 +1,20 @@
 add_executable(zkutil_test_commands zkutil_test_commands.cpp)
-target_link_libraries(zkutil_test_commands dbms)
+target_link_libraries(zkutil_test_commands dbms_common_io)
 
 add_executable(zkutil_test_lock zkutil_test_lock.cpp)
-target_link_libraries(zkutil_test_lock dbms)
+target_link_libraries(zkutil_test_lock dbms_common_io)
 
 add_executable(zkutil_expiration_test zkutil_expiration_test.cpp)
-target_link_libraries(zkutil_expiration_test dbms)
+target_link_libraries(zkutil_expiration_test dbms_common_io)
 
 add_executable(zkutil_test_async zkutil_test_async.cpp)
-target_link_libraries(zkutil_test_async dbms)
+target_link_libraries(zkutil_test_async dbms_common_io)
 
 add_executable(zkutil_zookeeper_holder zkutil_zookeeper_holder.cpp)
-target_link_libraries(zkutil_zookeeper_holder dbms)
+target_link_libraries(zkutil_zookeeper_holder dbms_common_io)
 
 add_executable (zk_many_watches_reconnect zk_many_watches_reconnect.cpp)
-target_link_libraries (zk_many_watches_reconnect dbms)
+target_link_libraries (zk_many_watches_reconnect dbms_common_io)
 
 add_executable (zkutil_test_multi_exception zkutil_test_multi_exception.cpp)
-target_link_libraries (zkutil_test_multi_exception dbms gtest_main)
+target_link_libraries (zkutil_test_multi_exception dbms_common_io gtest_main)
