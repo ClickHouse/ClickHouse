@@ -11,45 +11,17 @@
 namespace DB
 {
 
+class ReplicatedMergeTreeBlockOutputStream;
+
 
 /** Writes data to the specified table and to all dependent materialized views.
   */
 class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
-    PushingToViewsBlockOutputStream(String database, String table, const Context & context_, const ASTPtr & query_ptr_)
-        : context(context_), query_ptr(query_ptr_)
-    {
-        storage = context.getTable(database, table);
+    PushingToViewsBlockOutputStream(String database, String table, const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
 
-        /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
-          * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
-          *  but it's clear that here is not the best place for this functionality.
-          */
-        addTableLock(storage->lockStructure(true, __PRETTY_FUNCTION__));
-
-        Dependencies dependencies = context.getDependencies(database, table);
-        for (const auto & database_table : dependencies)
-            views.emplace_back(
-                dynamic_cast<const StorageMaterializedView &>(*context.getTable(database_table.first, database_table.second)).getInnerQuery(),
-                std::make_shared<PushingToViewsBlockOutputStream>(database_table.first, database_table.second, context, ASTPtr()));
-
-        output = storage->write(query_ptr, context.getSettingsRef());
-    }
-
-    void write(const Block & block) override
-    {
-        for (auto & view : views)
-        {
-            BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-            InterpreterSelectQuery select(view.first, context, QueryProcessingStage::Complete, 0, from);
-            BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-            copyData(*data, *view.second);
-        }
-
-        if (output)
-            output->write(block);
-    }
+    void write(const Block & block) override;
 
     void flush() override
     {
@@ -72,9 +44,21 @@ public:
 private:
     StoragePtr storage;
     BlockOutputStreamPtr output;
-    Context context;
+    ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
+
+    const Context & context;
     ASTPtr query_ptr;
-    std::vector<std::pair<ASTPtr, BlockOutputStreamPtr>> views;
+
+    struct ViewInfo
+    {
+        ASTPtr query;
+        String database;
+        String table;
+        BlockOutputStreamPtr out;
+    };
+
+    std::vector<ViewInfo> views;
+    std::unique_ptr<Context> views_context;
 };
 
 

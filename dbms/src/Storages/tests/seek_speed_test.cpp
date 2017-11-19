@@ -33,7 +33,7 @@ int main(int argc, const char ** argv)
     UInt64 size = Poco::File(argv[1]).getSize();
     UInt64 pos = 0;
     DB::ReadBufferFromFile in(argv[1], buf_size);
-    char * buf = new char[block];
+    auto buf = std::make_unique<char[]>(block);
     int checksum = 0;
     UInt64 bytes_read = 0;
 

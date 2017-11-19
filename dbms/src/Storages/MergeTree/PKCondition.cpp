@@ -223,7 +223,7 @@ PKCondition::PKCondition(
     const Context & context,
     const NamesAndTypesList & all_columns,
     const SortDescription & sort_descr_,
-    ExpressionActionsPtr pk_expr_)
+    const ExpressionActionsPtr & pk_expr_)
     : sort_descr(sort_descr_), pk_expr(pk_expr_), prepared_sets(query_info.sets)
 {
     for (size_t i = 0; i < sort_descr.size(); ++i)
@@ -307,11 +307,13 @@ static void applyFunction(
     const DataTypePtr & arg_type, const Field & arg_value,
     DataTypePtr & res_type, Field & res_value)
 {
-    res_type = func->getReturnType({arg_type});
+    std::vector<ExpressionAction> unused_prerequisites;
+    ColumnsWithTypeAndName arguments{{ arg_type->createConstColumn(1, arg_value), arg_type, "x" }};
+    func->getReturnTypeAndPrerequisites(arguments, res_type, unused_prerequisites);
 
     Block block
     {
-        { arg_type->createConstColumn(1, arg_value), arg_type, "x" },
+        arguments[0],
         { nullptr, res_type, "y" }
     };
 
@@ -435,7 +437,10 @@ bool PKCondition::isPrimaryKeyPossiblyWrappedByMonotonicFunctions(
         if (!func || !func->hasInformationAboutMonotonicity())
             return false;
 
-        primary_key_column_type = func->getReturnType({primary_key_column_type});
+        std::vector<ExpressionAction> unused_prerequisites;
+        ColumnsWithTypeAndName arguments{{ nullptr, primary_key_column_type, "" }};
+        func->getReturnTypeAndPrerequisites(arguments, primary_key_column_type, unused_prerequisites);
+
         out_functions_chain.push_back(func);
     }
 
@@ -507,7 +512,7 @@ static void castValueToType(const DataTypePtr & desired_type, Field & src_value,
 bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
     /** Functions < > = != <= >= in `notIn`, where one argument is a constant, and the other is one of columns of primary key,
-      *  or itself, wrapped in a chain of possibly-monotone functions,
+      *  or itself, wrapped in a chain of possibly-monotonic functions,
       *  or constant expression - number.
       */
     Field const_value;
@@ -520,7 +525,7 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
             return false;
 
         DataTypePtr key_expr_type;    /// Type of expression containing primary key column
-        size_t key_arg_pos;            /// Position of argument with primary key column (non-const argument)
+        size_t key_arg_pos;           /// Position of argument with primary key column (non-const argument)
         size_t key_column_num;        /// Number of a primary key column (inside sort_descr array)
         RPNElement::MonotonicFunctionsChain chain;
         bool is_set_const = false;
@@ -837,9 +842,9 @@ bool PKCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, co
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             Range key_range_transformed;
-            bool evaluation_is_not_possible = false;
             if (!element.monotonic_functions_chain.empty())
             {
+                bool evaluation_is_not_possible = false;
                 key_range_transformed = *key_range;
                 DataTypePtr current_type = data_types[element.key_column];
                 for (auto & func : element.monotonic_functions_chain)

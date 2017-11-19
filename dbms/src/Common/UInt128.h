@@ -4,7 +4,7 @@
 
 #include <city.h>
 
-#include <Common/HashTable/Hash.h>
+#include <Core/Types.h>
 
 #if __SSE4_2__
 #include <nmmintrin.h>
@@ -50,7 +50,7 @@ struct UInt128
     template <typename T> bool inline operator<= (const T rhs) const { return *this <= UInt128(rhs); }
     template <typename T> bool inline operator<  (const T rhs) const { return *this <  UInt128(rhs); }
 
-    template<typename T> explicit operator T() const { return static_cast<T>(low); }
+    template <typename T> explicit operator T() const { return static_cast<T>(low); }
 
 #if !__clang__
 #pragma GCC diagnostic pop

@@ -5,13 +5,6 @@
 #include <common/Types.h>
 
 
-#define REGION_TYPE_CITY       6
-#define REGION_TYPE_AREA       5
-#define REGION_TYPE_DISTRICT  4
-#define REGION_TYPE_COUNTRY   3
-#define REGION_TYPE_CONTINENT 1
-
-
 /** A class that lets you know if a region belongs to one RegionID region with another RegionID.
   * Information about the hierarchy of regions is downloaded from a text file.
   * Can on request update the data.
@@ -22,9 +15,18 @@ private:
     time_t file_modification_time = 0;
 
     using RegionID = UInt32;
-    using RegionType = UInt8;
     using RegionDepth = UInt8;
     using RegionPopulation = UInt32;
+
+    enum class RegionType : Int8
+    {
+        Hidden = -1,
+        Continent = 1,
+        Country = 3,
+        District = 4,
+        Area = 5,
+        City = 6,
+    };
 
     /// Relationship parent; 0, if there are no parents, the usual lookup table.
     using RegionParents = std::vector<RegionID>;

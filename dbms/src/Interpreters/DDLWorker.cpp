@@ -12,15 +12,16 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Storages/IStorage.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/DNSCache.h>
+#include <Common/DNSCache.h>
 
 #include <Common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
+#include <Common/randomSeed.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,6 +34,9 @@
 #include <Common/ZooKeeper/Lock.h>
 #include <Common/isLocalAddress.h>
 #include <Poco/Timestamp.h>
+
+#include <random>
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -62,7 +66,7 @@ struct HostID
 
     HostID() = default;
 
-    HostID(const Cluster::Address & address)
+    explicit HostID(const Cluster::Address & address)
     : host_name(address.host_name), port(address.port) {}
 
     static HostID fromString(const String & host_port_str)
@@ -82,11 +86,11 @@ struct HostID
         return host_name + ":" + DB::toString(port);
     }
 
-    bool isLocalAddress() const
+    bool isLocalAddress(UInt16 clickhouse_port) const
     {
         try
         {
-            return DB::isLocalAddress(Poco::Net::SocketAddress(DNSCache::instance().resolveHost(host_name), port));
+            return DB::isLocalAddress(Poco::Net::SocketAddress(host_name, port), clickhouse_port);
         }
         catch (const Poco::Exception & e)
         {
@@ -287,7 +291,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     bool host_in_hostlist = false;
     for (const HostID & host : task->entry.hosts)
     {
-        if (!host.isLocalAddress())
+        if (!host.isLocalAddress(context.getTCPPort()))
             continue;
 
         if (host_in_hostlist)
@@ -464,7 +468,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.resolved_address))
+            if (isLocalAddress(address.resolved_address, context.getTCPPort()))
             {
                 if (found_via_resolving)
                 {
@@ -655,7 +659,7 @@ void DDLWorker::processTaskAlter(
         bool alter_executed_by_any_replica = false;
         {
             auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
-            std::mt19937 rng(StringRefHash{}(task.host_id_str) + reinterpret_cast<intptr_t>(&rng));
+            pcg64 rng(randomSeed());
 
             for (int num_tries = 0; num_tries < 10; ++num_tries)
             {
@@ -932,7 +936,7 @@ class DDLQueryStatusInputSream : public IProfilingBlockInputStream
 {
 public:
 
-    DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, Context & context)
+    DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
     : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
     {
         sample = Block{
@@ -1072,7 +1076,7 @@ private:
 
 private:
     String node_path;
-    Context & context;
+    const Context & context;
     Stopwatch watch;
     Logger * log;
 
@@ -1087,7 +1091,7 @@ private:
 };
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, Context & context)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
 {
     ASTPtr query_ptr;
 

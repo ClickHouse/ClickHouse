@@ -11,10 +11,10 @@ namespace DB
 class BlockExtraInfoInputStream : public IProfilingBlockInputStream
 {
 public:
-    BlockExtraInfoInputStream(BlockInputStreamPtr input_, const BlockExtraInfo & block_extra_info_)
+    BlockExtraInfoInputStream(const BlockInputStreamPtr & input, const BlockExtraInfo & block_extra_info_)
         : block_extra_info(block_extra_info_)
     {
-        children.push_back(input_);
+        children.push_back(input);
     }
 
     BlockExtraInfo getBlockExtraInfo() const override

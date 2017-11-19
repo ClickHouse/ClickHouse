@@ -1,5 +1,5 @@
 #include <Interpreters/Cluster.h>
-#include <Interpreters/DNSCache.h>
+#include <Common/DNSCache.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/SimpleCache.h>
@@ -29,7 +29,7 @@ namespace
 /// Default shard weight.
 static constexpr UInt32 default_weight = 1;
 
-inline bool isLocal(const Cluster::Address & address)
+inline bool isLocal(const Cluster::Address & address, UInt16 clickhouse_port)
 {
     ///    If there is replica, for which:
     /// - its port is the same that the server is listening;
@@ -41,7 +41,7 @@ inline bool isLocal(const Cluster::Address & address)
     /// Also, replica is considered non-local, if it has default database set
     ///  (only reason is to avoid query rewrite).
 
-    return address.default_database.empty() && isLocalAddress(address.resolved_address);
+    return address.default_database.empty() && isLocalAddress(address.resolved_address, clickhouse_port);
 }
 
 
@@ -61,23 +61,23 @@ Poco::Net::SocketAddress resolveSocketAddress(const String & host_and_port)
 
 Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
+    UInt16 clickhouse_port = config.getInt("tcp_port", 0);
+
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
     resolved_address = resolveSocketAddress(host_name, port);
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
-    is_local = isLocal(*this);
+    is_local = isLocal(*this, clickhouse_port);
 }
 
 
-Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_)
+Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port)
     : user(user_), password(password_)
 {
-    UInt16 default_port = static_cast<UInt16>(Poco::Util::Application::instance().config().getInt("tcp_port", 0));
-
     /// It's like that 'host_port_' string contains port. If condition is met, it doesn't necessarily mean that port exists (example: [::]).
-    if ((nullptr != strchr(host_port_.c_str(), ':')) || !default_port)
+    if ((nullptr != strchr(host_port_.c_str(), ':')) || !clickhouse_port)
     {
         resolved_address = resolveSocketAddress(host_port_);
         host_name = host_port_.substr(0, host_port_.find(':'));
@@ -85,11 +85,11 @@ Cluster::Address::Address(const String & host_port_, const String & user_, const
     }
     else
     {
-        resolved_address = resolveSocketAddress(host_port_, default_port);
+        resolved_address = resolveSocketAddress(host_port_, clickhouse_port);
         host_name = host_port_;
-        port = default_port;
+        port = clickhouse_port;
     }
-    is_local = isLocal(*this);
+    is_local = isLocal(*this, clickhouse_port);
 }
 
 
@@ -222,7 +222,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                     settings.distributed_connections_pool_size,
                     address.host_name, address.port, address.resolved_address,
                     address.default_database, address.user, address.password,
-                    "server", Protocol::Compression::Enable,
+                    "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
                     saturate(settings.connect_timeout, settings.limits.max_execution_time),
                     saturate(settings.receive_timeout, settings.limits.max_execution_time),
                     saturate(settings.send_timeout, settings.limits.max_execution_time)));
@@ -301,7 +301,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port, replica.resolved_address,
                         replica.default_database, replica.user, replica.password,
-                        "server", Protocol::Compression::Enable,
+                        "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
                         saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
                         saturate(settings.receive_timeout, settings.limits.max_execution_time),
                         saturate(settings.send_timeout, settings.limits.max_execution_time)));
@@ -333,7 +333,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
 
 Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password)
+                 const String & username, const String & password, UInt16 clickhouse_port)
 {
     UInt32 current_shard_num = 1;
 
@@ -341,7 +341,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (auto & replica : shard)
-            current.emplace_back(replica, username, password);
+            current.emplace_back(replica, username, password, clickhouse_port);
 
         addresses_with_failover.emplace_back(current);
 
@@ -354,7 +354,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
                 settings.distributed_connections_pool_size,
                 replica.host_name, replica.port, replica.resolved_address,
                 replica.default_database, replica.user, replica.password,
-                "server", Protocol::Compression::Enable,
+                "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
                 saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
                 saturate(settings.receive_timeout, settings.limits.max_execution_time),
                 saturate(settings.send_timeout, settings.limits.max_execution_time)));
@@ -405,43 +405,6 @@ void Cluster::initMisc()
             any_remote_shard_info = &shard_info;
             break;
         }
-    }
-
-    calculateHashOfAddresses();
-}
-
-
-void Cluster::calculateHashOfAddresses()
-{
-    std::vector<std::string> elements;
-
-    if (!addresses_with_failover.empty())
-    {
-        for (const auto & addresses : addresses_with_failover)
-        {
-            for (const auto & address : addresses)
-                elements.push_back(address.host_name + ":" + toString(address.port));
-        }
-    }
-    else
-        throw Exception("Cluster: ill-formed cluster", ErrorCodes::LOGICAL_ERROR);
-
-    std::sort(elements.begin(), elements.end());
-
-    unsigned char hash[SHA512_DIGEST_LENGTH];
-
-    SHA512_CTX ctx;
-    SHA512_Init(&ctx);
-
-    for (const auto & host : elements)
-        SHA512_Update(&ctx, reinterpret_cast<const void *>(host.c_str()), host.size() + 1);
-
-    SHA512_Final(hash, &ctx);
-
-    {
-        WriteBufferFromString buf(hash_of_addresses);
-        HexWriteBuffer hex_buf(buf);
-        hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
     }
 }
 

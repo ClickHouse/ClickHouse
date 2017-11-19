@@ -44,12 +44,12 @@ struct Memory : boost::noncopyable, Allocator<false>
         dealloc();
     }
 
-    Memory(Memory && rhs)
+    Memory(Memory && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    Memory & operator=(Memory && rhs)
+    Memory & operator=(Memory && rhs) noexcept
     {
         std::swap(m_capacity, rhs.m_capacity);
         std::swap(m_size, rhs.m_size);
@@ -72,7 +72,7 @@ struct Memory : boost::noncopyable, Allocator<false>
             m_size = m_capacity = new_size;
             alloc();
         }
-        else if (new_size < m_capacity)
+        else if (new_size <= m_capacity)
         {
             m_size = new_size;
             return;
@@ -86,6 +86,7 @@ struct Memory : boost::noncopyable, Allocator<false>
         }
     }
 
+private:
     static size_t align(const size_t value, const size_t alignment)
     {
         if (!alignment)
@@ -94,7 +95,6 @@ struct Memory : boost::noncopyable, Allocator<false>
         return (value + alignment - 1) / alignment * alignment;
     }
 
-private:
     void alloc()
     {
         if (!m_capacity)

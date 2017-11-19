@@ -398,7 +398,7 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
             return;
 
         streams.emplace(name, std::make_unique<Stream>(
-            path + stream_name, DATA_FILE_EXTENSION, data_part->size,
+            path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
     };

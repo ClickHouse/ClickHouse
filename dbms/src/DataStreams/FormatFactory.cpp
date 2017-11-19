@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -30,6 +31,11 @@
 #include <DataStreams/FormatFactory.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataTypes/FormatSettingsJSON.h>
+#if USE_CAPNP
+#include <DataStreams/CapnProtoRowInputStream.h>
+#endif
+
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -92,6 +98,19 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     {
         return wrap_row_stream(std::make_shared<JSONEachRowRowInputStream>(buf, sample, settings.input_format_skip_unknown_fields));
     }
+#if USE_CAPNP
+    else if (name == "CapnProto")
+    {
+        std::vector<String> tokens;
+        auto schema_and_root = settings.format_schema.toString();
+        boost::split(tokens, schema_and_root, boost::is_any_of(":"));
+        if (tokens.size() != 2)
+            throw Exception("Format CapnProto requires 'format_schema' setting to have a schema_file:root_object format, e.g. 'schema.capnp:Message'");
+
+        const String & schema_dir = context.getFormatSchemaPath();
+        return wrap_row_stream(std::make_shared<CapnProtoRowInputStream>(buf, sample, schema_dir, tokens[0], tokens[1]));
+    }
+#endif
     else if (name == "TabSeparatedRaw"
         || name == "TSVRaw"
         || name == "BlockTabSeparated"

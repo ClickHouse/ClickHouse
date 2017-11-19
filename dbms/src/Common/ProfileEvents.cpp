@@ -124,8 +124,13 @@
     M(DictCacheLockReadNs) \
     \
     M(DistributedSyncInsertionTimeoutExceeded) \
-    M(DataAfterMergeDiffersFromReplica)
-
+    M(DataAfterMergeDiffersFromReplica) \
+    M(PolygonsAddedToPool) \
+    M(PolygonsInPoolAllocatedBytes) \
+    M(RWLockAcquiredReadLocks) \
+    M(RWLockAcquiredWriteLocks) \
+    M(RWLockReadersWaitMilliseconds) \
+    M(RWLockWritersWaitMilliseconds)
 
 namespace ProfileEvents
 {

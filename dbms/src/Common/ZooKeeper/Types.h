@@ -3,8 +3,9 @@
 #include <future>
 #include <memory>
 #include <vector>
-#include <zookeeper/zookeeper.h>
+#include <zookeeper.h>
 #include <Poco/Event.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace zkutil
@@ -149,6 +150,7 @@ namespace CreateMode
 }
 
 using EventPtr = std::shared_ptr<Poco::Event>;
+using TaskHandlePtr = DB::BackgroundSchedulePool::TaskHandle;   /// TODO Need to remove this dependency.
 
 class ZooKeeper;
 

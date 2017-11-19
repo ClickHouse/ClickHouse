@@ -1039,7 +1039,7 @@ public:
     }
 
     /// Aggregate the source. Get the result in the form of one of the data structures.
-    void execute(BlockInputStreamPtr stream, AggregatedDataVariants & result);
+    void execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result);
 
     using AggregateColumns = std::vector<ConstColumnPlainPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container_t *>;
@@ -1067,7 +1067,7 @@ public:
     /** Merge the stream of partially aggregated blocks into one data structure.
       * (Pre-aggregate several blocks that represent the result of independent aggregations from remote servers.)
       */
-    void mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads);
+    void mergeStream(const BlockInputStreamPtr & stream, AggregatedDataVariants & result, size_t max_threads);
 
     /// Merge several partially aggregated blocks into one.
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.

@@ -29,6 +29,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <memory>
 #include <Poco/Observer.h>
@@ -161,10 +162,16 @@ static void terminateRequestedSignalHandler(int sig, siginfo_t * info, void * co
 }
 
 
+thread_local bool already_signal_handled = false;
+
 /** Обработчик некоторых сигналов. Выводит информацию в лог (если получится).
   */
 static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (already_signal_handled)
+        return;
+    already_signal_handled = true;
+
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
 
@@ -192,7 +199,7 @@ size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & co
 
     unw_cursor_t cursor;
 
-    if (unw_init_local_signal(&cursor, &context) < 0)
+    if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) < 0)
         return 0;
 
     size_t i = 0;
@@ -223,9 +230,9 @@ public:
         StopThread = -2
     };
 
-    SignalListener(BaseDaemon & daemon_)
-    : log(&Logger::get("BaseDaemon"))
-    , daemon(daemon_)
+    explicit SignalListener(BaseDaemon & daemon_)
+        : log(&Logger::get("BaseDaemon"))
+        , daemon(daemon_)
     {
     }
 
@@ -328,11 +335,6 @@ private:
         static const int max_frames = 50;
         void * frames[max_frames];
 
-
-
-
-
-
 #if USE_UNWIND
         int frames_size = backtraceLibUnwind(frames, max_frames, context);
 
@@ -401,11 +403,11 @@ private:
   */
 static void terminate_handler()
 {
-    static __thread bool terminating = false;
+    static thread_local bool terminating = false;
     if (terminating)
     {
         abort();
-        return;
+        return; /// Just for convenience.
     }
 
     terminating = true;
@@ -811,6 +813,13 @@ void BaseDaemon::initialize(Application & self)
     /// Ставим terminate_handler
     std::set_terminate(terminate_handler);
 
+    /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
+    {
+        sigset_t sig_set;
+        if (sigemptyset(&sig_set) || sigaddset(&sig_set, SIGPIPE) || pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
+            throw Poco::Exception("Cannot block signal.");
+    }
+
     /// Ставим обработчики сигналов
     auto add_signal_handler =
         [](const std::vector<int> & signals, signal_function handler)
@@ -913,11 +922,35 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet& _options)
             );
 }
 
+bool isPidRunning(pid_t pid)
+{
+    if (getpgid(pid) >= 0)
+        return 1;
+    return 0;
+}
 
 void BaseDaemon::PID::seed(const std::string & file_)
 {
     /// переведём путь в абсолютный
-    file = Poco::Path(file_).absolute().toString();
+    auto file_path = Poco::Path(file_).absolute();
+    file = file_path.toString();
+    Poco::File poco_file(file);
+
+    if (poco_file.exists())
+    {
+        pid_t pid_read = 0;
+        {
+            std::ifstream in(file);
+            if (in.good())
+            {
+                in >> pid_read;
+                if (pid_read && isPidRunning(pid_read))
+                    throw Poco::Exception("Pid file exists and program running with pid = " + std::to_string(pid_read) + ", should not start daemon.");
+            }
+        }
+        std::cerr << "Old pid file exists (with pid = " << pid_read << "), removing." << std::endl;
+        poco_file.remove();
+    }
 
     int fd = open(file.c_str(),
         O_CREAT | O_EXCL | O_WRONLY,

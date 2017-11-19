@@ -69,7 +69,7 @@ public:
     ExpressionAnalyzer(
         const ASTPtr & ast_,
         const Context & context_,
-        StoragePtr storage_,
+        const StoragePtr & storage_,
         const NamesAndTypesList & columns_,
         size_t subquery_depth_ = 0,
         bool do_global_ = false);
@@ -83,7 +83,7 @@ public:
     /** Get a set of columns that are enough to read from the table to evaluate the expression.
       * Columns added from another table by JOIN are not counted.
       */
-    Names getRequiredColumns();
+    Names getRequiredColumns() const;
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -127,7 +127,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets getSubqueriesForSets() { return subqueries_for_sets; }
+    SubqueriesForSets getSubqueriesForSets() const { return subqueries_for_sets; }
 
     PreparedSets getPreparedSets() { return prepared_sets; }
 
@@ -269,17 +269,17 @@ private:
     void addExternalStorage(ASTPtr & subquery_or_table_name);
 
     void getArrayJoinedColumns();
-    void getArrayJoinedColumnsImpl(ASTPtr ast);
+    void getArrayJoinedColumnsImpl(const ASTPtr & ast);
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 
     struct ScopeStack;
-    void getActionsImpl(ASTPtr ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
+    void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
 
-    void getRootActions(ASTPtr ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
+    void getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 
-    void getActionsBeforeAggregation(ASTPtr ast, ExpressionActionsPtr & actions, bool no_subqueries);
+    void getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries);
 
     /** Add aggregation keys to aggregation_keys, aggregate functions to aggregate_descriptions,
       * Create a set of columns aggregated_columns resulting after the aggregation, if any,
@@ -295,7 +295,7 @@ private:
       * The set of columns available_joined_columns are the columns available from JOIN, they are not needed for reading from the main table.
       * Put in required_joined_columns the set of columns available from JOIN and needed.
       */
-    void getRequiredColumnsImpl(ASTPtr ast,
+    void getRequiredColumnsImpl(const ASTPtr & ast,
         NameSet & required_columns, NameSet & ignored_names,
         const NameSet & available_joined_columns, NameSet & required_joined_columns);
 

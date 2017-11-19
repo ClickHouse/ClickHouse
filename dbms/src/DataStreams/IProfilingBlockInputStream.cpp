@@ -142,52 +142,44 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 
 bool IProfilingBlockInputStream::checkLimits()
 {
+    auto handle_overflow_mode = [] (OverflowMode mode, const String & message, int code)
+    {
+        switch (mode)
+        {
+            case OverflowMode::THROW:
+                throw Exception(message, code);
+            case OverflowMode::BREAK:
+                return false;
+            default:
+                throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+        }
+    };
+
     if (limits.mode == LIMITS_CURRENT)
     {
         /// Check current stream limitations (i.e. max_result_{rows,bytes})
 
         if (limits.max_rows_to_read && info.rows > limits.max_rows_to_read)
-        {
-            if (limits.read_overflow_mode == OverflowMode::THROW)
-                throw Exception(std::string("Limit for result rows")
+            return handle_overflow_mode(limits.read_overflow_mode,
+                std::string("Limit for result rows")
                     + " exceeded: read " + toString(info.rows)
                     + " rows, maximum: " + toString(limits.max_rows_to_read),
-                    ErrorCodes::TOO_MUCH_ROWS);
-
-            if (limits.read_overflow_mode == OverflowMode::BREAK)
-                return false;
-
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-        }
+                ErrorCodes::TOO_MUCH_ROWS);
 
         if (limits.max_bytes_to_read && info.bytes > limits.max_bytes_to_read)
-        {
-            if (limits.read_overflow_mode == OverflowMode::THROW)
-                throw Exception(std::string("Limit for result bytes (uncompressed)")
+            return handle_overflow_mode(limits.read_overflow_mode,
+                std::string("Limit for result bytes (uncompressed)")
                     + " exceeded: read " + toString(info.bytes)
                     + " bytes, maximum: " + toString(limits.max_bytes_to_read),
-                    ErrorCodes::TOO_MUCH_BYTES);
-
-            if (limits.read_overflow_mode == OverflowMode::BREAK)
-                return false;
-
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-        }
+                ErrorCodes::TOO_MUCH_BYTES);
     }
 
     if (limits.max_execution_time != 0
         && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)
-    {
-        if (limits.timeout_overflow_mode == OverflowMode::THROW)
-            throw Exception("Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
+        return handle_overflow_mode(limits.timeout_overflow_mode,
+            "Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
                 + " seconds, maximum: " + toString(limits.max_execution_time.totalMicroseconds() / 1000000.0),
             ErrorCodes::TIMEOUT_EXCEEDED);
-
-        if (limits.timeout_overflow_mode == OverflowMode::BREAK)
-            return false;
-
-        throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-    }
 
     return true;
 }
@@ -244,28 +236,36 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
             && ((limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
                 || (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read)))
         {
-            if (limits.read_overflow_mode == OverflowMode::THROW)
+            switch (limits.read_overflow_mode)
             {
-                if (limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
-                    throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
-                        + " rows read (or to read), maximum: " + toString(limits.max_rows_to_read),
-                        ErrorCodes::TOO_MUCH_ROWS);
-                else
-                    throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(bytes_processed)
-                        + " bytes read, maximum: " + toString(limits.max_bytes_to_read),
-                        ErrorCodes::TOO_MUCH_BYTES);
-            }
-            else if (limits.read_overflow_mode == OverflowMode::BREAK)
-            {
-                /// For `break`, we will stop only if so many lines were actually read, and not just supposed to be read.
-                if ((limits.max_rows_to_read && rows_processed > limits.max_rows_to_read)
-                    || (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read))
+                case OverflowMode::THROW:
                 {
-                    cancel();
+                    if (limits.max_rows_to_read && total_rows_estimate > limits.max_rows_to_read)
+                        throw Exception("Limit for rows to read exceeded: " + toString(total_rows_estimate)
+                            + " rows read (or to read), maximum: " + toString(limits.max_rows_to_read),
+                            ErrorCodes::TOO_MUCH_ROWS);
+                    else
+                        throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(bytes_processed)
+                            + " bytes read, maximum: " + toString(limits.max_bytes_to_read),
+                            ErrorCodes::TOO_MUCH_BYTES);
+                    break;
                 }
+
+                case OverflowMode::BREAK:
+                {
+                    /// For `break`, we will stop only if so many lines were actually read, and not just supposed to be read.
+                    if ((limits.max_rows_to_read && rows_processed > limits.max_rows_to_read)
+                        || (limits.max_bytes_to_read && bytes_processed > limits.max_bytes_to_read))
+                    {
+                        cancel();
+                    }
+
+                    break;
+                }
+
+                default:
+                    throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
             }
-            else
-                throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
         }
 
         size_t total_rows = process_list_elem->progress_in.total_rows;
@@ -317,7 +317,7 @@ void IProfilingBlockInputStream::cancel()
 }
 
 
-void IProfilingBlockInputStream::setProgressCallback(ProgressCallback callback)
+void IProfilingBlockInputStream::setProgressCallback(const ProgressCallback & callback)
 {
     progress_callback = callback;
 
@@ -375,10 +375,9 @@ const Block & IProfilingBlockInputStream::getExtremes() const
 
 void IProfilingBlockInputStream::collectTotalRowsApprox()
 {
-    if (collected_total_rows_approx)
+    bool old_val = false;
+    if (!collected_total_rows_approx.compare_exchange_strong(old_val, true))
         return;
-
-    collected_total_rows_approx = true;
 
     for (auto & child : children)
     {

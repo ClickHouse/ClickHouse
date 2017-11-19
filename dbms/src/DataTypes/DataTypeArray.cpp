@@ -29,13 +29,13 @@ namespace ErrorCodes
 }
 
 
-DataTypeArray::DataTypeArray(DataTypePtr nested_)
+DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
     : enriched_nested(std::make_pair(nested_, std::make_shared<DataTypeVoid>())), nested{nested_}
 {
     offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
 }
 
-DataTypeArray::DataTypeArray(DataTypeTraits::EnrichedDataTypePtr enriched_nested_)
+DataTypeArray::DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_)
     : enriched_nested{enriched_nested_}, nested{enriched_nested.first}
 {
     offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
@@ -277,11 +277,11 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
     IColumn & nested_column = column_array.getData();
 
     size_t size = 0;
-    bool first = true;
     assertChar('[', istr);
 
     try
     {
+        bool first = true;
         while (!istr.eof() && *istr.position() != ']')
         {
             if (!first)
@@ -450,7 +450,7 @@ Field DataTypeArray::getDefault() const
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
-    if (arguments->children.size() != 1)
+    if (!arguments || arguments->children.size() != 1)
         throw Exception("Array data type family must have exactly one argument - type of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);

@@ -61,7 +61,7 @@ private:
 class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
+    explicit MemoryBlockOutputStream(StorageMemory & storage_) : storage(storage_) {}
 
     void write(const Block & block) override
     {
@@ -72,14 +72,6 @@ public:
 private:
     StorageMemory & storage;
 };
-
-
-StorageMemory::StorageMemory(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_)
-    : name(name_), columns(columns_)
-{
-}
 
 
 StorageMemory::StorageMemory(

@@ -21,33 +21,33 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     : storage(storage_),
     log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, PartCheckThread)"))
 {
+    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreePartCheckThread", [this] { run(); });
+    task_handle->schedule();
 }
 
+ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
+{
+    stop();
+    storage.context.getSchedulePool().removeTask(task_handle);
+}
 
 void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard<std::mutex> lock(start_stop_mutex);
-
-    if (need_stop)
-        need_stop = false;
-    else
-        thread = std::thread([this] { run(); });
+    need_stop = false;
+    task_handle->activate();
+    task_handle->schedule();
 }
-
 
 void ReplicatedMergeTreePartCheckThread::stop()
 {
+    //based on discussion on https://github.com/yandex/ClickHouse/pull/1489#issuecomment-344756259
+    //using the schedule pool there is no problem in case stop is called two time in row and the start multiple times
+
     std::lock_guard<std::mutex> lock(start_stop_mutex);
-
     need_stop = true;
-    if (thread.joinable())
-    {
-        wakeup_event.set();
-        thread.join();
-        need_stop = false;
-    }
+    task_handle->deactivate();
 }
-
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
 {
@@ -58,7 +58,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
     parts_queue.emplace_back(name, time(0) + delay_to_check_seconds);
     parts_set.insert(name);
-    wakeup_event.set();
+    task_handle->schedule();
 }
 
 
@@ -86,24 +86,35 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     }
 
     /// If the part is not in ZooKeeper, we'll check if it's at least somewhere.
-    auto part_info = MergeTreePartInfo::fromPartName(part_name);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.data.format_version);
 
-    /** The logic is this:
+    /** The logic is as follows:
         * - if some live or inactive replica has such a part, or a part covering it
         *   - it is Ok, nothing is needed, it is then downloaded when processing the queue, when the replica comes to life;
         *   - or, if the replica never comes to life, then the administrator will delete or create a new replica with the same address and see everything from the beginning;
         * - if no one has such part or a part covering it, then
-        *   - if someone has all the constituent parts, then we will do nothing - it simply means that other replicas have not yet completed merge
-        *   - if no one has all the constituent parts, then agree the part forever lost,
-        *     and remove the entry from the replication queue.
+        *   - if there are two smaller parts, one with the same min block and the other with the same
+        *     max block, we hope that all parts in between are present too and the needed part
+        *     will appear on other replicas as a result of a merge.
+        *   - otherwise, consider the part lost and delete the entry from the queue.
+        *
+        *   Note that this logic is not perfect - some part in the interior may be missing and the
+        *   needed part will never appear. But precisely determining whether the part will appear as
+        *   a result of a merge is complicated - we can't just check if all block numbers covered
+        *   by the missing part are present somewhere (because gaps between blocks are possible)
+        *   and to determine the constituent parts of the merge we need to query the replication log
+        *   (both the common log and the queues of the individual replicas) and then, if the
+        *   constituent parts are in turn not found, solve the problem recursively for them.
+        *
+        *   Considering the part lost when it is not in fact lost is very dangerous because it leads
+        *   to divergent replicas and intersecting parts. So we err on the side of caution
+        *   and don't delete the queue entry when in doubt.
         */
 
-    LOG_WARNING(log, "Checking if anyone has part covering " << part_name << ".");
+    LOG_WARNING(log, "Checking if anyone has a part covering " << part_name << ".");
 
-    bool found = false;
-
-    size_t part_length_in_blocks = part_info.max_block + 1 - part_info.min_block;
-    std::vector<char> found_blocks(part_length_in_blocks);
+    bool found_part_with_the_same_min_block = false;
+    bool found_part_with_the_same_max_block = false;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
     for (const String & replica : replicas)
@@ -111,49 +122,42 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         Strings parts = zookeeper->getChildren(storage.zookeeper_path + "/replicas/" + replica + "/parts");
         for (const String & part_on_replica : parts)
         {
-            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica);
+            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.data.format_version);
 
-            if (part_on_replica == part_name || part_on_replica_info.contains(part_info))
+            if (part_on_replica_info.contains(part_info))
             {
-                found = true;
-                LOG_WARNING(log, "Found part " << part_on_replica << " on " << replica);
-                break;
+                LOG_WARNING(log, "Found part " << part_on_replica << " on " << replica << " that covers the missing part " << part_name);
+                return;
             }
 
             if (part_info.contains(part_on_replica_info))
             {
+                if (part_on_replica_info.min_block == part_info.min_block)
+                    found_part_with_the_same_min_block = true;
+                if (part_on_replica_info.max_block == part_info.max_block)
+                    found_part_with_the_same_max_block = true;
 
-                for (auto block_num = part_on_replica_info.min_block; block_num <= part_on_replica_info.max_block; ++block_num)
-                    found_blocks.at(block_num - part_info.min_block) = 1;
+                if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
+                {
+                    LOG_WARNING(log,
+                        "Found parts with the same min block and with the same max block as the missing part "
+                        << part_name << ". Hoping that it will eventually appear as a result of a merge.");
+                    return;
+                }
             }
         }
-        if (found)
-            break;
     }
 
-    if (found)
-    {
-        /// On some live or dead replica there is a necessary part or part covering it.
-        return;
-    }
-
-    size_t num_found_blocks = 0;
-    for (auto found_block : found_blocks)
-        num_found_blocks += (found_block == 1);
-
-    if (num_found_blocks == part_length_in_blocks)
-    {
-        /// On a set of live or dead lines, there are all parts from which you can compound the desired part. We will do nothing.
-        LOG_WARNING(log, "Found all blocks for missing part " << part_name << ". Will wait for them to be merged.");
-        return;
-    }
-
-    /// No one has such a part.
-    LOG_ERROR(log, "No replica has part covering " << part_name);
-
-    if (num_found_blocks != 0)
-        LOG_WARNING(log, "When looking for smaller parts, that is covered by " << part_name
-            << ", we found just " << num_found_blocks << " of " << part_length_in_blocks << " blocks.");
+    /// No one has such a part and the merge is impossible.
+    String not_found_msg;
+    if (found_part_with_the_same_min_block)
+        not_found_msg = "a smaller part with the same max block.";
+    else if (found_part_with_the_same_min_block)
+        not_found_msg = "a smaller part with the same min block.";
+    else
+        not_found_msg = "smaller parts with either the same min block or the same max block.";
+    LOG_ERROR(log, "No replica has part covering " << part_name
+              << " and a merge is impossible: we didn't find " << not_found_msg);
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
@@ -185,9 +189,10 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
       * NOTE It is possible to also add a condition if the entry in the queue is very old.
       */
 
+    size_t part_length_in_blocks = part_info.max_block + 1 - part_info.min_block;
     if (part_length_in_blocks > 1000)
     {
-        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too much blocks (" << part_length_in_blocks << ")");
+        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too many blocks (" << part_length_in_blocks << ")");
         return;
     }
 
@@ -298,86 +303,74 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
 void ReplicatedMergeTreePartCheckThread::run()
 {
-    setThreadName("ReplMTPartCheck");
+    if (need_stop)
+        return;
 
-    while (!need_stop)
+    try
     {
-        try
+        time_t current_time = time(nullptr);
+
+        /// Take part from the queue for verification.
+        PartsToCheckQueue::iterator selected = parts_queue.end();    /// end from std::list is not get invalidated
+        time_t min_check_time = std::numeric_limits<time_t>::max();
+
         {
-            time_t current_time = time(nullptr);
+            std::lock_guard<std::mutex> lock(parts_mutex);
 
-            /// Take part from the queue for verification.
-            PartsToCheckQueue::iterator selected = parts_queue.end();    /// end from std::list is not get invalidated
-            time_t min_check_time = std::numeric_limits<time_t>::max();
-
+            if (parts_queue.empty())
             {
-                std::lock_guard<std::mutex> lock(parts_mutex);
-
-                if (parts_queue.empty())
+                if (!parts_set.empty())
                 {
-                    if (!parts_set.empty())
-                    {
-                        LOG_ERROR(log, "Non-empty parts_set with empty parts_queue. This is a bug.");
-                        parts_set.clear();
-                    }
-                }
-                else
-                {
-                    for (auto it = parts_queue.begin(); it != parts_queue.end(); ++it)
-                    {
-                        if (it->second <= current_time)
-                        {
-                            selected = it;
-                            break;
-                        }
-
-                        if (it->second < min_check_time)
-                            min_check_time = it->second;
-                    }
+                    LOG_ERROR(log, "Non-empty parts_set with empty parts_queue. This is a bug.");
+                    parts_set.clear();
                 }
             }
-
-            if (selected == parts_queue.end())
+            else
             {
-                /// Poco::Event is triggered immediately if `signal` was before the `wait` call.
-                /// We can wait a little more than we need due to the use of the old `current_time`.
-
-                if (min_check_time != std::numeric_limits<time_t>::max() && min_check_time > current_time)
-                    wakeup_event.tryWait(1000 * (min_check_time - current_time));
-                else
-                    wakeup_event.wait();
-
-                continue;
-            }
-
-            checkPart(selected->first);
-
-            if (need_stop)
-                break;
-
-            /// Remove the part from check queue.
-            {
-                std::lock_guard<std::mutex> lock(parts_mutex);
-
-                if (parts_queue.empty())
+                for (auto it = parts_queue.begin(); it != parts_queue.end(); ++it)
                 {
-                    LOG_ERROR(log, "Someone erased cheking part from parts_queue. This is a bug.");
-                }
-                else
-                {
-                    parts_set.erase(selected->first);
-                    parts_queue.erase(selected);
+                    if (it->second <= current_time)
+                    {
+                        selected = it;
+                        break;
+                    }
+
+                    if (it->second < min_check_time)
+                        min_check_time = it->second;
                 }
             }
         }
-        catch (...)
+
+        if (selected == parts_queue.end())
+            return;
+
+        checkPart(selected->first);
+
+        if (need_stop)
+            return;
+
+        /// Remove the part from check queue.
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            wakeup_event.tryWait(PART_CHECK_ERROR_SLEEP_MS);
+            std::lock_guard<std::mutex> lock(parts_mutex);
+
+            if (parts_queue.empty())
+            {
+                LOG_ERROR(log, "Someone erased cheking part from parts_queue. This is a bug.");
+            }
+            else
+            {
+                parts_set.erase(selected->first);
+                parts_queue.erase(selected);
+            }
         }
+
+        task_handle->schedule();
     }
-
-    LOG_DEBUG(log, "Part check thread finished");
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        task_handle->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+    }
 }
 
 }

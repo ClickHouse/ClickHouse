@@ -4,6 +4,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <ext/range.h>
 #include <numeric>
@@ -22,6 +23,7 @@ enum class AttributeUnderlyingType
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
@@ -42,13 +44,7 @@ std::string toString(const AttributeUnderlyingType type);
 
 
 /// Min and max lifetimes for a dictionary or it's entry
-struct DictionaryLifetime final
-{
-    UInt64 min_sec;
-    UInt64 max_sec;
-
-    DictionaryLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-};
+using DictionaryLifetime = ExternalLoadableLifetime;
 
 
 /** Holds the description of a single dictionary attribute:

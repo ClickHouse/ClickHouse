@@ -111,7 +111,7 @@ The query interpreter then finishes processing the data.
 
 The table's ``read`` method can return multiple ``IBlockInputStream`` objects to allow parallel data processing. These multiple block input streams can read from a table in parallel. Then you can wrap these streams with various transformations (such as expression evaluation or filtering) that can be calculated independently and create a ``UnionBlockInputStream`` on top of them, to read from multiple streams in parallel.
 
-There are also ``TableFunction``s. These are functions that return a temporary ``IStorage`` object to use in the ``FROM`` clause of a query.
+There are also ``TableFunction`` s. These are functions that return a temporary ``IStorage`` object to use in the ``FROM`` clause of a query.
 
 To get a quick idea of how to implement your own table engine, look at something simple, like ``StorageMemory`` or ``StorageTinyLog``.
 
@@ -129,7 +129,7 @@ A query is parsed by a hand-written recursive descent parser. For example, ``Par
 Interpreters
 ------------
 
-Interpreters are responsible for creating the query execution pipeline from an ``AST``. There are simple interpreters, such as ``InterpreterExistsQuery``and ``InterpreterDropQuery``, or the more sophisticated ``InterpreterSelectQuery``. The query execution pipeline is a combination of block input or output streams. For example, the result of interpreting the ``SELECT`` query is the ``IBlockInputStream`` to read the result set from; the result of the INSERT query is the ``IBlockOutputStream`` to write data for insertion to; and the result of interpreting the ``INSERT SELECT`` query is the ``IBlockInputStream`` that returns an empty result set on the first read, but that copies data from ``SELECT`` to ``INSERT`` at the same time.
+Interpreters are responsible for creating the query execution pipeline from an ``AST``. There are simple interpreters, such as ``InterpreterExistsQuery`` and ``InterpreterDropQuery``, or the more sophisticated ``InterpreterSelectQuery``. The query execution pipeline is a combination of block input or output streams. For example, the result of interpreting the ``SELECT`` query is the ``IBlockInputStream`` to read the result set from; the result of the INSERT query is the ``IBlockOutputStream`` to write data for insertion to; and the result of interpreting the ``INSERT SELECT`` query is the ``IBlockInputStream`` that returns an empty result set on the first read, but that copies data from ``SELECT`` to ``INSERT`` at the same time.
 
 ``InterpreterSelectQuery`` uses ``ExpressionAnalyzer`` and ``ExpressionActions`` machinery for query analysis and transformations. This is where most rule-based query optimizations are done. ``ExpressionAnalyzer`` is quite messy and should be rewritten: various query transformations and optimizations should be extracted to separate classes to allow modular transformations or query.
 

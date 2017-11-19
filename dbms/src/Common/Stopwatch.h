@@ -20,11 +20,12 @@ public:
       */
     Stopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { restart(); }
 
-    void start()                    { setStart(); is_running = true; }
-    void stop()                     { updateElapsed(); is_running = false; }
-    void restart()                  { elapsed_ns = 0; start(); }
-    UInt64 elapsed() const          { updateElapsed(); return elapsed_ns; }
-    double elapsedSeconds() const   { updateElapsed(); return static_cast<double>(elapsed_ns) / 1000000000ULL; }
+    void start()                        { setStart(); is_running = true; }
+    void stop()                         { updateElapsed(); is_running = false; }
+    void restart()                      { elapsed_ns = 0; start(); }
+    UInt64 elapsed() const              { updateElapsed(); return elapsed_ns; }
+    UInt64 elapsedMilliseconds() const  { updateElapsed(); return elapsed_ns / 1000000UL; }
+    double elapsedSeconds() const       { updateElapsed(); return static_cast<double>(elapsed_ns) / 1000000000ULL; }
 
 private:
     mutable UInt64 start_ns;

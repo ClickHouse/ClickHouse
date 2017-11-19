@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 
 #include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/HashSet.h>
@@ -63,6 +64,15 @@ struct AggregateFunctionUniqHLL12Data
 
 template <>
 struct AggregateFunctionUniqHLL12Data<String>
+{
+    using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
+    Set set;
+
+    static String getName() { return "uniqHLL12"; }
+};
+
+template <>
+struct AggregateFunctionUniqHLL12Data<UInt128>
 {
     using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
     Set set;
@@ -196,6 +206,16 @@ template <typename T> struct AggregateFunctionUniqTraits
     static UInt64 hash(T x) { return x; }
 };
 
+template <> struct AggregateFunctionUniqTraits<UInt128>
+{
+    static UInt64 hash(UInt128 x)
+    {
+        SipHash hash;
+        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+        return hash.get64();
+    }
+};
+
 template <> struct AggregateFunctionUniqTraits<Float32>
 {
     static UInt64 hash(Float32 x)
@@ -221,6 +241,16 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 template <typename T> struct AggregateFunctionUniqCombinedTraits
 {
     static UInt32 hash(T x) { return static_cast<UInt32>(intHash64(x)); }
+};
+
+template <> struct AggregateFunctionUniqCombinedTraits<UInt128>
+{
+    static UInt32 hash(UInt128 x)
+    {
+        SipHash hash;
+        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+        return static_cast<UInt32>(hash.get64());
+    }
 };
 
 template <> struct AggregateFunctionUniqCombinedTraits<Float32>
@@ -255,7 +285,7 @@ struct OneAdder<T, Data, typename std::enable_if<
     std::is_same<Data, AggregateFunctionUniqHLL12Data<T>>::value>::type>
 {
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column, size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
         typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
     {
         const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
@@ -263,7 +293,7 @@ struct OneAdder<T, Data, typename std::enable_if<
     }
 
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column,    size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column,    size_t row_num,
         typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
     {
         StringRef value = column.getDataAt(row_num);
@@ -279,7 +309,7 @@ struct OneAdder<T, Data, typename std::enable_if<
     std::is_same<Data, AggregateFunctionUniqCombinedData<T>>::value>::type>
 {
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column, size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
         typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
     {
         const auto & value = static_cast<const ColumnVector<T2> &>(column).getData()[row_num];
@@ -287,7 +317,7 @@ struct OneAdder<T, Data, typename std::enable_if<
     }
 
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column,    size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column,    size_t row_num,
         typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
     {
         StringRef value = column.getDataAt(row_num);
@@ -300,14 +330,14 @@ struct OneAdder<T, Data, typename std::enable_if<
     std::is_same<Data, AggregateFunctionUniqExactData<T>>::value>::type>
 {
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column, size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
         typename std::enable_if<!std::is_same<T2, String>::value>::type * = nullptr)
     {
         data.set.insert(static_cast<const ColumnVector<T2> &>(column).getData()[row_num]);
     }
 
     template <typename T2 = T>
-    static void addImpl(Data & data, const IColumn & column, size_t row_num,
+    static void ALWAYS_INLINE addImpl(Data & data, const IColumn & column, size_t row_num,
         typename std::enable_if<std::is_same<T2, String>::value>::type * = nullptr)
     {
         StringRef value = column.getDataAt(row_num);
@@ -364,6 +394,8 @@ public:
     {
         static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).set.size());
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -426,6 +458,8 @@ public:
     }
 
     IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

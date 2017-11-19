@@ -20,6 +20,8 @@ Install Git and CMake
 
     sudo apt-get install git cmake3
 
+Or just cmake on newer systems.
+
 
 Detect number of threads
 ------------------------
@@ -28,7 +30,7 @@ Detect number of threads
 
     export THREADS=$(grep -c ^processor /proc/cpuinfo)
 
-Install GCC 6
+Install GCC 7
 -------------
 
 There are several ways to do it.
@@ -41,43 +43,21 @@ Install from PPA package
     sudo apt-get install software-properties-common
     sudo apt-add-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
-    sudo apt-get install gcc-6 g++-6
+    sudo apt-get install gcc-7 g++-7
 
 
 Install from sources
 ~~~~~~~~~~~~~~~~~~~~
 
-Example:
+Look at [https://github.com/yandex/ClickHouse/blob/master/utils/prepare-environment/install-gcc.sh]
 
-.. code-block:: bash
-
-    # Download gcc from https://gcc.gnu.org/mirrors.html
-    wget ftp://ftp.fu-berlin.de/unix/languages/gcc/releases/gcc-6.2.0/gcc-6.2.0.tar.bz2
-    tar xf gcc-6.2.0.tar.bz2
-    cd gcc-6.2.0
-    ./contrib/download_prerequisites
-    cd ..
-    mkdir gcc-build
-    cd gcc-build
-    ../gcc-6.2.0/configure --enable-languages=c,c++
-    make -j $THREADS
-    sudo make install
-    hash gcc g++
-    gcc --version
-    sudo ln -s /usr/local/bin/gcc /usr/local/bin/gcc-6
-    sudo ln -s /usr/local/bin/g++ /usr/local/bin/g++-6
-    sudo ln -s /usr/local/bin/gcc /usr/local/bin/cc
-    sudo ln -s /usr/local/bin/g++ /usr/local/bin/c++
-    # /usr/local/bin/ should be in $PATH
-
-
-Use GCC 6 for builds
+Use GCC 7 for builds
 --------------------
 
 .. code-block:: bash
 
-    export CC=gcc-6
-    export CXX=g++-6
+    export CC=gcc-7
+    export CXX=g++-7
 
 
 Install required libraries from packages
@@ -120,37 +100,9 @@ Install prerequisites to build debian packages.
 
 Install recent version of clang.
 
-Clang is embedded into ClickHouse package and used at runtime. Minimum version is 3.8.0. It is optional.
+Clang is embedded into ClickHouse package and used at runtime. Minimum version is 3.8.0. Recommended version is 5.0. It is optional.
 
-
-You can build clang from sources:
-
-.. code-block:: bash
-
-    cd ..
-    sudo apt-get install subversion
-    mkdir llvm
-    cd llvm
-    svn co http://llvm.org/svn/llvm-project/llvm/tags/RELEASE_400/final llvm
-    cd llvm/tools
-    svn co http://llvm.org/svn/llvm-project/cfe/tags/RELEASE_400/final clang
-    cd ..
-    cd projects/
-    svn co http://llvm.org/svn/llvm-project/compiler-rt/tags/RELEASE_400/final compiler-rt
-    cd ../..
-    mkdir build
-    cd build/
-    cmake -D CMAKE_BUILD_TYPE:STRING=Release ../llvm
-    make -j $THREADS
-    sudo make install
-    hash clang
-
-Or install it from packages. On Ubuntu 16.04 or newer:
-
-.. code-block:: bash
-
-    sudo apt-get install clang
-
+To install clang, look at ``utils/prepare-environment/install-clang.sh``
 
 You may also build ClickHouse with clang for development purposes.
 For production releases, GCC is used.
@@ -192,4 +144,4 @@ Build to work with code
     cd ..
 
 To create an executable, run ``make clickhouse``.
-This will create the ``dbms/src/Server/clickhouse`` executable, which can be used with --client or --server arguments.
+This will create the ``dbms/src/Server/clickhouse`` executable, which can be used with ``client`` or ``server`` arguments.

@@ -30,6 +30,7 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
+class ASTCreateQuery;
 
 class IStorage;
 
@@ -38,11 +39,6 @@ using StoragePtr = std::shared_ptr<IStorage>;
 struct Settings;
 
 class AlterCommands;
-
-/// For RESHARD PARTITION.
-using WeightedZooKeeperPath = std::pair<String, UInt64>;
-using WeightedZooKeeperPaths = std::vector<WeightedZooKeeperPath>;
-
 
 
 /** Does not allow changing the table description (including rename and delete the table).
@@ -221,55 +217,43 @@ public:
     }
 
     /** Execute CLEAR COLUMN ... IN PARTITION query which removes column from given partition. */
-    virtual void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings)
+    virtual void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
     {
         throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the query (DROP|DETACH) PARTITION.
       */
-    virtual void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings)
+    virtual void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
     {
         throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the ATTACH request (PART|PARTITION).
       */
-    virtual void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings)
+    virtual void attachPartition(const ASTPtr & partition, bool part, const Context & context)
     {
         throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the FETCH PARTITION query.
       */
-    virtual void fetchPartition(const Field & partition, const String & from, const Settings & settings)
+    virtual void fetchPartition(const ASTPtr & partition, const String & from, const Context & context)
     {
         throw Exception("Method fetchPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the FREEZE PARTITION request. That is, create a local backup (snapshot) of data using the `localBackup` function (see localBackup.h)
       */
-    virtual void freezePartition(const Field & partition, const String & with_name, const Settings & settings)
+    virtual void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
     {
         throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the RESHARD PARTITION query.
-      */
-    virtual void reshardPartitions(
-        const ASTPtr & query, const String & database_name,
-        const Field & partition,
-        const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-        const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        Context & context)
-    {
-        throw Exception("Method reshardPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */
-    virtual bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings)
+    virtual bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -303,6 +287,10 @@ public:
     /// If it can - returns true
     /// Otherwise - throws an exception with detailed information or returns false
     virtual bool checkTableCanBeDropped() const { return true; }
+
+
+    /** Notify engine about updated dependencies for this storage. */
+    virtual void updateDependencies() {}
 
 protected:
     using ITableDeclaration::ITableDeclaration;

@@ -14,13 +14,13 @@ namespace
 {
 
 void run();
-void prepare(size_t s, std::string  & filename, std::string & buf);
-void prepare2(std::string  & filename, std::string & buf);
-void prepare3(std::string  & filename, std::string & buf);
-void prepare4(std::string  & filename, std::string & buf);
+void prepare(size_t s, std::string & filename, std::string & buf);
+void prepare2(std::string & filename, std::string & buf);
+void prepare3(std::string & filename, std::string & buf);
+void prepare4(std::string & filename, std::string & buf);
 std::string createTmpFile();
 void die(const std::string & msg);
-void runTest(unsigned int num, const std::function<bool()> func);
+void runTest(unsigned int num, const std::function<bool()> & func);
 
 bool test1(const std::string & filename);
 bool test2(const std::string & filename, const std::string & buf);
@@ -105,7 +105,7 @@ void run()
     fs::remove_all(fs::path(filename5).parent_path().string());
 }
 
-void prepare(size_t s, std::string  & filename, std::string & buf)
+void prepare(size_t s, std::string & filename, std::string & buf)
 {
     static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -184,7 +184,7 @@ void die(const std::string & msg)
     ::exit(EXIT_FAILURE);
 }
 
-void runTest(unsigned int num, const std::function<bool()> func)
+void runTest(unsigned int num, const std::function<bool()> & func)
 {
     bool ok;
 

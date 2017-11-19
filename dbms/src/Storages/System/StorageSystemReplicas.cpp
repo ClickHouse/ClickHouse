@@ -62,8 +62,8 @@ BlockInputStreams StorageSystemReplicas::read(
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
-        for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
-            if (typeid_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+        for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replicated_tables[db.first][iterator->name()] = iterator->table();
 
     /// Do you need columns that require a walkthrough in ZooKeeper to compute.
@@ -135,7 +135,7 @@ BlockInputStreams StorageSystemReplicas::read(
     for (size_t i = 0, size = col_database.column->size(); i < size; ++i)
     {
         StorageReplicatedMergeTree::Status status;
-        typeid_cast<StorageReplicatedMergeTree &>(
+        dynamic_cast<StorageReplicatedMergeTree &>(
             *replicated_tables
                 [(*col_database.column)[i].safeGet<const String &>()]
                 [(*col_table.column)[i].safeGet<const String &>()]).getStatus(status, with_zk_fields);

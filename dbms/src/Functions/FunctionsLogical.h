@@ -24,7 +24,7 @@ namespace ErrorCodes
   * Accept any numeric types, return a UInt8 containing 0 or 1.
   */
 
-template<typename B>
+template <typename B>
 struct AndImpl
 {
     static inline bool isSaturable()
@@ -43,7 +43,7 @@ struct AndImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct OrImpl
 {
     static inline bool isSaturable()
@@ -62,7 +62,7 @@ struct OrImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct XorImpl
 {
     static inline bool isSaturable()
@@ -81,7 +81,7 @@ struct XorImpl
     }
 };
 
-template<typename A>
+template <typename A>
 struct NotImpl
 {
     using ResultType = UInt8;
@@ -101,7 +101,7 @@ template <typename Op, size_t N>
 struct AssociativeOperationImpl
 {
     /// Erases the N last columns from `in` (if there are less, then all) and puts into `result` their combination.
-    static void execute(UInt8ColumnPtrs & in, UInt8Container & result)
+    static void NO_INLINE execute(UInt8ColumnPtrs & in, UInt8Container & result)
     {
         if (N > in.size())
         {

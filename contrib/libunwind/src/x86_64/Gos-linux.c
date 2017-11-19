@@ -138,7 +138,7 @@ x86_64_sigreturn (unw_cursor_t *cursor)
 {
   struct cursor *c = (struct cursor *) cursor;
   struct sigcontext *sc = (struct sigcontext *) c->sigcontext_addr;
-  mcontext_t *sc_mcontext = &((struct ucontext*)sc)->uc_mcontext;
+  mcontext_t *sc_mcontext = &((ucontext_t*)sc)->uc_mcontext;
   /* Copy in saved uc - all preserved regs are at the start of sigcontext */
   memcpy(sc_mcontext, &c->uc->uc_mcontext,
          DWARF_NUM_PRESERVED_REGS * sizeof(unw_word_t));

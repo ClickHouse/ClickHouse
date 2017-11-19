@@ -42,21 +42,20 @@ namespace ErrorCodes
 
 /** Hashing functions.
   *
-  * Half MD5:
-  * halfMD5:     String -> UInt64
+  * halfMD5: String -> UInt64
   *
   * A faster cryptographic hash function:
-  * sipHash64:  String -> UInt64
+  * sipHash64: String -> UInt64
   *
   * Fast non-cryptographic hash function for strings:
   * cityHash64: String -> UInt64
   *
   * A non-cryptographic hash from a tuple of values of any types (uses cityHash64 for strings and intHash64 for numbers):
-  * cityHash64:  any* -> UInt64
+  * cityHash64: any* -> UInt64
   *
   * Fast non-cryptographic hash function from any integer:
-  * intHash32:    number -> UInt32
-  * intHash64:  number -> UInt64
+  * intHash32: number -> UInt32
+  * intHash64: number -> UInt64
   *
   */
 
@@ -589,7 +588,7 @@ public:
         if (arguments.empty())
         {
             /// Constant random number from /dev/urandom is used as a hash value of empty list of arguments.
-            vec_to.assign(rows, 0xe28dbde7fe22e41c);
+            vec_to.assign(rows, static_cast<UInt64>(0xe28dbde7fe22e41c));
         }
 
         /// The function supports arbitary number of arguments of arbitary types.

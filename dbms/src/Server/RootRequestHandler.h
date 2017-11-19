@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Poco/Net/HTTPRequestHandler.h>
-
 #include "IServer.h"
+
+#include <Poco/Net/HTTPRequestHandler.h>
 
 
 namespace DB
@@ -15,7 +15,7 @@ private:
     IServer & server;
 
 public:
-    RootRequestHandler(IServer & server_) : server(server_)
+    explicit RootRequestHandler(IServer & server_) : server(server_)
     {
     }
 

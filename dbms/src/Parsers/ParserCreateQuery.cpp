@@ -5,6 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSetQuery.h>
 
 
 namespace DB
@@ -106,21 +107,78 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 }
 
 
-bool ParserEngine::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_engine("ENGINE");
     ParserToken s_eq(TokenType::Equals);
-    ParserIdentifierWithOptionalParameters storage_p;
+    ParserKeyword s_partition_by("PARTITION BY");
+    ParserKeyword s_order_by("ORDER BY");
+    ParserKeyword s_sample_by("SAMPLE BY");
+    ParserKeyword s_settings("SETTINGS");
 
-    if (s_engine.ignore(pos, expected))
+    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
+    ParserExpression expression_p;
+    ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
+
+    Pos begin = pos;
+
+    ASTPtr engine;
+    ASTPtr partition_by;
+    ASTPtr order_by;
+    ASTPtr sample_by;
+    ASTPtr settings;
+
+    if (!s_engine.ignore(pos, expected))
+        return false;
+
+    s_eq.ignore(pos, expected);
+
+    if (!ident_with_optional_params_p.parse(pos, engine, expected))
+        return false;
+
+    while (true)
     {
-        if (!s_eq.ignore(pos, expected))
-            return false;
+        if (!partition_by && s_partition_by.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, partition_by, expected))
+                continue;
+            else
+                return false;
+        }
 
-        if (!storage_p.parse(pos, node, expected))
-            return false;
+        if (!order_by && s_order_by.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, order_by, expected))
+                continue;
+            else
+                return false;
+        }
+
+        if (!sample_by && s_sample_by.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, sample_by, expected))
+                continue;
+            else
+                return false;
+        }
+
+        if (s_settings.ignore(pos, expected))
+        {
+            if (!settings_p.parse(pos, settings, expected))
+                return false;
+        }
+
+        break;
     }
 
+    auto storage = std::make_shared<ASTStorage>(StringRange(begin, pos));
+    storage->set(storage->engine, engine);
+    storage->set(storage->partition_by, partition_by);
+    storage->set(storage->order_by, order_by);
+    storage->set(storage->sample_by, sample_by);
+    storage->set(storage->settings, settings);
+
+    node = storage;
     return true;
 }
 
@@ -136,22 +194,23 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_database("DATABASE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_as("AS");
-    ParserKeyword s_select("SELECT");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
     ParserKeyword s_populate("POPULATE");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserEngine engine_p;
+    ParserStorage storage_p;
     ParserIdentifier name_p;
     ParserColumnDeclarationList columns_p;
+    ParserSelectQuery select_p;
 
     ASTPtr database;
     ASTPtr table;
     ASTPtr columns;
+    ASTPtr to_database;
+    ASTPtr to_table;
     ASTPtr storage;
-    ASTPtr inner_storage;
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
@@ -176,23 +235,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         is_temporary = true;
     }
 
-    if (s_database.ignore(pos, expected))
-    {
-        if (s_if_not_exists.ignore(pos, expected))
-            if_not_exists = true;
-
-        if (!name_p.parse(pos, database, expected))
-            return false;
-
-        if (ParserKeyword{"ON"}.ignore(pos, expected))
-        {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                return false;
-        }
-
-        engine_p.parse(pos, storage, expected);
-    }
-    else if (s_table.ignore(pos, expected))
+    if (s_table.ignore(pos, expected))
     {
         if (s_if_not_exists.ignore(pos, expected))
             if_not_exists = true;
@@ -213,6 +256,23 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        // Shortcut for ATTACH a previously detached table
+        if (attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
+        {
+            auto query = std::make_shared<ASTCreateQuery>(StringRange(begin, pos));
+            node = query;
+
+            query->attach = attach;
+            query->if_not_exists = if_not_exists;
+
+            if (database)
+                query->database = typeid_cast<ASTIdentifier &>(*database).name;
+            if (table)
+                query->table = typeid_cast<ASTIdentifier &>(*table).name;
+
+            return true;
+        }
+
         /// List of columns.
         if (s_lparen.ignore(pos, expected))
         {
@@ -222,39 +282,17 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!s_rparen.ignore(pos, expected))
                 return false;
 
-            if (!engine_p.parse(pos, storage, expected))
+            if (!storage_p.parse(pos, storage, expected) && !is_temporary)
                 return false;
-
-            /// For engine VIEW, you also need to read AS SELECT
-            if (storage && (typeid_cast<ASTFunction &>(*storage).name == "View"
-                        || typeid_cast<ASTFunction &>(*storage).name == "MaterializedView"))
-            {
-                if (!s_as.ignore(pos, expected))
-                    return false;
-                Pos before_select = pos;
-                if (!s_select.ignore(pos, expected))
-                    return false;
-                pos = before_select;
-                ParserSelectQuery select_p;
-                select_p.parse(pos, select, expected);
-            }
         }
         else
         {
-            engine_p.parse(pos, storage, expected);
+            storage_p.parse(pos, storage, expected);
 
             if (!s_as.ignore(pos, expected))
                 return false;
 
-            /// AS SELECT ...
-            Pos before_select = pos;
-            if (s_select.ignore(pos, expected))
-            {
-                pos = before_select;
-                ParserSelectQuery select_p;
-                select_p.parse(pos, select, expected);
-            }
-            else
+            if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
             {
                 /// AS [db.]table
                 if (!name_p.parse(pos, as_table, expected))
@@ -268,9 +306,27 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
 
                 /// Optional - ENGINE can be specified.
-                engine_p.parse(pos, storage, expected);
+                storage_p.parse(pos, storage, expected);
             }
         }
+    }
+    else if (is_temporary)
+        return false;
+    else if (s_database.ignore(pos, expected))
+    {
+        if (s_if_not_exists.ignore(pos, expected))
+            if_not_exists = true;
+
+        if (!name_p.parse(pos, database, expected))
+            return false;
+
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+        }
+
+        storage_p.parse(pos, storage, expected);
     }
     else
     {
@@ -304,6 +360,20 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        // TO [db.]table
+        if (ParserKeyword{"TO"}.ignore(pos, expected))
+        {
+            if (!name_p.parse(pos, to_table, expected))
+                return false;
+
+            if (s_dot.ignore(pos, expected))
+            {
+                to_database = to_table;
+                if (!name_p.parse(pos, to_table, expected))
+                    return false;
+            }
+        }
+
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
@@ -314,11 +384,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        /// Optional - internal ENGINE for MATERIALIZED VIEW can be specified
-        engine_p.parse(pos, inner_storage, expected);
+        if (is_materialized_view && !to_table)
+        {
+            /// Internal ENGINE for MATERIALIZED VIEW must be specified.
+            if (!storage_p.parse(pos, storage, expected))
+                return false;
 
-        if (s_populate.ignore(pos, expected))
-            is_populate = true;
+            if (s_populate.ignore(pos, expected))
+                is_populate = true;
+        }
 
         /// AS SELECT ...
         if (!s_as.ignore(pos, expected))
@@ -344,25 +418,19 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
     query->cluster = cluster_str;
-    if (inner_storage)
-        query->inner_storage = inner_storage;
 
-    query->columns = columns;
-    query->storage = storage;
+    if (to_database)
+        query->to_database = typeid_cast<ASTIdentifier &>(*to_database).name;
+    if (to_table)
+        query->to_table = typeid_cast<ASTIdentifier &>(*to_table).name;
+
+    query->set(query->columns, columns);
+    query->set(query->storage, storage);
     if (as_database)
         query->as_database = typeid_cast<ASTIdentifier &>(*as_database).name;
     if (as_table)
         query->as_table = typeid_cast<ASTIdentifier &>(*as_table).name;
-    query->select = select;
-
-    if (columns)
-        query->children.push_back(columns);
-    if (storage)
-        query->children.push_back(storage);
-    if (select)
-        query->children.push_back(select);
-    if (inner_storage)
-        query->children.push_back(inner_storage);
+    query->set(query->select, select);
 
     return true;
 }

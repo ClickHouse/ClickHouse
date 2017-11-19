@@ -16,6 +16,8 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 
+#include <IO/CompressionSettings.h>
+
 #include <Interpreters/Settings.h>
 #include <Interpreters/TablesStatus.h>
 
@@ -53,7 +55,8 @@ public:
     Connection(const String & host_, UInt16 port_, const String & default_database_,
         const String & user_, const String & password_,
         const String & client_name_ = "client",
-        Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
+        Protocol::Compression compression_ = Protocol::Compression::Enable,
+        Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
         Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
         Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
         Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
@@ -63,6 +66,7 @@ public:
         user(user_), password(password_), resolved_address(host, port),
         client_name(client_name_),
         compression(compression_),
+        encryption(encryption_),
         connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
         sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
@@ -79,7 +83,8 @@ public:
         const String & default_database_,
         const String & user_, const String & password_,
         const String & client_name_ = "client",
-        Protocol::Compression::Enum compression_ = Protocol::Compression::Enable,
+        Protocol::Compression compression_ = Protocol::Compression::Enable,
+        Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
         Poco::Timespan connect_timeout_ = Poco::Timespan(DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, 0),
         Poco::Timespan receive_timeout_ = Poco::Timespan(DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, 0),
         Poco::Timespan send_timeout_ = Poco::Timespan(DBMS_DEFAULT_SEND_TIMEOUT_SEC, 0),
@@ -91,6 +96,7 @@ public:
         resolved_address(resolved_address_),
         client_name(client_name_),
         compression(compression_),
+        encryption(encryption_),
         connect_timeout(connect_timeout_), receive_timeout(receive_timeout_), send_timeout(send_timeout_),
         sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
@@ -211,14 +217,16 @@ private:
     UInt64 server_revision = 0;
     String server_timezone;
 
-    Poco::Net::StreamSocket socket;
+    std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 
     String query_id;
-    UInt64 compression;        /// Enable data compression for communication.
-    /// What compression algorithm to use while sending data for INSERT queries and external tables.
-    CompressionMethod network_compression_method = CompressionMethod::LZ4;
+    Protocol::Compression compression;        /// Enable data compression for communication.
+    Protocol::Encryption encryption;             /// Enable data encryption for communication.
+
+    /// What compression settings to use while sending data for INSERT queries and external tables.
+    CompressionSettings compression_settings;
 
     /** If not nullptr, used to limit network traffic.
       * Only traffic for transferring blocks is accounted. Other packets don't.

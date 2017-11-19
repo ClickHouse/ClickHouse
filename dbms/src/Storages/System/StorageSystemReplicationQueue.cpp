@@ -60,8 +60,8 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
-        for (auto iterator = db.second->getIterator(); iterator->isValid(); iterator->next())
-            if (typeid_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+        for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replicated_tables[db.first][iterator->name()] = iterator->table();
 
     ColumnWithTypeAndName col_database_to_filter { std::make_shared<ColumnString>(),    std::make_shared<DataTypeString>(),    "database" };
@@ -118,7 +118,7 @@ BlockInputStreams StorageSystemReplicationQueue::read(
         String database = (*col_database_to_filter.column)[i].safeGet<const String &>();
         String table = (*col_table_to_filter.column)[i].safeGet<const String &>();
 
-        typeid_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getQueue(queue, replica_name);
+        dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getQueue(queue, replica_name);
 
         for (size_t j = 0, queue_size = queue.size(); j < queue_size; ++j)
         {

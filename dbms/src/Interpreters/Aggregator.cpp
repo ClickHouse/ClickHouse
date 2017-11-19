@@ -223,6 +223,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
     /// List of types of aggregate functions.
     std::stringstream aggregate_functions_typenames_str;
+    std::stringstream aggregate_functions_headers_args;
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
         IAggregateFunction & func = *aggregate_functions[i];
@@ -237,7 +238,20 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
                 + ", status: " + toString(status), ErrorCodes::CANNOT_COMPILE_CODE);
 
         aggregate_functions_typenames_str << ((i != 0) ? ", " : "") << type_name;
+
+        std::string header_path = func.getHeaderFilePath();
+        auto pos = header_path.find("/AggregateFunctions/");
+
+        if (pos == std::string::npos)
+            throw Exception("Cannot compile code: unusual path of header file for aggregate function: " + header_path,
+                ErrorCodes::CANNOT_COMPILE_CODE);
+
+        aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src";
+        aggregate_functions_headers_args.write(&header_path[pos], header_path.size() - pos);
+        aggregate_functions_headers_args << "' ";
     }
+
+    aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h'";
 
     std::string aggregate_functions_typenames = aggregate_functions_typenames_str.str();
 
@@ -263,31 +277,31 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
         {
             code <<
                 "template void Aggregator::executeSpecialized<\n"
-                    "\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-                    "\t" << method_typename << " &, Arena *, size_t, ConstColumnPlainPtrs &,\n"
-                    "\tAggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
+                    "    " << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+                    "    " << method_typename << " &, Arena *, size_t, ConstColumnPlainPtrs &,\n"
+                    "    AggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
                 "\n"
                 "static void wrapper" << suffix << "(\n"
-                    "\tconst Aggregator & aggregator,\n"
-                    "\t" << method_typename << " & method,\n"
-                    "\tArena * arena,\n"
-                    "\tsize_t rows,\n"
-                    "\tConstColumnPlainPtrs & key_columns,\n"
-                    "\tAggregator::AggregateColumns & aggregate_columns,\n"
-                    "\tconst Sizes & key_sizes,\n"
-                    "\tStringRefs & keys,\n"
-                    "\tbool no_more_keys,\n"
-                    "\tAggregateDataPtr overflow_row)\n"
+                    "    const Aggregator & aggregator,\n"
+                    "    " << method_typename << " & method,\n"
+                    "    Arena * arena,\n"
+                    "    size_t rows,\n"
+                    "    ConstColumnPlainPtrs & key_columns,\n"
+                    "    Aggregator::AggregateColumns & aggregate_columns,\n"
+                    "    const Sizes & key_sizes,\n"
+                    "    StringRefs & keys,\n"
+                    "    bool no_more_keys,\n"
+                    "    AggregateDataPtr overflow_row)\n"
                 "{\n"
-                    "\taggregator.executeSpecialized<\n"
-                        "\t\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-                        "\t\tmethod, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
+                    "    aggregator.executeSpecialized<\n"
+                        "        " << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+                        "        method, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
                 "}\n"
                 "\n"
                 "void * getPtr" << suffix << "() __attribute__((__visibility__(\"default\")));\n"
                 "void * getPtr" << suffix << "()\n" /// Without this wrapper, it's not clear how to get the desired symbol from the compiled library.
                 "{\n"
-                    "\treturn reinterpret_cast<void *>(&wrapper" << suffix << ");\n"
+                    "    return reinterpret_cast<void *>(&wrapper" << suffix << ");\n"
                 "}\n";
         };
 
@@ -298,25 +312,25 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
             /// For `without_key` method.
             code <<
                 "template void Aggregator::executeSpecializedWithoutKey<\n"
-                    "\t" << "TypeList<" << aggregate_functions_typenames << ">>(\n"
-                    "\tAggregatedDataWithoutKey &, size_t, AggregateColumns &, Arena *) const;\n"
+                    "    " << "TypeList<" << aggregate_functions_typenames << ">>(\n"
+                    "    AggregatedDataWithoutKey &, size_t, AggregateColumns &, Arena *) const;\n"
                 "\n"
                 "static void wrapper(\n"
-                    "\tconst Aggregator & aggregator,\n"
-                    "\tAggregatedDataWithoutKey & method,\n"
-                    "\tsize_t rows,\n"
-                    "\tAggregator::AggregateColumns & aggregate_columns,\n"
-                    "\tArena * arena)\n"
+                    "    const Aggregator & aggregator,\n"
+                    "    AggregatedDataWithoutKey & method,\n"
+                    "    size_t rows,\n"
+                    "    Aggregator::AggregateColumns & aggregate_columns,\n"
+                    "    Arena * arena)\n"
                 "{\n"
-                    "\taggregator.executeSpecializedWithoutKey<\n"
-                        "\t\tTypeList<" << aggregate_functions_typenames << ">>(\n"
-                        "\t\tmethod, rows, aggregate_columns, arena);\n"
+                    "    aggregator.executeSpecializedWithoutKey<\n"
+                        "        TypeList<" << aggregate_functions_typenames << ">>(\n"
+                        "        method, rows, aggregate_columns, arena);\n"
                 "}\n"
                 "\n"
                 "void * getPtr() __attribute__((__visibility__(\"default\")));\n"
                 "void * getPtr()\n"
                 "{\n"
-                    "\treturn reinterpret_cast<void *>(&wrapper);\n"
+                    "    return reinterpret_cast<void *>(&wrapper);\n"
                 "}\n";
         }
 
@@ -329,7 +343,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
                 "void * getPtrTwoLevel() __attribute__((__visibility__(\"default\")));\n"
                 "void * getPtrTwoLevel()\n"
                 "{\n"
-                    "\treturn nullptr;\n"
+                    "    return nullptr;\n"
                 "}\n";
         }
 
@@ -355,9 +369,9 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
       * If the counter has reached the value min_count_to_compile, then the compilation starts asynchronously (in a separate thread)
       *  at the end of which `on_ready` callback is called.
       */
+    aggregate_functions_headers_args << " -Wno-unused-function";
     SharedLibraryPtr lib = params.compiler->getOrCount(key, params.min_count_to_compile,
-        "-include " INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h "
-        "-Wno-unused-function",
+        aggregate_functions_headers_args.str(),
         get_code, on_ready);
 
     /// If the result is already ready.
@@ -679,7 +693,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     /// Optimization in the case of a single aggregate function `count`.
     AggregateFunctionCount * agg_count = params.aggregates_size == 1
         ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-        : NULL;
+        : nullptr;
 
     if (agg_count)
         agg_count->addDelta(res, rows);
@@ -1018,23 +1032,27 @@ bool Aggregator::checkLimits(size_t result_size, bool & no_more_keys) const
 {
     if (!no_more_keys && params.max_rows_to_group_by && result_size > params.max_rows_to_group_by)
     {
-        if (params.group_by_overflow_mode == OverflowMode::THROW)
-            throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
-                + " rows, maximum: " + toString(params.max_rows_to_group_by),
-                ErrorCodes::TOO_MUCH_ROWS);
-        else if (params.group_by_overflow_mode == OverflowMode::BREAK)
-            return false;
-        else if (params.group_by_overflow_mode == OverflowMode::ANY)
-            no_more_keys = true;
-        else
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
+        switch (params.group_by_overflow_mode)
+        {
+            case OverflowMode::THROW:
+                throw Exception("Limit for rows to GROUP BY exceeded: has " + toString(result_size)
+                    + " rows, maximum: " + toString(params.max_rows_to_group_by),
+                    ErrorCodes::TOO_MUCH_ROWS);
+
+            case OverflowMode::BREAK:
+                return false;
+
+            case OverflowMode::ANY:
+                no_more_keys = true;
+                break;
+        }
     }
 
     return true;
 }
 
 
-void Aggregator::execute(BlockInputStreamPtr stream, AggregatedDataVariants & result)
+void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result)
 {
     if (isCancelled())
         return;
@@ -1601,7 +1619,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
 
 
 /** Combines aggregation states together, turns them into blocks, and outputs streams.
-  * If the aggregation states are two-level, then it produces blocks strictly in order bucket_num.
+  * If the aggregation states are two-level, then it produces blocks strictly in order of 'bucket_num'.
   * (This is important for distributed processing.)
   * In doing so, it can handle different buckets in parallel, using up to `threads` threads.
   */
@@ -1630,6 +1648,16 @@ public:
         std::stringstream res;
         res << this;
         return res.str();
+    }
+
+    ~MergingAndConvertingBlockInputStream()
+    {
+        LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
+
+        /// We need to wait for threads to finish before destructor of 'parallel_merge_data',
+        ///  because the threads access 'parallel_merge_data'.
+        if (parallel_merge_data)
+            parallel_merge_data->pool.wait();
     }
 
 protected:
@@ -1728,19 +1756,13 @@ private:
 
     struct ParallelMergeData
     {
-        ThreadPool pool;
         std::map<Int32, Block> ready_blocks;
         std::exception_ptr exception;
         std::mutex mutex;
         std::condition_variable condvar;
+        ThreadPool pool;
 
-        ParallelMergeData(size_t threads) : pool(threads) {}
-
-        ~ParallelMergeData()
-        {
-            LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
-            pool.wait();
-        }
+        explicit ParallelMergeData(size_t threads) : pool(threads) {}
     };
 
     std::unique_ptr<ParallelMergeData> parallel_merge_data;
@@ -1989,7 +2011,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
 }
 
 
-void Aggregator::mergeStream(BlockInputStreamPtr stream, AggregatedDataVariants & result, size_t max_threads)
+void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataVariants & result, size_t max_threads)
 {
     if (isCancelled())
         return;

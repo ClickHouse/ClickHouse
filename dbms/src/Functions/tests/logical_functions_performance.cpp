@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-template<typename B>
+template <typename B>
 struct AndImpl
 {
     static inline UInt8 apply(UInt8 a, B b)
@@ -27,7 +27,7 @@ struct AndImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct OrImpl
 {
     static inline UInt8 apply(UInt8 a, B b)
@@ -36,7 +36,7 @@ struct OrImpl
     }
 };
 
-template<typename B>
+template <typename B>
 struct XorImpl
 {
     static inline UInt8 apply(UInt8 a, B b)
@@ -75,7 +75,7 @@ struct AssociativeOperationImpl
     AssociativeOperationImpl<Op, N - 1> continuation;
 
     /// Remembers the last N columns from in.
-    AssociativeOperationImpl(UInt8ColumnPtrs & in)
+    explicit AssociativeOperationImpl(UInt8ColumnPtrs & in)
         : vec(in[in.size() - N]->getData()), continuation(in) {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
@@ -97,7 +97,7 @@ struct AssociativeOperationImpl<Op, 1>
 
     const UInt8 * vec;
 
-    AssociativeOperationImpl(UInt8ColumnPtrs & in)
+    explicit AssociativeOperationImpl(UInt8ColumnPtrs & in)
         : vec(&in[in.size() - 1]->getData()[0]) {}
 
     inline UInt8 apply(size_t i) const
@@ -370,7 +370,6 @@ int main(int argc, char ** argv)
         for (size_t arity = 2; arity <= columns; ++arity)
         {
             FunctionPtr function = std::make_shared<FunctionAnd>();
-            function->getReturnType(DataTypes(arity, DataTypePtr(std::make_shared<DataTypeUInt8>())));
 
             ColumnNumbers arguments(arity);
             for (size_t i = 0; i < arity; ++i)

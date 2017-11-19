@@ -45,7 +45,7 @@ enum ia64_script_insn_opcode
     IA64_INSN_MOVE_SCRATCH_NO_NAT /* like above, but clear NaT info */
   };
 
-#ifdef HAVE___THREAD
+#if defined(HAVE___THREAD) && HAVE___THREAD
 static __thread struct ia64_script_cache ia64_per_thread_cache =
   {
 #ifdef HAVE_ATOMIC_OPS_H
@@ -105,7 +105,7 @@ get_script_cache (unw_addr_space_t as, intrmask_t *saved_maskp)
   if (!spin_trylock_irqsave (&cache->busy, *saved_maskp))
     return NULL;
 #else
-# ifdef HAVE___THREAD
+# if defined(HAVE___THREAD) && HAVE___THREAD
   if (as->caching_policy == UNW_CACHE_PER_THREAD)
     cache = &ia64_per_thread_cache;
 # endif

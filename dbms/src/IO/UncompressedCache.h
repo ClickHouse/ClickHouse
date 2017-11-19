@@ -69,7 +69,7 @@ public:
         return res;
     }
 
-    void set(const Key & key, MappedPtr mapped)
+    void set(const Key & key, const MappedPtr & mapped)
     {
         Base::set(key, mapped);
         ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, current_weight_lost);

@@ -101,7 +101,7 @@ bool allow(
 //    std::cerr << "sum_size: " << sum_size << "\n";
 
     /// Map size to 0..1 using logarithmic scale
-    double size_normalized = mapPiecewiseLinearToUnit(log(1 + sum_size), log(1 + settings.min_size_to_lower_base), log(1 + settings.max_size_to_lower_base));
+    double size_normalized = mapPiecewiseLinearToUnit(log1p(sum_size), log1p(settings.min_size_to_lower_base), log1p(settings.max_size_to_lower_base));
 
 //    std::cerr << "size_normalized: " << size_normalized << "\n";
 
@@ -148,7 +148,7 @@ void selectWithinPartition(
 
     for (size_t begin = 0; begin < parts_count; ++begin)
     {
-        /// If too much parts, select only from first, to avoid complexity.
+        /// If too many parts, select only from first, to avoid complexity.
         if (begin > 1000)
             break;
 

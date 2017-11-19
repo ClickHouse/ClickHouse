@@ -20,7 +20,6 @@ namespace DB
   */
 class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageTinyLog>;
 friend class TinyLogBlockInputStream;
 friend class TinyLogBlockOutputStream;
 
@@ -66,6 +65,10 @@ private:
 
     Logger * log;
 
+    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+    void addFiles(const String & column_name, const IDataType & type);
+
+protected:
     StorageTinyLog(
         const std::string & path_,
         const std::string & name_,
@@ -75,8 +78,6 @@ private:
         const ColumnDefaults & column_defaults_,
         bool attach,
         size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
-
-    void addFiles(const String & column_name, const IDataType & type);
 };
 
 }

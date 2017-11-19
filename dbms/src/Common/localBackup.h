@@ -13,4 +13,4 @@
   *  and is intended to be used as a simple means of protection against a human or program error,
   *  but not from a hardware failure.
   */
-void localBackup(Poco::Path source_path, Poco::Path destination_path);
+void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path);

@@ -146,7 +146,7 @@ private:
  * Grow the map by GrowthFactor::num/GrowthFactor::den and use a modulo to map a hash
  * to a bucket. Slower but it can be usefull if you want a slower growth.
  */
-template<class GrowthFactor = std::ratio<3, 2>>
+template <typename GrowthFactor = std::ratio<3, 2>>
 class mod_growth_policy {
 public:
     mod_growth_policy(std::size_t& min_bucket_count_in_out) {
@@ -212,7 +212,7 @@ static constexpr const std::array<std::size_t, 39> PRIMES = {{
     1610612741ul, 3221225473ul, 4294967291ul
 }};
 
-template<unsigned int IPrime>
+template <unsigned int IPrime>
 static std::size_t mod(std::size_t hash) { return hash % PRIMES[IPrime]; }
 
 // MOD_PRIME[iprime](hash) returns hash % PRIMES[iprime]. This table allows for faster modulo as the
@@ -274,26 +274,26 @@ namespace detail_hopscotch_hash {
     
     
     
-template<typename T>
+template <typename T>
 struct make_void {
     using type = void;
 };
 
 
-template<typename T, typename = void>
+template <typename T, typename = void>
 struct has_is_transparent : std::false_type {
 };
 
-template<typename T>
+template <typename T>
 struct has_is_transparent<T, typename make_void<typename T::is_transparent>::type> : std::true_type {
 };
 
 
-template<typename T, typename = void>
+template <typename T, typename = void>
 struct has_key_compare : std::false_type {
 };
 
-template<typename T>
+template <typename T>
 struct has_key_compare<T, typename make_void<typename T::key_compare>::type> : std::true_type {
 };
 
@@ -305,29 +305,29 @@ struct has_key_compare<T, typename make_void<typename T::key_compare>::type> : s
  * smallest_type_for_min_bits::type returns the smallest type that can fit MinBits.
  */
 static const size_t SMALLEST_TYPE_MAX_BITS_SUPPORTED = 64;
-template<unsigned int MinBits, typename Enable = void>
+template <unsigned int MinBits, typename Enable = void>
 class smallest_type_for_min_bits {
 };
 
-template<unsigned int MinBits>
+template <unsigned int MinBits>
 class smallest_type_for_min_bits<MinBits, typename std::enable_if<(MinBits > 0) && (MinBits <= 8)>::type> {
 public:
     using type = std::uint_least8_t;
 };
 
-template<unsigned int MinBits>
+template <unsigned int MinBits>
 class smallest_type_for_min_bits<MinBits, typename std::enable_if<(MinBits > 8) && (MinBits <= 16)>::type> {
 public:
     using type = std::uint_least16_t;
 };
 
-template<unsigned int MinBits>
+template <unsigned int MinBits>
 class smallest_type_for_min_bits<MinBits, typename std::enable_if<(MinBits > 16) && (MinBits <= 32)>::type> {
 public:
     using type = std::uint_least32_t;
 };
 
-template<unsigned int MinBits>
+template <unsigned int MinBits>
 class smallest_type_for_min_bits<MinBits, typename std::enable_if<(MinBits > 32) && (MinBits <= 64)>::type> {
 public:
     using type = std::uint_least64_t;
@@ -353,7 +353,7 @@ public:
 static const std::size_t NB_RESERVED_BITS_IN_NEIGHBORHOOD = 2; 
 
 
-template<bool StoreHash>
+template <bool StoreHash>
 class hopscotch_bucket_hash {
 public:    
     using hash_type = std::false_type;
@@ -375,7 +375,7 @@ protected:
     }
 };
 
-template<>
+template <>
 class hopscotch_bucket_hash<true> {
 public:
     using hash_type = std::uint_least32_t;
@@ -402,7 +402,7 @@ private:
     hash_type m_hash;
 };
 
-template<typename ValueType, unsigned int NeighborhoodSize, bool StoreHash>
+template <typename ValueType, unsigned int NeighborhoodSize, bool StoreHash>
 class hopscotch_bucket: public hopscotch_bucket_hash<StoreHash> {
 private:
     static const size_t MIN_NEIGHBORHOOD_SIZE = 4;
@@ -529,7 +529,7 @@ public:
         return *reinterpret_cast<const value_type*>(std::addressof(m_value));
     }
     
-    template<typename... Args>
+    template <typename... Args>
     void set_value_of_empty_bucket(std::size_t hash, Args&&... value_type_args) {
         tsl_assert(empty());
         
@@ -617,7 +617,7 @@ private:
  * OverflowContainer will be used as containers for overflown elements. Usually it should be a list<ValueType>
  * or a set<Key>/map<Key, T>.
  */
-template<class ValueType,
+template <typename ValueType,
          class KeySelect,
          class ValueSelect,
          class Hash,
@@ -629,11 +629,11 @@ template<class ValueType,
          class OverflowContainer>
 class hopscotch_hash: private Hash, private KeyEqual, private GrowthPolicy {
 private:
-    template<typename U>
+    template <typename U>
     using has_mapped_type = typename std::integral_constant<bool, !std::is_same<U, void>::value>;
     
 public:
-    template<bool is_const>
+    template <bool is_const>
     class hopscotch_iterator;
     
     using key_type = typename KeySelect::key_type;
@@ -680,7 +680,7 @@ public:
      * In case of a map, to get a modifiable reference to the value associated to a key (the '.second' in the 
      * stored pair), you have to call 'value()'.
      */
-    template<bool is_const>
+    template <bool is_const>
     class hopscotch_iterator {
         friend class hopscotch_hash;
     private:
@@ -724,7 +724,7 @@ public:
             return KeySelect()(*m_overflow_iterator);
         }
 
-        template<class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
+        template <typename U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
         typename std::conditional<
                         is_const, 
                         const typename U::value_type&, 
@@ -791,7 +791,7 @@ public:
 
     
 public:
-    template<class OC = OverflowContainer, typename std::enable_if<!has_key_compare<OC>::value>::type* = nullptr>
+    template <typename OC = OverflowContainer, typename std::enable_if<!has_key_compare<OC>::value>::type* = nullptr>
     hopscotch_hash(size_type bucket_count, 
                   const Hash& hash,
                   const KeyEqual& equal,
@@ -814,7 +814,7 @@ public:
         this->max_load_factor(max_load_factor);
     }
     
-    template<class OC = OverflowContainer, typename std::enable_if<has_key_compare<OC>::value>::type* = nullptr>
+    template <typename OC = OverflowContainer, typename std::enable_if<has_key_compare<OC>::value>::type* = nullptr>
     hopscotch_hash(size_type bucket_count, 
                   const Hash& hash,
                   const KeyEqual& equal,
@@ -949,7 +949,7 @@ public:
         return insert_impl(value); 
     }
         
-    template<class P, typename std::enable_if<std::is_constructible<value_type, P&&>::value>::type* = nullptr>
+    template <typename P, typename std::enable_if<std::is_constructible<value_type, P&&>::value>::type* = nullptr>
     std::pair<iterator, bool> insert(P&& value) { 
         return emplace(std::forward<P>(value)); 
     }
@@ -967,7 +967,7 @@ public:
         return insert(value).first; 
     }
         
-    template<class P, typename std::enable_if<std::is_constructible<value_type, P&&>::value>::type* = nullptr>
+    template <typename P, typename std::enable_if<std::is_constructible<value_type, P&&>::value>::type* = nullptr>
     iterator insert(const_iterator hint, P&& value) {
         return emplace_hint(hint, std::forward<P>(value)); 
     }
@@ -981,7 +981,7 @@ public:
     }
     
     
-    template<class InputIt>
+    template <typename InputIt>
     void insert(InputIt first, InputIt last) {
         if(std::is_base_of<std::forward_iterator_tag, 
                            typename std::iterator_traits<InputIt>::iterator_category>::value) 
@@ -1003,18 +1003,18 @@ public:
     }
     
     
-    template<class M>
+    template <typename M>
     std::pair<iterator, bool> insert_or_assign(const key_type& k, M&& obj) { 
         return insert_or_assign_impl(k, std::forward<M>(obj)); 
     }
 
-    template<class M>
+    template <typename M>
     std::pair<iterator, bool> insert_or_assign(key_type&& k, M&& obj) { 
         return insert_or_assign_impl(std::move(k), std::forward<M>(obj)); 
     }
     
     
-    template<class M>
+    template <typename M>
     iterator insert_or_assign(const_iterator hint, const key_type& k, M&& obj) {
         if(hint != cend() && compare_keys(KeySelect()(*hint), k)) { 
             auto it = mutable_iterator(hint); 
@@ -1026,7 +1026,7 @@ public:
         return insert_or_assign(k, std::forward<M>(obj)).first;
     }
     
-    template<class M>
+    template <typename M>
     iterator insert_or_assign(const_iterator hint, key_type&& k, M&& obj) {
         if(hint != cend() && compare_keys(KeySelect()(*hint), k)) {
             auto it = mutable_iterator(hint); 
@@ -1039,27 +1039,27 @@ public:
     }
     
     
-    template<class... Args>
+    template <typename... Args>
     std::pair<iterator, bool> emplace(Args&&... args) {
         return insert(value_type(std::forward<Args>(args)...));
     }
     
-    template<class... Args>
+    template <typename... Args>
     iterator emplace_hint(const_iterator hint, Args&&... args) {
         return insert(hint, value_type(std::forward<Args>(args)...));        
     }
     
-    template<class... Args>
+    template <typename... Args>
     std::pair<iterator, bool> try_emplace(const key_type& k, Args&&... args) { 
         return try_emplace_impl(k, std::forward<Args>(args)...);
     }
     
-    template<class... Args>
+    template <typename... Args>
     std::pair<iterator, bool> try_emplace(key_type&& k, Args&&... args) {
         return try_emplace_impl(std::move(k), std::forward<Args>(args)...);
     }
     
-    template<class... Args>
+    template <typename... Args>
     iterator try_emplace(const_iterator hint, const key_type& k, Args&&... args) { 
         if(hint != cend() && compare_keys(KeySelect()(*hint), k)) { 
             return mutable_iterator(hint); 
@@ -1068,7 +1068,7 @@ public:
         return try_emplace(k, std::forward<Args>(args)...).first;
     }
     
-    template<class... Args>
+    template <typename... Args>
     iterator try_emplace(const_iterator hint, key_type&& k, Args&&... args) {
         if(hint != cend() && compare_keys(KeySelect()(*hint), k)) { 
             return mutable_iterator(hint); 
@@ -1111,12 +1111,12 @@ public:
         return to_delete;
     }
     
-    template<class K>
+    template <typename K>
     size_type erase(const K& key) {
         return erase(key, hash_key(key));
     }
     
-    template<class K>
+    template <typename K>
     size_type erase(const K& key, std::size_t hash) {
         const std::size_t ibucket_for_hash = bucket_for_hash(hash);
         
@@ -1157,23 +1157,23 @@ public:
     /*
      * Lookup
      */
-    template<class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
+    template <typename K, typename U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
     typename U::value_type& at(const K& key) {
         return at(key, hash_key(key));
     }
     
-    template<class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
+    template <typename K, typename U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
     typename U::value_type& at(const K& key, std::size_t hash) {
         return const_cast<typename U::value_type&>(static_cast<const hopscotch_hash*>(this)->at(key, hash));
     }
     
     
-    template<class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
+    template <typename K, typename U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
     const typename U::value_type& at(const K& key) const {
         return at(key, hash_key(key));
     }
     
-    template<class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
+    template <typename K, typename U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
     const typename U::value_type& at(const K& key, std::size_t hash) const {
         using T = typename U::value_type;
         
@@ -1187,7 +1187,7 @@ public:
     }
     
     
-    template<class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
+    template <typename K, typename U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
     typename U::value_type& operator[](K&& key) {
         using T = typename U::value_type;
         
@@ -1206,57 +1206,57 @@ public:
     }
     
     
-    template<class K>
+    template <typename K>
     size_type count(const K& key) const {
         return count(key, hash_key(key));
     }
     
-    template<class K>
+    template <typename K>
     size_type count(const K& key, std::size_t hash) const {
         return count_impl(key, hash, m_buckets.cbegin() + bucket_for_hash(hash));
     }
     
     
-    template<class K>
+    template <typename K>
     iterator find(const K& key) {
         return find(key, hash_key(key));
     }
     
-    template<class K>
+    template <typename K>
     iterator find(const K& key, std::size_t hash) {
         return find_impl(key, hash, m_buckets.begin() + bucket_for_hash(hash));
     }
     
     
-    template<class K>
+    template <typename K>
     const_iterator find(const K& key) const {
         return find(key, hash_key(key));
     }
     
-    template<class K>
+    template <typename K>
     const_iterator find(const K& key, std::size_t hash) const {
         return find_impl(key, hash, m_buckets.begin() + bucket_for_hash(hash));
     }
     
     
-    template<class K>
+    template <typename K>
     std::pair<iterator, iterator> equal_range(const K& key) {
         return equal_range(key, hash_key(key));
     }
     
-    template<class K>
+    template <typename K>
     std::pair<iterator, iterator> equal_range(const K& key, std::size_t hash) {
         iterator it = find(key, hash);
         return std::make_pair(it, (it == end())?it:std::next(it));
     }
     
     
-    template<class K>
+    template <typename K>
     std::pair<const_iterator, const_iterator> equal_range(const K& key) const {
         return equal_range(key, hash_key(key));
     }
     
-    template<class K>
+    template <typename K>
     std::pair<const_iterator, const_iterator> equal_range(const K& key, std::size_t hash) const {
         const_iterator it = find(key, hash);
         return std::make_pair(it, (it == cend())?it:std::next(it));
@@ -1339,19 +1339,19 @@ public:
         return m_overflow_elements.size();
     }
     
-    template<class U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
+    template <typename U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
     typename U::key_compare key_comp() const {
         return m_overflow_elements.key_comp();
     }
     
     
 private:
-    template<class K>
+    template <typename K>
     std::size_t hash_key(const K& key) const {
         return Hash::operator()(key);
     }
     
-    template<class K1, class K2>
+    template <typename K1, typename K2>
     bool compare_keys(const K1& key1, const K2& key2) const {
         return KeyEqual::operator()(key1, key2);
     }
@@ -1365,7 +1365,7 @@ private:
                   std::is_copy_constructible<value_type>::value, 
                   "value_type must be either copy constructible or nothrow move constructible.");
     
-    template<typename U = value_type, 
+    template <typename U = value_type, 
              typename std::enable_if<std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
     void rehash_impl(size_type count) {
         hopscotch_hash new_map = new_hopscotch_hash(count);
@@ -1425,7 +1425,7 @@ private:
         new_map.swap(*this);
     }
     
-    template<typename U = value_type, 
+    template <typename U = value_type, 
              typename std::enable_if<std::is_copy_constructible<U>::value && 
                                      !std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
     void rehash_impl(size_type count) {
@@ -1499,7 +1499,7 @@ private:
     
 
     
-    template<class K, class M>
+    template <typename K, typename M>
     std::pair<iterator, bool> insert_or_assign_impl(K&& key, M&& obj) {
         auto it = try_emplace_impl(std::forward<K>(key), std::forward<M>(obj));
         if(!it.second) {
@@ -1509,7 +1509,7 @@ private:
         return it;
     }
     
-    template<typename P, class... Args>
+    template <typename P, typename... Args>
     std::pair<iterator, bool> try_emplace_impl(P&& key, Args&&... args_value) {
         const std::size_t hash = hash_key(key);
         const std::size_t ibucket_for_hash = bucket_for_hash(hash);
@@ -1525,7 +1525,7 @@ private:
                                                    std::forward_as_tuple(std::forward<Args>(args_value)...));
     }
     
-    template<typename P>
+    template <typename P>
     std::pair<iterator, bool> insert_impl(P&& value) {
         const std::size_t hash = hash_key(KeySelect()(value));
         const std::size_t ibucket_for_hash = bucket_for_hash(hash);
@@ -1540,7 +1540,7 @@ private:
         return insert_impl(ibucket_for_hash, hash, std::forward<P>(value));
     }
     
-    template<typename... Args>
+    template <typename... Args>
     std::pair<iterator, bool> insert_impl(std::size_t ibucket_for_hash, std::size_t hash, Args&&... value_type_args) {
         if((m_nb_elements - m_overflow_elements.size()) >= m_load_threshold) {
             rehash(GrowthPolicy::next_bucket_count());
@@ -1624,7 +1624,7 @@ private:
      * 
      * Return bucket iterator to ibucket_empty
      */
-    template<typename... Args>
+    template <typename... Args>
     iterator_buckets insert_in_bucket(std::size_t ibucket_empty, std::size_t ibucket_for_hash,
                                       std::size_t hash, Args&&... value_type_args) 
     {
@@ -1682,7 +1682,7 @@ private:
     
     
     
-    template<class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
+    template <typename K, typename U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
     typename U::value_type* find_value_impl(const K& key, std::size_t hash, iterator_buckets it_bucket) {
         return const_cast<typename U::value_type*>(
                     static_cast<const hopscotch_hash*>(this)->find_value_impl(key, hash, it_bucket));
@@ -1693,7 +1693,7 @@ private:
      *
      * Return null if no value for key (TODO use std::optional when available).
      */
-    template<class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
+    template <typename K, typename U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
     const typename U::value_type* find_value_impl(const K& key, std::size_t hash, 
                                                   const_iterator_buckets it_bucket) const 
     {
@@ -1712,7 +1712,7 @@ private:
         return nullptr;
     }
     
-    template<class K>
+    template <typename K>
     size_type count_impl(const K& key, std::size_t hash, const_iterator_buckets it_bucket) const {
         if(find_in_buckets(key, hash, it_bucket) != m_buckets.cend()) {
             return 1;
@@ -1725,7 +1725,7 @@ private:
         }
     }
     
-    template<class K>
+    template <typename K>
     iterator find_impl(const K& key, std::size_t hash, iterator_buckets it_bucket) {
         auto it = find_in_buckets(key, hash, it_bucket);
         if(it != m_buckets.end()) {
@@ -1739,7 +1739,7 @@ private:
         return iterator(m_buckets.end(), m_buckets.end(), find_in_overflow(key));
     }
     
-    template<class K>
+    template <typename K>
     const_iterator find_impl(const K& key, std::size_t hash, const_iterator_buckets it_bucket) const {
         auto it = find_in_buckets(key, hash, it_bucket);
         if(it != m_buckets.cend()) {
@@ -1754,14 +1754,14 @@ private:
         return const_iterator(m_buckets.cend(), m_buckets.cend(), find_in_overflow(key));
     }
     
-    template<class K>
+    template <typename K>
     iterator_buckets find_in_buckets(const K& key, std::size_t hash, iterator_buckets it_bucket) {   
         auto it_find = static_cast<const hopscotch_hash*>(this)->find_in_buckets(key, hash, it_bucket); 
         return m_buckets.begin() + std::distance(m_buckets.cbegin(), it_find);
     }
 
     
-    template<class K>
+    template <typename K>
     const_iterator_buckets find_in_buckets(const K& key, std::size_t hash, const_iterator_buckets it_bucket) const {      
         (void) hash; // Avoid warning of unused variable when StoreHash is false;
 
@@ -1791,7 +1791,7 @@ private:
     
 
     
-    template<class K, class U = OverflowContainer, typename std::enable_if<!has_key_compare<U>::value>::type* = nullptr>
+    template <typename K, typename U = OverflowContainer, typename std::enable_if<!has_key_compare<U>::value>::type* = nullptr>
     iterator_overflow find_in_overflow(const K& key) {
         return std::find_if(m_overflow_elements.begin(), m_overflow_elements.end(), 
                             [&](const value_type& value) { 
@@ -1799,7 +1799,7 @@ private:
                             });
     }
     
-    template<class K, class U = OverflowContainer, typename std::enable_if<!has_key_compare<U>::value>::type* = nullptr>
+    template <typename K, typename U = OverflowContainer, typename std::enable_if<!has_key_compare<U>::value>::type* = nullptr>
     const_iterator_overflow find_in_overflow(const K& key) const {
         return std::find_if(m_overflow_elements.cbegin(), m_overflow_elements.cend(), 
                             [&](const value_type& value) { 
@@ -1807,37 +1807,37 @@ private:
                             });
     }
     
-    template<class K, class U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
+    template <typename K, typename U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
     iterator_overflow find_in_overflow(const K& key) {
         return m_overflow_elements.find(key);
     }
     
-    template<class K, class U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
+    template <typename K, typename U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
     const_iterator_overflow find_in_overflow(const K& key) const {
         return m_overflow_elements.find(key);
     }
     
     
     
-    template<class... Args, class U = OverflowContainer, typename std::enable_if<!has_key_compare<U>::value>::type* = nullptr>
+    template <typename... Args, typename U = OverflowContainer, typename std::enable_if<!has_key_compare<U>::value>::type* = nullptr>
     iterator_overflow insert_in_overflow(Args&&... value_type_args) {
         return m_overflow_elements.emplace(m_overflow_elements.end(), std::forward<Args>(value_type_args)...);
     }
     
-    template<class... Args, class U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
+    template <typename... Args, typename U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
     iterator_overflow insert_in_overflow(Args&&... value_type_args) {
         return m_overflow_elements.emplace(std::forward<Args>(value_type_args)...).first;
     }
     
     
     
-    template<class U = OverflowContainer, typename std::enable_if<!has_key_compare<U>::value>::type* = nullptr>
+    template <typename U = OverflowContainer, typename std::enable_if<!has_key_compare<U>::value>::type* = nullptr>
     hopscotch_hash new_hopscotch_hash(size_type bucket_count) {
         return hopscotch_hash(bucket_count, static_cast<Hash&>(*this), static_cast<KeyEqual&>(*this), 
                               get_allocator(), m_max_load_factor);
     }
     
-    template<class U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
+    template <typename U = OverflowContainer, typename std::enable_if<has_key_compare<U>::value>::type* = nullptr>
     hopscotch_hash new_hopscotch_hash(size_type bucket_count) {
         return hopscotch_hash(bucket_count, static_cast<Hash&>(*this), static_cast<KeyEqual&>(*this), 
                               get_allocator(), m_max_load_factor, m_overflow_elements.key_comp());

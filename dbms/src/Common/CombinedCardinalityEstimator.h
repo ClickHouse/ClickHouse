@@ -228,6 +228,7 @@ private:
         if (getContainerType() != details::ContainerType::SMALL)
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 
+        CurrentMemoryTracker::alloc(sizeof(Medium));
         auto tmp_medium = std::make_unique<Medium>();
 
         for (const auto & x : small)
@@ -235,8 +236,6 @@ private:
 
         medium = tmp_medium.release();
         setContainerType(details::ContainerType::MEDIUM);
-
-        CurrentMemoryTracker::alloc(sizeof(medium));
     }
 
     void toLarge()
@@ -246,6 +245,7 @@ private:
         if ((container_type != details::ContainerType::SMALL) && (container_type != details::ContainerType::MEDIUM))
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
 
+        CurrentMemoryTracker::alloc(sizeof(Large));
         auto tmp_large = std::make_unique<Large>();
 
         if (container_type == details::ContainerType::SMALL)
@@ -263,9 +263,6 @@ private:
 
         large = tmp_large.release();
         setContainerType(details::ContainerType::LARGE);
-
-        CurrentMemoryTracker::alloc(sizeof(large));
-
     }
 
     void NO_INLINE destroy()
@@ -279,24 +276,24 @@ private:
             delete medium;
             medium = nullptr;
 
-            CurrentMemoryTracker::free(sizeof(medium));
+            CurrentMemoryTracker::free(sizeof(Medium));
         }
         else if (container_type == details::ContainerType::LARGE)
         {
             delete large;
             large = nullptr;
 
-            CurrentMemoryTracker::free(sizeof(large));
+            CurrentMemoryTracker::free(sizeof(Large));
         }
     }
 
-    template<typename T>
+    template <typename T>
     inline T & getContainer()
     {
         return *reinterpret_cast<T *>(address & mask);
     }
 
-    template<typename T>
+    template <typename T>
     inline const T & getContainer() const
     {
         return *reinterpret_cast<T *>(address & mask);

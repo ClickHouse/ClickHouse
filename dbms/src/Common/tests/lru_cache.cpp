@@ -12,7 +12,7 @@ namespace
 {
 
 void run();
-void runTest(unsigned int num, const std::function<bool()> func);
+void runTest(unsigned int num, const std::function<bool()> & func);
 bool test1();
 bool test2();
 bool test_concurrent();
@@ -46,7 +46,7 @@ void run()
     }
 }
 
-void runTest(unsigned int num, const std::function<bool()> func)
+void runTest(unsigned int num, const std::function<bool()> & func)
 {
     bool ok;
 
