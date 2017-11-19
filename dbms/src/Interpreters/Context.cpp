@@ -1233,7 +1233,7 @@ BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
-        shared->schedule_pool = std::make_shared<BackgroundSchedulePool>(settings.schedule_background_pool_size);
+        shared->schedule_pool = std::make_shared<BackgroundSchedulePool>(settings.background_schedule_pool_size);
     return *shared->schedule_pool;
 }
 

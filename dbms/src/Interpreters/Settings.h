@@ -77,7 +77,7 @@ struct Settings
     M(SettingUInt64, background_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE) \
     /** Number of threads performing background tasks for replicated tables. \
       * TODO: Now only applies when the server is started. You can make it dynamically variable. */ \
-    M(SettingUInt64, schedule_background_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE) \
+    M(SettingUInt64, background_schedule_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE) \
     \
     /** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
     M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \

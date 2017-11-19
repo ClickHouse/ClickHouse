@@ -273,6 +273,7 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 
     return code;
 }
+
 Strings ZooKeeper::getChildren(
     const std::string & path, Stat * stat, const EventPtr & watch)
 {
