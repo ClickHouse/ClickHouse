@@ -375,10 +375,9 @@ const Block & IProfilingBlockInputStream::getExtremes() const
 
 void IProfilingBlockInputStream::collectTotalRowsApprox()
 {
-    if (collected_total_rows_approx)
+    bool old_val = false;
+    if (!collected_total_rows_approx.compare_exchange_strong(old_val, true))
         return;
-
-    collected_total_rows_approx = true;
 
     for (auto & child : children)
     {
