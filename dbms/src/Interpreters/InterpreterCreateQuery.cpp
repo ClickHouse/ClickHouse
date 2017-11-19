@@ -489,7 +489,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
     {
         create.select->setDatabaseIfNeeded(current_database);
-        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->ptr(), context);
+        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->clone(), context);
         as_select_sample = interpreter_select->getSampleBlock();
     }
 

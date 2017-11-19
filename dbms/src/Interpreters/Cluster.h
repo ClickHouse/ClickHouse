@@ -135,11 +135,6 @@ public:
 private:
     void initMisc();
 
-    /// Hash list of addresses and ports.
-    /// We need it in order to be able to perform resharding requests
-    /// on tables that have the distributed engine.
-    void calculateHashOfAddresses();
-
     /// For getClusterWithSingleShard implementation.
     Cluster(const Cluster & from, size_t index);
 

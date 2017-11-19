@@ -200,7 +200,7 @@ StorageKafka::StorageKafka(
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_,
-	const String & brokers_, const String & group_, const Names & topics_,
+    const String & brokers_, const String & group_, const Names & topics_,
     const String & format_name_, const String & schema_name_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
     table_name(table_name_), database_name(database_name_), context(context_),
@@ -243,7 +243,7 @@ BlockInputStreams StorageKafka::read(
     processed_stage = QueryProcessingStage::FetchColumns;
 
     if (!conf)
-    	return BlockInputStreams();
+        return BlockInputStreams();
 
     BlockInputStreams streams;
     streams.reserve(num_streams);

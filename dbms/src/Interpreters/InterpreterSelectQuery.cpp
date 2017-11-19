@@ -156,6 +156,15 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
 
     query_analyzer = std::make_unique<ExpressionAnalyzer>(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze);
 
+    if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
+        throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
+
+    if (query.final() && (input || !storage || !storage->supportsFinal()))
+        throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
+
+    if (query.prewhere_expression && (input || !storage || !storage->supportsPrewhere()))
+        throw Exception((!input && storage) ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
+
     /// Save the new temporary tables in the query context
     for (const auto & it : query_analyzer->getExternalTables())
         if (!context.tryGetExternalTable(it.first))
@@ -177,16 +186,6 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
                 ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
         }
     }
-}
-
-void InterpreterSelectQuery::initQueryAnalyzer()
-{
-    query_analyzer.reset(
-        new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze));
-
-    for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
-        p->query_analyzer.reset(
-            new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, !only_analyze));
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
@@ -754,15 +753,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         if (query_analyzer->hasAggregation())
             interpreter_subquery->ignoreWithTotals();
     }
-
-    if (query.sample_size() && (!storage || !storage->supportsSampling()))
-        throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
-
-    if (query.final() && (!storage || !storage->supportsFinal()))
-        throw Exception(storage ? "Storage " + storage->getName() + " doesn't support FINAL" : "Illegal FINAL", ErrorCodes::ILLEGAL_FINAL);
-
-    if (query.prewhere_expression && (!storage || !storage->supportsPrewhere()))
-        throw Exception(storage ? "Storage " + storage->getName() + " doesn't support PREWHERE" : "Illegal PREWHERE", ErrorCodes::ILLEGAL_PREWHERE);
 
     const Settings & settings = context.getSettingsRef();
 

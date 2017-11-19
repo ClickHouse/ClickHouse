@@ -1693,15 +1693,6 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
     return nullptr;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & part_name, size_t shard_no)
-{
-    const MutableDataPartPtr & part_from_shard = per_shard_data_parts.at(shard_no);
-
-    if (part_from_shard->name == part_name)
-        return part_from_shard;
-
-    return nullptr;
-}
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
 {
