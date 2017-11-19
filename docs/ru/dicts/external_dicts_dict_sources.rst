@@ -10,7 +10,7 @@
 
 .. code-block:: xml
 
-  <dictionaries>
+  <yandex>
     <dictionary>
       ...
       <source>
@@ -21,7 +21,7 @@
       ...
     </dictionary>
     ...
-  </dictionaries>
+  </yandex>
 
 Источник настраивается в разделе ``source``. 
 
@@ -248,7 +248,7 @@ ODBC
 
 .. code-block:: xml
 
-  <dictionaries>
+  <yandex>
       <dictionary>
           <name>test</name>
           <source>
@@ -278,7 +278,7 @@ ODBC
               </attribute>
           </structure>
       </dictionary>
-  </dictionaries>
+  </yandex>
 
 
 

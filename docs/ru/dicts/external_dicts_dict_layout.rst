@@ -27,7 +27,7 @@
 
 .. code-block:: xml
 
-  <dictionaries>
+  <yandex>
       <dictionary>
           ...
           <layout>
@@ -37,7 +37,7 @@
           </layout>
           ...
       </dictionary>
-  </dictionaries>
+  </yandex>
 
 
 .. _dicts-external_dicts_dict_layout-manner:
@@ -169,7 +169,7 @@ range_hashed
 
 .. code-block:: xml
 
-  <dictionaries>
+  <yandex>
           <dictionary>
                   
                   ...
@@ -196,7 +196,7 @@ range_hashed
                   </structure>
 
           </dictionary>
-  </dictionaries>
+  </yandex>
 
 
 .. _dicts-external_dicts_dict_layout-cache:
