@@ -33,9 +33,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(String database
         auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
         auto query = materialized_view.getInnerQuery();
-        auto next = std::make_shared<PushingToViewsBlockOutputStream>(database_table.first, database_table.second, *views_context, ASTPtr());
+        auto out = std::make_shared<PushingToViewsBlockOutputStream>(database_table.first, database_table.second, *views_context, ASTPtr());
 
-        views.emplace_back(std::move(query), std::move(next));
+        views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
     }
 
     /* Do not push to destination table if the flag is set */
@@ -59,10 +59,18 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     /// Insert data into materialized views only after successful insert into main table
     for (auto & view : views)
     {
-        BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-        InterpreterSelectQuery select(view.first, *views_context, QueryProcessingStage::Complete, 0, from);
-        BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-        copyData(*data, *view.second);
+        try
+        {
+            BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
+            InterpreterSelectQuery select(view.query, *views_context, QueryProcessingStage::Complete, 0, from);
+            BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+            copyData(*data, *view.out);
+        }
+        catch (Exception & ex)
+        {
+            ex.addMessage("while pushing to view " + view.database + "." + view.table);
+            throw;
+        }
     }
 }
 
