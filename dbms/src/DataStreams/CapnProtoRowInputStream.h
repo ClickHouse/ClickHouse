@@ -1,4 +1,6 @@
 #pragma once
+#include <Common/config.h>
+#if USE_CAPNP
 
 #include <Core/Block.h>
 #include <DataStreams/IRowInputStream.h>
@@ -26,10 +28,11 @@ public:
     };
     using NestedFieldList = std::vector<NestedField>;
 
-    /** schema_file - location of the capnproto schema, e.g. "schema.canpn"
+    /** schema_dir  - base path for schema files
+      * schema_file - location of the capnproto schema, e.g. "schema.canpn"
       * root_object - name to the root object, e.g. "Message"
       */
-    CapnProtoRowInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_file, const String & root_object);
+    CapnProtoRowInputStream(ReadBuffer & istr_, const Block & sample_, const String & schema_dir, const String & schema_file, const String & root_object);
 
     bool read(Block & block) override;
 
@@ -66,3 +69,5 @@ private:
 };
 
 }
+
+#endif // USE_CAPNP

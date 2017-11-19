@@ -65,9 +65,9 @@ public:
     LocalDate(DayNum_t day_num)
     {
         const auto & values = DateLUT::instance().getValues(day_num);
-        m_year     = values.year;
+        m_year  = values.year;
         m_month = values.month;
-        m_day     = values.day_of_month;
+        m_day   = values.day_of_month;
     }
 
     LocalDate(unsigned short year_, unsigned char month_, unsigned char day_)

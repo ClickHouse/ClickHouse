@@ -23,7 +23,6 @@ class StorageKafka;
   */
 class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageKafka>;
 friend class KafkaBlockInputStream;
 friend class KafkaBlockOutputStream;
 
@@ -53,7 +52,6 @@ public:
 
     void updateDependencies() override;
 
-
 private:
     String table_name;
     String database_name;
@@ -71,6 +69,10 @@ private:
     std::atomic<bool> is_cancelled{false};
     std::thread stream_thread;
 
+    void streamThread();
+    void streamToViews();
+
+protected:
     StorageKafka(
         const std::string & table_name_,
         const std::string & database_name_,
@@ -81,9 +83,6 @@ private:
         const ColumnDefaults & column_defaults_,
         const String & brokers_, const String & group_, const Names & topics_,
         const String & format_name_, const String & schema_name_);
-
-    void streamThread();
-    void streamToViews();
 };
 
 }

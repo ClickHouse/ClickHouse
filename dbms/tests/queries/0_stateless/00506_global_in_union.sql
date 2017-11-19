@@ -9,9 +9,9 @@ INSERT INTO test.globalin VALUES (34, toDate('2017-10-02')), (42, toDate('2017-1
 
 SELECT * FROM ( SELECT CounterID FROM remote('localhost', 'test', 'globalin') WHERE (CounterID GLOBAL IN ( SELECT toUInt32(34))) GROUP BY CounterID);
 SELECT 'NOW okay =========================:';
-SELECT CounterID FROM remote('127.0.0.1', 'test', 'globalin') WHERE (CounterID GLOBAL IN ( SELECT toUInt32(34) )) GROUP BY CounterID  UNION ALL SELECT CounterID FROM remote('localhost', 'test', 'globalin') WHERE (CounterID GLOBAL IN ( SELECT toUInt32(34))) GROUP BY CounterID;
+SELECT CounterID FROM remote('localhost', 'test', 'globalin') WHERE (CounterID GLOBAL IN ( SELECT toUInt32(34) )) GROUP BY CounterID  UNION ALL SELECT CounterID FROM remote('localhost', 'test', 'globalin') WHERE (CounterID GLOBAL IN ( SELECT toUInt32(34))) GROUP BY CounterID;
 SELECT 'NOW BAD ==========================:';
-SELECT * FROM ( SELECT CounterID FROM remote('127.0.0.1', 'test', 'globalin') WHERE (CounterID GLOBAL IN ( SELECT toUInt32(34) )) GROUP BY CounterID  UNION ALL SELECT CounterID FROM remote('localhost', 'test', 'globalin') WHERE (CounterID GLOBAL IN ( SELECT toUInt32(34))) GROUP BY CounterID);
+SELECT * FROM ( SELECT CounterID FROM remote('localhost', 'test', 'globalin') WHERE (CounterID GLOBAL IN ( SELECT toUInt32(34) )) GROUP BY CounterID  UNION ALL SELECT CounterID FROM remote('localhost', 'test', 'globalin') WHERE (CounterID GLOBAL IN ( SELECT toUInt32(34))) GROUP BY CounterID);
 SELECT 'finish ===========================;';
 
 DROP TABLE test.globalin;

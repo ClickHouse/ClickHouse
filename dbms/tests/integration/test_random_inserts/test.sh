@@ -1,7 +1,7 @@
 #!/bin/bash
 #set -e
 
-[[ -n "$1" ]] && host="$1" || host="127.0.0.1"
+[[ -n "$1" ]] && host="$1" || host="localhost"
 [[ -n "$2" ]] && min_timestamp="$2" || min_timestamp=$(( $(date +%s) - 10 ))
 [[ -n "$3" ]] && max_timestamp="$3" || max_timestamp=$(( $(date +%s) + 10 ))
 

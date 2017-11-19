@@ -406,43 +406,6 @@ void Cluster::initMisc()
             break;
         }
     }
-
-    calculateHashOfAddresses();
-}
-
-
-void Cluster::calculateHashOfAddresses()
-{
-    std::vector<std::string> elements;
-
-    if (!addresses_with_failover.empty())
-    {
-        for (const auto & addresses : addresses_with_failover)
-        {
-            for (const auto & address : addresses)
-                elements.push_back(address.host_name + ":" + toString(address.port));
-        }
-    }
-    else
-        throw Exception("Cluster: ill-formed cluster", ErrorCodes::LOGICAL_ERROR);
-
-    std::sort(elements.begin(), elements.end());
-
-    unsigned char hash[SHA512_DIGEST_LENGTH];
-
-    SHA512_CTX ctx;
-    SHA512_Init(&ctx);
-
-    for (const auto & host : elements)
-        SHA512_Update(&ctx, reinterpret_cast<const void *>(host.c_str()), host.size() + 1);
-
-    SHA512_Final(hash, &ctx);
-
-    {
-        WriteBufferFromString buf(hash_of_addresses);
-        HexWriteBuffer hex_buf(buf);
-        hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
-    }
 }
 
 

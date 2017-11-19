@@ -40,11 +40,6 @@ struct Settings;
 
 class AlterCommands;
 
-/// For RESHARD PARTITION.
-using WeightedZooKeeperPath = std::pair<String, UInt64>;
-using WeightedZooKeeperPaths = std::vector<WeightedZooKeeperPath>;
-
-
 
 /** Does not allow changing the table description (including rename and delete the table).
   * If during any operation the table structure should remain unchanged, you need to hold such a lock for all of its time.
@@ -253,18 +248,6 @@ public:
     virtual void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
     {
         throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the RESHARD PARTITION query.
-      */
-    virtual void reshardPartitions(
-        const ASTPtr & query, const String & database_name,
-        const ASTPtr & partition,
-        const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-        const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        const Context & context)
-    {
-        throw Exception("Method reshardPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
