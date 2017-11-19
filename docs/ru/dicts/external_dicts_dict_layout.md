@@ -3,11 +3,11 @@
 Хранение словарей в памяти
 ==========================
 
-Словари можно размещать в памяти [множеством способов](../external_dicts_dict_layout.html#dicts-external_dicts_dict_layout-manner).
+Словари можно размещать в памяти [множеством способов](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-manner).
 
-Рекомендуем [flat](../external_dicts_dict_layout.html#dicts-external_dicts_dict_layout-flat), [hashed](../external_dicts_dict_layout.html#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](../external_dicts_dict_layout.html#dicts-external_dicts_dict_layout-complex_key_hashed). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-flat), [hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-complex_key_hashed). Скорость обработки словарей при этом максимальна.
 
-Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе " [cache](../external_dicts_dict_layout.html#dicts-external_dicts_dict_layout-cache)".
+Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе " [cache](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-cache)".
 
 Повысить производительнось словарей можно следующими способами:
 
@@ -24,7 +24,7 @@
 Общий вид конфигурации:
 
 ```xml
-<dictionaries>
+<yandex>
     <dictionary>
         ...
         <layout>
@@ -34,7 +34,7 @@
         </layout>
         ...
     </dictionary>
-</dictionaries>
+</yandex>
 ```
 
 <a name="dicts-external_dicts_dict_layout-manner"></a>
@@ -125,7 +125,7 @@ range_hashed
   +------------------+-----------------------------+------------+----------+
 ```
 
-Чтобы использовать выборку по диапазонам дат, необходимо в [structure](../external_dicts_dict_structure.html#dicts-external_dicts_dict_structure) определить элементы `range_min`, `range_max`.
+Чтобы использовать выборку по диапазонам дат, необходимо в [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure) определить элементы `range_min`, `range_max`.
 
 Пример:
 
@@ -158,7 +158,7 @@ range_hashed
 Пример конфигурации:
 
 ```xml
-<dictionaries>
+<yandex>
         <dictionary>
 
                 ...
@@ -185,7 +185,7 @@ range_hashed
                 </structure>
 
         </dictionary>
-</dictionaries>
+</yandex>
 ```
 
 <a name="dicts-external_dicts_dict_layout-cache"></a>
@@ -203,7 +203,7 @@ cache
 
 Чтобы увеличить производительность кэша, используйте подзапрос с `LIMIT`, а снаружи вызывайте функцию со словарём.
 
-Поддерживаются [источники](../external_dicts_dict_sources.html#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
+Поддерживаются [источники](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
 
 Пример настройки:
 
@@ -234,4 +234,4 @@ cache
 complex_key_cache
 -----------------
 
-Тип размещения предназначен для использования с составными [ключами](../external_dicts_dict_structure.html#dicts-external_dicts_dict_structure). Аналогичен `cache`.
+Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Аналогичен `cache`.

@@ -31,7 +31,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 
-#include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 
@@ -290,15 +289,6 @@ int Server::main(const std::vector<std::string> & args)
         LOG_DEBUG(log, "Shutted down storages.");
     });
 
-    bool has_resharding_worker = false;
-    if (has_zookeeper && config().has("resharding"))
-    {
-        auto resharding_worker = std::make_shared<ReshardingWorker>(config(), "resharding", *global_context);
-        global_context->setReshardingWorker(resharding_worker);
-        resharding_worker->start();
-        has_resharding_worker = true;
-    }
-
     if (has_zookeeper && config().has("distributed_ddl"))
     {
         /// DDL worker should be started after all tables were loaded
@@ -487,16 +477,6 @@ int Server::main(const std::vector<std::string> & args)
 
         SCOPE_EXIT({
             LOG_DEBUG(log, "Received termination signal.");
-
-            if (has_resharding_worker)
-            {
-                LOG_INFO(log, "Shutting down resharding thread");
-                auto & resharding_worker = global_context->getReshardingWorker();
-                if (resharding_worker.isStarted())
-                    resharding_worker.shutdown();
-                LOG_DEBUG(log, "Shut down resharding thread");
-            }
-
             LOG_DEBUG(log, "Waiting for current connections to close.");
 
             is_cancelled = true;
