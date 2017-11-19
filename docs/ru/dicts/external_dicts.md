@@ -17,7 +17,7 @@ ClickHouse:
 Конфигурационный файл словарей имеет вид:
 
 ```xml
-<dictionaries>
+<yandex>
     <comment>Необязательный элемент с любым содержимым. Игнорируется сервером ClickHouse.</comment>
 
     <dictionary>
@@ -29,10 +29,10 @@ ClickHouse:
     <dictionary>
         <!-- Конфигурация словаря -->
     </dictionary>
-</dictionaries>
+</yandex>
 ```
 
-В одном файле можно [сконфигурировать](external_dicts_dict.md#dicts-external_dicts_dict) произвольное количество словарей. Формат файла сохраняется даже если словарь один (т.е. `<dictionaries><dictionary> <!--configuration--> </dictionary></dictionaries>`).
+В одном файле можно [сконфигурировать](external_dicts_dict.md#dicts-external_dicts_dict) произвольное количество словарей. Формат файла сохраняется даже если словарь один (т.е. `<yandex><dictionary> <!--configuration--> </dictionary></yandex>`).
 
 Смотрите также "[Функции для работы с внешними словарями](../functions/ext_dict_functions.md#ext_dict_functions)" .
 
