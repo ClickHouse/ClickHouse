@@ -50,7 +50,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
         check_period_ms = storage.data.settings.check_delay_period * 1000;
 
     storage.queue_updating_task_handle = storage.context.getSchedulePool().addTask("queue_updating_task_handle", [this]{ storage.queueUpdatingThread(); });
-    storage.queue_updating_task_handle->pause();
+    storage.queue_updating_task_handle->deactivate();
 
     task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeRestartingThread", [this]{ run(); });
     task_handle->schedule();
@@ -147,7 +147,7 @@ void ReplicatedMergeTreeRestartingThread::run()
                 {
                     storage.is_leader_node = false;
                     CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
-                    storage.merge_selecting_handle->pause();
+                    storage.merge_selecting_handle->deactivate();
                     storage.leader_election->yield();
                 }
             }
@@ -204,7 +204,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         storage.shutdown_called = false;
         storage.shutdown_event.reset();
-        storage.queue_updating_task_handle->resume();
+        storage.queue_updating_task_handle->activate();
         storage.queue_updating_task_handle->schedule();
 
         storage.part_check_thread.start();
@@ -367,11 +367,11 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
         {
             storage.is_leader_node = false;
             CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
-            storage.merge_selecting_handle->pause();
+            storage.merge_selecting_handle->deactivate();
         }
     }
 
-    storage.queue_updating_task_handle->pause();
+    storage.queue_updating_task_handle->deactivate();
 
     storage.cleanup_thread.reset();
     storage.alter_thread.reset();

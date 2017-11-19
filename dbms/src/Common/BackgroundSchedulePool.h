@@ -42,6 +42,8 @@ public:
     public:
         TaskInfo(BackgroundSchedulePool & pool, const std::string & name, const Task & function);
 
+        /// All these methods waits for current execution of task.
+
         /// Schedule for execution as soon as possible (if not already scheduled).
         /// If the task was already scheduled with delay, the delay will be ignored.
         bool schedule();
@@ -49,19 +51,19 @@ public:
         /// Schedule for execution after specified delay.
         bool scheduleAfter(size_t ms);
 
-        void pause();
-        void resume();
+        /// Further attempts to schedule become no-op.
+        void deactivate();
+        void activate();
 
     private:
         friend class TaskNotification;
         friend class BackgroundSchedulePool;
 
-        void invalidate();
         void execute();
 
         std::mutex mutex;
-        std::atomic<bool> removed {false};
         std::string name;
+        bool deactivated = false;
         bool scheduled = false;
         BackgroundSchedulePool & pool;
         Task function;

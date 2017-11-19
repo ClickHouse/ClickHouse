@@ -78,7 +78,7 @@ private:
 
         cleanOldEphemeralNodes();
 
-        task_handle->resume();
+        task_handle->activate();
         task_handle->schedule();
     }
 
@@ -114,7 +114,7 @@ private:
 
     void releaseNode()
     {
-        task_handle->pause();
+        task_handle->deactivate();
         node = nullptr;
     }
 
