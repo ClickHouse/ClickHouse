@@ -1939,7 +1939,7 @@ void StorageReplicatedMergeTree::becomeLeader()
 
     LOG_INFO(log, "Became leader");
     is_leader_node = false;
-    merge_selecting_handle->resume();
+    merge_selecting_handle->activate();
     initMergeSelectSession();
     is_leader_node = true;
     merge_selecting_handle->schedule();

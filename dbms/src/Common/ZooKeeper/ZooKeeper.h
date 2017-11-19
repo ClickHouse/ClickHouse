@@ -164,7 +164,7 @@ public:
     bool existsWatch(const std::string & path, Stat * stat, const WatchCallback & watch_callback);
 
     std::string get(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    std::string get(const std::string & path, Stat * stat, const TaskHandlePtr& watch);
+    std::string get(const std::string & path, Stat * stat, const TaskHandlePtr & watch);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist. Returns false in this case.

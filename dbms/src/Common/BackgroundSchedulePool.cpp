@@ -43,7 +43,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 {
     std::lock_guard lock(mutex);
 
-    if (removed || scheduled)
+    if (deactivated || scheduled)
         return false;
 
     scheduled = true;
@@ -60,7 +60,7 @@ bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
 {
     std::lock_guard lock(mutex);
 
-    if (removed || scheduled)
+    if (deactivated || scheduled)
         return false;
 
     pool.scheduleDelayedTask(shared_from_this(), ms);
@@ -68,26 +68,13 @@ bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
 }
 
 
-void BackgroundSchedulePool::TaskInfo::pause()
+void BackgroundSchedulePool::TaskInfo::deactivate()
 {
-    invalidate();
-}
-
-
-void BackgroundSchedulePool::TaskInfo::resume()
-{
-    std::lock_guard lock(mutex);
-    removed = false;
-}
-
-
-void BackgroundSchedulePool::TaskInfo::invalidate()
-{
-    if (removed)
+    if (deactivated)
         return;
 
     std::lock_guard lock(mutex);
-    removed = true;
+    deactivated = true;
     scheduled = false;
 
     if (isScheduledWithDelay())
@@ -95,11 +82,18 @@ void BackgroundSchedulePool::TaskInfo::invalidate()
 }
 
 
+void BackgroundSchedulePool::TaskInfo::activate()
+{
+    std::lock_guard lock(mutex);
+    deactivated = false;
+}
+
+
 void BackgroundSchedulePool::TaskInfo::execute()
 {
     std::lock_guard lock(mutex);
 
-    if (removed)
+    if (deactivated)
         return;
 
     scheduled = false;
@@ -161,7 +155,7 @@ BackgroundSchedulePool::TaskHandle BackgroundSchedulePool::addTask(const std::st
 
 void BackgroundSchedulePool::removeTask(const TaskHandle & task)
 {
-    task->invalidate();
+    task->deactivate();
 }
 
 
