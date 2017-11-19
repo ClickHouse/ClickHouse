@@ -35,8 +35,9 @@ private:
 BackgroundSchedulePool::TaskInfo::TaskInfo(BackgroundSchedulePool & pool, const std::string & name, const Task & function):
     name(name),
     pool(pool),
-    function(function),
-    iterator(pool.delayed_tasks.end()) {}
+    function(function)
+{
+}
 
 
 bool BackgroundSchedulePool::TaskInfo::schedule()
@@ -48,8 +49,8 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 
     scheduled = true;
 
-    if (isScheduledWithDelay())
-        pool.cancelDelayedTask(shared_from_this());
+    if (delayed)
+        pool.cancelDelayedTask(shared_from_this(), lock);
 
     pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
     return true;
@@ -63,7 +64,7 @@ bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
     if (deactivated || scheduled)
         return false;
 
-    pool.scheduleDelayedTask(shared_from_this(), ms);
+    pool.scheduleDelayedTask(shared_from_this(), ms, lock);
     return true;
 }
 
@@ -77,8 +78,8 @@ void BackgroundSchedulePool::TaskInfo::deactivate()
     deactivated = true;
     scheduled = false;
 
-    if (isScheduledWithDelay())
-        pool.cancelDelayedTask(shared_from_this());
+    if (delayed)
+        pool.cancelDelayedTask(shared_from_this(), lock);
 }
 
 
@@ -159,29 +160,30 @@ void BackgroundSchedulePool::removeTask(const TaskHandle & task)
 }
 
 
-void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t ms)
+void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t ms, std::lock_guard<std::recursive_mutex> &)
 {
     Poco::Timestamp current_time;
 
     {
         std::lock_guard lock(delayed_tasks_lock);
 
-        if (task->iterator != delayed_tasks.end())
+        if (task->delayed)
             delayed_tasks.erase(task->iterator);
 
         task->iterator = delayed_tasks.emplace(current_time + (ms * 1000), task);
+        task->delayed = true;
     }
 
     wakeup_event.notify_all();
 }
 
 
-void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task)
+void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task, std::lock_guard<std::recursive_mutex> &)
 {
     {
         std::lock_guard lock(delayed_tasks_lock);
         delayed_tasks.erase(task->iterator);
-        task->iterator = delayed_tasks.end();
+        task->delayed = false;
     }
 
     wakeup_event.notify_all();
