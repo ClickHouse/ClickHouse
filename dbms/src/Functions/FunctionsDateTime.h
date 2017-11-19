@@ -61,18 +61,24 @@ namespace ErrorCodes
   */
 
 
+/// Determine working timezone either from optional argument with time zone name or from time zone in DateTime type of argument.
+std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndName & arguments, size_t time_zone_arg_num);
+const DateLUTImpl & extractTimeZoneFromFunctionArguments(Block & block, const ColumnNumbers & arguments, size_t time_zone_arg_num);
+
+
+
 #define TIME_SLOT_SIZE 1800
 
-/** Extra transformations.
+/** Transformations.
   * Represents two functions - from datetime (UInt32) and from date (UInt16).
   *
   * Also, the "factor transformation" F is defined for the T transformation.
-  * This is a transformation of F such that its value identifies the region of monotonicity T
+  * This is a transformation of F such that its value identifies the region of monotonicity for T
   *  (for a fixed value of F, the transformation T is monotonic).
   *
   * Or, figuratively, if T is similar to taking the remainder of division, then F is similar to division.
   *
-  * Example: to convert T "get the day number in the month" (2015-02-03 -> 3),
+  * Example: for transformation T "get the day number in the month" (2015-02-03 -> 3),
   *  factor-transformation F is "round to the nearest month" (2015-02-03 -> 2015-02-01).
   */
 
@@ -107,9 +113,9 @@ struct ToStartOfDayImpl
     {
         return time_zone.toDate(t);
     }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return d;
+        throw Exception("Illegal type Date of argument for function toStartOfDay", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     using FactorTransform = ZeroTransform;
@@ -543,21 +549,7 @@ struct DateTimeTransformImpl
     {
         using Op = Transformer<FromType, ToType, Transform>;
 
-        const ColumnConst * time_zone_column = nullptr;
-
-        if (arguments.size() == 2)
-        {
-            time_zone_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
-
-            if (!time_zone_column)
-                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-                    + " of second (time zone) argument of function " + Transform::name + ", must be constant string",
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        const DateLUTImpl & time_zone = time_zone_column
-            ? DateLUT::instance(time_zone_column->getValue<String>())
-            : DateLUT::instance();
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 1);
 
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
         if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
@@ -591,20 +583,23 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    void getReturnTypeAndPrerequisitesImpl(
+        const ColumnsWithTypeAndName & arguments,
+        DataTypePtr & out_return_type,
+        std::vector<ExpressionAction> &) override
     {
         if (arguments.size() == 1)
         {
-            if (!checkDataType<DataTypeDate>(arguments[0].get())
-                && !checkDataType<DataTypeDateTime>(arguments[0].get()))
+            if (!checkDataType<DataTypeDate>(arguments[0].type.get())
+                && !checkDataType<DataTypeDateTime>(arguments[0].type.get()))
                 throw Exception{
-                    "Illegal type " + arguments[0]->getName() + " of argument of function " + getName() +
+                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
         else if (arguments.size() == 2)
         {
-            if (!checkDataType<DataTypeDateTime>(arguments[0].get())
-                || !checkDataType<DataTypeString>(arguments[1].get()))
+            if (!checkDataType<DataTypeDateTime>(arguments[0].type.get())
+                || !checkDataType<DataTypeString>(arguments[1].type.get()))
                 throw Exception{
                     "Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument (optional) must be "
@@ -617,7 +612,11 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return std::make_shared<ToDataType>();
+        /// For DateTime, if time zone is specified, attach it to type.
+        if (std::is_same<ToDataType, DataTypeDateTime>::value)
+            out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1));
+        else
+            out_return_type = std::make_shared<ToDataType>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -846,21 +845,7 @@ struct DateTimeAddIntervalImpl
         using ToType = decltype(Transform::execute(FromType(), 0, std::declval<DateLUTImpl>()));
         using Op = Adder<FromType, ToType, Transform>;
 
-        const ColumnConst * time_zone_column = nullptr;
-
-        if (arguments.size() == 3)
-        {
-            time_zone_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[2]).column.get());
-
-            if (!time_zone_column)
-                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
-                    + " of second (time zone) argument of function " + Transform::name + ", must be constant string",
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        const DateLUTImpl & time_zone = time_zone_column
-            ? DateLUT::instance(time_zone_column->getValue<String>())
-            : DateLUT::instance();
+        const DateLUTImpl & time_zone = extractTimeZoneFromFunctionArguments(block, arguments, 2);
 
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
 
@@ -872,7 +857,7 @@ struct DateTimeAddIntervalImpl
             const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
 
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
-                Op::vector_constant(sources->getData(), col_to->getData(), delta_const_column->getValue<Int64>(), time_zone);
+                Op::vector_constant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
             else
                 Op::vector_vector(sources->getData(), col_to->getData(), delta_column, time_zone);
         }
@@ -907,29 +892,32 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    void getReturnTypeAndPrerequisitesImpl(
+        const ColumnsWithTypeAndName & arguments,
+        DataTypePtr & out_return_type,
+        std::vector<ExpressionAction> &) override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                 + toString(arguments.size()) + ", should be 2 or 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[1]->behavesAsNumber())
+        if (!arguments[1].type->behavesAsNumber())
             throw Exception("Second argument for function " + getName() + " (delta) must be number",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2)
         {
-            if (!checkDataType<DataTypeDate>(arguments[0].get())
-                && !checkDataType<DataTypeDateTime>(arguments[0].get()))
+            if (!checkDataType<DataTypeDate>(arguments[0].type.get())
+                && !checkDataType<DataTypeDateTime>(arguments[0].type.get()))
                 throw Exception{
-                    "Illegal type " + arguments[0]->getName() + " of argument of function " + getName() +
+                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
         else
         {
-            if (!checkDataType<DataTypeDateTime>(arguments[0].get())
-                || !checkDataType<DataTypeString>(arguments[1].get()))
+            if (!checkDataType<DataTypeDateTime>(arguments[0].type.get())
+                || !checkDataType<DataTypeString>(arguments[2].type.get()))
                 throw Exception{
                     "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument must be number. "
@@ -939,14 +927,20 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (checkDataType<DataTypeDate>(arguments[0].get()))
-            return std::make_shared<typename std::conditional<std::is_same<
-                decltype(Transform::execute(DataTypeDate::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>::value,
-                DataTypeDate, DataTypeDateTime>::type>();
+        if (checkDataType<DataTypeDate>(arguments[0].type.get()))
+        {
+            if (std::is_same<decltype(Transform::execute(DataTypeDate::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>::value)
+                out_return_type = std::make_shared<DataTypeDate>();
+            else
+                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2));
+        }
         else
-            return std::make_shared<typename std::conditional<std::is_same<
-                decltype(Transform::execute(DataTypeDateTime::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>::value,
-                DataTypeDate, DataTypeDateTime>::type>();
+        {
+            if (std::is_same<decltype(Transform::execute(DataTypeDateTime::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>::value)
+                out_return_type = std::make_shared<DataTypeDate>();
+            else
+                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2));
+        }
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -1045,6 +1039,46 @@ public:
         block.getByPosition(result).column = DataTypeUInt16().createConstColumn(
             block.rows(),
             UInt64(DateLUT::instance().toDayNum(time(0)) - 1));
+    }
+};
+
+
+/// Just changes time zone information for data type. The calculation is free.
+class FunctionToTimeZone : public IFunction
+{
+public:
+    static constexpr auto name = "toTimeZone";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToTimeZone>(); };
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    void getReturnTypeAndPrerequisitesImpl(
+        const ColumnsWithTypeAndName & arguments,
+        DataTypePtr & out_return_type,
+        std::vector<ExpressionAction> &) override
+    {
+        if (arguments.size() != 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (!checkDataType<DataTypeDateTime>(arguments[0].type.get()))
+            throw Exception{
+                "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
+                ". Should be DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1);
+        out_return_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
     }
 };
 

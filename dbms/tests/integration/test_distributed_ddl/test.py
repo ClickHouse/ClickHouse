@@ -32,8 +32,8 @@ def ddl_check_query(instance, query, num_hosts=None):
     return contents
 
 def ddl_check_there_are_no_dublicates(instance):
-    rows = instance.query("SELECT max(c), argMax(q, c) FROM (SELECT lower(query) AS q, count() AS c FROM system.query_log WHERE type=2 AND q LIKE '/*ddl_entry=query-%' GROUP BY query)")
-    assert len(rows) == 0 or rows[0][0] == "1", "dublicates on {} {}, query {}".format(instance.name, instance.ip_address)
+    rows = instance.query("SELECT max(c), argMax(q, c) FROM (SELECT lower(query) AS q, count() AS c FROM system.query_log WHERE type=2 AND q LIKE '/* ddl_entry=query-%' GROUP BY query)")
+    assert len(rows) > 0 and rows[0][0] == "1", "dublicates on {} {}, query {}".format(instance.name, instance.ip_address)
 
 # Make retries in case of UNKNOWN_STATUS_OF_INSERT or zkutil::KeeperException errors
 def insert_reliable(instance, query_insert):

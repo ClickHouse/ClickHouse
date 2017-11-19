@@ -29,6 +29,11 @@ ComplexKeyCacheDictionary::Attribute ComplexKeyCacheDictionary::createAttributeW
             std::get<ContainerPtrType<UInt64>>(attr.arrays) = std::make_unique<ContainerType<UInt64>>(size);
             bytes_allocated += size * sizeof(UInt64);
             break;
+        case AttributeUnderlyingType::UInt128:
+            std::get<UInt128>(attr.null_values) = null_value.get<UInt128>();
+            std::get<ContainerPtrType<UInt128>>(attr.arrays) = std::make_unique<ContainerType<UInt128>>(size);
+            bytes_allocated += size * sizeof(UInt128);
+            break;
         case AttributeUnderlyingType::Int8:
             std::get<Int8>(attr.null_values) = null_value.get<Int64>();
             std::get<ContainerPtrType<Int8>>(attr.arrays) = std::make_unique<ContainerType<Int8>>(size);
