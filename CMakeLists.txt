@@ -64,6 +64,13 @@ option (ENABLE_TESTS "Enables tests" ON)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
+if (NOT MAKE_STATIC_LIBRARIES)
+    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
+endif ()
+if (SPLIT_SHARED_LIBRARIES)
+    set (SPLIT_SHARED SHARED)
+endif ()
+
 if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
