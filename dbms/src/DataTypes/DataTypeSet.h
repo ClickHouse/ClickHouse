@@ -12,6 +12,7 @@ namespace DB
 class DataTypeSet final : public IDataTypeDummy
 {
 public:
+    static constexpr bool is_parametric = true;
     std::string getName() const override { return "Set"; }
     const char * getFamilyName() const override { return "Set"; }
     DataTypePtr clone() const override { return std::make_shared<DataTypeSet>(); }

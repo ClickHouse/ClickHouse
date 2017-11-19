@@ -12,7 +12,6 @@ class Context;
 
 class StorageSystemDictionaries : public ext::shared_ptr_helper<StorageSystemDictionaries>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageSystemDictionaries>;
 public:
     std::string getName() const override { return "SystemDictionaries"; }
     std::string getTableName() const override { return name; }
@@ -29,9 +28,10 @@ private:
     const std::string name;
     const NamesAndTypesList columns;
 
-    StorageSystemDictionaries(const std::string & name);
-
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
+
+protected:
+    StorageSystemDictionaries(const std::string & name);
 };
 
 }

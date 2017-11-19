@@ -11,7 +11,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
-#include <IO/CompressedStream.h>
+#include <IO/CompressionSettings.h>
 
 
 namespace Poco
@@ -35,9 +35,10 @@ struct ContextShared;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
+class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
-class ReshardingWorker;
+class BackgroundSchedulePool;
 class MergeList;
 class Cluster;
 class Compiler;
@@ -173,7 +174,7 @@ public:
     StoragePtr tryGetExternalTable(const String & table_name) const;
     StoragePtr getTable(const String & database_name, const String & table_name) const;
     StoragePtr tryGetTable(const String & database_name, const String & table_name) const;
-    void addExternalTable(const String & table_name, StoragePtr storage);
+    void addExternalTable(const String & table_name, const StoragePtr & storage);
     StoragePtr tryRemoveExternalTable(const String & table_name);
 
     void addDatabase(const String & database_name, const DatabasePtr & database);
@@ -209,10 +210,13 @@ public:
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;
+    const ExternalModels & getExternalModels() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionaries & getExternalDictionaries();
+    ExternalModels & getExternalModels();
     void tryCreateEmbeddedDictionaries() const;
     void tryCreateExternalDictionaries() const;
+    void tryCreateExternalModels() const;
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const;
@@ -270,8 +274,7 @@ public:
       */
     void setProcessListElement(ProcessListElement * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
-    ProcessListElement * getProcessListElement();
-    const ProcessListElement * getProcessListElement() const;
+    ProcessListElement * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -305,12 +308,10 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
-
-    void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
-    ReshardingWorker & getReshardingWorker();
+    BackgroundSchedulePool & getSchedulePool();
 
     void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
-    DDLWorker & getDDLWorker();
+    DDLWorker & getDDLWorker() const;
 
     Clusters & getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
@@ -329,8 +330,8 @@ public:
     void setMaxTableSizeToDrop(size_t max_size);
     void checkTableCanBeDropped(const String & database, const String & table, size_t table_size);
 
-    /// Lets you select the compression method according to the conditions described in the configuration file.
-    CompressionMethod chooseCompressionMethod(size_t part_size, double part_size_ratio) const;
+    /// Lets you select the compression settings according to the conditions described in the configuration file.
+    CompressionSettings chooseCompressionSettings(size_t part_size, double part_size_ratio) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
@@ -351,6 +352,10 @@ public:
     String getDefaultProfileName() const;
     void setDefaultProfileName(const String & name);
 
+    /// Base path for format schemas
+    String getFormatSchemaPath() const;
+    void setFormatSchemaPath(const String & path);
+
     /// User name and session identifier. Named sessions are local to users.
     using SessionKey = std::pair<String, String>;
 
@@ -363,6 +368,7 @@ private:
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
     ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
+    ExternalModels & getExternalModelsImpl(bool throw_on_error) const;
 
     StoragePtr getTableImpl(const String & database_name, const String & table_name, Exception * exception) const;
 

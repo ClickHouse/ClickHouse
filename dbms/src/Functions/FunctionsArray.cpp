@@ -1071,7 +1071,7 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
 void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     /// Check nullability.
-    bool is_nullable;
+    bool is_nullable = false;
 
     const ColumnArray * col_array = nullptr;
     const ColumnConst * col_const_array = nullptr;
@@ -2304,7 +2304,7 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 
     if (!checkDataType<DataTypeUInt8>(arg) &&
         !checkDataType<DataTypeUInt16>(arg) &&
-        !checkDataType<DataTypeUInt32>(arg) &
+        !checkDataType<DataTypeUInt32>(arg) &&
         !checkDataType<DataTypeUInt64>(arg))
     {
         throw Exception{
@@ -2413,8 +2413,7 @@ void FunctionRange::executeImpl(Block & block, const ColumnNumbers & arguments, 
     {
         throw Exception{
             "Illegal column " + col->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN
-        };
+            ErrorCodes::ILLEGAL_COLUMN};
     }
 }
 

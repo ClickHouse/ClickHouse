@@ -1,0 +1,8 @@
+<yandex>
+    <merge_tree>
+        <replicated_deduplication_window>999999999</replicated_deduplication_window>
+        <replicated_deduplication_window_seconds>999999999</replicated_deduplication_window_seconds>
+        <cleanup_delay_period>10</cleanup_delay_period>
+        <old_parts_lifetime>1</old_parts_lifetime>
+    </merge_tree>
+</yandex>

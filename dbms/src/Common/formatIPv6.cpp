@@ -8,30 +8,40 @@ namespace DB
 {
 
 /// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal  than log(value, base)
-static constexpr uint32_t int_log(const uint32_t value, const uint32_t base, const bool carry = false)
+static constexpr UInt32 intLog(const UInt32 value, const UInt32 base, const bool carry)
 {
-    return value >= base ? 1 + int_log(value / base, base, value % base || carry) : value % base > 1 || carry;
+    return value >= base ? 1 + intLog(value / base, base, value % base || carry) : value % base > 1 || carry;
 }
 
-/// print integer in desired base, faster than sprintf
-template <uint32_t base, typename T, uint32_t buffer_size = sizeof(T) * int_log(256, base, false)>
-static void print_integer(char *& out, T value)
+/// Print integer in desired base, faster than sprintf.
+/// NOTE This is not the best way. See https://github.com/miloyip/itoa-benchmark
+/// But it doesn't matter here.
+template <UInt32 base, typename T>
+static void printInteger(char *& out, T value)
 {
     if (value == 0)
         *out++ = '0';
     else
     {
+        constexpr size_t buffer_size = sizeof(T) * intLog(256, base, false);
+
         char buf[buffer_size];
         auto ptr = buf;
 
         while (value > 0)
         {
-            *ptr++ = hexDigitLowercase(value % base);
+            *ptr = hexDigitLowercase(value % base);
+            ++ptr;
             value /= base;
         }
 
+        /// Copy to out reversed.
         while (ptr != buf)
-            *out++ = *--ptr;
+        {
+            --ptr;
+            *out = *ptr;
+            ++out;
+        }
     }
 }
 
@@ -43,7 +53,7 @@ static void formatIPv4(const unsigned char * src, char *& dst, UInt8 zeroed_tail
     for (const auto i : ext::range(0, IPV4_BINARY_LENGTH))
     {
         UInt8 byte = (i < limit) ? src[i] : 0;
-        print_integer<10, UInt8>(dst, byte);
+        printInteger<10, UInt8>(dst, byte);
 
         if (i != IPV4_BINARY_LENGTH - 1)
             *dst++ = '.';
@@ -54,7 +64,7 @@ static void formatIPv4(const unsigned char * src, char *& dst, UInt8 zeroed_tail
 void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_count)
 {
     struct { int base, len; } best{-1}, cur{-1};
-    std::array<uint16_t, IPV6_BINARY_LENGTH / sizeof(uint16_t)> words{};
+    std::array<UInt16, IPV6_BINARY_LENGTH / sizeof(UInt16)> words{};
 
     /** Preprocess:
         *    Copy the input (bytewise) array into a wordwise array.
@@ -112,7 +122,7 @@ void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_
             break;
         }
 
-        print_integer<16>(dst, words[i]);
+        printInteger<16>(dst, words[i]);
     }
 
     /// Was it a trailing run of 0x00's?

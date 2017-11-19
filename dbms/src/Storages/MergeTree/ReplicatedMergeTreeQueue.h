@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -36,6 +37,8 @@ private:
     /// To calculate min_unprocessed_insert_time, max_processed_insert_time, for which the replica lag is calculated.
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
+
+    MergeTreeDataFormatVersion format_version;
 
     String zookeeper_path;
     String replica_path;
@@ -121,7 +124,11 @@ private:
     };
 
 public:
-    ReplicatedMergeTreeQueue() {}
+    ReplicatedMergeTreeQueue(MergeTreeDataFormatVersion format_version_)
+        : format_version(format_version_)
+        , virtual_parts(format_version)
+    {
+    }
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
@@ -141,7 +148,7 @@ public:
       * If next_update_event != nullptr, will call this event when new entries appear in the log.
       * Returns true if new entries have been.
       */
-    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle next_update_event);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.

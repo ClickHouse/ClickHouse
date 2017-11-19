@@ -4,13 +4,14 @@
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <atomic>
 #include <functional>
+#include <Common/ActionBlocker.h>
+
 
 namespace DB
 {
 
 class MergeListEntry;
 class MergeProgressCallback;
-struct ReshardingJob;
 
 
 /** Can select the parts to merge and merge them.
@@ -27,7 +28,7 @@ public:
         MergeTreePartInfo part_info;
         MergeTreeData::DataPartsVector parts;
 
-        const Row & getPartition() const { return parts.front()->partition; }
+        const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 
         FuturePart() = default;
         explicit FuturePart(MergeTreeData::DataPartsVector parts_)
@@ -96,12 +97,6 @@ public:
         const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
-    /** Reshards the specified partition.
-      */
-    MergeTreeData::PerShardDataParts reshardPartition(
-        const ReshardingJob & job,
-        DiskSpaceMonitor::Reservation * disk_reservation = nullptr);
-
     /// The approximate amount of disk space needed for merge. With a surplus.
     static size_t estimateDiskSpaceForMerge(const MergeTreeData::DataPartsVector & parts);
 
@@ -110,42 +105,15 @@ private:
       */
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
-    /** Temporarily cancel merges.
-      */
-    class BlockerImpl
-    {
-    public:
-        BlockerImpl(MergeTreeDataMerger * merger_) : merger(merger_)
-        {
-            ++merger->cancelled;
-        }
-
-        ~BlockerImpl()
-        {
-            --merger->cancelled;
-        }
-    private:
-        MergeTreeDataMerger * merger;
-    };
-
 public:
-    /** Cancel all merges. All currently running 'mergeParts' methods will throw exception soon.
-      * All new calls to 'mergeParts' will throw exception till all 'Blocker' objects will be destroyed.
+    /** Is used to cancel all merges. On cancel() call all currently running 'mergeParts' methods will throw exception soon.
+      * All new calls to 'mergeParts' will throw exception till all 'BlockHolder' objects will be destroyed.
       */
-    using Blocker = std::unique_ptr<BlockerImpl>;
-    Blocker cancel() { return std::make_unique<BlockerImpl>(this); }
-
-    /** Cancel all merges forever.
-      */
-    void cancelForever() { ++cancelled; }
-
-    bool isCancelled() const { return cancelled > 0; }
-
-public:
+    ActionBlocker merges_blocker;
 
     enum class MergeAlgorithm
     {
-        Horizontal,    /// per-row merge of all columns
+        Horizontal, /// per-row merge of all columns
         Vertical    /// per-row merge of PK columns, per-column gather for non-PK columns
     };
 
@@ -165,10 +133,6 @@ private:
     time_t disk_space_warning_time = 0;
 
     CancellationHook cancellation_hook;
-
-    std::atomic<int> cancelled {0};
-
-    void abortReshardPartitionIfRequested();
 };
 
 

@@ -4,24 +4,6 @@
 namespace DB
 {
 
-const DateLUTImpl * extractTimeZoneFromFunctionArguments(Block & block, const ColumnNumbers & arguments)
-{
-    if (arguments.size() == 2)
-    {
-        const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
-
-        if (!time_zone_column)
-            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-                + " of second (time zone) argument of function, must be constant string",
-                ErrorCodes::ILLEGAL_COLUMN);
-
-        return &DateLUT::instance(time_zone_column->getValue<String>());
-    }
-    else
-        return &DateLUT::instance();
-}
-
-
 void throwExceptionForIncompletelyParsedValue(
     ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result)
 {
@@ -57,13 +39,16 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToInt64>();
     factory.registerFunction<FunctionToFloat32>();
     factory.registerFunction<FunctionToFloat64>();
+
     factory.registerFunction<FunctionToDate>();
     factory.registerFunction<FunctionToDateTime>();
     factory.registerFunction<FunctionToUUID>();
     factory.registerFunction<FunctionToString>();
     factory.registerFunction<FunctionToFixedString>();
+
     factory.registerFunction<FunctionToUnixTimestamp>();
     factory.registerFunction<FunctionCast>();
+
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
     factory.registerFunction<FunctionToUInt32OrZero>();
@@ -74,6 +59,14 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToInt64OrZero>();
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
+
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalSecond, PositiveMonotonicity>>();
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMinute, PositiveMonotonicity>>();
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalHour, PositiveMonotonicity>>();
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalDay, PositiveMonotonicity>>();
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalWeek, PositiveMonotonicity>>();
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalMonth, PositiveMonotonicity>>();
+    factory.registerFunction<FunctionConvert<DataTypeInterval, NameToIntervalYear, PositiveMonotonicity>>();
 }
 
 }

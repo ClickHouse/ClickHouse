@@ -20,11 +20,11 @@ void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatistics(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
+void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory);
-void registerAggregateFunctionDebug(AggregateFunctionFactory & factory);
 
 
 void registerAggregateFunctions()
@@ -46,11 +46,11 @@ void registerAggregateFunctions()
     registerAggregateFunctionsMinMaxAny(factory);
     registerAggregateFunctionsStatistics(factory);
     registerAggregateFunctionSum(factory);
+    registerAggregateFunctionSumMap(factory);
     registerAggregateFunctionsUniq(factory);
     registerAggregateFunctionUniqUpTo(factory);
     registerAggregateFunctionTopK(factory);
     registerAggregateFunctionsBitwise(factory);
-    registerAggregateFunctionDebug(factory);
 }
 
 }

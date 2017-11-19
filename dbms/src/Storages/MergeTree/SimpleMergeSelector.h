@@ -29,8 +29,8 @@ public:
 
         /** Base is lowered until 1 (effectively means "merge any two parts") depending on several variables:
           *
-          * 1. Total number of parts in partition. If too much - then base is lowered.
-          * It means: when too much parts - do merges more urgently.
+          * 1. Total number of parts in partition. If too many - then base is lowered.
+          * It means: when too many parts - do merges more urgently.
           *
           * 2. Minimum age of parts participating in merge. If higher age - then base is lowered.
           * It means: do less wide merges only rarely.
@@ -71,7 +71,7 @@ public:
         double heuristic_to_remove_small_parts_at_right_max_ratio = 0.01;
     };
 
-    SimpleMergeSelector(const Settings & settings) : settings(settings) {}
+    explicit SimpleMergeSelector(const Settings & settings) : settings(settings) {}
 
     PartsInPartition select(
         const Partitions & partitions,

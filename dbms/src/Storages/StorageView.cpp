@@ -12,29 +12,25 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
 }
 
 
 StorageView::StorageView(
     const String & table_name_,
     const String & database_name_,
-    Context & context_,
-    ASTPtr & query_,
+    const ASTCreateQuery & query,
     NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
     const ColumnDefaults & column_defaults_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    database_name(database_name_), context(context_), columns(columns_)
+    database_name(database_name_), columns(columns_)
 {
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_);
-    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*create.select);
+    if (!query.select)
+        throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    /// If the internal query does not specify a database, retrieve it from the context and write it to the query.
-    select.setDatabaseIfNeeded(database_name);
-
-    inner_query = create.select;
+    inner_query = query.select->ptr();
 }
 
 

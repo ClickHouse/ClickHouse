@@ -26,10 +26,8 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return ParserFunction{}.parse(pos, node, expected);
     }
 
-    bool has_case_expr = false;
-
     auto old_pos = pos;
-    has_case_expr = !s_when.parse(pos, node, expected);
+    bool has_case_expr = !s_when.parse(pos, node, expected);
     pos = old_pos;
 
     ASTs args;

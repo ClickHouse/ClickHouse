@@ -24,13 +24,13 @@ private:
     {
         size_t old_size = vector.size();
         vector.resize(old_size * 2);
-        internal_buffer = Buffer(reinterpret_cast<Position>(&vector[old_size]), reinterpret_cast<Position>(&*vector.end()));
+        internal_buffer = Buffer(reinterpret_cast<Position>(&vector[old_size]), reinterpret_cast<Position>(vector.data() + vector.size()));
         working_buffer = internal_buffer;
     }
 
 public:
     WriteBufferFromVector(VectorType & vector_)
-        : WriteBuffer(reinterpret_cast<Position>(&vector_[0]), vector_.size()), vector(vector_)
+        : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_)
     {
         if (vector.empty())
         {

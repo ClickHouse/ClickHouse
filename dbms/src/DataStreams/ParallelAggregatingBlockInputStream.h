@@ -22,7 +22,7 @@ public:
     /** Columns from key_names and arguments of aggregate functions must already be computed.
       */
     ParallelAggregatingBlockInputStream(
-        BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end,
+        const BlockInputStreams & inputs, const BlockInputStreamPtr & additional_input_at_end,
         const Aggregator::Params & params_, bool final_, size_t max_threads_, size_t temporary_data_merge_threads_);
 
     String getName() const override { return "ParallelAggregating"; }

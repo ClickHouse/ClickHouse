@@ -1,112 +1,46 @@
 #pragma once
 
 #include <Dictionaries/IDictionary.h>
-#include <Common/Exception.h>
-#include <Common/setThreadName.h>
-#include <Common/randomSeed.h>
-#include <common/MultiVersion.h>
+#include <Interpreters/ExternalLoader.h>
 #include <common/logger_useful.h>
-#include <Poco/Event.h>
-#include <unistd.h>
-#include <time.h>
-#include <mutex>
-#include <thread>
-#include <unordered_map>
-#include <chrono>
-#include <random>
+#include <memory>
+
 
 namespace DB
 {
 
 class Context;
 
-/** Manages user-defined dictionaries.
-*    Monitors configuration file and automatically reloads dictionaries in a separate thread.
-*    The monitoring thread wakes up every @check_period_sec seconds and checks
-*    modification time of dictionaries' configuration file. If said time is greater than
-*    @config_last_modified, the dictionaries are created from scratch using configuration file,
-*    possibly overriding currently existing dictionaries with the same name (previous versions of
-*    overridden dictionaries will live as long as there are any users retaining them).
-*
-*    Apart from checking configuration file for modifications, each non-cached dictionary
-*    has a lifetime of its own and may be updated if it's source reports that it has been
-*    modified. The time of next update is calculated by choosing uniformly a random number
-*    distributed between lifetime.min_sec and lifetime.max_sec.
-*    If either of lifetime.min_sec and lifetime.max_sec is zero, such dictionary is never updated.
-*/
-class ExternalDictionaries
+/// Manages user-defined dictionaries.
+class ExternalDictionaries : public ExternalLoader
 {
-private:
+public:
+    using DictPtr = std::shared_ptr<IDictionaryBase>;
+
+    /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
+    ExternalDictionaries(Context & context, bool throw_on_error);
+
+    /// Forcibly reloads specified dictionary.
+    void reloadDictionary(const std::string & name) { reload(name); }
+
+    DictPtr getDictionary(const std::string & name) const
+    {
+        return std::static_pointer_cast<IDictionaryBase>(getLoadable(name));
+    }
+
+protected:
+
+    std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
+                                              const std::string & config_prefix) override;
+
+    using ExternalLoader::getObjectsMap;
+
     friend class StorageSystemDictionaries;
     friend class DatabaseDictionary;
 
-    /// Protects only dictionaries map.
-    mutable std::mutex dictionaries_mutex;
-
-    /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
-    mutable std::mutex all_mutex;
-
-    using DictionaryPtr = std::shared_ptr<MultiVersion<IDictionaryBase>>;
-    struct DictionaryInfo final
-    {
-        DictionaryPtr dict;
-        std::string origin;
-        std::exception_ptr exception;
-    };
-
-    struct FailedDictionaryInfo final
-    {
-        std::unique_ptr<IDictionaryBase> dict;
-        std::chrono::system_clock::time_point next_attempt_time;
-        UInt64 error_count;
-    };
-
-    /** name -> dictionary.
-      */
-    std::unordered_map<std::string, DictionaryInfo> dictionaries;
-
-    /** Here are dictionaries, that has been never loaded successfully.
-      * They are also in 'dictionaries', but with nullptr as 'dict'.
-      */
-    std::unordered_map<std::string, FailedDictionaryInfo> failed_dictionaries;
-
-    /** Both for dictionaries and failed_dictionaries.
-      */
-    std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
-
-    std::mt19937_64 rnd_engine{randomSeed()};
+private:
 
     Context & context;
-
-    std::thread reloading_thread;
-    Poco::Event destroy;
-
-    Logger * log;
-
-    std::unordered_map<std::string, Poco::Timestamp> last_modification_times;
-
-    /// Check dictionaries definitions in config files and reload or/and add new ones if the definition is changed
-    void reloadFromConfigFiles(const bool throw_on_error, const bool force_reload = false, const std::string & only_dictionary = "");
-    void reloadFromConfigFile(const std::string & config_path, const bool throw_on_error, const bool force_reload,
-                                  const std::string & only_dictionary);
-
-    /// Check config files and update expired dictionaries
-    void reloadAndUpdate(bool throw_on_error = false);
-
-    void reloadPeriodically();
-
-public:
-    /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalDictionaries(Context & context, const bool throw_on_error);
-    ~ExternalDictionaries();
-
-    /// Forcibly reloads all dictionaries.
-    void reload();
-
-    /// Forcibly reloads specified dictionary.
-    void reloadDictionary(const std::string & name);
-
-    MultiVersion<IDictionaryBase>::Version getDictionary(const std::string & name) const;
 };
 
 }

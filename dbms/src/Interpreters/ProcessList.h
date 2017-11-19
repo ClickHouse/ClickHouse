@@ -245,7 +245,7 @@ public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
 
     /** Register running query. Returns refcounted object, that will remove element from list in destructor.
-      * If too much running queries - wait for not more than specified (see settings) amount of time.
+      * If too many running queries - wait for not more than specified (see settings) amount of time.
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries.
       */
@@ -274,7 +274,7 @@ public:
     }
 
     /// Register temporary table. Then it is accessible by query_id and name.
-    void addTemporaryTable(ProcessListElement & elem, const String & table_name, StoragePtr storage);
+    void addTemporaryTable(ProcessListElement & elem, const String & table_name, const StoragePtr & storage);
 
     enum class CancellationCode
     {

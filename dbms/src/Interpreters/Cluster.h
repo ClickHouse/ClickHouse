@@ -19,8 +19,10 @@ public:
     Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name);
 
     /// Construct a cluster by the names of shards and replicas. Local are treated as well as remote ones.
+    /// 'clickhouse_port' - port that this server instance listen for queries.
+    /// This parameter is needed only to check that some address is local (points to ourself).
     Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-            const String & username, const String & password);
+            const String & username, const String & password, UInt16 clickhouse_port);
 
     Cluster(const Cluster &) = delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -59,7 +61,7 @@ public:
 
         Address() = default;
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-        Address(const String & host_port_, const String & user_, const String & password_);
+        Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -132,11 +134,6 @@ public:
 
 private:
     void initMisc();
-
-    /// Hash list of addresses and ports.
-    /// We need it in order to be able to perform resharding requests
-    /// on tables that have the distributed engine.
-    void calculateHashOfAddresses();
 
     /// For getClusterWithSingleShard implementation.
     Cluster(const Cluster & from, size_t index);

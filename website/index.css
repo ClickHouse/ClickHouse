@@ -209,8 +209,21 @@ a:hover, a:active {
     margin-top: 0;
 }
 
-#performance {
+#performance, #announcement {
     background: #fc0;
+}
+#announcement {
+    margin: 0 0 60px 0;
+    padding: 20px 0;
+}
+#announcement-link {
+    color: #000;
+    text-decoration: underline;
+    font: 400 150%/133% 'Yandex Sans Display Web',Arial,sans-serif;
+    margin: 1em 0;
+}
+#announcement-link:hover {
+    color: #000;
 }
 
 #call_to_action, #benchmark_learn_more {
@@ -402,7 +415,7 @@ img {
     }
 
     #hero {
-        padding: 40px 0 10px 0;
+        padding: 40px 0 0 0;
     }
 
     .desktop-only {

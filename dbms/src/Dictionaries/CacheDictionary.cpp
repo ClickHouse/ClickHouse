@@ -68,7 +68,7 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
         size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))},
         size_overlap_mask{this->size - 1},
         cells{this->size},
-        rnd_engine{randomSeed()}
+        rnd_engine(randomSeed())
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{
@@ -228,6 +228,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -266,6 +267,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -303,6 +305,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -480,6 +483,11 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const Attrib
             std::get<ContainerPtrType<UInt64>>(attr.arrays) = std::make_unique<ContainerType<UInt64>>(size);
             bytes_allocated += size * sizeof(UInt64);
             break;
+        case AttributeUnderlyingType::UInt128:
+            std::get<UInt128>(attr.null_values) = null_value.get<UInt128>();
+            std::get<ContainerPtrType<UInt128>>(attr.arrays) = std::make_unique<ContainerType<UInt128>>(size);
+            bytes_allocated += size * sizeof(UInt128);
+            break;
         case AttributeUnderlyingType::Int8:
             std::get<Int8>(attr.null_values) = null_value.get<Int64>();
             std::get<ContainerPtrType<Int8>>(attr.arrays) = std::make_unique<ContainerType<Int8>>(size);
@@ -538,6 +546,7 @@ void CacheDictionary::getItemsNumber(
     DISPATCH(UInt16)
     DISPATCH(UInt32)
     DISPATCH(UInt64)
+    DISPATCH(UInt128)
     DISPATCH(Int8)
     DISPATCH(Int16)
     DISPATCH(Int32)
@@ -591,7 +600,7 @@ void CacheDictionary::getItemsNumberImpl(
                 ++cache_hit;
                 const auto & cell_idx = find_result.cell_idx;
                 const auto & cell = cells[cell_idx];
-                out[row] = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+                out[row] = cell.isDefault() ? get_default(row) : static_cast<OutputType>(attribute_array[cell_idx]);
             }
         }
     }
@@ -617,7 +626,7 @@ void CacheDictionary::getItemsNumberImpl(
         const auto attribute_value = attribute_array[cell_idx];
 
         for (const auto row : outdated_ids[id])
-            out[row] = attribute_value;
+            out[row] = static_cast<OutputType>(attribute_value);
     },
     [&] (const auto id, const auto cell_idx)
     {
@@ -896,6 +905,7 @@ void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key 
         case AttributeUnderlyingType::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = std::get<UInt16>(attribute.null_values); break;
         case AttributeUnderlyingType::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = std::get<UInt32>(attribute.null_values); break;
         case AttributeUnderlyingType::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = std::get<UInt64>(attribute.null_values); break;
+        case AttributeUnderlyingType::UInt128: std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = std::get<UInt128>(attribute.null_values); break;
         case AttributeUnderlyingType::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = std::get<Int8>(attribute.null_values); break;
         case AttributeUnderlyingType::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = std::get<Int16>(attribute.null_values); break;
         case AttributeUnderlyingType::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = std::get<Int32>(attribute.null_values); break;
@@ -928,6 +938,7 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
         case AttributeUnderlyingType::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
         case AttributeUnderlyingType::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
         case AttributeUnderlyingType::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
+        case AttributeUnderlyingType::UInt128: std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.get<UInt128>(); break;
         case AttributeUnderlyingType::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
         case AttributeUnderlyingType::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
         case AttributeUnderlyingType::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;

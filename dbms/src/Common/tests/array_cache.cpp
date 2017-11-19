@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstring>
 #include <thread>
+#include <pcg_random.hpp>
 #include <Common/ArrayCache.h>
 #include <IO/ReadHelpers.h>
 
@@ -51,7 +52,7 @@ int main(int argc, char ** argv)
     {
         threads.emplace_back([&]
         {
-            std::mt19937 generator(randomSeed());
+            pcg64 generator(randomSeed());
 
             for (size_t i = 0; i < num_iterations; ++i)
             {

@@ -20,7 +20,6 @@ MultiplexedConnections::MultiplexedConnections(Connection & connection, const Se
     ReplicaState replica_state;
     replica_state.connection = &connection;
     replica_states.push_back(replica_state);
-    fd_to_replica_state_idx.emplace(connection.socket.impl()->sockfd(), 0);
 
     active_connection_count = 1;
 }
@@ -36,7 +35,6 @@ MultiplexedConnections::MultiplexedConnections(
         return;
 
     replica_states.reserve(connections.size());
-    fd_to_replica_state_idx.reserve(connections.size());
     for (size_t i = 0; i < connections.size(); ++i)
     {
         Connection * connection = &(*connections[i]);
@@ -47,7 +45,6 @@ MultiplexedConnections::MultiplexedConnections(
         replica_state.connection = connection;
 
         replica_states.push_back(std::move(replica_state));
-        fd_to_replica_state_idx.emplace(connection->socket.impl()->sockfd(), i);
     }
 
     active_connection_count = connections.size();
@@ -280,7 +277,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
     {
         Connection * connection = state.connection;
         if ((connection != nullptr) && connection->hasReadBufferPendingData())
-            read_list.push_back(connection->socket);
+            read_list.push_back(*connection->socket);
     }
 
     /// If no data was found, then we check if there are any connections
@@ -294,7 +291,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         {
             Connection * connection = state.connection;
             if (connection != nullptr)
-                read_list.push_back(connection->socket);
+                read_list.push_back(*connection->socket);
         }
 
         int n = Poco::Net::Socket::select(read_list, write_list, except_list, settings.receive_timeout);
@@ -304,6 +301,16 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
     }
 
     auto & socket = read_list[rand() % read_list.size()];
+    if (fd_to_replica_state_idx.empty())
+    {
+        fd_to_replica_state_idx.reserve(replica_states.size());
+        size_t replica_state_number = 0;
+        for (const auto & replica_state : replica_states)
+        {
+            fd_to_replica_state_idx.emplace(replica_state.connection->socket->impl()->sockfd(), replica_state_number);
+            ++replica_state_number;
+        }
+    }
     return replica_states[fd_to_replica_state_idx.at(socket.impl()->sockfd())];
 }
 

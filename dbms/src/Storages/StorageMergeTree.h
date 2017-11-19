@@ -18,7 +18,6 @@ namespace DB
   */
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMergeTree>;
 friend class MergeTreeBlockOutputStream;
 
 public:
@@ -61,15 +60,12 @@ public:
 
     /** Perform the next step in combining the parts.
       */
-    bool optimize(const ASTPtr & query, const String & partition_id, bool final, bool deduplicate, const Settings & settings) override
-    {
-        return merge(settings.min_bytes_to_use_direct_io, true, partition_id, final, deduplicate);
-    }
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void dropPartition(const ASTPtr & query, const Field & partition, bool detach, const Settings & settings) override;
-    void clearColumnInPartition(const ASTPtr & query, const Field & partition, const Field & column_name, const Settings & settings) override;
-    void attachPartition(const ASTPtr & query, const Field & partition, bool part, const Settings & settings) override;
-    void freezePartition(const Field & partition, const String & with_name, const Settings & settings) override;
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void drop() override;
 
@@ -115,13 +111,22 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
+    /** Determines what parts should be merged and merges it.
+      * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
+      * Returns true if merge is finished successfully.
+      */
+    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
+
+    bool mergeTask();
+
+protected:
     /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
       *
       * primary_expr_ast      - expression for sorting;
-      * date_column_name      - the name of the column with the date;
-      * index_granularity     - fow how many rows one index value is written.
+      * date_column_name      - if not empty, the name of the column with the date used for partitioning by month;
+          otherwise, partition_expr_ast is used as the partitioning expression;
       */
     StorageMergeTree(
         const String & path_,
@@ -133,21 +138,13 @@ private:
         const ColumnDefaults & column_defaults_,
         bool attach,
         Context & context_,
-        ASTPtr & primary_expr_ast_,
-        const String & date_column_name_,
+        const ASTPtr & primary_expr_ast_,
+        const String & date_column_name,
+        const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-        size_t index_granularity_,
         const MergeTreeData::MergingParams & merging_params_,
-        bool has_force_restore_data_flag,
-        const MergeTreeSettings & settings_);
-
-    /** Determines what parts should be merged and merges it.
-      * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
-      * Returns true if merge is finished successfully.
-      */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
-
-    bool mergeTask();
+        const MergeTreeSettings & settings_,
+        bool has_force_restore_data_flag);
 };
 
 }

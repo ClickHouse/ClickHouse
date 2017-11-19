@@ -55,7 +55,7 @@ class AggregateFunctionGroupArrayInsertAtGeneric final
 private:
     DataTypePtr type;
     Field default_value;
-    size_t length_to_resize = 0;    /// zero means - do not do resizing.
+    UInt64 length_to_resize = 0;    /// zero means - do not do resizing.
 
 public:
     String getName() const override { return "groupArrayInsertAt"; }
@@ -97,7 +97,7 @@ public:
 
         if (params.size() == 2)
         {
-            length_to_resize = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[1]);
+            length_to_resize = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
         }
     }
 
@@ -202,6 +202,8 @@ public:
 
         to_offsets.push_back((to_offsets.empty() ? 0 : to_offsets.back()) + result_array_size);
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

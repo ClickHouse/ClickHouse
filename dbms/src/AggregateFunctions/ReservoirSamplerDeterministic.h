@@ -12,7 +12,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
 #include <Poco/Exception.h>
-#include <boost/random.hpp>
 
 
  /// Implementation of Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the `sample_count` size.

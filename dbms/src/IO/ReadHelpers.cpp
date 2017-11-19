@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-template <class IteratorSrc, class IteratorDst>
+template <typename IteratorSrc, typename IteratorDst>
 void parseHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes)
 {
     size_t src_pos = 0;
@@ -49,6 +49,7 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
 {
     /// If string is not like UUID - implementation specific behaviour.
 
+    /// FIXME This code looks like trash.
     parseHex(&src36[0], dst16 + 8, 4);
     parseHex(&src36[9], dst16 + 12, 2);
     parseHex(&src36[14], dst16 + 14, 2);
@@ -630,6 +631,36 @@ void readJSONString(String & s, ReadBuffer & buf)
 template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
+
+
+void readDateTextFallback(LocalDate & date, ReadBuffer & buf)
+{
+    char chars_year[4];
+    readPODBinary(chars_year, buf);
+    UInt16 year = (chars_year[0] - '0') * 1000 + (chars_year[1] - '0') * 100 + (chars_year[2] - '0') * 10 + (chars_year[3] - '0');
+
+    buf.ignore();
+
+    char chars_month[2];
+    readPODBinary(chars_month, buf);
+    UInt8 month = chars_month[0] - '0';
+    if (isNumericASCII(chars_month[1]))
+    {
+        month = month * 10 + chars_month[1] - '0';
+        buf.ignore();
+    }
+
+    char char_day;
+    readChar(char_day, buf);
+    UInt8 day = char_day - '0';
+    if (!buf.eof() && isNumericASCII(*buf.position()))
+    {
+        day = day * 10 + *buf.position() - '0';
+        ++buf.position();
+    }
+
+    date = LocalDate(year, month, day);
+}
 
 
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)

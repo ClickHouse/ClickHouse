@@ -1,5 +1,3 @@
-SET min_bytes_to_use_direct_io = 128;
-
 DROP TABLE IF EXISTS test.stored_aggregates;
 
 CREATE TABLE test.stored_aggregates

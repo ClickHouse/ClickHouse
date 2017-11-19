@@ -304,7 +304,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         const auto & range = ranges_to_read[next_range_idx++];
                         task->current_range_reader = reader->readRange(range.begin, range.end);
                     }
-                    MergeTreeRangeReader & range_reader = task->current_range_reader.value();
+                    MergeTreeRangeReader & range_reader = *task->current_range_reader;
                     size_t current_range_rows_read = 0;
                     auto pre_filter_begin_pos = pre_filter_pos;
 
@@ -391,7 +391,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 if (!post_filter_pos)
                 {
-                    task->size_predictor->updateFilteredRowsRation(pre_filter.size(), pre_filter.size());
+                    if (task->size_predictor)
+                        task->size_predictor->updateFilteredRowsRation(pre_filter.size(), pre_filter.size());
                     res.clear();
                     continue;
                 }
@@ -412,7 +413,8 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter, -1);
                     rows = col.column->size();
                 }
-                task->size_predictor->updateFilteredRowsRation(pre_filter.size(), pre_filter.size() - rows);
+                if (task->size_predictor)
+                    task->size_predictor->updateFilteredRowsRation(pre_filter.size(), pre_filter.size() - rows);
 
                 /// Replace column with condition value from PREWHERE to a constant.
                 if (!task->remove_prewhere_column)

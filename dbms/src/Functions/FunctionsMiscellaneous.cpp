@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <ext/range.h>
+#include <ext/bit_cast.h>
 #include <Poco/Net/DNS.h>
 #include <Common/ClickHouseRevision.h>
 #include <Columns/ColumnSet.h>
@@ -15,6 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -213,6 +215,51 @@ public:
             = DataTypeString().createConstColumn(block.rows(), block.getByPosition(arguments[0]).type->getName());
     }
 };
+
+
+/// Returns number of fields in Enum data type of passed value.
+class FunctionGetSizeOfEnumType : public IFunction
+{
+public:
+    static constexpr auto name = "getSizeOfEnumType";
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionGetSizeOfEnumType>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (checkDataType<DataTypeEnum8>(arguments[0].get()))
+            return std::make_shared<DataTypeUInt8>();
+        else if (checkDataType<DataTypeEnum16>(arguments[0].get()))
+            return std::make_shared<DataTypeUInt16>();
+
+        throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        if (auto type = checkAndGetDataType<DataTypeEnum8>(block.getByPosition(arguments[0]).type.get()))
+            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(type->getValues().size()));
+        else if (auto type = checkAndGetDataType<DataTypeEnum16>(block.getByPosition(arguments[0]).type.get()))
+            block.getByPosition(result).column = DataTypeUInt16().createConstColumn(block.rows(), UInt64(type->getValues().size()));
+        else
+            throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+};
+
 
 
 /// Returns name of IColumn instance.
@@ -1199,11 +1246,24 @@ public:
 
 struct IsFiniteImpl
 {
+    /// Better implementation, because isinf, isfinite, isnan are not inlined for unknown reason.
+    /// Assuming IEEE 754.
+    /// NOTE gcc 7 doesn't vectorize this loop.
+
     static constexpr auto name = "isFinite";
     template <typename T>
     static bool execute(const T t)
     {
-        return std::isfinite(t);
+        if constexpr (std::is_same<T, float>::value)
+            return (ext::bit_cast<uint32_t>(t)
+                 & 0b01111111100000000000000000000000)
+                != 0b01111111100000000000000000000000;
+        else if constexpr (std::is_same<T, double>::value)
+            return (ext::bit_cast<uint64_t>(t)
+                 & 0b0111111111110000000000000000000000000000000000000000000000000000)
+                != 0b0111111111110000000000000000000000000000000000000000000000000000;
+        else
+            return true;
     }
 };
 
@@ -1213,7 +1273,16 @@ struct IsInfiniteImpl
     template <typename T>
     static bool execute(const T t)
     {
-        return std::isinf(t);
+        if constexpr (std::is_same<T, float>::value)
+            return (ext::bit_cast<uint32_t>(t)
+                 & 0b01111111111111111111111111111111)
+                == 0b01111111100000000000000000000000;
+        else if constexpr (std::is_same<T, double>::value)
+            return (ext::bit_cast<uint64_t>(t)
+                 & 0b0111111111111111111111111111111111111111111111111111111111111111)
+                == 0b0111111111110000000000000000000000000000000000000000000000000000;
+        else
+            return false;
     }
 };
 
@@ -1223,7 +1292,7 @@ struct IsNaNImpl
     template <typename T>
     static bool execute(const T t)
     {
-        return std::isnan(t);
+        return t != t;
     }
 };
 
@@ -1280,7 +1349,7 @@ public:
         return std::make_shared<FunctionUptime>(context.getUptimeSeconds());
     }
 
-    FunctionUptime(time_t uptime_) : uptime(uptime_)
+    explicit FunctionUptime(time_t uptime_) : uptime(uptime_)
     {
     }
 
@@ -1419,11 +1488,26 @@ public:
     }
 };
 
+template <bool is_first_line_zero>
+struct FunctionRunningDifferenceName;
+
+template <>
+struct FunctionRunningDifferenceName<true>
+{
+    static constexpr auto name = "runningDifference";
+};
+
+template <>
+struct FunctionRunningDifferenceName<false>
+{
+    static constexpr auto name = "runningDifferenceStartingWithFirstValue";
+};
 
 /** Calculate difference of consecutive values in block.
   * So, result of function depends on partition of data to blocks and on order of data in block.
   */
-class FunctionRunningDifference : public IFunction
+template <bool is_first_line_zero>
+class FunctionRunningDifferenceImpl : public IFunction
 {
 private:
     /// It is possible to track value from previous block, to calculate continuously across all blocks. Not implemented.
@@ -1439,7 +1523,7 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        dst[0] = 0;
+        dst[0] = is_first_line_zero ? 0 : src[0];
         Src prev = src[0];
         for (size_t i = 1; i < size; ++i)
         {
@@ -1486,10 +1570,11 @@ private:
     }
 
 public:
-    static constexpr auto name = "runningDifference";
+    static constexpr auto name = FunctionRunningDifferenceName<is_first_line_zero>::name;
+
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionRunningDifference>();
+        return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }
 
     String getName() const override
@@ -1538,6 +1623,9 @@ public:
         });
     }
 };
+
+using FunctionRunningDifference = FunctionRunningDifferenceImpl<true>;
+using FunctionRunningIncome = FunctionRunningDifferenceImpl<false>;
 
 
 /** Takes state of aggregate function. Returns result of aggregation (finalized state).
@@ -1598,7 +1686,7 @@ public:
         return std::make_shared<FunctionHasColumnInTable>(context.getGlobalContext());
     }
 
-    FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
+    explicit FunctionHasColumnInTable(const Context & global_context_) : global_context(global_context_)
     {
     }
 
@@ -1709,7 +1797,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
     else
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
-        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password);
+        auto cluster = std::make_shared<Cluster>(global_context.getSettings(), host_names, !user_name.empty() ? user_name : "default", password, global_context.getTCPPort());
         auto names_and_types_list = std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*cluster, database_name, table_name, global_context));
         const auto & names = names_and_types_list->getNames();
         has_column = std::find(names.begin(), names.end(), column_name) != names.end();
@@ -1733,6 +1821,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionHostName>();
     factory.registerFunction<FunctionVisibleWidth>();
     factory.registerFunction<FunctionToTypeName>();
+    factory.registerFunction<FunctionGetSizeOfEnumType>();
     factory.registerFunction<FunctionToColumnTypeName>();
     factory.registerFunction<FunctionDefaultValueOfArgumentType>();
     factory.registerFunction<FunctionBlockSize>();
@@ -1766,6 +1855,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 
     factory.registerFunction<FunctionRunningAccumulate>();
     factory.registerFunction<FunctionRunningDifference>();
+    factory.registerFunction<FunctionRunningIncome>();
     factory.registerFunction<FunctionFinalizeAggregation>();
 }
 }

@@ -15,7 +15,7 @@ namespace DB
 
 /** Create an aggregate function with a numeric type in the template parameter, depending on the type of the argument.
   */
-template <template <typename> class AggregateFunctionTemplate>
+template <template <typename, typename ... TArgs> class AggregateFunctionTemplate>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
          if (typeid_cast<const DataTypeUInt8 *>(&argument_type)) return new AggregateFunctionTemplate<UInt8>;
@@ -34,7 +34,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
         return nullptr;
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, class Data>
+template <template <typename, typename> class AggregateFunctionTemplate, typename Data>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type)
 {
          if (typeid_cast<const DataTypeUInt8 *>(&argument_type)) return new AggregateFunctionTemplate<UInt8, Data>;
@@ -53,7 +53,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
         return nullptr;
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, class Data, typename ... TArgs>
+template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename ... TArgs>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {
          if (typeid_cast<const DataTypeUInt8 *>(&argument_type)) return new AggregateFunctionTemplate<UInt8, Data>(std::forward<TArgs>(args)...);
@@ -87,6 +87,26 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
     else if (typeid_cast<const DataTypeFloat64 *>(&argument_type)) return new AggregateFunctionTemplate<Float64, Data<Float64>>;
     else if (typeid_cast<const DataTypeEnum8 *>(&argument_type)) return new AggregateFunctionTemplate<UInt8, Data<UInt8>>;
     else if (typeid_cast<const DataTypeEnum16 *>(&argument_type)) return new AggregateFunctionTemplate<UInt16, Data<UInt16>>;
+    else
+        return nullptr;
+}
+
+
+template <template <typename, typename> class AggregateFunctionTemplate>
+static IAggregateFunction * createWithNumericTypeNearest(const IDataType & argument_type)
+{
+         if (typeid_cast<const DataTypeUInt8 *>(&argument_type)) return new AggregateFunctionTemplate<UInt8, NearestFieldType<UInt8>::Type>;
+    else if (typeid_cast<const DataTypeUInt16 *>(&argument_type)) return new AggregateFunctionTemplate<UInt16, NearestFieldType<UInt16>::Type>;
+    else if (typeid_cast<const DataTypeUInt32 *>(&argument_type)) return new AggregateFunctionTemplate<UInt32, NearestFieldType<UInt32>::Type>;
+    else if (typeid_cast<const DataTypeUInt64 *>(&argument_type)) return new AggregateFunctionTemplate<UInt64, NearestFieldType<UInt64>::Type>;
+    else if (typeid_cast<const DataTypeInt8 *>(&argument_type)) return new AggregateFunctionTemplate<Int8, NearestFieldType<Int8>::Type>;
+    else if (typeid_cast<const DataTypeInt16 *>(&argument_type)) return new AggregateFunctionTemplate<Int16, NearestFieldType<Int16>::Type>;
+    else if (typeid_cast<const DataTypeInt32 *>(&argument_type)) return new AggregateFunctionTemplate<Int32, NearestFieldType<Int32>::Type>;
+    else if (typeid_cast<const DataTypeInt64 *>(&argument_type)) return new AggregateFunctionTemplate<Int64, NearestFieldType<Int64>::Type>;
+    else if (typeid_cast<const DataTypeFloat32 *>(&argument_type)) return new AggregateFunctionTemplate<Float32, NearestFieldType<Float32>::Type>;
+    else if (typeid_cast<const DataTypeFloat64 *>(&argument_type)) return new AggregateFunctionTemplate<Float64, NearestFieldType<Float64>::Type>;
+    else if (typeid_cast<const DataTypeEnum8 *>(&argument_type)) return new AggregateFunctionTemplate<UInt8, NearestFieldType<UInt8>::Type>;
+    else if (typeid_cast<const DataTypeEnum16 *>(&argument_type)) return new AggregateFunctionTemplate<UInt16, NearestFieldType<UInt16>::Type>;
     else
         return nullptr;
 }

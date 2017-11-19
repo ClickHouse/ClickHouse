@@ -44,7 +44,7 @@ private:
     {
         UConverter * impl;
 
-        Converter(const String & charset)
+        explicit Converter(const String & charset)
         {
             UErrorCode status = U_ZERO_ERROR;
             impl = ucnv_open(charset.data(), &status);

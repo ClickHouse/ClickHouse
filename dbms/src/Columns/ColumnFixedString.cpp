@@ -102,7 +102,7 @@ template <bool positive>
 struct ColumnFixedString::less
 {
     const ColumnFixedString & parent;
-    less(const ColumnFixedString & parent_) : parent(parent_) {}
+    explicit less(const ColumnFixedString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
         /// TODO: memcmp slows down.
@@ -196,9 +196,9 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
         }
         else
         {
+            size_t res_chars_size = res->chars.size();
             for (size_t i = 0; i < SIMD_BYTES; ++i)
             {
-                size_t res_chars_size = res->chars.size();
                 if (filt_pos[i])
                 {
                     res->chars.resize(res_chars_size + n);
@@ -289,6 +289,27 @@ void ColumnFixedString::getExtremes(Field & min, Field & max) const
 {
     min = String();
     max = String();
+
+    size_t col_size = size();
+
+    if (col_size == 0)
+        return;
+
+    size_t min_idx = 0;
+    size_t max_idx = 0;
+
+    less<true> less_op(*this);
+
+    for (size_t i = 1; i < col_size; ++i)
+    {
+        if (less_op(i, min_idx))
+            min_idx = i;
+        else if (less_op(max_idx, i))
+            max_idx = i;
+    }
+
+    get(min_idx, min);
+    get(max_idx, max);
 }
 
 }

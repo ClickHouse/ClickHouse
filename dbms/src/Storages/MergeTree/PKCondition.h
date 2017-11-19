@@ -207,7 +207,7 @@ public:
         const Context & context,
         const NamesAndTypesList & all_columns,
         const SortDescription & sort_descr,
-        ExpressionActionsPtr pk_expr);
+        const ExpressionActionsPtr & pk_expr);
 
     /// Whether the condition is feasible in the key range.
     /// left_pk and right_pk must contain all fields in the sort_descr in the appropriate order.

@@ -29,13 +29,13 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeData & storage_,
     size_t min_compress_block_size_,
     size_t max_compress_block_size_,
-    CompressionMethod compression_method_,
+    CompressionSettings compression_settings_,
     size_t aio_threshold_)
     : storage(storage_),
     min_compress_block_size(min_compress_block_size_),
     max_compress_block_size(max_compress_block_size_),
     aio_threshold(aio_threshold_),
-    compression_method(compression_method_)
+    compression_settings(compression_settings_)
 {
 }
 
@@ -62,7 +62,7 @@ void IMergedBlockOutputStream::addStream(
             path + stream_name, DATA_FILE_EXTENSION,
             path + stream_name, MARKS_FILE_EXTENSION,
             max_compress_block_size,
-            compression_method,
+            compression_settings,
             estimated_size,
             aio_threshold);
     };
@@ -144,14 +144,14 @@ IMergedBlockOutputStream::ColumnStream::ColumnStream(
     const std::string & marks_path,
     const std::string & marks_file_extension_,
     size_t max_compress_block_size,
-    CompressionMethod compression_method,
+    CompressionSettings compression_settings,
     size_t estimated_size,
     size_t aio_threshold) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     plain_file(createWriteBufferFromFileBase(data_path + data_file_extension, estimated_size, aio_threshold, max_compress_block_size)),
-    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_method), compressed(compressed_buf),
+    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_settings), compressed(compressed_buf),
     marks_file(marks_path + marks_file_extension, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file)
 {
 }
@@ -190,10 +190,10 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
     String part_path_,
     const NamesAndTypesList & columns_list_,
-    CompressionMethod compression_method)
+    CompressionSettings compression_settings)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, compression_method,
+        storage_.context.getSettings().max_compress_block_size, compression_settings,
         storage_.context.getSettings().min_bytes_to_use_direct_io),
     columns_list(columns_list_), part_path(part_path_)
 {
@@ -206,12 +206,12 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
     String part_path_,
     const NamesAndTypesList & columns_list_,
-    CompressionMethod compression_method,
+    CompressionSettings compression_settings,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
     size_t aio_threshold_)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, compression_method,
+        storage_.context.getSettings().max_compress_block_size, compression_settings,
         aio_threshold_),
     columns_list(columns_list_), part_path(part_path_)
 {
@@ -253,10 +253,14 @@ void MergedBlockOutputStream::writeSuffix()
     throw Exception("Method writeSuffix is not supported by MergedBlockOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChecksums(
-    const NamesAndTypesList & total_column_list,
-    MergeTreeData::DataPart::Checksums * additional_column_checksums)
+void MergedBlockOutputStream::writeSuffixAndFinalizePart(
+        MergeTreeData::MutableDataPartPtr & new_part,
+        const NamesAndTypesList * total_column_list,
+        MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
+    if (!total_column_list)
+        total_column_list = &columns_list;
+
     /// Finish write and get checksums.
     MergeTreeData::DataPart::Checksums checksums;
 
@@ -279,18 +283,30 @@ MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChe
 
     column_streams.clear();
 
-    if (marks_count == 0)
+    if (rows_count == 0)
     {
         /// A part is empty - all records are deleted.
         Poco::File(part_path).remove(true);
-        checksums.files.clear();
-        return checksums;
+        return;
+    }
+
+    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        new_part->partition.store(storage, part_path, checksums);
+        new_part->minmax_idx.store(storage, part_path, checksums);
+
+        WriteBufferFromFile count_out(part_path + "count.txt", 4096);
+        HashingWriteBuffer count_out_hashing(count_out);
+        writeIntText(rows_count, count_out_hashing);
+        count_out_hashing.next();
+        checksums.files["count.txt"].file_size = count_out_hashing.count();
+        checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
     }
 
     {
         /// Write a file with a description of columns.
         WriteBufferFromFile out(part_path + "columns.txt", 4096);
-        total_column_list.writeText(out);
+        total_column_list->writeText(out);
     }
 
     {
@@ -299,22 +315,13 @@ MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChe
         checksums.write(out);
     }
 
-    return checksums;
-}
-
-MergeTreeData::DataPart::Checksums MergedBlockOutputStream::writeSuffixAndGetChecksums()
-{
-    return writeSuffixAndGetChecksums(columns_list, nullptr);
-}
-
-MergeTreeData::DataPart::Index & MergedBlockOutputStream::getIndex()
-{
-    return index_columns;
-}
-
-size_t MergedBlockOutputStream::marksCount()
-{
-    return marks_count;
+    new_part->rows_count = rows_count;
+    new_part->marks_count = marks_count;
+    new_part->modification_time = time(nullptr);
+    new_part->columns = *total_column_list;
+    new_part->index.swap(index_columns);
+    new_part->checksums = checksums;
+    new_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part->getFullPath());
 }
 
 void MergedBlockOutputStream::init()
@@ -396,6 +403,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         }
     }
 
+    rows_count += rows;
+
     {
         /** While filling index (index_columns), disable memory tracker.
           * Because memory is allocated here (maybe in context of INSERT query),
@@ -430,10 +439,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 /// Implementation of MergedColumnOnlyOutputStream.
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    MergeTreeData & storage_, String part_path_, bool sync_, CompressionMethod compression_method, bool skip_offsets_)
+    MergeTreeData & storage_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, compression_method,
+        storage_.context.getSettings().max_compress_block_size, compression_settings,
         storage_.context.getSettings().min_bytes_to_use_direct_io),
     part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_)
 {

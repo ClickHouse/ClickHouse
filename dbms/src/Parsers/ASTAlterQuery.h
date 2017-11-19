@@ -14,10 +14,6 @@ namespace DB
  *      DROP COLUMN col_drop [FROM PARTITION partition],
  *      MODIFY COLUMN col_name type,
  *      DROP PARTITION partition,
- *      RESHARD [COPY] PARTITION partition
- *          TO '/path/to/zookeeper/table' [WEIGHT w], ...
- *              USING expression
- *              [COORDINATE WITH 'coordinator_id']
  */
 
 class ASTAlterQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
@@ -34,7 +30,6 @@ public:
         ATTACH_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
-        RESHARD_PARTITION,
 
         NO_TYPE,
     };
@@ -60,9 +55,10 @@ public:
           */
         ASTPtr primary_key;
 
-        /** In DROP PARTITION and RESHARD PARTITION queries, the name of the partition is stored here.
+        /** In DROP PARTITION and RESHARD PARTITION queries, the value or ID of the partition is stored here.
           */
         ASTPtr partition;
+
         bool detach = false;        /// true for DETACH PARTITION
 
         bool part = false;          /// true for ATTACH PART
@@ -74,12 +70,6 @@ public:
         /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
           */
         String from;
-
-        /** For RESHARD PARTITION.
-          */
-        ASTPtr weighted_zookeeper_paths;
-        ASTPtr sharding_key_expr;
-        ASTPtr coordinator;
 
         /** For FREEZE PARTITION - place local backup to directory with specified name.
           */

@@ -1,26 +1,23 @@
+#include <unistd.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include <Core/FieldVisitors.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
-
+#include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/getClusterName.h>
-
 #include <Storages/StorageLog.h>
 #include <Storages/StorageTinyLog.h>
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageBuffer.h>
-#include <Storages/StorageTrivialBuffer.h>
 #include <Storages/StorageNull.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageMergeTree.h>
@@ -36,7 +33,10 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
-#include <unistd.h>
+#include <Common/config.h>
+#if USE_RDKAFKA
+#include <Storages/StorageKafka.h>
+#endif
 
 
 namespace DB
@@ -56,27 +56,30 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_TABLES;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int INCORRECT_QUERY;
+    extern const int ENGINE_REQUIRED;
 }
 
 
-/** For StorageMergeTree: get the primary key as an ASTExpressionList.
+/** For StorageMergeTree: get the key expression AST as an ASTExpressionList.
   * It can be specified in the tuple: (CounterID, Date),
   *  or as one column: CounterID.
   */
-static ASTPtr extractPrimaryKey(const ASTPtr & node)
+static ASTPtr extractKeyExpressionList(IAST & node)
 {
-    const ASTFunction * primary_expr_func = typeid_cast<const ASTFunction *>(&*node);
+    const ASTFunction * expr_func = typeid_cast<const ASTFunction *>(&node);
 
-    if (primary_expr_func && primary_expr_func->name == "tuple")
+    if (expr_func && expr_func->name == "tuple")
     {
         /// Primary key is specified in tuple.
-        return primary_expr_func->children.at(0);
+        return expr_func->children.at(0);
     }
     else
     {
         /// Primary key consists of one column.
         auto res = std::make_shared<ASTExpressionList>();
-        res->children.push_back(node);
+        res->children.push_back(node.ptr());
         return res;
     }
 }
@@ -244,14 +247,124 @@ static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_t
 }
 
 
+static String getMergeTreeVerboseHelp(bool is_extended_syntax)
+{
+    String help = R"(
+
+MergeTree is a family of storage engines.
+
+MergeTrees are different in two ways:
+- they may be replicated and non-replicated;
+- they may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
+
+So we have 14 combinations:
+    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree, GraphiteMergeTree
+    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree, ReplicatedGraphiteMergeTree
+
+In most of cases, you need MergeTree or ReplicatedMergeTree.
+
+For replicated merge trees, you need to supply a path in ZooKeeper and a replica name as the first two parameters.
+Path in ZooKeeper is like '/clickhouse/tables/01/' where /clickhouse/tables/ is a common prefix and 01 is a shard name.
+Replica name is like 'mtstat01-1' - it may be the hostname or any suitable string identifying replica.
+You may use macro substitutions for these parameters. It's like ReplicatedMergeTree('/clickhouse/tables/{shard}/', '{replica}'...
+Look at the <macros> section in server configuration file.
+)";
+
+    if (!is_extended_syntax)
+        help += R"(
+Next parameter (which is the first for unreplicated tables and the third for replicated tables) is the name of date column.
+Date column must exist in the table and have type Date (not DateTime).
+It is used for internal data partitioning and works like some kind of index.
+
+If your source data doesn't have a column of type Date, but has a DateTime column, you may add values for Date column while loading,
+ or you may INSERT your source data to a table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
+If your source data doesn't have any date or time, you may just pass any constant for a date column while loading.
+
+Next parameter is optional sampling expression. Sampling expression is used to implement SAMPLE clause in query for approximate query execution.
+If you don't need approximate query execution, simply omit this parameter.
+Sample expression must be one of the elements of the primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
+
+Next parameter is the primary key tuple. It's like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions in round brackets. If your primary key has just one element, you may omit round brackets.
+
+Careful choice of the primary key is extremely important for processing short-time queries.
+
+Next parameter is index (primary key) granularity. Good value is 8192. You have no reasons to use any other value.
+)";
+
+    help += R"(
+For the Collapsing mode, the last parameter is the name of a sign column - a special column that is used to 'collapse' rows with the same primary key while merging.
+
+For the Summing mode, the optional last parameter is a list of columns to sum while merging. This list is passed in round brackets, like (PageViews, Cost).
+If this parameter is omitted, the storage will sum all numeric columns except columns participating in the primary key.
+
+For the Replacing mode, the optional last parameter is the name of a 'version' column. While merging, for all rows with the same primary key, only one row is selected: the last row, if the version column was not specified, or the last row with the maximum version value, if specified.
+)";
+
+    if (is_extended_syntax)
+        help += R"(
+You can specify a partitioning expression in the PARTITION BY clause. It is optional but highly recommended.
+A common partitioning expression is some function of the event date column e.g. PARTITION BY toYYYYMM(EventDate) will partition the table by month.
+Rows with different partition expression values are never merged together. That allows manipulating partitions with ALTER commands.
+Also it acts as a kind of index.
+
+Primary key is specified in the ORDER BY clause. It is mandatory for all MergeTree types except UnsortedMergeTree.
+It is like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions in round brackets.
+If your primary key has just one element, you may omit round brackets.
+
+Careful choice of the primary key is extremely important for processing short-time queries.
+
+Optional sampling expression can be specified in the SAMPLE BY clause. It is used to implement the SAMPLE clause in a SELECT query for approximate query execution.
+Sampling expression must be one of the elements of the primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
+
+Engine settings can be specified in the SETTINGS clause. Full list is in the source code in the 'dbms/src/Storages/MergeTree/MergeTreeSettings.h' file.
+E.g. you can specify the index (primary key) granularity with SETTINGS index_granularity = 8192.
+
+Examples:
+
+MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity = 8192
+
+MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
+
+CollapsingMergeTree(Sign) PARTITION BY StartDate SAMPLE BY intHash32(UserID) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
+
+SummingMergeTree PARTITION BY toMonday(EventDate) ORDER BY (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo)
+
+SummingMergeTree((Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth)) PARTITION BY toYYYYMM(EventDate) ORDER BY (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo)
+
+ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}') PARTITION BY EventDate ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
+)";
+    else
+        help += R"(
+Examples:
+
+MergeTree(EventDate, (CounterID, EventDate), 8192)
+
+MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+
+CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
+
+SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192)
+
+SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192, (Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth))
+
+ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+)";
+
+    help += R"(
+For further info please read the documentation: https://clickhouse.yandex/
+)";
+
+    return help;
+}
+
+
 StoragePtr StorageFactory::get(
-    const String & name,
+    ASTCreateQuery & query,
     const String & data_path,
     const String & table_name,
     const String & database_name,
     Context & local_context,
     Context & context,
-    ASTPtr & query,
     NamesAndTypesListPtr columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
@@ -259,34 +372,82 @@ StoragePtr StorageFactory::get(
     bool attach,
     bool has_force_restore_data_flag) const
 {
-    /// Check for some special types, that are not allowed to be stored in tables. Example: NULL data type.
-    /// Exception: any type is allowed in View, because plain (non-materialized) View does not store anything itself.
-    if (name != "View")
+    if (query.is_view)
     {
-        checkAllTypesAreAllowedInTable(*columns);
-        checkAllTypesAreAllowedInTable(materialized_columns);
-        checkAllTypesAreAllowedInTable(alias_columns);
+        if (query.storage)
+            throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
+
+        return StorageView::create(
+            table_name, database_name, query, columns,
+            materialized_columns, alias_columns, column_defaults);
     }
 
-    if (name == "Log")
+    /// Check for some special types, that are not allowed to be stored in tables. Example: NULL data type.
+    /// Exception: any type is allowed in View, because plain (non-materialized) View does not store anything itself.
+    checkAllTypesAreAllowedInTable(*columns);
+    checkAllTypesAreAllowedInTable(materialized_columns);
+    checkAllTypesAreAllowedInTable(alias_columns);
+
+    if (query.is_materialized_view)
     {
+        /// Pass local_context here to convey setting for inner table
+        return StorageMaterializedView::create(
+            table_name, database_name, local_context, query, columns,
+            materialized_columns, alias_columns, column_defaults,
+            attach);
+    }
+
+    if (!query.storage)
+        throw Exception("Incorrect CREATE query: ENGINE required", ErrorCodes::ENGINE_REQUIRED);
+
+    ASTStorage & storage_def = *query.storage;
+    const ASTFunction & engine_def = *storage_def.engine;
+
+    if (engine_def.parameters)
+        throw Exception(
+            "Engine definition cannot take the form of a parametric function", ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
+
+    ASTs * args_ptr = nullptr;
+    if (engine_def.arguments)
+        args_ptr = &engine_def.arguments->children;
+
+    const String & name = engine_def.name;
+
+    if ((storage_def.partition_by || storage_def.order_by || storage_def.sample_by || storage_def.settings)
+        && !endsWith(name, "MergeTree"))
+    {
+        throw Exception(
+            "Engine " + name + " doesn't support PARTITION BY, ORDER BY, SAMPLE BY or SETTINGS clauses. "
+            "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    auto check_arguments_empty = [&]
+    {
+        if (args_ptr && !args_ptr->empty())
+            throw Exception(
+                "Engine " + name + " doesn't support any arguments (" + toString(args_ptr->size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    };
+
+    if (name == "View")
+    {
+        throw Exception(
+            "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement",
+            ErrorCodes::INCORRECT_QUERY);
+    }
+    else if (name == "MaterializedView")
+    {
+        throw Exception(
+            "Direct creation of tables with ENGINE MaterializedView is not supported, use CREATE MATERIALIZED VIEW statement",
+            ErrorCodes::INCORRECT_QUERY);
+    }
+    else if (name == "Log")
+    {
+        check_arguments_empty();
         return StorageLog::create(
             data_path, table_name, columns,
             materialized_columns, alias_columns, column_defaults,
             context.getSettings().max_compress_block_size);
-    }
-    else if (name == "View")
-    {
-        return StorageView::create(
-            table_name, database_name, context, query, columns,
-            materialized_columns, alias_columns, column_defaults);
-    }
-    else if (name == "MaterializedView")
-    {
-        return StorageMaterializedView::create(
-            table_name, database_name, context, query, columns,
-            materialized_columns, alias_columns, column_defaults,
-            attach);
     }
     else if (name == "Dictionary")
     {
@@ -296,6 +457,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "TinyLog")
     {
+        check_arguments_empty();
         return StorageTinyLog::create(
             data_path, table_name, columns,
             materialized_columns, alias_columns, column_defaults,
@@ -303,6 +465,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "StripeLog")
     {
+        check_arguments_empty();
         return StorageStripeLog::create(
             data_path, table_name, columns,
             materialized_columns, alias_columns, column_defaults,
@@ -310,16 +473,11 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "File")
     {
-        auto & func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage);
-        auto & args = typeid_cast<ASTExpressionList &>(*func.arguments).children;
-
-        constexpr auto error_msg = "Storage File requires 1 or 2 arguments: name of used format and source.";
-
-        if (func.parameters)
-            throw Exception(error_msg, ErrorCodes::FUNCTION_CANNOT_HAVE_PARAMETERS);
-
-        if (args.empty() || args.size() > 2)
-            throw Exception(error_msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (!args_ptr || !(args_ptr->size() == 1 || args_ptr->size() == 2))
+            throw Exception(
+                "Storage File requires 1 or 2 arguments: name of used format and source.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
         String format_name = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
@@ -364,6 +522,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "Set")
     {
+        check_arguments_empty();
         return StorageSet::create(
             data_path, table_name, columns,
             materialized_columns, alias_columns, column_defaults);
@@ -372,17 +531,11 @@ StoragePtr StorageFactory::get(
     {
         /// Join(ANY, LEFT, k1, k2, ...)
 
-        ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
-
-        constexpr auto params_error_message = "Storage Join requires at least 3 parameters: Join(ANY|ALL, LEFT|INNER, keys...).";
-
-        if (args_func.size() != 1)
-            throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
-
-        if (args.size() < 3)
-            throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (!args_ptr || args_ptr->size() < 3)
+            throw Exception(
+                "Storage Join requires at least 3 parameters: Join(ANY|ALL, LEFT|INNER, keys...).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        const ASTs & args = *args_ptr;
 
         const ASTIdentifier * strictness_id = typeid_cast<ASTIdentifier *>(&*args[0]);
         if (!strictness_id)
@@ -432,6 +585,7 @@ StoragePtr StorageFactory::get(
     }
     else if (name == "Memory")
     {
+        check_arguments_empty();
         return StorageMemory::create(table_name, columns, materialized_columns, alias_columns, column_defaults);
     }
     else if (name == "Null")
@@ -443,19 +597,12 @@ StoragePtr StorageFactory::get(
         /** In query, the name of database is specified as table engine argument which contains source tables,
           *  as well as regex for source-table names.
           */
-        ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
-        if (args_func.size() != 1)
+        if (!args_ptr || args_ptr->size() != 2)
             throw Exception("Storage Merge requires exactly 2 parameters"
                 " - name of source database and regexp for table names.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
-
-        if (args.size() != 2)
-            throw Exception("Storage Merge requires exactly 2 parameters"
-                " - name of source database and regexp for table names.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
         args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
@@ -481,19 +628,12 @@ StoragePtr StorageFactory::get(
           * -- string literal as specific case;
           * - empty string means 'use default database from cluster'.
           */
-        ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
 
-        const auto params_error_message = "Storage Distributed requires 3 or 4 parameters"
-            " - name of configuration section with list of remote servers, name of remote database, name of remote table,"
-            " sharding key expression (optional).";
-
-        if (args_func.size() != 1)
-            throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
-
-        if (args.size() != 3 && args.size() != 4)
-            throw Exception(params_error_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        if (!args_ptr || !(args_ptr->size() == 3 || args_ptr->size() == 4))
+            throw Exception("Storage Distributed requires 3 or 4 parameters"
+                " - name of configuration section with list of remote servers, name of remote database, name of remote table,"
+                " sharding key expression (optional).", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
         String cluster_name = getClusterName(*args[0]);
 
@@ -536,19 +676,11 @@ StoragePtr StorageFactory::get(
           * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for flushing the buffer.
           */
 
-        ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
-
-        if (args_func.size() != 1)
-            throw Exception("Storage Buffer requires 9 parameters: "
-                " destination database, destination table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
-
-        if (args.size() != 9)
+        if (!args_ptr || args_ptr->size() != 9)
             throw Exception("Storage Buffer requires 9 parameters: "
                 " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
         args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
         args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
@@ -556,14 +688,14 @@ StoragePtr StorageFactory::get(
         String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
         String destination_table     = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
-        size_t num_buckets = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
+        UInt64 num_buckets = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[2]).value);
 
-        time_t min_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[3]).value);
-        time_t max_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[4]).value);
-        size_t min_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[5]).value);
-        size_t max_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[6]).value);
-        size_t min_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[7]).value);
-        size_t max_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[8]).value);
+        Int64 min_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*args[3]).value);
+        Int64 max_time = applyVisitor(FieldVisitorConvertToNumber<Int64>(), typeid_cast<ASTLiteral &>(*args[4]).value);
+        UInt64 min_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[5]).value);
+        UInt64 max_rows = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[6]).value);
+        UInt64 min_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[7]).value);
+        UInt64 max_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), typeid_cast<ASTLiteral &>(*args[8]).value);
 
         return StorageBuffer::create(
             table_name, columns,
@@ -574,54 +706,63 @@ StoragePtr StorageFactory::get(
             StorageBuffer::Thresholds{max_time, max_rows, max_bytes},
             destination_database, destination_table);
     }
-    else if (name == "TrivialBuffer")
+    else if (name == "Kafka")
     {
-        /** TrivialBuffer(db, table, num_blocks_to_deduplicate, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes, path_in_zookeeper)
-          *
-          * db, table - in which table to put data from buffer.
-          * min_time, max_time, min_rows, max_rows, min_bytes, max_bytes - conditions for pushing out from the buffer.
-          * num_blocks_to_deduplicate - level of parallelism.
+#if USE_RDKAFKA
+        /** Arguments of engine is following:
+          * - Kafka broker list
+          * - List of topics
+          * - Group ID (may be a constaint expression with a string result)
+          * - Message format (string)
+          * - Schema (optional, if the format supports it)
           */
 
-        const std::string error_message_argument_number_mismatch = "Storage TrivialBuffer requires 10 parameters: "
-                " destination database, destination table, num_blocks_to_deduplicate, min_time, max_time, min_rows,"
-                " max_rows, min_bytes, max_bytes, path_in_zookeeper.";
-        ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
-
-        if (args_func.size() != 1)
-            throw Exception(error_message_argument_number_mismatch,
+        if (!args_ptr || !(args_ptr->size() == 4 || args_ptr->size() == 5))
+            throw Exception(
+                "Storage Kafka requires 4 parameters"
+                " - Kafka broker list, list of topics to consume, consumer group ID, message format",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
 
-        ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+        String brokers;
+        auto ast = typeid_cast<ASTLiteral *>(&*args[0]);
+        if (ast && ast->value.getType() == Field::Types::String)
+            brokers = safeGet<String>(ast->value);
+        else
+            throw Exception(String("Kafka broker list must be a string"), ErrorCodes::BAD_ARGUMENTS);
 
-        if (args.size() != 10)
-            throw Exception(error_message_argument_number_mismatch,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        args[1] = evaluateConstantExpressionAsLiteral(args[1], local_context);
+        args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(args[2], local_context);
+        args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(args[3], local_context);
 
-        args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], local_context);
-        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], local_context);
+        // Additionally parse schema if supported
+        String schema;
+        if (args.size() == 5)
+        {
+            args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(args[4], local_context);
+            schema = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
+        }
 
-        String destination_database = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
-        String destination_table    = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+        // Parse topic list and consumer group
+        Names topics;
+        topics.push_back(static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>());
+        String group = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
-        size_t num_blocks_to_deduplicate = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[2]).value);
+        // Parse format from string
+        String format;
+        ast = typeid_cast<ASTLiteral *>(&*args[3]);
+        if (ast && ast->value.getType() == Field::Types::String)
+            format = safeGet<String>(ast->value);
+        else
+            throw Exception(String("Format must be a string"), ErrorCodes::BAD_ARGUMENTS);
 
-        time_t min_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[3]).value);
-        time_t max_time = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[4]).value);
-        size_t min_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[5]).value);
-        size_t max_rows = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[6]).value);
-        size_t min_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[7]).value);
-        size_t max_bytes = applyVisitor(FieldVisitorConvertToNumber<size_t>(), typeid_cast<ASTLiteral &>(*args[8]).value);
-
-        String path_in_zk_for_deduplication = static_cast<const ASTLiteral &>(*args[9]).value.safeGet<String>();
-
-        return StorageTrivialBuffer::create(
-            table_name, columns,
+        return StorageKafka::create(
+            table_name, database_name, context, columns,
             materialized_columns, alias_columns, column_defaults,
-            context, num_blocks_to_deduplicate, path_in_zk_for_deduplication,
-            StorageTrivialBuffer::Thresholds{min_time, min_rows, min_bytes},
-            StorageTrivialBuffer::Thresholds{max_time, max_rows, max_bytes},
-            destination_database, destination_table);
+            brokers, group, topics, format, schema);
+#else
+            throw Exception{"Storage `Kafka` disabled because ClickHouse built without kafka support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
     }
     else if (endsWith(name, "MergeTree"))
     {
@@ -632,7 +773,7 @@ StoragePtr StorageFactory::get(
           *  - the name of the column with the date;
           *  - (optional) expression for sampling
           *     (the query with `SAMPLE x` will select rows that have a lower value in this column than `x * UINT32_MAX`);
-          *  - an expression for sorting (either a scalar expression or a tuple from several);
+          *  - an expression for sorting (either a scalar expression or a tuple of several);
           *  - index_granularity;
           *  - (for Collapsing) the name of Int8 column that contains `sign` type with the change of "visit" (taking values 1 and -1).
           * For example: ENGINE = ReplicatedCollapsingMergeTree('/tables/mytable', 'rep02', EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign).
@@ -648,71 +789,14 @@ StoragePtr StorageFactory::get(
           * ReplacingMergeTree(date, [sample_key], primary_key, index_granularity, [version_column])
           * GraphiteMergeTree(date, [sample_key], primary_key, index_granularity, 'config_element')
           * UnsortedMergeTree(date, index_granularity)  TODO Add description below.
+          *
+          * Alternatively, if experimental_allow_extended_storage_definition_syntax setting is specified,
+          * you can specify:
+          *  - Partitioning expression in the PARTITION BY clause;
+          *  - Primary key in the ORDER BY clause;
+          *  - Sampling expression in the SAMPLE BY clause;
+          *  - Additional MergeTreeSettings in the SETTINGS clause;
           */
-
-        const char * verbose_help = R"(
-
-MergeTree is family of storage engines.
-
-MergeTrees is different in two ways:
-- it may be replicated and non-replicated;
-- it may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
-
-So we have 14 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, UnsortedMergeTree, GraphiteMergeTree
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedUnsortedMergeTree, ReplicatedGraphiteMergeTree
-
-In most of cases, you need MergeTree or ReplicatedMergeTree.
-
-For replicated merge trees, you need to supply path in ZooKeeper and replica name as first two parameters.
-Path in ZooKeeper is like '/clickhouse/tables/01/' where /clickhouse/tables/ is common prefix and 01 is shard name.
-Replica name is like 'mtstat01-1' - it may be hostname or any suitable string identifying replica.
-You may use macro substitutions for these parameters. It's like ReplicatedMergeTree('/clickhouse/tables/{shard}/', '{replica}'...
-Look at <macros> section in server configuration file.
-
-Next parameter (which is first for unreplicated tables and third for replicated tables) is name of date column.
-Date column must exist in table and have type Date (not DateTime).
-It is used for internal data partitioning and works like some kind of index.
-
-If your source data doesn't have column of type Date, but have DateTime column, you may add values for Date column while loading,
- or you may INSERT your source data to table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
-If your source data doesn't have any date or time, you may just pass any constant for date column while loading.
-
-Next parameter is optional sampling expression. Sampling expression is used to implement SAMPLE clause in query for approximate query execution.
-If you don't need approximate query execution, simply omit this parameter.
-Sample expression must be one of elements of primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
-
-Next parameter is primary key tuple. It's like (CounterID, EventDate, intHash64(UserID)) - list of column names or functional expressions in round brackets. If your primary key have just one element, you may omit round brackets.
-
-Careful choice of primary key is extremely important for processing short-time queries.
-
-Next parameter is index (primary key) granularity. Good value is 8192. You have no reasons to use any other value.
-
-For Collapsing mode, last parameter is name of sign column - special column that is used to 'collapse' rows with same primary key while merge.
-
-For Summing mode, last parameter is optional list of columns to sum while merge. List is passed in round brackets, like (PageViews, Cost).
-If this parameter is omitted, storage will sum all numeric columns except columns participated in primary key.
-
-For Replacing mode, last parameter is optional name of 'version' column. While merging, for all rows with same primary key, only one row is selected: last row, if version column was not specified, or last row with maximum version value, if specified.
-
-
-Examples:
-
-MergeTree(EventDate, (CounterID, EventDate), 8192)
-
-MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
-
-CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
-
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192)
-
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, PhraseID, ContextType, RegionID, PageID, IsFlat, TypeID, ResourceNo), 8192, (Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosition, SessionNum, SessionLen, SessionCost, GoalsNum, SessionDepth))
-
-ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
-
-
-For further info please read the documentation: https://clickhouse.yandex/
-)";
 
         String name_part = name.substr(0, name.size() - strlen("MergeTree"));
 
@@ -722,6 +806,9 @@ For further info please read the documentation: https://clickhouse.yandex/
 
         MergeTreeData::MergingParams merging_params;
         merging_params.mode = MergeTreeData::MergingParams::Ordinary;
+
+        const bool allow_extended_storage_def =
+            attach || local_context.getSettingsRef().experimental_allow_extended_storage_definition_syntax;
 
         if (name_part == "Collapsing")
             merging_params.mode = MergeTreeData::MergingParams::Collapsing;
@@ -736,95 +823,115 @@ For further info please read the documentation: https://clickhouse.yandex/
         else if (name_part == "Graphite")
             merging_params.mode = MergeTreeData::MergingParams::Graphite;
         else if (!name_part.empty())
-            throw Exception("Unknown storage " + name + verbose_help, ErrorCodes::UNKNOWN_STORAGE);
-
-        ASTs & args_func = typeid_cast<ASTFunction &>(*typeid_cast<ASTCreateQuery &>(*query).storage).children;
+            throw Exception(
+                "Unknown storage " + name + getMergeTreeVerboseHelp(allow_extended_storage_def),
+                ErrorCodes::UNKNOWN_STORAGE);
 
         ASTs args;
-
-        if (args_func.size() == 1)
-            args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+        if (args_ptr)
+            args = *args_ptr;
 
         /// NOTE Quite complicated.
-        size_t num_additional_params = (replicated ? 2 : 0)
-            + (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-            + (merging_params.mode == MergeTreeData::MergingParams::Graphite);
 
-        String params_for_replicated;
+        bool is_extended_storage_def =
+            storage_def.partition_by || storage_def.order_by || storage_def.sample_by || storage_def.settings;
+
+        if (is_extended_storage_def && !allow_extended_storage_def)
+            throw Exception(
+                "Extended storage definition syntax (PARTITION BY, ORDER BY, SAMPLE BY and SETTINGS clauses) "
+                "is disabled. Enable it with experimental_allow_extended_storage_definition_syntax user setting");
+
+        size_t min_num_params = 0;
+        size_t max_num_params = 0;
+        String needed_params;
+
+        auto add_mandatory_param = [&](const char * desc)
+        {
+            ++min_num_params;
+            ++max_num_params;
+            needed_params += needed_params.empty() ? "\n" : ",\n";
+            needed_params += desc;
+        };
+        auto add_optional_param = [&](const char * desc)
+        {
+            ++max_num_params;
+            needed_params += needed_params.empty() ? "\n" : ",\n[";
+            needed_params += desc;
+            needed_params += "]";
+        };
+
         if (replicated)
-            params_for_replicated =
-                "\npath in ZooKeeper,"
-                "\nreplica name,";
-
-        if (merging_params.mode == MergeTreeData::MergingParams::Unsorted
-            && args.size() != num_additional_params + 2)
         {
-            String params =
-                "\nname of column with date,"
-                "\nindex granularity\n";
-
-            throw Exception("Storage " + name + " requires "
-                + toString(num_additional_params + 2) + " parameters: " + params_for_replicated + params + verbose_help,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            add_mandatory_param("path in ZooKeeper");
+            add_mandatory_param("replica name");
         }
 
-        if (merging_params.mode != MergeTreeData::MergingParams::Summing
-            && merging_params.mode != MergeTreeData::MergingParams::Replacing
-            && merging_params.mode != MergeTreeData::MergingParams::Unsorted
-            && args.size() != num_additional_params + 3
-            && args.size() != num_additional_params + 4)
+        if (!is_extended_storage_def)
         {
-            String params =
-                "\nname of column with date,"
-                "\n[sampling element of primary key],"
-                "\nprimary key expression,"
-                "\nindex granularity\n";
-
-            if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-                params += ", sign column\n";
-
-            if (merging_params.mode == MergeTreeData::MergingParams::Graphite)
-                params += ", 'config_element_for_graphite_schema'\n";
-
-            throw Exception("Storage " + name + " requires "
-                + toString(num_additional_params + 3) + " or "
-                + toString(num_additional_params + 4) + " parameters: " + params_for_replicated + params + verbose_help,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        }
-
-        if ((merging_params.mode == MergeTreeData::MergingParams::Summing
-                || merging_params.mode == MergeTreeData::MergingParams::Replacing)
-            && args.size() != num_additional_params + 3
-            && args.size() != num_additional_params + 4
-            && args.size() != num_additional_params + 5)
-        {
-            String params =
-                "\nname of column with date,"
-                "\n[sampling element of primary key],"
-                "\nprimary key expression,"
-                "\nindex granularity,";
-
-            if (merging_params.mode == MergeTreeData::MergingParams::Summing)
-                params += "\n[list of columns to sum]\n";
+            if (merging_params.mode == MergeTreeData::MergingParams::Unsorted)
+            {
+                if (args.size() == min_num_params && allow_extended_storage_def)
+                    is_extended_storage_def = true;
+                else
+                {
+                    add_mandatory_param("name of column with date");
+                    add_mandatory_param("index granularity");
+                }
+            }
             else
-                params += "\n[version]\n";
+            {
+                add_mandatory_param("name of column with date");
+                add_optional_param("sampling element of primary key");
+                add_mandatory_param("primary key expression");
+                add_mandatory_param("index granularity");
+            }
+        }
 
-            throw Exception("Storage " + name + " requires "
-                + toString(num_additional_params + 3) + " or "
-                + toString(num_additional_params + 4) + " or "
-                + toString(num_additional_params + 5) + " parameters: " + params_for_replicated + params + verbose_help,
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        switch (merging_params.mode)
+        {
+        default:
+            break;
+        case MergeTreeData::MergingParams::Summing:
+            add_optional_param("list of columns to sum");
+            break;
+        case MergeTreeData::MergingParams::Replacing:
+            add_optional_param("version");
+            break;
+        case MergeTreeData::MergingParams::Collapsing:
+            add_mandatory_param("sign column");
+            break;
+        case MergeTreeData::MergingParams::Graphite:
+            add_mandatory_param("'config_element_for_graphite_schema'");
+            break;
+        }
+
+        if (args.size() < min_num_params || args.size() > max_num_params)
+        {
+            String msg;
+            if (is_extended_storage_def)
+                msg += "With extended storage definition syntax storage " + name + " requires ";
+            else
+                msg += "Storage " + name + " requires ";
+
+            if (max_num_params)
+            {
+                if (min_num_params == max_num_params)
+                    msg += toString(min_num_params) + " parameters: ";
+                else
+                    msg += toString(min_num_params) + " to " + toString(max_num_params) + " parameters: ";
+                msg += needed_params;
+            }
+            else
+                msg += "no parameters";
+
+            msg += getMergeTreeVerboseHelp(is_extended_storage_def);
+
+            throw Exception(msg, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         /// For Replicated.
         String zookeeper_path;
         String replica_name;
-
-        /// For all.
-        String date_column_name;
-        ASTPtr primary_expr_list;
-        ASTPtr sampling_expression;
-        UInt64 index_granularity;
 
         if (replicated)
         {
@@ -832,16 +939,22 @@ For further info please read the documentation: https://clickhouse.yandex/
             if (ast && ast->value.getType() == Field::Types::String)
                 zookeeper_path = safeGet<String>(ast->value);
             else
-                throw Exception(String("Path in ZooKeeper must be a string literal") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
 
             ast = typeid_cast<ASTLiteral *>(&*args[1]);
             if (ast && ast->value.getType() == Field::Types::String)
                 replica_name = safeGet<String>(ast->value);
             else
-                throw Exception(String("Replica name must be a string literal") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Replica name must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
 
             if (replica_name.empty())
-                throw Exception(String("No replica name in config") + verbose_help, ErrorCodes::NO_REPLICA_NAME_GIVEN);
+                throw Exception(
+                    "No replica name in config" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::NO_REPLICA_NAME_GIVEN);
 
             args.erase(args.begin(), args.begin() + 2);
         }
@@ -851,27 +964,31 @@ For further info please read the documentation: https://clickhouse.yandex/
             if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
                 merging_params.sign_column = ast->name;
             else
-                throw Exception(String("Sign column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(
+                    "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
 
             args.pop_back();
         }
         else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
         {
-            /// If the last element is not an index granularity (literal), then this is the name of the version column.
-            if (!typeid_cast<const ASTLiteral *>(&*args.back()))
+            /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
+            if (!args.empty() && !typeid_cast<const ASTLiteral *>(&*args.back()))
             {
                 if (auto ast = typeid_cast<ASTIdentifier *>(&*args.back()))
                     merging_params.version_column = ast->name;
                 else
-                    throw Exception(String("Version column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+                    throw Exception(
+                        "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                        ErrorCodes::BAD_ARGUMENTS);
 
                 args.pop_back();
             }
         }
         else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
         {
-            /// If the last element is not an index granularity (literal), then this is a list of summable columns.
-            if (!typeid_cast<const ASTLiteral *>(&*args.back()))
+            /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
+            if (!args.empty() && !typeid_cast<const ASTLiteral *>(&*args.back()))
             {
                 merging_params.columns_to_sum = extractColumnNames(args.back());
                 args.pop_back();
@@ -881,7 +998,7 @@ For further info please read the documentation: https://clickhouse.yandex/
         {
             String graphite_config_name;
             String error_msg = "Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options";
-            error_msg += verbose_help;
+            error_msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
             if (auto ast = typeid_cast<ASTLiteral *>(&*args.back()))
             {
@@ -897,45 +1014,69 @@ For further info please read the documentation: https://clickhouse.yandex/
             setGraphitePatternsFromConfig(context, graphite_config_name, merging_params.graphite_params);
         }
 
-        /// If there is an expression for sampling. MergeTree(date, [sample_key], primary_key, index_granularity)
-        if (args.size() == 4)
+        String date_column_name;
+        ASTPtr partition_expr_list;
+        ASTPtr primary_expr_list;
+        ASTPtr sampling_expression;
+        MergeTreeSettings storage_settings = context.getMergeTreeSettings();
+
+        if (is_extended_storage_def)
         {
-            sampling_expression = args[1];
-            args.erase(args.begin() + 1);
+            if (storage_def.partition_by)
+                partition_expr_list = extractKeyExpressionList(*storage_def.partition_by);
+
+            if (storage_def.order_by)
+                primary_expr_list = extractKeyExpressionList(*storage_def.order_by);
+
+            if (storage_def.sample_by)
+                sampling_expression = storage_def.sample_by->ptr();
+
+            storage_settings.loadFromQuery(storage_def);
         }
-
-        /// Now only three parameters remain - date, primary_key, index_granularity.
-
-        if (auto ast = typeid_cast<ASTIdentifier *>(&*args[0]))
-            date_column_name = ast->name;
         else
-            throw Exception(String("Date column name must be an unquoted string") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+        {
+            /// If there is an expression for sampling. MergeTree(date, [sample_key], primary_key, index_granularity)
+            if (args.size() == 4)
+            {
+                sampling_expression = args[1];
+                args.erase(args.begin() + 1);
+            }
 
-        if (merging_params.mode != MergeTreeData::MergingParams::Unsorted)
-            primary_expr_list = extractPrimaryKey(args[1]);
+            /// Now only three parameters remain - date (or partitioning expression), primary_key, index_granularity.
 
-        auto ast = typeid_cast<ASTLiteral *>(&*args.back());
-        if (ast && ast->value.getType() == Field::Types::UInt64)
-                index_granularity = safeGet<UInt64>(ast->value);
-        else
-            throw Exception(String("Index granularity must be a positive integer") + verbose_help, ErrorCodes::BAD_ARGUMENTS);
+            if (auto ast = typeid_cast<ASTIdentifier *>(args[0].get()))
+                date_column_name = ast->name;
+            else
+                throw Exception(
+                    "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+
+            if (merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+                primary_expr_list = extractKeyExpressionList(*args[1]);
+
+            auto ast = typeid_cast<ASTLiteral *>(&*args.back());
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+                storage_settings.index_granularity = safeGet<UInt64>(ast->value);
+            else
+                throw Exception(
+                    "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
 
         if (replicated)
             return StorageReplicatedMergeTree::create(
                 zookeeper_path, replica_name, attach, data_path, database_name, table_name,
                 columns, materialized_columns, alias_columns, column_defaults,
-                context, primary_expr_list, date_column_name,
-                sampling_expression, index_granularity, merging_params,
-                has_force_restore_data_flag,
-                context.getMergeTreeSettings());
+                context, primary_expr_list, date_column_name, partition_expr_list,
+                sampling_expression, merging_params, storage_settings,
+                has_force_restore_data_flag);
         else
             return StorageMergeTree::create(
                 data_path, database_name, table_name,
                 columns, materialized_columns, alias_columns, column_defaults, attach,
-                context, primary_expr_list, date_column_name,
-                sampling_expression, index_granularity, merging_params,
-                has_force_restore_data_flag,
-                context.getMergeTreeSettings());
+                context, primary_expr_list, date_column_name, partition_expr_list,
+                sampling_expression, merging_params, storage_settings,
+                has_force_restore_data_flag);
     }
     else
         throw Exception("Unknown storage " + name, ErrorCodes::UNKNOWN_STORAGE);

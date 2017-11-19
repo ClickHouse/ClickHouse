@@ -241,8 +241,8 @@ public:
 private:
     bool isIPv4Mapped(const unsigned char * address) const
     {
-        return (*reinterpret_cast<const UInt64 *>(&address[0]) == 0) &&
-            ((*reinterpret_cast<const UInt64 *>(&address[8]) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
+        return (*reinterpret_cast<const UInt64 *>(address) == 0) &&
+            ((*reinterpret_cast<const UInt64 *>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
     }
 
     void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
@@ -325,14 +325,15 @@ public:
         auto endp = tp + ipv6_bytes_length;
         auto curtok = src;
         auto saw_xdigit = false;
-        uint16_t val{};
+        UInt32 val{};
         unsigned char * colonp = nullptr;
 
+        /// Assuming zero-terminated string.
         while (const auto ch = *src++)
         {
             const auto num = unhex(ch);
 
-            if (num != -1)
+            if (num != '\xff')
             {
                 val <<= 4;
                 val |= num;
@@ -355,7 +356,7 @@ public:
                     continue;
                 }
 
-                if (tp + sizeof(uint16_t) > endp)
+                if (tp + sizeof(UInt16) > endp)
                     return clear_dst();
 
                 *tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
@@ -380,7 +381,7 @@ public:
 
         if (saw_xdigit)
         {
-            if (tp + sizeof(uint16_t) > endp)
+            if (tp + sizeof(UInt16) > endp)
                 return clear_dst();
 
             *tp++ = static_cast<unsigned char>((val >> 8) & 0xffu);
@@ -443,52 +444,52 @@ public:
 };
 
 
+/** If mask_tail_octets > 0, the last specified number of octets will be filled with "xxx".
+  */
+template <size_t mask_tail_octets, typename Name>
 class FunctionIPv4NumToString : public IFunction
 {
-public:
-    static constexpr auto name = "IPv4NumToString";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4NumToString>(); }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const Block &) override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!checkDataType<DataTypeUInt32>(&*arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
-
+private:
     static void formatIP(UInt32 ip, char *& out)
     {
         char * begin = out;
 
-        /// Write everything backwards.
-        for (size_t offset = 0; offset <= 24; offset += 8)
+        for (size_t octet = 0; octet < mask_tail_octets; ++octet)
         {
-            if (offset > 0)
-                *(out++) = '.';
+            if (octet > 0)
+            {
+                *out = '.';
+                ++out;
+            }
+
+            memcpy(out, "xxx", 3);  /// Strange choice, but meets the specification.
+            out += 3;
+        }
+
+        /// Write everything backwards. NOTE The loop is unrolled.
+        for (size_t octet = mask_tail_octets; octet < 4; ++octet)
+        {
+            if (octet > 0)
+            {
+                *out = '.';
+                ++out;
+            }
 
             /// Get the next byte.
-            UInt32 value = (ip >> offset) & static_cast<UInt32>(255);
+            UInt32 value = (ip >> (octet * 8)) & static_cast<UInt32>(0xFF);
 
-            /// Faster than sprintf.
+            /// Faster than sprintf. NOTE Actually not good enough. LUT will be better.
             if (value == 0)
             {
-                *(out++) = '0';
+                *out = '0';
+                ++out;
             }
             else
             {
                 while (value > 0)
                 {
-                    *(out++) = '0' + value % 10;
+                    *out = '0' + value % 10;
+                    ++out;
                     value /= 10;
                 }
             }
@@ -497,7 +498,29 @@ public:
         /// And reverse.
         std::reverse(begin, out);
 
-        *(out++) = '\0';
+        *out = '\0';
+        ++out;
+    }
+
+public:
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4NumToString<mask_tail_octets, Name>>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+    bool isInjective(const Block &) override { return mask_tail_octets == 0; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!checkDataType<DataTypeUInt32>(&*arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeString>();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -614,102 +637,6 @@ public:
 };
 
 
-class FunctionIPv4NumToStringClassC : public IFunction
-{
-public:
-    static constexpr auto name = "IPv4NumToStringClassC";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4NumToStringClassC>(); }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!checkDataType<DataTypeUInt32>(&*arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
-
-    static void formatIP(UInt32 ip, char *& out)
-    {
-        char * begin = out;
-
-        for (auto i = 0; i < 3; ++i)
-            *(out++) = 'x';
-
-        /// Write everything backwards.
-        for (size_t offset = 8; offset <= 24; offset += 8)
-        {
-            if (offset > 0)
-                *(out++) = '.';
-
-            /// Get the next byte.
-            UInt32 value = (ip >> offset) & static_cast<UInt32>(255);
-
-            /// Faster than sprintf.
-            if (value == 0)
-            {
-                *(out++) = '0';
-            }
-            else
-            {
-                while (value > 0)
-                {
-                    *(out++) = '0' + value % 10;
-                    value /= 10;
-                }
-            }
-        }
-
-        /// And reverse.
-        std::reverse(begin, out);
-
-        *(out++) = '\0';
-    }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
-    {
-        const ColumnPtr & column = block.getByPosition(arguments[0]).column;
-
-        if (const ColumnUInt32 * col = typeid_cast<const ColumnUInt32 *>(column.get()))
-        {
-            const ColumnUInt32::Container_t & vec_in = col->getData();
-
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_res;
-
-            ColumnString::Chars_t & vec_res = col_res->getChars();
-            ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
-
-            vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
-            offsets_res.resize(vec_in.size());
-            char * begin = reinterpret_cast<char *>(&vec_res[0]);
-            char * pos = begin;
-
-            for (size_t i = 0; i < vec_in.size(); ++i)
-            {
-                formatIP(vec_in[i], pos);
-                offsets_res[i] = pos - begin;
-            }
-
-            vec_res.resize(pos - begin);
-        }
-        else
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
-    }
-};
-
-
 class FunctionIPv4ToIPv6 : public IFunction
 {
 public:
@@ -759,8 +686,8 @@ public:
 private:
     void mapIPv4ToIPv6(UInt32 in, unsigned char * buf) const
     {
-        *reinterpret_cast<UInt64 *>(&buf[0]) = 0;
-        *reinterpret_cast<UInt64 *>(&buf[8]) = 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32);
+        *reinterpret_cast<UInt64 *>(buf) = 0;
+        *reinterpret_cast<UInt64 *>(buf + 8) = 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32);
     }
 };
 

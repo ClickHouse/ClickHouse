@@ -144,7 +144,7 @@ BlockIO InterpreterCheckQuery::execute()
 
     StoragePtr table = context.getTable(database_name, table_name);
 
-    auto distributed_table = typeid_cast<StorageDistributed *>(&*table);
+    auto distributed_table = dynamic_cast<StorageDistributed *>(&*table);
     if (distributed_table != nullptr)
     {
         /// For tables with the Distributed engine, the CHECK TABLE query sends a DESCRIBE TABLE request to all replicas.

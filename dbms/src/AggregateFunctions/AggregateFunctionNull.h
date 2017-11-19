@@ -157,6 +157,8 @@ public:
     {
         return nested_function->isState();
     }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
