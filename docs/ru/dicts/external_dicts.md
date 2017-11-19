@@ -20,6 +20,10 @@ ClickHouse:
 <yandex>
     <comment>Необязательный элемент с любым содержимым. Игнорируется сервером ClickHouse.</comment>
 
+    <!--Необязательный элемент, имя файла с подстановками-->
+    <include_from>/etc/metrika.xml</include_from>
+
+    
     <dictionary>
         <!-- Конфигурация словаря -->
     </dictionary>
