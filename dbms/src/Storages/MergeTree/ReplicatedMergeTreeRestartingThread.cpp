@@ -28,7 +28,8 @@ namespace ErrorCodes
     extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
-namespace {
+namespace
+{
     constexpr auto retry_period_ms = 10 * 1000;
 }
 

@@ -22,7 +22,7 @@ public:
     ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
     ~ReplicatedMergeTreeCleanupThread();
 
-    void schedule() {task_handle->schedule();}
+    void schedule() { task_handle->schedule(); }
 
 private:
     StorageReplicatedMergeTree & storage;
