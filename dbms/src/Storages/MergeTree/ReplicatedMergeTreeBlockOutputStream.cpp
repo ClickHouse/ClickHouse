@@ -297,7 +297,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         if (code == ZOK)
         {
             transaction.commit();
-            storage.merge_selecting_event.set();
+            storage.merge_selecting_handle->schedule();
         }
         else if (code == ZNODEEXISTS)
         {

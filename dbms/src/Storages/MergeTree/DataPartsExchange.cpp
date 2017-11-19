@@ -166,8 +166,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"endpoint", getEndpointId(replica_path)},
         {"part", part_name},
         {"compress", "false"}
-    }
-    );
+    });
 
     ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
 

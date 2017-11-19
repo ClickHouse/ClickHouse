@@ -28,6 +28,10 @@ namespace ErrorCodes
     extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
+namespace
+{
+    constexpr auto retry_period_ms = 10 * 1000;
+}
 
 /// Used to check whether it's us who set node `is_active`, or not.
 static String generateActiveNodeIdentifier()
@@ -35,129 +39,131 @@ static String generateActiveNodeIdentifier()
     return "pid: " + toString(getpid()) + ", random: " + toString(randomSeed());
 }
 
-
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_),
     log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, RestartingThread)")),
-    active_node_identifier(generateActiveNodeIdentifier()),
-    thread([this] { run(); })
+    active_node_identifier(generateActiveNodeIdentifier())
 {
-}
-
-
-void ReplicatedMergeTreeRestartingThread::run()
-{
-    constexpr auto retry_period_ms = 10 * 1000;
-
-    /// The frequency of checking expiration of session in ZK.
-    Int64 check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period.totalSeconds() * 1000;
+    check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
     /// Periodicity of checking lag of replica.
     if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
         check_period_ms = storage.data.settings.check_delay_period * 1000;
 
-    setThreadName("ReplMTRestart");
+    storage.queue_updating_task_handle = storage.context.getSchedulePool().addTask("queue_updating_task_handle", [this]{ storage.queueUpdatingThread(); });
+    storage.queue_updating_task_handle->deactivate();
 
-    bool first_time = true;                 /// Activate replica for the first time.
-    time_t prev_time_of_check_delay = 0;
+    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeRestartingThread", [this]{ run(); });
+    task_handle->schedule();
+}
 
-    /// Starts the replica when the server starts/creates a table. Restart the replica when session expires with ZK.
-    while (!need_stop)
+ReplicatedMergeTreeRestartingThread::~ReplicatedMergeTreeRestartingThread()
+{
+    storage.context.getSchedulePool().removeTask(task_handle);
+    completeShutdown();
+    storage.context.getSchedulePool().removeTask(storage.queue_updating_task_handle);
+}
+
+void ReplicatedMergeTreeRestartingThread::run()
+{
+    if (need_stop)
+        return;
+
+    try
     {
-        try
+        if (first_time || storage.getZooKeeper()->expired())
         {
-            if (first_time || storage.getZooKeeper()->expired())
+            startup_completed = false;
+
+            if (first_time)
             {
-                if (first_time)
-                {
-                    LOG_DEBUG(log, "Activating replica.");
-                }
-                else
-                {
-                    LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
+                LOG_DEBUG(log, "Activating replica.");
+            }
+            else
+            {
+                LOG_WARNING(log, "ZooKeeper session has expired. Switching to a new session.");
 
-                    if (!storage.is_readonly)
-                        CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
-                    storage.is_readonly = true;
-                    partialShutdown();
-                }
-
-                while (!need_stop)
-                {
-                    try
-                    {
-                        storage.setZooKeeper(storage.context.getZooKeeper());
-                    }
-                    catch (const zkutil::KeeperException & e)
-                    {
-                        /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-
-                        wakeup_event.tryWait(retry_period_ms);
-                        continue;
-                    }
-
-                    if (!need_stop && !tryStartup())
-                    {
-                        wakeup_event.tryWait(retry_period_ms);
-                        continue;
-                    }
-
-                    break;
-                }
-
-                if (need_stop)
-                    break;
-
-                if (storage.is_readonly)
-                    CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
-                storage.is_readonly = false;
-                first_time = false;
+                if (!storage.is_readonly)
+                    CurrentMetrics::add(CurrentMetrics::ReadonlyReplica);
+                storage.is_readonly = true;
+                partialShutdown();
             }
 
-            time_t current_time = time(nullptr);
-            if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage.data.settings.check_delay_period))
+            if (!startup_completed)
             {
-                /// Find out lag of replicas.
-                time_t absolute_delay = 0;
-                time_t relative_delay = 0;
-
-                storage.getReplicaDelays(absolute_delay, relative_delay);
-
-                if (absolute_delay)
-                    LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
-
-                prev_time_of_check_delay = current_time;
-
-                /// We give up leadership if the relative gap is greater than threshold.
-                if (storage.is_leader_node
-                    && relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership))
+                try
                 {
-                    LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
-                        << storage.data.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+                    storage.setZooKeeper(storage.context.getZooKeeper());
+                }
+                catch (const zkutil::KeeperException & e)
+                {
+                    /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    task_handle->scheduleAfter(retry_period_ms);
+                    return;
+                }
 
-                    ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
+                if (!need_stop && !tryStartup())
+                {
+                    task_handle->scheduleAfter(retry_period_ms);
+                    return;
+                }
 
-                    if (storage.is_leader_node)
-                    {
-                        storage.is_leader_node = false;
-                        CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
-                        if (storage.merge_selecting_thread.joinable())
-                            storage.merge_selecting_thread.join();
+                startup_completed = true;
+            }
 
-                        storage.leader_election->yield();
-                    }
+            if (need_stop)
+                return;
+
+            if (storage.is_readonly)
+                CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
+            storage.is_readonly = false;
+            first_time = false;
+        }
+
+        time_t current_time = time(nullptr);
+        if (current_time >= prev_time_of_check_delay + static_cast<time_t>(storage.data.settings.check_delay_period))
+        {
+            /// Find out lag of replicas.
+            time_t absolute_delay = 0;
+            time_t relative_delay = 0;
+
+            storage.getReplicaDelays(absolute_delay, relative_delay);
+
+            if (absolute_delay)
+                LOG_TRACE(log, "Absolute delay: " << absolute_delay << ". Relative delay: " << relative_delay << ".");
+
+            prev_time_of_check_delay = current_time;
+
+            /// We give up leadership if the relative gap is greater than threshold.
+            if (storage.is_leader_node
+                && relative_delay > static_cast<time_t>(storage.data.settings.min_relative_delay_to_yield_leadership))
+            {
+                LOG_INFO(log, "Relative replica delay (" << relative_delay << " seconds) is bigger than threshold ("
+                    << storage.data.settings.min_relative_delay_to_yield_leadership << "). Will yield leadership.");
+
+                ProfileEvents::increment(ProfileEvents::ReplicaYieldLeadership);
+
+                if (storage.is_leader_node)
+                {
+                    storage.is_leader_node = false;
+                    CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
+                    storage.merge_selecting_handle->deactivate();
+                    storage.leader_election->yield();
                 }
             }
         }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
-        wakeup_event.tryWait(check_period_ms);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
+    task_handle->scheduleAfter(check_period_ms);
+}
+
+void ReplicatedMergeTreeRestartingThread::completeShutdown()
+{
     try
     {
         storage.data_parts_exchange_endpoint_holder->cancelForever();
@@ -175,10 +181,7 @@ void ReplicatedMergeTreeRestartingThread::run()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
-    LOG_DEBUG(log, "Restarting thread finished");
 }
-
 
 bool ReplicatedMergeTreeRestartingThread::tryStartup()
 {
@@ -190,6 +193,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         if (storage.data.settings.replicated_can_become_leader)
             storage.leader_election = std::make_shared<zkutil::LeaderElection>(
+                storage.context.getSchedulePool(),
                 storage.zookeeper_path + "/leader_election",
                 *storage.current_zookeeper,     /// current_zookeeper lives for the lifetime of leader_election,
                                                 ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
@@ -201,8 +205,9 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         storage.shutdown_called = false;
         storage.shutdown_event.reset();
+        storage.queue_updating_task_handle->activate();
+        storage.queue_updating_task_handle->schedule();
 
-        storage.queue_updating_thread = std::thread(&StorageReplicatedMergeTree::queueUpdatingThread, &storage);
         storage.part_check_thread.start();
         storage.alter_thread = std::make_unique<ReplicatedMergeTreeAlterThread>(storage);
         storage.cleanup_thread = std::make_unique<ReplicatedMergeTreeCleanupThread>(storage);
@@ -352,10 +357,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
     storage.shutdown_called = true;
     storage.shutdown_event.set();
-    storage.merge_selecting_event.set();
-    storage.queue_updating_event->set();
     storage.alter_query_event->set();
-    storage.cleanup_thread_event.set();
     storage.replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
@@ -366,12 +368,11 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
         {
             storage.is_leader_node = false;
             CurrentMetrics::sub(CurrentMetrics::LeaderReplica);
-            if (storage.merge_selecting_thread.joinable())
-                storage.merge_selecting_thread.join();
+            storage.merge_selecting_handle->deactivate();
         }
     }
-    if (storage.queue_updating_thread.joinable())
-        storage.queue_updating_thread.join();
+
+    storage.queue_updating_task_handle->deactivate();
 
     storage.cleanup_thread.reset();
     storage.alter_thread.reset();

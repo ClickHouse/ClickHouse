@@ -75,7 +75,7 @@ Field convertNodeToField(capnp::DynamicValue::Reader value)
         throw Exception("CAPABILITY type not supported");
     case capnp::DynamicValue::ANY_POINTER:
         throw Exception("ANY_POINTER type not supported");
-	}
+    }
 }
 
 capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::string & field)
