@@ -24,7 +24,7 @@
 Общий вид конфигурации:
 
 ```xml
-<dictionaries>
+<yandex>
     <dictionary>
         ...
         <layout>
@@ -34,7 +34,7 @@
         </layout>
         ...
     </dictionary>
-</dictionaries>
+</yandex>
 ```
 
 <a name="dicts-external_dicts_dict_layout-manner"></a>
@@ -158,7 +158,7 @@ range_hashed
 Пример конфигурации:
 
 ```xml
-<dictionaries>
+<yandex>
         <dictionary>
 
                 ...
@@ -185,7 +185,7 @@ range_hashed
                 </structure>
 
         </dictionary>
-</dictionaries>
+</yandex>
 ```
 
 <a name="dicts-external_dicts_dict_layout-cache"></a>

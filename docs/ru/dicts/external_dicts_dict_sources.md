@@ -8,7 +8,7 @@
 Общий вид конфигурации:
 
 ```xml
-<dictionaries>
+<yandex>
   <dictionary>
     ...
     <source>
@@ -19,7 +19,7 @@
     ...
   </dictionary>
   ...
-</dictionaries>
+</yandex>
 ```
 
 Источник настраивается в разделе `source`.
@@ -240,7 +240,7 @@ ODBC
 Настройка словаря в ClickHouse:
 
 ```xml
-<dictionaries>
+<yandex>
     <dictionary>
         <name>test</name>
         <source>
@@ -270,7 +270,7 @@ ODBC
             </attribute>
         </structure>
     </dictionary>
-</dictionaries>
+</yandex>
 ```
 
 СУБД
