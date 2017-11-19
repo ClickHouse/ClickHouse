@@ -1,5 +1,5 @@
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <Interpreters/DNSCache.h>
+#include <Common/DNSCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/EmbeddedDictionaries.h>
