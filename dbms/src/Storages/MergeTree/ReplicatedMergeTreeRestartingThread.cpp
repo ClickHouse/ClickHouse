@@ -118,7 +118,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
             bool old_val = true;
             if (storage.is_readonly.compare_exchange_strong(old_val, false))
-                CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica)
+                CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
 
             first_time = false;
         }
