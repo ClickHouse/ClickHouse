@@ -1739,6 +1739,7 @@ void MergeTreeData::calculateColumnSizesImpl()
 
 void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 {
+    std::shared_lock<std::shared_mutex> lock(part->columns_lock);
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.

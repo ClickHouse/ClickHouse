@@ -219,7 +219,7 @@ private:
     void setZooKeeper(zkutil::ZooKeeperPtr zookeeper);
 
     /// If true, the table is offline and can not be written to it.
-    bool is_readonly = false;
+    std::atomic_bool is_readonly {false};
 
     String database_name;
     String table_name;
@@ -240,7 +240,7 @@ private:
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
-    bool is_leader_node = false;
+    std::atomic_bool is_leader_node {false};
     std::mutex leader_node_mutex;
 
     InterserverIOEndpointHolderPtr data_parts_exchange_endpoint_holder;
