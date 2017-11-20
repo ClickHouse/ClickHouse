@@ -42,7 +42,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Field.h>
-#include <Common/Collator.h>
+#include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 
 

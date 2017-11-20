@@ -1,6 +1,6 @@
 #include <Core/Defines.h>
 
-#include <Common/Collator.h>
+#include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
