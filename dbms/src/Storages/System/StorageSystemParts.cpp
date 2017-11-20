@@ -39,7 +39,7 @@ StorageSystemParts::StorageSystemParts(const std::string & name_)
 
         {"database",            std::make_shared<DataTypeString>()},
         {"table",               std::make_shared<DataTypeString>()},
-        {"engine",              std::make_shared<DataTypeString>()},
+        {"engine",              std::make_shared<DataTypeString>()}
     }
 {
 }
@@ -53,8 +53,11 @@ BlockInputStreams StorageSystemParts::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    check(column_names);
+    //check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
+
+    auto it_state_column = std::find(column_names.begin(), column_names.end(), "_state");
+    bool has_state_column = it_state_column != column_names.end();
 
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
@@ -142,6 +145,8 @@ BlockInputStreams StorageSystemParts::read(
     /// Finally, create the result.
 
     Block block = getSampleBlock();
+    if (has_state_column)
+        block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
     for (size_t i = 0; i < filtered_database_column->size();)
     {
@@ -198,10 +203,18 @@ BlockInputStreams StorageSystemParts::read(
         using State = MergeTreeDataPart::State;
         MergeTreeData::DataPartStateVector all_parts_state;
         MergeTreeData::DataPartsVector all_parts;
+
         if (need[0])
-            all_parts = data->getDataPartsVector({State::Committed, State::Outdated}, all_parts_state);
+        {
+            /// If has_state_column is requested, return all states
+            if (!has_state_column)
+                all_parts = data->getDataPartsVector({State::Committed, State::Outdated}, &all_parts_state);
+            else
+                all_parts = data->getAllDataPartsVector(&all_parts_state);
+        }
         else
-            all_parts = data->getDataPartsVector({State::Committed}, all_parts_state);
+            all_parts = data->getDataPartsVector({State::Committed}, &all_parts_state);
+
 
         /// Finally, we'll go through the list of parts.
         for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
@@ -248,10 +261,29 @@ BlockInputStreams StorageSystemParts::read(
             block.getByPosition(i++).column->insert(database);
             block.getByPosition(i++).column->insert(table);
             block.getByPosition(i++).column->insert(engine);
+
+            if (has_state_column)
+                block.getByPosition(i++).column->insert(part->stateString());
         }
     }
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));
+}
+
+NameAndTypePair StorageSystemParts::getColumn(const String & column_name) const
+{
+    if (column_name == "_state")
+        return NameAndTypePair("_state", std::make_shared<DataTypeString>());
+
+    return ITableDeclaration::getColumn(column_name);
+}
+
+bool StorageSystemParts::hasColumn(const String & column_name) const
+{
+    if (column_name == "_state")
+        return true;
+
+    return ITableDeclaration::hasColumn(column_name);
 }
 
 
