@@ -8,7 +8,7 @@
 #include <Storages/System/StorageSystemParts.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
