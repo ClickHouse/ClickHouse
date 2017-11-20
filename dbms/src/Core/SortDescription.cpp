@@ -1,6 +1,6 @@
 #include <sstream>
 #include <Core/SortDescription.h>
-#include <Common/Collator.h>
+#include <Columns/Collator.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
