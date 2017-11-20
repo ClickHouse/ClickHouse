@@ -432,7 +432,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 if (task->size_predictor)
                     task->size_predictor->update(res);
 
-                reader->fillMissingColumnsAndReorder(res, task->ordered_names);
+                reader->fillMissingColumns(res, task->ordered_names, true);
             }
         }
         while (!task->isFinished() && !res && !isCancelled());
