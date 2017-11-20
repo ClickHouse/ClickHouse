@@ -174,7 +174,7 @@ void Block::eraseImpl(size_t position)
     for (auto it = index_by_name.begin(); it != index_by_name.end();)
     {
         if (it->second == position)
-            index_by_name.erase(it++);
+            it = index_by_name.erase(it);
         else
         {
             if (it->second > position)
