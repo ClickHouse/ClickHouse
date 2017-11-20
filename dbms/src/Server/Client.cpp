@@ -832,7 +832,7 @@ private:
         if (out_file_buf)
         {
             out_file_buf->next();
-            out_file_buf = std::nullopt;
+            out_file_buf.reset();
         }
         std_out.next();
     }
