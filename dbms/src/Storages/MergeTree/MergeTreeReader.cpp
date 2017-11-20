@@ -22,12 +22,6 @@ namespace
     using OffsetColumns = std::map<std::string, ColumnPtr>;
 
     constexpr auto DATA_FILE_EXTENSION = ".bin";
-    constexpr auto NULL_MAP_EXTENSION = ".null.bin";
-
-    bool isNullStream(const std::string & extension)
-    {
-        return extension == NULL_MAP_EXTENSION;
-    }
 }
 
 namespace ErrorCodes
@@ -58,7 +52,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
             throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
 
         for (const NameAndTypePair & column : columns)
-            addStream(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
+            addStreams(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
     }
     catch (...)
     {
@@ -93,9 +87,6 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
         for (const NameAndTypePair & it : columns)
         {
-            if (streams.end() == streams.find(it.name))
-                continue;
-
             /// The column is already present in the block so we will append the values to the end.
             bool append = res.has(it.name);
 
@@ -300,12 +291,7 @@ const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
 
 void MergeTreeReader::Stream::loadMarks()
 {
-    std::string path;
-
-    if (isNullStream(extension))
-        path = path_prefix + ".null.mrk";
-    else
-        path = path_prefix + ".mrk";
+    std::string path = path_prefix + ".mrk";
 
     auto load = [&]() -> MarkCache::MappedPtr
     {
@@ -316,8 +302,8 @@ void MergeTreeReader::Stream::loadMarks()
         size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
-                    "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: "  + std::to_string(expected_file_size),
-                    ErrorCodes::CORRUPTED_DATA);
+                "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: "  + std::to_string(expected_file_size),
+                ErrorCodes::CORRUPTED_DATA);
 
         auto res = std::make_shared<MarksInCompressedFile>(marks_count);
 
@@ -377,18 +363,23 @@ void MergeTreeReader::Stream::seekToMark(size_t index)
 }
 
 
-void MergeTreeReader::addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+void MergeTreeReader::addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
+
+        std::cerr << "Adding stream " << stream_name << "\n";
+
         if (streams.count(stream_name))
             return;
 
         bool data_file_exists = Poco::File(path + stream_name + DATA_FILE_EXTENSION).exists();
         bool is_sizes_of_nested_type = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes
             && DataTypeNested::extractNestedTableName(name) != name;
+
+        std::cerr << "File exists: " << data_file_exists << ", is_sizes_of_nested_type: " << is_sizes_of_nested_type << "\n";
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
@@ -397,10 +388,12 @@ void MergeTreeReader::addStream(const String & name, const IDataType & type, con
         if (!data_file_exists && !is_sizes_of_nested_type)
             return;
 
-        streams.emplace(name, std::make_unique<Stream>(
+        streams.emplace(stream_name, std::make_unique<Stream>(
             path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+
+        std::cerr << "Added stream " << stream_name << "\n";
     };
 
     type.enumerateStreams(callback, {});
@@ -414,14 +407,23 @@ void MergeTreeReader::readData(
 {
     IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
+        for (const auto & elem : path)
+            std::cerr << elem.type << "\n";
+        std::cerr << "\n";
+
+        /// If offsets for arrays have already been read.
         if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
             return nullptr;
 
         String stream_name = IDataType::getFileNameForStream(name, path);
 
+        std::cerr << stream_name << "\n";
+
         auto it = streams.find(stream_name);
         if (it == streams.end())
             return nullptr;
+
+        std::cerr << "!!!\n";
 
         Stream & stream = *it->second;
 

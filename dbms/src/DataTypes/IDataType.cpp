@@ -58,8 +58,12 @@ void IDataType::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_
 
 String IDataType::getFileNameForStream(const String & column_name, const IDataType::SubstreamPath & path)
 {
+    String nested_table_name = DataTypeNested::extractNestedTableName(column_name);
+    bool is_sizes_of_nested_type = !path.empty() && path.back().type == IDataType::Substream::ArraySizes
+        && nested_table_name != column_name;
+
     size_t array_level = 0;
-    String stream_name = escapeForFileName(column_name);
+    String stream_name = escapeForFileName(is_sizes_of_nested_type ? nested_table_name : column_name);
     for (const IDataType::Substream & elem : path)
     {
         if (elem.type == IDataType::Substream::NullMap)

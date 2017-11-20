@@ -62,7 +62,7 @@ protected:
 
     using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-    void addStream(const String & path, const String & name, const IDataType & type, size_t estimated_size, bool skip_offsets);
+    void addStreams(const String & path, const String & name, const IDataType & type, size_t estimated_size, bool skip_offsets);
 
     /// Write data of one column.
     void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, bool skip_offsets);
@@ -80,18 +80,13 @@ protected:
     size_t aio_threshold;
 
     CompressionSettings compression_settings;
-
-private:
-    /// Internal version of writeData.
-    void writeDataImpl(const String & name, const IDataType & type, const IColumn & column,
-        OffsetColumns & offset_columns, bool write_array_data, bool skip_offsets);
 };
 
 
 /** To write one part.
   * The data refers to one partition, and is written in one part.
   */
-class MergedBlockOutputStream : public IMergedBlockOutputStream
+class MergedBlockOutputStream final : public IMergedBlockOutputStream
 {
 public:
     MergedBlockOutputStream(
@@ -113,7 +108,7 @@ public:
     /// If the data is pre-sorted.
     void write(const Block & block) override;
 
-    /** If the data is not sorted, but we have previously calculated the permutation, after which they will be sorted.
+    /** If the data is not sorted, but we have previously calculated the permutation, that will sort it.
       * This method is used to save RAM, since you do not need to keep two blocks at once - the original one and the sorted one.
       */
     void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation);
@@ -150,7 +145,7 @@ private:
 
 
 /// Writes only those columns that are in `block`
-class MergedColumnOnlyOutputStream : public IMergedBlockOutputStream
+class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {
 public:
     MergedColumnOnlyOutputStream(
