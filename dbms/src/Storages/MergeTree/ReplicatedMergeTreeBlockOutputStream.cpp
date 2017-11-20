@@ -130,8 +130,9 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             } hash_value;
             hash.get128(hash_value.bytes);
 
-            /// We take the hash from the data as ID. That is, do not insert the same data twice.
-            block_id = toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
+            /// We add the hash from the data and partition identifier to deduplication ID.
+            /// That is, do not insert the same data to the same partition twice.
+            block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
             LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << block.rows() << " rows");
         }
@@ -296,7 +297,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         if (code == ZOK)
         {
             transaction.commit();
-            storage.merge_selecting_event.set();
+            storage.merge_selecting_handle->schedule();
         }
         else if (code == ZNODEEXISTS)
         {
@@ -331,7 +332,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     }
     catch (const zkutil::KeeperException & e)
     {
-        /** If the connection is lost, and we do not know if the changes were applied, you can not delete the local chunk
+        /** If the connection is lost, and we do not know if the changes were applied, you can not delete the local part
             *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
             */
         if (e.code == ZOPERATIONTIMEOUT ||

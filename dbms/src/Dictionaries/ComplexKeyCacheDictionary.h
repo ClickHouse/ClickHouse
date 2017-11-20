@@ -137,6 +137,7 @@ public:
     DECLARE(UInt16)
     DECLARE(UInt32)
     DECLARE(UInt64)
+    DECLARE(UInt128)
     DECLARE(Int8)
     DECLARE(Int16)
     DECLARE(Int32)
@@ -157,6 +158,7 @@ public:
     DECLARE(UInt16)
     DECLARE(UInt32)
     DECLARE(UInt64)
+    DECLARE(UInt128)
     DECLARE(Int8)
     DECLARE(Int16)
     DECLARE(Int32)
@@ -181,6 +183,7 @@ public:
     DECLARE(UInt16)
     DECLARE(UInt32)
     DECLARE(UInt64)
+    DECLARE(UInt128)
     DECLARE(Int8)
     DECLARE(Int16)
     DECLARE(Int32)
@@ -244,11 +247,12 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::tuple<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, String> null_values;
+        std::tuple<UInt8, UInt16, UInt32, UInt64, UInt128, Int8, Int16, Int32, Int64, Float32, Float64, String> null_values;
         std::tuple<ContainerPtrType<UInt8>,
             ContainerPtrType<UInt16>,
             ContainerPtrType<UInt32>,
             ContainerPtrType<UInt64>,
+            ContainerPtrType<UInt128>,
             ContainerPtrType<Int8>,
             ContainerPtrType<Int16>,
             ContainerPtrType<Int32>,
@@ -277,6 +281,7 @@ private:
         DISPATCH(UInt16)
         DISPATCH(UInt32)
         DISPATCH(UInt64)
+        DISPATCH(UInt128)
         DISPATCH(Int8)
         DISPATCH(Int16)
         DISPATCH(Int32)
@@ -331,7 +336,7 @@ private:
                     ++cache_hit;
                     const auto & cell_idx = find_result.cell_idx;
                     const auto & cell = cells[cell_idx];
-                    out[row] = cell.isDefault() ? get_default(row) : attribute_array[cell_idx];
+                    out[row] = cell.isDefault() ? get_default(row) : static_cast<OutputType>(attribute_array[cell_idx]);
                 }
             }
         }
@@ -355,7 +360,7 @@ private:
             [&](const StringRef key, const size_t cell_idx)
             {
                 for (const auto row : outdated_keys[key])
-                    out[row] = attribute_array[cell_idx];
+                    out[row] = static_cast<OutputType>(attribute_array[cell_idx]);
             },
             [&](const StringRef key, const size_t cell_idx)
             {

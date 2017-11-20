@@ -68,6 +68,7 @@ public:
     DECLARE(UInt16)
     DECLARE(UInt32)
     DECLARE(UInt64)
+    DECLARE(UInt128)
     DECLARE(Int8)
     DECLARE(Int16)
     DECLARE(Int32)
@@ -86,6 +87,7 @@ public:
     DECLARE(UInt16)
     DECLARE(UInt32)
     DECLARE(UInt64)
+    DECLARE(UInt128)
     DECLARE(Int8)
     DECLARE(Int16)
     DECLARE(Int32)
@@ -105,6 +107,7 @@ public:
     DECLARE(UInt16)
     DECLARE(UInt32)
     DECLARE(UInt64)
+    DECLARE(UInt128)
     DECLARE(Int8)
     DECLARE(Int16)
     DECLARE(Int32)
@@ -134,11 +137,13 @@ private:
         AttributeUnderlyingType type;
         std::tuple<
             UInt8, UInt16, UInt32, UInt64,
+            UInt128,
             Int8, Int16, Int32, Int64,
             Float32, Float64,
             String> null_values;
         std::tuple<
             CollectionPtrType<UInt8>, CollectionPtrType<UInt16>, CollectionPtrType<UInt32>, CollectionPtrType<UInt64>,
+            CollectionPtrType<UInt128>,
             CollectionPtrType<Int8>, CollectionPtrType<Int16>, CollectionPtrType<Int32>, CollectionPtrType<Int64>,
             CollectionPtrType<Float32>, CollectionPtrType<Float64>,
             CollectionPtrType<StringRef>> maps;

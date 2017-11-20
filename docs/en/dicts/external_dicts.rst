@@ -15,8 +15,11 @@ The dictionary config file has the following format:
 
 .. code-block:: xml
 
-  <dictionaries>
+  <yandex>
       <comment>Optional element with any content; completely ignored.</comment>
+      
+      <!--Optional element to specify include file-->
+      <include_from>/etc/metrika.xml</include_from>
 
       <!--You can set any number of different dictionaries. -->
       <dictionary>
@@ -135,7 +138,7 @@ The dictionary config file has the following format:
               </attribute>
           </structure>
       </dictionary>
-  </dictionaries>
+  </yandex>
 
 The dictionary identifier (key attribute) should be a number that fits into UInt64. Also, you can use arbitrary tuples as keys (see section "Dictionaries with complex keys"). Note: you can use complex keys consisting of just one element. This allows using e.g. Strings as dictionary keys.
 
@@ -206,7 +209,7 @@ Example of a dictionary by ranges:
 
 .. code-block:: xml
 
-  <dictionaries>
+  <yandex>
           <dictionary>
                   <name>xxx</name>
                   <source>
@@ -246,7 +249,7 @@ Example of a dictionary by ranges:
                           </attribute>
                   </structure>
           </dictionary>
-  </dictionaries>
+  </yandex>
 
 ip_trie
 -------

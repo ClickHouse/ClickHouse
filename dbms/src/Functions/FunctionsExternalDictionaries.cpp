@@ -19,6 +19,7 @@ void registerFunctionsExternalDictionaries(FunctionFactory & factory)
     factory.registerFunction<FunctionDictGetFloat64>();
     factory.registerFunction<FunctionDictGetDate>();
     factory.registerFunction<FunctionDictGetDateTime>();
+    factory.registerFunction<FunctionDictGetUUID>();
     factory.registerFunction<FunctionDictGetString>();
     factory.registerFunction<FunctionDictGetHierarchy>();
     factory.registerFunction<FunctionDictIsIn>();
@@ -34,6 +35,7 @@ void registerFunctionsExternalDictionaries(FunctionFactory & factory)
     factory.registerFunction<FunctionDictGetFloat64OrDefault>();
     factory.registerFunction<FunctionDictGetDateOrDefault>();
     factory.registerFunction<FunctionDictGetDateTimeOrDefault>();
+    factory.registerFunction<FunctionDictGetUUIDOrDefault>();
     factory.registerFunction<FunctionDictGetStringOrDefault>();
 }
 

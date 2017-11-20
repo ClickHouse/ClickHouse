@@ -3,7 +3,7 @@
 #include <DataStreams/LazyBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <Storages/StorageMerge.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/VirtualColumnFactory.h>
@@ -141,7 +141,7 @@ BlockInputStreams StorageMerge::read(
         else
             virt_column_names.push_back(it);
 
-    std::experimental::optional<QueryProcessingStage::Enum> processed_stage_in_source_tables;
+    std::optional<QueryProcessingStage::Enum> processed_stage_in_source_tables;
 
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.

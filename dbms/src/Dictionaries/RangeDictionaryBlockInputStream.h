@@ -50,7 +50,7 @@ private:
 
     template <typename T>
     void addSpecialColumn(
-        const std::experimental::optional<DictionarySpecialAttribute>& attribute, DataTypePtr type,
+        const std::optional<DictionarySpecialAttribute>& attribute, DataTypePtr type,
         const std::string & default_name, const std::unordered_set<std::string> & column_names,
         const PaddedPODArray<T> & values, ColumnsWithTypeAndName& columns) const;
 
@@ -133,7 +133,7 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromPOD
 template <typename DictionaryType, typename Key>
 template <typename T>
 void RangeDictionaryBlockInputStream<DictionaryType, Key>::addSpecialColumn(
-    const std::experimental::optional<DictionarySpecialAttribute> & attribute, DataTypePtr type,
+    const std::optional<DictionarySpecialAttribute> & attribute, DataTypePtr type,
     const std::string& default_name, const std::unordered_set<std::string> & column_names,
     const PaddedPODArray<T> & values, ColumnsWithTypeAndName & columns) const
 {
@@ -181,6 +181,9 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
                 break;
             case AttributeUnderlyingType::UInt64:
                 GET_COLUMN_FORM_ATTRIBUTE(UInt64);
+                break;
+            case AttributeUnderlyingType::UInt128:
+                GET_COLUMN_FORM_ATTRIBUTE(UInt128);
                 break;
             case AttributeUnderlyingType::Int8:
                 GET_COLUMN_FORM_ATTRIBUTE(Int8);

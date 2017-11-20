@@ -18,7 +18,7 @@
 #endif
 
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <experimental/optional>
+#include <optional>
 
 #include <Core/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -41,7 +41,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace ProfileEvents
@@ -215,7 +215,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         throw Exception(exception_message.str(), ErrorCodes::INDEX_NOT_USED);
     }
 
-    std::experimental::optional<PKCondition> minmax_idx_condition;
+    std::optional<PKCondition> minmax_idx_condition;
     if (data.minmax_idx_expr)
     {
         minmax_idx_condition.emplace(
