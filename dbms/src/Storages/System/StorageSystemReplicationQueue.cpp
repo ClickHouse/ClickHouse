@@ -8,7 +8,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 
