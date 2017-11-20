@@ -417,7 +417,7 @@ void writeCSVString(const char * begin, const char * end, WriteBuffer & buf)
             buf.write(pos, end - pos);
             break;
         }
-        else                        /// Quotation.
+        else /// Quotation.
         {
             ++next_pos;
             buf.write(pos, next_pos - pos);
@@ -658,18 +658,18 @@ template <typename T>
 inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
 writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
-inline void writeText(const String & x,        WriteBuffer & buf) { writeEscapedString(x, buf); }
+inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
 
 /// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
 template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
 
 /// unlike the method for std::string
 /// assumes here that `x` is a null-terminated string.
-inline void writeText(const char * x,         WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
+inline void writeText(const char * x, WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
 inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
 
-inline void writeText(const LocalDate & x,        WriteBuffer & buf) { writeDateText(x, buf); }
-inline void writeText(const LocalDateTime & x,    WriteBuffer & buf) { writeDateTimeText(x, buf); }
+inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
+inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf)
 {
@@ -684,16 +684,16 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
-inline void writeQuoted(const String & x,    WriteBuffer & buf) { writeQuotedString(x, buf); }
+inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
 
-inline void writeQuoted(const LocalDate & x,        WriteBuffer & buf)
+inline void writeQuoted(const LocalDate & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
     writeDateText(x, buf);
     writeChar('\'', buf);
 }
 
-inline void writeQuoted(const LocalDateTime & x,    WriteBuffer & buf)
+inline void writeQuoted(const LocalDateTime & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
     writeDateTimeText(x, buf);
@@ -706,16 +706,16 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
-inline void writeDoubleQuoted(const String & x,        WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
+inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
 
-inline void writeDoubleQuoted(const LocalDate & x,        WriteBuffer & buf)
+inline void writeDoubleQuoted(const LocalDate & x, WriteBuffer & buf)
 {
     writeChar('"', buf);
     writeDateText(x, buf);
     writeChar('"', buf);
 }
 
-inline void writeDoubleQuoted(const LocalDateTime & x,    WriteBuffer & buf)
+inline void writeDoubleQuoted(const LocalDateTime & x, WriteBuffer & buf)
 {
     writeChar('"', buf);
     writeDateTimeText(x, buf);
@@ -735,8 +735,8 @@ template <typename T>
 inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
 writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
-inline void writeCSV(const String & x,        WriteBuffer & buf) { writeCSVString<>(x, buf); }
-inline void writeCSV(const LocalDate & x,    WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
+inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }
+inline void writeCSV(const LocalDate & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const LocalDateTime & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UUID & x, WriteBuffer & buf) { writeDoubleQuoted(x, buf); }
 inline void writeCSV(const UInt128, WriteBuffer & buf)
