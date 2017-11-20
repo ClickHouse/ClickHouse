@@ -131,6 +131,11 @@ public:
 
         void rollback();
 
+        bool isEmpty() const
+        {
+            return parts_to_add_on_rollback.empty() && parts_to_remove_on_rollback.empty();
+        }
+
         ~Transaction()
         {
             try
