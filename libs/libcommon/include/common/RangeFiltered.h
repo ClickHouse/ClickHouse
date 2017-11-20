@@ -104,6 +104,11 @@ struct RangeFiltered
             return iter != rhs.iter;
         }
 
+        const RawIterator & base() const
+        {
+            return iter;
+        }
+
         self_type & operator=(const self_type & rhs) = default;
         self_type & operator=(self_type && rhs) noexcept = default;
 

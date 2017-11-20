@@ -1179,7 +1179,21 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
             if (!do_fetch)
             {
                 merger.renameMergedTemporaryPart(part, parts, &transaction);
-                getZooKeeper()->multi(ops);        /// After long merge, get fresh ZK handle, because previous session may be expired.
+
+                /// Do not commit if the part is obsolete
+                if (!transaction.isEmpty())
+                {
+                    getZooKeeper()->multi(ops); /// After long merge, get fresh ZK handle, because previous session may be expired.
+                    transaction.commit();
+                }
+
+                /** Removing old chunks from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
+                  */
+
+                /** With `ZCONNECTIONLOSS` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
+                  * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
+                  */
+                merge_selecting_event.set();
 
                 if (auto part_log = context.getPartLog(database_name, table_name))
                 {
@@ -1211,15 +1225,6 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
                         part_log->add(elem);
                     }
                 }
-
-                /** Removing old chunks from ZK and from the disk is delayed - see ReplicatedMergeTreeCleanupThread, clearOldParts.
-                  */
-
-                /** With `ZCONNECTIONLOSS` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
-                  * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
-                  */
-                transaction.commit();
-                merge_selecting_event.set();
 
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
             }
@@ -2205,6 +2210,13 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
         MergeTreeData::Transaction transaction;
         auto removed_parts = data.renameTempPartAndReplace(part, nullptr, &transaction);
 
+        /// Do not commit if the part is obsolete
+        if (!transaction.isEmpty())
+        {
+            getZooKeeper()->multi(ops);
+            transaction.commit();
+        }
+
         if (auto part_log = context.getPartLog(database_name, table_name))
         {
             PartLogElement elem;
@@ -2235,10 +2247,6 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
                 part_log->add(elem);
             }
         }
-
-
-        getZooKeeper()->multi(ops);
-        transaction.commit();
 
         /** If a quorum is tracked for this part, you must update it.
           * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
