@@ -15,7 +15,10 @@
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 
-#include <common/RangeFiltered.h>
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/global_fun.hpp>
+#include <boost/range/iterator_range_core.hpp>
 
 namespace DB
 {
@@ -104,7 +107,16 @@ public:
     using DataPartStates = std::initializer_list<DataPartState>;
     using DataPartStateVector = std::vector<DataPartState>;
 
-    struct DataPartPtrLess
+    /// Auxiliary structure for index comparison. Keep in mind lifetime of MergeTreePartInfo.
+    struct DataPartStateAndInfo
+    {
+        DataPartState state;
+        const MergeTreePartInfo & info;
+
+        DataPartStateAndInfo(DataPartState state, const MergeTreePartInfo & info) : state(state), info(info) {}
+    };
+
+    struct LessDataPart
     {
         using is_transparent = void;
 
@@ -113,11 +125,32 @@ public:
         bool operator()(const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; }
     };
 
-    using DataParts = std::set<DataPartPtr, DataPartPtrLess>;
+    struct LessStateDataPart
+    {
+        using is_transparent = void;
+
+        bool operator() (const DataPartStateAndInfo & lhs, const DataPartStateAndInfo & rhs) const
+        {
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info)
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info);
+        }
+
+        bool operator() (DataPartStateAndInfo info, const DataPartState & state) const
+        {
+            return static_cast<size_t>(info.state) < static_cast<size_t>(state);
+        }
+
+        bool operator() (const DataPartState & state, DataPartStateAndInfo info) const
+        {
+            return static_cast<size_t>(state) < static_cast<size_t>(info.state);
+        }
+    };
+
+    using DataParts = std::set<DataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
 
     /// For resharding.
-    using MutableDataParts = std::set<MutableDataPartPtr, DataPartPtrLess>;
+    using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using PerShardDataParts = std::unordered_map<size_t, MutableDataPartPtr>;
 
     /// Some operations on the set of parts return a Transaction object.
@@ -130,6 +163,11 @@ public:
         void commit();
 
         void rollback();
+
+        bool isEmpty() const
+        {
+            return parts_to_add_on_rollback.empty() && parts_to_remove_on_rollback.empty();
+        }
 
         ~Transaction()
         {
@@ -310,21 +348,16 @@ public:
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts(const DataPartStates & affordable_states) const;
-    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states) const;
-    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector & out_states_snapshot) const;
+    /// Returns sorted list of the parts with specified states
+    ///  out_states will contain snapshot of each part state
+    DataPartsVector getDataPartsVector(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
 
-    /// Returns a virtual container iteration only through parts with specified states
-    decltype(auto) getDataPartsRange(const DataPartStates & affordable_states) const
-    {
-        return createRangeFiltered(DataPart::getStatesFilter(affordable_states), data_parts);
-    }
+    /// Returns absolutely all parts (and snapshot of their states)
+    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
     /// Returns Committed parts
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
-
-    /// Returns all parts except Temporary and Deleting ones
-    DataParts getAllDataParts() const;
 
     /// Returns an comitted part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
@@ -375,8 +408,8 @@ public:
     /// Removes parts from data_parts, they should be in Deleting state
     void removePartsFinally(const DataPartsVector & parts);
 
-    /// Delete irrelevant parts.
-    void clearOldParts();
+    /// Delete irrelevant parts from memory and disk.
+    void clearOldPartsFromFilesystem();
 
     /// Deleate all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
@@ -538,15 +571,81 @@ private:
     String log_name;
     Logger * log;
 
-    /// Current set of data parts.
-    DataParts data_parts;
-    mutable std::mutex data_parts_mutex;
 
-    /// The set of all data parts including already merged but not yet deleted. Usually it is small (tens of elements).
-    /// The part is referenced from here, from the list of current parts and from each thread reading from it.
-    /// This means that if reference count is 1 - the part is not used right now and can be deleted.
-//    DataParts all_data_parts;
-//    mutable std::mutex all_data_parts_mutex;
+    /// Work with data parts
+
+    struct TagByName{};
+    struct TagByStateAndName{};
+
+    static const MergeTreePartInfo & dataPartPtrToInfo(const DataPartPtr & part)
+    {
+        return part->info;
+    }
+
+    static DataPartStateAndInfo dataPartPtrToStateAndInfo(const DataPartPtr & part)
+    {
+        return {part->state, part->info};
+    };
+
+    using DataPartsIndexes = boost::multi_index_container<DataPartPtr,
+        boost::multi_index::indexed_by<
+            /// Index by Name
+            boost::multi_index::ordered_unique<
+                boost::multi_index::tag<TagByName>,
+                boost::multi_index::global_fun<const DataPartPtr &, const MergeTreePartInfo &, dataPartPtrToInfo>
+            >,
+            /// Index by (State, Name), is used to obtain ordered slices of parts with the same state
+            boost::multi_index::ordered_unique<
+                boost::multi_index::tag<TagByStateAndName>,
+                boost::multi_index::global_fun<const DataPartPtr &, DataPartStateAndInfo, dataPartPtrToStateAndInfo>,
+                LessStateDataPart
+            >
+        >
+    >;
+
+    /// Current set of data parts.
+    mutable std::mutex data_parts_mutex;
+    DataPartsIndexes data_parts_indexes;
+    DataPartsIndexes::index<TagByName>::type & data_parts_by_name;
+    DataPartsIndexes::index<TagByStateAndName>::type & data_parts_by_state_and_name;
+
+    using DataPartIteratorByAndName = DataPartsIndexes::index<TagByName>::type::iterator;
+    using DataPartIteratorByStateAndName = DataPartsIndexes::index<TagByStateAndName>::type::iterator;
+
+    boost::iterator_range<DataPartIteratorByStateAndName> getDataPartsStateRange(DataPartState state) const
+    {
+        auto begin = data_parts_by_state_and_name.lower_bound(state, LessStateDataPart());
+        auto end = data_parts_by_state_and_name.upper_bound(state, LessStateDataPart());
+        return {begin, end};
+    }
+
+    static decltype(auto) getStateModifier(DataPartState state)
+    {
+        return [state] (const DataPartPtr & part) { part->state = state; };
+    }
+
+    void modifyPartState(DataPartIteratorByStateAndName it, DataPartState state)
+    {
+        if (!data_parts_by_state_and_name.modify(it, getStateModifier(state)))
+            throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
+    }
+
+    void modifyPartState(DataPartIteratorByAndName it, DataPartState state)
+    {
+        if (!data_parts_by_state_and_name.modify(data_parts_indexes.project<TagByStateAndName>(it), getStateModifier(state)))
+            throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
+    }
+
+    void modifyPartState(const DataPartPtr & part, DataPartState state)
+    {
+        auto it = data_parts_by_name.find(part->info);
+        if (it == data_parts_by_name.end() || (*it).get() != part.get())
+            throw Exception("Part " + part->name + " is not exists", ErrorCodes::LOGICAL_ERROR);
+
+        if (!data_parts_by_state_and_name.modify(data_parts_indexes.project<TagByStateAndName>(it), getStateModifier(state)))
+            throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
+    }
+
 
     /// Used to serialize calls to grabOldParts.
     std::mutex grab_old_parts_mutex;
@@ -582,7 +681,7 @@ private:
     void removePartContributionToColumnSizes(const DataPartPtr & part);
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
-    DataPartPtr getAnyPartInPartition(const String & partition_id, std::lock_guard<std::mutex> & data_parts_lock);
+    DataPartPtr getAnyPartInPartition(const String & partition_id, std::unique_lock<std::mutex> & data_parts_lock);
 };
 
 }
