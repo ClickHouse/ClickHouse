@@ -29,7 +29,7 @@
 #include <DataStreams/copyData.h>
 
 #include <Common/Macros.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
