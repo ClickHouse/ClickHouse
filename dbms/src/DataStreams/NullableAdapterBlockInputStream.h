@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <experimental/optional>
+#include <optional>
 
 namespace DB
 {
@@ -53,7 +53,7 @@ private:
 
 private:
     Actions actions;
-    std::vector<std::experimental::optional<String>> rename;
+    std::vector<std::optional<String>> rename;
     bool must_transform = false;
 };
 
