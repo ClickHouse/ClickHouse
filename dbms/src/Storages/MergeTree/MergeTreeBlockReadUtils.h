@@ -47,7 +47,7 @@ struct MergeTreeReadTask
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
     /// used to save current range processing status
-    std::experimental::optional<MergeTreeRangeReader> current_range_reader;
+    std::optional<MergeTreeRangeReader> current_range_reader;
     /// the number of rows wasn't read by range_reader if condition in prewhere was false
     /// helps to skip graunule if all conditions will be aslo false
     size_t number_of_rows_to_skip;

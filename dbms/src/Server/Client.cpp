@@ -8,7 +8,7 @@
 #include <iomanip>
 #include <unordered_set>
 #include <algorithm>
-#include <experimental/optional>
+#include <optional>
 #include <boost/program_options.hpp>
 
 #include <Poco/File.h>
@@ -125,7 +125,7 @@ private:
     WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
     std::unique_ptr<ShellCommand> pager_cmd;
     /// The user can specify to redirect query output to a file.
-    std::experimental::optional<WriteBufferFromFile> out_file_buf;
+    std::optional<WriteBufferFromFile> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
 
     String home_path;
@@ -832,7 +832,7 @@ private:
         if (out_file_buf)
         {
             out_file_buf->next();
-            out_file_buf = std::experimental::nullopt;
+            out_file_buf = std::nullopt;
         }
         std_out.next();
     }

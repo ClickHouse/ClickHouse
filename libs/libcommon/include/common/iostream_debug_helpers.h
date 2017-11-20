@@ -166,10 +166,10 @@ std::ostream & operator<<(std::ostream & stream, const std::unique_ptr<T> & what
 }
 
 
-#include <experimental/optional>
+#include <optional>
 
 template <typename T>
-std::ostream & operator<<(std::ostream & stream, const std::experimental::optional<T> & what)
+std::ostream & operator<<(std::ostream & stream, const std::optional<T> & what)
 {
     stream << "optional{";
     if (what)
