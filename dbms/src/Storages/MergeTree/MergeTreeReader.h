@@ -115,7 +115,7 @@ private:
     size_t aio_threshold;
     size_t max_read_buffer_size;
 
-    void addStream(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+    void addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void readData(

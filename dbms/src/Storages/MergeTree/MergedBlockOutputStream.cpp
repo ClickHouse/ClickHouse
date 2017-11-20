@@ -40,7 +40,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 }
 
 
-void IMergedBlockOutputStream::addStream(
+void IMergedBlockOutputStream::addStreams(
     const String & path,
     const String & name,
     const IDataType & type,
@@ -54,6 +54,7 @@ void IMergedBlockOutputStream::addStream(
 
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
+        /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
             return;
 
@@ -94,10 +95,16 @@ void IMergedBlockOutputStream::writeData(
             /// Write marks.
             type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
             {
-                if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+                bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+                if (is_offsets && skip_offsets)
                     return;
 
                 String stream_name = IDataType::getFileNameForStream(name, substream_path);
+
+                /// Don't write offsets more than one time for Nested type.
+                if (is_offsets && offset_columns.count(stream_name))
+                    return;
+
                 ColumnStream & stream = *column_streams[stream_name];
 
                 /// There could already be enough data to compress into the new block.
@@ -111,10 +118,16 @@ void IMergedBlockOutputStream::writeData(
 
         IDataType::OutputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
         {
-            if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+            bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+            if (is_offsets && skip_offsets)
                 return nullptr;
 
             String stream_name = IDataType::getFileNameForStream(name, substream_path);
+
+            /// Don't write offsets more than one time for Nested type.
+            if (is_offsets && offset_columns.count(stream_name))
+                return nullptr;
+
             return &column_streams[stream_name]->compressed;
         };
 
@@ -123,15 +136,32 @@ void IMergedBlockOutputStream::writeData(
         /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
         type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
         {
-            if (skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+            bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+            if (is_offsets && skip_offsets)
                 return;
 
             String stream_name = IDataType::getFileNameForStream(name, substream_path);
+
+            /// Don't write offsets more than one time for Nested type.
+            if (is_offsets && offset_columns.count(stream_name))
+                return;
+
             column_streams[stream_name]->compressed.nextIfAtEnd();
         }, {});
 
         prev_mark += limit;
     }
+
+    /// Memoize offsets for Nested types, that are already written. They will not be written again for next columns of Nested structure.
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+    {
+        bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+        if (is_offsets)
+        {
+            String stream_name = IDataType::getFileNameForStream(name, substream_path);
+            offset_columns.insert(stream_name);
+        }
+    }, {});
 }
 
 
@@ -199,7 +229,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 {
     init();
     for (const auto & it : columns_list)
-        addStream(part_path, it.name, *it.type, 0, false);
+        addStreams(part_path, it.name, *it.type, 0, false);
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -225,7 +255,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
             if (it2 != merged_column_to_size_.end())
                 estimated_size = it2->second;
         }
-        addStream(part_path, it.name, *it.type, estimated_size, false);
+        addStreams(part_path, it.name, *it.type, estimated_size, false);
     }
 }
 
@@ -455,7 +485,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         column_streams.clear();
         for (size_t i = 0; i < block.columns(); ++i)
         {
-            addStream(part_path, block.safeGetByPosition(i).name,
+            addStreams(part_path, block.safeGetByPosition(i).name,
                 *block.safeGetByPosition(i).type, 0, skip_offsets);
         }
         initialized = true;
