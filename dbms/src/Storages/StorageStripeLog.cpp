@@ -84,8 +84,8 @@ protected:
             /// Freeing memory before destroying the object.
             if (!res)
             {
-                block_in = std::nullopt;
-                data_in = std::nullopt;
+                block_in.reset();
+                data_in.reset();
                 index.reset();
             }
         }
