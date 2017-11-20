@@ -13,7 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
 
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/typeid_cast.h>
 
 

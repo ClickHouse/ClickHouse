@@ -41,7 +41,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace ProfileEvents

@@ -182,18 +182,6 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 }
 
 
-void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, const bool always_reorder)
-{
-    fillMissingColumnsImpl(res, ordered_names, always_reorder);
-}
-
-
-void MergeTreeReader::fillMissingColumnsAndReorder(Block & res, const Names & ordered_names)
-{
-    fillMissingColumnsImpl(res, ordered_names, true);
-}
-
-
 MergeTreeReader::Stream::Stream(
     const String & path_prefix_, const String & extension_, size_t marks_count_,
     const MarkRanges & all_mark_ranges,
@@ -527,7 +515,7 @@ void MergeTreeReader::readData(
 }
 
 
-void MergeTreeReader::fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder)
+void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, bool always_reorder)
 {
     if (!res)
         throw Exception("Empty block passed to fillMissingColumnsImpl", ErrorCodes::LOGICAL_ERROR);
