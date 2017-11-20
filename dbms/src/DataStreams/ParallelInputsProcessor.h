@@ -183,6 +183,8 @@ private:
 
         try
         {
+            for (auto & input : inputs)
+                input->readPrefix();
             loop(thread_num);
         }
         catch (...)
@@ -205,6 +207,7 @@ private:
             {
                 try
                 {
+                    additional_input_at_end->readPrefix();
                     while (Block block = additional_input_at_end->read())
                         publishPayload(additional_input_at_end, block, thread_num);
                 }
