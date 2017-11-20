@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int UNKNOWN_FORMAT;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
+    extern const int NOT_FOUND_EXPECTED_DATA_PART;
 }
 
 
@@ -932,6 +933,18 @@ String MergeTreeDataPart::stateToString(MergeTreeDataPart::State state)
 String MergeTreeDataPart::stateString() const
 {
     return stateToString(state);
+}
+
+void MergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPart::State> & affordable_states) const
+{
+    if (!checkState(affordable_states))
+    {
+        String states_str;
+        for (auto state : affordable_states)
+            states_str += stateToString(state) + " ";
+
+        throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+    }
 }
 
 }

@@ -4,6 +4,7 @@
 [[ -n "$1" ]] && host="$1" || host="localhost"
 [[ -n "$2" ]] && min_timestamp="$2" || min_timestamp=$(( $(date +%s) - 10 ))
 [[ -n "$3" ]] && max_timestamp="$3" || max_timestamp=$(( $(date +%s) + 10 ))
+[[ -n "$4" ]] && iters_per_timestamp="$4" || iters_per_timestamp=1
 
 timestamps=`seq $min_timestamp $max_timestamp`
 
@@ -40,6 +41,6 @@ for i in $timestamps; do
         cur_timestamp=$(date +%s)
     done
 
-    #echo $i >> $host".txt"
     reliable_insert "$i"
 done
+sleep 1

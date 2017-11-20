@@ -68,7 +68,7 @@ StorageMergeTree::StorageMergeTree(
     }
     else
     {
-        data.clearOldParts();
+        data.clearOldPartsFromFilesystem();
     }
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
@@ -188,7 +188,7 @@ void StorageMergeTree::alter(
     if (primary_key_is_modified && supportsSampling())
         throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
 
-    MergeTreeData::DataParts parts = data.getAllDataParts();
+    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
         if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
@@ -291,7 +291,7 @@ bool StorageMergeTree::merge(
     /// Clear old parts. It does not matter to do it more frequently than each second.
     if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
     {
-        data.clearOldParts();
+        data.clearOldPartsFromFilesystem();
         data.clearOldTemporaryDirectories();
     }
 
