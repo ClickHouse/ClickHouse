@@ -21,6 +21,10 @@ public:
 
     const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
+    NameAndTypePair getColumn(const String & column_name) const override;
+
+    bool hasColumn(const String & column_name) const override;
+
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
