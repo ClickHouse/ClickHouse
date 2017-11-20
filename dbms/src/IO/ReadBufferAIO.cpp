@@ -6,7 +6,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include <experimental/optional>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -88,7 +88,7 @@ bool ReadBufferAIO::nextImpl()
     if (is_eof)
         return false;
 
-    std::experimental::optional<Stopwatch> watch;
+    std::optional<Stopwatch> watch;
     if (profile_callback)
         watch.emplace(clock_type);
 

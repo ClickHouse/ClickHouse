@@ -1,4 +1,4 @@
-#include <experimental/optional>
+#include <optional>
 
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
@@ -690,7 +690,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         return QueryProcessingStage::FetchColumns;
 
     /// The subquery interpreter, if the subquery
-    std::experimental::optional<InterpreterSelectQuery> interpreter_subquery;
+    std::optional<InterpreterSelectQuery> interpreter_subquery;
 
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredColumns();
