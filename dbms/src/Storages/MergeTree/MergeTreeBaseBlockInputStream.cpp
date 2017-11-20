@@ -159,7 +159,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             MarkRanges ranges_to_read;
             /// Last range may be partl read. The same number of rows we need to read after prewhere
             size_t rows_was_read_in_last_range = 0;
-            std::experimental::optional<MergeTreeRangeReader> pre_range_reader;
+            std::optional<MergeTreeRangeReader> pre_range_reader;
 
             auto processNextRange = [& ranges_to_read, & rows_was_read_in_last_range, & pre_range_reader](
                 MergeTreeReadTask & task, MergeTreeReader & pre_reader)
@@ -200,7 +200,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 size_t read_rows = pre_range_reader->read(res, rows_to_read);
                 rows_was_read_in_last_range += read_rows;
                 if (pre_range_reader->isReadingFinished())
-                    pre_range_reader = std::experimental::nullopt;
+                    pre_range_reader = std::nullopt;
 
                 space_left -= read_rows;
             }
@@ -208,7 +208,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             /// In case of isCancelled.
             if (!res)
             {
-                task->current_range_reader = std::experimental::nullopt;
+                task->current_range_reader = std::nullopt;
                 return res;
             }
 
@@ -252,7 +252,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                         task->number_of_rows_to_skip = rows_was_read_in_last_range;
                     }
                     else
-                        task->current_range_reader = std::experimental::nullopt;
+                        task->current_range_reader = std::nullopt;
 
                     res.clear();
                     return res;
@@ -277,7 +277,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 }
 
                 if (!pre_range_reader)
-                    task->current_range_reader = std::experimental::nullopt;
+                    task->current_range_reader = std::nullopt;
                 task->number_of_rows_to_skip = 0;
 
                 progressImpl({ 0, res.bytes() - pre_bytes });
@@ -383,11 +383,11 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     readRows();
 
                     if (next_range_idx != ranges_to_read.size())
-                        task->current_range_reader = std::experimental::nullopt;
+                        task->current_range_reader = std::nullopt;
                 }
 
                 if (!pre_range_reader)
-                    task->current_range_reader = std::experimental::nullopt;
+                    task->current_range_reader = std::nullopt;
 
                 if (!post_filter_pos)
                 {
@@ -456,7 +456,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
             size_t rows_was_read = task->current_range_reader->read(res, rows_to_read);
             if (task->current_range_reader->isReadingFinished())
-                task->current_range_reader = std::experimental::nullopt;
+                task->current_range_reader = std::nullopt;
 
             if (res && task->size_predictor)
             {

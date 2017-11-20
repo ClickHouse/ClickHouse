@@ -48,7 +48,7 @@
 #include <thread>
 #include <typeinfo>
 #include <typeindex>
-#include <experimental/optional>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -1799,7 +1799,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
 void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context)
 {
-    std::experimental::optional<String> prefix;
+    std::optional<String> prefix;
     String partition_id;
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
