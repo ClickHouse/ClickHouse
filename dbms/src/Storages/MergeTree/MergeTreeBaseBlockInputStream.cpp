@@ -424,8 +424,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             else
                 throw Exception{
                     "Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER
-                };
+                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER};
 
             if (res)
             {
