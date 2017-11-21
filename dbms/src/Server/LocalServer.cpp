@@ -247,10 +247,10 @@ try
     /// Load config files if exists
     if (config().has("config-file") || Poco::File("config.xml").exists())
     {
-        ConfigurationPtr processed_config = ConfigProcessor(false, true)
-            .loadConfig(config().getString("config-file", "config.xml"))
-            .configuration;
-        config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
+        ConfigProcessor config_processor(config().getString("config-file", "config.xml"), false, true);
+        auto loaded_config = config_processor.loadConfig();
+        config_processor.savePreprocessedConfig(loaded_config);
+        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
     context = std::make_unique<Context>(Context::createGlobal());
