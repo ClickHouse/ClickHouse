@@ -4,7 +4,7 @@
 get_property (dirs1 TARGET dbms PROPERTY INCLUDE_DIRECTORIES)
 list(APPEND dirs ${dirs1})
 
-get_property (dirs1 TARGET dbms_common_io PROPERTY INCLUDE_DIRECTORIES)
+get_property (dirs1 TARGET clickhouse_common_io PROPERTY INCLUDE_DIRECTORIES)
 list(APPEND dirs ${dirs1})
 
 get_property (dirs1 TARGET common PROPERTY INCLUDE_DIRECTORIES)
