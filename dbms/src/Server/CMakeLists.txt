@@ -77,11 +77,8 @@ install_symlink_to_clickhouse(clickhouse-local)
 install_symlink_to_clickhouse(clickhouse-benchmark)
 install_symlink_to_clickhouse(clickhouse-performance-test)
 install_symlink_to_clickhouse(clickhouse-format)
-
-if (USE_EMBEDDED_COMPILER)
-    install_symlink_to_clickhouse(clickhouse-clang)
-    install_symlink_to_clickhouse(clickhouse-lld)
-endif ()
+install_symlink_to_clickhouse(clickhouse-clang)
+install_symlink_to_clickhouse(clickhouse-lld)
 
 INSTALL(
     FILES config.xml users.xml
