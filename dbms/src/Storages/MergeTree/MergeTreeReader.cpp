@@ -136,8 +136,13 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
             try
             {
                 size_t column_size_before_reading = column.column->size();
+
                 readData(column.name, *column.type, *column.column, from_mark, continue_reading, max_rows_to_read, read_offsets);
-                read_rows = std::max(read_rows, column.column->size() - column_size_before_reading);
+
+                /// For elements of Nested, column_size_before_reading may be greater than column size
+                ///  if offsets are not empty and were already read, but elements are empty.
+                if (column.column->size())
+                    read_rows = std::max(read_rows, column.column->size() - column_size_before_reading);
             }
             catch (Exception & e)
             {
@@ -147,8 +152,15 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
             }
 
             if (!append && column.column->size())
+            {
+                std::cerr << "Inserting " << column.name << "\n";
                 res.insert(std::move(column));
+            }
+            else
+                std::cerr << "Not inserting " << column.name << "\n";
         }
+
+        std::cerr << res.dumpStructure() << "\n";
 
         /// NOTE: positions for all streams must be kept in sync. In particular, even if for some streams there are no rows to be read,
         /// you must ensure that no seeks are skipped and at this point they all point to to_mark.
@@ -364,16 +376,13 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
             return;
 
         bool data_file_exists = Poco::File(path + stream_name + DATA_FILE_EXTENSION).exists();
-        bool is_sizes_of_nested_type = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes
-            && DataTypeNested::extractNestedTableName(name) != name;
 
-        std::cerr << "File exists: " << data_file_exists << ", is_sizes_of_nested_type: " << is_sizes_of_nested_type << "\n";
+        std::cerr << "File exists: " << data_file_exists << "\n";
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
-          * But we should try to load offset data for array columns of Nested subtable (their data will be filled by default value).
           */
-        if (!data_file_exists && !is_sizes_of_nested_type)
+        if (!data_file_exists)
             return;
 
         streams.emplace(stream_name, std::make_unique<Stream>(
