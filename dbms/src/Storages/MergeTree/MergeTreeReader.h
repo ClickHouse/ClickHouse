@@ -58,11 +58,7 @@ private:
             size_t aio_threshold, size_t max_read_buffer_size,
             const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
-        static std::unique_ptr<Stream> createEmptyPtr();
-
         void seekToMark(size_t index);
-
-        bool isEmpty() const { return is_empty; }
 
         ReadBuffer * data_buffer;
 
@@ -85,8 +81,6 @@ private:
 
         std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
         std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
-
-        bool is_empty = false;
     };
 
     using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
