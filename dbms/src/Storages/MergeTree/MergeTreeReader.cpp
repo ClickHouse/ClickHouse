@@ -275,12 +275,6 @@ MergeTreeReader::Stream::Stream(
     }
 }
 
-std::unique_ptr<MergeTreeReader::Stream> MergeTreeReader::Stream::createEmptyPtr()
-{
-    std::unique_ptr<Stream> res(new Stream);
-    res->is_empty = true;
-    return res;
-}
 
 const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
 {
@@ -288,6 +282,7 @@ const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
         loadMarks();
     return (*marks)[index];
 }
+
 
 void MergeTreeReader::Stream::loadMarks()
 {
@@ -423,10 +418,6 @@ void MergeTreeReader::readData(
         std::cerr << "!!!\n";
 
         Stream & stream = *it->second;
-
-        /// It means that data column of array column will be empty, and it will be replaced by const data column
-        if (stream.isEmpty())
-            return nullptr;
 
         if (!continue_reading)
             stream.seekToMark(from_mark);
