@@ -1061,7 +1061,7 @@ private:
 };
 
 template <typename DataType>
-const std::string FunctionDictGet<DataType>::name = "dictGet" + DataType{}.getName();
+const std::string FunctionDictGet<DataType>::name = "dictGet" + String(DataType{}.getFamilyName());
 
 
 using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8>;
@@ -1130,7 +1130,7 @@ private:
         {
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
-                    + ", must be " + DataType{}.getName() + ".",
+                    + ", must be " + String(DataType{}.getFamilyName()) + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
@@ -1221,7 +1221,7 @@ private:
         }
         else
             throw Exception{
-                "Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+                "Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 
@@ -1259,7 +1259,7 @@ private:
         }
         else
             throw Exception{
-                "Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+                "Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 
@@ -1309,7 +1309,7 @@ private:
         }
         else
             throw Exception{
-                "Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+                "Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()),
                 ErrorCodes::ILLEGAL_COLUMN};
 
         return true;
@@ -1319,7 +1319,7 @@ private:
 };
 
 template <typename DataType>
-const std::string FunctionDictGetOrDefault<DataType>::name = "dictGet" + DataType{}.getName() + "OrDefault";
+const std::string FunctionDictGetOrDefault<DataType>::name = "dictGet" + String(DataType{}.getFamilyName()) + "OrDefault";
 
 
 using FunctionDictGetUInt8OrDefault = FunctionDictGetOrDefault<DataTypeUInt8>;
