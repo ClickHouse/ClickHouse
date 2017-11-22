@@ -171,7 +171,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, si
         }
         return (this->*fillBlockFunction)({}, columns, {}, std::move(view_columns));
     }
-    else if(!ids.empty())
+    else if (!ids.empty())
     {
         PaddedPODArray<Key> block_ids(ids.begin() + start, ids.begin() + start + length);
         return (this->*fillBlockFunction)(block_ids, {}, {}, {});

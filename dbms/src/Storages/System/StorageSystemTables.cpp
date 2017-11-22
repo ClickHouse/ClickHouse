@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemTables.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 

@@ -80,14 +80,14 @@ void __longjmp_chk(jmp_buf env, int val)
 
 int vasprintf(char **s, const char *fmt, va_list ap);
 
-int __vasprintf_chk(char **s, const char *fmt, va_list ap)
+int __vasprintf_chk(char **s, int unused, const char *fmt, va_list ap)
 {
     return vasprintf(s, fmt, ap);
 }
 
 size_t fread(void *ptr, size_t size, size_t nmemb, void *stream);
 
-size_t __fread_chk(void *ptr, size_t size, size_t nmemb, void *stream)
+size_t __fread_chk(void *ptr, size_t unused, size_t size, size_t nmemb, void *stream)
 {
     return fread(ptr, size, nmemb, stream);
 }

@@ -75,6 +75,9 @@ struct Settings
     /** Number of threads performing background work for tables (for example, merging in merge tree). \
       * TODO: Now only applies when the server is started. You can make it dynamically variable. */ \
     M(SettingUInt64, background_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE) \
+    /** Number of threads performing background tasks for replicated tables. \
+      * TODO: Now only applies when the server is started. You can make it dynamically variable. */ \
+    M(SettingUInt64, background_schedule_pool_size, DBMS_DEFAULT_BACKGROUND_POOL_SIZE) \
     \
     /** Sleep time for StorageDistributed DirectoryMonitors in case there is no work or exception has been thrown */ \
     M(SettingMilliseconds, distributed_directory_monitor_sleep_time_ms, DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS) \
@@ -217,9 +220,6 @@ struct Settings
     \
     /** If you uncompress the POST data from the client compressed by the native format, do not check the checksum */ \
     M(SettingBool, http_native_compression_disable_checksumming_on_decompress, 0) \
-    \
-    /** Timeout in seconds */ \
-    M(SettingUInt64, resharding_barrier_timeout, 300) \
     \
     /** What aggregate function to use for implementation of count(DISTINCT ...) */ \
     M(SettingString, count_distinct_implementation, "uniqExact") \

@@ -16,10 +16,6 @@ namespace DB
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
   *     [FETCH PARTITION partition FROM ...]
   *     [FREEZE PARTITION]
-  *        [RESHARD [COPY] PARTITION partition
-  *            TO '/path/to/zookeeper/table' [WEIGHT w], ...
-  *             USING expression
-  *            [COORDINATE WITH 'coordinator_id']]
   */
 class ParserAlterQuery : public IParserBase
 {
