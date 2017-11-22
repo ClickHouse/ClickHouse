@@ -322,7 +322,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
             return on_error();
     }
 
-    if (*buf.position() == '0')                    /// There are many zeros in real datasets.
+    if (*buf.position() == '0') /// There are many zeros in real datasets.
     {
         ++buf.position();
         return;
@@ -330,7 +330,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        if ((*buf.position() & 0xF0) == 0x30)    /// It makes sense to have this condition inside loop.
+        if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
         {
             x *= 10;
             x += *buf.position() & 0x0F;

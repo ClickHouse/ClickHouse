@@ -15,12 +15,12 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/BackgroundSchedulePool.h>
 #include <DataStreams/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
-#include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionSettingsSelector.h>
@@ -38,7 +38,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DNSCache.h>
+#include <Common/DNSCache.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -125,7 +125,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
-    ReshardingWorkerPtr resharding_worker;
+    BackgroundSchedulePoolPtr schedule_pool;                /// A thread pool that can run different jobs in background (used in replicated tables)
     Macros macros;                                          /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -1229,21 +1229,12 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     return *shared->background_pool;
 }
 
-void Context::setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker)
+BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
-    if (shared->resharding_worker)
-        throw Exception("Resharding background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
-    shared->resharding_worker = resharding_worker;
-}
-
-ReshardingWorker & Context::getReshardingWorker() const
-{
-    auto lock = getLock();
-    if (!shared->resharding_worker)
-        throw Exception("Resharding background thread not initialized: resharding missing in configuration file.",
-            ErrorCodes::LOGICAL_ERROR);
-    return *shared->resharding_worker;
+    if (!shared->schedule_pool)
+        shared->schedule_pool = std::make_shared<BackgroundSchedulePool>(settings.background_schedule_pool_size);
+    return *shared->schedule_pool;
 }
 
 void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
