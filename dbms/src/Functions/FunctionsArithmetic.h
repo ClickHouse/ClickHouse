@@ -434,7 +434,7 @@ struct AbsImpl
 template <typename A, typename B>
 struct GCDImpl
 {
-    using ResultType = typename NumberTraits::ResultOfGCD<A, B>::Type;
+    using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -450,7 +450,7 @@ struct GCDImpl
 template <typename A, typename B>
 struct LCMImpl
 {
-    using ResultType = typename NumberTraits::ResultOfLCM<A, B>::Type;
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
