@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
+#include <boost/math/common_factor.hpp>
 
 
 namespace DB
@@ -427,6 +428,38 @@ struct AbsImpl
     static inline ResultType apply(T a, typename std::enable_if<std::is_floating_point<T>::value, void>::type * = nullptr)
     {
         return static_cast<ResultType>(std::abs(a));
+    }
+};
+
+template <typename A, typename B>
+struct GCDImpl
+{
+    using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
+    {
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        return boost::math::gcd(
+            typename NumberTraits::ToInteger<A>::Type(a),
+            typename NumberTraits::ToInteger<A>::Type(b));
+    }
+};
+
+template <typename A, typename B>
+struct LCMImpl
+{
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
+    {
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        return boost::math::lcm(
+            typename NumberTraits::ToInteger<A>::Type(a),
+            typename NumberTraits::ToInteger<A>::Type(b));
     }
 };
 
@@ -1006,6 +1039,8 @@ struct NameBitTestAny           { static constexpr auto name = "bitTestAny"; };
 struct NameBitTestAll           { static constexpr auto name = "bitTestAll"; };
 struct NameLeast                { static constexpr auto name = "least"; };
 struct NameGreatest             { static constexpr auto name = "greatest"; };
+struct NameGCD                  { static constexpr auto name = "gcd"; };
+struct NameLCM                  { static constexpr auto name = "lcm"; };
 
 using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
 using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
@@ -1027,6 +1062,8 @@ using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, Name
 using FunctionBitTest = FunctionBinaryArithmetic<BitTestImpl, NameBitTest>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
+using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD>;
+using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM>;
 
 /// Monotonicity properties for some functions.
 
