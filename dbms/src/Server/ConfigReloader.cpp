@@ -75,7 +75,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                        path, zk_node_cache, fallback_to_preprocessed);
+                        zk_node_cache, fallback_to_preprocessed);
         }
         catch (...)
         {
