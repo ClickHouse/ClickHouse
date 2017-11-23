@@ -123,10 +123,6 @@ if (ARCHNATIVE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
 endif ()
 
-if (CMAKE_SYSTEM MATCHES "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ON)
-endif ()
-
 # Special options for better optimized code with clang
 #if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 #    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
