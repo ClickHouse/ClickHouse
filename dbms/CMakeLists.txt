@@ -157,6 +157,7 @@ target_link_libraries (clickhouse_common_io
     ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
+    ${PLATFORM_LIBS}
 )
 
 target_link_libraries (dbms
@@ -197,7 +198,6 @@ if (USE_CAPNP)
 endif ()
 
 target_link_libraries (dbms
-    ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
     Threads::Threads
 )
