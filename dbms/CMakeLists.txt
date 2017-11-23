@@ -160,8 +160,8 @@ target_link_libraries (clickhouse_common_io
 )
 
 target_link_libraries (dbms
-    clickhouse_common_io
     clickhouse_parsers
+    clickhouse_common_io
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}
     ${METROHASH_LIBRARIES}
