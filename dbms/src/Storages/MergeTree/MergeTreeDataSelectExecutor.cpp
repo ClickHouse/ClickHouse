@@ -605,7 +605,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     size_t sum_marks = 0;
     for (size_t i = 0; i < parts.size(); ++i)
     {
-        /// Let the segments be listed from right to left so that the leftmost segment can be dropped using `pop_back()`.
+        /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
         std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
 
         for (const auto & range : parts[i].ranges)
@@ -655,10 +655,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         {
             size_t need_marks = min_marks_per_stream;
 
-            /// Loop parts.
+            /// Loop over parts.
+            /// We will iteratively take part or some subrange of a part from the back
+            ///  and assign a stream to read from it.
             while (need_marks > 0 && !parts.empty())
             {
-                RangesInDataPart & part = parts.back();
+                RangesInDataPart part = parts.back();
                 size_t & marks_in_part = sum_marks_in_parts.back();
 
                 /// We will not take too few rows from a part.
@@ -687,7 +689,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                 }
                 else
                 {
-                    /// Cycle through segments of a part.
+                    /// Loop through ranges in part. Take enough ranges to cover "need_marks".
                     while (need_marks > 0)
                     {
                         if (part.ranges.empty())
