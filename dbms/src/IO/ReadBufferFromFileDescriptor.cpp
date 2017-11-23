@@ -1,7 +1,7 @@
 #include <errno.h>
 #include <time.h>
 
-#include <experimental/optional>
+#include <optional>
 
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -51,7 +51,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     {
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
 
-        std::experimental::optional<Stopwatch> watch;
+        std::optional<Stopwatch> watch;
         if (profile_callback)
             watch.emplace(clock_type);
 

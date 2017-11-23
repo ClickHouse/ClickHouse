@@ -1,24 +1,5 @@
-/// Compatibility with clang, in which std::numeric_limits (from libstdc++ from gcc) for some reason does not specialize for __uint128_t.
-#if __clang__ && __clang_major__ < 4
-    #include <limits>
-
-    namespace std
-    {
-        template <>
-        struct numeric_limits<__uint128_t>
-        {
-            static constexpr bool is_specialized = true;
-            static constexpr bool is_signed = false;
-            static constexpr bool is_integer = true;
-            static constexpr int radix = 2;
-            static constexpr int digits = 8 * sizeof(char) * 2;
-            static constexpr __uint128_t min () { return 0; } // used in boost 1.65.1+
-        };
-    }
-#endif
-
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
-#include <experimental/optional>
+#include <optional>
 
 #include <Core/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -41,7 +22,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 
 
 namespace ProfileEvents
@@ -215,7 +196,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         throw Exception(exception_message.str(), ErrorCodes::INDEX_NOT_USED);
     }
 
-    std::experimental::optional<PKCondition> minmax_idx_condition;
+    std::optional<PKCondition> minmax_idx_condition;
     if (data.minmax_idx_expr)
     {
         minmax_idx_condition.emplace(

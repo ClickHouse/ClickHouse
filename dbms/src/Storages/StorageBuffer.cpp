@@ -474,7 +474,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
         return;
 
     /** For simplicity, buffer is locked during write.
-        * We could unlock buffer temporary, but it would lead to too much difficulties:
+        * We could unlock buffer temporary, but it would lead to too many difficulties:
         * - data, that is written, will not be visible for SELECTs;
         * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
         * - this could lead to infinite memory growth.

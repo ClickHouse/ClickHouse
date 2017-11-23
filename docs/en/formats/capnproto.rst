@@ -5,9 +5,10 @@ Cap'n Proto is a binary message format. Like Protocol Buffers and Thrift (but un
 
 .. code-block:: sql
 
-  SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema.capnp:Message'
+  SELECT SearchPhrase, count() AS c FROM test.hits
+  GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
 
-When the schema file looks like:
+When the `schema.capnp` schema file looks like:
 
 .. code-block:: text
 
@@ -15,6 +16,13 @@ When the schema file looks like:
     SearchPhrase @0 :Text;
     c @1 :Uint64;
   }
+
+The schema files are located in the path specified in the configuration file:
+
+.. code-block:: xml
+
+  <!-- Directory containing schema files for various input formats. -->
+  <format_schema_path>format_schemas/</format_schema_path>
 
 Deserialization is almost as efficient as the binary rows format, with typically zero allocation overhead per message.
 

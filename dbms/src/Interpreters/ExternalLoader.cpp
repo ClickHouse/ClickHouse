@@ -10,6 +10,7 @@
 #include <Poco/File.h>
 #include <cmath>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Common/ConfigProcessor.h>
 
 namespace DB
 {
@@ -277,7 +278,10 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
         const auto last_modified = config_file.getLastModified();
         if (force_reload || last_modified > config_last_modified)
         {
-            Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(config_path);
+            ConfigProcessor config_processor = ConfigProcessor();
+            ConfigProcessor::LoadedConfig cfg = config_processor.loadConfig(config_path);
+            
+            Poco::AutoPtr<Poco::Util::AbstractConfiguration> config = cfg.configuration;
 
             /// Definitions of loadable objects may have changed, recreate all of them
 
@@ -296,7 +300,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
                 if (!startsWith(key, config_settings.external_config))
                 {
-                    if (!startsWith(key, "comment"))
+                    if (!startsWith(key, "comment") && !startsWith(key, "include_from"))
                         LOG_WARNING(log, config_path << ": unknown node in file: '" << key
                                                      << "', expected '" << config_settings.external_config << "'");
                     continue;

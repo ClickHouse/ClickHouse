@@ -352,8 +352,6 @@ std::string FunctionAssumeNotNull::getName() const
 
 DataTypePtr FunctionAssumeNotNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments[0]->isNull())
-        throw Exception{"NULL is an invalid value for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     return getNestedDataType(arguments[0]);
 }
 
@@ -362,9 +360,7 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
     const ColumnPtr & col = block.getByPosition(arguments[0]).column;
     ColumnPtr & res_col = block.getByPosition(result).column;
 
-    if (col->isNull())
-        throw Exception{"NULL is an invalid value for function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-    else if (col->isNullable())
+    if (col->isNullable())
     {
         const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
         res_col = nullable_col.getNestedColumn();

@@ -87,8 +87,6 @@ namespace ErrorCodes
 
 class MergeTreeData : public ITableDeclaration
 {
-    friend class ReshardingWorker;
-
 public:
     /// Function to call if the part is suspected to contain corrupt data.
     using BrokenPartCallback = std::function<void (const String &)>;
@@ -115,10 +113,6 @@ public:
 
     using DataParts = std::set<DataPartPtr, DataPartPtrLess>;
     using DataPartsVector = std::vector<DataPartPtr>;
-
-    /// For resharding.
-    using MutableDataParts = std::set<MutableDataPartPtr, DataPartPtrLess>;
-    using PerShardDataParts = std::unordered_map<size_t, MutableDataPartPtr>;
 
     /// Some operations on the set of parts return a Transaction object.
     /// If neither commit() nor rollback() was called, the destructor rollbacks the operation.
@@ -341,8 +335,6 @@ public:
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     void delayInsertIfNeeded(Poco::Event * until = nullptr);
 
-    DataPartPtr getShardedPartIfExists(const String & part_name, size_t shard_no);
-
     /// Renames temporary part to a permanent part and adds it to the working set.
     /// If increment != nullptr, part index is determing using increment. Otherwise part index remains unchanged.
     /// It is assumed that the part does not intersect with existing parts.
@@ -477,7 +469,7 @@ public:
         calculateColumnSizesImpl();
     }
 
-    /// For ATTACH/DETACH/DROP/RESHARD PARTITION.
+    /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & partition, const Context & context);
 
     MergeTreeDataFormatVersion format_version;
@@ -541,20 +533,12 @@ private:
     /// Current set of data parts.
     DataParts data_parts;
     mutable std::mutex data_parts_mutex;
-
-    /// The set of all data parts including already merged but not yet deleted. Usually it is small (tens of elements).
-    /// The part is referenced from here, from the list of current parts and from each thread reading from it.
-    /// This means that if reference count is 1 - the part is not used right now and can be deleted.
-//    DataParts all_data_parts;
-//    mutable std::mutex all_data_parts_mutex;
+    // TODO: this mutex could be a bottleneck. If so, make it shared, and split parts onto partitions
 
     /// Used to serialize calls to grabOldParts.
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
-
-    /// For each shard of the set of sharded parts.
-    PerShardDataParts per_shard_data_parts;
 
     /// Check that columns list doesn't contain multidimensional arrays.
     /// If attach is true (attaching an existing table), writes an error message to log.

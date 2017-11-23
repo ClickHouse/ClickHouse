@@ -13,3 +13,9 @@
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/edenhill/librdkafka.git
+[submodule "contrib/cctz"]
+	path = contrib/cctz
+	url = https://github.com/google/cctz.git
+[submodule "contrib/zlib-ng"]
+	path = contrib/zlib-ng
+	url = https://github.com/Dead2/zlib-ng.git

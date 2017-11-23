@@ -38,7 +38,6 @@ class Context;
   */
 class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageBuffer>;
 friend class BufferBlockInputStream;
 friend class BufferBlockOutputStream;
 
@@ -112,17 +111,6 @@ private:
     /// Resets data by timeout.
     std::thread flush_thread;
 
-    /** num_shards - the level of internal parallelism (the number of independent buffers)
-      * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
-      */
-    StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        Context & context_,
-        size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-        const String & destination_database_, const String & destination_table_);
-
     void flushAllBuffers(bool check_thresholds = true);
     /// Reset the buffer. If check_thresholds is set - resets only if thresholds are exceeded.
     void flushBuffer(Buffer & buffer, bool check_thresholds);
@@ -133,6 +121,18 @@ private:
     void writeBlockToDestination(const Block & block, StoragePtr table);
 
     void flushThread();
+
+protected:
+    /** num_shards - the level of internal parallelism (the number of independent buffers)
+      * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
+      */
+    StorageBuffer(const std::string & name_, NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        Context & context_,
+        size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
+        const String & destination_database_, const String & destination_table_);
 };
 
 }

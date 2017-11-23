@@ -1,16 +1,20 @@
 DROP TABLE IF EXISTS default.test_table;
 DROP TABLE IF EXISTS default.test_view;
+DROP TABLE IF EXISTS default.test_view_filtered;
 
-CREATE TABLE default.test_table (EventDate Date, CounterID UInt32,  UserID UInt64,  EventTime DateTime, UTCEventTime DateTime) ENGINE = Memory;
+CREATE TABLE default.test_table (EventDate Date, CounterID UInt32,  UserID UInt64,  EventTime DateTime, UTCEventTime DateTime) ENGINE = MergeTree(EventDate, CounterID, 8192);
 CREATE MATERIALIZED VIEW default.test_view (Rows UInt64,  MaxHitTime DateTime) ENGINE = Memory AS SELECT count() AS Rows, max(UTCEventTime) AS MaxHitTime FROM default.test_table;
+CREATE MATERIALIZED VIEW default.test_view_filtered (EventDate Date, CounterID UInt32) ENGINE = Memory POPULATE AS SELECT CounterID, EventDate FROM default.test_table WHERE EventDate < '2013-01-01';
 
 INSERT INTO test_table (EventDate, UTCEventTime) VALUES ('2014-01-02', '2014-01-02 03:04:06');
 
 SELECT * FROM default.test_table;
 SELECT * FROM default.test_view;
+SELECT * FROM default.test_view_filtered;
 
 DROP TABLE default.test_table;
 DROP TABLE default.test_view;
+DROP TABLE default.test_view_filtered;
 
 -- Check only sophisticated constructors and desctructors:
 
