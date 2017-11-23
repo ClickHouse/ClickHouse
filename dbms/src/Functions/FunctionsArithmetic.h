@@ -439,11 +439,11 @@ struct GCDImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
         return boost::math::gcd(
-            typename NumberTraits::ToInteger<A>::Type(a),
-            typename NumberTraits::ToInteger<A>::Type(b));
+            typename NumberTraits::ToInteger<Result>::Type(a),
+            typename NumberTraits::ToInteger<Result>::Type(b));
     }
 };
 
@@ -455,11 +455,11 @@ struct LCMImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
         return boost::math::lcm(
-            typename NumberTraits::ToInteger<A>::Type(a),
-            typename NumberTraits::ToInteger<A>::Type(b));
+            typename NumberTraits::ToInteger<Result>::Type(a),
+            typename NumberTraits::ToInteger<Result>::Type(b));
     }
 };
 
