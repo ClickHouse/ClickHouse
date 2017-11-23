@@ -8,7 +8,7 @@
 #include <Columns/ColumnSet.h>
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>

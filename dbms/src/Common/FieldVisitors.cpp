@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 
 

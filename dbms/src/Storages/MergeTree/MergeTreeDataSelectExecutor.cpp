@@ -1,7 +1,7 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 #include <optional>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>

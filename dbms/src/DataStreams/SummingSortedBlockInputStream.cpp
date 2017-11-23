@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/StringUtils.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
