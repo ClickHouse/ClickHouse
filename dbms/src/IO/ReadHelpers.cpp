@@ -633,6 +633,36 @@ template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UIn
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
+void readDateTextFallback(LocalDate & date, ReadBuffer & buf)
+{
+    char chars_year[4];
+    readPODBinary(chars_year, buf);
+    UInt16 year = (chars_year[0] - '0') * 1000 + (chars_year[1] - '0') * 100 + (chars_year[2] - '0') * 10 + (chars_year[3] - '0');
+
+    buf.ignore();
+
+    char chars_month[2];
+    readPODBinary(chars_month, buf);
+    UInt8 month = chars_month[0] - '0';
+    if (isNumericASCII(chars_month[1]))
+    {
+        month = month * 10 + chars_month[1] - '0';
+        buf.ignore();
+    }
+
+    char char_day;
+    readChar(char_day, buf);
+    UInt8 day = char_day - '0';
+    if (!buf.eof() && isNumericASCII(*buf.position()))
+    {
+        day = day * 10 + *buf.position() - '0';
+        ++buf.position();
+    }
+
+    date = LocalDate(year, month, day);
+}
+
+
 void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;

@@ -4,24 +4,6 @@
 namespace DB
 {
 
-const DateLUTImpl * extractTimeZoneFromFunctionArguments(Block & block, const ColumnNumbers & arguments)
-{
-    if (arguments.size() == 2)
-    {
-        const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
-
-        if (!time_zone_column)
-            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-                + " of second (time zone) argument of function, must be constant string",
-                ErrorCodes::ILLEGAL_COLUMN);
-
-        return &DateLUT::instance(time_zone_column->getValue<String>());
-    }
-    else
-        return &DateLUT::instance();
-}
-
-
 void throwExceptionForIncompletelyParsedValue(
     ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result)
 {

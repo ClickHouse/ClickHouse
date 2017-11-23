@@ -4,7 +4,7 @@
 #include <Common/config.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <Interpreters/DNSCache.h>
+#include <Common/DNSCache.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Version.h>

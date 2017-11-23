@@ -2571,7 +2571,7 @@ The sharding expression can be any expression from constants and table columns t
 
 A simple remainder from division is a limited solution for sharding and isn&#39;t always appropriate. It works for medium and large volumes of data (dozens of servers), but not for very large volumes of data (hundreds of servers or more). In the latter case, use the sharding scheme required by the subject area, rather than using entries in Distributed tables.
 
-When using Replicated tables, it is possible to reshard data - look at "Resharding" section. But in many cases, better to do without it. SELECT queries are sent to all the shards, and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don&#39;t have to transfer the old data to it. You can write new data with a heavier weight - the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
+SELECT queries are sent to all the shards, and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you don&#39;t have to transfer the old data to it. You can write new data with a heavier weight - the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
 You should be concerned about the sharding scheme in the following cases:
 - Queries are used that require joining data (IN or JOIN) by a specific key. If data is sharded by this key, you can use local IN or JOIN instead of GLOBAL IN or GLOBAL JOIN, which is much more efficient.
@@ -3075,86 +3075,6 @@ After this, you can launch the server, create a MergeTree table, move the data t
 ===Recovery when metadata in the ZooKeeper cluster is lost or damaged===
 
 If you lost ZooKeeper, you can save data by moving it to an unreplicated table as described above.
-
-
-==Resharding==
-
-%%ALTER TABLE t RESHARD [COPY] [PARTITION partition] TO <i>cluster description</i> USING <i>sharding key</i>%%
-
-Query works only for Replicated tables and for Distributed tables that are looking at Replicated tables.
-
-When executing, query first checks correctness of query, sufficiency of free space on nodes and writes to ZooKeeper at some path a task to to. Next work is done asynchronously.
-
-For using resharding, you must specify path in ZooKeeper for task queue in configuration file:
-
-%%
-&lt;resharding&gt;
-    &lt;task_queue_path&gt;/clickhouse/task_queue&lt;/task_queue_path&gt;
-&lt;/resharding&gt;
-%%
-
-When running %%ALTER TABLE t RESHARD%% query, node in ZooKeeper is created if not exists.
-
-Cluster description is list of shards with weights to distribute the data.
-Shard is specified as address of table in ZooKeeper. Example: %%/clickhouse/tables/01-03/hits%%
-Relative weight of shard (optional, default is 1) could be specified after %%WEIGHT%% keyword.
-Example:
-
-%%
-ALTER TABLE merge.hits
-RESHARD PARTITION 201501
-TO
-    '/clickhouse/tables/01-01/hits' WEIGHT 1,
-    '/clickhouse/tables/01-02/hits' WEIGHT 2,
-    '/clickhouse/tables/01-03/hits' WEIGHT 1,
-    '/clickhouse/tables/01-04/hits' WEIGHT 1
-USING UserID
-%%
-
-Sharding key (%%UserID%% in example) has same semantic as for Distributed tables. You could specify %%rand()%% as sharding key for random distribution of data.
-
-When query is run, it checks:
-- identity of table structure on all shards.
-- availability of free space on local node in amount of partition size in bytes, with additional 10% reserve.
-- availability of free space on all replicas of all specified shards, except local replica, if exists, in amount of patition size times ratio of shard weight to total weight of all shards, with additional 10% reserve.
-
-Next, asynchronous processing of query is of following steps:
-
-1. Split patition to parts on local node.
-It merges all parts forming a partition and in the same time, splits them to several, according sharding key.
-Result is placed to /reshard directory in table data directory.
-Source parts doesn't modified and all process doesn't intervent table working data set.
-
-2. Copying all parts to remote nodes (to each replica of corresponding shard).
-
-3. Execution of queries %%ALTER TABLE t DROP PARTITION%% on local node and %%ALTER TABLE t ATTACH PARTITION%% on all shards.
-Note: this operation is not atomic. There are time point when user could see absence of data.
-
-When %%COPY%% keyword is specified, source data is not removed. It is suitable for copying data from one cluster to another with changing sharding scheme in same time.
-
-4. Removing temporary data from local node.
-
-When having multiple resharding queries, their tasks will be done sequentially.
-
-Query in example is to reshard single partition.
-If you don't specify partition in query, then tasks to reshard all partitions will be created. Example:
-
-%%
-ALTER TABLE merge.hits
-RESHARD
-TO ...
-%%
-
-When resharding Distributed tables, each shard will be resharded (corresponding query is sent to each shard).
-
-You could reshard Distributed table to itself or to another table.
-
-Resharding is intended for "old" data: in case when during job, resharded partition was modified, task for that partition will be cancelled.
-
-On each server, resharding is done in single thread. It is doing that way to not disturb normal query processing.
-
-As of June 2016, resharding is in "beta" state: it was tested only for small data sets - up to 5 TB.
-
 
 
 </div>
@@ -6956,7 +6876,7 @@ Otherwise, they are printed as regular numbers.
 ==input_format_allow_errors_num==
 ==input_format_allow_errors_ratio==
 
-Maximum amount of errors while reading text formats (like CSV, TSV). 
+Maximum amount of errors while reading text formats (like CSV, TSV).
 In case of error, if both values are non-zero, and at least absolute or relative amount of errors is lower than corresponding value, will skip until next line and continue.
 
 ==Restrictions on query complexity==

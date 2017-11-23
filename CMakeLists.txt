@@ -4,28 +4,25 @@ cmake_minimum_required (VERSION 2.8)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # Require at least gcc 6
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
-        message (FATAL_ERROR "GCC version must be at least 6! For example, if GCC 6 is available under gcc-6, g++-6 names, do the following: export CC=gcc-6 CXX=g++-6; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
+    # Require at least gcc 7
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
+        message (FATAL_ERROR "GCC version must be at least 7! For example, if GCC 7 is available under gcc-7, g++-7 names, do the following: export CC=gcc-7 CXX=g++-7; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Require at least clang 3.8
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
-        message (FATAL_ERROR "Clang version must be at least 3.8! Recommended 4+")
+    # Require at least clang 3.9
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.9)
+        message (FATAL_ERROR "Clang version must be at least 3.9! Recommended 4+")
     endif ()
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4)
         message (WARNING "Compilation has only been tested with Clang 4+")
     endif ()
 else ()
-    message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 4+ and GCC 6+.")
+    message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 4+ and GCC 7+.")
 endif ()
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
     set (PLATFORM_EXTRA_CXX_FLAG "-DCLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST")
 endif ()
-
-cmake_policy (SET CMP0014 OLD) # Ignore warning about CMakeLists.txt in each directory
-cmake_policy (SET CMP0012 NEW) # Don't dereference TRUE and FALSE
 
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
@@ -67,6 +64,13 @@ option (ENABLE_TESTS "Enables tests" ON)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
+if (NOT MAKE_STATIC_LIBRARIES)
+    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
+endif ()
+if (SPLIT_SHARED_LIBRARIES)
+    set (SPLIT_SHARED SHARED)
+endif ()
+
 if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
@@ -93,6 +97,20 @@ endif ()
 
 set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
+find_program (LLD_PATH NAMES lld)
+find_program (GOLD_PATH NAMES gold)
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND LLD_PATH)
+    set (LINKER_NAME "lld")
+elseif (GOLD_PATH)
+    set (LINKER_NAME "gold")
+endif ()
+
+if (LINKER_NAME)
+    message(STATUS "Using linker: ${LINKER_NAME}")
+    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
+endif ()
+
 option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
 if (PIPE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pipe")
@@ -105,11 +123,13 @@ if (ARCHNATIVE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
 endif ()
 
-option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" OFF)
-if (USE_LIBCXX)
-    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pthread") # NOTE: Why this is not the default and why this is needed only with libc++?
-    set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-    set (CMAKE_CXX_FLAGS_DEBUG           "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
+if (CMAKE_SYSTEM MATCHES "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ON)
+    if (USE_LIBCXX)
+        set (COMPILER_FLAGS              "${COMPILER_FLAGS} -pthread") # NOTE: Why this is not the default and why this is needed only with libc++?
+        set (CMAKE_CXX_FLAGS             "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+        set (CMAKE_CXX_FLAGS_DEBUG       "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
+    endif ()
 endif ()
 
 # Special options for better optimized code with clang
@@ -117,8 +137,16 @@ endif ()
 #    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
 #endif ()
 
+if (CMAKE_VERSION VERSION_LESS "3.8.0")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++1z")
+else ()
+    set (CMAKE_CXX_STANDARD 17)
+    set (CMAKE_CXX_STANDARD_REQUIRED ON)
+    set (CXX_FLAGS_INTERNAL_COMPILER "-std=gnu++1z")
+endif ()
+
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
-set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} -std=gnu++1z ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
+set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS} ${GLIBC_COMPATIBILITY_COMPILE_FLAGS}")
 #set (CMAKE_CXX_FLAGS_RELEASE             "${CMAKE_CXX_FLAGS_RELEASE}")
 set (CMAKE_CXX_FLAGS_RELWITHDEBINFO      "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -O3")
 set (CMAKE_CXX_FLAGS_DEBUG               "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
@@ -151,15 +179,15 @@ if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
-set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
+set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer")
+if (SAN_DEBUG)
+    set (SAN_FLAGS "${SAN_FLAGS} -O0")
+else ()
+    set (SAN_FLAGS "${SAN_FLAGS} -O3")
+endif ()
+
 set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
 set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # -fuse-ld=gold - fix linkage for gcc-5.4, gcc-6.1
-    # See more in http://stackoverflow.com/questions/37603238/fsanitize-not-using-gold-linker-in-gcc-6-1
-    set (CMAKE_CXX_FLAGS_ASAN            "${CMAKE_CXX_FLAGS_ASAN} -fuse-ld=gold")
-    set (CMAKE_C_FLAGS_ASAN              "${CMAKE_C_FLAGS_ASAN}   -fuse-ld=gold")
-endif ()
 set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} ${SAN_FLAGS} -fsanitize=undefined")
 set (CMAKE_C_FLAGS_UBSAN                 "${CMAKE_C_FLAGS_UBSAN}   ${SAN_FLAGS} -fsanitize=undefined")
 set (CMAKE_CXX_FLAGS_MSAN                "${CMAKE_CXX_FLAGS_MSAN}  ${SAN_FLAGS} -fsanitize=memory")
@@ -231,6 +259,7 @@ include (cmake/find_zookeeper.cmake)
 include (cmake/find_re2.cmake)
 include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
+include (cmake/find_llvm.cmake)
 
 include (cmake/find_contrib_lib.cmake)
 find_contrib_lib(cityhash)

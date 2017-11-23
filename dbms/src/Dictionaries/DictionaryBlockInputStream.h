@@ -171,7 +171,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, si
         }
         return (this->*fillBlockFunction)({}, columns, {}, std::move(view_columns));
     }
-    else if(!ids.empty())
+    else if (!ids.empty())
     {
         PaddedPODArray<Key> block_ids(ids.begin() + start, ids.begin() + start + length);
         return (this->*fillBlockFunction)(block_ids, {}, {}, {});
@@ -285,6 +285,9 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
             case AttributeUnderlyingType::UInt64:
                 GET_COLUMN_FORM_ATTRIBUTE(UInt64);
                 break;
+            case AttributeUnderlyingType::UInt128:
+                GET_COLUMN_FORM_ATTRIBUTE(UInt128);
+                break;
             case AttributeUnderlyingType::Int8:
                 GET_COLUMN_FORM_ATTRIBUTE(Int8);
                 break;
@@ -379,6 +382,9 @@ void DictionaryBlockInputStream<DictionaryType, Key>::fillKeyColumns(
             break;
         case AttributeUnderlyingType::UInt64:
             ADD_COLUMN(UInt64);
+            break;
+        case AttributeUnderlyingType::UInt128:
+            ADD_COLUMN(UInt128);
             break;
         case AttributeUnderlyingType::Int8:
             ADD_COLUMN(Int8);

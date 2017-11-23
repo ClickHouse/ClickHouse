@@ -67,6 +67,7 @@ public:
     DECLARE_MULTIPLE_GETTER(UInt16)
     DECLARE_MULTIPLE_GETTER(UInt32)
     DECLARE_MULTIPLE_GETTER(UInt64)
+    DECLARE_MULTIPLE_GETTER(UInt128)
     DECLARE_MULTIPLE_GETTER(Int8)
     DECLARE_MULTIPLE_GETTER(Int16)
     DECLARE_MULTIPLE_GETTER(Int32)
@@ -120,10 +121,12 @@ private:
     public:
         AttributeUnderlyingType type;
         std::tuple<UInt8, UInt16, UInt32, UInt64,
+                   UInt128,
                    Int8, Int16, Int32, Int64,
                    Float32, Float64,
                    String> null_values;
         std::tuple<Ptr<UInt8>, Ptr<UInt16>, Ptr<UInt32>, Ptr<UInt64>,
+                   Ptr<UInt128>,
                    Ptr<Int8>, Ptr<Int16>, Ptr<Int32>, Ptr<Int64>,
                    Ptr<Float32>, Ptr<Float64>, Ptr<StringRef>> maps;
         std::unique_ptr<Arena> string_arena;

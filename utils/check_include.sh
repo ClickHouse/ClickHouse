@@ -15,8 +15,8 @@ inc="-I. \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \
 -I./contrib/libtcmalloc/include \
--I./build/contrib/libzlib-ng \
--I./contrib/libzlib-ng \
+-I./build/contrib/zlib-ng \
+-I./contrib/zlib-ng \
 -I./contrib/poco/MongoDB/include \
 -I./contrib/poco/XML/include \
 -I./contrib/poco/Crypto/include \
