@@ -205,6 +205,7 @@ private:
     friend class ReplicatedMergeTreeRestartingThread;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
+    friend class ReplicatedMergeTreeQueue;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;

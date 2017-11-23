@@ -188,7 +188,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         settings_, database_name_ + "." + table_name, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); },
         [this] () { clearOldPartsAndRemoveFromZK(); }),
-    reader(data), writer(data), merger(data, context.getBackgroundPool()), queue(data.format_version),
+    reader(data), writer(data), merger(data, context.getBackgroundPool()), queue(*this),
     fetcher(data),
     shutdown_event(false), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
