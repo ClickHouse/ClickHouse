@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -11,6 +13,7 @@ namespace DB
 
 
 class MergeTreeDataMerger;
+class StorageReplicatedMergeTree;
 
 
 class ReplicatedMergeTreeQueue
@@ -38,7 +41,7 @@ private:
     using InsertsByTime = std::set<LogEntryPtr, ByTime>;
 
 
-    MergeTreeDataFormatVersion format_version;
+    const StorageReplicatedMergeTree & storage;
 
     String zookeeper_path;
     String replica_path;
@@ -124,11 +127,7 @@ private:
     };
 
 public:
-    ReplicatedMergeTreeQueue(MergeTreeDataFormatVersion format_version_)
-        : format_version(format_version_)
-        , virtual_parts(format_version)
-    {
-    }
+    ReplicatedMergeTreeQueue(const StorageReplicatedMergeTree & storage_);
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
