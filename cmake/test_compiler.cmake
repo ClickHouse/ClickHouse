@@ -1,9 +1,24 @@
 include (CheckCXXSourceCompiles)
 include (CMakePushCheckState)
 
+cmake_push_check_state ()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 # clang4 : -no-pie cause error
 # clang6 : -no-pie cause warning
+
+
+    set (TEST_FLAG "-lc++ -lc++abi")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
+
+    check_cxx_source_compiles("
+        #include <iostream>
+        int main() {
+            std::cerr << std::endl;
+            return 0;
+        }
+        " HAVE_LIBCPP)
+
 else ()
 
     cmake_push_check_state ()
@@ -21,6 +36,7 @@ else ()
         set (FLAG_NO_PIE ${TEST_FLAG})
     endif ()
 
-    cmake_pop_check_state ()
 
 endif ()
+
+cmake_pop_check_state ()
