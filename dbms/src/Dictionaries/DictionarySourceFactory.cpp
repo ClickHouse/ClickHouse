@@ -9,7 +9,7 @@
 #include <Dictionaries/LibraryDictionarySource.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/HTTPCommon.h>
 #include <memory>
