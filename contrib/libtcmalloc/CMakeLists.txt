@@ -39,6 +39,7 @@ add_library (tcmalloc_minimal_internal
 
 
 target_compile_options (tcmalloc_minimal_internal
+    PRIVATE
     -DNO_TCMALLOC_SAMPLES
     -DNDEBUG
     -DNO_FRAME_POINTER
