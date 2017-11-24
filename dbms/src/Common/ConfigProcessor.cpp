@@ -397,7 +397,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         }
         catch (Poco::Exception & e)
         {
-            throw Poco::Exception("Failed to merge config with " + merge_file + ": " + e.displayText());
+            throw Poco::Exception("Failed to merge config with '" + merge_file + "': " + e.displayText());
         }
     }
 
@@ -427,7 +427,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     }
     catch (Poco::Exception & e)
     {
-        throw Poco::Exception("Failed to preprocess config `" + path + "': " + e.displayText(), e);
+        throw Poco::Exception("Failed to preprocess config '" + path + "': " + e.displayText(), e);
     }
 
     if (has_zk_includes)
