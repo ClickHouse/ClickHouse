@@ -9,6 +9,9 @@ select gcd(255, 254);
 select gcd(2147483647, 2147483646);
 select gcd(4611686011984936962, 2147483647);
 select gcd(-2147483648, 1);
+select gcd(255, 515);
+select gcd(255, 510);
+select gcd(255, 512);
 -- test lcm
 select lcm(1280, 1024);
 select lcm(11, 121);
