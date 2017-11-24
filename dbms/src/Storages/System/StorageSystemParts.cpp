@@ -199,9 +199,9 @@ BlockInputStreams StorageSystemParts::read(
         MergeTreeData::DataPartStateVector all_parts_state;
         MergeTreeData::DataPartsVector all_parts;
         if (need[0])
-            all_parts = data->getDataPartsVector({State::Committed, State::Outdated}, all_parts_state);
+            all_parts = data->getDataPartsVector({State::Committed, State::Outdated}, &all_parts_state);
         else
-            all_parts = data->getDataPartsVector({State::Committed}, all_parts_state);
+            all_parts = data->getDataPartsVector({State::Committed}, &all_parts_state);
 
         /// Finally, we'll go through the list of parts.
         for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)

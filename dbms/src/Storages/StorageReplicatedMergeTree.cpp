@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int TOO_MUCH_FETCHES;
     extern const int BAD_DATA_PART_NAME;
+    extern const int PART_IS_TEMPORARILY_LOCKED;
 }
 
 
@@ -1620,6 +1621,11 @@ bool StorageReplicatedMergeTree::queueTask()
             {
                 /// Interrupted merge or downloading a part is not an error.
                 LOG_INFO(log, e.message());
+            }
+            else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
+            {
+                /// Part cannot be added temporarily
+                LOG_INFO(log, e.displayText());
             }
             else
                 tryLogCurrentException(__PRETTY_FUNCTION__);
