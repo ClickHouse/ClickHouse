@@ -8,7 +8,7 @@
 #include <Columns/ColumnSet.h>
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -1263,7 +1263,7 @@ struct IsFiniteImpl
                  & 0b0111111111110000000000000000000000000000000000000000000000000000)
                 != 0b0111111111110000000000000000000000000000000000000000000000000000;
         else
-            return false;
+            return true;
     }
 };
 
@@ -1500,7 +1500,7 @@ struct FunctionRunningDifferenceName<true>
 template <>
 struct FunctionRunningDifferenceName<false>
 {
-    static constexpr auto name = "runningIncome";
+    static constexpr auto name = "runningDifferenceStartingWithFirstValue";
 };
 
 /** Calculate difference of consecutive values in block.

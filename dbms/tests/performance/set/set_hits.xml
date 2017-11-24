@@ -2,6 +2,10 @@
     <name>set_lookup_hits</name>
     <type>once</type>
 
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
     <stop_conditions>
         <all_of>
             <total_time_ms>10000</total_time_ms>

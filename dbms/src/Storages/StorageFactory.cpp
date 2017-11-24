@@ -1,7 +1,7 @@
 #include <unistd.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeTuple.h>

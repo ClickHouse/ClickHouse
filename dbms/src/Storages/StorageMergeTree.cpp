@@ -1,5 +1,5 @@
-#include <experimental/optional>
-#include <Core/FieldVisitors.h>
+#include <optional>
+#include <Common/FieldVisitors.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
@@ -302,7 +302,7 @@ bool StorageMergeTree::merge(
     MergeTreeDataMerger::FuturePart future_part;
 
     /// You must call destructor with unlocked `currently_merging_mutex`.
-    std::experimental::optional<CurrentlyMergingPartsTagger> merging_tagger;
+    std::optional<CurrentlyMergingPartsTagger> merging_tagger;
 
     {
         std::lock_guard<std::mutex> lock(currently_merging_mutex);

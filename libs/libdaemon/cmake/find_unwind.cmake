@@ -25,7 +25,7 @@ if (NOT USE_INTERNAL_UNWIND_LIBRARY)
     int main () {
        ucontext_t context;
        unw_cursor_t cursor;
-       unw_init_local_signal(&cursor, &context);
+       unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME);
        return 0;
     }
     " HAVE_UNWIND_INIT_LOCAL_SIGNAL)

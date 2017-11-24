@@ -322,7 +322,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
             return on_error();
     }
 
-    if (*buf.position() == '0')                    /// There are many zeros in real datasets.
+    if (*buf.position() == '0') /// There are many zeros in real datasets.
     {
         ++buf.position();
         return;
@@ -330,7 +330,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        if ((*buf.position() & 0xF0) == 0x30)    /// It makes sense to have this condition inside loop.
+        if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
         {
             x *= 10;
             x += *buf.position() & 0x0F;
@@ -572,38 +572,51 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16);
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 
-/// In YYYY-MM-DD format
-inline void readDateText(DayNum_t & date, ReadBuffer & buf)
-{
-    char s[10];
-    size_t size = buf.read(s, 10);
-    if (10 != size)
-    {
-        s[size] = 0;
-        throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
-    }
 
-    UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-    UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
-    UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
+void readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 
-    date = DateLUT::instance().makeDayNum(year, month, day);
-}
-
+/// In YYYY-MM-DD format.
+/// For convenience, Month and Day parts can have single digit instead of two digits.
+/// Any separators other than '-' are supported.
 inline void readDateText(LocalDate & date, ReadBuffer & buf)
 {
-    char s[10];
-    size_t size = buf.read(s, 10);
-    if (10 != size)
+    /// Optimistic path, when whole value is in buffer.
+    if (buf.position() + 10 <= buf.buffer().end())
     {
-        s[size] = 0;
-        throw Exception(std::string("Cannot parse date ") + s, ErrorCodes::CANNOT_PARSE_DATE);
-    }
+        UInt16 year = (buf.position()[0] - '0') * 1000 + (buf.position()[1] - '0') * 100 + (buf.position()[2] - '0') * 10 + (buf.position()[3] - '0');
+        buf.position() += 5;
 
-    date.year((s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0'));
-    date.month((s[5] - '0') * 10 + (s[6] - '0'));
-    date.day((s[8] - '0') * 10 + (s[9] - '0'));
+        UInt8 month = buf.position()[0] - '0';
+        if (isNumericASCII(buf.position()[1]))
+        {
+            month = month * 10 + buf.position()[1] - '0';
+            buf.position() += 3;
+        }
+        else
+            buf.position() += 2;
+
+        UInt8 day = buf.position()[0] - '0';
+        if (isNumericASCII(buf.position()[1]))
+        {
+            day = day * 10 + buf.position()[1] - '0';
+            buf.position() += 2;
+        }
+        else
+            buf.position() += 1;
+
+        date = LocalDate(year, month, day);
+    }
+    else
+        readDateTextFallback(date, buf);
 }
+
+inline void readDateText(DayNum_t & date, ReadBuffer & buf)
+{
+    LocalDate local_date;
+    readDateText(local_date, buf);
+    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
+}
+
 
 inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
 {
@@ -637,9 +650,9 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
       * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
       */
 
-    /// Optimistic path, when whole value are in buffer.
+    /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
-    if (s + 19 < buf.buffer().end())
+    if (s + 19 <= buf.buffer().end())
     {
         if (s[4] < '0' || s[4] > '9')
         {

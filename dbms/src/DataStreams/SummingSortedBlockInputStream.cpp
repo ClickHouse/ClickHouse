@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/StringUtils.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -36,7 +36,7 @@ String SummingSortedBlockInputStream::getID() const
 }
 
 
-void SummingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_columns)
+void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(ColumnPlainPtrs & merged_columns, bool force_insertion)
 {
     for (auto & desc : columns_to_aggregate)
     {
@@ -46,6 +46,19 @@ void SummingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_co
             try
             {
                 desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
+
+                /// Update zero status of current row
+                if (desc.column_numbers.size() == 1)
+                {
+                    // Flag row as non-empty if at least one column number if non-zero
+                    current_row_is_zero = current_row_is_zero && desc.merged_column->get64(desc.merged_column->size() - 1) == 0;
+                }
+                else
+                {
+                    /// It is sumMap aggregate function.
+                    /// Assume that the row isn't empty in this case (just because it is compatible with previous version)
+                    current_row_is_zero = false;
+                }
             }
             catch (...)
             {
@@ -60,8 +73,22 @@ void SummingSortedBlockInputStream::insertCurrentRow(ColumnPlainPtrs & merged_co
             desc.merged_column->insertDefault();
     }
 
+    /// If it is "zero" row and it is not the last row of the result block, then
+    ///  rollback the insertion (at this moment we need rollback only cols from columns_to_aggregate)
+    if (!force_insertion && current_row_is_zero)
+    {
+        for (auto & desc : columns_to_aggregate)
+            desc.merged_column->popBack(1);
+
+        return;
+    }
+
     for (auto i : column_numbers_not_to_aggregate)
         merged_columns[i]->insert(current_row[i]);
+
+    /// Update per-block and per-group flags
+    ++merged_rows;
+    output_is_non_empty = true;
 }
 
 
@@ -155,6 +182,7 @@ Block SummingSortedBlockInputStream::readImpl()
                     desc.column_numbers = {i};
                     desc.function = factory.get("sumWithOverflow", {column.type});
                     desc.function->setArguments({column.type});
+                    desc.add_function = desc.function->getAddressOfAddFunction();
                     desc.state.resize(desc.function->sizeOfData());
                     columns_to_aggregate.emplace_back(std::move(desc));
                 }
@@ -237,6 +265,7 @@ Block SummingSortedBlockInputStream::readImpl()
                 // Create summation for all value columns in the map
                 desc.function = factory.get("sumMap", argument_types);
                 desc.function->setArguments(argument_types);
+                desc.add_function = desc.function->getAddressOfAddFunction();
                 desc.state.resize(desc.function->sizeOfData());
                 columns_to_aggregate.emplace_back(std::move(desc));
             }
@@ -279,7 +308,7 @@ Block SummingSortedBlockInputStream::readImpl()
 template <typename TSortCursor>
 void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
-    size_t merged_rows = 0;
+    merged_rows = 0;
 
     /// Take the rows in needed order and put them in `merged_block` until rows no more than `max_block_size`
     while (!queue.empty())
@@ -308,12 +337,7 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
         if (key_differs)
         {
             /// Write the data for the previous group.
-            if (!current_row_is_zero)
-            {
-                ++merged_rows;
-                output_is_non_empty = true;
-                insertCurrentRow(merged_columns);
-            }
+            insertCurrentRowIfNeeded(merged_columns, false);
 
             current_key.swap(next_key);
 
@@ -327,11 +351,12 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
             }
 
             // Start aggregations with current row
-            current_row_is_zero = !addRow(current_row, current);
+            addRow(current_row, current);
+            current_row_is_zero = true;
         }
         else
         {
-            current_row_is_zero = !addRow(current_row, current);
+            addRow(current_row, current);
 
             // Merge maps only for same rows
             for (auto & desc : maps_to_sum)
@@ -355,12 +380,7 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
 
     /// We will write the data for the last group, if it is non-zero.
     /// If it is zero, and without it the output stream will be empty, we will write it anyway.
-    if (!current_row_is_zero || !output_is_non_empty)
-    {
-        ++merged_rows;  /// Dead store (result is unused). Left for clarity.
-        insertCurrentRow(merged_columns);
-    }
-
+    insertCurrentRowIfNeeded(merged_columns, !output_is_non_empty);
     finished = true;
 }
 
@@ -449,38 +469,29 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 
 
 template <typename TSortCursor>
-bool SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
+void SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
 {
-    bool res = false;
     for (auto & desc : columns_to_aggregate)
     {
-        if (desc.created)
-        {
-            // Specialized case for unary functions
-            if (desc.column_numbers.size() == 1)
-            {
-                auto & col = cursor->all_columns[desc.column_numbers[0]];
-                desc.function->add(desc.state.data(), &col, cursor->pos, nullptr);
-                // Flag row as non-empty if at least one column number if non-zero
-                // Note: This defers compaction of signed type rows that sum to zero by one merge
-                if (!res)
-                    res = col->get64(cursor->pos) != 0;
-            }
-            else
-            {
-                // Gather all source columns into a vector
-                ConstColumnPlainPtrs columns(desc.column_numbers.size());
-                for (size_t i = 0; i < desc.column_numbers.size(); ++i)
-                    columns[i] = cursor->all_columns[desc.column_numbers[i]];
+        if (!desc.created)
+            throw Exception("Logical error in SummingSortedBlockInputStream, there are no description", ErrorCodes::LOGICAL_ERROR);
 
-                desc.function->add(desc.state.data(), columns.data(), cursor->pos, nullptr);
-                // Note: we can't detect whether the aggregation result is non-empty here yet
-                res = true;
-            }
+        // Specialized case for unary functions
+        if (desc.column_numbers.size() == 1)
+        {
+            auto & col = cursor->all_columns[desc.column_numbers[0]];
+            desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->pos, nullptr);
+        }
+        else
+        {
+            // Gather all source columns into a vector
+            ConstColumnPlainPtrs columns(desc.column_numbers.size());
+            for (size_t i = 0; i < desc.column_numbers.size(); ++i)
+                columns[i] = cursor->all_columns[desc.column_numbers[i]];
+
+            desc.add_function(desc.function.get(),desc.state.data(), columns.data(), cursor->pos, nullptr);
         }
     }
-
-    return res;
 }
 
 }

@@ -2,6 +2,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 

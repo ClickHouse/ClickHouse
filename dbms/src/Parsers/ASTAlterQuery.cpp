@@ -18,9 +18,6 @@ void ASTAlterQuery::Parameters::clone(Parameters & p) const
     if (col_decl)           p.col_decl = col_decl->clone();
     if (column)             p.column = column->clone();
     if (partition)          p.partition = partition->clone();
-    if (weighted_zookeeper_paths) p.weighted_zookeeper_paths = weighted_zookeeper_paths->clone();
-    if (sharding_key_expr)  p.sharding_key_expr = sharding_key_expr->clone();
-    if (coordinator)        p.coordinator = coordinator->clone();
 }
 
 void ASTAlterQuery::addParameters(const Parameters & params)
@@ -32,12 +29,6 @@ void ASTAlterQuery::addParameters(const Parameters & params)
         children.push_back(params.column);
     if (params.partition)
         children.push_back(params.partition);
-    if (params.weighted_zookeeper_paths)
-        children.push_back(params.weighted_zookeeper_paths);
-    if (params.sharding_key_expr)
-        children.push_back(params.sharding_key_expr);
-    if (params.coordinator)
-        children.push_back(params.coordinator);
     if (params.primary_key)
         children.push_back(params.primary_key);
 }
@@ -161,45 +152,6 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
             {
                 settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
                     << " " << std::quoted(p.with_name, '\'');
-            }
-        }
-        else if (p.type == ASTAlterQuery::RESHARD_PARTITION)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RESHARD ";
-
-            if (p.do_copy)
-                settings.ostr << "COPY ";
-
-            if (p.partition)
-                settings.ostr << "PARTITION ";
-
-            settings.ostr << (settings.hilite ? hilite_none : "");
-
-            if (p.partition)
-                p.partition->formatImpl(settings, state, frame);
-
-            std::string ws = p.partition ? " " : "";
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << ws
-                << "TO " << (settings.hilite ? hilite_none : "");
-
-            FormatStateStacked frame_with_indent = frame;
-            ++frame_with_indent.indent;
-            p.weighted_zookeeper_paths->formatImpl(settings, state, frame_with_indent);
-
-            settings.ostr << settings.nl_or_ws;
-
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                << "USING " << (settings.hilite ? hilite_none : "");
-
-            p.sharding_key_expr->formatImpl(settings, state, frame);
-
-            if (p.coordinator)
-            {
-                settings.ostr << settings.nl_or_ws;
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                    << "COORDINATE WITH " << (settings.hilite ? hilite_none : "");
-
-                p.coordinator->formatImpl(settings, state, frame);
             }
         }
         else

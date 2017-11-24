@@ -3,7 +3,7 @@
 Функции для работы с внешними словарями
 =======================================
 
-Информация о подключении и настройке внешних словарей смотрите в разделе "[Внешние словари](../../dicts/external_dicts.html#dicts-external_dicts)".
+Информация о подключении и настройке внешних словарей смотрите в разделе "[Внешние словари](../dicts/external_dicts.md#dicts-external_dicts)".
 
 ### dictGetUInt8, dictGetUInt16, dictGetUInt32, dictGetUInt64
 
@@ -12,6 +12,8 @@
 ### dictGetFloat32, dictGetFloat64
 
 ### dictGetDate, dictGetDateTime
+
+### dictGetUUID
 
 ### dictGetString
 `dictGetT('dict_name', 'attr_name', id)`

@@ -305,13 +305,13 @@ public:
         if (!pos || pos > end)
             return false;
 
-        if (!re->match(pos, end - pos, matches) || !matches[capture].length)
+        if (!re->match(pos, end - pos, matches) || !matches[0].length)
             return false;
 
         token_begin = pos + matches[capture].offset;
         token_end = token_begin + matches[capture].length;
 
-        pos += matches[capture].offset + matches[capture].length;
+        pos += matches[0].offset + matches[0].length;
 
         return true;
     }

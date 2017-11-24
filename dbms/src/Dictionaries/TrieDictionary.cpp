@@ -82,6 +82,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -130,6 +131,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -176,6 +178,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -213,6 +216,7 @@ void TrieDictionary::has(const Columns & key_columns, const DataTypes & key_type
         case AttributeUnderlyingType::UInt16: has<UInt16>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::UInt32: has<UInt32>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::UInt64: has<UInt64>(attribute, key_columns, out); break;
+        case AttributeUnderlyingType::UInt128: has<UInt128>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Int8: has<Int8>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Int16: has<Int16>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Int32: has<Int32>(attribute, key_columns, out); break;
@@ -311,6 +315,7 @@ void TrieDictionary::calculateBytesAllocated()
             case AttributeUnderlyingType::UInt16: addAttributeSize<UInt16>(attribute); break;
             case AttributeUnderlyingType::UInt32: addAttributeSize<UInt32>(attribute); break;
             case AttributeUnderlyingType::UInt64: addAttributeSize<UInt64>(attribute); break;
+            case AttributeUnderlyingType::UInt128: addAttributeSize<UInt128>(attribute); break;
             case AttributeUnderlyingType::Int8: addAttributeSize<Int8>(attribute); break;
             case AttributeUnderlyingType::Int16: addAttributeSize<Int16>(attribute); break;
             case AttributeUnderlyingType::Int32: addAttributeSize<Int32>(attribute); break;
@@ -363,6 +368,7 @@ TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const Attribut
         case AttributeUnderlyingType::UInt16: createAttributeImpl<UInt16>(attr, null_value); break;
         case AttributeUnderlyingType::UInt32: createAttributeImpl<UInt32>(attr, null_value); break;
         case AttributeUnderlyingType::UInt64: createAttributeImpl<UInt64>(attr, null_value); break;
+        case AttributeUnderlyingType::UInt128: createAttributeImpl<UInt128>(attr, null_value); break;
         case AttributeUnderlyingType::Int8: createAttributeImpl<Int8>(attr, null_value); break;
         case AttributeUnderlyingType::Int16: createAttributeImpl<Int16>(attr, null_value); break;
         case AttributeUnderlyingType::Int32: createAttributeImpl<Int32>(attr, null_value); break;
@@ -397,6 +403,7 @@ void TrieDictionary::getItemsNumber(
     DISPATCH(UInt16)
     DISPATCH(UInt32)
     DISPATCH(UInt64)
+    DISPATCH(UInt128)
     DISPATCH(Int8)
     DISPATCH(Int16)
     DISPATCH(Int32)
@@ -425,7 +432,7 @@ void TrieDictionary::getItemsImpl(
         {
             auto addr = Int32(first_column->get64(i));
             uintptr_t slot = btrie_find(trie, addr);
-            set_value(i, slot != BTRIE_NULL ? vec[slot] : get_default(i));
+            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
         }
     }
     else
@@ -437,7 +444,7 @@ void TrieDictionary::getItemsImpl(
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
             uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const UInt8*>(addr.data));
-            set_value(i, slot != BTRIE_NULL ? vec[slot] : get_default(i));
+            set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
         }
     }
 
@@ -496,6 +503,7 @@ bool TrieDictionary::setAttributeValue(Attribute & attribute, const StringRef ke
         case AttributeUnderlyingType::UInt16: return setAttributeValueImpl<UInt16>(attribute, key, value.get<UInt64>());
         case AttributeUnderlyingType::UInt32: return setAttributeValueImpl<UInt32>(attribute, key, value.get<UInt64>());
         case AttributeUnderlyingType::UInt64: return setAttributeValueImpl<UInt64>(attribute, key, value.get<UInt64>());
+        case AttributeUnderlyingType::UInt128: return setAttributeValueImpl<UInt128>(attribute, key, value.get<UInt128>());
         case AttributeUnderlyingType::Int8: return setAttributeValueImpl<Int8>(attribute, key, value.get<Int64>());
         case AttributeUnderlyingType::Int16: return setAttributeValueImpl<Int16>(attribute, key, value.get<Int64>());
         case AttributeUnderlyingType::Int32: return setAttributeValueImpl<Int32>(attribute, key, value.get<Int64>());
