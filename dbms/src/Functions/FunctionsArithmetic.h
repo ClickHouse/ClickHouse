@@ -210,9 +210,9 @@ struct ModuloImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
         return typename NumberTraits::ToInteger<A>::Type(a)
-            % typename NumberTraits::ToInteger<A>::Type(b);
+            % typename NumberTraits::ToInteger<B>::Type(b);
     }
 };
 
@@ -434,7 +434,7 @@ struct AbsImpl
 template <typename A, typename B>
 struct GCDImpl
 {
-    using ResultType = typename NumberTraits::ResultOfIntegerDivision<A, B>::Type;
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
