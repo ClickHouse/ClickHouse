@@ -207,6 +207,16 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
     }
 }
 
+void InterpreterSelectQuery::initQueryAnalyzer()
+{
+    query_analyzer.reset(
+        new ExpressionAnalyzer(query_ptr, context, storage, table_column_names, subquery_depth, !only_analyze));
+
+    for (auto p = next_select_in_union_all.get(); p != nullptr; p = p->next_select_in_union_all.get())
+        p->query_analyzer.reset(
+            new ExpressionAnalyzer(p->query_ptr, p->context, p->storage, p->table_column_names, p->subquery_depth, !only_analyze));
+}
+
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_, BlockInputStreamPtr input)
     : query_ptr(query_ptr_)
