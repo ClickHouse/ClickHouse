@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Progress.h>
+#include <IO/Progress.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <DataStreams/IRowOutputStream.h>

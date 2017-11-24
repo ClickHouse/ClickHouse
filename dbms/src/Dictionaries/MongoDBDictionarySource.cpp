@@ -14,7 +14,7 @@
 // dbms/src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <ext/enumerate.h>
 
 

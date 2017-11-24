@@ -16,7 +16,7 @@
 #include <Common/memcpySmall.h>
 #include <ext/range.h>
 #include <Core/TypeListNumber.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <DataTypes/DataTypeTraits.h>
 
