@@ -546,7 +546,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
         res = spreadMarkRangesAmongStreamsFinal(
-            parts_with_ranges,
+            std::move(parts_with_ranges),
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
@@ -559,7 +559,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     else
     {
         res = spreadMarkRangesAmongStreams(
-            parts_with_ranges,
+            std::move(parts_with_ranges),
             num_streams,
             column_names_to_read,
             max_block_size,
@@ -585,7 +585,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
-    RangesInDataParts parts,
+    RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
     size_t max_block_size,
@@ -727,7 +727,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 }
 
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts parts,
+    RangesInDataParts && parts,
     const Names & column_names,
     size_t max_block_size,
     bool use_uncompressed_cache,
