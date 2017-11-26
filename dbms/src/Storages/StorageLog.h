@@ -14,18 +14,6 @@
 namespace DB
 {
 
-/** Offsets to some row number in a file for column in table.
-  * They are needed so that you can read the data in several threads.
-  */
-struct Mark
-{
-    size_t rows;    /// How many rows are before this offset.
-    size_t offset;  /// The offset in compressed file.
-};
-
-using Marks = std::vector<Mark>;
-
-
 /** Implements simple table engine without support of indices.
   * The data is stored in a compressed form.
   */
@@ -52,18 +40,6 @@ public:
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
-    /// Column data
-    struct ColumnData
-    {
-        /// Specifies the column number in the marks file.
-        /// Does not necessarily match the column number among the columns of the table: columns with lengths of arrays are also numbered here.
-        size_t column_index;
-
-        Poco::File data_file;
-        Marks marks;
-    };
-    using Files_t = std::map<String, ColumnData>;
-
     bool checkData() const override;
 
 protected:
@@ -86,6 +62,29 @@ private:
     NamesAndTypesListPtr columns;
 
     mutable std::shared_mutex rwlock;
+
+    /** Offsets to some row number in a file for column in table.
+      * They are needed so that you can read the data in several threads.
+      */
+    struct Mark
+    {
+        size_t rows;    /// How many rows are before this offset.
+        size_t offset;  /// The offset in compressed file.
+    };
+
+    using Marks = std::vector<Mark>;
+
+    /// Column data
+    struct ColumnData
+    {
+        /// Specifies the column number in the marks file.
+        /// Does not necessarily match the column number among the columns of the table: columns with lengths of arrays are also numbered here.
+        size_t column_index;
+
+        Poco::File data_file;
+        Marks marks;
+    };
+    using Files_t = std::map<String, ColumnData>;
 
     Files_t files; /// name -> data
 
@@ -118,7 +117,7 @@ private:
 
     /** For normal columns, the number of rows in the block is specified in the marks.
       * For array columns and nested structures, there are more than one group of marks that correspond to different files
-      *  - for insides (file name.bin) - the total number of array elements in the block is specified,
+      *  - for elements (file name.bin) - the total number of array elements in the block is specified,
       *  - for array sizes (file name.size0.bin) - the number of rows (the whole arrays themselves) in the block is specified.
       *
       * Return the first group of marks that contain the number of rows, but not the internals of the arrays.
