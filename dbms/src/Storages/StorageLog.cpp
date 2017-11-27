@@ -398,7 +398,7 @@ StorageLog::StorageLog(
     size_t max_compress_block_size_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
     path(path_), name(name_), columns(columns_),
-    loaded_marks(false), max_compress_block_size(max_compress_block_size_),
+    max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json")
 {
     if (columns->empty())
