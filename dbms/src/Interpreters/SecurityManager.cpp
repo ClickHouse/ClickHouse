@@ -1,4 +1,4 @@
-#include "SecurityManager.h"
+#include <Interpreters/SecurityManager.h>
 
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Util/AbstractConfiguration.h>
