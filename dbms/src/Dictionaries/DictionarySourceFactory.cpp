@@ -191,7 +191,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
         const auto found = registered_sources.find(source_type);
         if (found != registered_sources.end())
         {
-            const auto& create_source = found->second;
+            const auto & create_source = found->second;
             return create_source(dict_struct, config, config_prefix, sample_block, context);
         }
     }
