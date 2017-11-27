@@ -1,5 +1,9 @@
 #include <Common/escapeForFileName.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 #include <gtest/gtest.h>
+#pragma GCC diagnostic pop
 
 using namespace DB;
 

@@ -3,7 +3,7 @@
 #include <sstream>
 
 #include <Core/Field.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <Common/Stopwatch.h>
 #include <DataStreams/TabSeparatedRowOutputStream.h>

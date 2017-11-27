@@ -1,18 +1,17 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 #include <gtest/gtest.h>
+#pragma GCC diagnostic pop
 
 #include <stdexcept>
-
 #include <Poco/File.h>
-
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
-
 #include <Common/typeid_cast.h>
 
 using namespace DB;

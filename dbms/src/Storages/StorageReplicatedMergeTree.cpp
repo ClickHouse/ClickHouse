@@ -1,7 +1,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/KeeperException.h>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
