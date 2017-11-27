@@ -157,11 +157,12 @@ target_link_libraries (clickhouse_common_io
     ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
+    ${PLATFORM_LIBS}
 )
 
 target_link_libraries (dbms
-    clickhouse_common_io
     clickhouse_parsers
+    clickhouse_common_io
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}
     ${METROHASH_LIBRARIES}
@@ -197,9 +198,8 @@ if (USE_CAPNP)
 endif ()
 
 target_link_libraries (dbms
-    ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
