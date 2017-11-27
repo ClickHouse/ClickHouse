@@ -278,8 +278,9 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
         const auto last_modified = config_file.getLastModified();
         if (force_reload || last_modified > config_last_modified)
         {
-            ConfigProcessor config_processor = ConfigProcessor();
-            ConfigProcessor::LoadedConfig cfg = config_processor.loadConfig(config_path);
+            ConfigProcessor config_processor = ConfigProcessor(config_path);
+            ConfigProcessor::LoadedConfig cfg = config_processor.loadConfig();
+            config_processor.savePreprocessedConfig(cfg);
             
             Poco::AutoPtr<Poco::Util::AbstractConfiguration> config = cfg.configuration;
 
