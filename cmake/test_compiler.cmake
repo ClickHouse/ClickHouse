@@ -17,7 +17,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
             std::cerr << std::endl;
             return 0;
         }
-        " HAVE_LIBCPP)
+        " HAVE_LIBCXX)
 
 else ()
 
