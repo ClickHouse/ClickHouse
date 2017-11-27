@@ -21,7 +21,7 @@ public:
         const String & password,
         const Poco::Net::IPAddress & address) const override;
 
-    const User & getUser(const String & user_name) override;
+    const User & getUser(const String & user_name) const override;
 
     bool hasAccessToDatabase(const String & user_name, const String & database_name) const override;
 };
