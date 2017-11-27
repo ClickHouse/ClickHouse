@@ -247,10 +247,10 @@ try
     /// Load config files if exists
     if (config().has("config-file") || Poco::File("config.xml").exists())
     {
-        ConfigurationPtr processed_config = ConfigProcessor(false, true)
-            .loadConfig(config().getString("config-file", "config.xml"))
-            .configuration;
-        config().add(processed_config.duplicate(), PRIO_DEFAULT, false);
+        ConfigProcessor config_processor(config().getString("config-file", "config.xml"), false, true);
+        auto loaded_config = config_processor.loadConfig();
+        config_processor.savePreprocessedConfig(loaded_config);
+        config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
     context = std::make_unique<Context>(Context::createGlobal());
@@ -452,8 +452,11 @@ void LocalServer::setupUsers()
 
     if (config().has("users_config") || config().has("config-file") || Poco::File("config.xml").exists())
     {
-        auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
-        users_config = ConfigProcessor().loadConfig(users_config_path).configuration;
+        const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
+        ConfigProcessor config_processor(users_config_path);
+        const auto loaded_config = config_processor.loadConfig();
+        config_processor.savePreprocessedConfig(loaded_config);
+        users_config = loaded_config.configuration;
     }
     else
     {

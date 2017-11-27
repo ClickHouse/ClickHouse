@@ -176,7 +176,7 @@ private:
         MarksForColumns & out_marks,
         WrittenStreams & written_streams);
 
-    void writeMarks(MarksForColumns marks);
+    void writeMarks(MarksForColumns && marks);
 };
 
 
@@ -267,10 +267,13 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 {
     IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-       if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
+        if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
             return nullptr;
 
         String stream_name = IDataType::getFileNameForStream(name, path);
+
+        std::cerr << "Stream: " << stream_name << "\n";
+        std::cerr << "Offset: " << storage.files[stream_name].marks[mark_number].offset << "\n";
 
         auto it = streams.try_emplace(stream_name,
             storage.files[stream_name].data_file.path(),
@@ -302,7 +305,7 @@ void LogBlockOutputStream::write(const Block & block)
         writeData(column.name, *column.type, *column.column, marks, written_streams);
     }
 
-    writeMarks(marks);
+    writeMarks(std::move(marks));
 }
 
 
@@ -371,7 +374,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 }
 
 
-void LogBlockOutputStream::writeMarks(MarksForColumns marks)
+void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 {
     if (marks.size() != storage.file_count)
         throw Exception("Wrong number of marks generated from block. Makes no sense.", ErrorCodes::LOGICAL_ERROR);
@@ -558,32 +561,6 @@ BlockInputStreams StorageLog::read(
     const Marks & marks = getMarksWithRealRowCount();
     size_t marks_size = marks.size();
 
-    /// Given a stream_num, return the start of the area from which
-    /// it can read data, i.e. a mark number.
-    auto mark_from_stream_num = [&](size_t stream_num)
-    {
-        /// The computation below reflects the fact that marks
-        /// are uniformly distributed among streams.
-        return stream_num * marks_size / num_streams;
-    };
-
-    /// Given a stream_num, get the parameters that specify the area
-    /// from which it can read data, i.e. a mark number and a
-    /// maximum number of rows.
-    auto get_reader_parameters = [&](size_t stream_num)
-    {
-        size_t mark_number = mark_from_stream_num(stream_num);
-
-        size_t cur_total_row_count = stream_num == 0
-            ? 0
-            : marks[mark_number - 1].rows;
-
-        size_t next_total_row_count = marks[mark_from_stream_num(stream_num + 1) - 1].rows;
-        size_t rows_limit = next_total_row_count - cur_total_row_count;
-
-        return std::make_pair(mark_number, rows_limit);
-    };
-
     if (num_streams > marks_size)
         num_streams = marks_size;
 
@@ -591,16 +568,20 @@ BlockInputStreams StorageLog::read(
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        size_t mark_number;
-        size_t rows_limit;
-        std::tie(mark_number, rows_limit) = get_reader_parameters(stream);
+        size_t mark_begin = stream * marks_size / num_streams;
+        size_t mark_end = (stream + 1) * marks_size / num_streams;
 
-        res.push_back(std::make_shared<LogBlockInputStream>(
+        size_t rows_begin = mark_begin ? marks[mark_begin - 1].rows : 0;
+        size_t rows_end = mark_end ? marks[mark_end - 1].rows : 0;
+
+        std::cerr << mark_begin << ", " << mark_end << ", " << rows_begin << ", " << rows_end << "\n";
+
+        res.emplace_back(std::make_shared<LogBlockInputStream>(
             max_block_size,
             column_names,
             *this,
-            mark_number,
-            rows_limit,
+            mark_begin,
+            rows_end - rows_begin,
             max_read_buffer_size));
     }
 
