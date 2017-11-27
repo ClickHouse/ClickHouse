@@ -41,8 +41,8 @@ public:
         const DictionaryStructure & dict_struct, Context & context) const;
 
 private:
-    using TSourceRegistry = std::unordered_map<std::string, Creator>;
-    TSourceRegistry registered_sources;
+    using SourceRegistry = std::unordered_map<std::string, Creator>;
+    SourceRegistry registered_sources;
 
     Poco::Logger * log;
 };
