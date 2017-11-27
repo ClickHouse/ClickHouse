@@ -53,8 +53,12 @@ BlockInputStreams StorageSystemParts::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    check(column_names);
+    //check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
+
+    static const String state_column_name = "_state";
+    auto it_state_column = std::find(column_names.begin(), column_names.end(), state_column_name);
+    bool has_state_column = it_state_column != column_names.end();
 
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
@@ -142,6 +146,8 @@ BlockInputStreams StorageSystemParts::read(
     /// Finally, create the result.
 
     Block block = getSampleBlock();
+    if (has_state_column)
+        block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), state_column_name));
 
     for (size_t i = 0; i < filtered_database_column->size();)
     {
@@ -198,10 +204,19 @@ BlockInputStreams StorageSystemParts::read(
         using State = MergeTreeDataPart::State;
         MergeTreeData::DataPartStateVector all_parts_state;
         MergeTreeData::DataPartsVector all_parts;
-        if (need[0])
-            all_parts = data->getDataPartsVector({State::Committed, State::Outdated}, &all_parts_state);
+
+        if (!has_state_column)
+        {
+            if (need[0])
+                all_parts = data->getDataPartsVector({State::Committed, State::Outdated}, &all_parts_state);
+            else
+                all_parts = data->getDataPartsVector({State::Committed}, &all_parts_state);
+        }
         else
-            all_parts = data->getDataPartsVector({State::Committed}, &all_parts_state);
+        {
+            all_parts = data->getDataPartsVector({State::Temporary, State::PreCommitted, State::Committed, State::Outdated, State::Deleting}, &all_parts_state);
+        }
+
 
         /// Finally, we'll go through the list of parts.
         for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
@@ -248,6 +263,9 @@ BlockInputStreams StorageSystemParts::read(
             block.getByPosition(i++).column->insert(database);
             block.getByPosition(i++).column->insert(table);
             block.getByPosition(i++).column->insert(engine);
+
+            if (has_state_column)
+                block.getByPosition(i++).column->insert(part->stateString());
         }
     }
 

@@ -549,17 +549,29 @@ private:
     struct TagByName{};
     struct TagByStateAndName{};
 
-    static const MergeTreePartInfo & getDataPartInfo(const DataPartPtr & part)
+    static const MergeTreePartInfo & dataPartPtrToInfo(const DataPartPtr & part)
     {
         return part->info;
     }
 
-    /// Auxilary structure for index comparison, keep in mind lifetime of MergeTreePartInfo
-    using DataPartStateAndInfo = std::pair<size_t, const MergeTreePartInfo &>;
-
-    static DataPartStateAndInfo getDataPartStateAndInfo(const DataPartPtr & part)
+    /// Auxiliary structure for index comparison, keep in mind lifetime of MergeTreePartInfo
+    struct DataPartStateAndInfo
     {
-        return {static_cast<size_t>(part->state), part->info};
+        DataPartStateAndInfo(DataPartState state, const MergeTreePartInfo & info) : state(state), info(info) {}
+
+        DataPartState state;
+        const MergeTreePartInfo & info;
+
+        bool operator < (const DataPartStateAndInfo & rhs) const
+        {
+            return std::forward_as_tuple(static_cast<size_t>(state), info)
+                   < std::forward_as_tuple(static_cast<size_t>(rhs.state), rhs.info);
+        }
+    };
+
+    static DataPartStateAndInfo dataPartPtrToStateAndInfo(const DataPartPtr & part)
+    {
+        return {part->state, part->info};
     };
 
     using DataPartsIndexes = boost::multi_index_container<DataPartPtr,
@@ -567,12 +579,12 @@ private:
             /// Index by Name
             boost::multi_index::ordered_unique<
                 boost::multi_index::tag<TagByName>,
-                boost::multi_index::global_fun<const DataPartPtr &, const MergeTreePartInfo &, getDataPartInfo>
+                boost::multi_index::global_fun<const DataPartPtr &, const MergeTreePartInfo &, dataPartPtrToInfo>
             >,
             /// Index by (State, Name)
             boost::multi_index::ordered_unique<
                 boost::multi_index::tag<TagByStateAndName>,
-                boost::multi_index::global_fun<const DataPartPtr &, DataPartStateAndInfo, getDataPartStateAndInfo>
+                boost::multi_index::global_fun<const DataPartPtr &, DataPartStateAndInfo, dataPartPtrToStateAndInfo>
             >
         >
     >;
@@ -590,12 +602,12 @@ private:
     {
         bool operator() (DataPartStateAndInfo info, const DataPartState & state) const
         {
-            return info.first < static_cast<size_t>(state);
+            return static_cast<size_t>(info.state) < static_cast<size_t>(state);
         }
 
         bool operator() (const DataPartState & state, DataPartStateAndInfo info) const
         {
-            return static_cast<size_t>(state) < info.first;
+            return static_cast<size_t>(state) < static_cast<size_t>(info.state);
         }
     };
 
@@ -612,24 +624,31 @@ private:
         return [state] (const DataPartPtr & part) { part->state = state; };
     }
 
-    bool modifyPartState(DataPartIteratorByStateAndName it, DataPartState state)
+public:
+
+    void modifyPartState(DataPartIteratorByStateAndName it, DataPartState state)
     {
-        return data_parts_by_state_and_name.modify(it, getStateModifier(state));
+        if (!data_parts_by_state_and_name.modify(it, getStateModifier(state)))
+            throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
     }
 
-    bool modifyPartState(DataPartIteratorByAndName it, DataPartState state)
+    void modifyPartState(DataPartIteratorByAndName it, DataPartState state)
     {
-        return data_parts_by_state_and_name.modify(data_parts_indexes.project<TagByStateAndName>(it), getStateModifier(state));
+        if (!data_parts_by_state_and_name.modify(data_parts_indexes.project<TagByStateAndName>(it), getStateModifier(state)))
+            throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
     }
 
-    bool modifyPartState(const DataPartPtr & part, DataPartState state)
+    void modifyPartState(const DataPartPtr & part, DataPartState state)
     {
         auto it = data_parts_by_name.find(part->info);
         if (it == data_parts_by_name.end() || (*it).get() != part.get())
             throw Exception("Part " + part->name + " is not exists", ErrorCodes::LOGICAL_ERROR);
 
-        return data_parts_by_state_and_name.modify(data_parts_indexes.project<TagByStateAndName>(it), getStateModifier(state));
+        if (!data_parts_by_state_and_name.modify(data_parts_indexes.project<TagByStateAndName>(it), getStateModifier(state)))
+            throw Exception("Can't modify " + (*it)->getNameWithState(), ErrorCodes::LOGICAL_ERROR);
     }
+
+private:
 
     /// Used to serialize calls to grabOldParts.
     std::mutex grab_old_parts_mutex;
