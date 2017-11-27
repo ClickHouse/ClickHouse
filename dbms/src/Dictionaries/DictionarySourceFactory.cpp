@@ -91,10 +91,12 @@ DictionarySourceFactory::DictionarySourceFactory()
 #endif
 }
 
-void DictionarySourceFactory::registerSource(const std::string& source_type, Creator create_source)
+void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source)
 {
     LOG_DEBUG(log, "Register dictionary source type `" + source_type + "`");
-    registered_sources.emplace(source_type, std::move(create_source));
+    if (!registered_sources.emplace(source_type, std::move(create_source)).second)
+        throw Exception("DictionarySourceFactory: the source name '" + name + "' is not unique",
+            ErrorCodes::LOGICAL_ERROR);
 }
 
 DictionarySourcePtr DictionarySourceFactory::create(
