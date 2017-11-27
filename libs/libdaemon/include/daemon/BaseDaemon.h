@@ -9,6 +9,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <chrono>
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
 #include <Poco/TaskNotification.h>
@@ -122,6 +123,14 @@ public:
         auto writer = getGraphiteWriter(config_name);
         if (writer)
             writer->write(key_vals, timestamp, custom_root_path);
+    }
+
+    template <class T>
+    void writeToGraphite(const GraphiteWriter::KeyValueVector<T> & key_vals, const std::chrono::system_clock::time_point & current_time, const std::string & custom_root_path)
+    {
+        auto writer = getGraphiteWriter();
+        if (writer)
+            writer->write(key_vals, std::chrono::system_clock::to_time_t(current_time), custom_root_path);
     }
 
     GraphiteWriter * getGraphiteWriter(const std::string & config_name = DEFAULT_GRAPHITE_CONFIG_NAME)

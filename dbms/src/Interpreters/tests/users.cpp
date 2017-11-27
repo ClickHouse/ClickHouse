@@ -195,7 +195,7 @@ void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
 
     try
     {
-        config = ConfigProcessor{}.loadConfig(path_name).configuration;
+        config = ConfigProcessor(path_name).loadConfig().configuration;
     }
     catch (const Poco::Exception & ex)
     {

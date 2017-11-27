@@ -11,7 +11,7 @@
 
 #include <Common/SpaceSaving.h>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <AggregateFunctions/AggregateFunctionGroupArray.h>
 

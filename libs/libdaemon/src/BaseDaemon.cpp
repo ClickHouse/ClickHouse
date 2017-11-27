@@ -524,7 +524,7 @@ void BaseDaemon::reloadConfiguration()
       */
     std::string log_command_line_option = config().getString("logger.log", "");
     config_path = config().getString("config-file", "config.xml");
-    loaded_config = ConfigProcessor(false, true).loadConfig(config_path, /* allow_zk_includes = */ true);
+    loaded_config = ConfigProcessor(config_path, false, true).loadConfig(/* allow_zk_includes = */ true);
     if (last_configuration != nullptr)
         config().removeConfiguration(last_configuration);
     last_configuration = loaded_config.configuration.duplicate();
@@ -720,6 +720,20 @@ void BaseDaemon::initialize(Application & self)
     /// Считаем конфигурацию
     reloadConfiguration();
 
+    /// This must be done before creation of any files (including logs).
+    if (config().has("umask"))
+    {
+        std::string umask_str = config().getString("umask");
+        mode_t umask_num = 0;
+        std::stringstream stream;
+        stream << umask_str;
+        stream >> std::oct >> umask_num;
+
+        umask(umask_num);
+    }
+
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config);
+
     /// В случае падения - сохраняем коры
     {
         struct rlimit rlim;
@@ -747,18 +761,6 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
-    }
-
-    /// This must be done before creation of any files (including logs).
-    if (config().has("umask"))
-    {
-        std::string umask_str = config().getString("umask");
-        mode_t umask_num = 0;
-        std::stringstream stream;
-        stream << umask_str;
-        stream >> std::oct >> umask_num;
-
-        umask(umask_num);
     }
 
     std::string log_path = config().getString("logger.log", "");

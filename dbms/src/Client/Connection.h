@@ -8,7 +8,7 @@
 
 #include <Core/Block.h>
 #include <Core/Defines.h>
-#include <Core/Progress.h>
+#include <IO/Progress.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 

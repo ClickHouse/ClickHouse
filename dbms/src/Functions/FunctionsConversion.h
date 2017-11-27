@@ -26,7 +26,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
