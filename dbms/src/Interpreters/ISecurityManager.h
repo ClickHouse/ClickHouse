@@ -17,7 +17,7 @@ public:
         const Poco::Net::IPAddress & address) const = 0;
 
     /// Just find user
-    virtual const User & getUser(const String & user_name) = 0;
+    virtual const User & getUser(const String & user_name) const = 0;
 
     /// Check if the user has access to the database.
     virtual bool hasAccessToDatabase(const String & user_name, const String & database_name) const = 0;

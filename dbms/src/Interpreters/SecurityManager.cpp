@@ -90,7 +90,7 @@ const User & SecurityManager::authorizeAndGetUser(
     return it->second;
 }
 
-const User & SecurityManager::getUser(const String & user_name)
+const User & SecurityManager::getUser(const String & user_name) const
 {
     auto it = users.find(user_name);
 
