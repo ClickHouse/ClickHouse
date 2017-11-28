@@ -6,6 +6,9 @@
 namespace DB
 {
 
+/** Default implementation of runtime components factory
+  * used by native server application.
+  */
 class RuntimeComponentsFactory : public IRuntimeComponentsFactory
 {
 public:
