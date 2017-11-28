@@ -68,7 +68,7 @@ private:
       */
     struct Mark
     {
-        size_t rows;    /// How many rows are before this offset.
+        size_t rows;    /// How many rows are before this offset including the block at this offset.
         size_t offset;  /// The offset in compressed file.
     };
 
@@ -95,7 +95,7 @@ private:
     /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
     void addFiles(const String & column_name, const IDataType & type);
 
-    bool loaded_marks;
+    bool loaded_marks = false;
 
     size_t max_compress_block_size;
     size_t file_count = 0;
