@@ -60,8 +60,6 @@ private:
         return language_aliases;
     }
 
-    using RegionID = UInt32;
-
     using NamesSources = std::vector<std::shared_ptr<ILanguageRegionsNamesDataSource>>;
 
     using Chars = std::vector<char>;
