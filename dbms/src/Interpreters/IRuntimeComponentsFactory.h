@@ -7,6 +7,10 @@
 namespace DB
 {
 
+/** Factory of query engine runtime components / services.
+  * Helps to host query engine in external applications
+  * by replacing or reconfiguring its components.
+  */
 class IRuntimeComponentsFactory
 {
 public:
