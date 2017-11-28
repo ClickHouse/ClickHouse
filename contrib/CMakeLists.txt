@@ -64,7 +64,7 @@ if (USE_INTERNAL_CCTZ_LIBRARY)
     add_subdirectory (cctz-cmake)
 endif ()
 
-if (ENABLE_LIBTCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
+if (ENABLE_TCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
     add_subdirectory (libtcmalloc)
 endif ()
 
