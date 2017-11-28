@@ -39,8 +39,7 @@ private:
     HierarchyFiles hierarchy_files;
 
 public:
-    /** path_to_regions_hierarchy_file in configuration file:
-      * must point to the file with the hierarchy of regions "by default". It will be accessible by an empty key.
+    /** path must point to the file with the hierarchy of regions "by default". It will be accessible by an empty key.
       * In addition, a number of files are searched for, the name of which (before the extension, if any) is added arbitrary _suffix.
       * Such files are loaded, and the hierarchy of regions is put on the `suffix` key.
       *
