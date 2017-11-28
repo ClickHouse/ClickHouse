@@ -4,7 +4,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Core/Progress.h>
+#include <IO/Progress.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataStreams/BlockIO.h>

@@ -58,7 +58,7 @@ struct RangeFiltered
         }
 
         Iterator(const Iterator & rhs) = default;
-        Iterator(Iterator && rhs) noexcept = default;
+        Iterator(Iterator && rhs) = default;
 
         Iterator operator++()
         {
@@ -105,7 +105,7 @@ struct RangeFiltered
         }
 
         self_type & operator=(const self_type & rhs) = default;
-        self_type & operator=(self_type && rhs) noexcept = default;
+        self_type & operator=(self_type && rhs) = default;
 
         ~Iterator() = default;
 

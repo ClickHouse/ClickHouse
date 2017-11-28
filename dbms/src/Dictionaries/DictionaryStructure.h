@@ -11,7 +11,7 @@
 #include <vector>
 #include <string>
 #include <map>
-#include <experimental/optional>
+#include <optional>
 
 
 namespace DB
@@ -23,6 +23,7 @@ enum class AttributeUnderlyingType
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
@@ -78,11 +79,11 @@ struct DictionarySpecialAttribute final
 /// Name of identifier plus list of attributes
 struct DictionaryStructure final
 {
-    std::experimental::optional<DictionarySpecialAttribute> id;
-    std::experimental::optional<std::vector<DictionaryAttribute>> key;
+    std::optional<DictionarySpecialAttribute> id;
+    std::optional<std::vector<DictionaryAttribute>> key;
     std::vector<DictionaryAttribute> attributes;
-    std::experimental::optional<DictionarySpecialAttribute> range_min;
-    std::experimental::optional<DictionarySpecialAttribute> range_max;
+    std::optional<DictionarySpecialAttribute> range_min;
+    std::optional<DictionarySpecialAttribute> range_max;
     bool has_expressions = false;
 
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);

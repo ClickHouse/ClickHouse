@@ -9,7 +9,7 @@
 #include <Dictionaries/LibraryDictionarySource.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/HTTPCommon.h>
 #include <memory>
@@ -27,7 +27,9 @@
     #include <Dictionaries/MySQLDictionarySource.h>
 #endif
 
+#include <Poco/Logger.h>
 
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -82,12 +84,20 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 
 
 DictionarySourceFactory::DictionarySourceFactory()
+    : log(&Poco::Logger::get("DictionarySourceFactory"))
 {
 #if Poco_DataODBC_FOUND
     Poco::Data::ODBC::Connector::registerConnector();
 #endif
 }
 
+void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source)
+{
+    LOG_DEBUG(log, "Register dictionary source type `" + source_type + "`");
+    if (!registered_sources.emplace(source_type, std::move(create_source)).second)
+        throw Exception("DictionarySourceFactory: the source name '" + source_type + "' is not unique",
+            ErrorCodes::LOGICAL_ERROR);
+}
 
 DictionarySourcePtr DictionarySourceFactory::create(
     const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
@@ -175,6 +185,15 @@ DictionarySourcePtr DictionarySourceFactory::create(
     else if ("library" == source_type)
     {
         return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context);
+    }
+    else
+    {
+        const auto found = registered_sources.find(source_type);
+        if (found != registered_sources.end())
+        {
+            const auto & create_source = found->second;
+            return create_source(dict_struct, config, config_prefix, sample_block, context);
+        }
     }
 
     throw Exception{

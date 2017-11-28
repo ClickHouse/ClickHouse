@@ -120,8 +120,6 @@ def started_cluster():
             ddl_check_there_are_no_dublicates(instance)
 
     finally:
-        # Remove iptables rules for sacrifice instance
-        cluster.pm_random_drops.heal_all()
         cluster.shutdown()
 
 

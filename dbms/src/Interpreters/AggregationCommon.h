@@ -222,7 +222,7 @@ static inline StringRef * ALWAYS_INLINE placeKeysInPool(
 
     /// Place the StringRefs on the newly copied keys in the pool.
     char * res = pool.alloc(keys_size * sizeof(StringRef));
-    memcpy(res, &keys[0], keys_size * sizeof(StringRef));
+    memcpy(res, keys.data(), keys_size * sizeof(StringRef));
 
     return reinterpret_cast<StringRef *>(res);
 }
@@ -242,7 +242,7 @@ static inline StringRef * ALWAYS_INLINE extractKeysAndPlaceInPool(
 
     /// Place the StringRefs on the newly copied keys in the pool.
     char * res = pool.alloc(keys_size * sizeof(StringRef));
-    memcpy(res, &keys[0], keys_size * sizeof(StringRef));
+    memcpy(res, keys.data(), keys_size * sizeof(StringRef));
 
     return reinterpret_cast<StringRef *>(res);
 }
@@ -282,7 +282,7 @@ inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
     }
 
     /// Place the StringRefs on the newly copied keys in the pool.
-    memcpy(place, &keys[0], keys_size * sizeof(StringRef));
+    memcpy(place, keys.data(), keys_size * sizeof(StringRef));
 
     return {res, sum_keys_size};
 }

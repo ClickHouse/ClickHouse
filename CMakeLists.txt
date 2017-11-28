@@ -4,20 +4,20 @@ cmake_minimum_required (VERSION 2.8)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # Require at least gcc 6
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
-        message (FATAL_ERROR "GCC version must be at least 6! For example, if GCC 6 is available under gcc-6, g++-6 names, do the following: export CC=gcc-6 CXX=g++-6; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
+    # Require at least gcc 7
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
+        message (FATAL_ERROR "GCC version must be at least 7! For example, if GCC 7 is available under gcc-7, g++-7 names, do the following: export CC=gcc-7 CXX=g++-7; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Require at least clang 3.8
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.8)
-        message (FATAL_ERROR "Clang version must be at least 3.8! Recommended 4+")
+    # Require at least clang 3.9
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.9)
+        message (FATAL_ERROR "Clang version must be at least 3.9! Recommended 4+")
     endif ()
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4)
         message (WARNING "Compilation has only been tested with Clang 4+")
     endif ()
 else ()
-    message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 4+ and GCC 6+.")
+    message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 4+ and GCC 7+.")
 endif ()
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
@@ -64,11 +64,18 @@ option (ENABLE_TESTS "Enables tests" ON)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
+if (NOT MAKE_STATIC_LIBRARIES)
+    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
+endif ()
+if (SPLIT_SHARED_LIBRARIES)
+    set (SPLIT_SHARED SHARED)
+endif ()
+
 if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64.*|x86_64.*|AMD64.*")
+if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "amd64.*|x86_64.*|AMD64.*")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
     if (CMAKE_SYSTEM MATCHES "Linux")
@@ -116,13 +123,6 @@ if (ARCHNATIVE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
 endif ()
 
-option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" OFF)
-if (USE_LIBCXX)
-    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pthread") # NOTE: Why this is not the default and why this is needed only with libc++?
-    set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-    set (CMAKE_CXX_FLAGS_DEBUG           "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
-endif ()
-
 # Special options for better optimized code with clang
 #if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 #    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
@@ -147,20 +147,29 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
 
-if (NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc")
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
+if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
+    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif ()
 
-if (NOT APPLE)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+
+include (cmake/test_compiler.cmake)
+
+if (CMAKE_SYSTEM MATCHES "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 
-    if (USE_LIBCXX AND (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-        link_libraries (-Wl,-Bstatic -stdlib=libc++ c++ c++abi -Wl,-Bdynamic)
+    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ${HAVE_LIBCXX})
+    if (USE_LIBCXX)
+        set (CMAKE_CXX_FLAGS             "${CMAKE_CXX_FLAGS} -stdlib=libc++") # Ok for clang6, for older can cause 'not used option' warning
+        set (CMAKE_CXX_FLAGS_DEBUG       "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
+        if (MAKE_STATIC_LIBRARIES)
+            link_libraries (-Wl,-Bstatic -stdlib=libc++ c++ c++abi -Wl,-Bdynamic)
+        else ()
+            link_libraries (-stdlib=libc++ c++ c++abi)
+        endif ()
     endif ()
 endif ()
 
-include (cmake/test_compiler.cmake)
 if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} ${FLAG_NO_PIE}")
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
@@ -170,7 +179,13 @@ if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
-set (SAN_FLAGS "-O3 -g -fno-omit-frame-pointer")
+set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer")
+if (SAN_DEBUG)
+    set (SAN_FLAGS "${SAN_FLAGS} -O0")
+else ()
+    set (SAN_FLAGS "${SAN_FLAGS} -O3")
+endif ()
+
 set (CMAKE_CXX_FLAGS_ASAN                "${CMAKE_CXX_FLAGS_ASAN}  ${SAN_FLAGS} -fsanitize=address")
 set (CMAKE_C_FLAGS_ASAN                  "${CMAKE_C_FLAGS_ASAN}    ${SAN_FLAGS} -fsanitize=address")
 set (CMAKE_CXX_FLAGS_UBSAN               "${CMAKE_CXX_FLAGS_UBSAN} ${SAN_FLAGS} -fsanitize=undefined")
@@ -263,9 +278,10 @@ include (libs/libdaemon/cmake/find_unwind.cmake)
 
 set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
 set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
-message (STATUS "C_FLAGS    = ${FULL_C_FLAGS}")
-message (STATUS "CXX_FLAGS  = ${FULL_CXX_FLAGS}")
-message (STATUS "LINK_FLAGS = ${CMAKE_EXE_LINKER_FLAGS}")
+set (FULL_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_EXE_LINKER_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
+message (STATUS "C_FLAGS      = ${FULL_C_FLAGS}")
+message (STATUS "CXX_FLAGS    = ${FULL_CXX_FLAGS}")
+message (STATUS "LINKER_FLAGS = ${FULL_EXE_LINKER_FLAGS}")
 
 # Directory for Yandex specific files
 set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)

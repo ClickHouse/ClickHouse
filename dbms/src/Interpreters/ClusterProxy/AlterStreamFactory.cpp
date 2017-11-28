@@ -17,8 +17,8 @@ void AlterStreamFactory::createForShard(
 {
     if (shard_info.isLocal())
     {
-        /// The ALTER query may be a resharding query that is a part of a distributed
-        /// job. Since the latter heavily relies on synchronization among its participating
+        /// The ALTER query may be a part of a distributed job.
+        /// Since the latter heavily relies on synchronization among its participating
         /// nodes, it is very important to defer the execution of a local query so as
         /// to prevent any deadlock.
         auto interpreter = std::make_shared<InterpreterAlterQuery>(query_ast, context);

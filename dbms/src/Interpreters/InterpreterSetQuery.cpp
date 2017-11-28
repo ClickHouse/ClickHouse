@@ -2,7 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Common/typeid_cast.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 namespace DB
 {
