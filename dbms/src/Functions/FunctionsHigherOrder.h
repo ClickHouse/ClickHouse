@@ -885,16 +885,16 @@ public:
 };
 
 
-struct NameArrayMap            { static constexpr auto name = "arrayMap"; };
-struct NameArrayFilter        { static constexpr auto name = "arrayFilter"; };
-struct NameArrayCount        { static constexpr auto name = "arrayCount"; };
-struct NameArrayExists        { static constexpr auto name = "arrayExists"; };
-struct NameArrayAll            { static constexpr auto name = "arrayAll"; };
-struct NameArraySum            { static constexpr auto name = "arraySum"; };
-struct NameArrayFirst        { static constexpr auto name = "arrayFirst"; };
-struct NameArrayFirstIndex    { static constexpr auto name = "arrayFirstIndex"; };
+struct NameArrayMap         { static constexpr auto name = "arrayMap"; };
+struct NameArrayFilter      { static constexpr auto name = "arrayFilter"; };
+struct NameArrayCount       { static constexpr auto name = "arrayCount"; };
+struct NameArrayExists      { static constexpr auto name = "arrayExists"; };
+struct NameArrayAll         { static constexpr auto name = "arrayAll"; };
+struct NameArraySum         { static constexpr auto name = "arraySum"; };
+struct NameArrayFirst       { static constexpr auto name = "arrayFirst"; };
+struct NameArrayFirstIndex  { static constexpr auto name = "arrayFirstIndex"; };
 struct NameArraySort        { static constexpr auto name = "arraySort"; };
-struct NameArrayReverseSort    { static constexpr auto name = "arrayReverseSort"; };
+struct NameArrayReverseSort { static constexpr auto name = "arrayReverseSort"; };
 
 using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, NameArrayMap>;
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;

@@ -9,7 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <AggregateFunctions/IBinaryAggregateFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <map>

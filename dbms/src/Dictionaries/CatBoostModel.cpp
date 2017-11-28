@@ -1,5 +1,5 @@
 #include <Dictionaries/CatBoostModel.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <mutex>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>

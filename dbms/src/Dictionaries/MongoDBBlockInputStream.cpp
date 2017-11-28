@@ -18,7 +18,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <ext/range.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 
 namespace DB
