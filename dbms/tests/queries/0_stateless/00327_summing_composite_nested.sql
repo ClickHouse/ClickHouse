@@ -18,11 +18,7 @@ SELECT d, k, m.k1ID, m.k2Key, m.k3Type, m.s FROM test.summing_composite_key ARRA
 SELECT d, k, m.k1ID, m.k2Key, m.k3Type, sum(m.s) FROM test.summing_composite_key ARRAY JOIN SecondMap AS m GROUP BY d, k, m.k1ID, m.k2Key, m.k3Type ORDER BY d, k, m.k1ID, m.k2Key, m.k3Type;
 SELECT d, k, m.k1ID, m.k2Key, m.k3Type, m.s FROM test.summing_composite_key FINAL ARRAY JOIN SecondMap AS m ORDER BY d, k, m.k1ID, m.k2Key, m.k3Type, m.s;
 
-OPTIMIZE TABLE test.summing_composite_key;
-OPTIMIZE TABLE test.summing_composite_key;
-OPTIMIZE TABLE test.summing_composite_key;
-OPTIMIZE TABLE test.summing_composite_key;
-OPTIMIZE TABLE test.summing_composite_key;
+OPTIMIZE TABLE test.summing_composite_key PARTITION 200001 FINAL;
 
 SELECT * FROM test.summing_composite_key ORDER BY d, k, _part_index;
 

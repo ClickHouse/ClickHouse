@@ -15,7 +15,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeExpression.h>
