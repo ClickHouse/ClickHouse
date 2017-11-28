@@ -1,5 +1,5 @@
 #include <Common/ConfigProcessor.h>
-#include <Interpreters/Users.h>
+#include <Interpreters/SecurityManager.h>
 
 #include <boost/filesystem.hpp>
 
@@ -204,11 +204,11 @@ void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
         throw std::runtime_error(os.str());
     }
 
-    DB::Users users;
+    DB::SecurityManager security_manager;
 
     try
     {
-        users.loadFromConfig(*config);
+        security_manager.loadFromConfig(*config);
     }
     catch (const Poco::Exception & ex)
     {
@@ -223,7 +223,7 @@ void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
 
         try
         {
-            res = users.isAllowedDatabase(entry.user_name, entry.database_name);
+            res = security_manager.hasAccessToDatabase(entry.user_name, entry.database_name);
         }
         catch (const Poco::Exception &)
         {
