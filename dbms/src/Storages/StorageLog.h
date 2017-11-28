@@ -107,11 +107,6 @@ private:
     /// You can not call with a write locked `rwlock`.
     void loadMarks();
 
-    /// Can be called with any state of `rwlock`.
-    size_t marksCount();
-
-    void loadMarksImpl(bool load_null_marks);
-
     /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
     void addFile(const String & column_name, const IDataType & type, size_t level = 0);
 

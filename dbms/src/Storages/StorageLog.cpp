@@ -20,7 +20,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 
 #include <Common/typeid_cast.h>
 
@@ -492,12 +491,6 @@ void StorageLog::loadMarks()
     }
 
     loaded_marks = true;
-}
-
-
-size_t StorageLog::marksCount()
-{
-    return files.begin()->second.marks.size();
 }
 
 
