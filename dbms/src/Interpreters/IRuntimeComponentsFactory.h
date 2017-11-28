@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Dictionaries/Embedded/IGeoDictionariesLoader.h>
 #include <Interpreters/ISecurityManager.h>
 
 #include <memory>
@@ -15,6 +16,8 @@ class IRuntimeComponentsFactory
 {
 public:
     virtual std::unique_ptr<ISecurityManager> createSecurityManager() = 0;
+
+    virtual std::unique_ptr<IGeoDictionariesLoader> createGeoDictionariesLoader() = 0;
 
     virtual ~IRuntimeComponentsFactory() {}
 };
