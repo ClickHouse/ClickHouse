@@ -80,7 +80,7 @@ public:
         : inputs(inputs_), additional_input_at_end(additional_input_at_end_), max_threads(std::min(inputs_.size(), max_threads_)), handler(handler_)
     {
         for (size_t i = 0; i < inputs_.size(); ++i)
-            available_inputs.emplace(inputs_[i], i);
+            unprepared_inputs.emplace(inputs_[i], i);
     }
 
     ~ParallelInputsProcessor()
@@ -183,6 +183,26 @@ private:
 
         try
         {
+              while (!finish) {
+                InputData unprepared_input;
+                {
+                    std::lock_guard<std::mutex> lock(unprepared_inputs_mutex);
+
+                    if (unprepared_inputs.empty())
+                        break;
+
+                    unprepared_input = unprepared_inputs.front();
+                    unprepared_inputs.pop();
+                }
+
+                unprepared_input.in->readPrefix();
+
+                {
+                    std::lock_guard<std::mutex> lock(available_inputs_mutex);
+                    available_inputs.push(unprepared_input);
+                }
+            }
+            
             loop(thread_num);
         }
         catch (...)
@@ -205,6 +225,7 @@ private:
             {
                 try
                 {
+                    additional_input_at_end->readPrefix();
                     while (Block block = additional_input_at_end->read())
                         publishPayload(additional_input_at_end, block, thread_num);
                 }
@@ -304,8 +325,15 @@ private:
     using AvailableInputs = std::queue<InputData>;
     AvailableInputs available_inputs;
 
+    /// For parallel preparing child streams.
+    using UnpreparedInputs = std::queue<InputData>;
+    UnpreparedInputs unprepared_inputs;
+
     /// For operations with available_inputs.
     std::mutex available_inputs_mutex;
+
+    /// For operations with unprepared_inputs.
+    std::mutex unprepared_inputs_mutex;
 
     /// How many sources ran out.
     std::atomic<size_t> active_threads { 0 };
