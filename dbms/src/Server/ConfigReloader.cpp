@@ -66,15 +66,16 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
     FilesChangesTracker new_files = getNewFileList();
     if (force || new_files.isDifferOrNewerThan(files))
     {
+        ConfigProcessor config_processor(path);
         ConfigProcessor::LoadedConfig loaded_config;
         try
         {
             LOG_DEBUG(log, "Loading config `" << path << "'");
 
-            loaded_config = ConfigProcessor().loadConfig(path, /* allow_zk_includes = */ true);
+            loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)
-                loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
-                        path, zk_node_cache, fallback_to_preprocessed);
+                loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
+                        zk_node_cache, fallback_to_preprocessed);
         }
         catch (...)
         {
@@ -84,6 +85,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             tryLogCurrentException(log, "Error loading config from `" + path + "'");
             return;
         }
+        config_processor.savePreprocessedConfig(loaded_config);
 
         /** We should remember last modification time if and only if config was sucessfully loaded
          * Otherwise a race condition could occur during config files update:

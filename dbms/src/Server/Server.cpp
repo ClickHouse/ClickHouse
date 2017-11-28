@@ -108,8 +108,10 @@ int Server::main(const std::vector<std::string> & args)
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
-        loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
-            config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+        ConfigProcessor config_processor(config_path);
+        loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
+            main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+        config_processor.savePreprocessedConfig(loaded_config);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }

@@ -45,7 +45,19 @@ if (USE_INTERNAL_UNWIND_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
-    add_subdirectory (libzlib-ng)
+    add_subdirectory (zlib-ng)
+    # todo: make pull to Dead2/zlib-ng and remove:
+    # We should use same defines when including zlib.h as used when zlib compiled
+    target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    set_target_properties(example PROPERTIES EXCLUDE_FROM_ALL 1)
+    set_target_properties(minigzip PROPERTIES EXCLUDE_FROM_ALL 1)
+    if (TARGET example64)
+        set_target_properties(example64 PROPERTIES EXCLUDE_FROM_ALL 1)
+    endif ()
+    if (TARGET minigzip64)
+        set_target_properties(minigzip64 PROPERTIES EXCLUDE_FROM_ALL 1)
+    endif ()
 endif ()
 
 if (USE_INTERNAL_CCTZ_LIBRARY)
