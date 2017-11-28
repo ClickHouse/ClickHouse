@@ -7,7 +7,7 @@ namespace DB
 
 /** Duties of security manager:
   * 1) Authenticate users
-  * 2) Provide per-user settings (profile, quota, ACLs)
+  * 2) Provide user settings (profile, quota, ACLs)
   * 3) Grant access to databases
   */
 class ISecurityManager
