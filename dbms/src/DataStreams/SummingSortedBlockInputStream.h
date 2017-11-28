@@ -4,6 +4,8 @@
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 
 namespace DB
 {
@@ -79,12 +81,39 @@ private:
         std::vector<char> state;
         bool created = false;
 
+        void init(const char * function_name, const DataTypes & argument_types)
+        {
+            function = AggregateFunctionFactory::instance().get(function_name, argument_types);
+            function->setArguments(argument_types);
+            add_function = function->getAddressOfAddFunction();
+            state.resize(function->sizeOfData());
+        }
+
+        void createState()
+        {
+            if (created)
+                return;
+            function->create(state.data());
+            created = true;
+        }
+
+        void destroyState()
+        {
+            if (!created)
+                return;
+            function->destroy(state.data());
+            created = false;
+        }
+
         /// Explicitly destroy aggregation state if the stream is terminated
         ~AggregateDescription()
         {
-            if (created)
-                function->destroy(state.data());
+            destroyState();
         }
+
+        AggregateDescription() = default;
+        AggregateDescription(AggregateDescription &&) = default;
+        AggregateDescription(const AggregateDescription &) = delete;
     };
 
     /// Stores numbers of key-columns and value-columns.
