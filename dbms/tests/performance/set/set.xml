@@ -1,6 +1,9 @@
 <test>
     <name>set_lookup_random</name>
     <type>once</type>
+    <tags>
+        <tag>long</tag>
+    </tags>
 
     <stop_conditions>
         <all_of>

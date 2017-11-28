@@ -112,7 +112,11 @@ public:
   * This pointer is set when memory consumption is monitored in current thread.
   * So, you just need to pass it to all the threads that handle one request.
   */
+#if defined(__apple_build_version__) && __apple_build_version__ <= 9000038
+extern __thread MemoryTrackerPtr current_memory_tracker;
+#else
 extern thread_local MemoryTrackerPtr current_memory_tracker;
+#endif
 
 /// Convenience methods, that use current_memory_tracker if it is available.
 namespace CurrentMemoryTracker

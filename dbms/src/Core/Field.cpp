@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Core/Field.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 
 namespace DB

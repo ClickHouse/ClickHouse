@@ -46,10 +46,6 @@ public:
     /// If at least one column was added, reorders all columns in the block according to ordered_names.
     void fillMissingColumns(Block & res, const Names & ordered_names, const bool always_reorder = false);
 
-    /// The same as fillMissingColumns(), but always reorders columns according to ordered_names
-    /// (even if no columns were added).
-    void fillMissingColumnsAndReorder(Block & res, const Names & ordered_names);
-
 private:
     class Stream
     {
@@ -123,8 +119,6 @@ private:
         const String & name, const IDataType & type, IColumn & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
         size_t level = 0, bool read_offsets = true);
-
-    void fillMissingColumnsImpl(Block & res, const Names & ordered_names, bool always_reorder);
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark

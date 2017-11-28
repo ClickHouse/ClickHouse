@@ -149,8 +149,11 @@ void MemoryTracker::setOrRaiseLimit(Int64 value)
         ;
 }
 
-
+#if defined(__apple_build_version__) && __apple_build_version__ <= 9000038
+__thread MemoryTrackerPtr current_memory_tracker;
+#else
 thread_local MemoryTrackerPtr current_memory_tracker;
+#endif
 
 namespace CurrentMemoryTracker
 {

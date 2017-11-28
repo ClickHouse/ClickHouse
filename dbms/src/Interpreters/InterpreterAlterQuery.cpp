@@ -75,12 +75,6 @@ BlockIO InterpreterAlterQuery::execute()
                 table->freezePartition(command.partition, command.with_name, context);
                 break;
 
-            case PartitionCommand::RESHARD_PARTITION:
-                table->reshardPartitions(query_ptr, database_name, command.partition,
-                    command.weighted_zookeeper_paths, command.sharding_key_expr, command.do_copy,
-                    command.coordinator, context);
-                break;
-
             case PartitionCommand::CLEAR_COLUMN:
                 table->clearColumnInPartition(command.partition, command.column_name, context);
                 break;
@@ -197,25 +191,6 @@ void InterpreterAlterQuery::parseAlter(
         else if (params.type == ASTAlterQuery::FREEZE_PARTITION)
         {
             out_partition_commands.emplace_back(PartitionCommand::freezePartition(params.partition, params.with_name));
-        }
-        else if (params.type == ASTAlterQuery::RESHARD_PARTITION)
-        {
-            WeightedZooKeeperPaths weighted_zookeeper_paths;
-
-            const ASTs & ast_weighted_zookeeper_paths = typeid_cast<const ASTExpressionList &>(*params.weighted_zookeeper_paths).children;
-            for (size_t i = 0; i < ast_weighted_zookeeper_paths.size(); ++i)
-            {
-                const auto & weighted_zookeeper_path = typeid_cast<const ASTWeightedZooKeeperPath &>(*ast_weighted_zookeeper_paths[i]);
-                weighted_zookeeper_paths.emplace_back(weighted_zookeeper_path.path, weighted_zookeeper_path.weight);
-            }
-
-            Field coordinator;
-            if (params.coordinator)
-                coordinator = dynamic_cast<const ASTLiteral &>(*params.coordinator).value;
-
-            out_partition_commands.emplace_back(PartitionCommand::reshardPartitions(
-                params.partition, weighted_zookeeper_paths, params.sharding_key_expr,
-                params.do_copy, coordinator));
         }
         else
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);

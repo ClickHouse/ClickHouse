@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <AggregateFunctions/IUnaryAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>

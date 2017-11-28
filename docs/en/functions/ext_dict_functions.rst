@@ -14,6 +14,9 @@ dictGetFloat32, dictGetFloat64
 dictGetDate, dictGetDateTime
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+dictGetUUID
+~~~~~~~~~~~
+
 dictGetString
 ~~~~~~~~~~~~~
 ``dictGetT('dict_name', 'attr_name', id)``

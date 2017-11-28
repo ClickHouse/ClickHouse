@@ -1,6 +1,5 @@
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Common/VirtualColumnUtils.h>
 #include <Common/NetException.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>

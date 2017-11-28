@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
 #include <Databases/IDatabase.h>
 

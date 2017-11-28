@@ -1,5 +1,5 @@
 #include <Common/SipHash.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 

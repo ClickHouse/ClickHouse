@@ -1,6 +1,6 @@
 #pragma once
 
-#include <experimental/optional>
+#include <optional>
 #include <mutex>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -12,7 +12,7 @@
 #include <IO/HTTPCommon.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <Core/Progress.h>
+#include <IO/Progress.h>
 
 
 namespace Poco
@@ -58,8 +58,8 @@ private:
     std::ostream * response_header_ostr = nullptr;
 #endif
 
-    std::experimental::optional<WriteBufferFromOStream> out_raw;
-    std::experimental::optional<ZlibDeflatingWriteBuffer> deflating_buf;
+    std::optional<WriteBufferFromOStream> out_raw;
+    std::optional<ZlibDeflatingWriteBuffer> deflating_buf;
 
     WriteBuffer * out = nullptr;     /// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 

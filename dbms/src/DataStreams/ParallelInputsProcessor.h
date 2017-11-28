@@ -219,7 +219,7 @@ private:
                 }
             }
 
-            handler.onFinish ();       /// TODO If in `onFinish` or `onFinishThread` there is an exception, then std::terminate is called.
+            handler.onFinish();       /// TODO If in `onFinish` or `onFinishThread` there is an exception, then std::terminate is called.
         }
     }
 

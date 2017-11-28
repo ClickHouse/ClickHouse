@@ -55,7 +55,7 @@ Examples: ``1``, ``18446744073709551615``, ``0xDEADBEEF``, ``01``, ``0.1``, ``1e
 
 String literals
 """""""""""""""
-Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have special meanings: ``\b``, ``\f``, ``\r``, ``\n``, ``\t``, ``\0``, ``\a``, ``\v``, ``\xHH``. In all other cases, escape sequences like \c, where c is any character, are transformed to c. This means that the sequences ``\'`` and ``\\`` can be used. The value will have the String type.
+Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have special meanings: ``\b``, ``\f``, ``\r``, ``\n``, ``\t``, ``\0``, ``\a``, ``\v``, ``\xHH``. In all other cases, escape sequences like ``\c``, where c is any character, are transformed to c. This means that the sequences ``\'`` and ``\\`` can be used. The value will have the String type.
 
 Minimum set of symbols that must be escaped in string literal is ``'`` and ``\``.
 

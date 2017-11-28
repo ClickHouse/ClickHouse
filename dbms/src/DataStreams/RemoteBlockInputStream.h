@@ -1,6 +1,6 @@
 #pragma once
 
-#include <experimental/optional>
+#include <optional>
 
 #include <common/logger_useful.h>
 
@@ -146,7 +146,7 @@ private:
 
     bool append_extra_info = false;
     PoolMode pool_mode = PoolMode::GET_MANY;
-    std::experimental::optional<QualifiedTableName> main_table;
+    std::optional<QualifiedTableName> main_table;
 
     Logger * log = &Logger::get("RemoteBlockInputStream");
 };

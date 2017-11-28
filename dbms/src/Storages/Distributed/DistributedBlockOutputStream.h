@@ -7,7 +7,7 @@
 #include <atomic>
 #include <memory>
 #include <chrono>
-#include <experimental/optional>
+#include <optional>
 #include <Interpreters/Cluster.h>
 
 namespace Poco
@@ -94,7 +94,7 @@ private:
     std::chrono::steady_clock::time_point deadline;
     size_t remote_jobs_count;
     size_t local_jobs_count;
-    std::experimental::optional<ThreadPool> pool;
+    std::optional<ThreadPool> pool;
 };
 
 }
