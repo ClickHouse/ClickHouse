@@ -187,7 +187,7 @@ bool MergeTreeDataMerger::selectPartsToMerge(
         if (prev_part && part->info.partition_id == (*prev_part)->info.partition_id
             && part->info.min_block < (*prev_part)->info.max_block)
         {
-            LOG_ERROR(log, "Part " << part->getNameWithState() << " intersects previous part " << (*prev_part)->getNameWithState());
+            LOG_ERROR(log, "Part " << part->name << " intersects previous part " << (*prev_part)->name);
         }
 
         prev_part = &part;
