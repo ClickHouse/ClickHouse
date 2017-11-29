@@ -53,11 +53,22 @@ BlockInputStreams StorageSystemParts::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    //check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
+    bool has_state_column = false;
+    Names real_column_names;
 
-    auto it_state_column = std::find(column_names.begin(), column_names.end(), "_state");
-    bool has_state_column = it_state_column != column_names.end();
+    for (const String & column_name : column_names)
+    {
+        if (column_name == "_state")
+            has_state_column = true;
+        else
+            real_column_names.emplace_back(column_name);
+    }
+
+    /// Do not check if only _state column is requested
+    if (!(has_state_column && real_column_names.empty()))
+        check(real_column_names);
+
+    processed_stage = QueryProcessingStage::FetchColumns;
 
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
