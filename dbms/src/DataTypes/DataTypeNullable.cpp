@@ -46,7 +46,7 @@ void DataTypeNullable::serializeBinary(const IColumn & column, size_t row_num, W
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
-    bool is_null = col.isNullAt(row_num);
+    bool is_null = column.isNullable() && col.isNullAt(row_num);
     writeBinary(is_null, ostr);
     if (!is_null)
         nested_data_type->serializeBinary(*col.getNestedColumn(), row_num, ostr);
@@ -94,7 +94,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
-    if (col.isNullAt(row_num))
+    if (column.isNullable() && col.isNullAt(row_num))
         writeCString("\\N", ostr);
     else
         nested_data_type->serializeTextEscaped(*col.getNestedColumn(), row_num, ostr);
@@ -162,7 +162,7 @@ void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_nu
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
-    if (col.isNullAt(row_num))
+    if (column.isNullable() && col.isNullAt(row_num))
         writeCString("NULL", ostr);
     else
         nested_data_type->serializeTextQuoted(*col.getNestedColumn(), row_num, ostr);
@@ -180,7 +180,7 @@ void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, 
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
-    if (col.isNullAt(row_num))
+    if (column.isNullable() && col.isNullAt(row_num))
         writeCString("\\N", ostr);
     else
         nested_data_type->serializeTextCSV(*col.getNestedColumn(), row_num, ostr);
@@ -197,7 +197,7 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
-    if (col.isNullAt(row_num))
+    if (column.isNullable() && col.isNullAt(row_num))
         writeCString("NULL", ostr);
     else
         nested_data_type->serializeText(*col.getNestedColumn(), row_num, ostr);
@@ -207,7 +207,7 @@ void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num,
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
-    if (col.isNullAt(row_num))
+    if (column.isNullable() && col.isNullAt(row_num))
         writeCString("null", ostr);
     else
         nested_data_type->serializeTextJSON(*col.getNestedColumn(), row_num, ostr, settings);
@@ -224,7 +224,7 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
-    if (col.isNullAt(row_num))
+    if (column.isNullable() && col.isNullAt(row_num))
         writeCString("\\N", ostr);
     else
         nested_data_type->serializeTextXML(*col.getNestedColumn(), row_num, ostr);
