@@ -20,7 +20,7 @@ public:
 
     std::unique_ptr<IExternalLoaderConfigRepository> createExternalDictionariesConfigRepository() override
     {
-	return std::make_unique<ExternalLoaderConfigRepository>();
+        return std::make_unique<ExternalLoaderConfigRepository>();
     }
 
     std::unique_ptr<IExternalLoaderConfigRepository> createExternalModelsConfigRepository() override
