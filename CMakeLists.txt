@@ -59,7 +59,7 @@ set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also 
 set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
 if (CCACHE_FOUND)
     # clang-6.0: warning: argument unused during compilation: '-stdlib=libc++'
-    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnounused-command-line-argument")
+    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
 
 set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
