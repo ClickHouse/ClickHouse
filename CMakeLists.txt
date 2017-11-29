@@ -55,8 +55,12 @@ if ( ( ARCH_ARM AND NOT ARCH_AARCH64 ) OR ARCH_I386)
     message (WARNING "Support 32bit platforms is highly experimental")
 endif ()
 
-set (COMMON_WARNING_FLAGS "-Wall")    # -Werror is also added inside directories with our own code.
-set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
+set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
+set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
+if (CCACHE_FOUND)
+    # clang-6.0: warning: argument unused during compilation: '-stdlib=libc++'
+    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnounused-command-line-argument")
+endif ()
 
 set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
