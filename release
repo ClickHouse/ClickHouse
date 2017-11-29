@@ -7,8 +7,8 @@ cd $CURDIR
 
 source "./release_lib.sh"
 
-DEB_CC=gcc-6
-DEB_CXX=g++-6
+DEB_CC=gcc-7
+DEB_CXX=g++-7
 
 CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
