@@ -44,12 +44,13 @@ void DataTypeNullable::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr
 
 void DataTypeNullable::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
-
     bool is_null = column.isNullAt(row_num);
     writeBinary(is_null, ostr);
     if (!is_null)
+    {
+        const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
         nested_data_type->serializeBinary(*col.getNestedColumn(), row_num, ostr);
+    }
 }
 
 
