@@ -14,6 +14,8 @@ namespace DB
 {
 
 /** Implements storage in the ODBC database.
+  * Use ENGINE = odbc(odbc connection string, table name)
+    Example ENGINE = odbc('dsn=test', table)
   * Read only
   */
 

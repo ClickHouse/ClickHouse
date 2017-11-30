@@ -6,7 +6,9 @@
 namespace DB
 {
 
-/* odbc (database, table) - creates a temporary StorageODBC.
+/* odbc (odbc connect string, table) - creates a temporary StorageODBC.
+ * The structure of the table is taken from the mysql query "SELECT * FROM table WHERE 1=0".
+ * If there is no such table, an exception is thrown.
  */
 class TableFunctionODBC : public ITableFunction
 {

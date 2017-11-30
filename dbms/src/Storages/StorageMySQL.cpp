@@ -12,9 +12,14 @@
 namespace DB
 {
 
+/** Implements storage in the MySQL database.
+  * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
+  * Read only
+  */
+
 namespace ErrorCodes
 {
-    extern const int CAN_NOT_FIND_FIELD;
+    extern const int CANNOT_FIND_FIELD;
 };
 
 StorageMySQL::StorageMySQL(
@@ -51,7 +56,7 @@ std::string DumpQuery(const IAST * query)
     return iss.str();
 }
 
-std::string StorageMySQL::AnalyzeQuery(const SelectQueryInfo & query_info, const Context & context)
+std::string AnalyzeQuery(const SelectQueryInfo & query_info, const Context & context, std::string table_name, NamesAndTypesListPtr columns, google::dense_hash_map<std::string, DataTypePtr> & column_map, Block & sample_block)
 {
     BlockInputStreams res;
     StoragePtr storage(NULL);
@@ -71,13 +76,13 @@ std::string StorageMySQL::AnalyzeQuery(const SelectQueryInfo & query_info, const
         google::dense_hash_map<std::string, DataTypePtr>::iterator it = column_map.find(column.name);
         if (it == column_map.end())
         {
-            throw Exception("Can not find field " + column.name + " in table " + table_name, ErrorCodes::CAN_NOT_FIND_FIELD);
+            throw Exception("Can not find field " + column.name + " in table " + table_name, ErrorCodes::CANNOT_FIND_FIELD);
         }
         col.type = it->second;
         col.column = column.type->createColumn();
         sample_block.insert(std::move(col));
     }
-    iss << " FROM " << mysql_table_name;
+    iss << " FROM " << table_name;
     ASTSelectQuery * select_query = typeid_cast<ASTSelectQuery *>(query_info.query.get());
     IAST* where = select_query->where_expression.get();
     if (where)
@@ -97,7 +102,7 @@ BlockInputStreams StorageMySQL::read(
 {
     DB::BlockInputStreams res;
     sample_block.clear();
-    std::string query = AnalyzeQuery(query_info, context);
+    std::string query = AnalyzeQuery(query_info, context, mysql_table_name, columns, column_map, sample_block);
     res.push_back(std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size));
     return res;
 }

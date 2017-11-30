@@ -20,10 +20,12 @@ inline std::string SplitHostPort(const char * host_port, int & port)
     else
     {
         server = host_port;
-        port = 1457;
+        port = 3306;
     }
     return server;
 }
+
+std::string AnalyzeQuery(const SelectQueryInfo & query_info, const Context & context, std::string table_name, NamesAndTypesListPtr columns, google::dense_hash_map<std::string, DataTypePtr> & column_map, Block & sample_block);
 
 class StorageMySQL : public IStorage
 {
@@ -86,8 +88,6 @@ public:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    std::string AnalyzeQuery(const SelectQueryInfo & query_info, const Context & context);
 
 private:
     std::string table_name;

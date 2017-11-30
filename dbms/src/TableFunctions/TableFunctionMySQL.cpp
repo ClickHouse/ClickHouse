@@ -73,13 +73,11 @@ StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Contex
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
     if (args.size() != 5)
-        throw Exception("Table function 'mysql' requires exactly 5 argument: amount of numbers.",
+        throw Exception("Table function 'mysql' requires exactly 5 arguments: host:port, database name, table name, user name and password",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (int i = 0; i < 5; i++)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
-
-//    pool(database_name_, server_, user_name_, password_, port_)
 
     int port;
     std::string host_port = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();

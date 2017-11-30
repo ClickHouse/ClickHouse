@@ -15,6 +15,8 @@
 
 #include <Poco/Data/ODBC/SessionImpl.h>
 #include <Poco/Data/ODBC/ODBCException.h>
+#include "Poco/Data/ODBC/ODBCException.h"
+#include <Poco/Data/ODBC/Utility.h>
 
 namespace DB
 {
@@ -60,7 +62,7 @@ StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
     if (args.size() != 2)
-        throw Exception("Table function 'odbc' requires exactly 2 arguments: database name and table name.",
+        throw Exception("Table function 'odbc' requires exactly 2 arguments: odbc connect sting and table name.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (int i = 0; i < 2; i++)
@@ -71,29 +73,26 @@ StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context
     Poco::Data::ODBC::SessionImpl session(database_name, 60);
     SQLHDBC hdbc = session.dbc().handle();
     SQLHSTMT hstmt;
-    if (SQLAllocStmt(hdbc, &hstmt) != SQL_SUCCESS)
+    if (Poco::Data::ODBC::Utility::isError(SQLAllocStmt(hdbc, &hstmt)))
     {
-        throw Poco::Data::ODBC::DescriptorException(session.dbc());
+        throw Poco::Data::ODBC::ODBCException("Could not allocate connection handle.");
     }
     try {
         std::string query = "SELECT * FROM " + table_name + " WHERE 1=0";
-        if (SQLPrepare(hstmt, (SQLCHAR*)query.c_str(), query.size()) != SQL_SUCCESS )
+        if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, (SQLCHAR*)query.c_str(), query.size())))
         {
             throw Poco::Data::ODBC::DescriptorException(session.dbc());
         }
-        SQLINTEGER ret = SQLExecute(hstmt);
-
-        if ((ret != SQL_SUCCESS) && (ret != SQL_SUCCESS_WITH_INFO))
+        if (Poco::Data::ODBC::Utility::isError(SQLExecute(hstmt)))
         {
-            throw Poco::Data::ODBC::DescriptorException(session.dbc());
+            throw Poco::Data::ODBC::StatementException(hstmt);
         }
 
         SQLSMALLINT cols;
-        if (SQLNumResultCols(hstmt, &cols) != SQL_SUCCESS)
+        if (Poco::Data::ODBC::Utility::isError(SQLNumResultCols(hstmt, &cols)))
         {
-            throw Poco::Data::ODBC::ConnectionException(session.dbc());
+            throw Poco::Data::ODBC::StatementException(hstmt);
         }
-//        fprintf(stderr, "Column count: %u\n", cols);
         NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
         NamesAndTypesList materialized_columns;
         NamesAndTypesList alias_columns;
@@ -102,10 +101,11 @@ StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context
         {
             SQLSMALLINT type = 0;
             SQLCHAR column_name[301];
-            SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), NULL, &type, NULL, NULL, NULL);
+            Poco::Data::ODBC::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), NULL, &type, NULL, NULL, NULL);
             columns->push_back(NameAndTypePair((char*)column_name, std::shared_ptr<IDataType>(getDataType(type))));
 //            fprintf(stderr, "Column name: %s type: %i\n", column_name, type);
         }
+        SQLFreeStmt(hstmt, SQL_DROP);
         auto result = StorageODBC::create(table_name, database_name, table_name, columns, materialized_columns, alias_columns, column_defaults, context);
         result->startup();
         return result;
@@ -114,7 +114,6 @@ StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context
         SQLFreeStmt(hstmt, SQL_DROP);
         throw;
     }
-    return nullptr;
 }
 
 
