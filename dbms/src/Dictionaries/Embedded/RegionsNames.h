@@ -68,7 +68,7 @@ private:
     using StringRefsForLanguageID = std::vector<StringRefs>;
 
 public:
-    /** Reboot, if necessary, the names of regions.
+    /** Reload the names of regions if necessary.
       */
     void reload(const Poco::Util::AbstractConfiguration & config);
     void reload(const std::string & directory);

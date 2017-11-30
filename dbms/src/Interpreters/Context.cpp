@@ -25,7 +25,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionSettingsSelector.h>
 #include <Interpreters/Settings.h>
-#include <Interpreters/Users.h>
+#include <Interpreters/RuntimeComponentsFactory.h>
+#include <Interpreters/ISecurityManager.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
@@ -90,6 +91,8 @@ struct ContextShared
 {
     Logger * log = &Logger::get("Context");
 
+    std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
+
     /// For access of most of shared objects. Recursive mutex.
     mutable Poco::Mutex mutex;
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
@@ -115,7 +118,7 @@ struct ContextShared
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
     mutable std::shared_ptr<ExternalModels> external_models;
     String default_profile_name;                            /// Default profile name used for default values.
-    Users users;                                            /// Known users.
+    std::shared_ptr<ISecurityManager> security_manager;     /// Known users.
     Quotas quotas;                                          /// Known quotas for resource use.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
@@ -181,7 +184,8 @@ struct ContextShared
 
     pcg64 rng{randomSeed()};
 
-    ContextShared()
+    ContextShared(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
+        : runtime_components_factory(std::move(runtime_components_factory_))
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -191,6 +195,8 @@ struct ContextShared
             std::cerr.flush();
             std::terminate();
         }
+
+        initialize();
     }
 
 
@@ -236,21 +242,32 @@ struct ContextShared
             databases.clear();
         }
     }
+
+private:
+    void initialize()
+    {
+       security_manager = runtime_components_factory->createSecurityManager();
+    }
 };
 
 
 Context::Context() = default;
 
 
-Context Context::createGlobal()
+Context Context::createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory)
 {
     Context res;
-    res.shared = std::make_shared<ContextShared>();
+    res.runtime_components_factory = runtime_components_factory;
+    res.shared = std::make_shared<ContextShared>(runtime_components_factory);
     res.quota = std::make_shared<QuotaForIntervals>();
     res.system_logs = std::make_shared<SystemLogs>();
     return res;
 }
 
+Context Context::createGlobal()
+{
+    return createGlobal(std::make_unique<RuntimeComponentsFactory>());
+}
 
 Context::~Context()
 {
@@ -512,7 +529,7 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->users.loadFromConfig(*shared->users_config);
+    shared->security_manager->loadFromConfig(*shared->users_config);
     shared->quotas.loadFromConfig(*shared->users_config);
 }
 
@@ -526,7 +543,7 @@ void Context::calculateUserSettings()
 {
     auto lock = getLock();
 
-    String profile = shared->users.get(client_info.current_user).profile;
+    String profile = shared->security_manager->getUser(client_info.current_user).profile;
 
     /// 1) Set default settings (hardcoded values)
     /// NOTE: we ignore global_context settings (from which it is usually copied)
@@ -547,7 +564,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 {
     auto lock = getLock();
 
-    const User & user_props = shared->users.get(name, password, address.host());
+    const User & user_props = shared->security_manager->authorizeAndGetUser(name, password, address.host());
 
     client_info.current_user = name;
     client_info.current_address = address;
@@ -582,7 +599,7 @@ void Context::checkDatabaseAccessRights(const std::string & database_name) const
          /// All users have access to the database system.
         return;
     }
-    if (!shared->users.isAllowedDatabase(client_info.current_user, database_name))
+    if (!shared->security_manager->hasAccessToDatabase(client_info.current_user, database_name))
         throw Exception("Access denied to database " + database_name, ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 

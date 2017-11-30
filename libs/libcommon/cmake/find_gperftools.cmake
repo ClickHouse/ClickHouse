@@ -5,16 +5,16 @@ else ()
 endif ()
 
 if (CMAKE_SYSTEM MATCHES "FreeBSD")
-    option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc" OFF)
+    option (ENABLE_TCMALLOC "Set to TRUE to enable tcmalloc" OFF)
 else ()
-    option (ENABLE_LIBTCMALLOC "Set to TRUE to enable libtcmalloc" ON)
+    option (ENABLE_TCMALLOC "Set to TRUE to enable tcmalloc" ON)
 endif ()
 
-option (DEBUG_LIBTCMALLOC "Set to TRUE to use debug version of libtcmalloc" OFF)
+option (DEBUG_TCMALLOC "Set to TRUE to use debug version of libtcmalloc" OFF)
 
-if (ENABLE_LIBTCMALLOC)
+if (ENABLE_TCMALLOC)
     #contrib/libtcmalloc doesnt build debug version, try find in system
-    if (DEBUG_LIBTCMALLOC OR NOT USE_INTERNAL_GPERFTOOLS_LIBRARY)
+    if (DEBUG_TCMALLOC OR NOT USE_INTERNAL_GPERFTOOLS_LIBRARY)
         find_package (Gperftools)
     endif ()
 

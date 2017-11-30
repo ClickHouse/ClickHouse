@@ -243,9 +243,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
 
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
-    if (nested_column.empty())
-        column_array.getOffsetsColumn() = column_array.getOffsetsColumn()->cloneEmpty();
-    else if (nested_column.size() != last_offset)
+    if (!nested_column.empty() && nested_column.size() != last_offset)
         throw Exception("Cannot read all array values", ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
