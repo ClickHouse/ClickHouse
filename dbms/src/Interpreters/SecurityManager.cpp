@@ -27,6 +27,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+using UserPtr = SecurityManager::UserPtr;
+
 void SecurityManager::loadFromConfig(Poco::Util::AbstractConfiguration & config)
 {
     Container new_users;
@@ -35,12 +37,15 @@ void SecurityManager::loadFromConfig(Poco::Util::AbstractConfiguration & config)
     config.keys("users", config_keys);
 
     for (const std::string & key : config_keys)
-        new_users.emplace(std::piecewise_construct, std::forward_as_tuple(key), std::forward_as_tuple(key, "users." + key, config));
+    {
+        auto user = std::make_shared<const User>(key, "users." + key, config);
+        new_users.emplace(key, std::move(user));
+    }
 
     users = std::move(new_users);
 }
 
-const User & SecurityManager::authorizeAndGetUser(
+UserPtr SecurityManager::authorizeAndGetUser(
     const String & user_name,
     const String & password,
     const Poco::Net::IPAddress & address) const
@@ -50,7 +55,7 @@ const User & SecurityManager::authorizeAndGetUser(
     if (users.end() == it)
         throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
 
-    if (!it->second.addresses.contains(address))
+    if (!it->second->addresses.contains(address))
         throw Exception("User " + user_name + " is not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
 
     auto on_wrong_password = [&]()
@@ -61,7 +66,7 @@ const User & SecurityManager::authorizeAndGetUser(
             throw Exception("Wrong password for user " + user_name, ErrorCodes::WRONG_PASSWORD);
     };
 
-    if (!it->second.password_sha256_hex.empty())
+    if (!it->second->password_sha256_hex.empty())
     {
         unsigned char hash[32];
 
@@ -79,10 +84,10 @@ const User & SecurityManager::authorizeAndGetUser(
 
         Poco::toLowerInPlace(hash_hex);
 
-        if (hash_hex != it->second.password_sha256_hex)
+        if (hash_hex != it->second->password_sha256_hex)
             on_wrong_password();
     }
-    else if (password != it->second.password)
+    else if (password != it->second->password)
     {
         on_wrong_password();
     }
@@ -90,7 +95,7 @@ const User & SecurityManager::authorizeAndGetUser(
     return it->second;
 }
 
-const User & SecurityManager::getUser(const String & user_name) const
+UserPtr SecurityManager::getUser(const String & user_name) const
 {
     auto it = users.find(user_name);
 
@@ -107,8 +112,8 @@ bool SecurityManager::hasAccessToDatabase(const std::string & user_name, const s
     if (users.end() == it)
         throw Exception("Unknown user " + user_name, ErrorCodes::UNKNOWN_USER);
 
-    const auto & user = it->second;
-    return user.databases.empty() || user.databases.count(database_name);
+    auto user = it->second;
+    return user->databases.empty() || user->databases.count(database_name);
 }
 
 }
