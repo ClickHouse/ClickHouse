@@ -439,8 +439,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("database",        value<std::string>()->default_value("default"),     "")
             ("stacktrace",                                                            "print stack traces of exceptions")
 
-        #define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
-        #define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
+        #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
+        #define DECLARE_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
             APPLY_FOR_LIMITS(DECLARE_LIMIT)
         #undef DECLARE_SETTING
@@ -462,7 +462,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         /// Extract `settings` and `limits` from received `options`
         Settings settings;
 
-        #define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+        #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (options.count(#NAME)) \
             settings.set(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
