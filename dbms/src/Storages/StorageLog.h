@@ -68,7 +68,7 @@ private:
       */
     struct Mark
     {
-        size_t rows;    /// How many rows are before this offset.
+        size_t rows;    /// How many rows are before this offset including the block at this offset.
         size_t offset;  /// The offset in compressed file.
     };
 
@@ -95,7 +95,7 @@ private:
     /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
     void addFiles(const String & column_name, const IDataType & type);
 
-    bool loaded_marks;
+    bool loaded_marks = false;
 
     size_t max_compress_block_size;
     size_t file_count = 0;
@@ -106,11 +106,6 @@ private:
     /// It is done lazily, so that with a large number of tables, the server starts quickly.
     /// You can not call with a write locked `rwlock`.
     void loadMarks();
-
-    /// Can be called with any state of `rwlock`.
-    size_t marksCount();
-
-    void loadMarksImpl(bool load_null_marks);
 
     /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
     void addFile(const String & column_name, const IDataType & type, size_t level = 0);

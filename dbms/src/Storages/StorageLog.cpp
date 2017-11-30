@@ -20,7 +20,6 @@
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 
 #include <Common/typeid_cast.h>
 
@@ -272,13 +271,18 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 
         String stream_name = IDataType::getFileNameForStream(name, path);
 
+        const auto & file_it = storage.files.find(stream_name);
+        if (storage.files.end() == file_it)
+            throw Exception("Logical error: no information about file " + stream_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
+
         std::cerr << "Stream: " << stream_name << "\n";
-        std::cerr << "Offset: " << storage.files[stream_name].marks[mark_number].offset << "\n";
+        std::cerr << "Mark number: " << mark_number << "\n";
+        std::cerr << "Offset: " << file_it->second.marks[mark_number].offset << "\n";
 
         auto it = streams.try_emplace(stream_name,
-            storage.files[stream_name].data_file.path(),
+            file_it->second.data_file.path(),
             mark_number
-                ? storage.files[stream_name].marks[mark_number].offset
+                ? file_it->second.marks[mark_number].offset
                 : 0,
             max_read_buffer_size).first;
 
@@ -339,13 +343,15 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
     type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
+        if (written_streams.count(stream_name))
+            return;
 
         const auto & file = storage.files[stream_name];
-        const auto stream_it = streams.find(stream_name);
+        const auto stream_it = streams.try_emplace(stream_name, storage.files[stream_name].data_file.path(), storage.max_compress_block_size).first;
 
         Mark mark;
         mark.rows = (file.marks.empty() ? 0 : file.marks.back().rows) + column.size();
-        mark.offset = stream_it != streams.end() ? stream_it->second.plain_offset + stream_it->second.plain.count() : 0;
+        mark.offset = stream_it->second.plain_offset + stream_it->second.plain.count();
 
         out_marks.emplace_back(file.column_index, mark);
     }, {});
@@ -353,12 +359,13 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
     IDataType::OutputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
-
-        auto it_inserted = streams.try_emplace(stream_name, storage.files[stream_name].data_file.path(), storage.max_compress_block_size);
-        if (!it_inserted.second)
+        if (written_streams.count(stream_name))
             return nullptr;
 
-        return &it_inserted.first->second.compressed;
+        auto it = streams.find(stream_name);
+        if (streams.end() == it)
+            throw Exception("Logical error: stream was not created when writing data in LogBlockOutputStream", ErrorCodes::LOGICAL_ERROR);
+        return &it->second.compressed;
     };
 
     type.serializeBinaryBulkWithMultipleStreams(column, stream_getter, 0, 0, true, {});
@@ -366,6 +373,9 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
     type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
+        if (!written_streams.emplace(stream_name).second)
+            return;
+
         auto it = streams.find(stream_name);
         if (streams.end() == it)
             throw Exception("Logical error: stream was not created when writing data in LogBlockOutputStream", ErrorCodes::LOGICAL_ERROR);
@@ -401,7 +411,7 @@ StorageLog::StorageLog(
     size_t max_compress_block_size_)
     : IStorage{materialized_columns_, alias_columns_, column_defaults_},
     path(path_), name(name_), columns(columns_),
-    loaded_marks(false), max_compress_block_size(max_compress_block_size_),
+    max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json")
 {
     if (columns->empty())
@@ -481,12 +491,6 @@ void StorageLog::loadMarks()
     }
 
     loaded_marks = true;
-}
-
-
-size_t StorageLog::marksCount()
-{
-    return files.begin()->second.marks.size();
 }
 
 

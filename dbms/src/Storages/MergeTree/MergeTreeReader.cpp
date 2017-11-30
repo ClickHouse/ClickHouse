@@ -431,17 +431,35 @@ void MergeTreeReader::readData(
 }
 
 
+static bool arrayHasNoElementsRead(const IColumn & column)
+{
+    const ColumnArray * column_array = typeid_cast<const ColumnArray *>(&column);
+
+    if (!column_array)
+        return false;
+
+    size_t size = column_array->size();
+    if (!size)
+        return false;
+
+    size_t data_size = column_array->getData().size();
+    if (data_size)
+        return false;
+
+    size_t last_offset = column_array->getOffsets()[size - 1];
+    return last_offset != 0;
+}
+
+
 void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, bool always_reorder)
 {
     if (!res)
-        throw Exception("Empty block passed to fillMissingColumnsImpl", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Empty block passed to fillMissingColumns", ErrorCodes::LOGICAL_ERROR);
 
     try
     {
         /// For a missing column of a nested data structure we must create not a column of empty
         /// arrays, but a column of arrays of correct length.
-        /// TODO: If for some nested data structure only missing columns were selected, the arrays in these columns will be empty,
-        /// even if the offsets for this nested structure are present in the current part. This can be fixed.
         /// NOTE: Similar, but slightly different code is present in Block::addDefaults.
 
         /// First, collect offset columns for all arrays in the block.
@@ -462,13 +480,26 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
             }
         }
 
-        auto should_evaluate_defaults = false;
-        auto should_sort = always_reorder;
+        bool should_evaluate_defaults = false;
+        bool should_sort = always_reorder;
 
+        size_t rows = res.rows();
+
+        /// insert default values only for columns without default expressions
         for (const auto & requested_column : columns)
         {
-            /// insert default values only for columns without default expressions
-            if (!res.has(requested_column.name))
+            bool has_column = res.has(requested_column.name);
+            if (has_column)
+            {
+                const auto & col = *res.getByName(requested_column.name).column;
+                if (arrayHasNoElementsRead(col))
+                {
+                    res.erase(requested_column.name);
+                    has_column = false;
+                }
+            }
+
+            if (!has_column)
             {
                 should_sort = true;
                 if (storage.column_defaults.count(requested_column.name) != 0)
@@ -499,7 +530,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                     /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
                     /// but in some blocks (from other parts) it can be a full column.
                     column_to_add.column = column_to_add.type->createConstColumn(
-                        res.rows(), column_to_add.type->getDefault())->convertToFullColumnIfConst();
+                        rows, column_to_add.type->getDefault())->convertToFullColumnIfConst();
                 }
 
                 res.insert(std::move(column_to_add));
