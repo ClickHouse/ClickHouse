@@ -386,6 +386,7 @@ namespace ErrorCodes
     extern const int HTTP_LENGTH_REQUIRED = 381;
     extern const int CANNOT_LOAD_CATBOOST_MODEL = 382;
     extern const int CANNOT_APPLY_CATBOOST_MODEL = 383;
+    extern const int CANNOT_FIND_FIELD = 384;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

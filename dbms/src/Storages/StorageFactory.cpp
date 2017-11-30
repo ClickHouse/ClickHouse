@@ -29,6 +29,8 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFile.h>
+#include <Storages/StorageMySQL.h>
+#include <Storages/StorageODBC.h>
 #include <Storages/StorageDictionary.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -582,6 +584,33 @@ StoragePtr StorageFactory::get(
             data_path, table_name,
             key_names, kind, strictness,
             columns, materialized_columns, alias_columns, column_defaults);
+    }
+    else if (name == "MySQL") {
+        if (!args_ptr || args_ptr->size() != 5)
+            throw Exception(
+                "Storage MySQL requires exactly 5 parameters: MySQL('host:port', database, table, user, password).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
+        for (int i = 0; i < 5; i++)
+            args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], local_context);
+        return StorageMySQL::create(table_name, static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>(),
+            static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>(),
+            static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>(),
+            static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>(),
+            static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>(),
+            columns, materialized_columns, alias_columns, column_defaults, context);
+    }
+    else if (name == "ODBC") {
+        if (!args_ptr || args_ptr->size() != 2)
+            throw Exception(
+                "Storage ODBC requires exactly 2 parameters: ODBC(database, table).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        ASTs & args = *args_ptr;
+        for (int i = 0; i < 2; i++)
+            args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], local_context);
+        return StorageODBC::create(table_name, static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>(),
+            static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>(),
+            columns, materialized_columns, alias_columns, column_defaults, context);
     }
     else if (name == "Memory")
     {
