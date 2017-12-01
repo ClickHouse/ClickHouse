@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
     WriteBufferFromOStream out_buf(ostr);
 
     stopwatch.restart();
-    data_type.serializeBinaryBulk(*column, out_buf, 0, 0);
+    data_type.serializeBinaryBulkWithMultipleStreams(*column, [&](const IDataType::SubstreamPath &){ return &out_buf; }, 0, 0, true, {});
     stopwatch.stop();
 
     std::cout << "Elapsed: " << stopwatch.elapsedSeconds() << std::endl;
