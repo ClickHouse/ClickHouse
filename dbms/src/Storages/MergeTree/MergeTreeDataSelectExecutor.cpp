@@ -546,7 +546,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         column_names_to_read.erase(std::unique(column_names_to_read.begin(), column_names_to_read.end()), column_names_to_read.end());
 
         res = spreadMarkRangesAmongStreamsFinal(
-            parts_with_ranges,
+            std::move(parts_with_ranges),
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
@@ -559,7 +559,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     else
     {
         res = spreadMarkRangesAmongStreams(
-            parts_with_ranges,
+            std::move(parts_with_ranges),
             num_streams,
             column_names_to_read,
             max_block_size,
@@ -585,7 +585,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 
 
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
-    RangesInDataParts parts,
+    RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
     size_t max_block_size,
@@ -605,7 +605,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     size_t sum_marks = 0;
     for (size_t i = 0; i < parts.size(); ++i)
     {
-        /// Let the segments be listed from right to left so that the leftmost segment can be dropped using `pop_back()`.
+        /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
         std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
 
         for (const auto & range : parts[i].ranges)
@@ -655,10 +655,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         {
             size_t need_marks = min_marks_per_stream;
 
-            /// Loop parts.
+            /// Loop over parts.
+            /// We will iteratively take part or some subrange of a part from the back
+            ///  and assign a stream to read from it.
             while (need_marks > 0 && !parts.empty())
             {
-                RangesInDataPart & part = parts.back();
+                RangesInDataPart part = parts.back();
                 size_t & marks_in_part = sum_marks_in_parts.back();
 
                 /// We will not take too few rows from a part.
@@ -687,7 +689,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                 }
                 else
                 {
-                    /// Cycle through segments of a part.
+                    /// Loop through ranges in part. Take enough ranges to cover "need_marks".
                     while (need_marks > 0)
                     {
                         if (part.ranges.empty())
@@ -725,7 +727,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 }
 
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts parts,
+    RangesInDataParts && parts,
     const Names & column_names,
     size_t max_block_size,
     bool use_uncompressed_cache,

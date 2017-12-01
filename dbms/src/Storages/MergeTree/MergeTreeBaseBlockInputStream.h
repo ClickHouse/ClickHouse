@@ -1,4 +1,5 @@
 #pragma once
+
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
