@@ -1141,7 +1141,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
                 *final_aggregate_columns[i]);
     }
 
-    destroyImpl(method, data);      /// NOTE You can do better.
+    destroyImpl<Method>(data);      /// NOTE You can do better.
 }
 
 template <typename Method, typename Table>
@@ -2430,9 +2430,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 
 
 template <typename Method, typename Table>
-void NO_INLINE Aggregator::destroyImpl(
-    Method & method,
-    Table & table) const
+void NO_INLINE Aggregator::destroyImpl(Table & table) const
 {
     for (auto elem : table)
     {
@@ -2482,7 +2480,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        destroyImpl(*result.NAME, result.NAME->data);
+        destroyImpl<decltype(result.NAME)::element_type>(result.NAME->data);
 
     if (false) {}
     APPLY_FOR_AGGREGATED_VARIANTS(M)

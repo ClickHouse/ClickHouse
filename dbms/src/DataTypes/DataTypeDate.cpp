@@ -70,7 +70,7 @@ void DataTypeDate::serializeTextCSV(const IColumn & column, size_t row_num, Writ
     writeChar('"', ostr);
 }
 
-void DataTypeDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
 {
     LocalDate value;
     readCSV(value, istr);

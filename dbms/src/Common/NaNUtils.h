@@ -13,7 +13,7 @@ inline typename std::enable_if<std::is_floating_point<T>::value, bool>::type isN
 }
 
 template <typename T>
-inline typename std::enable_if<!std::is_floating_point<T>::value, bool>::type isNaN(T x)
+inline typename std::enable_if<!std::is_floating_point<T>::value, bool>::type isNaN(T)
 {
     return false;
 }
@@ -25,7 +25,7 @@ inline typename std::enable_if<std::is_floating_point<T>::value, bool>::type isF
 }
 
 template <typename T>
-inline typename std::enable_if<!std::is_floating_point<T>::value, bool>::type isFinite(T x)
+inline typename std::enable_if<!std::is_floating_point<T>::value, bool>::type isFinite(T)
 {
     return true;
 }

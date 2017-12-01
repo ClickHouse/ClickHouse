@@ -45,12 +45,12 @@ ColumnPtr IDataType::createConstColumn(size_t size, const Field & field) const
 }
 
 
-void IDataType::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void IDataType::serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const
 {
     throw Exception("Data type " + getName() + " must be serialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);
 }
 
-void IDataType::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void IDataType::deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const
 {
     throw Exception("Data type " + getName() + " must be deserialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);
 }

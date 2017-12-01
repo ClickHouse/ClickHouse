@@ -188,7 +188,7 @@ void RangeHashedDictionary::createAttributeImpl(Attribute & attribute, const Fie
 
 RangeHashedDictionary::Attribute RangeHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type};
+    Attribute attr{type, {}, {}, {}};
 
     switch (type)
     {

@@ -838,7 +838,7 @@ StoragePtr Context::tryRemoveExternalTable(const String & table_name)
     return {};
 }
 
-DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message)
+DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && /*lock*/, const String & elem, const String & message)
     : map(map_), mutex(mutex_)
 {
     bool inserted;

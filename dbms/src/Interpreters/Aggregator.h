@@ -1394,9 +1394,7 @@ protected:
         std::vector<Block> & destinations) const;
 
     template <typename Method, typename Table>
-    void destroyImpl(
-        Method & method,
-        Table & table) const;
+    void destroyImpl(Table & table) const;
 
     void destroyWithoutKey(
         AggregatedDataVariants & result) const;
