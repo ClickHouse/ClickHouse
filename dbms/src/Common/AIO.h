@@ -128,7 +128,7 @@ class AIOContextPool : public ext::singleton<AIOContextPool>
 
     int getCompletionEvents(io_event events[], const int max_events)
     {
-        timespec timeout{timeout_sec};
+        timespec timeout{timeout_sec, 0};
 
         auto num_events = 0;
 

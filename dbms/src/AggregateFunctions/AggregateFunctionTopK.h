@@ -11,7 +11,7 @@
 
 #include <Common/SpaceSaving.h>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <AggregateFunctions/AggregateFunctionGroupArray.h>
 
@@ -84,7 +84,7 @@ public:
         set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).value.merge(this->data(rhs).value);
     }
@@ -225,7 +225,7 @@ public:
         set.insert(str_serialized);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).value.merge(this->data(rhs).value);
     }

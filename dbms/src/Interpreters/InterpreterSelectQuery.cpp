@@ -1,4 +1,4 @@
-#include <experimental/optional>
+#include <optional>
 
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
@@ -42,7 +42,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Field.h>
-#include <Common/Collator.h>
+#include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 
 
@@ -508,7 +508,7 @@ void InterpreterSelectQuery::executeSingleQuery()
             before_order_and_select = chain.getLastActions();
             chain.addStep();
 
-            query_analyzer->appendProjectResult(chain, !second_stage);
+            query_analyzer->appendProjectResult(chain);
             final_projection = chain.getLastActions();
 
             chain.finalize();
@@ -690,7 +690,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
         return QueryProcessingStage::FetchColumns;
 
     /// The subquery interpreter, if the subquery
-    std::experimental::optional<InterpreterSelectQuery> interpreter_subquery;
+    std::optional<InterpreterSelectQuery> interpreter_subquery;
 
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredColumns();

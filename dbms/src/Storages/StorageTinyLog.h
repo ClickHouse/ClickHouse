@@ -39,8 +39,6 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    void drop() override;
-
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     bool checkData() const override;
@@ -68,6 +66,7 @@ private:
     Logger * log;
 
     void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+    void addFiles(const String & column_name, const IDataType & type);
 
 protected:
     StorageTinyLog(

@@ -6,7 +6,7 @@
 
 #include <Common/Stopwatch.h>
 
-#include <Core/Progress.h>
+#include <IO/Progress.h>
 
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>

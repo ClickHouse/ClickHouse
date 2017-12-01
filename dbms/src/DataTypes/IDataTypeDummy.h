@@ -30,29 +30,21 @@ private:
     }
 
 public:
-    void serializeBinary(const Field & field, WriteBuffer & ostr) const override                       { throwNoSerialization(); }
-    void deserializeBinary(Field & field, ReadBuffer & istr) const override                            { throwNoSerialization(); }
-    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override    { throwNoSerialization(); }
-    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override                         { throwNoSerialization(); }
-
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr,
-        size_t offset, size_t limit) const override                                                    { throwNoSerialization(); }
-
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override { throwNoSerialization(); }
-
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override           { throwNoSerialization(); }
-
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override    { throwNoSerialization(); }
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override                         { throwNoSerialization(); }
-
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override     { throwNoSerialization(); }
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override                          { throwNoSerialization(); }
-
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const override { throwNoSerialization(); }
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override                            { throwNoSerialization(); }
-
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override        { throwNoSerialization(); }
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override       { throwNoSerialization(); }
+    void serializeBinary(const Field &, WriteBuffer &) const override                       { throwNoSerialization(); }
+    void deserializeBinary(Field &, ReadBuffer &) const override                            { throwNoSerialization(); }
+    void serializeBinary(const IColumn &, size_t, WriteBuffer &) const override             { throwNoSerialization(); }
+    void deserializeBinary(IColumn &, ReadBuffer &) const override                          { throwNoSerialization(); }
+    void serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const override { throwNoSerialization(); }
+    void deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const override      { throwNoSerialization(); }
+    void serializeText(const IColumn &, size_t, WriteBuffer &) const override               { throwNoSerialization(); }
+    void serializeTextEscaped(const IColumn &, size_t, WriteBuffer &) const override        { throwNoSerialization(); }
+    void deserializeTextEscaped(IColumn &, ReadBuffer &) const override                     { throwNoSerialization(); }
+    void serializeTextQuoted(const IColumn &, size_t, WriteBuffer &) const override         { throwNoSerialization(); }
+    void deserializeTextQuoted(IColumn &, ReadBuffer &) const override                      { throwNoSerialization(); }
+    void serializeTextJSON(const IColumn &, size_t, WriteBuffer &, const FormatSettingsJSON &) const override { throwNoSerialization(); }
+    void deserializeTextJSON(IColumn &, ReadBuffer &) const override                        { throwNoSerialization(); }
+    void serializeTextCSV(const IColumn &, size_t, WriteBuffer &) const override            { throwNoSerialization(); }
+    void deserializeTextCSV(IColumn &, ReadBuffer &, const char) const override             { throwNoSerialization(); }
 
     ColumnPtr createColumn() const override
     {
@@ -64,7 +56,7 @@ public:
         throw Exception("Method getDefault() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void insertDefaultInto(IColumn & column) const override
+    void insertDefaultInto(IColumn &) const override
     {
         throw Exception("Method insertDefaultInto() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

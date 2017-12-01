@@ -147,7 +147,7 @@ bool DistinctSortedBlockInputStream::buildFilter(
 
         if (inserted)
         {
-            method.onNewKey(*it, columns.size(), i, variants.string_pool);
+            method.onNewKey(*it, columns.size(), variants.string_pool);
             has_new_data = true;
         }
 

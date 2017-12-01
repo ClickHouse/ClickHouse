@@ -44,7 +44,7 @@ public:
         this->data(place).sum += static_cast<const ColumnVector<T> &>(column).getData()[row_num];
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).sum += this->data(rhs).sum;
     }

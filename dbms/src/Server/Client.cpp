@@ -8,7 +8,7 @@
 #include <iomanip>
 #include <unordered_set>
 #include <algorithm>
-#include <experimental/optional>
+#include <optional>
 #include <boost/program_options.hpp>
 
 #include <Poco/File.h>
@@ -125,7 +125,7 @@ private:
     WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
     std::unique_ptr<ShellCommand> pager_cmd;
     /// The user can specify to redirect query output to a file.
-    std::experimental::optional<WriteBufferFromFile> out_file_buf;
+    std::optional<WriteBufferFromFile> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
 
     String home_path;
@@ -181,13 +181,13 @@ private:
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context.getSettingsRef().limits.NAME.changed) \
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_LIMITS(EXTRACT_LIMIT)
@@ -832,7 +832,7 @@ private:
         if (out_file_buf)
         {
             out_file_buf->next();
-            out_file_buf = std::experimental::nullopt;
+            out_file_buf.reset();
         }
         std_out.next();
     }
@@ -1241,8 +1241,8 @@ public:
             }
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
-#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
+#define DECLARE_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 
         /// Main commandline options related to client functionality and all parameters from Settings.
         boost::program_options::options_description main_description("Main options");
@@ -1331,7 +1331,7 @@ public:
         }
 
         /// Extract settings and limits from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (options.count(#NAME)) \
             context.setSetting(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)

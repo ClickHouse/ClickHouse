@@ -8,7 +8,7 @@
 #include <Poco/Condition.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
-#include <Core/Progress.h>
+#include <IO/Progress.h>
 #include <Common/MemoryTracker.h>
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/ClientInfo.h>

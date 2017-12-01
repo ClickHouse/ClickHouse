@@ -55,8 +55,12 @@ if ( ( ARCH_ARM AND NOT ARCH_AARCH64 ) OR ARCH_I386)
     message (WARNING "Support 32bit platforms is highly experimental")
 endif ()
 
-set (COMMON_WARNING_FLAGS "-Wall")    # -Werror is also added inside directories with our own code.
-set (CXX_WARNING_FLAGS "-Wnon-virtual-dtor")
+set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
+set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
+if (CCACHE_FOUND)
+    # clang-6.0: warning: argument unused during compilation: '-stdlib=libc++'
+    set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-unused-command-line-argument")
+endif ()
 
 set (CXX11_ABI "ENABLE" CACHE STRING "Use C++11 ABI: DEFAULT, ENABLE, DISABLE")
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
@@ -75,7 +79,7 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64.*|x86_64.*|AMD64.*")
+if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "amd64.*|x86_64.*|AMD64.*")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
     if (CMAKE_SYSTEM MATCHES "Linux")
@@ -123,24 +127,17 @@ if (ARCHNATIVE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
 endif ()
 
-option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" OFF)
-if (USE_LIBCXX)
-    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pthread") # NOTE: Why this is not the default and why this is needed only with libc++?
-    set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-    set (CMAKE_CXX_FLAGS_DEBUG           "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
-endif ()
-
 # Special options for better optimized code with clang
 #if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 #    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -Wno-unused-command-line-argument -mllvm -inline-threshold=10000")
 #endif ()
 
 if (CMAKE_VERSION VERSION_LESS "3.8.0")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++1z")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
 else ()
     set (CMAKE_CXX_STANDARD 17)
     set (CMAKE_CXX_STANDARD_REQUIRED ON)
-    set (CXX_FLAGS_INTERNAL_COMPILER "-std=gnu++1z")
+    set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
 endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
@@ -154,20 +151,29 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline")
 
-if (NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc")
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
+if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_SYSTEM MATCHES "FreeBSD"))
+    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif ()
 
-if (NOT APPLE)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+
+include (cmake/test_compiler.cmake)
+
+if (CMAKE_SYSTEM MATCHES "Linux" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} ${GLIBC_COMPATIBILITY_LINK_FLAGS} ${CXX11_ABI_FLAGS}")
 
-    if (USE_LIBCXX AND (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-        link_libraries (-Wl,-Bstatic -stdlib=libc++ c++ c++abi -Wl,-Bdynamic)
+    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ${HAVE_LIBCXX})
+    if (USE_LIBCXX)
+        set (CMAKE_CXX_FLAGS             "${CMAKE_CXX_FLAGS} -stdlib=libc++") # Ok for clang6, for older can cause 'not used option' warning
+        set (CMAKE_CXX_FLAGS_DEBUG       "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=1") # More checks in debug build.
+        if (MAKE_STATIC_LIBRARIES)
+            link_libraries (-Wl,-Bstatic -stdlib=libc++ c++ c++abi -Wl,-Bdynamic)
+        else ()
+            link_libraries (-stdlib=libc++ c++ c++abi)
+        endif ()
     endif ()
 endif ()
 
-include (cmake/test_compiler.cmake)
 if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} ${FLAG_NO_PIE}")
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
@@ -276,9 +282,10 @@ include (libs/libdaemon/cmake/find_unwind.cmake)
 
 set (FULL_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_C_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
 set (FULL_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
-message (STATUS "C_FLAGS    = ${FULL_C_FLAGS}")
-message (STATUS "CXX_FLAGS  = ${FULL_CXX_FLAGS}")
-message (STATUS "LINK_FLAGS = ${CMAKE_EXE_LINKER_FLAGS}")
+set (FULL_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_EXE_LINKER_FLAGS_${CMAKE_BUILD_TYPE_UC}}")
+message (STATUS "C_FLAGS      = ${FULL_C_FLAGS}")
+message (STATUS "CXX_FLAGS    = ${FULL_CXX_FLAGS}")
+message (STATUS "LINKER_FLAGS = ${FULL_EXE_LINKER_FLAGS}")
 
 # Directory for Yandex specific files
 set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)

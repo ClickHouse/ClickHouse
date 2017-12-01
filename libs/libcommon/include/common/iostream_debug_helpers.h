@@ -117,7 +117,7 @@ std::ostream & operator<<(std::ostream & stream, const std::list<K> & what)
 #include <ratio>
 
 template <std::intmax_t Num, std::intmax_t Denom>
-std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> & what)
+std::ostream & operator<<(std::ostream & stream, const std::ratio<Num, Denom> &)
 {
     stream << "ratio<Num=" << Num << ", Denom=" << Denom << ">";
     return stream;
@@ -166,10 +166,10 @@ std::ostream & operator<<(std::ostream & stream, const std::unique_ptr<T> & what
 }
 
 
-#include <experimental/optional>
+#include <optional>
 
 template <typename T>
-std::ostream & operator<<(std::ostream & stream, const std::experimental::optional<T> & what)
+std::ostream & operator<<(std::ostream & stream, const std::optional<T> & what)
 {
     stream << "optional{";
     if (what)

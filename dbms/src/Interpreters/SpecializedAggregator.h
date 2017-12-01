@@ -190,7 +190,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
             AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
             aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
+            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
 

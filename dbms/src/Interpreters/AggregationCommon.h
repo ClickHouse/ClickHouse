@@ -211,7 +211,7 @@ static inline UInt128 ALWAYS_INLINE hash128(
 
 /// Copy keys to the pool. Then put into pool StringRefs to them and return the pointer to the first.
 static inline StringRef * ALWAYS_INLINE placeKeysInPool(
-    size_t i, size_t keys_size, StringRefs & keys, Arena & pool)
+    size_t keys_size, StringRefs & keys, Arena & pool)
 {
     for (size_t j = 0; j < keys_size; ++j)
     {
@@ -291,7 +291,7 @@ inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
 /** Serialize keys into a continuous chunk of memory.
   */
 static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous(
-    size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, StringRefs & keys, Arena & pool)
+    size_t i, size_t keys_size, const ConstColumnPlainPtrs & key_columns, Arena & pool)
 {
     const char * begin = nullptr;
 

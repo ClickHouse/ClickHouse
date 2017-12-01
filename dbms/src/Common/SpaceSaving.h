@@ -35,7 +35,7 @@ struct SpaceSavingArena
 {
     SpaceSavingArena() {}
     const TKey emplace(const TKey & key) { return key; }
-    void free(const TKey & key) {}
+    void free(const TKey & /*key*/) {}
 };
 
 /*

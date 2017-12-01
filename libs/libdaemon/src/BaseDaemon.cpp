@@ -524,7 +524,7 @@ void BaseDaemon::reloadConfiguration()
       */
     std::string log_command_line_option = config().getString("logger.log", "");
     config_path = config().getString("config-file", "config.xml");
-    loaded_config = ConfigProcessor(false, true).loadConfig(config_path, /* allow_zk_includes = */ true);
+    loaded_config = ConfigProcessor(config_path, false, true).loadConfig(/* allow_zk_includes = */ true);
     if (last_configuration != nullptr)
         config().removeConfiguration(last_configuration);
     last_configuration = loaded_config.configuration.duplicate();
@@ -605,11 +605,13 @@ void BaseDaemon::buildLoggers()
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log_file = new FileChannel;
-        log_file->setProperty("path", Poco::Path(config().getString("logger.log")).absolute().toString());
-        log_file->setProperty("rotation", config().getRawString("logger.size", "100M"));
-        log_file->setProperty("archive", "number");
-        log_file->setProperty("compress", config().getRawString("logger.compress", "true"));
-        log_file->setProperty("purgeCount", config().getRawString("logger.count", "1"));
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config().getString("logger.log")).absolute().toString());
+        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config().getRawString("logger.size", "100M"));
+        log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
+        log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config().getRawString("logger.compress", "true"));
+        log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config().getRawString("logger.count", "1"));
+        log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config().getRawString("logger.flush", "true"));
+        log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config().getRawString("logger.rotateOnOpen", "false"));
         log->setChannel(log_file);
         split->addChannel(log);
         log_file->open();
@@ -623,11 +625,13 @@ void BaseDaemon::buildLoggers()
             pf->setProperty("times", "local");
             Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
             error_log_file = new FileChannel;
-            error_log_file->setProperty("path", Poco::Path(config().getString("logger.errorlog")).absolute().toString());
-            error_log_file->setProperty("rotation", config().getRawString("logger.size", "100M"));
-            error_log_file->setProperty("archive", "number");
-            error_log_file->setProperty("compress", config().getRawString("logger.compress", "true"));
-            error_log_file->setProperty("purgeCount", config().getRawString("logger.count", "1"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config().getString("logger.errorlog")).absolute().toString());
+            error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config().getRawString("logger.size", "100M"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
+            error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config().getRawString("logger.compress", "true"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config().getRawString("logger.count", "1"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config().getRawString("logger.flush", "true"));
+            error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config().getRawString("logger.rotateOnOpen", "false"));
             errorlog->setChannel(error_log_file);
             level->setChannel(errorlog);
             split->addChannel(level);
@@ -716,6 +720,20 @@ void BaseDaemon::initialize(Application & self)
     /// Считаем конфигурацию
     reloadConfiguration();
 
+    /// This must be done before creation of any files (including logs).
+    if (config().has("umask"))
+    {
+        std::string umask_str = config().getString("umask");
+        mode_t umask_num = 0;
+        std::stringstream stream;
+        stream << umask_str;
+        stream >> std::oct >> umask_num;
+
+        umask(umask_num);
+    }
+
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config);
+
     /// В случае падения - сохраняем коры
     {
         struct rlimit rlim;
@@ -743,18 +761,6 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot setenv TZ variable");
 
         tzset();
-    }
-
-    /// This must be done before creation of any files (including logs).
-    if (config().has("umask"))
-    {
-        std::string umask_str = config().getString("umask");
-        mode_t umask_num = 0;
-        std::stringstream stream;
-        stream << umask_str;
-        stream >> std::oct >> umask_num;
-
-        umask(umask_num);
     }
 
     std::string log_path = config().getString("logger.log", "");
