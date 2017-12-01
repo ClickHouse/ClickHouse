@@ -66,23 +66,26 @@ public:
     virtual DataTypePtr clone() const = 0;
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
-      * 'offset' and 'limit' are used to specify range.
-      * limit = 0 - means no limit.
-      * offset must be not greater than size of column.
-      * offset + limit could be greater than size of column
-      *  - in that case, column is serialized to the end.
-      */
-    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
-
-    /** Read no more than limit values and append them into column.
-      * avg_value_size_hint - if not zero, may be used to avoid reallocations while reading column of String type.
-      */
-    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
-
-    /** Some data types are represented in multiple streams while being serialized.
+      *
+      * Some data types are represented in multiple streams while being serialized.
       * Example:
       * - Arrays are represented as stream of all elements and stream of array sizes.
       * - Nullable types are represented as stream of values (with unspecified values in place of NULLs) and stream of NULL flags.
+      *
+      * Different streams are identified by "path".
+      * If the data type require single stream (it's true for most of data types), the stream will have empty path.
+      * Otherwise, the path can have components like "array elements", "array sizes", etc.
+      *
+      * For multidimensional arrays, path can have arbiraty length.
+      * As an example, for 2-dimensional arrays of numbers we have at least three streams:
+      * - array sizes;                      (sizes of top level arrays)
+      * - array elements / array sizes;     (sizes of second level (nested) arrays)
+      * - array elements / array elements;  (the most deep elements, placed contiguously)
+      *
+      * Descendants must override either serializeBinaryBulk, deserializeBinaryBulk methods (for simple cases with single stream)
+      *  or serializeBinaryBulkWithMultipleStreams, deserializeBinaryBulkWithMultipleStreams, enumerateStreams methods (for cases with multiple streams).
+      *
+      * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
       */
 
     struct Substream
@@ -111,6 +114,12 @@ public:
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
 
+    /** 'offset' and 'limit' are used to specify range.
+      * limit = 0 - means no limit.
+      * offset must be not greater than size of column.
+      * offset + limit could be greater than size of column
+      *  - in that case, column is serialized till the end.
+      */
     virtual void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         OutputStreamGetter getter,
@@ -123,6 +132,9 @@ public:
             serializeBinaryBulk(column, *stream, offset, limit);
     }
 
+    /** Read no more than limit values and append them into column.
+      * avg_value_size_hint - if not zero, may be used to avoid reallocations while reading column of String type.
+      */
     virtual void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
         InputStreamGetter getter,
@@ -135,6 +147,10 @@ public:
             deserializeBinaryBulk(column, *stream, limit, avg_value_size_hint);
     }
 
+    /** Override these methods for data types that require just single stream (most of data types).
+      */
+    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
+    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
 
     /** Serialization/deserialization of individual values.
       *
