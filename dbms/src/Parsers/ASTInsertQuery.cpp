@@ -11,7 +11,10 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "INSERT INTO ";
     if (table_function)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "FUNCTION ";
         table_function->formatImpl(settings, state, frame);
+    }
     else
         settings.ostr << (settings.hilite ? hilite_none : "")
                       << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);

@@ -51,7 +51,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!s_insert_into.ignore(pos, expected))
         return false;
 
-    if (s_function.ignore(pos, expected) || (s_table.ignore(pos, expected) && s_function.ignore(pos, expected)))
+    s_table.ignore(pos, expected);
+
+    if (s_function.ignore(pos, expected))
     {
         if (!table_function_p.parse(pos, table_function, expected))
             return false;
