@@ -16,7 +16,7 @@ std::set<std::string> ExternalLoaderConfigRepository::list(
 {
     std::set<std::string> files;
 
-    auto patterns = DB::getMultipleValuesFromConfig(config, "", path_key);
+    auto patterns = getMultipleValuesFromConfig(config, "", path_key);
 
     for (auto & pattern : patterns)
     {
