@@ -94,8 +94,7 @@ MergeTreeData::MergeTreeData(
     const String & log_name_,
     bool require_part_metadata_,
     bool attach,
-    BrokenPartCallback broken_part_callback_,
-    PartsCleanCallback parts_clean_callback_)
+    BrokenPartCallback broken_part_callback_)
     : ITableDeclaration{materialized_columns_, alias_columns_, column_defaults_}, context(context_),
     sampling_expression(sampling_expression_),
     index_granularity(settings_.index_granularity),
@@ -2120,7 +2119,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
-    const String & partition_id, std::unique_lock<std::mutex> & data_parts_lock)
+    const String & partition_id, std::unique_lock<std::mutex> & /*data_parts_lock*/)
 {
     auto min_block = std::numeric_limits<Int64>::min();
     MergeTreePartInfo dummy_part_info(partition_id, min_block, min_block, 0);

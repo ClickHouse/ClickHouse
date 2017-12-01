@@ -21,7 +21,7 @@
 using namespace DB;
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     NamesAndTypesList names_and_types_list
