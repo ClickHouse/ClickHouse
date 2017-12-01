@@ -137,7 +137,7 @@ struct AggregationMethodOneNumber
 
     /** Place additional data, if necessary, in case a new key was inserted into the hash table.
       */
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
     {
     }
 
@@ -205,7 +205,7 @@ struct AggregationMethodString
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
     {
         value.first.data = pool.insert(value.first.data, value.first.size);
     }
@@ -266,7 +266,7 @@ struct AggregationMethodFixedString
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
     {
         value.first.data = pool.insert(value.first.data, value.first.size);
     }
@@ -428,7 +428,7 @@ struct AggregationMethodKeysFixed
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
     {
     }
 
@@ -525,7 +525,7 @@ struct AggregationMethodConcat
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
     {
     }
 
@@ -603,14 +603,14 @@ struct AggregationMethodSerialized
             StringRefs & keys,
             Arena & pool) const
         {
-            return serializeKeysToPoolContiguous(i, keys_size, key_columns, keys, pool);
+            return serializeKeysToPoolContiguous(i, keys_size, key_columns, pool);
         }
     };
 
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
     {
     }
 
@@ -669,9 +669,9 @@ struct AggregationMethodHashed
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value.second; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value.second; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
     {
-        value.second.first = placeKeysInPool(i, keys_size, keys, pool);
+        value.second.first = placeKeysInPool(keys_size, keys, pool);
     }
 
     static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
