@@ -343,7 +343,7 @@ void NO_INLINE testForEachHash(const Key * data, size_t size, Init && init)
 
 void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
 {
-    auto nothing = [](auto & map){};
+    auto nothing = [](auto &){};
 
     testForEachHash<HashMap>(data, size, nothing);
     testForEachHash<std::unordered_map>(data, size, nothing);
@@ -356,6 +356,12 @@ void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
 
 int main(int argc, char ** argv)
 {
+    if (argc < 2)
+    {
+        std::cerr << "Usage: program n\n";
+        return 1;
+    }
+
     size_t n = atoi(argv[1]);
 //    size_t m = atoi(argv[2]);
 

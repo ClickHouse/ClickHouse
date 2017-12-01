@@ -443,7 +443,7 @@ void AnalyzeColumns::dump(WriteBuffer & out) const
         if (it->second.node)
         {
             std::stringstream formatted_ast;
-            formatAST(*it->second.node, formatted_ast, 0, false, true);
+            formatAST(*it->second.node, formatted_ast, false, true);
             writeString(formatted_ast.str(), out);
         }
         else
