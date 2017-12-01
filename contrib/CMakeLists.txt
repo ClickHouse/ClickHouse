@@ -50,6 +50,11 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
     target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64")
+       target_compile_definitions (zlib PUBLIC X86_64)
+       target_compile_definitions (zlibstatic PUBLIC X86_64)
+    endif ()
+
     set_target_properties(example PROPERTIES EXCLUDE_FROM_ALL 1)
     set_target_properties(minigzip PROPERTIES EXCLUDE_FROM_ALL 1)
     if (TARGET example64)
