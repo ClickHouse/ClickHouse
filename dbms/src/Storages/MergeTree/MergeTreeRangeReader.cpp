@@ -36,10 +36,7 @@ size_t MergeTreeRangeReader::read(Block & res, size_t max_rows_to_read)
     size_t rows_to_read = numPendingRows();
     rows_to_read = std::min(rows_to_read, max_rows_to_read);
     if (rows_to_read == 0)
-    {
-        throw Exception("rows_to_read: 0;");
-        return 0;
-    }
+        throw Exception("Logical error: 0 rows to read.", ErrorCodes::LOGICAL_ERROR);
 
     auto read_rows = merge_tree_reader.get().readRows(current_mark, continue_reading, rows_to_read, res);
 
