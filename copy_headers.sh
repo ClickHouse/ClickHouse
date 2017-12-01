@@ -22,7 +22,7 @@ BUILD_PATH=${3:-$SOURCE_PATH/build}
 PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
 if [[ -z $CLANG ]]; then
-    CLANG="clang"
+    CLANG=`cat $BUILD_PATH/internal_compiler.txt`
 fi
 
 START_HEADERS=$(echo \
@@ -31,8 +31,8 @@ START_HEADERS=$(echo \
     $SOURCE_PATH/dbms/src/AggregateFunctions/AggregateFunction*.h)
 
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
-
-for src_file in $(echo | $CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC \
+for src_file in $(echo | $CLANG -M -mcx16 \
+    $(cat "$BUILD_PATH/internal_compiler_definitions.txt") \
     $(cat "$BUILD_PATH/include_directories.txt") \
     $(echo $START_HEADERS | sed -r -e 's/[^ ]+/-include \0/g') \
     - |
