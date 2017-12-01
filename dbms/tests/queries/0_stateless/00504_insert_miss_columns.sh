@@ -11,4 +11,4 @@ clickhouse-client -q "CREATE TABLE test.advertiser_test ( action_date Date, adbl
 clickhouse-client -q "INSERT INTO test.advertiser_test SELECT *, sipHash64( CAST(adblock  AS String) ), CAST(1 AS Int8) FROM test.advertiser;" 2>/dev/null
 clickhouse-client -q "DROP TABLE test.advertiser";
 clickhouse-client -q "DROP TABLE test.advertiser_test";
-clickhouse-client -q "SELECT 'server still alive'";
+clickhouse-client -q "SELECT 'Still alive'";
