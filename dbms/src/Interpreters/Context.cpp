@@ -1113,7 +1113,13 @@ ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-        shared->external_dictionaries = std::make_shared<ExternalDictionaries>(*this->global_context, throw_on_error);
+
+        auto config_repository = runtime_components_factory->createExternalDictionariesConfigRepository();
+
+        shared->external_dictionaries = std::make_shared<ExternalDictionaries>(
+            std::move(config_repository),
+            *this->global_context,
+            throw_on_error);
     }
 
     return *shared->external_dictionaries;
@@ -1127,7 +1133,13 @@ ExternalModels & Context::getExternalModelsImpl(bool throw_on_error) const
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
-        shared->external_models = std::make_shared<ExternalModels>(*this->global_context, throw_on_error);
+
+        auto config_repository = runtime_components_factory->createExternalModelsConfigRepository();
+
+        shared->external_models = std::make_shared<ExternalModels>(
+            std::move(config_repository),
+            *this->global_context,
+            throw_on_error);
     }
 
     return *shared->external_models;
