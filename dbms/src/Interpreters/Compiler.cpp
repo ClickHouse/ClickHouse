@@ -225,6 +225,7 @@ void Compiler::compile(
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/c++/*/"
+        " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include/c++/*/x86_64-pc-linux-gnu/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/"
         " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/x86_64-linux-gnu/c++/*/"
