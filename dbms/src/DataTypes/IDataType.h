@@ -125,7 +125,7 @@ public:
         OutputStreamGetter getter,
         size_t offset,
         size_t limit,
-        bool position_independent_encoding,
+        bool /*position_independent_encoding*/,
         SubstreamPath path) const
     {
         if (WriteBuffer * stream = getter(path))
@@ -140,7 +140,7 @@ public:
         InputStreamGetter getter,
         size_t limit,
         double avg_value_size_hint,
-        bool position_independent_encoding,
+        bool /*position_independent_encoding*/,
         SubstreamPath path) const
     {
         if (ReadBuffer * stream = getter(path))

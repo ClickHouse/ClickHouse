@@ -21,7 +21,7 @@ public:
     UInt64 weight;
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked frame) const override
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
         settings.ostr << settings.nl_or_ws << indent_str << std::quoted(path, '\'') << " WEIGHT " << weight;

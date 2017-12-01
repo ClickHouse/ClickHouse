@@ -337,7 +337,7 @@ static String formattedAST(const ASTPtr & ast)
     if (!ast)
         return "";
     std::stringstream ss;
-    formatAST(*ast, ss, 0, false, true);
+    formatAST(*ast, ss, false, true);
     return ss.str();
 }
 

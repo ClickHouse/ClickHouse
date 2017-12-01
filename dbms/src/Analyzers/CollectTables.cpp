@@ -175,7 +175,7 @@ void CollectTables::dump(WriteBuffer & out) const
         else
         {
             std::stringstream formatted_ast;
-            formatAST(*table.node, formatted_ast, 0, false, true);
+            formatAST(*table.node, formatted_ast, false, true);
             writeString(formatted_ast.str(), out);
         }
 

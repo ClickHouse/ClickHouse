@@ -128,7 +128,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
     Pos begin = pos;
 
@@ -654,7 +654,7 @@ template class ParserAliasImpl<ParserIdentifier>;
 template class ParserAliasImpl<ParserTypeInCastExpression>;
 
 
-bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
     Pos begin = pos;
     if (pos->type == TokenType::Asterisk)
