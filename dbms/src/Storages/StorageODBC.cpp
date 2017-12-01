@@ -1,5 +1,5 @@
 #include <Storages/StorageODBC.h>
-#include <Storages/StorageMySQL.h>
+//#include <Storages/StorageMySQL.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -23,6 +23,8 @@ namespace ErrorCodes
 {
     extern const int CANNOT_FIND_FIELD;
 };
+
+std::string analyzeQuery(const SelectQueryInfo & query_info, const Context & context, std::string table_name, NamesAndTypesListPtr columns, google::dense_hash_map<std::string, DataTypePtr> & column_map, Block & sample_block);
 
 StorageODBC::StorageODBC(
     const std::string & table_name_,
@@ -55,7 +57,7 @@ BlockInputStreams StorageODBC::read(
 {
     DB::BlockInputStreams res;
     sample_block.clear();
-    std::string query = AnalyzeQuery(query_info, context, odbc_table_name, columns, column_map, sample_block);
+    std::string query = analyzeQuery(query_info, context, odbc_table_name, columns, column_map, sample_block);
     res.push_back(std::make_shared<ODBCBlockInputStream>(pool.get(), query, sample_block, max_block_size));
     return res;
 }

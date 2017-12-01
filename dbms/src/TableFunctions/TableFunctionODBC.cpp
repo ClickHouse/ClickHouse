@@ -7,11 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageODBC.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <Poco/Data/ODBC/SessionImpl.h>
 #include <Poco/Data/ODBC/ODBCException.h>
@@ -26,28 +22,26 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-IDataType* getDataType(SQLSMALLINT type)
+DataTypePtr getDataType(SQLSMALLINT type)
 {
     switch (type)
     {
-        case SQL_NUMERIC:
-        case SQL_DECIMAL:
         case SQL_INTEGER:
-            return new DataTypeUInt32;
+            return DataTypeFactory::instance().get("UInt32");
         case SQL_SMALLINT:
-            return new DataTypeUInt16;
+            return DataTypeFactory::instance().get("UInt16");
         case SQL_FLOAT:
         case SQL_REAL:
-            return new DataTypeFloat32;
+            return DataTypeFactory::instance().get("Float32");
         case SQL_DOUBLE:
-            return new DataTypeFloat64;
+            return DataTypeFactory::instance().get("Float64");
         case SQL_DATETIME:
         case SQL_TYPE_TIMESTAMP:
-            return new DataTypeDateTime;
+            return DataTypeFactory::instance().get("DateTime");
         case SQL_TYPE_DATE:
-            return new DataTypeDate;
+            return DataTypeFactory::instance().get("Date");
         default:
-            return new DataTypeString;
+            return DataTypeFactory::instance().get("String");
     }
 }
 
@@ -65,7 +59,7 @@ StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context
         throw Exception("Table function 'odbc' requires exactly 2 arguments: odbc connect sting and table name.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 2; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
     std::string database_name = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
@@ -97,12 +91,12 @@ StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context
         NamesAndTypesList materialized_columns;
         NamesAndTypesList alias_columns;
         ColumnDefaults column_defaults;
-        for (int ncol = 1; ncol <= cols; ncol++)
+        for (int ncol = 1; ncol <= cols; ++ncol)
         {
             SQLSMALLINT type = 0;
             SQLCHAR column_name[301];
             Poco::Data::ODBC::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), NULL, &type, NULL, NULL, NULL);
-            columns->push_back(NameAndTypePair((char*)column_name, std::shared_ptr<IDataType>(getDataType(type))));
+            columns->push_back(NameAndTypePair((char*)column_name, getDataType(type)));
 //            fprintf(stderr, "Column name: %s type: %i\n", column_name, type);
         }
         SQLFreeStmt(hstmt, SQL_DROP);

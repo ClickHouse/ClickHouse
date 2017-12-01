@@ -3,29 +3,19 @@
 #include <Storages/IStorage.h>
 #include <sparsehash/dense_hash_map>
 
+#include <Poco/Net/SocketAddress.h>
+
 #include <mysqlxx/Pool.h>
 
 namespace DB
 {
 
-inline std::string SplitHostPort(const char * host_port, int & port)
+inline std::string splitHostPort(const char * host_port, int & port)
 {
-    const char* colon = strchr(host_port, ':');
-    std::string server;
-    if (colon)
-    {
-        server = std::string(host_port, colon - host_port);
-        port = atoi(colon + 1);
-    }
-    else
-    {
-        server = host_port;
-        port = 3306;
-    }
-    return server;
+    Poco::Net::SocketAddress socket_address(host_port);
+    port = socket_address.port();
+    return socket_address.host().toString();
 }
-
-std::string AnalyzeQuery(const SelectQueryInfo & query_info, const Context & context, std::string table_name, NamesAndTypesListPtr columns, google::dense_hash_map<std::string, DataTypePtr> & column_map, Block & sample_block);
 
 class StorageMySQL : public IStorage
 {
@@ -59,7 +49,7 @@ public:
     {
         std::string server;
         int port;
-        server = SplitHostPort(host_port.c_str(), port);
+        server = splitHostPort(host_port.c_str(), port);
         return std::make_shared<StorageMySQL>(
             table_name, server, port, database_name, mysql_table_name, user_name, password, columns,
             materialized_columns_, alias_columns_, column_defaults_,
