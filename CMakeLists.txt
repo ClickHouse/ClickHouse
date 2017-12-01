@@ -133,11 +133,11 @@ endif ()
 #endif ()
 
 if (CMAKE_VERSION VERSION_LESS "3.8.0")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++1z")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
 else ()
     set (CMAKE_CXX_STANDARD 17)
     set (CMAKE_CXX_STANDARD_REQUIRED ON)
-    set (CXX_FLAGS_INTERNAL_COMPILER "-std=gnu++1z")
+    set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
 endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
