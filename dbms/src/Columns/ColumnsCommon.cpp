@@ -147,16 +147,16 @@ namespace
 
     struct NoResultOffsetsBuilder
     {
-        explicit NoResultOffsetsBuilder(IColumn::Offsets_t * res_offsets_) {}
-        void reserve(ssize_t result_size_hint, size_t src_size) {}
-        void insertOne(size_t array_size) {}
+        explicit NoResultOffsetsBuilder(IColumn::Offsets_t *) {}
+        void reserve(ssize_t, size_t) {}
+        void insertOne(size_t) {}
 
         template <size_t SIMD_BYTES>
         void insertChunk(
-            const IColumn::Offset_t * src_offsets_pos,
-            bool first,
-            IColumn::Offset_t chunk_offset,
-            size_t chunk_size)
+            const IColumn::Offset_t *,
+            bool,
+            IColumn::Offset_t,
+            size_t)
         {
         }
     };

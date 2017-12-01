@@ -913,7 +913,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out, path);
+        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out);
 
     if (false) {}
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -987,8 +987,7 @@ template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,
     Method & method,
-    IBlockOutputStream & out,
-    const String & path)
+    IBlockOutputStream & out)
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
@@ -1239,7 +1238,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
         ColumnPlainPtrs & key_columns,
         AggregateColumnsData & aggregate_columns,
         ColumnPlainPtrs & final_aggregate_columns,
-        const Sizes & key_sizes,
+        const Sizes & /*key_sizes*/,
         bool final)
     {
         if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
@@ -1282,7 +1281,7 @@ Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_v
         ColumnPlainPtrs & key_columns,
         AggregateColumnsData & aggregate_columns,
         ColumnPlainPtrs & final_aggregate_columns,
-        const Sizes & key_sizes,
+        const Sizes & /*key_sizes*/,
         bool final)
     {
     #define M(NAME) \

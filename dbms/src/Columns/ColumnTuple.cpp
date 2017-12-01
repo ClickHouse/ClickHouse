@@ -41,12 +41,12 @@ void ColumnTuple::get(size_t n, Field & res) const
         columns[i]->get(n, res_arr[i]);
 }
 
-StringRef ColumnTuple::getDataAt(size_t n) const
+StringRef ColumnTuple::getDataAt(size_t) const
 {
     throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void ColumnTuple::insertData(const char * pos, size_t length)
+void ColumnTuple::insertData(const char *, size_t)
 {
     throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }

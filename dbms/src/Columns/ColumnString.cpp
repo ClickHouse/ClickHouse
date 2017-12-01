@@ -181,7 +181,7 @@ struct ColumnString::less
     }
 };
 
-void ColumnString::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);

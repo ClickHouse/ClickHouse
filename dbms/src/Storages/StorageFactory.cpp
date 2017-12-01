@@ -143,7 +143,7 @@ static Names extractColumnNames(const ASTPtr & node)
   *     </default>
   * </graphite_rollup>
   */
-static void appendGraphitePattern(const Context & context,
+static void appendGraphitePattern(
     const Poco::Util::AbstractConfiguration & config, const String & config_element, Graphite::Patterns & patterns)
 {
     Graphite::Pattern pattern;
@@ -216,7 +216,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
     {
         if (startsWith(key, "pattern"))
         {
-            appendGraphitePattern(context, config, config_element + "." + key, params.patterns);
+            appendGraphitePattern(config, config_element + "." + key, params.patterns);
         }
         else if (key == "default")
         {
@@ -234,7 +234,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
     }
 
     if (config.has(config_element + ".default"))
-        appendGraphitePattern(context, config, config_element + "." + ".default", params.patterns);
+        appendGraphitePattern(config, config_element + "." + ".default", params.patterns);
 }
 
 
