@@ -108,12 +108,12 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
         }
 
-        size_t unread_rows_in_current_granule = reader.unreadRowsInCurrentGranule();
+        size_t unread_rows_in_current_granule = reader.numPendingRowsInCurrentGranule();
         if (unread_rows_in_current_granule >= rows_to_read)
             return rows_to_read;
 
-        size_t granule_to_read = (rows_to_read + reader.readRowsInCurrentGranule() + index_granularity / 2) / index_granularity;
-        return index_granularity * granule_to_read - reader.readRowsInCurrentGranule();
+        size_t granule_to_read = (rows_to_read + reader.numReadRowsInCurrentGranule() + index_granularity / 2) / index_granularity;
+        return index_granularity * granule_to_read - reader.numReadRowsInCurrentGranule();
     };
 
     // read rows from reader and clear columns
@@ -196,7 +196,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 if (!pre_range_reader)
                     processNextRange(*task, *pre_reader);
 
-                size_t rows_to_read = std::min(pre_range_reader->unreadRows(), space_left);
+                size_t rows_to_read = std::min(pre_range_reader->numPendingRows(), space_left);
                 size_t read_rows = pre_range_reader->read(res, rows_to_read);
                 rows_was_read_in_last_range += read_rows;
                 if (pre_range_reader->isReadingFinished())
@@ -263,7 +263,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     if (task->number_of_rows_to_skip)
                         skipRows(res, *task->current_range_reader, *task, task->number_of_rows_to_skip);
                     size_t rows_to_read = ranges_to_read.empty()
-                        ? rows_was_read_in_last_range : task->current_range_reader->unreadRows();
+                        ? rows_was_read_in_last_range : task->current_range_reader->numPendingRows();
                     task->current_range_reader->read(res, rows_to_read);
                 }
 
@@ -272,7 +272,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     const auto & range = ranges_to_read[range_idx];
                     task->current_range_reader = reader->readRange(range.begin, range.end);
                     size_t rows_to_read = range_idx + 1 == ranges_to_read.size()
-                        ? rows_was_read_in_last_range : task->current_range_reader->unreadRows();
+                        ? rows_was_read_in_last_range : task->current_range_reader->numPendingRows();
                     task->current_range_reader->read(res, rows_to_read);
                 }
 
@@ -310,7 +310,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                     /// Now we need to read the same number of rows as in prewhere.
                     size_t rows_to_read = next_range_idx == ranges_to_read.size()
-                        ? rows_was_read_in_last_range : (task->current_range_reader->unreadRows() - number_of_rows_to_skip);
+                        ? rows_was_read_in_last_range : (task->current_range_reader->numPendingRows() - number_of_rows_to_skip);
 
                     auto readRows = [&]()
                     {
@@ -338,7 +338,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     {
                         auto rows_should_be_copied = pre_filter_pos - pre_filter_begin_pos;
                         auto range_reader_with_skipped_rows = range_reader.getFutureState(number_of_rows_to_skip + rows_should_be_copied);
-                        auto unread_rows_in_current_granule = range_reader_with_skipped_rows.unreadRowsInCurrentGranule();
+                        auto unread_rows_in_current_granule = range_reader_with_skipped_rows.numPendingRowsInCurrentGranule();
 
                         const size_t limit = std::min(pre_filter.size(), pre_filter_pos + unread_rows_in_current_granule);
                         bool will_read_until_mark = unread_rows_in_current_granule == limit - pre_filter_pos;
@@ -424,8 +424,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             else
                 throw Exception{
                     "Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER
-                };
+                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER};
 
             if (res)
             {

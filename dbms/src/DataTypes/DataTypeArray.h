@@ -68,24 +68,27 @@ public:
 
     /** Streaming serialization of arrays is arranged in a special way:
       * - elements placed in a row are written/read without array sizes;
-      * - the sizes are written/read in a separate column,
-      *   and the caller must take care of writing/reading the sizes.
+      * - the sizes are written/read in a separate stream,
       * This is necessary, because when implementing nested structures, several arrays can have common sizes.
       */
 
-    /** Write only values, without dimensions. The caller also needs to record the offsets somewhere. */
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
+    void enumerateStreams(StreamCallback callback, SubstreamPath path) const override;
 
-    /** Read only values, without dimensions.
-      * In this case, all the sizes must already be read in the column beforehand.
-      */
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        OutputStreamGetter getter,
+        size_t offset,
+        size_t limit,
+        bool position_independent_encoding,
+        SubstreamPath path) const override;
 
-    /** Write the dimensions. */
-    void serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
-
-    /** Read the dimensions. Call this method before reading the values. */
-    void deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const;
+    void deserializeBinaryBulkWithMultipleStreams(
+        IColumn & column,
+        InputStreamGetter getter,
+        size_t limit,
+        double avg_value_size_hint,
+        bool position_independent_encoding,
+        SubstreamPath path) const override;
 
     ColumnPtr createColumn() const override;
 
