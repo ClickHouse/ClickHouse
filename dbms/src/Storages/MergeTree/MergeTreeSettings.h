@@ -122,7 +122,15 @@ struct MergeTreeSettings
     M(SettingUInt64, vertical_merge_algorithm_min_rows_to_activate, 16 * DEFAULT_MERGE_BLOCK_SIZE)            \
                                                                                                               \
     /** Minimal amount of non-PK columns to activate Vertical merge algorithm */                              \
-    M(SettingUInt64, vertical_merge_algorithm_min_columns_to_activate, 11)
+    M(SettingUInt64, vertical_merge_algorithm_min_columns_to_activate, 11)                                    \
+                                                                                                              \
+    /** Compatibility settings */                                                                             \
+                                                                                                              \
+    /** Allow to create a table with sampling expression not in primary key.                                  \
+      * This is needed only to temporarily allow to run the server with wrong tables                          \
+      *  for backward compatibility.                                                                          \
+      */                                                                                                      \
+    M(SettingBool, compatibility_allow_sampling_expression_not_in_primary_key, false)                         \
 
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M)  \

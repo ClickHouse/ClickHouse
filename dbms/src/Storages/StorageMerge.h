@@ -14,8 +14,6 @@ namespace DB
   */
 class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMerge>;
-
 public:
     std::string getName() const override { return "Merge"; }
     std::string getTableName() const override { return name; }
@@ -54,13 +52,13 @@ private:
     OptimizedRegularExpression table_name_regexp;
     const Context & context;
 
-    StorageMerge(
-        const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
-        const String & source_database_,      /// In which database to look for source tables.
-        const String & table_name_regexp_,    /// Regex names of source tables.
-        const Context & context_);            /// Known tables.
+    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockPtr>>;
 
+    StorageListWithLocks getSelectedTables() const;
+
+    Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
+
+protected:
     StorageMerge(
         const std::string & name_,
         NamesAndTypesListPtr columns_,
@@ -70,12 +68,6 @@ private:
         const String & source_database_,
         const String & table_name_regexp_,
         const Context & context_);
-
-    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockPtr>>;
-
-    StorageListWithLocks getSelectedTables() const;
-
-    Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
 };
 
 }
