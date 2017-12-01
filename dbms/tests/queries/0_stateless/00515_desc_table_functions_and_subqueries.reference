@@ -14,11 +14,13 @@ date	Date
 val	UInt64		
 val2	UInt8		
 val3	UInt8		
+val4	UInt64		
 -
 date	Date		
 val	UInt64		
 val2	UInt8		
 val3	UInt8		
+val4	UInt64		
 -
 1	UInt8		
 -

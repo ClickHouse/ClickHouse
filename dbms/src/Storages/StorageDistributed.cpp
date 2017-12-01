@@ -167,12 +167,13 @@ StorageDistributed::StorageDistributed(
 }
 
 
-StoragePtr StorageDistributed::createWithOwnCluster(
+StoragePtr StorageDistributed::createWithOwnClusters(
     const std::string & name_,
     NamesAndTypesListPtr columns_,
     const String & remote_database_,
     const String & remote_table_,
-    ClusterPtr & owned_cluster_,
+    ClusterPtr owned_cluster_,
+    ClusterPtr owned_cluster_for_insertion_,
     const Context & context_)
 {
     auto res = ext::shared_ptr_helper<StorageDistributed>::create(
@@ -180,6 +181,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
         remote_table_, String{}, context_);
 
     res->owned_cluster = owned_cluster_;
+    res->owned_cluster_for_insertion = owned_cluster_for_insertion_;
 
     return res;
 }
@@ -221,11 +223,11 @@ BlockInputStreams StorageDistributed::read(
 
 BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
 {
-    auto cluster = owned_cluster ? owned_cluster : context.getCluster(cluster_name);
+    auto cluster = owned_cluster_for_insertion ? owned_cluster_for_insertion : context.getCluster(cluster_name);
 
-    /// TODO: !path.empty() can be replaced by !owned_cluster or !cluster_name.empty() ?
-    /// owned_cluster for remote table function use sync insertion => doesn't need a path.
-    bool write_enabled = (!path.empty() || owned_cluster)
+    /// TODO: !path.empty() can be replaced by !owned_cluster_for_insertion or !cluster_name.empty() ?
+    /// owned_cluster_for_insertion for remote table function use sync insertion => doesn't need a path.
+    bool write_enabled = (!path.empty() || owned_cluster_for_insertion)
                          && (((cluster->getLocalShardCount() + cluster->getRemoteShardCount()) < 2) || has_sharding_key);
 
     if (!write_enabled)
@@ -234,7 +236,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Setti
             " with more than one shard and no sharding key provided",
             ErrorCodes::STORAGE_REQUIRES_PARAMETER};
 
-    bool insert_sync = settings.insert_distributed_sync || owned_cluster;
+    bool insert_sync = settings.insert_distributed_sync || owned_cluster_for_insertion;
     auto timeout = settings.insert_distributed_timeout;
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
