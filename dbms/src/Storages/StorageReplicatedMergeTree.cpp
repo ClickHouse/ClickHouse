@@ -2357,7 +2357,7 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const Settings & settings)
 {
     assertNotReadonly();
 
@@ -2422,7 +2422,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
 
 void StorageReplicatedMergeTree::alter(const AlterCommands & params,
-    const String & database_name, const String & table_name, const Context & context)
+    const String & /*database_name*/, const String & /*table_name*/, const Context & context)
 {
     assertNotReadonly();
 

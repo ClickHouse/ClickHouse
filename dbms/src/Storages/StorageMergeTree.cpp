@@ -112,7 +112,7 @@ BlockInputStreams StorageMergeTree::read(
     return reader.read(column_names, query_info, context, processed_stage, max_block_size, num_streams, nullptr, 0);
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }
@@ -130,7 +130,7 @@ void StorageMergeTree::drop()
     data.dropAllData();
 }
 
-void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
@@ -449,7 +449,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
 
 
 bool StorageMergeTree::optimize(
-    const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+    const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
     String partition_id;
     if (partition)
@@ -458,7 +458,7 @@ bool StorageMergeTree::optimize(
 }
 
 
-void StorageMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
+void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & partition, bool detach, const Context & context)
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.

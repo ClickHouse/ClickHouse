@@ -1238,8 +1238,7 @@ protected:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        IBlockOutputStream & out,
-        const String & path);
+        IBlockOutputStream & out);
 
 public:
     /// Templates that are instantiated by dynamic code compilation - see SpecializedAggregator.h

@@ -57,7 +57,7 @@ int main(int argc, char ** argv)
         ExpressionAnalyzer analyzer(ast, context, {}, columns);
         ExpressionActionsChain chain;
         analyzer.appendSelect(chain, false);
-        analyzer.appendProjectResult(chain, false);
+        analyzer.appendProjectResult(chain);
         chain.finalize();
         ExpressionActionsPtr expression = chain.getLastActions();
 

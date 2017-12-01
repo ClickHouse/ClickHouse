@@ -490,7 +490,7 @@ void StorageLog::loadMarks()
 }
 
 
-void StorageLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageLog::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -544,7 +544,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 
 BlockInputStreams StorageLog::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
@@ -588,7 +588,7 @@ BlockInputStreams StorageLog::read(
 
 
 BlockOutputStreamPtr StorageLog::write(
-    const ASTPtr & query, const Settings & settings)
+    const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     loadMarks();
     return std::make_shared<LogBlockOutputStream>(*this);
