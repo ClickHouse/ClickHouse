@@ -1099,7 +1099,14 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
     std::lock_guard<std::mutex> lock(shared->embedded_dictionaries_mutex);
 
     if (!shared->embedded_dictionaries)
-        shared->embedded_dictionaries = std::make_shared<EmbeddedDictionaries>(*this->global_context, throw_on_error);
+    {
+        auto geo_dictionaries_loader = runtime_components_factory->createGeoDictionariesLoader();
+
+        shared->embedded_dictionaries = std::make_shared<EmbeddedDictionaries>(
+            std::move(geo_dictionaries_loader),
+            *this->global_context,
+            throw_on_error);
+    }
 
     return *shared->embedded_dictionaries;
 }
