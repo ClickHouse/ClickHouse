@@ -261,7 +261,7 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 
     /// quality. Methods are taken from SMHasher.
     {
-        auto wrapper = [](const void * blob, const int len, const uint32_t seed, void * out)
+        auto wrapper = [](const void * blob, const int, const uint32_t, void * out)
         {
             *reinterpret_cast<UInt32*>(out) = Func(*reinterpret_cast<const UInt64 *>(blob));
         };

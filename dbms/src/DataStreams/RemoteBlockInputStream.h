@@ -60,7 +60,7 @@ public:
     /** Prevent default progress notification because progress' callback is
         called by its own
       */
-    void progress(const Progress & value) override {}
+    void progress(const Progress & /*value*/) override {}
 
     void cancel() override;
 

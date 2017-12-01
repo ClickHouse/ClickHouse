@@ -53,8 +53,7 @@ const char * ASTSystemQuery::typeToString(Type type)
 }
 
 
-void ASTSystemQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state,
-                                IAST::FormatStateStacked frame) const
+void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM " << (settings.hilite ? hilite_none : "");
     settings.ostr << typeToString(type);
