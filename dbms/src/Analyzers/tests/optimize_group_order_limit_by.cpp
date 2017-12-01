@@ -67,7 +67,7 @@ try
     OptimizeGroupOrderLimitBy optimizer;
     optimizer.process(ast, inference);
 
-    formatAST(*ast, std::cout, 0, false);
+    formatAST(*ast, std::cout, false);
     std::cout << "\n";
     return 0;
 

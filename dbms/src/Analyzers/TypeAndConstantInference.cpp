@@ -513,7 +513,7 @@ void TypeAndConstantInference::dump(WriteBuffer & out) const
         else
         {
             std::stringstream formatted_ast;
-            formatAST(*it->second.node, formatted_ast, 0, false, true);
+            formatAST(*it->second.node, formatted_ast, false, true);
             writeString(formatted_ast.str(), out);
         }
 
