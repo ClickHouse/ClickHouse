@@ -427,7 +427,7 @@ void executeQuery(
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
-            std::experimental::optional<WriteBufferFromFile> out_file_buf;
+            std::optional<WriteBufferFromFile> out_file_buf;
             if (ast_query_with_output && ast_query_with_output->out_file)
             {
                 if (!allow_into_outfile)

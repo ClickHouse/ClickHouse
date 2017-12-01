@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <AggregateFunctions/IUnaryAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
 #include <Common/typeid_cast.h>
@@ -112,6 +113,17 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
     }
 };
 
+template <>
+struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UInt64>
+{
+    void addImpl(const IColumn & column, size_t row_num, UInt8 threshold)
+    {
+        UInt128 value = static_cast<const ColumnVector<UInt128> &>(column).getData()[row_num];
+        SipHash hash;
+        hash.update(reinterpret_cast<const char *>(&value), sizeof(value));
+        insert(hash.get64(), threshold);
+    }
+};
 
 constexpr UInt8 uniq_upto_max_threshold = 100;
 

@@ -67,8 +67,6 @@ CATBOOST_MODEL_CONFIG = \
         <type>catboost</type>
         <name>{name}</name>
         <path>{path}</path>
-        <float_features_count>{float_features_count}</float_features_count>
-        <cat_features_count>{cat_features_count}</cat_features_count>
         <lifetime>0</lifetime>
     </model>
 </models>
@@ -94,8 +92,8 @@ class ClickHouseServerWithCatboostModels:
         stderr_file = os.path.join(self.root, 'server_stderr.txt')
         return ClickHouseServer(self.binary_path, self.config_path, stdout_file, stderr_file, self.shutdown_timeout)
 
-    def add_model(self, model_name, model, float_features_count, cat_features_count):
-        self.models[model_name] = (float_features_count, cat_features_count, model)
+    def add_model(self, model_name, model):
+        self.models[model_name] = model
 
     def apply_model(self, name, df, cat_feature_names):
         names = list(df)
@@ -135,15 +133,12 @@ class ClickHouseServerWithCatboostModels:
         if not os.path.exists(self.models_dir):
             os.makedirs(self.models_dir)
 
-        for name, params in self.models.items():
-            float_features_count, cat_features_count, model = params
+        for name, model in self.models.items():
             model_path = os.path.join(self.models_dir, name + '.cbm')
             config_path = os.path.join(self.models_dir, name + '_model.xml')
             params = {
                 'name': name,
-                'path': model_path,
-                'float_features_count': float_features_count,
-                'cat_features_count': cat_features_count
+                'path': model_path
             }
             config = CATBOOST_MODEL_CONFIG.format(**params)
             with open(config_path, 'w') as f:

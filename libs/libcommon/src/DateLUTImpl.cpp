@@ -123,11 +123,16 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         ++i;
     }
 
-    /// Fill lookup table for years.
-    ::memset(years_lut, 0, DATE_LUT_YEARS * sizeof(years_lut[0]));
-    for (size_t day = 0; day < i && lut[day].year <= DATE_LUT_MAX_YEAR; ++day)
+    /// Fill lookup table for years and months.
+    for (size_t day = 0; day < DATE_LUT_SIZE && lut[day].year <= DATE_LUT_MAX_YEAR; ++day)
     {
-        if (lut[day].month == 1 && lut[day].day_of_month == 1)
-            years_lut[lut[day].year - DATE_LUT_MIN_YEAR] = day;
+        const Values & values = lut[day];
+
+        if (values.day_of_month == 1)
+        {
+            if (values.month == 1)
+                years_lut[values.year - DATE_LUT_MIN_YEAR] = day;
+            years_months_lut[(values.year - DATE_LUT_MIN_YEAR) * 12 + values.month - 1] = day;
+        }
     }
 }

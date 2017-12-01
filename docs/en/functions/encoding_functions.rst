@@ -3,10 +3,10 @@ Encoding functions
 
 hex
 ~~~
-Accepts a string, number, date, or date with time. Returns a string containing the argument's hexadecimal representation. Uses uppercase letters A-F. 
-Doesn't use ``0x`` prefixes or ``h`` suffixes. 
-For strings, all bytes are simply encoded as two hexadecimal numbers. Numbers are converted to big endian ("human readable") format. 
-For numbers, older zeros are trimmed, but only by entire bytes. 
+Accepts a String, unsigned integer, Date, or DateTime. Returns a string containing the argument's hexadecimal representation. Uses uppercase letters A-F.
+Doesn't use ``0x`` prefixes or ``h`` suffixes.
+For strings, all bytes are simply encoded as two hexadecimal numbers. Numbers are converted to big endian ("human readable") format.
+For numbers, older zeros are trimmed, but only by entire bytes.
 For example, ``hex(1) = '01'``. Dates are encoded as the number of days since the beginning of the Unix Epoch. Dates with times are encoded as the number of seconds since the beginning of the Unix Epoch.
 
 unhex(str)

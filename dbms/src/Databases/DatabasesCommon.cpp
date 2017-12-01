@@ -36,6 +36,9 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     if (!create.is_view && !create.is_materialized_view)
         create.select = nullptr;
 
+    create.format = nullptr;
+    create.out_file = nullptr;
+
     std::ostringstream statement_stream;
     formatAST(create, statement_stream, 0, false);
     statement_stream << '\n';

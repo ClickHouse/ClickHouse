@@ -483,13 +483,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.to_database.empty())
         create.to_database = current_database;
 
+    if (create.select && (create.is_view || create.is_materialized_view))
+        create.select->setDatabaseIfNeeded(current_database);
+
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;
     Block as_select_sample;
-    /// For `view` type tables, you may need `sample_block` to get the columns.
-    if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
+    if (create.select && (!create.attach || !create.columns))
     {
-        create.select->setDatabaseIfNeeded(current_database);
-        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->ptr(), context);
+        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->clone(), context);
         as_select_sample = interpreter_select->getSampleBlock();
     }
 
@@ -549,8 +550,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     res->startup();
 
-    /// If the CREATE SELECT query is, insert the data into the table
-    if (create.select && !create.is_view && (!create.is_materialized_view || create.is_populate))
+    /// If the query is a CREATE SELECT, insert the data into the table.
+    if (create.select && !create.attach
+        && !create.is_view && (!create.is_materialized_view || create.is_populate))
     {
         auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
 

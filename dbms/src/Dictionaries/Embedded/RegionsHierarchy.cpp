@@ -77,7 +77,7 @@ void RegionsHierarchy::reload()
         }
         DB::assertChar('\n', in);
 
-        if (read_region_id <= 0 || read_type < 0)
+        if (read_region_id <= 0)
             continue;
 
         RegionID region_id = read_region_id;
@@ -86,7 +86,7 @@ void RegionsHierarchy::reload()
         if (read_parent_id >= 0)
             parent_id = read_parent_id;
 
-        RegionType type = read_type;
+        RegionType type = static_cast<RegionType>(read_type);
 
         if (region_id > max_region_id)
         {
@@ -108,33 +108,33 @@ void RegionsHierarchy::reload()
         types[region_id] = type;
     }
 
-    new_parents        .resize(max_region_id + 1);
-    new_city        .resize(max_region_id + 1);
-    new_country        .resize(max_region_id + 1);
-    new_area        .resize(max_region_id + 1);
-    new_district    .resize(max_region_id + 1);
+    new_parents      .resize(max_region_id + 1);
+    new_city         .resize(max_region_id + 1);
+    new_country      .resize(max_region_id + 1);
+    new_area         .resize(max_region_id + 1);
+    new_district     .resize(max_region_id + 1);
     new_continent    .resize(max_region_id + 1);
     new_top_continent.resize(max_region_id + 1);
-    new_populations .resize(max_region_id + 1);
-    new_depths        .resize(max_region_id + 1);
+    new_populations  .resize(max_region_id + 1);
+    new_depths       .resize(max_region_id + 1);
     types            .resize(max_region_id + 1);
 
     /// prescribe the cities and countries for the regions
     for (RegionID i = 0; i <= max_region_id; ++i)
     {
-        if (types[i] == REGION_TYPE_CITY)
+        if (types[i] == RegionType::City)
             new_city[i] = i;
 
-        if (types[i] == REGION_TYPE_AREA)
+        if (types[i] == RegionType::Area)
             new_area[i] = i;
 
-        if (types[i] == REGION_TYPE_DISTRICT)
+        if (types[i] == RegionType::District)
             new_district[i] = i;
 
-        if (types[i] == REGION_TYPE_COUNTRY)
+        if (types[i] == RegionType::Country)
             new_country[i] = i;
 
-        if (types[i] == REGION_TYPE_CONTINENT)
+        if (types[i] == RegionType::Continent)
         {
             new_continent[i] = i;
             new_top_continent[i] = i;
@@ -156,19 +156,19 @@ void RegionsHierarchy::reload()
             if (current > max_region_id)
                 throw Poco::Exception("Logical error in regions hierarchy: region " + DB::toString(current) + " (specified as parent) doesn't exist");
 
-            if (types[current] == REGION_TYPE_CITY)
+            if (types[current] == RegionType::City)
                 new_city[i] = current;
 
-            if (types[current] == REGION_TYPE_AREA)
+            if (types[current] == RegionType::Area)
                 new_area[i] = current;
 
-            if (types[current] == REGION_TYPE_DISTRICT)
+            if (types[current] == RegionType::District)
                 new_district[i] = current;
 
-            if (types[current] == REGION_TYPE_COUNTRY)
+            if (types[current] == RegionType::Country)
                 new_country[i] = current;
 
-            if (types[current] == REGION_TYPE_CONTINENT)
+            if (types[current] == RegionType::Continent)
             {
                 if (!new_continent[i])
                     new_continent[i] = current;

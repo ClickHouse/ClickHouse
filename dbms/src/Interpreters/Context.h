@@ -32,13 +32,14 @@ namespace DB
 {
 
 struct ContextShared;
+class IRuntimeComponentsFactory;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
 class ExternalDictionaries;
 class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
-class ReshardingWorker;
+class BackgroundSchedulePool;
 class MergeList;
 class Cluster;
 class Compiler;
@@ -89,6 +90,8 @@ private:
     using Shared = std::shared_ptr<ContextShared>;
     Shared shared;
 
+    std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
+
     ClientInfo client_info;
 
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
@@ -116,6 +119,7 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
+    static Context createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
     ~Context();
@@ -308,9 +312,7 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
-
-    void setReshardingWorker(std::shared_ptr<ReshardingWorker> resharding_worker);
-    ReshardingWorker & getReshardingWorker() const;
+    BackgroundSchedulePool & getSchedulePool();
 
     void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
@@ -353,6 +355,10 @@ public:
     /// Set once
     String getDefaultProfileName() const;
     void setDefaultProfileName(const String & name);
+
+    /// Base path for format schemas
+    String getFormatSchemaPath() const;
+    void setFormatSchemaPath(const String & path);
 
     /// User name and session identifier. Named sessions are local to users.
     using SessionKey = std::pair<String, String>;
