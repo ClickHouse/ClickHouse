@@ -55,11 +55,10 @@
 #define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 5000 /// Maximum waiting time in the request queue.
 #define DBMS_DEFAULT_BACKGROUND_POOL_SIZE 16
 
-/// Used in the `reserve` method, when the number of rows is known, but their dimensions are unknown.
-#define DBMS_APPROX_STRING_SIZE 64
-
 /// Name suffix for the column containing the array offsets.
 #define ARRAY_SIZES_COLUMN_NAME_SUFFIX ".size"
+/// And NULL map.
+#define NULL_MAP_COLUMN_NAME_SUFFIX ".null"
 
 #define DBMS_MIN_REVISION_WITH_CLIENT_INFO 54032
 #define DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE 54058
