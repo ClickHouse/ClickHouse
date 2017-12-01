@@ -43,7 +43,6 @@ public:
     }
 
 private:
-
     StoragePtr storage;
     BlockOutputStreamPtr output;
     ReplicatedMergeTreeBlockOutputStream * replicated_output = nullptr;
@@ -51,7 +50,15 @@ private:
     const Context & context;
     ASTPtr query_ptr;
 
-    std::vector<std::pair<ASTPtr, BlockOutputStreamPtr>> views;
+    struct ViewInfo
+    {
+        ASTPtr query;
+        String database;
+        String table;
+        BlockOutputStreamPtr out;
+    };
+
+    std::vector<ViewInfo> views;
     std::unique_ptr<Context> views_context;
 };
 

@@ -28,7 +28,6 @@ add_library (tcmalloc_minimal_internal
 ./src/system-alloc.cc
 ./src/span.cc
 ./src/common.cc
-./src/debugallocation.cc
 ./src/stacktrace.cc
 ./src/stack_trace_table.cc
 ./src/heap-checker.cc
@@ -38,7 +37,9 @@ add_library (tcmalloc_minimal_internal
 ./src/memory_region_map.cc
 )
 
-target_compile_options (tcmalloc_minimal_internal PUBLIC
+
+target_compile_options (tcmalloc_minimal_internal
+    PRIVATE
     -DNO_TCMALLOC_SAMPLES
     -DNDEBUG
     -DNO_FRAME_POINTER
@@ -48,6 +49,8 @@ target_compile_options (tcmalloc_minimal_internal PUBLIC
     -Wno-deprecated-declarations
     -Wno-unused-function
     -Wno-unused-private-field
+
+    PUBLIC
     -fno-builtin-malloc
     -fno-builtin-free
     -fno-builtin-realloc

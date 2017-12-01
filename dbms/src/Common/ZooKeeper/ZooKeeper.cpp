@@ -197,6 +197,23 @@ WatchCallback ZooKeeper::callbackForEvent(const EventPtr & event)
     return callback;
 }
 
+WatchCallback ZooKeeper::callbackForTaskHandle(const TaskHandlePtr & task)
+{
+    WatchCallback callback;
+    if (task)
+    {
+        callback = [t=task](ZooKeeper &, int, int, const char *) mutable
+        {
+            if (t)
+            {
+                t->schedule();
+                t.reset(); /// The event is set only once, even if the callback can fire multiple times due to session events.
+            }
+        };
+    }
+    return callback;
+}
+
 WatchContext * ZooKeeper::createContext(WatchCallback && callback)
 {
     if (callback)
@@ -256,6 +273,7 @@ int32_t ZooKeeper::getChildrenImpl(const std::string & path, Strings & res,
 
     return code;
 }
+
 Strings ZooKeeper::getChildren(
     const std::string & path, Stat * stat, const EventPtr & watch)
 {
@@ -441,13 +459,12 @@ int32_t ZooKeeper::existsImpl(const std::string & path, Stat * stat_, WatchCallb
 
 bool ZooKeeper::exists(const std::string & path, Stat * stat_, const EventPtr & watch)
 {
-    int32_t code = retry(std::bind(&ZooKeeper::existsImpl, this, path, stat_, callbackForEvent(watch)));
+    return existsWatch(path, stat_, callbackForEvent(watch));
+}
 
-    if (!(code == ZOK || code == ZNONODE))
-        throw KeeperException(code, path);
-    if (code == ZNONODE)
-        return false;
-    return true;
+bool ZooKeeper::exists(const std::string & path, Stat * stat, const TaskHandlePtr & watch)
+{
+    return existsWatch(path, stat, callbackForTaskHandle(watch));
 }
 
 bool ZooKeeper::existsWatch(const std::string & path, Stat * stat_, const WatchCallback & watch_callback)
@@ -505,17 +522,19 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr
         throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
 }
 
+std::string ZooKeeper::get(const std::string & path, Stat * stat, const TaskHandlePtr & watch)
+{
+    int code;
+    std::string res;
+    if (tryGetWatch(path, res, stat, callbackForTaskHandle(watch), &code))
+        return res;
+    else
+        throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
+}
+
 bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat_, const EventPtr & watch, int * return_code)
 {
-    int32_t code = retry(std::bind(&ZooKeeper::getImpl, this, std::ref(path), std::ref(res), stat_, callbackForEvent(watch)));
-
-    if (!(code == ZOK || code == ZNONODE))
-        throw KeeperException(code, path);
-
-    if (return_code)
-        *return_code = code;
-
-    return code == ZOK;
+    return tryGetWatch(path, res, stat_, callbackForEvent(watch), return_code);
 }
 
 bool ZooKeeper::tryGetWatch(const std::string & path, std::string & res, Stat * stat_, const WatchCallback & watch_callback, int * return_code)
@@ -916,7 +935,7 @@ ZooKeeper::GetChildrenFuture ZooKeeper::asyncGetChildren(const std::string & pat
     return future;
 }
 
-ZooKeeper::RemoveFuture ZooKeeper::asyncRemove(const std::string & path)
+ZooKeeper::RemoveFuture ZooKeeper::asyncRemove(const std::string & path, int32_t version)
 {
     RemoveFuture future {
         [path] (int rc)
@@ -926,11 +945,41 @@ ZooKeeper::RemoveFuture ZooKeeper::asyncRemove(const std::string & path)
         }};
 
     int32_t code = zoo_adelete(
-        impl, path.c_str(), -1,
+        impl, path.c_str(), version,
         [] (int rc, const void * data)
         {
             RemoveFuture::TaskPtr owned_task =
                 std::move(const_cast<RemoveFuture::TaskPtr &>(*static_cast<const RemoveFuture::TaskPtr *>(data)));
+            (*owned_task)(rc);
+        },
+        future.task.get());
+
+    ProfileEvents::increment(ProfileEvents::ZooKeeperRemove);
+    ProfileEvents::increment(ProfileEvents::ZooKeeperTransactions);
+
+    if (code != ZOK)
+        throw KeeperException(code, path);
+
+    return future;
+}
+
+ZooKeeper::TryRemoveFuture ZooKeeper::asyncTryRemove(const std::string & path, int32_t version)
+{
+    TryRemoveFuture future {
+        [path] (int rc)
+        {
+            if (rc != ZOK && rc != ZNONODE && rc != ZBADVERSION && rc != ZNOTEMPTY)
+                throw KeeperException(rc, path);
+
+            return rc;
+        }};
+
+    int32_t code = zoo_adelete(
+        impl, path.c_str(), version,
+        [] (int rc, const void * data)
+        {
+            TryRemoveFuture::TaskPtr owned_task =
+                std::move(const_cast<TryRemoveFuture::TaskPtr &>(*static_cast<const TryRemoveFuture::TaskPtr *>(data)));
             (*owned_task)(rc);
         },
         future.task.get());

@@ -15,40 +15,40 @@ namespace ErrorCodes
 
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)")),
-    thread([this] { run(); }),
-    cached_block_stats(std::make_unique<NodesStatCache>()) {}
+    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)"))
+{
+    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeCleanupThread", [this]{ run(); });
+    task_handle->schedule();
+}
 
+ReplicatedMergeTreeCleanupThread::~ReplicatedMergeTreeCleanupThread()
+{
+    storage.context.getSchedulePool().removeTask(task_handle);
+}
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
-    setThreadName("ReplMTCleanup");
-
     const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000;
 
-    while (!storage.shutdown_called)
+    try
     {
-        try
-        {
-            iterate();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
-        storage.cleanup_thread_event.tryWait(CLEANUP_SLEEP_MS);
+        iterate();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    LOG_DEBUG(log, "Cleanup thread finished");
+    task_handle->scheduleAfter(CLEANUP_SLEEP_MS);
 }
-
 
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
     storage.clearOldPartsAndRemoveFromZK();
     storage.data.clearOldTemporaryDirectories();
 
+    /// This is loose condition: no problem if we actually had lost leadership at this moment
+    ///  and two replicas will try to do cleanup simultaneously.
     if (storage.is_leader_node)
     {
         clearOldLogs();
@@ -110,131 +110,104 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 }
 
 
-namespace
-{
-
-/// Just a subset of zkutil::Stat fields required for the cache
-struct RequiredStat
-{
-    int64_t ctime = 0;
-    int32_t numChildren = 0;
-
-    RequiredStat() = default;
-    RequiredStat(const RequiredStat &) = default;
-    explicit RequiredStat(const zkutil::Stat & s) : ctime(s.ctime), numChildren(s.numChildren) {};
-    explicit RequiredStat(Int64 ctime_) : ctime(ctime_) {}
-};
-
-}
-
-/// Just a node name with its ZooKeeper's stat
 struct ReplicatedMergeTreeCleanupThread::NodeWithStat
 {
     String node;
-    RequiredStat stat;
+    Int64 ctime = 0;
 
-    NodeWithStat() = default;
-    NodeWithStat(const String & node_, const RequiredStat & stat_) : node(node_), stat(stat_) {}
+    NodeWithStat(String node_, Int64 ctime_) : node(std::move(node_)), ctime(ctime_) {}
 
-    static bool greaterByTime (const NodeWithStat & lhs, const NodeWithStat & rhs)
+    static bool greaterByTime(const NodeWithStat & lhs, const NodeWithStat & rhs)
     {
-        return std::greater<void>()(std::forward_as_tuple(lhs.stat.ctime, lhs.node), std::forward_as_tuple(rhs.stat.ctime, rhs.node));
+        return std::forward_as_tuple(lhs.ctime, lhs.node) > std::forward_as_tuple(rhs.ctime, rhs.node);
     }
 };
-
-/// Use simple map node_name -> zkutil::Stat (only required fields) as the cache
-/// It is not declared in the header explicitly to hide extra implementation dependent structs like RequiredStat
-class ReplicatedMergeTreeCleanupThread::NodesStatCache : public std::map<String, RequiredStat> {};
-
 
 void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 {
     auto zookeeper = storage.getZooKeeper();
 
     std::vector<NodeWithStat> timed_blocks;
-    getBlocksSortedByTime(zookeeper, timed_blocks);
+    getBlocksSortedByTime(*zookeeper, timed_blocks);
 
     if (timed_blocks.empty())
         return;
 
     /// Use ZooKeeper's first node (last according to time) timestamp as "current" time.
-    Int64 current_time = timed_blocks.front().stat.ctime;
+    Int64 current_time = timed_blocks.front().ctime;
     Int64 time_threshold = std::max(static_cast<Int64>(0), current_time - static_cast<Int64>(1000 * storage.data.settings.replicated_deduplication_window_seconds));
 
     /// Virtual node, all nodes that are "greater" than this one will be deleted
-    NodeWithStat block_threshold("", RequiredStat(time_threshold));
+    NodeWithStat block_threshold{{}, time_threshold};
 
     size_t current_deduplication_window = std::min(timed_blocks.size(), storage.data.settings.replicated_deduplication_window.value);
     auto first_outdated_block_fixed_threshold = timed_blocks.begin() + current_deduplication_window;
     auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
-    /// TODO After about half a year, we could remain only multi op, because there will be no obsolete children nodes.
-    zkutil::Ops ops;
+    std::vector<std::pair<String, zkutil::ZooKeeper::TryRemoveFuture>> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         String path = storage.zookeeper_path + "/blocks/" + it->node;
-
-        if (it->stat.numChildren == 0)
-        {
-            ops.emplace_back(new zkutil::Op::Remove(path, -1));
-            if (ops.size() >= zkutil::MULTI_BATCH_SIZE)
-            {
-                zookeeper->multi(ops);
-                ops.clear();
-            }
-        }
-        else
-            zookeeper->removeRecursive(path);
+        try_remove_futures.emplace_back(path, zookeeper->asyncTryRemove(path));
     }
 
-    if (!ops.empty())
+    for (auto & pair : try_remove_futures)
     {
-        zookeeper->multi(ops);
-        ops.clear();
+        const String & path = pair.first;
+        int32_t rc = pair.second.get();
+        if (rc == ZNOTEMPTY)
+        {
+             /// Can happen if there are leftover block nodes with children created by previous server versions.
+            zookeeper->removeRecursive(path);
+        }
+        else if (rc != ZOK)
+            LOG_WARNING(log,
+                "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
     }
 
     auto num_nodes_to_delete = timed_blocks.end() - first_outdated_block;
-    LOG_TRACE(log, "Cleared " << num_nodes_to_delete << " old blocks from ZooKeeper");
+    if (num_nodes_to_delete)
+        LOG_TRACE(log, "Cleared " << num_nodes_to_delete << " old blocks from ZooKeeper");
 }
 
 
-void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeperPtr & zookeeper, std::vector<NodeWithStat> & timed_blocks)
+void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks)
 {
     timed_blocks.clear();
 
     Strings blocks;
     zkutil::Stat stat;
-    if (ZOK != zookeeper->tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
+    if (ZOK != zookeeper.tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
         throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
     /// Clear already deleted blocks from the cache, cached_block_ctime should be subset of blocks
     {
         NameSet blocks_set(blocks.begin(), blocks.end());
-        for (auto it = cached_block_stats->begin(); it != cached_block_stats->end();)
+        for (auto it = cached_block_stats.begin(); it != cached_block_stats.end();)
         {
             if (!blocks_set.count(it->first))
-                it = cached_block_stats->erase(it);
+                it = cached_block_stats.erase(it);
             else
                 ++it;
         }
     }
 
-    auto not_cached_blocks = stat.numChildren - cached_block_stats->size();
+    auto not_cached_blocks = stat.numChildren - cached_block_stats.size();
     if (not_cached_blocks)
     {
         LOG_TRACE(log, "Checking " << stat.numChildren << " blocks (" << not_cached_blocks << " are not cached)"
-                                   << " to clear old ones from ZooKeeper. This might take several minutes.");
+                                   << " to clear old ones from ZooKeeper.");
     }
 
     std::vector<std::pair<String, zkutil::ZooKeeper::ExistsFuture>> exists_futures;
     for (const String & block : blocks)
     {
-        auto it = cached_block_stats->find(block);
-        if (it == cached_block_stats->end())
+        auto it = cached_block_stats.find(block);
+        if (it == cached_block_stats.end())
         {
-            /// New block. Fetch its stat stat asynchronously
-            exists_futures.emplace_back(block, zookeeper->asyncExists(storage.zookeeper_path + "/blocks/" + block));
+            /// New block. Fetch its stat asynchronously.
+            exists_futures.emplace_back(block, zookeeper.asyncExists(storage.zookeeper_path + "/blocks/" + block));
         }
         else
         {
@@ -247,21 +220,14 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeperPt
     for (auto & elem : exists_futures)
     {
         zkutil::ZooKeeper::StatAndExists status = elem.second.get();
-        if (!status.exists)
-            throw zkutil::KeeperException("A block node was suddenly deleted", ZNONODE);
-
-        cached_block_stats->emplace(elem.first, RequiredStat(status.stat));
-        timed_blocks.emplace_back(elem.first, RequiredStat(status.stat));
+        if (status.exists)
+        {
+            cached_block_stats.emplace(elem.first, status.stat.ctime);
+            timed_blocks.emplace_back(elem.first, status.stat.ctime);
+        }
     }
 
     std::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
-}
-
-
-ReplicatedMergeTreeCleanupThread::~ReplicatedMergeTreeCleanupThread()
-{
-    if (thread.joinable())
-        thread.join();
 }
 
 }

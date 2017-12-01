@@ -262,10 +262,6 @@
     -->
     </compression>
 
-    <resharding>
-        <task_queue_path>/clickhouse/task_queue</task_queue_path>
-    </resharding>
-
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
     <distributed_ddl>
@@ -318,4 +314,9 @@
             </retention>
         </default>
     </graphite_rollup_example>
+
+    <!-- Directory in <clickhouse-path> containing schema files for various input formats.
+         The directory will be created if it doesn't exist.
+      -->
+    <format_schema_path>format_schemas/</format_schema_path>
 </yandex>

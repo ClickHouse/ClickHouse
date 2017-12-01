@@ -48,7 +48,7 @@
 #include <thread>
 #include <typeinfo>
 #include <typeindex>
-#include <experimental/optional>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -1693,15 +1693,6 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
     return nullptr;
 }
 
-MergeTreeData::DataPartPtr MergeTreeData::getShardedPartIfExists(const String & part_name, size_t shard_no)
-{
-    const MutableDataPartPtr & part_from_shard = per_shard_data_parts.at(shard_no);
-
-    if (part_from_shard->name == part_name)
-        return part_from_shard;
-
-    return nullptr;
-}
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const String & relative_path)
 {
@@ -1748,6 +1739,7 @@ void MergeTreeData::calculateColumnSizesImpl()
 
 void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 {
+    std::shared_lock<std::shared_mutex> lock(part->columns_lock);
     const auto & files = part->checksums.files;
 
     /// TODO This method doesn't take into account columns with multiple files.
@@ -1807,7 +1799,7 @@ void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part
 
 void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String & with_name, const Context & context)
 {
-    std::experimental::optional<String> prefix;
+    std::optional<String> prefix;
     String partition_id;
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)

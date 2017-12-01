@@ -29,3 +29,13 @@ SELECT * FROM test.summing_merge_tree ORDER BY d, a, x, y, z;
 
 
 DROP TABLE test.summing_merge_tree;
+
+--
+DROP TABLE IF EXISTS test.summing;
+CREATE TABLE test.summing (p Date, k UInt64, s UInt64) ENGINE = SummingMergeTree(p, k, 1);
+
+INSERT INTO test.summing (k, s) VALUES (0, 1);
+INSERT INTO test.summing (k, s) VALUES (0, 1), (666, 1), (666, 0);
+OPTIMIZE TABLE test.summing PARTITION 197001;
+
+SELECT k, s FROM test.summing ORDER BY k;

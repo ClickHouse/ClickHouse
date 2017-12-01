@@ -5,7 +5,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <DataStreams/ValuesRowInputStream.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Core/Block.h>
 #include <Common/typeid_cast.h>
 

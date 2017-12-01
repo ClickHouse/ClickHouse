@@ -31,7 +31,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
 
-#include <Storages/MergeTree/ReshardingWorker.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 
@@ -109,8 +108,10 @@ int Server::main(const std::vector<std::string> & args)
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
-        loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
-            config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+        ConfigProcessor config_processor(config_path);
+        loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
+            main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+        config_processor.savePreprocessedConfig(loaded_config);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
@@ -264,6 +265,11 @@ int Server::main(const std::vector<std::string> & args)
     global_context->setDefaultProfileName(default_profile_name);
     global_context->setSetting("profile", default_profile_name);
 
+    /// Set path for format schema files
+    auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
+    global_context->setFormatSchemaPath(format_schema_path.path() + "/");
+    format_schema_path.createDirectories();
+
     LOG_INFO(log, "Loading metadata.");
     loadMetadataSystem(*global_context);
     /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
@@ -284,15 +290,6 @@ int Server::main(const std::vector<std::string> & args)
         global_context->shutdown();
         LOG_DEBUG(log, "Shutted down storages.");
     });
-
-    bool has_resharding_worker = false;
-    if (has_zookeeper && config().has("resharding"))
-    {
-        auto resharding_worker = std::make_shared<ReshardingWorker>(config(), "resharding", *global_context);
-        global_context->setReshardingWorker(resharding_worker);
-        resharding_worker->start();
-        has_resharding_worker = true;
-    }
 
     if (has_zookeeper && config().has("distributed_ddl"))
     {
@@ -482,16 +479,6 @@ int Server::main(const std::vector<std::string> & args)
 
         SCOPE_EXIT({
             LOG_DEBUG(log, "Received termination signal.");
-
-            if (has_resharding_worker)
-            {
-                LOG_INFO(log, "Shutting down resharding thread");
-                auto & resharding_worker = global_context->getReshardingWorker();
-                if (resharding_worker.isStarted())
-                    resharding_worker.shutdown();
-                LOG_DEBUG(log, "Shut down resharding thread");
-            }
-
             LOG_DEBUG(log, "Waiting for current connections to close.");
 
             is_cancelled = true;

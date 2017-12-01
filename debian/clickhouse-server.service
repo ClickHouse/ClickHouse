@@ -1,0 +1,15 @@
+[Unit]
+Description=ClickHouse Server (analytic DBMS for big data)
+
+[Service]
+Type=simple
+User=clickhouse
+Group=clickhouse
+Restart=always
+RestartSec=30
+ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml
+LimitCORE=infinity
+LimitNOFILE=500000
+
+[Install]
+WantedBy=multi-user.target

@@ -33,7 +33,7 @@ target_include_directories (mysqlxx PUBLIC include)
 set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
 
 if (USE_MYSQL)
-    include_directories (${MYSQL_INCLUDE_DIR})
+    target_include_directories (mysqlxx PRIVATE ${MYSQL_INCLUDE_DIR})
 endif ()
 
 if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)

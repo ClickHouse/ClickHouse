@@ -61,6 +61,7 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
         { "UInt16", AttributeUnderlyingType::UInt16 },
         { "UInt32", AttributeUnderlyingType::UInt32 },
         { "UInt64", AttributeUnderlyingType::UInt64 },
+        { "UUID", AttributeUnderlyingType::UInt128 },
         { "Int8", AttributeUnderlyingType::Int8 },
         { "Int16", AttributeUnderlyingType::Int16 },
         { "Int32", AttributeUnderlyingType::Int32 },
@@ -90,6 +91,7 @@ std::string toString(const AttributeUnderlyingType type)
         case AttributeUnderlyingType::UInt16: return "UInt16";
         case AttributeUnderlyingType::UInt32: return "UInt32";
         case AttributeUnderlyingType::UInt64: return "UInt64";
+        case AttributeUnderlyingType::UInt128: return "UUID";
         case AttributeUnderlyingType::Int8: return "Int8";
         case AttributeUnderlyingType::Int16: return "Int16";
         case AttributeUnderlyingType::Int32: return "Int32";

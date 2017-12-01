@@ -33,8 +33,4 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
   */
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context);
 
-/** Parses a name of an object which could be written in 3 forms:
-  * name, `name` or 'name' */
-bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result);
-
 }

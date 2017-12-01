@@ -148,7 +148,9 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
             return Type::key32;
         if (size_of_field == 8)
             return Type::key64;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
+        if (size_of_field == 16)
+            return Type::keys128;
+        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.", ErrorCodes::LOGICAL_ERROR);
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
