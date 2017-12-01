@@ -9,4 +9,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # todo: maybe add more strange usages
 perl -E "chomp, say qx{$CLICKHOUSE_CLIENT -q '\$_'} for map {chomp; (qq{SELECT \$_;}, qq{SELECT \$_();}, qq{SELECT \$_(NULL);}, qq{SELECT \$_([]);}, qq{SELECT \$_([NULL]);})} qx{$CLICKHOUSE_CLIENT -q 'SELECT name FROM system.functions ORDER BY name;'}" 2>&1 >/dev/null
 
-$CLICKHOUSE_CLIENT -q 'Still alive'
+$CLICKHOUSE_CLIENT -q "Select 'Still alive'"
