@@ -761,13 +761,14 @@ DECLARE_DICT_GET_TRAITS(UInt32, DataTypeDateTime)
 DECLARE_DICT_GET_TRAITS(UInt128, DataTypeUUID)
 #undef DECLARE_DICT_GET_TRAITS
 
-template <typename DataType>
+
+template <typename DataType, typename Name>
 class FunctionDictGet final : public IFunction
 {
     using Type = typename DataType::FieldType;
 
 public:
-    static const std::string name;
+    static constexpr auto name = Name::name;
 
     static FunctionPtr create(const Context & context)
     {
@@ -1060,32 +1061,42 @@ private:
     const ExternalDictionaries & dictionaries;
 };
 
-template <typename DataType>
-const std::string FunctionDictGet<DataType>::name = "dictGet" + DataType{}.getName();
+struct NameDictGetUInt8 { static constexpr auto name = "dictGetUInt8"; };
+struct NameDictGetUInt16 { static constexpr auto name = "dictGetUInt16"; };
+struct NameDictGetUInt32 { static constexpr auto name = "dictGetUInt32"; };
+struct NameDictGetUInt64 { static constexpr auto name = "dictGetUInt64"; };
+struct NameDictGetInt8 { static constexpr auto name = "dictGetInt8"; };
+struct NameDictGetInt16 { static constexpr auto name = "dictGetInt16"; };
+struct NameDictGetInt32 { static constexpr auto name = "dictGetInt32"; };
+struct NameDictGetInt64 { static constexpr auto name = "dictGetInt64"; };
+struct NameDictGetFloat32 { static constexpr auto name = "dictGetFloat32"; };
+struct NameDictGetFloat64 { static constexpr auto name = "dictGetFloat64"; };
+struct NameDictGetDate { static constexpr auto name = "dictGetDate"; };
+struct NameDictGetDateTime { static constexpr auto name = "dictGetDateTime"; };
+struct NameDictGetUUID { static constexpr auto name = "dictGetUUID"; };
+
+using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8, NameDictGetUInt8>;
+using FunctionDictGetUInt16 = FunctionDictGet<DataTypeUInt16, NameDictGetUInt16>;
+using FunctionDictGetUInt32 = FunctionDictGet<DataTypeUInt32, NameDictGetUInt32>;
+using FunctionDictGetUInt64 = FunctionDictGet<DataTypeUInt64, NameDictGetUInt64>;
+using FunctionDictGetInt8 = FunctionDictGet<DataTypeInt8, NameDictGetInt8>;
+using FunctionDictGetInt16 = FunctionDictGet<DataTypeInt16, NameDictGetInt16>;
+using FunctionDictGetInt32 = FunctionDictGet<DataTypeInt32, NameDictGetInt32>;
+using FunctionDictGetInt64 = FunctionDictGet<DataTypeInt64, NameDictGetInt64>;
+using FunctionDictGetFloat32 = FunctionDictGet<DataTypeFloat32, NameDictGetFloat32>;
+using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64, NameDictGetFloat64>;
+using FunctionDictGetDate = FunctionDictGet<DataTypeDate, NameDictGetDate>;
+using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime, NameDictGetDateTime>;
+using FunctionDictGetUUID = FunctionDictGet<DataTypeUUID, NameDictGetUUID>;
 
 
-using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8>;
-using FunctionDictGetUInt16 = FunctionDictGet<DataTypeUInt16>;
-using FunctionDictGetUInt32 = FunctionDictGet<DataTypeUInt32>;
-using FunctionDictGetUInt64 = FunctionDictGet<DataTypeUInt64>;
-using FunctionDictGetInt8 = FunctionDictGet<DataTypeInt8>;
-using FunctionDictGetInt16 = FunctionDictGet<DataTypeInt16>;
-using FunctionDictGetInt32 = FunctionDictGet<DataTypeInt32>;
-using FunctionDictGetInt64 = FunctionDictGet<DataTypeInt64>;
-using FunctionDictGetFloat32 = FunctionDictGet<DataTypeFloat32>;
-using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64>;
-using FunctionDictGetDate = FunctionDictGet<DataTypeDate>;
-using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime>;
-using FunctionDictGetUUID = FunctionDictGet<DataTypeUUID>;
-
-
-template <typename DataType>
+template <typename DataType, typename Name>
 class FunctionDictGetOrDefault final : public IFunction
 {
     using Type = typename DataType::FieldType;
 
 public:
-    static const std::string name;
+    static constexpr auto name = Name::name;
 
     static FunctionPtr create(const Context & context)
     {
@@ -1130,7 +1141,7 @@ private:
         {
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
-                    + ", must be " + DataType{}.getName() + ".",
+                    + ", must be " + String(DataType{}.getFamilyName()) + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
@@ -1221,7 +1232,7 @@ private:
         }
         else
             throw Exception{
-                "Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+                "Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 
@@ -1259,7 +1270,7 @@ private:
         }
         else
             throw Exception{
-                "Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+                "Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 
@@ -1309,7 +1320,7 @@ private:
         }
         else
             throw Exception{
-                "Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+                "Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()),
                 ErrorCodes::ILLEGAL_COLUMN};
 
         return true;
@@ -1318,23 +1329,33 @@ private:
     const ExternalDictionaries & dictionaries;
 };
 
-template <typename DataType>
-const std::string FunctionDictGetOrDefault<DataType>::name = "dictGet" + DataType{}.getName() + "OrDefault";
+struct NameDictGetUInt8OrDefault { static constexpr auto name = "dictGetUInt8OrDefault"; };
+struct NameDictGetUInt16OrDefault { static constexpr auto name = "dictGetUInt16OrDefault"; };
+struct NameDictGetUInt32OrDefault { static constexpr auto name = "dictGetUInt32OrDefault"; };
+struct NameDictGetUInt64OrDefault { static constexpr auto name = "dictGetUInt64OrDefault"; };
+struct NameDictGetInt8OrDefault { static constexpr auto name = "dictGetInt8OrDefault"; };
+struct NameDictGetInt16OrDefault { static constexpr auto name = "dictGetInt16OrDefault"; };
+struct NameDictGetInt32OrDefault { static constexpr auto name = "dictGetInt32OrDefault"; };
+struct NameDictGetInt64OrDefault { static constexpr auto name = "dictGetInt64OrDefault"; };
+struct NameDictGetFloat32OrDefault { static constexpr auto name = "dictGetFloat32OrDefault"; };
+struct NameDictGetFloat64OrDefault { static constexpr auto name = "dictGetFloat64OrDefault"; };
+struct NameDictGetDateOrDefault { static constexpr auto name = "dictGetDateOrDefault"; };
+struct NameDictGetDateTimeOrDefault { static constexpr auto name = "dictGetDateTimeOrDefault"; };
+struct NameDictGetUUIDOrDefault { static constexpr auto name = "dictGetUUIDOrDefault"; };
 
-
-using FunctionDictGetUInt8OrDefault = FunctionDictGetOrDefault<DataTypeUInt8>;
-using FunctionDictGetUInt16OrDefault = FunctionDictGetOrDefault<DataTypeUInt16>;
-using FunctionDictGetUInt32OrDefault = FunctionDictGetOrDefault<DataTypeUInt32>;
-using FunctionDictGetUInt64OrDefault = FunctionDictGetOrDefault<DataTypeUInt64>;
-using FunctionDictGetInt8OrDefault = FunctionDictGetOrDefault<DataTypeInt8>;
-using FunctionDictGetInt16OrDefault = FunctionDictGetOrDefault<DataTypeInt16>;
-using FunctionDictGetInt32OrDefault = FunctionDictGetOrDefault<DataTypeInt32>;
-using FunctionDictGetInt64OrDefault = FunctionDictGetOrDefault<DataTypeInt64>;
-using FunctionDictGetFloat32OrDefault = FunctionDictGetOrDefault<DataTypeFloat32>;
-using FunctionDictGetFloat64OrDefault = FunctionDictGetOrDefault<DataTypeFloat64>;
-using FunctionDictGetDateOrDefault = FunctionDictGetOrDefault<DataTypeDate>;
-using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTime>;
-using FunctionDictGetUUIDOrDefault = FunctionDictGetOrDefault<DataTypeUUID>;
+using FunctionDictGetUInt8OrDefault = FunctionDictGet<DataTypeUInt8, NameDictGetUInt8OrDefault>;
+using FunctionDictGetUInt16OrDefault = FunctionDictGet<DataTypeUInt16, NameDictGetUInt16OrDefault>;
+using FunctionDictGetUInt32OrDefault = FunctionDictGet<DataTypeUInt32, NameDictGetUInt32OrDefault>;
+using FunctionDictGetUInt64OrDefault = FunctionDictGet<DataTypeUInt64, NameDictGetUInt64OrDefault>;
+using FunctionDictGetInt8OrDefault = FunctionDictGet<DataTypeInt8, NameDictGetInt8OrDefault>;
+using FunctionDictGetInt16OrDefault = FunctionDictGet<DataTypeInt16, NameDictGetInt16OrDefault>;
+using FunctionDictGetInt32OrDefault = FunctionDictGet<DataTypeInt32, NameDictGetInt32OrDefault>;
+using FunctionDictGetInt64OrDefault = FunctionDictGet<DataTypeInt64, NameDictGetInt64OrDefault>;
+using FunctionDictGetFloat32OrDefault = FunctionDictGet<DataTypeFloat32, NameDictGetFloat32OrDefault>;
+using FunctionDictGetFloat64OrDefault = FunctionDictGet<DataTypeFloat64, NameDictGetFloat64OrDefault>;
+using FunctionDictGetDateOrDefault = FunctionDictGet<DataTypeDate, NameDictGetDateOrDefault>;
+using FunctionDictGetDateTimeOrDefault = FunctionDictGet<DataTypeDateTime, NameDictGetDateTimeOrDefault>;
+using FunctionDictGetUUIDOrDefault = FunctionDictGet<DataTypeUUID, NameDictGetUUIDOrDefault>;
 
 
 /// Functions to work with hierarchies.

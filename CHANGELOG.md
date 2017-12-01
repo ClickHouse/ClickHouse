@@ -1,3 +1,6 @@
+# ClickHouse release 1.1.54318
+* This is bugfix release for previous 1.1.54310 release.
+
 # ClickHouse release 1.1.54310
 
 ## New features:

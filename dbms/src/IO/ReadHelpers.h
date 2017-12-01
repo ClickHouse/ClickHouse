@@ -322,7 +322,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
             return on_error();
     }
 
-    if (*buf.position() == '0')                    /// There are many zeros in real datasets.
+    if (*buf.position() == '0') /// There are many zeros in real datasets.
     {
         ++buf.position();
         return;
@@ -330,7 +330,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        if ((*buf.position() & 0xF0) == 0x30)    /// It makes sense to have this condition inside loop.
+        if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
         {
             x *= 10;
             x += *buf.position() & 0x0F;
@@ -730,7 +730,7 @@ inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); 
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
-inline void readText(UInt128 & x, ReadBuffer & buf)
+inline void readText(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
@@ -825,7 +825,7 @@ inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { 
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
-inline void readCSV(UInt128 & x, ReadBuffer & buf)
+inline void readCSV(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.

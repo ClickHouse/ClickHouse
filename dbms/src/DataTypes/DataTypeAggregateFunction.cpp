@@ -1,4 +1,4 @@
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -110,7 +110,7 @@ void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, Writ
         function->serialize(*it, ostr);
 }
 
-void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
     ColumnAggregateFunction::Container_t & vec = real_column.getData();

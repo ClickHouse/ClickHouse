@@ -73,7 +73,7 @@ public:
         this->data(place).array.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).array.insert(this->data(rhs).array.begin(), this->data(rhs).array.end());
     }
@@ -157,7 +157,7 @@ public:
         this->data(place).array.push_back(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).array.insert(this->data(rhs).array.begin(), this->data(rhs).array.end());
     }

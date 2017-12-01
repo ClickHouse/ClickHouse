@@ -94,7 +94,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             || storage.partition_by || storage.order_by || storage.sample_by || storage.settings)
         {
             std::stringstream ostr;
-            formatAST(storage, ostr, 0, false, false);
+            formatAST(storage, ostr, false, false);
             throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
         }
 
@@ -125,7 +125,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         std::ostringstream statement_stream;
-        formatAST(create, statement_stream, 0, false);
+        formatAST(create, statement_stream, false);
         statement_stream << '\n';
         String statement = statement_stream.str();
 
@@ -483,12 +483,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.to_database.empty())
         create.to_database = current_database;
 
+    if (create.select && (create.is_view || create.is_materialized_view))
+        create.select->setDatabaseIfNeeded(current_database);
+
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;
     Block as_select_sample;
-    /// For `view` type tables, you may need `sample_block` to get the columns.
-    if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
+    if (create.select && (!create.attach || !create.columns))
     {
-        create.select->setDatabaseIfNeeded(current_database);
         interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->clone(), context);
         as_select_sample = interpreter_select->getSampleBlock();
     }
@@ -549,8 +550,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     res->startup();
 
-    /// If the CREATE SELECT query is, insert the data into the table
-    if (create.select && !create.is_view && (!create.is_materialized_view || create.is_populate))
+    /// If the query is a CREATE SELECT, insert the data into the table.
+    if (create.select && !create.attach
+        && !create.is_view && (!create.is_materialized_view || create.is_populate))
     {
         auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
 

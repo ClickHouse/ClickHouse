@@ -20,7 +20,7 @@ DatabaseDictionary::DatabaseDictionary(const String & name_, const Context & con
 {
 }
 
-void DatabaseDictionary::loadTables(Context & context, ThreadPool * thread_pool, bool has_force_restore_data_flag)
+void DatabaseDictionary::loadTables(Context &, ThreadPool *, bool)
 {
 }
 
@@ -48,7 +48,7 @@ Tables DatabaseDictionary::loadTables()
 }
 
 bool DatabaseDictionary::isTableExist(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name) const
 {
     auto objects_map = external_dictionaries.getObjectsMap();
@@ -57,7 +57,7 @@ bool DatabaseDictionary::isTableExist(
 }
 
 StoragePtr DatabaseDictionary::tryGetTable(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name)
 {
     auto objects_map = external_dictionaries.getObjectsMap();
@@ -82,12 +82,12 @@ StoragePtr DatabaseDictionary::tryGetTable(
     return {};
 }
 
-DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context)
+DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & /*context*/)
 {
     return std::make_unique<DatabaseSnaphotIterator>(loadTables());
 }
 
-bool DatabaseDictionary::empty(const Context & context) const
+bool DatabaseDictionary::empty(const Context & /*context*/) const
 {
     auto objects_map = external_dictionaries.getObjectsMap();
     const auto & dictionaries = objects_map.get();
@@ -97,21 +97,21 @@ bool DatabaseDictionary::empty(const Context & context) const
     return true;
 }
 
-StoragePtr DatabaseDictionary::detachTable(const String & table_name)
+StoragePtr DatabaseDictionary::detachTable(const String & /*table_name*/)
 {
     throw Exception("DatabaseDictionary: detachTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void DatabaseDictionary::attachTable(const String & table_name, const StoragePtr & table)
+void DatabaseDictionary::attachTable(const String & /*table_name*/, const StoragePtr & /*table*/)
 {
     throw Exception("DatabaseDictionary: attachTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void DatabaseDictionary::createTable(
-    const Context & context,
-    const String & table_name,
-    const StoragePtr & table,
-    const ASTPtr & query)
+    const Context & /*context*/,
+    const String & /*table_name*/,
+    const StoragePtr & /*table*/,
+    const ASTPtr & /*query*/)
 {
     throw Exception("DatabaseDictionary: createTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -128,36 +128,36 @@ void DatabaseDictionary::removeTable(
 }
 
 void DatabaseDictionary::renameTable(
-    const Context & context,
-    const String & table_name,
-    IDatabase & to_database,
-    const String & to_table_name)
+    const Context &,
+    const String &,
+    IDatabase &,
+    const String &)
 {
     throw Exception("DatabaseDictionary: renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void DatabaseDictionary::alterTable(
-    const Context & context,
-    const String & name,
-    const NamesAndTypesList & columns,
-    const NamesAndTypesList & materialized_columns,
-    const NamesAndTypesList & alias_columns,
-    const ColumnDefaults & column_defaults,
-    const ASTModifier & engine_modifier)
+    const Context &,
+    const String &,
+    const NamesAndTypesList &,
+    const NamesAndTypesList &,
+    const NamesAndTypesList &,
+    const ColumnDefaults &,
+    const ASTModifier &)
 {
     throw Exception("DatabaseDictionary: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 time_t DatabaseDictionary::getTableMetadataModificationTime(
-    const Context & context,
-    const String & table_name)
+    const Context &,
+    const String &)
 {
     return static_cast<time_t>(0);
 }
 
 ASTPtr DatabaseDictionary::getCreateQuery(
-    const Context & context,
-    const String & table_name) const
+    const Context &,
+    const String &) const
 {
     throw Exception("DatabaseDictionary: getCreateQuery() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }

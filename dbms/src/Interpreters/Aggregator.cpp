@@ -663,7 +663,7 @@ void NO_INLINE Aggregator::executeImplCase(
             /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
             aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
+            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
             createAggregateStates(place);
@@ -913,7 +913,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out, path);
+        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out);
 
     if (false) {}
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -987,8 +987,7 @@ template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,
     Method & method,
-    IBlockOutputStream & out,
-    const String & path)
+    IBlockOutputStream & out)
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
@@ -1141,7 +1140,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
                 *final_aggregate_columns[i]);
     }
 
-    destroyImpl(method, data);      /// NOTE You can do better.
+    destroyImpl<Method>(data);      /// NOTE You can do better.
 }
 
 template <typename Method, typename Table>
@@ -1239,7 +1238,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
         ColumnPlainPtrs & key_columns,
         AggregateColumnsData & aggregate_columns,
         ColumnPlainPtrs & final_aggregate_columns,
-        const Sizes & key_sizes,
+        const Sizes & /*key_sizes*/,
         bool final)
     {
         if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
@@ -1282,7 +1281,7 @@ Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_v
         ColumnPlainPtrs & key_columns,
         AggregateColumnsData & aggregate_columns,
         ColumnPlainPtrs & final_aggregate_columns,
-        const Sizes & key_sizes,
+        const Sizes & /*key_sizes*/,
         bool final)
     {
     #define M(NAME) \
@@ -1944,7 +1943,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
             aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
+            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
             createAggregateStates(place);
@@ -2430,9 +2429,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 
 
 template <typename Method, typename Table>
-void NO_INLINE Aggregator::destroyImpl(
-    Method & method,
-    Table & table) const
+void NO_INLINE Aggregator::destroyImpl(Table & table) const
 {
     for (auto elem : table)
     {
@@ -2482,7 +2479,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        destroyImpl(*result.NAME, result.NAME->data);
+        destroyImpl<decltype(result.NAME)::element_type>(result.NAME->data);
 
     if (false) {}
     APPLY_FOR_AGGREGATED_VARIANTS(M)

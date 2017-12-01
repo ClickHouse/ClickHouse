@@ -61,7 +61,7 @@ try
     ExpressionAnalyzer analyzer(ast, context, {}, {NameAndTypePair("number", std::make_shared<DataTypeUInt64>())});
     ExpressionActionsChain chain;
     analyzer.appendSelect(chain, false);
-    analyzer.appendProjectResult(chain, false);
+    analyzer.appendProjectResult(chain);
     chain.finalize();
     ExpressionActionsPtr expression = chain.getLastActions();
 

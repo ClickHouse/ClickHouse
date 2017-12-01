@@ -1,18 +1,17 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 #include <gtest/gtest.h>
+#pragma GCC diagnostic pop
 
 #include <stdexcept>
-
 #include <Poco/File.h>
-
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
-
 #include <Common/typeid_cast.h>
 
 using namespace DB;
@@ -108,15 +107,15 @@ try
                 std::make_shared<MemoryWriteBuffer>(s, 1, 2.0)
             },
             {
-                [=] (auto prev) { return std::make_shared<MemoryWriteBuffer>(max_s - s, 1, 2.0); }
+                [=] (auto) { return std::make_shared<MemoryWriteBuffer>(max_s - s, 1, 2.0); }
             }
         );
 
         testCascadeBufferRedability(makeTestArray(max_s),
             {},
             {
-                [=] (auto prev) { return std::make_shared<MemoryWriteBuffer>(max_s - s, 1, 2.0); },
-                [=] (auto prev) { return std::make_shared<MemoryWriteBuffer>(s, 1, 2.0); }
+                [=] (auto) { return std::make_shared<MemoryWriteBuffer>(max_s - s, 1, 2.0); },
+                [=] (auto) { return std::make_shared<MemoryWriteBuffer>(s, 1, 2.0); }
             }
         );
     }
@@ -260,7 +259,7 @@ try
         testCascadeBufferRedability(makeTestArray(s),
             {},
             {
-                [=] (auto prev) { return WriteBufferFromTemporaryFile::create(tmp_template); }
+                [=] (auto) { return WriteBufferFromTemporaryFile::create(tmp_template); }
             }
         );
 
@@ -269,7 +268,7 @@ try
                 std::make_shared<MemoryWriteBuffer>(std::max(1ul, s/3ul), 2, 1.5),
             },
             {
-                [=] (auto prev) { return WriteBufferFromTemporaryFile::create(tmp_template); }
+                [=] (auto) { return WriteBufferFromTemporaryFile::create(tmp_template); }
             }
         );
     }

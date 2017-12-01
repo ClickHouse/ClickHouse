@@ -18,6 +18,8 @@ get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
 
+#set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
@@ -37,12 +39,11 @@ set(dbms_sources)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
-add_headers_and_sources(dbms_common_io src/Common)
-add_headers_and_sources(dbms_common_io src/Common/HashTable)
-add_headers_and_sources(dbms_common_io src/Common/ZooKeeper)
-add_headers_and_sources(dbms_common_io src/IO)
+add_headers_and_sources(clickhouse_common_io src/Common)
+add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
+add_headers_and_sources(clickhouse_common_io src/Common/ZooKeeper)
+add_headers_and_sources(clickhouse_common_io src/IO)
 
-add_headers_and_sources(dbms src/Parsers)
 add_headers_and_sources(dbms src/Analyzers)
 add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
@@ -50,6 +51,7 @@ add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
 add_headers_and_sources(dbms src/Dictionaries)
 add_headers_and_sources(dbms src/Dictionaries/Embedded)
+add_headers_and_sources(dbms src/Dictionaries/Embedded/GeodataProviders)
 add_headers_and_sources(dbms src/Interpreters)
 add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Columns)
@@ -59,8 +61,8 @@ add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
 add_headers_only(dbms src/Server)
 
-list (APPEND dbms_common_io_sources ${CONFIG_BUILD})
-list (APPEND dbms_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
+list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
+list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
 list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
@@ -92,22 +94,22 @@ list (APPEND dbms_sources src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
 
-list(REMOVE_ITEM dbms_common_io_sources
+list(REMOVE_ITEM clickhouse_common_io_sources
     src/Common/StringUtils.cpp)
-list(REMOVE_ITEM dbms_common_io_headers
+list(REMOVE_ITEM clickhouse_common_io_headers
     src/Common/StringUtils.h)
 
 if (APPLE OR CMAKE_SYSTEM MATCHES "FreeBSD")
-    list(REMOVE_ITEM dbms_common_io_headers
+    list(REMOVE_ITEM clickhouse_common_io_headers
         src/Common/AIO.h
         src/IO/WriteBufferAIO.h
         src/IO/ReadBufferAIO.h)
-    list(REMOVE_ITEM dbms_common_io_sources
+    list(REMOVE_ITEM clickhouse_common_io_sources
         src/IO/ReadBufferAIO.cpp
         src/IO/WriteBufferAIO.cpp)
 endif()
 
-add_library(dbms_common_io ${SPLIT_SHARED} ${dbms_common_io_headers} ${dbms_common_io_sources})
+add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 if (MAKE_STATIC_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
@@ -149,7 +151,7 @@ else()
     set(PLATFORM_LIBS "")
 endif()
 
-target_link_libraries (dbms_common_io
+target_link_libraries (clickhouse_common_io
     common
     string_utils
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
@@ -158,10 +160,12 @@ target_link_libraries (dbms_common_io
     ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
+    ${PLATFORM_LIBS}
 )
 
 target_link_libraries (dbms
-    dbms_common_io
+    clickhouse_parsers
+    clickhouse_common_io
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}
     ${METROHASH_LIBRARIES}
@@ -183,7 +187,7 @@ if (Poco_MongoDB_FOUND)
 endif()
 
 if (Poco_NetSSL_FOUND)
-    target_link_libraries (dbms_common_io ${Poco_NetSSL_LIBRARY})
+    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY})
 endif()
 
 target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
@@ -197,9 +201,8 @@ if (USE_CAPNP)
 endif ()
 
 target_link_libraries (dbms
-    ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
@@ -213,16 +216,16 @@ if (NOT USE_INTERNAL_ZSTD_LIBRARY)
 endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
-target_include_directories (dbms_common_io PUBLIC ${DBMS_INCLUDE_DIR})
-target_include_directories (dbms_common_io PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
-target_include_directories (dbms_common_io BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 if (USE_RDKAFKA)
     target_link_libraries (dbms ${RDKAFKA_LIBRARY})
 endif ()
 
 # also for copy_headers.sh:
-target_include_directories (dbms_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)

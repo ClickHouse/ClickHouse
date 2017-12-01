@@ -226,7 +226,7 @@ void DataTypeEnum<Type>::serializeBinaryBulk(
 
 template <typename Type>
 void DataTypeEnum<Type>::deserializeBinaryBulk(
-    IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const
+    IColumn & column, ReadBuffer & istr, const size_t limit, const double /*avg_value_size_hint*/) const
 {
     auto & x = typeid_cast<ColumnType &>(column).getData();
     const auto initial_size = x.size();

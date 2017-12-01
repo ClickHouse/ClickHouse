@@ -1,4 +1,4 @@
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNull.h>
@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-DataTypePtr FieldToDataType::operator() (Null & x) const
+DataTypePtr FieldToDataType::operator() (Null &) const
 {
     return std::make_shared<DataTypeNull>();
 }
@@ -43,12 +43,12 @@ DataTypePtr FieldToDataType::operator() (Int64 & x) const
     return std::make_shared<DataTypeInt64>();
 }
 
-DataTypePtr FieldToDataType::operator() (Float64 & x) const
+DataTypePtr FieldToDataType::operator() (Float64 &) const
 {
     return std::make_shared<DataTypeFloat64>();
 }
 
-DataTypePtr FieldToDataType::operator() (String & x) const
+DataTypePtr FieldToDataType::operator() (String &) const
 {
     return std::make_shared<DataTypeString>();
 }

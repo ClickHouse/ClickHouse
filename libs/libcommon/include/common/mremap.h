@@ -24,10 +24,10 @@ inline void * clickhouse_mremap(void * old_address,
     size_t old_size,
     size_t new_size,
     int flags = 0,
-    int mmap_prot = 0,
-    int mmap_flags = 0,
-    int mmap_fd = -1,
-    off_t mmap_offset = 0)
+    [[maybe_unused]] int mmap_prot = 0,
+    [[maybe_unused]] int mmap_flags = 0,
+    [[maybe_unused]] int mmap_fd = -1,
+    [[maybe_unused]] off_t mmap_offset = 0)
 {
     return mremap(old_address,
         old_size,

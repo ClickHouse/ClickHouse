@@ -64,7 +64,7 @@ static size_t decodeURL(const char * src, size_t src_size, char * dst)
 
 size_t ExtractProtocol::getReserveLengthForElement()
 {
-    return makeStringView("https").size() + 1;
+    return strlen("https") + 1;
 }
 
 

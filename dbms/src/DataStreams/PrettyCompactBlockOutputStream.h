@@ -19,7 +19,7 @@ public:
 protected:
     void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths);
     void writeBottom(const Widths & max_widths);
-    void writeRow(size_t row_num, const Block & block, const WidthsPerColumn & widths, const Widths & max_widths, const Widths & name_widths);
+    void writeRow(size_t row_num, const Block & block, const WidthsPerColumn & widths, const Widths & max_widths);
 };
 
 }
