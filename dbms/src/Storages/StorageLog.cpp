@@ -275,10 +275,6 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
         if (storage.files.end() == file_it)
             throw Exception("Logical error: no information about file " + stream_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
 
-        std::cerr << "Stream: " << stream_name << "\n";
-        std::cerr << "Mark number: " << mark_number << "\n";
-        std::cerr << "Offset: " << file_it->second.marks[mark_number].offset << "\n";
-
         auto it = streams.try_emplace(stream_name,
             file_it->second.data_file.path(),
             mark_number
@@ -577,8 +573,6 @@ BlockInputStreams StorageLog::read(
 
         size_t rows_begin = mark_begin ? marks[mark_begin - 1].rows : 0;
         size_t rows_end = mark_end ? marks[mark_end - 1].rows : 0;
-
-        std::cerr << mark_begin << ", " << mark_end << ", " << rows_begin << ", " << rows_end << "\n";
 
         res.emplace_back(std::make_shared<LogBlockInputStream>(
             max_block_size,

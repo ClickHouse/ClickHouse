@@ -34,7 +34,6 @@ MergeTreeRangeReader MergeTreeRangeReader::getFutureState(size_t rows_to_read) c
 size_t MergeTreeRangeReader::read(Block & res, size_t max_rows_to_read)
 {
     size_t rows_to_read = numPendingRows();
-    std::cerr << "rows_to_read: " << rows_to_read << "\n";
     rows_to_read = std::min(rows_to_read, max_rows_to_read);
     if (rows_to_read == 0)
     {
@@ -43,8 +42,6 @@ size_t MergeTreeRangeReader::read(Block & res, size_t max_rows_to_read)
     }
 
     auto read_rows = merge_tree_reader.get().readRows(current_mark, continue_reading, rows_to_read, res);
-
-    std::cerr << "read_rows: " << read_rows << "\n";
 
     if (read_rows && read_rows < rows_to_read)
         is_reading_finished = true;

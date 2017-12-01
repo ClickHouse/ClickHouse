@@ -152,15 +152,8 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
             }
 
             if (!append && column.column->size())
-            {
-                std::cerr << "Inserting " << column.name << "\n";
                 res.insert(std::move(column));
-            }
-            else
-                std::cerr << "Not inserting " << column.name << "\n";
         }
-
-        std::cerr << res.dumpStructure() << "\n";
 
         /// NOTE: positions for all streams must be kept in sync. In particular, even if for some streams there are no rows to be read,
         /// you must ensure that no seeks are skipped and at this point they all point to to_mark.
@@ -365,14 +358,10 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
     {
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
-        std::cerr << "Adding stream " << stream_name << "\n";
-
         if (streams.count(stream_name))
             return;
 
         bool data_file_exists = Poco::File(path + stream_name + DATA_FILE_EXTENSION).exists();
-
-        std::cerr << "File exists: " << data_file_exists << "\n";
 
         /** If data file is missing then we will not try to open it.
           * It is necessary since it allows to add new column to structure of the table without creating new files for old parts.
@@ -384,8 +373,6 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
             path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
-
-        std::cerr << "Added stream " << stream_name << "\n";
     };
 
     type.enumerateStreams(callback, {});
@@ -399,23 +386,15 @@ void MergeTreeReader::readData(
 {
     IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-        for (const auto & elem : path)
-            std::cerr << elem.type << "\n";
-        std::cerr << "\n";
-
         /// If offsets for arrays have already been read.
         if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
             return nullptr;
 
         String stream_name = IDataType::getFileNameForStream(name, path);
 
-        std::cerr << stream_name << "\n";
-
         auto it = streams.find(stream_name);
         if (it == streams.end())
             return nullptr;
-
-        std::cerr << "!!!\n";
 
         Stream & stream = *it->second;
 
