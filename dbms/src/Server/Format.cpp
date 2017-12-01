@@ -54,7 +54,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
         if (!quiet)
         {
-            formatAST(*res, std::cout, 0, hilite, oneline);
+            formatAST(*res, std::cout, hilite, oneline);
             std::cout << std::endl;
         }
     }

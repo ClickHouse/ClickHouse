@@ -44,7 +44,7 @@ public:
     }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         if (table.empty() && !database.empty())
         {

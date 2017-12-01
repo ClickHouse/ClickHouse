@@ -59,7 +59,7 @@ try
     out.next();
 
     std::cout << "\n";
-    formatAST(*ast, std::cout, 0, false, true);
+    formatAST(*ast, std::cout, false, true);
     std::cout << "\n";
 
     return 0;

@@ -17,6 +17,12 @@
 
 int main(int argc, char ** argv)
 {
+    if (argc < 2)
+    {
+        std::cerr << "Usage: program n\n";
+        return 1;
+    }
+
     std::cerr << std::fixed << std::setprecision(3);
     std::ofstream devnull("/dev/null");
 
