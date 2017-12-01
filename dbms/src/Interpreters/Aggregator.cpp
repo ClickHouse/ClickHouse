@@ -663,7 +663,7 @@ void NO_INLINE Aggregator::executeImplCase(
             /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
             aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
+            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
             createAggregateStates(place);
@@ -1944,7 +1944,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
             aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
+            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
             createAggregateStates(place);
