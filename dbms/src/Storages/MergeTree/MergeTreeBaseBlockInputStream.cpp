@@ -464,8 +464,6 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             }
 
             space_left -= rows_was_read;
-
-            std::cerr << "rows_was_read: " << rows_was_read << ", space_left: " << space_left << "\n";
         }
 
         /// In the case of isCancelled.
