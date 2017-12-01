@@ -838,7 +838,7 @@ private:
             /// and, if found any settings in test's xml configuration
             /// with the same name, sets its value to settings
             std::map<String, String>::iterator it;
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
     it = settings_to_apply.find(#NAME);      \
     if (it != settings_to_apply.end())       \
         settings.set(#NAME, settings_to_apply[#NAME]);
