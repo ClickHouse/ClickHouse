@@ -10,11 +10,11 @@
 namespace DB
 {
 
-std::set<std::string> ExternalLoaderConfigRepository::list(
+ExternalLoaderConfigRepository::Files ExternalLoaderConfigRepository::list(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & path_key) const
 {
-    std::set<std::string> files;
+    Files files;
 
     auto patterns = getMultipleValuesFromConfig(config, "", path_key);
 
