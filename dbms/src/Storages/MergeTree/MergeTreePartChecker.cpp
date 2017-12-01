@@ -74,6 +74,7 @@ public:
     size_t read(size_t rows)
     {
         ColumnPtr column = type->createColumn();
+        type->deserializeBinaryBulk(*column, uncompressed_hashing_buf, rows, 0);
         return column->size();
     }
 
