@@ -53,7 +53,7 @@ struct SetMethodOneNumber
 
     /** Place additional data, if necessary, in case a new key was inserted into the hash table.
       */
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, Arena & pool) {}
 };
 
 /// For the case where there is one string key.
@@ -90,7 +90,7 @@ struct SetMethodString
         }
     };
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, Arena & pool)
     {
         value.data = pool.insert(value.data, value.size);
     }
@@ -128,7 +128,7 @@ struct SetMethodFixedString
         }
     };
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, Arena & pool)
     {
         value.data = pool.insert(value.data, value.size);
     }
@@ -268,7 +268,7 @@ struct SetMethodKeysFixed
         }
     };
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, Arena & pool) {}
 };
 
 /// For other cases. 128 bit hash from the key.
@@ -296,7 +296,7 @@ struct SetMethodHashed
         }
     };
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, Arena & pool) {}
 };
 
 
