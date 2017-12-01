@@ -25,7 +25,8 @@ bool ColumnConst::isNull() const
 
 bool ColumnConst::isNullAt(size_t n) const
 {
-    return data->isNullAt(n);
+    /// Ignore n
+    return data->isNullAt(0);
 }
 
 ColumnPtr ColumnConst::convertToFullColumn() const
