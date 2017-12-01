@@ -1465,11 +1465,26 @@ public:
     }
 };
 
+template <bool is_first_line_zero>
+struct FunctionRunningDifferenceName;
+
+template <>
+struct FunctionRunningDifferenceName<true>
+{
+    static constexpr auto name = "runningDifference";
+};
+
+template <>
+struct FunctionRunningDifferenceName<false>
+{
+    static constexpr auto name = "runningIncome";
+};
 
 /** Calculate difference of consecutive values in block.
   * So, result of function depends on partition of data to blocks and on order of data in block.
   */
-class FunctionRunningDifference : public IFunction
+template <bool is_first_line_zero>
+class FunctionRunningDifferenceImpl : public IFunction
 {
 private:
     /// It is possible to track value from previous block, to calculate continuously across all blocks. Not implemented.
@@ -1485,7 +1500,7 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        dst[0] = 0;
+        dst[0] = is_first_line_zero ? 0 : src[0];
         Src prev = src[0];
         for (size_t i = 1; i < size; ++i)
         {
@@ -1532,10 +1547,11 @@ private:
     }
 
 public:
-    static constexpr auto name = "runningDifference";
+    static constexpr auto name = FunctionRunningDifferenceName<is_first_line_zero>::name;
+
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionRunningDifference>();
+        return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }
 
     String getName() const override
@@ -1584,6 +1600,9 @@ public:
         });
     }
 };
+
+using FunctionRunningDifference = FunctionRunningDifferenceImpl<true>;
+using FunctionRunningIncome = FunctionRunningDifferenceImpl<false>;
 
 
 /** Takes state of aggregate function. Returns result of aggregation (finalized state).
@@ -1813,6 +1832,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 
     factory.registerFunction<FunctionRunningAccumulate>();
     factory.registerFunction<FunctionRunningDifference>();
+    factory.registerFunction<FunctionRunningIncome>();
     factory.registerFunction<FunctionFinalizeAggregation>();
 }
 }

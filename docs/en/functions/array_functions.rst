@@ -63,7 +63,6 @@ has(arr, elem)
 ~~~~~~~~~~~~~~
 Checks whether the 'arr' array has the 'elem' element.
 Returns 0 if the the element is not in the array, or 1 if it is.
-'elem' must be a constant.
 
 indexOf(arr, x)
 ~~~~~~~~~~~~~~~

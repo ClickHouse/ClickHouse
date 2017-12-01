@@ -27,7 +27,6 @@ class StorageDistributedDirectoryMonitor;
   */
 class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
-    friend class ext::shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
 
@@ -92,30 +91,6 @@ public:
     std::string getRemoteTableName() const { return remote_table; }
     std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
 
-private:
-    StorageDistributed(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
-
-    StorageDistributed(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
-
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors();
     /// ensure directory monitor thread creation by subdirectory name
@@ -159,6 +134,30 @@ private:
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
+
+protected:
+    StorageDistributed(
+        const std::string & name_,
+        NamesAndTypesListPtr columns_,
+        const String & remote_database_,
+        const String & remote_table_,
+        const String & cluster_name_,
+        const Context & context_,
+        const ASTPtr & sharding_key_ = nullptr,
+        const String & data_path_ = String{});
+
+    StorageDistributed(
+        const std::string & name_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        const String & remote_database_,
+        const String & remote_table_,
+        const String & cluster_name_,
+        const Context & context_,
+        const ASTPtr & sharding_key_ = nullptr,
+        const String & data_path_ = String{});
 };
 
 }

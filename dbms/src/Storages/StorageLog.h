@@ -39,7 +39,6 @@ using Marks = std::vector<Mark>;
   */
 class StorageLog : public ext::shared_ptr_helper<StorageLog>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageLog>;
 friend class LogBlockInputStream;
 friend class LogBlockOutputStream;
 
@@ -76,12 +75,6 @@ public:
     bool checkData() const override;
 
 protected:
-    String path;
-    String name;
-    NamesAndTypesListPtr columns;
-
-    mutable std::shared_mutex rwlock;
-
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (the correctness of names and paths is not verified)
       *  consisting of the specified columns; Create files if they do not exist.
@@ -95,15 +88,13 @@ protected:
         const ColumnDefaults & column_defaults_,
         size_t max_compress_block_size_);
 
-    /// Read marks files if they are not already read.
-    /// It is done lazily, so that with a large number of tables, the server starts quickly.
-    /// You can not call with a write locked `rwlock`.
-    void loadMarks();
-
-    /// Can be called with any state of `rwlock`.
-    size_t marksCount();
-
 private:
+    String path;
+    String name;
+    NamesAndTypesListPtr columns;
+
+    mutable std::shared_mutex rwlock;
+
     Files_t files; /// name -> data
 
     Names column_names; /// column_index -> name
@@ -112,11 +103,6 @@ private:
     Poco::File marks_file;
     Poco::File null_marks_file;
 
-    void loadMarksImpl(bool load_null_marks);
-
-    /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
-    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
-
     bool loaded_marks;
     bool has_nullable_columns = false;
 
@@ -124,10 +110,21 @@ private:
     size_t file_count = 0;
     size_t null_file_count = 0;
 
-protected:
     FileChecker file_checker;
 
-private:
+    /// Read marks files if they are not already read.
+    /// It is done lazily, so that with a large number of tables, the server starts quickly.
+    /// You can not call with a write locked `rwlock`.
+    void loadMarks();
+
+    /// Can be called with any state of `rwlock`.
+    size_t marksCount();
+
+    void loadMarksImpl(bool load_null_marks);
+
+    /// The order of adding files should not change: it corresponds to the order of the columns in the marks file.
+    void addFile(const String & column_name, const IDataType & type, size_t level = 0);
+
     /** For normal columns, the number of rows in the block is specified in the marks.
       * For array columns and nested structures, there are more than one group of marks that correspond to different files
       *  - for insides (file name.bin) - the total number of array elements in the block is specified,

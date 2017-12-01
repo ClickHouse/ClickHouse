@@ -76,14 +76,6 @@ private:
 
 StorageMemory::StorageMemory(
     const std::string & name_,
-    NamesAndTypesListPtr columns_)
-    : name(name_), columns(columns_)
-{
-}
-
-
-StorageMemory::StorageMemory(
-    const std::string & name_,
     NamesAndTypesListPtr columns_,
     const NamesAndTypesList & materialized_columns_,
     const NamesAndTypesList & alias_columns_,
