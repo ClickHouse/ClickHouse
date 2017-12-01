@@ -543,7 +543,7 @@ void Context::calculateUserSettings()
 {
     auto lock = getLock();
 
-    String profile = shared->security_manager->getUser(client_info.current_user).profile;
+    String profile = shared->security_manager->getUser(client_info.current_user)->profile;
 
     /// 1) Set default settings (hardcoded values)
     /// NOTE: we ignore global_context settings (from which it is usually copied)
@@ -564,7 +564,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 {
     auto lock = getLock();
 
-    const User & user_props = shared->security_manager->authorizeAndGetUser(name, password, address.host());
+    auto user_props = shared->security_manager->authorizeAndGetUser(name, password, address.host());
 
     client_info.current_user = name;
     client_info.current_address = address;
@@ -574,7 +574,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 
     calculateUserSettings();
 
-    setQuota(user_props.quota, quota_key, name, address.host());
+    setQuota(user_props->quota, quota_key, name, address.host());
 }
 
 
