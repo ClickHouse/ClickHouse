@@ -18,7 +18,10 @@ public:
     using ModelPtr = std::shared_ptr<IModel>;
 
     /// Models will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalModels(Context & context, bool throw_on_error);
+    ExternalModels(
+        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+        Context & context,
+        bool throw_on_error);
 
     /// Forcibly reloads specified model.
     void reloadModel(const std::string & name) { reload(name); }
