@@ -2,6 +2,7 @@
 
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/IRuntimeComponentsFactory.h>
+#include <Interpreters/ExternalLoaderConfigRepository.h>
 #include <Interpreters/SecurityManager.h>
 
 namespace DB
@@ -21,6 +22,16 @@ public:
     std::unique_ptr<IGeoDictionariesLoader> createGeoDictionariesLoader() override
     {
         return std::make_unique<GeoDictionariesLoader>();
+    }
+
+    std::unique_ptr<IExternalLoaderConfigRepository> createExternalDictionariesConfigRepository() override
+    {
+        return std::make_unique<ExternalLoaderConfigRepository>();
+    }
+
+    std::unique_ptr<IExternalLoaderConfigRepository> createExternalModelsConfigRepository() override
+    {
+        return std::make_unique<ExternalLoaderConfigRepository>();
     }
 };
 

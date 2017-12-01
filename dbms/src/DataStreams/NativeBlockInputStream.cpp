@@ -48,40 +48,8 @@ NativeBlockInputStream::NativeBlockInputStream(
 
 void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
-    if (type.isNullable())
-    {
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
-
-        ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
-        IColumn & nested_col = *nullable_col.getNestedColumn();
-
-        IColumn & null_map = nullable_col.getNullMapConcreteColumn();
-        DataTypeUInt8{}.deserializeBinaryBulk(null_map, istr, rows, avg_value_size_hint);
-
-        readData(nested_type, nested_col, istr, rows, avg_value_size_hint);
-
-        return;
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /** For arrays, we deserialize the offsets first, and then the values.
-          */
-        IColumn & offsets_column = *typeid_cast<ColumnArray &>(column).getOffsetsColumn();
-        type_arr->getOffsetsType()->deserializeBinaryBulk(offsets_column, istr, rows, 0);
-
-        if (offsets_column.size() != rows)
-            throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
-
-        if (rows)
-            readData(
-                *type_arr->getNestedType(),
-                typeid_cast<ColumnArray &>(column).getData(),
-                istr,
-                typeid_cast<const ColumnArray &>(column).getOffsets()[rows - 1], 0);
-    }
-    else
-        type.deserializeBinaryBulk(column, istr, rows, avg_value_size_hint);
+    IDataType::InputStreamGetter input_stream_getter = [&] (const IDataType::SubstreamPath & path) { return &istr; };
+    type.deserializeBinaryBulkWithMultipleStreams(column, input_stream_getter, rows, avg_value_size_hint, false, {});
 
     if (column.size() != rows)
         throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
