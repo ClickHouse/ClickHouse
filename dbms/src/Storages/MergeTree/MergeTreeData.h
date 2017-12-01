@@ -93,8 +93,6 @@ class MergeTreeData : public ITableDeclaration
 public:
     /// Function to call if the part is suspected to contain corrupt data.
     using BrokenPartCallback = std::function<void (const String &)>;
-    /// Callback to delete outdated parts immediately
-    using PartsCleanCallback = std::function<void ()>;
     using DataPart = MergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
@@ -290,9 +288,7 @@ public:
                     const String & log_name_,
                     bool require_part_metadata_,
                     bool attach,
-                    BrokenPartCallback broken_part_callback_ = [](const String &){},
-                    PartsCleanCallback parts_clean_callback_ = nullptr
-                 );
+                    BrokenPartCallback broken_part_callback_ = [](const String &){});
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
