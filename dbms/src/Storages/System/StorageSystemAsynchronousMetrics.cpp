@@ -26,11 +26,11 @@ StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const std::st
 
 BlockInputStreams StorageSystemAsynchronousMetrics::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    const SelectQueryInfo &,
+    const Context &,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
