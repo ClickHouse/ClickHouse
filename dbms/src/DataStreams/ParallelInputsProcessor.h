@@ -45,22 +45,22 @@ enum class StreamUnionMode
 struct ParallelInputsHandler
 {
     /// Processing the data block.
-    void onBlock(Block & block, size_t thread_num) {}
+    void onBlock(Block & /*block*/, size_t /*thread_num*/) {}
 
     /// Processing the data block + additional information.
-    void onBlock(Block & block, BlockExtraInfo & extra_info, size_t thread_num) {}
+    void onBlock(Block & /*block*/, BlockExtraInfo & /*extra_info*/, size_t /*thread_num*/) {}
 
     /// Called for each thread, when the thread has nothing else to do.
     /// Due to the fact that part of the sources has run out, and now there are fewer sources left than streams.
     /// Called if the `onException` method does not throw an exception; is called before the `onFinish` method.
-    void onFinishThread(size_t thread_num) {}
+    void onFinishThread(size_t /*thread_num*/) {}
 
     /// Blocks are over. Due to the fact that all sources ran out or because of the cancellation of work.
     /// This method is always called exactly once, at the end of the work, if the `onException` method does not throw an exception.
     void onFinish() {}
 
     /// Exception handling. It is reasonable to call the ParallelInputsProcessor::cancel method in this method, and also pass the exception to the main thread.
-    void onException(std::exception_ptr & exception, size_t thread_num) {}
+    void onException(std::exception_ptr & /*exception*/, size_t /*thread_num*/) {}
 };
 
 
@@ -158,19 +158,15 @@ private:
         InputData(const BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
     };
 
-    template <StreamUnionMode mode2 = mode>
-    void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num,
-        typename std::enable_if<mode2 == StreamUnionMode::Basic>::type * = nullptr)
+    void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num)
     {
-        handler.onBlock(block, thread_num);
-    }
-
-    template <StreamUnionMode mode2 = mode>
-    void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num,
-        typename std::enable_if<mode2 == StreamUnionMode::ExtraInfo>::type * = nullptr)
-    {
-        BlockExtraInfo extra_info = stream->getBlockExtraInfo();
-        handler.onBlock(block, extra_info, thread_num);
+        if constexpr (mode == StreamUnionMode::Basic)
+            handler.onBlock(block, thread_num);
+        else
+        {
+            BlockExtraInfo extra_info = stream->getBlockExtraInfo();
+            handler.onBlock(block, extra_info, thread_num);
+        }
     }
 
     void thread(MemoryTracker * memory_tracker, size_t thread_num)

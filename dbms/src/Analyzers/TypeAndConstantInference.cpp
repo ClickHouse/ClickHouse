@@ -318,7 +318,7 @@ void processScalarSubquery(const String & column_name, ASTPtr & ast, TypeAndCons
 }
 
 
-void processHigherOrderFunction(const String & column_name,
+void processHigherOrderFunction(
     ASTPtr & ast, const Context & context,
     CollectAliases & aliases, const AnalyzeColumns & columns,
     TypeAndConstantInference::Info & info,
@@ -459,7 +459,7 @@ void processImpl(
     {
         /// If this is higher-order function, determine types of lambda arguments and infer types of subexpressions inside lambdas.
         if (lambdas.higher_order_functions.end() != std::find(lambdas.higher_order_functions.begin(), lambdas.higher_order_functions.end(), ast))
-            processHigherOrderFunction(column_name, ast, context, aliases, columns, info, lambdas, table_functions);
+            processHigherOrderFunction(ast, context, aliases, columns, info, lambdas, table_functions);
 
         processFunction(column_name, ast, info, context);
     }
