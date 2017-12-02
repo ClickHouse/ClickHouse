@@ -77,8 +77,11 @@ static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
                 writeCString("inf", ostr);
         }
     }
-
-    /// This function is not called for non floating point numbers.
+    else
+    {
+        /// This function is not called for non floating point numbers.
+        (void)x;
+    }
 }
 
 
