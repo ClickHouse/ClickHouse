@@ -195,11 +195,11 @@ private:
     }
 
 
-    int main(const std::vector<std::string> & args)
+    int main(const std::vector<std::string> & /*args*/)
     {
         try
         {
-            return mainImpl(args);
+            return mainImpl();
         }
         catch (const Exception & e)
         {
@@ -262,7 +262,7 @@ private:
     }
 
 
-    int mainImpl(const std::vector<std::string> & args)
+    int mainImpl()
     {
         registerFunctions();
         registerAggregateFunctions();

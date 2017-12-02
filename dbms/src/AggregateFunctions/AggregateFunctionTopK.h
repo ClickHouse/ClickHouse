@@ -57,7 +57,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void setArgument(const DataTypePtr & /*argument*/)
     {
     }
 
@@ -213,7 +213,7 @@ public:
         set.readAlphaMap(buf);
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)

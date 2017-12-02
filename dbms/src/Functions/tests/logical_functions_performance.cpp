@@ -90,7 +90,7 @@ struct AssociativeOperationImpl
 template <typename Op>
 struct AssociativeOperationImpl<Op, 1>
 {
-    static void execute(UInt8ColumnPtrs & in, UInt8Container & result)
+    static void execute(UInt8ColumnPtrs &, UInt8Container &)
     {
         throw Exception("Logical error: AssociativeOperationImpl<Op, 1>::execute called", ErrorCodes::LOGICAL_ERROR);
     }

@@ -806,7 +806,7 @@ public:
         return std::make_shared<DataTypeFloat32>();
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void setArgument(const DataTypePtr & /*argument*/)
     {
     }
 
@@ -867,7 +867,7 @@ public:
         return std::make_shared<DataTypeFloat32>();
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
+    void setArgumentsImpl(const DataTypes & /*arguments*/)
     {
     }
 
@@ -928,7 +928,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void setArgument(const DataTypePtr & /*argument*/)
     {
     }
 
@@ -995,7 +995,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
-    void setArgumentsImpl(const DataTypes & arguments)
+    void setArgumentsImpl(const DataTypes & /*arguments*/)
     {
     }
 

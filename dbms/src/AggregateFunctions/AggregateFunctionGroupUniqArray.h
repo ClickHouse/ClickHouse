@@ -51,7 +51,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void setArgument(const DataTypePtr & /*argument*/)
     {
     }
 

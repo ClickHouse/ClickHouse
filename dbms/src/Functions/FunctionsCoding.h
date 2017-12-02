@@ -1437,7 +1437,7 @@ class FunctionBitmaskToArray : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToArray";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBitmaskToArray>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmaskToArray>(); }
 
     String getName() const override
     {
@@ -1528,7 +1528,7 @@ class FunctionToStringCutToZero : public IFunction
 {
 public:
     static constexpr auto name = "toStringCutToZero";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToStringCutToZero>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToStringCutToZero>(); }
 
     String getName() const override
     {

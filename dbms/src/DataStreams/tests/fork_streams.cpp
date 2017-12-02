@@ -43,7 +43,7 @@ void thread2(DB::BlockInputStreamPtr in, DB::BlockOutputStreamPtr out, DB::Write
 }
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;

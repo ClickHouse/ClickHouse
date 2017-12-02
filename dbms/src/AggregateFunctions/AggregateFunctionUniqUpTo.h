@@ -146,7 +146,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void setArgument(const DataTypePtr & /*argument*/)
     {
     }
 

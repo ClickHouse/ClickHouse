@@ -265,8 +265,7 @@ template <typename TResult>
 class ArraySourceCreator<TResult, Null> final
 {
 public:
-    static bool execute(IArraySources<TResult> & sources, const Block & block,
-        const ColumnNumbers & args, const Branch & br)
+    static bool execute(IArraySources<TResult> & sources, const Block &, const ColumnNumbers &, const Branch & br)
     {
         auto type_name = br.type->getName();
         if (TypeName<Null>::get() == type_name)
@@ -399,7 +398,7 @@ class ArrayEvaluator<NumberTraits::Error>
 {
 public:
     /// For the meaning of the builder parameter, see the FunctionMultiIf::perform() declaration.
-    static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
+    static void perform(const Branches &, Block &, const ColumnNumbers &, size_t, NullMapBuilder &)
     {
         throw CondException{CondErrorCodes::ARRAY_EVALUATOR_INVALID_TYPES};
     }
