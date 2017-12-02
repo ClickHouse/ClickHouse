@@ -468,7 +468,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
 }
 
 static void LLVMErrorHandler(void *UserData, const std::string &Message,
-                             bool GenCrashDiag) {
+                             bool /*GenCrashDiag*/) {
   DiagnosticsEngine &Diags = *static_cast<DiagnosticsEngine*>(UserData);
 
   Diags.Report(diag::err_fe_error_backend) << Message;
@@ -477,7 +477,7 @@ static void LLVMErrorHandler(void *UserData, const std::string &Message,
   exit(1);
 }
 
-int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
+int cc1as_main(ArrayRef<const char *> Argv, const char * /*Argv0*/, void * /*MainAddr*/) {
   // Initialize targets and assembly printers/parsers.
   InitializeAllTargetInfos();
   InitializeAllTargetMCs();
