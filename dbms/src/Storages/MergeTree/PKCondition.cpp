@@ -50,6 +50,7 @@ static String extractFixedPrefixFromLikePattern(const String & like_pattern)
         switch (*pos)
         {
             case '%':
+                [[fallthrough]];
             case '_':
                 return fixed_prefix;
 
@@ -57,6 +58,7 @@ static String extractFixedPrefixFromLikePattern(const String & like_pattern)
                 ++pos;
                 if (pos == end)
                     break;
+                [[fallthrough]];
             default:
                 fixed_prefix += *pos;
                 break;
