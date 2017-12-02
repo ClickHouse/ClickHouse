@@ -220,10 +220,10 @@ template <bool compute_marginal_moments>
 class BaseCovarianceData
 {
 protected:
-    void incrementMarginalMoments(Float64 left_incr, Float64 right_incr) {}
-    void mergeWith(const BaseCovarianceData & source) {}
-    void serialize(WriteBuffer & buf) const {}
-    void deserialize(const ReadBuffer & buf) {}
+    void incrementMarginalMoments(Float64, Float64) {}
+    void mergeWith(const BaseCovarianceData &) {}
+    void serialize(WriteBuffer &) const {}
+    void deserialize(const ReadBuffer &) {}
 };
 
 template <>

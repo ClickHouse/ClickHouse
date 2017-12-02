@@ -88,7 +88,7 @@ inline bool operator==(StringRef_CompareMemcmp lhs, StringRef_CompareMemcmp rhs)
     return 0 == memcmp(lhs.data, rhs.data, lhs.size);
 }
 
-inline bool operator==(StringRef_CompareAlwaysTrue lhs, StringRef_CompareAlwaysTrue rhs)
+inline bool operator==(StringRef_CompareAlwaysTrue, StringRef_CompareAlwaysTrue)
 {
     return true;
 }
@@ -454,6 +454,12 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
 
 int main(int argc, char ** argv)
 {
+    if (argc < 3)
+    {
+        std::cerr << "Usage: program n m\n";
+        return 1;
+    }
+
     size_t n = atoi(argv[1]);
     size_t m = atoi(argv[2]);
 

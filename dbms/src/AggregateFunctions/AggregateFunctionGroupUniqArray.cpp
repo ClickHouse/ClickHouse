@@ -42,7 +42,7 @@ static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type
     }
 }
 
-AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() != 1)
         throw Exception("Incorrect number of arguments for aggregate function " + name,

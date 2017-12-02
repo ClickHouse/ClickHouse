@@ -29,6 +29,8 @@ find_package (Threads)
 
 add_subdirectory (src)
 
+# These files are located in separate library, because they are used by Yandex.Metrika code
+#  in places when no dependency on whole "dbms" library is possible.
 add_library(string_utils
     src/Common/StringUtils.h
     src/Common/StringUtils.cpp)

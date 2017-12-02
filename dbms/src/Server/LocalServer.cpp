@@ -20,7 +20,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
-#include <common/ApplicationServerExt.h>
 #include "StatusFile.h"
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -203,7 +202,7 @@ void LocalServer::displayHelp()
 }
 
 
-void LocalServer::handleHelp(const std::string & name, const std::string & value)
+void LocalServer::handleHelp(const std::string & /*name*/, const std::string & /*value*/)
 {
     displayHelp();
     stopOptionsProcessing();
@@ -228,7 +227,7 @@ void LocalServer::tryInitPath()
 }
 
 
-int LocalServer::main(const std::vector<std::string> & args)
+int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     Logger * log = &logger();
@@ -475,4 +474,18 @@ void LocalServer::setupUsers()
 
 }
 
-YANDEX_APP_MAIN_FUNC(DB::LocalServer, mainEntryClickHouseLocal);
+int mainEntryClickHouseLocal(int argc, char ** argv)
+{
+    DB::LocalServer app;
+    try
+    {
+        app.init(argc, argv);
+        return app.run();
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
+}
