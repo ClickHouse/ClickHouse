@@ -64,7 +64,8 @@ private:
 public:
     /// Create a new column that has another column as a source.
     ColumnAggregateFunction(const ColumnAggregateFunction & other)
-        : arenas(other.arenas), func(other.func), src(other.shared_from_this())
+        : std::enable_shared_from_this<ColumnAggregateFunction>(other),
+        arenas(other.arenas), func(other.func), src(other.shared_from_this())
     {
     }
 
