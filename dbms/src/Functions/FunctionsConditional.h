@@ -204,11 +204,11 @@ private:
 
     template <typename T0, typename T1>
     bool executeRightTypeArray(
-        const ColumnUInt8 * cond_col,
-        Block & block,
-        const ColumnNumbers & arguments,
-        size_t result,
-        const ColumnArray * col_left_array)
+        [[maybe_unused]] const ColumnUInt8 * cond_col,
+        [[maybe_unused]] Block & block,
+        [[maybe_unused]] const ColumnNumbers & arguments,
+        [[maybe_unused]] size_t result,
+        [[maybe_unused]] const ColumnArray * col_left_array)
     {
         if constexpr (std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value)
             return false;
