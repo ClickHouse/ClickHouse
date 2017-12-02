@@ -633,7 +633,7 @@ private:
 
     /// Overload for InvalidType
     template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result, const ColumnType * col_left)
+    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result, [[maybe_unused]] const ColumnType * col_left)
     {
         if constexpr (std::is_same<ResultDataType, InvalidType>::value)
             throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
