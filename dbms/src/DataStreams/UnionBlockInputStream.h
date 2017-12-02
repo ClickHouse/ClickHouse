@@ -237,17 +237,13 @@ protected:
     }
 
 private:
-    template <StreamUnionMode mode2 = mode>
-    BlockExtraInfo doGetBlockExtraInfo(typename std::enable_if<mode2 == StreamUnionMode::ExtraInfo>::type * = nullptr) const
+    BlockExtraInfo doGetBlockExtraInfo() const
     {
-        return received_payload.extra_info;
-    }
-
-    template <StreamUnionMode mode2 = mode>
-    BlockExtraInfo doGetBlockExtraInfo(typename std::enable_if<mode2 == StreamUnionMode::Basic>::type * = nullptr) const
-    {
-        throw Exception("Method getBlockExtraInfo is not supported for mode StreamUnionMode::Basic",
-            ErrorCodes::NOT_IMPLEMENTED);
+        if constexpr (mode == StreamUnionMode::ExtraInfo)
+            return received_payload.extra_info;
+        else
+            throw Exception("Method getBlockExtraInfo is not supported for mode StreamUnionMode::Basic",
+                ErrorCodes::NOT_IMPLEMENTED);
     }
 
 private:

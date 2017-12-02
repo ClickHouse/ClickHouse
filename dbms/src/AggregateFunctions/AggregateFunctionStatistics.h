@@ -350,16 +350,12 @@ public:
         Base::deserialize(buf);
     }
 
-    template <bool compute = compute_marginal_moments>
-    void publish(IColumn & to, typename std::enable_if<compute>::type * = nullptr) const
+    void publish(IColumn & to) const
     {
-        static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, Base::left_m2, Base::right_m2, count));
-    }
-
-    template <bool compute = compute_marginal_moments>
-    void publish(IColumn & to, typename std::enable_if<!compute>::type * = nullptr) const
-    {
-        static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, count));
+        if constexpr (compute_marginal_moments)
+            static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, Base::left_m2, Base::right_m2, count));
+        else
+            static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, count));
     }
 
 private:
