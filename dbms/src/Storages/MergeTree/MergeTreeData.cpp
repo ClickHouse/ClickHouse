@@ -1272,7 +1272,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
                 file.remove();
         }
 
-        mutable_part.size_in_bytes = MergeTreeData::DataPart::calcTotalSize(path);
+        mutable_part.size_in_bytes = MergeTreeData::DataPart::calculateTotalSize(path);
 
         /// TODO: we can skip resetting caches when the column is added.
         data_part->storage.context.dropCaches();

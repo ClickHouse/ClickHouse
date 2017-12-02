@@ -270,7 +270,7 @@ struct MergeTreeDataPart
     ~MergeTreeDataPart();
 
     /// Calculate the total size of the entire directory with all the files
-    static size_t calcTotalSize(const String & from);
+    static size_t calculateTotalSize(const String & from);
 
     void remove() const;
 

@@ -351,7 +351,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->columns = *total_column_list;
     new_part->index.swap(index_columns);
     new_part->checksums = checksums;
-    new_part->size_in_bytes = MergeTreeData::DataPart::calcTotalSize(new_part->getFullPath());
+    new_part->size_in_bytes = MergeTreeData::DataPart::calculateTotalSize(new_part->getFullPath());
 }
 
 void MergedBlockOutputStream::init()
