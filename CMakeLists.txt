@@ -49,7 +49,7 @@ if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "i386")
 endif ()
 if ( ( ARCH_ARM AND NOT ARCH_AARCH64 ) OR ARCH_I386)
     set (ARCH_32 1)
-    message (WARNING "Support 32bit platforms is highly experimental")
+    message (WARNING "Support for 32bit platforms is highly experimental")
 endif ()
 
 set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
