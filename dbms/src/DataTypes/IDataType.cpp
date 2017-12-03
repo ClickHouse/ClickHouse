@@ -69,7 +69,7 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
         if (elem.type == Substream::NullMap)
             stream_name += ".null";
         else if (elem.type == Substream::ArraySizes)
-            stream_name = DataTypeNested::extractNestedTableName(stream_name) + ".size" + toString(array_level);
+            stream_name += ".size" + toString(array_level);
         else if (elem.type == Substream::ArrayElements)
             ++array_level;
         else if (elem.type == Substream::TupleElement)
