@@ -31,18 +31,22 @@ namespace
 
 /** To read and checksum single stream (a pair of .bin, .mrk files) for a single column.
   */
-struct Stream
+class Stream
 {
+public:
     String base_name;
     String bin_file_path;
     String mrk_file_path;
-
+private:
     ReadBufferFromFile file_buf;
     HashingReadBuffer compressed_hashing_buf;
     CompressedReadBuffer uncompressing_buf;
+public:
     HashingReadBuffer uncompressed_hashing_buf;
 
+private:
     ReadBufferFromFile mrk_file_buf;
+public:
     HashingReadBuffer mrk_hashing_buf;
 
     Stream(const String & path, const String & base_name)
@@ -246,6 +250,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         while (true)
         {
             /// Check that mark points to current position in file.
+            bool marks_eof = false;
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
                     String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
@@ -253,8 +258,10 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
                     try
                     {
-                        if (!stream.uncompressed_hashing_buf.eof())
+                        if (!stream.mrk_hashing_buf.eof())
                             stream.assertMark();
+                        else
+                            marks_eof = true;
                     }
                     catch (Exception & e)
                     {
@@ -289,6 +296,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
             if (read_size < index_granularity)
                 break;
+            else if (marks_eof)
+                throw Exception("Unexpected end of mrk file while reading column " + name_type.name, ErrorCodes::CORRUPTED_DATA);
 
             if (is_cancelled())
                 return {};
