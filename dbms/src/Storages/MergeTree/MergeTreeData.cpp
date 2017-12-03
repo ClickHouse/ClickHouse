@@ -892,65 +892,47 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     for (const NameAndTypePair & column : new_columns)
         new_types.emplace(column.name, column.type.get());
 
-    /// The number of columns in each Nested structure. Columns not belonging to Nested structure will also be
-    /// in this map, but they won't interfere with the computation.
-    std::map<String, size_t> nested_table_counts;
-    for (const NameAndTypePair & column : old_columns)
-        ++nested_table_counts[DataTypeNested::extractNestedTableName(column.name)];
-
     /// For every column that need to be converted: source column name, column name of calculated expression for conversion.
     std::vector<std::pair<String, String>> conversions;
+
+    /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
+    std::map<String, size_t> stream_counts;
+    for (const NameAndTypePair & column : old_columns)
+    {
+        column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+        {
+            ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
+        }, {});
+    }
 
     for (const NameAndTypePair & column : old_columns)
     {
         if (!new_types.count(column.name))
         {
-            bool is_nullable = column.type->isNullable();
-
+            /// The column was deleted.
             if (!part || part->hasColumnFiles(column.name))
             {
-                /// The column must be deleted.
-                const IDataType * observed_type;
-                if (is_nullable)
+                column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
-                    auto & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
-                    observed_type = nullable_type.getNestedType().get();
-                }
-                else
-                    observed_type = column.type.get();
+                    String file_name = IDataType::getFileNameForStream(column.name, substream_path);
 
-                String escaped_column = escapeForFileName(column.name);
-                out_rename_map[escaped_column + ".bin"] = "";
-                out_rename_map[escaped_column + ".mrk"] = "";
-
-                if (is_nullable)
-                {
-                    out_rename_map[escaped_column + ".null.bin"] = "";
-                    out_rename_map[escaped_column + ".null.mrk"] = "";
-                }
-
-                /// If the column is an array or the last column of nested structure, we must delete the
-                /// sizes file.
-                if (typeid_cast<const DataTypeArray *>(observed_type))
-                {
-                    String nested_table = DataTypeNested::extractNestedTableName(column.name);
-                    /// If it was the last column referencing these .size0 files, delete them.
-                    if (!--nested_table_counts[nested_table])
+                    /// Delete files if they are no longer shared with another column.
+                    if (--stream_counts[file_name] == 0)
                     {
-                        String escaped_nested_table = escapeForFileName(nested_table);
-                        out_rename_map[escaped_nested_table + ".size0.bin"] = "";
-                        out_rename_map[escaped_nested_table + ".size0.mrk"] = "";
+                        out_rename_map[file_name + ".bin"] = "";
+                        out_rename_map[file_name + ".mrk"] = "";
                     }
-                }
+                }, {});
             }
         }
         else
         {
+            /// The column was converted. Collect conversions.
             const auto * new_type = new_types[column.name];
             const String new_type_name = new_type->getName();
             const auto * old_type = column.type.get();
 
-            if (new_type_name != old_type->getName() && (!part || part->hasColumnFiles(column.name)))
+            if (!new_type->equals(*old_type) && (!part || part->hasColumnFiles(column.name)))
             {
                 if (isMetadataOnlyConversion(old_type, new_type))
                 {
@@ -966,8 +948,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
                 Names out_names;
 
-                /// @todo invent the name more safely
-                const auto new_type_name_column = '#' + new_type_name + "_column";
+                /// This is temporary name for expression. TODO Invent the name more safely.
+                const String new_type_name_column = '#' + new_type_name + "_column";
                 out_expression->add(ExpressionAction::addColumn(
                     { DataTypeString().createConstColumn(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
@@ -993,26 +975,24 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
         for (const auto & source_and_expression : conversions)
         {
-            String converting_column_name = source_and_expression.first + " converting";
-            projection.emplace_back(source_and_expression.second, converting_column_name);
+            /// Column name for temporary filenames before renaming. NOTE The is unnecessarily tricky.
 
-            const String escaped_converted_column = escapeForFileName(converting_column_name);
-            const String escaped_source_column = escapeForFileName(source_and_expression.first);
+            String original_column_name = source_and_expression.first;
+            String temporary_column_name = original_column_name + " converting";
+
+            projection.emplace_back(source_and_expression.second, temporary_column_name);
 
             /// After conversion, we need to rename temporary files into original.
-            out_rename_map[escaped_converted_column + ".bin"] = escaped_source_column + ".bin";
-            out_rename_map[escaped_converted_column + ".mrk"] = escaped_source_column + ".mrk";
 
-            const IDataType * new_type = new_types[source_and_expression.first];
+            new_types[source_and_expression.first]->enumerateStreams(
+                [&](const IDataType::SubstreamPath & substream_path)
+                {
+                    String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
+                    String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
-            /// NOTE Sizes of arrays are not updated during conversion.
-
-            /// Information on how to update the null map if it is a nullable column.
-            if (new_type->isNullable())
-            {
-                out_rename_map[escaped_converted_column + ".null.bin"] = escaped_source_column + ".null.bin";
-                out_rename_map[escaped_converted_column + ".null.mrk"] = escaped_source_column + ".null.mrk";
-            }
+                    out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
+                    out_rename_map[temporary_file_name + ".mrk"] = original_file_name + ".mrk";
+                }, {});
         }
 
         out_expression->add(ExpressionAction::project(projection));
