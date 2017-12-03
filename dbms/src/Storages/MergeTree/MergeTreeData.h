@@ -273,27 +273,27 @@ public:
     ///     Otherwise, partition_expr_ast is used for partitioning.
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
-    MergeTreeData(  const String & database_, const String & table_,
-                    const String & full_path_, NamesAndTypesListPtr columns_,
-                    const NamesAndTypesList & materialized_columns_,
-                    const NamesAndTypesList & alias_columns_,
-                    const ColumnDefaults & column_defaults_,
-                    Context & context_,
-                    const ASTPtr & primary_expr_ast_,
-                    const String & date_column_name,
-                    const ASTPtr & partition_expr_ast_,
-                    const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
-                    const MergingParams & merging_params_,
-                    const MergeTreeSettings & settings_,
-                    const String & log_name_,
-                    bool require_part_metadata_,
-                    bool attach,
-                    BrokenPartCallback broken_part_callback_ = [](const String &){});
+    MergeTreeData(const String & database_, const String & table_,
+                  const String & full_path_, NamesAndTypesListPtr columns_,
+                  const NamesAndTypesList & materialized_columns_,
+                  const NamesAndTypesList & alias_columns_,
+                  const ColumnDefaults & column_defaults_,
+                  Context & context_,
+                  const ASTPtr & primary_expr_ast_,
+                  const String & date_column_name,
+                  const ASTPtr & partition_expr_ast_,
+                  const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
+                  const MergingParams & merging_params_,
+                  const MergeTreeSettings & settings_,
+                  const String & log_name_,
+                  bool require_part_metadata_,
+                  bool attach,
+                  BrokenPartCallback broken_part_callback_ = [](const String &){});
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
 
-    bool supportsSampling() const { return !!sampling_expression; }
+    bool supportsSampling() const { return sampling_expression != nullptr; }
     bool supportsPrewhere() const { return true; }
 
     bool supportsFinal() const
@@ -410,7 +410,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void setPath(const String & full_path, bool move_data);
+    void setPath(const String & full_path);
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
@@ -492,6 +492,7 @@ public:
         return total_size;
     }
 
+    /// Calculates column sizes in compressed form for the current state of data_parts.
     void recalculateColumnSizes()
     {
         std::lock_guard<std::mutex> lock{data_parts_mutex};
@@ -639,11 +640,6 @@ private:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
-
-    /// Check that columns list doesn't contain multidimensional arrays.
-    /// If attach is true (attaching an existing table), writes an error message to log.
-    /// Otherwise (new table or alter) throws an exception.
-    void checkNoMultidimensionalArrays(const NamesAndTypesList & columns, bool attach) const;
 
     void initPrimaryKey();
 

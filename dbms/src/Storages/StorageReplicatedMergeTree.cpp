@@ -2855,7 +2855,7 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const Str
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
-    data.setPath(new_full_path, true);
+    data.setPath(new_full_path);
 
     database_name = new_database_name;
     table_name = new_table_name;
