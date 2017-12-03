@@ -108,7 +108,7 @@ struct Stream
         if (!mrk_hashing_buf.eof())
             throw Exception("EOF expected in " + mrk_file_path + " file"
                 + " at position "
-                + toString(uncompressed_hashing_buf.count()), ErrorCodes::CORRUPTED_DATA);
+                + toString(mrk_hashing_buf.count()), ErrorCodes::CORRUPTED_DATA);
     }
 
     void saveChecksums(MergeTreeData::DataPart::Checksums & checksums)
