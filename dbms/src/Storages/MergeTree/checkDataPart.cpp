@@ -1,6 +1,7 @@
 #include <optional>
 
 #include <Poco/File.h>
+#include <Poco/DirectoryIterator.h>
 
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataStreams/MarkInCompressedFile.h>
@@ -196,10 +197,38 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         checksums_data.files["primary.idx"] = MergeTreeData::DataPart::Checksums::Checksum(primary_idx_size, hashing_buf.getHash());
     }
 
+    /// Optional files count.txt, partition.dat, minmax_*.idx. Just calculate checksums for existing files.
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator dir_it(path); dir_it != dir_end; ++dir_it)
+    {
+        const String & file_name = dir_it.name();
+        if (file_name == "count.txt"
+            || file_name == "partition.dat"
+            || (startsWith(file_name, "minmax_") && endsWith(file_name, ".idx")))
+        {
+            ReadBufferFromFile file_buf(dir_it->path());
+            HashingReadBuffer hashing_buf(file_buf);
+            hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+            checksums_data.files[file_name] = MergeTreeData::DataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
+        }
+    }
+
     if (is_cancelled())
         return {};
 
+    /// If count.txt file exists, use it as source of truth for number of rows. Otherwise just check that all columns have equal amount of rows.
     std::optional<size_t> rows;
+
+    if (Poco::File(path + "count.txt").exists())
+    {
+        ReadBufferFromFile buf(path + "count.txt");
+        size_t count = 0;
+        readText(count, buf);
+        assertEOF(buf);
+        rows = count;
+    }
+
+    /// Read all columns, calculate checksums and validate marks.
     for (const NameAndTypePair & name_type : columns)
     {
         LOG_DEBUG(log, "Checking column " + name_type.name + " in " + path);
@@ -246,9 +275,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         if (!rows)
             rows = column_size;
         else if (*rows != column_size)
-            throw Exception{"Different number of rows in columns "
-                + columns.front().name + " (" + toString(*rows) + ") and "
-                + name_type.name + " (" + toString(column_size) + ")",
+            throw Exception{"Unexpected number of rows in column "
+                + name_type.name + " (" + toString(column_size) + ", expected: " + toString(*rows) + ")",
                 ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH};
 
         /// Save checksums for column.
