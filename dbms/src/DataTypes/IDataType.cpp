@@ -64,14 +64,16 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
 
     size_t array_level = 0;
     String stream_name = escapeForFileName(is_sizes_of_nested_type ? nested_table_name : column_name);
-    for (const IDataType::Substream & elem : path)
+    for (const Substream & elem : path)
     {
-        if (elem.type == IDataType::Substream::NullMap)
+        if (elem.type == Substream::NullMap)
             stream_name += ".null";
-        else if (elem.type == IDataType::Substream::ArraySizes)
+        else if (elem.type == Substream::ArraySizes)
             stream_name = DataTypeNested::extractNestedTableName(stream_name) + ".size" + toString(array_level);
-        else if (elem.type == IDataType::Substream::ArrayElements)
+        else if (elem.type == Substream::ArrayElements)
             ++array_level;
+        else if (elem.type == Substream::TupleElement)
+            stream_name += "." + toString(elem.tuple_element);
     }
     return stream_name;
 }

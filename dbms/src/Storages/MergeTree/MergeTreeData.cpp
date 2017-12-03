@@ -1244,19 +1244,19 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
         LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->relative_path);
 
         String path = data_part->getFullPath();
-        for (auto it : rename_map)
+        for (const auto & from_to : rename_map)
         {
-            if (!it.second.empty())
+            if (!from_to.second.empty())
             {
                 try
                 {
-                    Poco::File file(path + it.first);
+                    Poco::File file(path + from_to.first);
                     if (file.exists())
                         file.remove();
                 }
                 catch (Poco::Exception & e)
                 {
-                    LOG_WARNING(data_part->storage.log, "Can't remove " << path + it.first << ": " << e.displayText());
+                    LOG_WARNING(data_part->storage.log, "Can't remove " << path + from_to.first << ": " << e.displayText());
                 }
             }
         }
