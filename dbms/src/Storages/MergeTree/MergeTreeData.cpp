@@ -1798,10 +1798,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
     /// Check the data while we are at it.
     if (part->checksums.empty())
     {
-        MergeTreePartChecker::Settings settings;
-        settings.setIndexGranularity(index_granularity);
-        settings.setRequireColumnFiles(true);
-        MergeTreePartChecker::checkDataPart(full_part_path, settings, primary_key_data_types, &part->checksums);
+        part->checksums = checkDataPart(full_part_path, index_granularity, false, primary_key_data_types);
 
         {
             WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
