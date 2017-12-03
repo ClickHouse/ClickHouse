@@ -247,7 +247,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
                     try
                     {
-                        stream.assertMark();
+                        if (!stream.uncompressed_hashing_buf.eof())
+                            stream.assertMark();
                     }
                     catch (Exception & e)
                     {
