@@ -954,6 +954,10 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
             new_types[source_and_expression.first]->enumerateStreams(
                 [&](const IDataType::SubstreamPath & substream_path)
                 {
+                    /// Skip array sizes, because they cannot be modified in ALTER.
+                    if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+                        return;
+
                     String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
                     String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
@@ -1127,7 +1131,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
           *  will have old name of shared offsets for arrays.
           */
-        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true /* sync */, compression_settings, false /* skip_offsets */);
+        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true /* sync */, compression_settings, true /* skip_offsets */);
 
         in.readPrefix();
         out.writePrefix();
