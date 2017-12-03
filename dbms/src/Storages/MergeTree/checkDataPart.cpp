@@ -100,9 +100,15 @@ struct Stream
     void assertEnd()
     {
         if (!uncompressed_hashing_buf.eof())
-            throw Exception("EOF expected in " + bin_file_path + " file", ErrorCodes::CORRUPTED_DATA);
+            throw Exception("EOF expected in " + bin_file_path + " file"
+                + " at position "
+                + toString(compressed_hashing_buf.count()) + " (compressed), "
+                + toString(uncompressed_hashing_buf.count()) + " (uncompressed)", ErrorCodes::CORRUPTED_DATA);
+
         if (!mrk_hashing_buf.eof())
-            throw Exception("EOF expected in " + mrk_file_path + " file", ErrorCodes::CORRUPTED_DATA);
+            throw Exception("EOF expected in " + mrk_file_path + " file"
+                + " at position "
+                + toString(uncompressed_hashing_buf.count()), ErrorCodes::CORRUPTED_DATA);
     }
 
     void saveChecksums(MergeTreeData::DataPart::Checksums & checksums)
