@@ -122,7 +122,10 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr) const
         {
             skipWhitespaceIfAny(istr);
             if (i != 0)
+            {
                 assertChar(',', istr);
+                skipWhitespaceIfAny(istr);
+            }
             elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr);
         }
     });
@@ -174,7 +177,10 @@ void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr) con
         {
             skipWhitespaceIfAny(istr);
             if (i != 0)
+            {
                 assertChar(',', istr);
+                skipWhitespaceIfAny(istr);
+            }
             elems[i]->deserializeTextJSON(extractElementColumn(column, i), istr);
         }
     });
