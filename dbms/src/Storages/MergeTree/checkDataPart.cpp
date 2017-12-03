@@ -34,8 +34,8 @@ namespace
 struct Stream
 {
     String base_name;
-    String bin_file_name;
-    String mrk_file_name;
+    String bin_file_path;
+    String mrk_file_path;
 
     ReadBufferFromFile file_buf;
     HashingReadBuffer compressed_hashing_buf;
@@ -48,13 +48,13 @@ struct Stream
     Stream(const String & path, const String & base_name)
         :
         base_name(base_name),
-        bin_file_name(path + base_name + ".bin"),
-        mrk_file_name(path + base_name + ".mrk"),
-        file_buf(bin_file_name),
+        bin_file_path(path + base_name + ".bin"),
+        mrk_file_path(path + base_name + ".mrk"),
+        file_buf(bin_file_path),
         compressed_hashing_buf(file_buf),
         uncompressing_buf(compressed_hashing_buf),
         uncompressed_hashing_buf(uncompressing_buf),
-        mrk_file_buf(mrk_file_name),
+        mrk_file_buf(mrk_file_path),
         mrk_hashing_buf(mrk_file_buf)
     {}
 
@@ -94,15 +94,15 @@ struct Stream
         if (mrk_mark != data_mark)
             throw Exception("Incorrect mark: " + data_mark.toString() +
                 (has_alternative_mark ? " or " + alternative_data_mark.toString() : "") + " in data, " +
-                mrk_mark.toString() + " in " + mrk_file_name + " file", ErrorCodes::INCORRECT_MARK);
+                mrk_mark.toString() + " in " + mrk_file_path + " file", ErrorCodes::INCORRECT_MARK);
     }
 
     void assertEnd()
     {
         if (!uncompressed_hashing_buf.eof())
-            throw Exception("EOF expected in " + bin_file_name + " file", ErrorCodes::CORRUPTED_DATA);
+            throw Exception("EOF expected in " + bin_file_path + " file", ErrorCodes::CORRUPTED_DATA);
         if (!mrk_hashing_buf.eof())
-            throw Exception("EOF expected in " + mrk_file_name + " file", ErrorCodes::CORRUPTED_DATA);
+            throw Exception("EOF expected in " + mrk_file_path + " file", ErrorCodes::CORRUPTED_DATA);
     }
 
     void saveChecksums(MergeTreeData::DataPart::Checksums & checksums)
@@ -235,6 +235,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
         std::map<String, Stream> streams;
         size_t column_size = 0;
+        size_t mark_num = 0;
 
         while (true)
         {
@@ -243,8 +244,21 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                 {
                     String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
                     auto & stream = streams.try_emplace(file_name, path, file_name).first->second;
-                    stream.assertMark();
+
+                    try
+                    {
+                        stream.assertMark();
+                    }
+                    catch (Exception & e)
+                    {
+                        e.addMessage("Cannot read mark " + toString(mark_num) + " at row " + toString(column_size)
+                            + " in file " + stream.mrk_file_path
+                            + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
+                        throw;
+                    }
                 }, {});
+
+            ++mark_num;
 
             /// Read index_granularity rows from column.
             ColumnPtr tmp_column = name_type.type->createColumn();
