@@ -262,6 +262,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             ++mark_num;
 
             /// Read index_granularity rows from column.
+            /// NOTE Shared array sizes of Nested columns are read more than once. That's Ok.
+
             ColumnPtr tmp_column = name_type.type->createColumn();
             name_type.type->deserializeBinaryBulkWithMultipleStreams(
                 *tmp_column,
