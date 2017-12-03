@@ -241,13 +241,12 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 if (part->columns != zk_columns)
                     throw Exception("Columns of local part " + part_name + " are different from ZooKeeper");
 
-                MergeTreePartChecker::Settings settings;
-                settings.setIndexGranularity(storage.data.index_granularity);
-                settings.setRequireChecksums(true);
-                settings.setRequireColumnFiles(true);
-
-                MergeTreePartChecker::checkDataPart(
-                    storage.data.getFullPath() + part_name, settings, storage.data.primary_key_data_types, nullptr, &need_stop);
+                checkDataPart(
+                    storage.data.getFullPath() + part_name,
+                    storage.data.index_granularity,
+                    true,
+                    storage.data.primary_key_data_types,
+                    [this] { return need_stop.load(); });
 
                 if (need_stop)
                 {
@@ -257,8 +256,10 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
                 LOG_INFO(log, "Part " << part_name << " looks good.");
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                /// TODO Better to check error code.
+
                 tryLogCurrentException(__PRETTY_FUNCTION__);
 
                 LOG_ERROR(log, "Part " << part_name << " looks broken. Removing it and queueing a fetch.");
