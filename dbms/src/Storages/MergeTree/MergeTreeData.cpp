@@ -23,8 +23,6 @@
 #include <IO/Operators.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeArray.h>
@@ -179,27 +177,6 @@ MergeTreeData::MergeTreeData(
 }
 
 
-void MergeTreeData::checkNoMultidimensionalArrays(const NamesAndTypesList & columns, bool attach) const
-{
-    for (const auto & column : columns)
-    {
-        if (const auto * array = dynamic_cast<const DataTypeArray *>(column.type.get()))
-        {
-            if (dynamic_cast<const DataTypeArray *>(array->getNestedType().get()))
-            {
-                std::string message =
-                    "Column " + column.name + " is a multidimensional array. "
-                    + "Multidimensional arrays are not supported in MergeTree engines.";
-                if (!attach)
-                    throw Exception(message, ErrorCodes::BAD_TYPE_OF_FIELD);
-                else
-                    LOG_ERROR(log, message);
-            }
-        }
-    }
-}
-
-
 void MergeTreeData::initPrimaryKey()
 {
     if (!primary_expr_ast)
@@ -345,7 +322,6 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
                     && !typeid_cast<const DataTypeUInt16 *>(column.type.get())
                     && !typeid_cast<const DataTypeUInt32 *>(column.type.get())
                     && !typeid_cast<const DataTypeUInt64 *>(column.type.get())
-                    && !typeid_cast<const DataTypeUUID *>(column.type.get())
                     && !typeid_cast<const DataTypeDate *>(column.type.get())
                     && !typeid_cast<const DataTypeDateTime *>(column.type.get()))
                     throw Exception("Version column (" + version_column + ")"
@@ -703,22 +679,17 @@ void MergeTreeData::clearOldPartsFromFilesystem()
     removePartsFinally(parts_to_remove);
 }
 
-void MergeTreeData::setPath(const String & new_full_path, bool move_data)
+void MergeTreeData::setPath(const String & new_full_path)
 {
-    if (move_data)
-    {
-        if (Poco::File{new_full_path}.exists())
-            throw Exception{
-                "Target path already exists: " + new_full_path,
-                /// @todo existing target can also be a file, not directory
-                ErrorCodes::DIRECTORY_ALREADY_EXISTS
-            };
-        Poco::File(full_path).renameTo(new_full_path);
-        /// If we don't need to move the data, it means someone else has already moved it.
-        /// We hope that he has also reset the caches.
-        context.dropCaches();
-    }
+    if (Poco::File{new_full_path}.exists())
+        throw Exception{
+            "Target path already exists: " + new_full_path,
+            /// @todo existing target can also be a file, not directory
+            ErrorCodes::DIRECTORY_ALREADY_EXISTS};
 
+    Poco::File(full_path).renameTo(new_full_path);
+
+    context.dropCaches();
     full_path = new_full_path;
 }
 
@@ -762,7 +733,6 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
             { typeid(DataTypeDateTime), typeid(DataTypeUInt32)   },
             { typeid(DataTypeUInt32),   typeid(DataTypeDateTime) },
             { typeid(DataTypeDate),     typeid(DataTypeUInt16)   },
-            { typeid(DataTypeUUID),     typeid(DataTypeUUID)     },
             { typeid(DataTypeUInt16),   typeid(DataTypeDate)     },
         };
 
@@ -807,9 +777,6 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     auto new_alias_columns = alias_columns;
     auto new_column_defaults = column_defaults;
     commands.apply(new_columns, new_materialized_columns, new_alias_columns, new_column_defaults);
-
-    checkNoMultidimensionalArrays(new_columns, /* attach = */ false);
-    checkNoMultidimensionalArrays(new_materialized_columns, /* attach = */ false);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
@@ -1160,7 +1127,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
           *  will have old name of shared offsets for arrays.
           */
-        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true, compression_settings, true /* skip_offsets */);
+        MergedColumnOnlyOutputStream out(*this, full_path + part->name + '/', true /* sync */, compression_settings, false /* skip_offsets */);
 
         in.readPrefix();
         out.writePrefix();
@@ -1224,19 +1191,19 @@ void MergeTreeData::AlterDataPartTransaction::commit()
         /// before, i.e. they do not have older versions.
 
         /// 1) Rename the old files.
-        for (auto it : rename_map)
+        for (const auto & from_to : rename_map)
         {
-            String name = it.second.empty() ? it.first : it.second;
+            String name = from_to.second.empty() ? from_to.first : from_to.second;
             Poco::File file{path + name};
             if (file.exists())
                 file.renameTo(path + name + ".tmp2");
         }
 
         /// 2) Move new files in the place of old and update the metadata in memory.
-        for (auto it : rename_map)
+        for (const auto & from_to : rename_map)
         {
-            if (!it.second.empty())
-                Poco::File{path + it.first}.renameTo(path + it.second);
+            if (!from_to.second.empty())
+                Poco::File{path + from_to.first}.renameTo(path + from_to.second);
         }
 
         auto & mutable_part = const_cast<DataPart &>(*data_part);
@@ -1244,9 +1211,9 @@ void MergeTreeData::AlterDataPartTransaction::commit()
         mutable_part.columns = new_columns;
 
         /// 3) Delete the old files.
-        for (auto it : rename_map)
+        for (const auto & from_to : rename_map)
         {
-            String name = it.second.empty() ? it.first : it.second;
+            String name = from_to.second.empty() ? from_to.first : from_to.second;
             Poco::File file{path + name + ".tmp2"};
             if (file.exists())
                 file.remove();
@@ -1931,7 +1898,6 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
     size_t size = 0;
 
     Poco::DirectoryIterator end;
-    Poco::DirectoryIterator end2;
 
     for (Poco::DirectoryIterator it(full_path); it != end; ++it)
     {
@@ -1942,7 +1908,7 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
             continue;
 
         const auto part_path = it.path().absolute().toString();
-        for (Poco::DirectoryIterator it2(part_path); it2 != end2; ++it2)
+        for (Poco::DirectoryIterator it2(part_path); it2 != end; ++it2)
         {
             const auto part_file_path = it2.path().absolute().toString();
             size += Poco::File(part_file_path).getSize();
