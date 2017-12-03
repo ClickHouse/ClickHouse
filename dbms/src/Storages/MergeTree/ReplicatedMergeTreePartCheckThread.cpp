@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
-#include <Storages/MergeTree/MergeTreePartChecker.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/setThreadName.h>
 

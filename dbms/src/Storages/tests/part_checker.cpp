@@ -1,5 +1,5 @@
 #include <Poco/ConsoleChannel.h>
-#include <Storages/MergeTree/MergeTreePartChecker.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 
 int main(int argc, char ** argv)

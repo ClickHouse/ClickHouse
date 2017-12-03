@@ -2,7 +2,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Storages/MergeTree/MergeTreePartChecker.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTNameTypePair.h>

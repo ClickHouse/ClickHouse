@@ -2,7 +2,7 @@
 
 #include <Poco/File.h>
 
-#include <Storages/MergeTree/MergeTreePartChecker.h>
+#include <Storages/MergeTree/checkDataPart.h>
 #include <DataStreams/MarkInCompressedFile.h>
 #include <IO/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
