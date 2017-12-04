@@ -183,7 +183,8 @@ private:
 
         try
         {
-              while (!finish) {
+              while (!finish)
+              {
                 InputData unprepared_input;
                 {
                     std::lock_guard<std::mutex> lock(unprepared_inputs_mutex);
