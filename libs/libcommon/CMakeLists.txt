@@ -27,7 +27,6 @@ add_library (common
     src/ThreadPool.cpp
     src/iostream_debug_helpers.cpp
 
-    include/common/ApplicationServerExt.h
     include/common/Types.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h

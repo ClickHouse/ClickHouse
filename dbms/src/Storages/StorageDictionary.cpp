@@ -69,11 +69,11 @@ StorageDictionary::StorageDictionary(
 
 BlockInputStreams StorageDictionary::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned /*threads*/)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
     auto dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);

@@ -362,7 +362,7 @@ private:
                 for (const auto row : outdated_keys[key])
                     out[row] = static_cast<OutputType>(attribute_array[cell_idx]);
             },
-            [&](const StringRef key, const size_t cell_idx)
+            [&](const StringRef key, const size_t)
             {
                 for (const auto row : outdated_keys[key])
                     out[row] = get_default(row);
@@ -492,7 +492,7 @@ private:
                     map[copied_key] = copied_value;
                     total_length += (attribute_value.size + 1) * outdated_keys[key].size();
                 },
-                [&](const StringRef key, const size_t cell_idx) {
+                [&](const StringRef key, const size_t) {
                     for (const auto row : outdated_keys[key])
                         total_length += get_default(row).size + 1;
                 });

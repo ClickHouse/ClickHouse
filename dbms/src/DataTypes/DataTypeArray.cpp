@@ -214,7 +214,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
     InputStreamGetter getter,
     size_t limit,
-    double avg_value_size_hint,
+    double /*avg_value_size_hint*/,
     bool position_independent_encoding,
     SubstreamPath path) const
 {

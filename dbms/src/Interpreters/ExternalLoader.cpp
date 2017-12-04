@@ -325,7 +325,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
                     /// add new loadable object or update an existing version
                     if (object_it == std::end(loadable_objects))
-                        loadable_objects.emplace(name, LoadableInfo{std::move(object_ptr), config_path});
+                        loadable_objects.emplace(name, LoadableInfo{std::move(object_ptr), config_path, {}});
                     else
                     {
                         if (object_it->second.loadable)

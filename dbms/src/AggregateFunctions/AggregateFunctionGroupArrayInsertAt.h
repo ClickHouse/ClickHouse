@@ -125,7 +125,7 @@ public:
         column_value.get(row_num, arr[position]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         Array & arr_lhs = data(place).value;
         const Array & arr_rhs = data(rhs).value;

@@ -11,7 +11,7 @@
 
 /// Parses query from stdin and print found higher order functions and query with rewritten names of lambda parameters.
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;

@@ -84,7 +84,7 @@ template <>
 class ResultDataTypeDeducerImpl<NumberTraits::Error> final
 {
 public:
-    static void execute(const DataTypes & args, size_t i, DataTypeTraits::EnrichedDataTypePtr & type_res)
+    static void execute(const DataTypes & args, size_t, DataTypeTraits::EnrichedDataTypePtr &)
     {
         std::string dump = dumpArgTypes(args);
         throw CondException{CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR, dump};

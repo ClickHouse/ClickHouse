@@ -45,12 +45,12 @@ ColumnPtr IDataType::createConstColumn(size_t size, const Field & field) const
 }
 
 
-void IDataType::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void IDataType::serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const
 {
     throw Exception("Data type " + getName() + " must be serialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);
 }
 
-void IDataType::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void IDataType::deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const
 {
     throw Exception("Data type " + getName() + " must be deserialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);
 }
@@ -64,14 +64,16 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
 
     size_t array_level = 0;
     String stream_name = escapeForFileName(is_sizes_of_nested_type ? nested_table_name : column_name);
-    for (const IDataType::Substream & elem : path)
+    for (const Substream & elem : path)
     {
-        if (elem.type == IDataType::Substream::NullMap)
-            stream_name += NULL_MAP_COLUMN_NAME_SUFFIX;
-        else if (elem.type == IDataType::Substream::ArraySizes)
-            stream_name = DataTypeNested::extractNestedTableName(stream_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(array_level);
-        else if (elem.type == IDataType::Substream::ArrayElements)
+        if (elem.type == Substream::NullMap)
+            stream_name += ".null";
+        else if (elem.type == Substream::ArraySizes)
+            stream_name += ".size" + toString(array_level);
+        else if (elem.type == Substream::ArrayElements)
             ++array_level;
+        else if (elem.type == Substream::TupleElement)
+            stream_name += "." + toString(elem.tuple_element);
     }
     return stream_name;
 }

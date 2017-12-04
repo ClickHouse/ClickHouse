@@ -84,7 +84,7 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
             return {};
 
         auto dictionary = std::make_unique<TechDataHierarchy>();
-        dictionary->reload(config);
+        dictionary->reload();
         return dictionary;
     };
 

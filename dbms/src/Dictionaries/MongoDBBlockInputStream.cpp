@@ -5,9 +5,12 @@
 #include <string>
 #include <sstream>
 
-#include <Poco/MongoDB/Connection.h>
-#include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/Element.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+    #include <Poco/MongoDB/Connection.h>
+    #include <Poco/MongoDB/Cursor.h>
+    #include <Poco/MongoDB/Element.h>
+#pragma GCC diagnostic pop
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>

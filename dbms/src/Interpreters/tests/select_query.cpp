@@ -20,7 +20,7 @@
 
 using namespace DB;
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     Poco::AutoPtr<Poco::ConsoleChannel> channel = new Poco::ConsoleChannel(std::cerr);

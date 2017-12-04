@@ -104,7 +104,7 @@ DataTypePtr getReturnTypeFromFirstNonNullBranch(const DataTypes & args, bool has
 
 /// Implementation of FunctionMultiIf.
 
-FunctionPtr FunctionMultiIf::create(const Context & context)
+FunctionPtr FunctionMultiIf::create(const Context &)
 {
     return std::make_shared<FunctionMultiIf>();
 }
@@ -488,7 +488,7 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
 }
 
 
-FunctionPtr FunctionCaseWithoutExpression::create(const Context & context_)
+FunctionPtr FunctionCaseWithoutExpression::create(const Context &)
 {
     return std::make_shared<FunctionCaseWithoutExpression>();
 }

@@ -14,22 +14,22 @@ namespace DB
 StorageSystemMerges::StorageSystemMerges(const std::string & name)
     : name{name}
     , columns{
-        { "database",                         std::make_shared<DataTypeString>() },
-        { "table",                            std::make_shared<DataTypeString>() },
-        { "elapsed",                        std::make_shared<DataTypeFloat64>() },
-        { "progress",                        std::make_shared<DataTypeFloat64>() },
-        { "num_parts",                        std::make_shared<DataTypeUInt64>() },
-        { "source_part_names",                std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
-        { "result_part_name",                std::make_shared<DataTypeString>() },
-        { "total_size_bytes_compressed",    std::make_shared<DataTypeUInt64>() },
-        { "total_size_marks",                std::make_shared<DataTypeUInt64>() },
-        { "bytes_read_uncompressed",        std::make_shared<DataTypeUInt64>() },
-        { "rows_read",                        std::make_shared<DataTypeUInt64>() },
-        { "bytes_written_uncompressed",     std::make_shared<DataTypeUInt64>() },
-        { "rows_written",                    std::make_shared<DataTypeUInt64>() },
-        { "columns_written",                std::make_shared<DataTypeUInt64>() },
-        { "memory_usage",                    std::make_shared<DataTypeUInt64>() },
-        { "thread_number",                    std::make_shared<DataTypeUInt64>() },
+        { "database",                    std::make_shared<DataTypeString>() },
+        { "table",                       std::make_shared<DataTypeString>() },
+        { "elapsed",                     std::make_shared<DataTypeFloat64>() },
+        { "progress",                    std::make_shared<DataTypeFloat64>() },
+        { "num_parts",                   std::make_shared<DataTypeUInt64>() },
+        { "source_part_names",           std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "result_part_name",            std::make_shared<DataTypeString>() },
+        { "total_size_bytes_compressed", std::make_shared<DataTypeUInt64>() },
+        { "total_size_marks",            std::make_shared<DataTypeUInt64>() },
+        { "bytes_read_uncompressed",     std::make_shared<DataTypeUInt64>() },
+        { "rows_read",                   std::make_shared<DataTypeUInt64>() },
+        { "bytes_written_uncompressed",  std::make_shared<DataTypeUInt64>() },
+        { "rows_written",                std::make_shared<DataTypeUInt64>() },
+        { "columns_written",             std::make_shared<DataTypeUInt64>() },
+        { "memory_usage",                std::make_shared<DataTypeUInt64>() },
+        { "thread_number",               std::make_shared<DataTypeUInt64>() },
     }
 {
 }
@@ -37,10 +37,10 @@ StorageSystemMerges::StorageSystemMerges(const std::string & name)
 
 BlockInputStreams StorageSystemMerges::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo &,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
+    const size_t,
     const unsigned)
 {
     check(column_names);
