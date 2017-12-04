@@ -17,6 +17,11 @@
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
   * Reads (pulls) blocks from any available source and passes it to specified handler.
   *
+  * Before any reading, calls "readPrefix" method of sources in parallel.
+  *
+  * (As an example, "readPrefix" can prepare connections to remote servers,
+  *  and we want this work to be executed in parallel for different sources)
+  *
   * Implemented in following way:
   * - there are multiple input sources to read blocks from;
   * - there are multiple threads, that could simultaneously read blocks from different sources;
@@ -179,8 +184,8 @@ private:
 
         try
         {
-              while (!finish)
-              {
+            while (!finish)
+            {
                 InputData unprepared_input;
                 {
                     std::lock_guard<std::mutex> lock(unprepared_inputs_mutex);
@@ -199,7 +204,7 @@ private:
                     available_inputs.push(unprepared_input);
                 }
             }
-            
+
             loop(thread_num);
         }
         catch (...)
@@ -322,7 +327,10 @@ private:
     using AvailableInputs = std::queue<InputData>;
     AvailableInputs available_inputs;
 
-    /// For parallel preparing child streams.
+    /** For parallel preparing (readPrefix) child streams.
+      * First, streams are located here.
+      * After a stream was prepared, it is moved to "available_inputs" for reading.
+      */
     using UnpreparedInputs = std::queue<InputData>;
     UnpreparedInputs unprepared_inputs;
 
