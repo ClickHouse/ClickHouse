@@ -16,6 +16,8 @@ RegionsNames::RegionsNames(IRegionsNamesDataProviderPtr data_provider)
         const std::string & language = getSupportedLanguages()[language_id];
         names_sources[language_id] = data_provider->getLanguageRegionsNamesSource(language);
     }
+
+    reload();
 }
 
 std::string RegionsNames::dumpSupportedLanguagesNames()
