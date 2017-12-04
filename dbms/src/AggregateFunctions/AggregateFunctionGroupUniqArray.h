@@ -51,7 +51,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void setArgument(const DataTypePtr & /*argument*/)
     {
     }
 
@@ -61,7 +61,7 @@ public:
         this->data(place).value.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).value.merge(this->data(rhs).value);
     }

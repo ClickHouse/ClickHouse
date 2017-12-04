@@ -31,9 +31,9 @@ public:
         }
     }
 
-    static void free(void * buf, size_t size)
+    static void free(void * /*buf*/, size_t /*size*/)
     {
-        // Remains trash in arena
+        // Do nothing, trash in arena remains.
     }
 };
 
@@ -100,7 +100,7 @@ public:
         return new_buf;
     }
 
-    void free(void * buf, size_t size) {}
+    void free(void * /*buf*/, size_t /*size*/) {}
 };
 
 }

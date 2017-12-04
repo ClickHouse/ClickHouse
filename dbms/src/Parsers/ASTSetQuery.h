@@ -33,7 +33,7 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTSetQuery>(*this); }
 
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         if (is_standalone)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << "SET " << (settings.hilite ? hilite_none : "");

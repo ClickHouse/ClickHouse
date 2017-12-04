@@ -65,7 +65,7 @@ public:
         data = const_col->template getValue<TType>();
     }
 
-    TResult get(size_t i) const override
+    TResult get(size_t) const override
     {
         return static_cast<TResult>(data);
     };
@@ -232,7 +232,7 @@ class NumericEvaluator<NumberTraits::Error>
 {
 public:
     /// For the meaning of the builder parameter, see the FunctionMultiIf::perform() declaration.
-    static void perform(const Branches & branches, Block & block, const ColumnNumbers & args, size_t result, NullMapBuilder & builder)
+    static void perform(const Branches &, Block &, const ColumnNumbers &, size_t, NullMapBuilder &)
     {
         throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }

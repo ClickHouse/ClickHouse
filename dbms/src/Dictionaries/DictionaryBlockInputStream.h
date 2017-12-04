@@ -201,7 +201,7 @@ template <typename DictionaryType, typename Key>
 template <typename Type, typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
     DictionaryGetter<Type> getter, const PaddedPODArray<Key> & ids,
-    const Columns & keys, const DataTypes & data_types,
+    const Columns & /*keys*/, const DataTypes & /*data_types*/,
     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {
     (dictionary.*getter)(attribute.name, ids, container);
@@ -211,7 +211,7 @@ template <typename DictionaryType, typename Key>
 template <typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
     DictionaryStringGetter getter, const PaddedPODArray<Key> & ids,
-    const Columns & keys, const DataTypes & data_types,
+    const Columns & /*keys*/, const DataTypes & /*data_types*/,
     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {
     (dictionary.*getter)(attribute.name, ids, container);
@@ -220,7 +220,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
 template <typename DictionaryType, typename Key>
 template <typename Type, typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
-    GetterByKey<Type> getter, const PaddedPODArray<Key> & ids,
+    GetterByKey<Type> getter, const PaddedPODArray<Key> & /*ids*/,
     const Columns & keys, const DataTypes & data_types,
     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {
@@ -230,7 +230,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
 template <typename DictionaryType, typename Key>
 template <typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
-    StringGetterByKey getter, const PaddedPODArray<Key> & ids,
+    StringGetterByKey getter, const PaddedPODArray<Key> & /*ids*/,
     const Columns & keys, const DataTypes & data_types,
     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {

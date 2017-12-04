@@ -18,7 +18,7 @@ class Context;
 class VerticalRowOutputStream : public IRowOutputStream
 {
 public:
-    VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, size_t max_rows_, const Context & context);
+    VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, size_t max_rows_);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeRowStartDelimiter() override;

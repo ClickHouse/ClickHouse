@@ -222,7 +222,7 @@ StringRef ColumnAggregateFunction::getDataAt(size_t n) const
     return StringRef(reinterpret_cast<const char *>(&getData()[n]), sizeof(getData()[n]));
 }
 
-void ColumnAggregateFunction::insertData(const char * pos, size_t length)
+void ColumnAggregateFunction::insertData(const char * pos, size_t /*length*/)
 {
     getData().push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 }
@@ -281,12 +281,12 @@ void ColumnAggregateFunction::insertDefault()
     function->create(getData().back());
 }
 
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t, Arena &, const char *&) const
 {
     throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * pos)
+const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *)
 {
     throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -353,7 +353,7 @@ Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const
     return columns;
 }
 
-void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
+void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
 {
     size_t s = getData().size();
     res.resize(s);

@@ -11,7 +11,7 @@ namespace DB
 class NullBlockOutputStream : public IBlockOutputStream
 {
 public:
-    void write(const Block & block) override {}
+    void write(const Block &) override {}
 };
 
 }

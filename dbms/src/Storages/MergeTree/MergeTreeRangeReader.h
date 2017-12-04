@@ -13,10 +13,10 @@ class MergeTreeReader;
 class MergeTreeRangeReader
 {
 public:
-    size_t unreadRows() const { return (last_mark - current_mark) * index_granularity - read_rows_after_current_mark; }
-    size_t unreadRowsInCurrentGranule() const { return index_granularity - read_rows_after_current_mark; }
+    size_t numPendingRows() const { return (last_mark - current_mark) * index_granularity - read_rows_after_current_mark; }
+    size_t numPendingRowsInCurrentGranule() const { return index_granularity - read_rows_after_current_mark; }
 
-    size_t readRowsInCurrentGranule() const { return read_rows_after_current_mark; }
+    size_t numReadRowsInCurrentGranule() const { return read_rows_after_current_mark; }
 
     /// Seek to next mark before next reading.
     size_t skipToNextMark();
@@ -41,10 +41,10 @@ private:
     std::reference_wrapper<MergeTreeReader> merge_tree_reader;
     size_t current_mark;
     size_t last_mark;
-    size_t read_rows_after_current_mark;
+    size_t read_rows_after_current_mark = 0;
     size_t index_granularity;
-    bool continue_reading;
-    bool is_reading_finished;
+    bool continue_reading = false;
+    bool is_reading_finished = false;
 
     friend class MergeTreeReader;
 };

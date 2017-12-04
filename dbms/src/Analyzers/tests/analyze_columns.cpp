@@ -18,7 +18,7 @@
 
 /// Parses query from stdin and print found columns and corresponding tables.
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;
@@ -59,7 +59,7 @@ try
     out.next();
 
     std::cout << "\n";
-    formatAST(*ast, std::cout, 0, false, true);
+    formatAST(*ast, std::cout, false, true);
     std::cout << "\n";
 
     return 0;

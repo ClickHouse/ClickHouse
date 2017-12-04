@@ -108,7 +108,7 @@ public:
 
     template <typename T>
     Field(T && rhs,
-        typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, void>::type * unused = nullptr)
+        [[maybe_unused]] typename std::enable_if<!std::is_same<typename std::decay<T>::type, Field>::value, void>::type * unused = nullptr)
     {
         createConcrete(std::forward<T>(rhs));
     }
@@ -523,25 +523,25 @@ class WriteBuffer;
 /// It is assumed that all elements of the array have the same type.
 void readBinary(Array & x, ReadBuffer & buf);
 
-inline void readText(Array & x, ReadBuffer & buf) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
-inline void readQuoted(Array & x, ReadBuffer & buf) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readText(Array &, ReadBuffer &) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readQuoted(Array &, ReadBuffer &) { throw Exception("Cannot read Array.", ErrorCodes::NOT_IMPLEMENTED); }
 
 /// It is assumed that all elements of the array have the same type.
 void writeBinary(const Array & x, WriteBuffer & buf);
 
 void writeText(const Array & x, WriteBuffer & buf);
 
-inline void writeQuoted(const Array & x, WriteBuffer & buf) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception("Cannot write Array quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 
 void readBinary(Tuple & x, ReadBuffer & buf);
 
-inline void readText(Tuple & x, ReadBuffer & buf) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
-inline void readQuoted(Tuple & x, ReadBuffer & buf) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readText(Tuple &, ReadBuffer &) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void readQuoted(Tuple &, ReadBuffer &) { throw Exception("Cannot read Tuple.", ErrorCodes::NOT_IMPLEMENTED); }
 
 void writeBinary(const Tuple & x, WriteBuffer & buf);
 
 void writeText(const Tuple & x, WriteBuffer & buf);
 
-inline void writeQuoted(const Tuple & x, WriteBuffer & buf) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
+inline void writeQuoted(const Tuple &, WriteBuffer &) { throw Exception("Cannot write Tuple quoted.", ErrorCodes::NOT_IMPLEMENTED); }
 
 }

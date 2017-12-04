@@ -1146,6 +1146,12 @@ int main(int argc, char ** argv)
 {
     try
     {
+        if (argc < 2)
+        {
+            std::cerr << "Usage: program n\n";
+            return 1;
+        }
+
         using T = UInt8;
 
         size_t n = atoi(argv[1]);

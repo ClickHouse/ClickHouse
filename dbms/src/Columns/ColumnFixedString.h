@@ -99,7 +99,7 @@ public:
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
-    int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int nan_direction_hint) const override
+    int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
         return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);

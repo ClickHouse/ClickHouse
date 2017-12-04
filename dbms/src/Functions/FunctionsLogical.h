@@ -70,7 +70,7 @@ struct XorImpl
         return false;
     }
 
-    static inline bool isSaturatedValue(UInt8 a)
+    static inline bool isSaturatedValue(UInt8)
     {
         return false;
     }
@@ -144,7 +144,7 @@ struct AssociativeOperationImpl
 template <typename Op>
 struct AssociativeOperationImpl<Op, 1>
 {
-    static void execute(UInt8ColumnPtrs & in, UInt8Container & result)
+    static void execute(UInt8ColumnPtrs &, UInt8Container &)
     {
         throw Exception("Logical error: AssociativeOperationImpl<Op, 1>::execute called", ErrorCodes::LOGICAL_ERROR);
     }
@@ -166,7 +166,7 @@ class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionAnyArityLogical>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyArityLogical>(); };
 
 private:
     bool extractConstColumns(ColumnPlainPtrs & in, UInt8 & res)
@@ -376,7 +376,7 @@ class FunctionUnaryLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnaryLogical>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryLogical>(); };
 
 private:
     template <typename T>

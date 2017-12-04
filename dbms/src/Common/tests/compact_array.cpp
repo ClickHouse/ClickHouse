@@ -226,7 +226,7 @@ struct TestSet
 
 struct Generator1
 {
-    static UInt8 execute(size_t i, size_t width)
+    static UInt8 execute(size_t, size_t width)
     {
         return (1 << width) - 1;
     }

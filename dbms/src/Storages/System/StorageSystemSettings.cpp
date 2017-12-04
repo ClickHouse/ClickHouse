@@ -14,10 +14,10 @@ namespace DB
 StorageSystemSettings::StorageSystemSettings(const std::string & name_)
     : name(name_)
     , columns{
-        { "name",             std::make_shared<DataTypeString>()   },
-        { "value",            std::make_shared<DataTypeString>()   },
-        { "changed",          std::make_shared<DataTypeUInt8>()    },
-        { "description",      std::make_shared<DataTypeString>()   },
+        { "name",        std::make_shared<DataTypeString>() },
+        { "value",       std::make_shared<DataTypeString>() },
+        { "changed",     std::make_shared<DataTypeUInt8>() },
+        { "description", std::make_shared<DataTypeString>() },
     }
 {
 }
@@ -25,11 +25,11 @@ StorageSystemSettings::StorageSystemSettings(const std::string & name_)
 
 BlockInputStreams StorageSystemSettings::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo &,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -45,7 +45,7 @@ BlockInputStreams StorageSystemSettings::read(
     col_name.column->insert(String(#NAME)); \
     col_value.column->insert(settings.NAME.toString()); \
     col_changed.column->insert(UInt64(settings.NAME.changed)); \
-    col_description.column->insert(String(DESCRIPTION)); 
+    col_description.column->insert(String(DESCRIPTION));
 
     APPLY_FOR_SETTINGS(ADD_SETTING)
 #undef ADD_SETTING

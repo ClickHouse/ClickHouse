@@ -43,7 +43,7 @@ struct HasParam
 {
     using ResultType = UInt8;
 
-    static UInt8 extract(const UInt8 * begin, const UInt8 * end)
+    static UInt8 extract(const UInt8 *, const UInt8 *)
     {
         return true;
     }
@@ -219,18 +219,12 @@ struct ExtractParamImpl
             );
     }
 
-    static void vector_vector(
-        const ColumnString::Chars_t & haystack_data, const ColumnString::Offsets_t & haystack_offsets,
-        const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
-        PaddedPODArray<ResultType> & res)
+    template <typename... Args> static void vector_vector(Args &&...)
     {
         throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    static void constant_vector(
-        const String & haystack,
-        const ColumnString::Chars_t & needle_data, const ColumnString::Offsets_t & needle_offsets,
-        PaddedPODArray<ResultType> & res)
+    template <typename... Args> static void constant_vector(Args &&...)
     {
         throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }

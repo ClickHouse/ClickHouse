@@ -293,7 +293,7 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
 
 void registerTableFunctionRemote(TableFunctionFactory & factory)
 {
-    TableFunctionFactory::instance().registerFunction<TableFunctionRemote>();
+    factory.registerFunction<TableFunctionRemote>();
 }
 
 }

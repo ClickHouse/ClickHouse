@@ -28,7 +28,7 @@ namespace ErrorCodes
 template <bool negative = false>
 struct EmptyImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt8> & res)
+    static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt8> & res)
     {
         size_t size = offsets.size();
         ColumnString::Offset_t prev_offset = 1;
@@ -39,12 +39,12 @@ struct EmptyImpl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt8 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t n, UInt8 & res)
     {
         res = negative ^ (n == 0);
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt8> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & /*data*/, size_t /*n*/, PaddedPODArray<UInt8> & /*res*/)
     {
     }
 
@@ -65,19 +65,19 @@ struct EmptyImpl
   */
 struct LengthImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
+    static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
         for (size_t i = 0; i < size; ++i)
             res[i] = i == 0 ? (offsets[i] - 1) : (offsets[i] - 1 - offsets[i - 1]);
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt64 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t n, UInt64 & res)
     {
         res = n;
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt64> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & /*data*/, size_t /*n*/, PaddedPODArray<UInt64> & /*res*/)
     {
     }
 
@@ -109,7 +109,7 @@ struct LengthUTF8Impl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt64 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t /*n*/, UInt64 & /*res*/)
     {
     }
 
@@ -123,7 +123,7 @@ struct LengthUTF8Impl
         }
     }
 
-    static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
+    static void array(const ColumnString::Offsets_t &, PaddedPODArray<UInt64> &)
     {
         throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -143,7 +143,7 @@ struct LowerUpperImpl
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars_t & data, size_t /*n*/, ColumnString::Chars_t & res_data)
     {
         res_data.resize(data.size());
         array(data.data(), data.data() + data.size(), res_data.data());
@@ -273,7 +273,7 @@ struct ReverseUTF8Impl
         }
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
     {
         throw Exception("Cannot apply function reverseUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -283,7 +283,7 @@ struct ReverseUTF8Impl
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::vector(const ColumnString::Chars_t & data,
     const IColumn::Offsets_t & offsets,
     ColumnString::Chars_t & res_data,
@@ -297,9 +297,9 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::vector_fixed(
-    const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    const ColumnString::Chars_t & data, size_t /*n*/, ColumnString::Chars_t & res_data)
 {
     res_data.resize(data.size());
     array(data.data(), data.data() + data.size(), res_data.data());
@@ -308,7 +308,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::constant(
     const std::string & data, std::string & res_data)
 {
@@ -321,7 +321,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::toCase(
     const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
 {
@@ -335,7 +335,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
     else if (src + 1 < src_end
         && ((src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0xBFu)) || (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x9Fu))))
     {
-        cyrillic_to_case(src, src_end, dst);
+        cyrillic_to_case(src, dst);
     }
     else if (src + 1 < src_end && src[0] == 0xC2u)
     {
@@ -364,7 +364,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::array(
     const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 {
@@ -509,7 +509,7 @@ class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionStringOrArrayToT>();
     }
@@ -590,7 +590,7 @@ class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionReverse>();
     }
@@ -654,7 +654,7 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<ConcatImpl>();
     }
@@ -762,7 +762,7 @@ class FunctionSubstring : public IFunction
 {
 public:
     static constexpr auto name = "substring";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionSubstring>();
     }
@@ -901,7 +901,7 @@ class FunctionSubstringUTF8 : public IFunction
 {
 public:
     static constexpr auto name = "substringUTF8";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionSubstringUTF8>();
     }
@@ -977,7 +977,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
     }

@@ -203,7 +203,7 @@ public:
         data(place).add(timestamp, events);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
