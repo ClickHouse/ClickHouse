@@ -1,6 +1,11 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Poco/Data/SessionPool.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+    #include <Poco/Data/SessionPool.h>
+#pragma GCC diagnostic pop
+
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>

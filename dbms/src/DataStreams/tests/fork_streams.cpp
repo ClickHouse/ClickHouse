@@ -43,7 +43,7 @@ void thread2(DB::BlockInputStreamPtr in, DB::BlockOutputStreamPtr out, DB::Write
 }
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;
@@ -61,7 +61,7 @@ try
     ExpressionAnalyzer analyzer(ast, context, {}, {NameAndTypePair("number", std::make_shared<DataTypeUInt64>())});
     ExpressionActionsChain chain;
     analyzer.appendSelect(chain, false);
-    analyzer.appendProjectResult(chain, false);
+    analyzer.appendProjectResult(chain);
     chain.finalize();
     ExpressionActionsPtr expression = chain.getLastActions();
 

@@ -38,8 +38,7 @@ static const ColumnPtr initMaterializedCol(const Block & block, const ColumnNumb
         return col;
 }
 
-static const PaddedPODArray<UInt8> & initDataArray(const Block & block, const ColumnNumbers & args,
-    size_t i, const ColumnPtr & materialized_col)
+static const PaddedPODArray<UInt8> & initDataArray(size_t i, const ColumnPtr & materialized_col)
 {
     auto vec_col = checkAndGetColumn<ColumnUInt8>(materialized_col.get());
 
@@ -71,7 +70,7 @@ static const PaddedPODArray<UInt8> & initNullMap(const Block & block, const Colu
 
 CondSource::CondSource(const Block & block, const ColumnNumbers & args, size_t i)
     : materialized_col{initMaterializedCol(block, args, i)},
-    data_array{initDataArray(block, args, i, materialized_col)},
+    data_array{initDataArray(i, materialized_col)},
     null_map{initNullMap(block, args, i)}
 {
 }

@@ -50,6 +50,7 @@ static String extractFixedPrefixFromLikePattern(const String & like_pattern)
         switch (*pos)
         {
             case '%':
+                [[fallthrough]];
             case '_':
                 return fixed_prefix;
 
@@ -57,6 +58,7 @@ static String extractFixedPrefixFromLikePattern(const String & like_pattern)
                 ++pos;
                 if (pos == end)
                     break;
+                [[fallthrough]];
             default:
                 fixed_prefix += *pos;
                 break;
@@ -358,7 +360,6 @@ void PKCondition::traverseAST(const ASTPtr & node, const Context & context, Bloc
 
 bool PKCondition::canConstantBeWrappedByMonotonicFunctions(
     const ASTPtr & node,
-    const Context & context,
     size_t & out_primary_key_column_num,
     DataTypePtr & out_primary_key_column_type,
     Field & out_value,
@@ -537,7 +538,7 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
             key_arg_pos = 0;
         }
         else if (getConstant(args[1], block_with_constants, const_value, const_type)
-            && canConstantBeWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, const_value, const_type))
+            && canConstantBeWrappedByMonotonicFunctions(args[0], key_column_num, key_expr_type, const_value, const_type))
         {
             key_arg_pos = 0;
             is_constant_transformed = true;
@@ -548,7 +549,7 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
             key_arg_pos = 1;
         }
         else if (getConstant(args[0], block_with_constants, const_value, const_type)
-            &&  canConstantBeWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, const_value, const_type))
+            &&  canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
         {
             key_arg_pos = 1;
             is_constant_transformed = true;

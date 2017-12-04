@@ -80,7 +80,7 @@ public:
             determinator.get64(row_num));
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).sample.merge(this->data(rhs).sample);
     }
@@ -165,7 +165,7 @@ public:
             determinator.get64(row_num));
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).sample.merge(this->data(rhs).sample);
     }

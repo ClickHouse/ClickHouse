@@ -62,7 +62,7 @@ public:
         this->data(place).update(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).update(this->data(rhs).value);
     }

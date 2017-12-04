@@ -575,7 +575,7 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionComparison>(); };
 
 private:
     template <typename T0, typename T1>
@@ -759,7 +759,7 @@ private:
 
     void executeDateOrDateTimeOrEnumWithConstString(
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-        const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num, bool right_is_num)
+        const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num)
     {
         /// This is no longer very special case - comparing dates, datetimes, and enumerations with a string constant.
         const IColumn * column_string_untyped = !left_is_num ? col_left_untyped : col_right_untyped;
@@ -1120,7 +1120,7 @@ public:
             executeDateOrDateTimeOrEnumWithConstString(
                 block, result, col_left_untyped, col_right_untyped,
                 col_with_type_and_name_left.type, col_with_type_and_name_right.type,
-                left_is_num, right_is_num);
+                left_is_num);
     }
 };
 

@@ -490,7 +490,7 @@ void StorageLog::loadMarks()
 }
 
 
-void StorageLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageLog::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -526,13 +526,14 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
     String filename;
 
     /** We take marks from first column.
-      * If this is an array, then we take the marks corresponding to the sizes, and not to the internals of the arrays.
+      * If this is a data type with multiple stream, get the first stream, that we assume have real row count.
+      * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
-
-    if (typeid_cast<const DataTypeArray *>(&column_type))
-        filename = DataTypeNested::extractNestedTableName(column_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
-    else
-        filename = column_name;
+    column_type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        if (filename.empty())
+            filename = IDataType::getFileNameForStream(column_name, substream_path);
+    },  {});
 
     Files_t::const_iterator it = files.find(filename);
     if (files.end() == it)
@@ -544,7 +545,7 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 
 BlockInputStreams StorageLog::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
@@ -588,7 +589,7 @@ BlockInputStreams StorageLog::read(
 
 
 BlockOutputStreamPtr StorageLog::write(
-    const ASTPtr & query, const Settings & settings)
+    const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     loadMarks();
     return std::make_shared<LogBlockOutputStream>(*this);

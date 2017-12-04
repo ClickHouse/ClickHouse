@@ -65,7 +65,7 @@ const Type * checkAndGetColumnConstData(const IColumn * column)
 }
 
 template <typename Type>
-const bool checkColumnConst(const IColumn * column)
+bool checkColumnConst(const IColumn * column)
 {
     return checkAndGetColumnConst<Type>(column);
 }

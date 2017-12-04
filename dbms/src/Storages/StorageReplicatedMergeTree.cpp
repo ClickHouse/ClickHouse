@@ -187,8 +187,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         context_, primary_expr_ast_, date_column_name, partition_expr_ast_,
         sampling_expression_, merging_params_,
         settings_, database_name_ + "." + table_name, true, attach,
-        [this] (const std::string & name) { enqueuePartForCheck(name); },
-        [this] () { clearOldPartsAndRemoveFromZK(); }),
+        [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger(data, context.getBackgroundPool()), queue(data.format_version),
     fetcher(data),
     shutdown_event(false), part_check_thread(*this),
@@ -2357,7 +2356,7 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const Settings & settings)
 {
     assertNotReadonly();
 
@@ -2422,7 +2421,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
 
 void StorageReplicatedMergeTree::alter(const AlterCommands & params,
-    const String & database_name, const String & table_name, const Context & context)
+    const String & /*database_name*/, const String & /*table_name*/, const Context & context)
 {
     assertNotReadonly();
 
@@ -2856,7 +2855,7 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const Str
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
-    data.setPath(new_full_path, true);
+    data.setPath(new_full_path);
 
     database_name = new_database_name;
     table_name = new_table_name;

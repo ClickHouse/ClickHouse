@@ -83,57 +83,57 @@ public:
         return s;
     }
 
-    Field operator[](size_t n) const override
+    Field operator[](size_t) const override
     {
         return (*data)[0];
     }
 
-    void get(size_t n, Field & res) const override
+    void get(size_t, Field & res) const override
     {
         data->get(0, res);
     }
 
-    StringRef getDataAt(size_t n) const override
+    StringRef getDataAt(size_t) const override
     {
         return data->getDataAt(0);
     }
 
-    StringRef getDataAtWithTerminatingZero(size_t n) const override
+    StringRef getDataAtWithTerminatingZero(size_t) const override
     {
         return data->getDataAtWithTerminatingZero(0);
     }
 
-    UInt64 get64(size_t n) const override
+    UInt64 get64(size_t) const override
     {
         return data->get64(0);
     }
 
-    UInt64 getUInt(size_t n) const override
+    UInt64 getUInt(size_t) const override
     {
         return data->getUInt(0);
     }
 
-    Int64 getInt(size_t n) const override
+    Int64 getInt(size_t) const override
     {
         return data->getInt(0);
     }
 
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
+    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
     {
         s += length;
     }
 
-    void insert(const Field & x) override
+    void insert(const Field &) override
     {
         ++s;
     }
 
-    void insertData(const char * pos, size_t length) override
+    void insertData(const char *, size_t) override
     {
         ++s;
     }
 
-    void insertFrom(const IColumn & src, size_t n) override
+    void insertFrom(const IColumn &, size_t) override
     {
         ++s;
     }
@@ -148,7 +148,7 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
     }
@@ -161,12 +161,12 @@ public:
         return res;
     }
 
-    void updateHashWithValue(size_t n, SipHash & hash) const override
+    void updateHashWithValue(size_t, SipHash & hash) const override
     {
         data->updateHashWithValue(0, hash);
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
+    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
         if (s != filt.size())
             throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -206,12 +206,12 @@ public:
         return std::make_shared<ColumnConst>(data, limit);
     }
 
-    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
+    int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override
     {
         return data->compareAt(0, 0, *static_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override
+    void getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
     {
         res.resize(s);
         for (size_t i = 0; i < s; ++i)

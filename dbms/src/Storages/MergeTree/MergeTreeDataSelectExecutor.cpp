@@ -10,6 +10,22 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
+
+/// Allow to use __uint128_t as a template parameter for boost::rational.
+namespace std
+{
+    template <>
+    struct numeric_limits<__uint128_t>
+    {
+        static constexpr bool is_specialized = true;
+        static constexpr bool is_signed = false;
+        static constexpr bool is_integer = true;
+        static constexpr int radix = 2;
+        static constexpr int digits = 8 * sizeof(char) * 2;
+        static constexpr __uint128_t min () { return 0; } // used in boost 1.65.1+
+    };
+}
+
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/CollapsingFinalBlockInputStream.h>

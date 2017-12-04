@@ -1,5 +1,5 @@
 #include <Poco/ConsoleChannel.h>
-#include <Storages/MergeTree/MergeTreePartChecker.h>
+#include <Storages/MergeTree/checkDataPart.h>
 
 
 int main(int argc, char ** argv)
@@ -10,22 +10,15 @@ int main(int argc, char ** argv)
     Logger::root().setChannel(channel);
     Logger::root().setLevel("trace");
 
-    if ((argc != 3 && argc != 4) || (strcmp(argv[2], "0") && strcmp(argv[2], "1")))
+    if (argc != 4)
     {
-        std::cerr << "usage: " << argv[0] << " path strict [index_granularity]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " path strict index_granularity" << std::endl;
         return 1;
     }
 
     try
     {
-        MergeTreePartChecker::Settings settings;
-        if (argc == 4)
-            settings.setIndexGranularity(parse<size_t>(argv[3]));
-        settings.setRequireChecksums(argv[2][0] == '1');
-        settings.setRequireColumnFiles(argv[2][0] == '1');
-        settings.setVerbose(true);
-
-        MergeTreePartChecker::checkDataPart(argv[1], settings, {});
+        checkDataPart(argv[1], parse<size_t>(argv[3]), parse<bool>(argv[2]), {});
     }
     catch (...)
     {

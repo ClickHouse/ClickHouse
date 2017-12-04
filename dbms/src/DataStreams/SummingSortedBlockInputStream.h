@@ -151,7 +151,7 @@ private:
 
     // Add the row under the cursor to the `row`.
     template <typename TSortCursor>
-    void addRow(Row & row, TSortCursor & cursor);
+    void addRow(TSortCursor & cursor);
 };
 
 }

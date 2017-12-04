@@ -182,8 +182,7 @@ void createASTsForAllColumnsInTable(const CollectTables::TableInfo & table, ASTs
 }
 
 
-ASTs expandUnqualifiedAsterisk(
-    AnalyzeColumns::Columns & columns, const CollectAliases & aliases, const CollectTables & tables)
+ASTs expandUnqualifiedAsterisk(const CollectTables & tables)
 {
     ASTs res;
     for (const auto & table : tables.tables)
@@ -193,7 +192,7 @@ ASTs expandUnqualifiedAsterisk(
 
 
 ASTs expandQualifiedAsterisk(
-    const IAST & ast, AnalyzeColumns::Columns & columns, const CollectAliases & aliases, const CollectTables & tables)
+    const IAST & ast, const CollectTables & tables)
 {
     if (ast.children.size() != 1)
         throw Exception("Logical error: AST node for qualified asterisk has number of children not equal to one", ErrorCodes::LOGICAL_ERROR);
@@ -353,13 +352,13 @@ void processImpl(ASTPtr & ast, AnalyzeColumns::Columns & columns, const CollectA
         {
             if (typeid_cast<ASTAsterisk *>(asts[i].get()))
             {
-                ASTs expanded = expandUnqualifiedAsterisk(columns, aliases, tables);
+                ASTs expanded = expandUnqualifiedAsterisk(tables);
                 asts.erase(asts.begin() + i);
                 asts.insert(asts.begin() + i, expanded.begin(), expanded.end());
             }
             else if (ASTQualifiedAsterisk * asterisk = typeid_cast<ASTQualifiedAsterisk *>(asts[i].get()))
             {
-                ASTs expanded = expandQualifiedAsterisk(*asterisk, columns, aliases, tables);
+                ASTs expanded = expandQualifiedAsterisk(*asterisk, tables);
                 asts.erase(asts.begin() + i);
                 asts.insert(asts.begin() + i, expanded.begin(), expanded.end());
             }

@@ -14,9 +14,9 @@ namespace ErrorCodes
 }
 
 void DatabaseMemory::loadTables(
-    Context & context,
-    ThreadPool * thread_pool,
-    bool has_force_restore_data_flag)
+    Context & /*context*/,
+    ThreadPool * /*thread_pool*/,
+    bool /*has_force_restore_data_flag*/)
 {
     log = &Logger::get("DatabaseMemory(" + name + ")");
 
@@ -24,7 +24,7 @@ void DatabaseMemory::loadTables(
 }
 
 bool DatabaseMemory::isTableExist(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
@@ -32,7 +32,7 @@ bool DatabaseMemory::isTableExist(
 }
 
 StoragePtr DatabaseMemory::tryGetTable(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name)
 {
     std::lock_guard<std::mutex> lock(mutex);
@@ -42,13 +42,13 @@ StoragePtr DatabaseMemory::tryGetTable(
     return it->second;
 }
 
-DatabaseIteratorPtr DatabaseMemory::getIterator(const Context & context)
+DatabaseIteratorPtr DatabaseMemory::getIterator(const Context & /*context*/)
 {
     std::lock_guard<std::mutex> lock(mutex);
     return std::make_unique<DatabaseSnaphotIterator>(tables);
 }
 
-bool DatabaseMemory::empty(const Context & context) const
+bool DatabaseMemory::empty(const Context & /*context*/) const
 {
     std::lock_guard<std::mutex> lock(mutex);
     return tables.empty();
@@ -77,55 +77,54 @@ void DatabaseMemory::attachTable(const String & table_name, const StoragePtr & t
 }
 
 void DatabaseMemory::createTable(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name,
     const StoragePtr & table,
-    const ASTPtr & query)
+    const ASTPtr & /*query*/)
 {
     attachTable(table_name, table);
 }
 
 void DatabaseMemory::removeTable(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name)
 {
     detachTable(table_name);
 }
 
 void DatabaseMemory::renameTable(
-    const Context & context,
-    const String & table_name,
-    IDatabase & to_database,
-    const String & to_table_name)
+    const Context &,
+    const String &,
+    IDatabase &,
+    const String &)
 {
     throw Exception("DatabaseMemory: renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void DatabaseMemory::alterTable(
-    const Context & context,
-    const String & name,
-    const NamesAndTypesList & columns,
-    const NamesAndTypesList & materialized_columns,
-    const NamesAndTypesList & alias_columns,
-    const ColumnDefaults & column_defaults,
-    const ASTModifier & engine_modifier)
+    const Context &,
+    const String &,
+    const NamesAndTypesList &,
+    const NamesAndTypesList &,
+    const NamesAndTypesList &,
+    const ColumnDefaults &,
+    const ASTModifier &)
 {
     throw Exception("DatabaseMemory: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 time_t DatabaseMemory::getTableMetadataModificationTime(
-    const Context & context,
-    const String & table_name)
+    const Context &,
+    const String &)
 {
     return static_cast<time_t>(0);
 }
 
 ASTPtr DatabaseMemory::getCreateQuery(
-    const Context & context,
-    const String & table_name) const
+    const Context &,
+    const String &) const
 {
     throw Exception("DatabaseMemory: getCreateQuery() is not supported", ErrorCodes::NOT_IMPLEMENTED);
-    return nullptr;
 }
 
 void DatabaseMemory::shutdown()

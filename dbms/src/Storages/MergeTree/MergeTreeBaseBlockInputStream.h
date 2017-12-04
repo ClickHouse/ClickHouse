@@ -39,7 +39,7 @@ protected:
     virtual bool getNewTask() = 0;
 
     /// We will call progressImpl manually.
-    void progress(const Progress & value) override {}
+    void progress(const Progress &) override {}
 
     Block readFromPart();
 
