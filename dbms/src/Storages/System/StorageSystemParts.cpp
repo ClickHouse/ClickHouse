@@ -50,8 +50,8 @@ BlockInputStreams StorageSystemParts::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     bool has_state_column = false;
     Names real_column_names;

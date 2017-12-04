@@ -23,22 +23,22 @@ public:
     const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
     BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override
+        const Names &,
+        const SelectQueryInfo &,
+        const Context &,
+        QueryProcessingStage::Enum &,
+        size_t,
+        unsigned) override
     {
         return { std::make_shared<NullBlockInputStream>() };
     }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override
+    BlockOutputStreamPtr write(const ASTPtr &, const Settings &) override
     {
         return std::make_shared<NullBlockOutputStream>();
     }
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override
+    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override
     {
         name = new_table_name;
     }

@@ -50,7 +50,7 @@ StoragePtr TableFunctionCatBoostPool::execute(const ASTPtr & ast_function, const
 
 void registerTableFunctionCatBoostPool(TableFunctionFactory & factory)
 {
-    TableFunctionFactory::instance().registerFunction<TableFunctionCatBoostPool>();
+    factory.registerFunction<TableFunctionCatBoostPool>();
 }
 
 }

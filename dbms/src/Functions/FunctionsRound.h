@@ -526,7 +526,7 @@ class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRounding>(); }
 
 private:
     template <typename T>
@@ -592,7 +592,7 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
         return { true, true, true };
     }
@@ -621,7 +621,7 @@ using FunctionTrunc = FunctionRounding<NameTrunc, RoundingMode::Trunc>;
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return { true };
     }

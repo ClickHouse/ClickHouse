@@ -1,10 +1,9 @@
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnConst.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <ext/map.h>
 #include <ext/enumerate.h>
@@ -123,7 +122,10 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr) const
         {
             skipWhitespaceIfAny(istr);
             if (i != 0)
+            {
                 assertChar(',', istr);
+                skipWhitespaceIfAny(istr);
+            }
             elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr);
         }
     });
@@ -175,7 +177,10 @@ void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr) con
         {
             skipWhitespaceIfAny(istr);
             if (i != 0)
+            {
                 assertChar(',', istr);
+                skipWhitespaceIfAny(istr);
+            }
             elems[i]->deserializeTextJSON(extractElementColumn(column, i), istr);
         }
     });
@@ -224,18 +229,48 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
     });
 }
 
-void DataTypeTuple::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeTuple::enumerateStreams(StreamCallback callback, SubstreamPath path) const
 {
-    const ColumnTuple & real_column = static_cast<const ColumnTuple &>(column);
-    for (size_t i = 0, size = elems.size(); i < size; ++i)
-        NativeBlockOutputStream::writeData(*elems[i], real_column.getData().safeGetByPosition(i).column, ostr, offset, limit);
+    path.push_back(Substream::TupleElement);
+    for (const auto i : ext::range(0, ext::size(elems)))
+    {
+        path.back().tuple_element = i + 1;
+        elems[i]->enumerateStreams(callback, path);
+    }
 }
 
-void DataTypeTuple::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
+    const IColumn & column,
+    OutputStreamGetter getter,
+    size_t offset,
+    size_t limit,
+    bool position_independent_encoding,
+    SubstreamPath path) const
 {
-    ColumnTuple & real_column = static_cast<ColumnTuple &>(column);
-    for (size_t i = 0, size = elems.size(); i < size; ++i)
-        NativeBlockInputStream::readData(*elems[i], *real_column.getData().safeGetByPosition(i).column, istr, limit, avg_value_size_hint);
+    path.push_back(Substream::TupleElement);
+    for (const auto i : ext::range(0, ext::size(elems)))
+    {
+        path.back().tuple_element = i + 1;
+        elems[i]->serializeBinaryBulkWithMultipleStreams(
+            extractElementColumn(column, i), getter, offset, limit, position_independent_encoding, path);
+    }
+}
+
+void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
+    IColumn & column,
+    InputStreamGetter getter,
+    size_t limit,
+    double avg_value_size_hint,
+    bool position_independent_encoding,
+    SubstreamPath path) const
+{
+    path.push_back(Substream::TupleElement);
+    for (const auto i : ext::range(0, ext::size(elems)))
+    {
+        path.back().tuple_element = i + 1;
+        elems[i]->deserializeBinaryBulkWithMultipleStreams(
+            extractElementColumn(column, i), getter, limit, avg_value_size_hint, position_independent_encoding, path);
+    }
 }
 
 ColumnPtr DataTypeTuple::createColumn() const

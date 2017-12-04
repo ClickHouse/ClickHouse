@@ -43,7 +43,7 @@ static IAggregateFunction * createAggregateFunctionSingleValue(const String & na
 
 /// argMin, argMax
 template <template <typename> class MinMaxData, typename ResData>
-static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const String & name, const IDataType & val_type)
+static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const String & /*name*/, const IDataType & val_type)
 {
          if (typeid_cast<const DataTypeUInt8 *>(&val_type))
         return new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxData<ResData, MinMaxData<SingleValueDataFixed<UInt8>>>>;

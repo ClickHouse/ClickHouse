@@ -607,10 +607,10 @@ Platform
 
 #. We write code for specific platform. But other things equal cross platform and portable code is preferred.
 
-#. Language is C++17. GNU extensions can be used if necessary.
+#. Language is C++17.
 
-#. Compiler is gcc. As of April 2017 version 6.3 is used. It is also compilable with clang 4.
-    Standard library from gcc is used.
+#. Compiler is gcc. As of December 2017 version 7.2 is used. It is also compilable with clang 5.
+    Standard library is used (libstdc++ or libc++).
 
 #. OS - Linux Ubuntu, not older than Precise.
 

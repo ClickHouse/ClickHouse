@@ -87,7 +87,7 @@ StoragePtr TableFunctionShardByHash::execute(const ASTPtr & ast_function, const 
 
 void registerTableFunctionShardByHash(TableFunctionFactory & factory)
 {
-    TableFunctionFactory::instance().registerFunction<TableFunctionShardByHash>();
+    factory.registerFunction<TableFunctionShardByHash>();
 }
 
 }

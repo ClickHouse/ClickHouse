@@ -91,7 +91,7 @@ void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffe
 }
 
 
-void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars_t & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
@@ -194,7 +194,7 @@ void DataTypeFixedString::serializeTextCSV(const IColumn & column, size_t row_nu
 }
 
 
-void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
 {
     read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr); });
 }

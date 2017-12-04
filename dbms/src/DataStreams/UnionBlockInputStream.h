@@ -237,17 +237,13 @@ protected:
     }
 
 private:
-    template <StreamUnionMode mode2 = mode>
-    BlockExtraInfo doGetBlockExtraInfo(typename std::enable_if<mode2 == StreamUnionMode::ExtraInfo>::type * = nullptr) const
+    BlockExtraInfo doGetBlockExtraInfo() const
     {
-        return received_payload.extra_info;
-    }
-
-    template <StreamUnionMode mode2 = mode>
-    BlockExtraInfo doGetBlockExtraInfo(typename std::enable_if<mode2 == StreamUnionMode::Basic>::type * = nullptr) const
-    {
-        throw Exception("Method getBlockExtraInfo is not supported for mode StreamUnionMode::Basic",
-            ErrorCodes::NOT_IMPLEMENTED);
+        if constexpr (mode == StreamUnionMode::ExtraInfo)
+            return received_payload.extra_info;
+        else
+            throw Exception("Method getBlockExtraInfo is not supported for mode StreamUnionMode::Basic",
+                ErrorCodes::NOT_IMPLEMENTED);
     }
 
 private:
@@ -267,33 +263,26 @@ private:
     {
         Handler(Self & parent_) : parent(parent_) {}
 
-        template <StreamUnionMode mode2 = mode>
-        void onBlock(Block & block, size_t thread_num,
-            typename std::enable_if<mode2 == StreamUnionMode::Basic>::type * = nullptr)
+        void onBlock(Block & block, size_t /*thread_num*/)
         {
-            //std::cerr << "pushing block\n";
             parent.output_queue.push(Payload(block));
         }
 
-        template <StreamUnionMode mode2 = mode>
-        void onBlock(Block & block, BlockExtraInfo & extra_info, size_t thread_num,
-            typename std::enable_if<mode2 == StreamUnionMode::ExtraInfo>::type * = nullptr)
+        void onBlock(Block & block, BlockExtraInfo & extra_info, size_t /*thread_num*/)
         {
-            //std::cerr << "pushing block with extra info\n";
             parent.output_queue.push(Payload(block, extra_info));
         }
 
         void onFinish()
         {
-            //std::cerr << "pushing end\n";
             parent.output_queue.push(Payload());
         }
 
-        void onFinishThread(size_t thread_num)
+        void onFinishThread(size_t /*thread_num*/)
         {
         }
 
-        void onException(std::exception_ptr & exception, size_t thread_num)
+        void onException(std::exception_ptr & exception, size_t /*thread_num*/)
         {
             //std::cerr << "pushing exception\n";
 

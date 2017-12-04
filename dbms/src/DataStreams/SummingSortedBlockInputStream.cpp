@@ -338,12 +338,12 @@ void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std:
                 desc.createState();
 
             // Start aggregations with current row
-            addRow(current_row, current);
+            addRow(current);
             current_row_is_zero = true;
         }
         else
         {
-            addRow(current_row, current);
+            addRow(current);
 
             // Merge maps only for same rows
             for (auto & desc : maps_to_sum)
@@ -456,7 +456,7 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 
 
 template <typename TSortCursor>
-void SummingSortedBlockInputStream::addRow(Row & row, TSortCursor & cursor)
+void SummingSortedBlockInputStream::addRow(TSortCursor & cursor)
 {
     for (auto & desc : columns_to_aggregate)
     {

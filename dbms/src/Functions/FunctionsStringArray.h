@@ -72,7 +72,7 @@ public:
     }
 
     /// Initialize by the function arguments.
-    void init(Block & block, const ColumnNumbers & arguments) {}
+    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
@@ -323,7 +323,7 @@ class FunctionTokens : public IFunction
 {
 public:
     static constexpr auto name = Generator::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTokens>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTokens>(); }
 
     String getName() const override
     {
@@ -487,7 +487,7 @@ private:
 
 public:
     static constexpr auto name = "arrayStringConcat";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayStringConcat>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayStringConcat>(); }
 
     String getName() const override
     {
