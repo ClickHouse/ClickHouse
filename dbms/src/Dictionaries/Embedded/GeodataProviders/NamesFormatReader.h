@@ -5,6 +5,7 @@
 #include <IO/ReadBuffer.h>
 
 
+// Reads regions names list in geoexport format
 class LanguageRegionsNamesFormatReader : public ILanguageRegionsNamesReader
 {
 private:
