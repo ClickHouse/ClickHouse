@@ -5,6 +5,7 @@
 #include <IO/ReadBuffer.h>
 
 
+// Reads regions hierarchy in geoexport format
 class RegionsHierarchyFormatReader : public IRegionsHierarchyReader
 {
 private:
