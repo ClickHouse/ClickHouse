@@ -63,7 +63,6 @@ ReadBufferFromFile::ReadBufferFromFile(
     int fd,
     const std::string & original_file_name,
     size_t buf_size,
-    int flags,
     char * existing_memory,
     size_t alignment)
     :

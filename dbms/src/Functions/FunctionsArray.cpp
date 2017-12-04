@@ -715,7 +715,7 @@ struct ArrayElementGenericImpl
 }
 
 
-FunctionPtr FunctionArrayElement::create(const Context & context)
+FunctionPtr FunctionArrayElement::create(const Context &)
 {
     return std::make_shared<FunctionArrayElement>();
 }
@@ -1207,7 +1207,7 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
 
 /// Implementation of FunctionArrayEnumerate.
 
-FunctionPtr FunctionArrayEnumerate::create(const Context & context)
+FunctionPtr FunctionArrayEnumerate::create(const Context &)
 {
     return std::make_shared<FunctionArrayEnumerate>();
 }
@@ -1272,7 +1272,7 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
 
 /// Implementation of FunctionArrayUniq.
 
-FunctionPtr FunctionArrayUniq::create(const Context & context) { return std::make_shared<FunctionArrayUniq>(); }
+FunctionPtr FunctionArrayUniq::create(const Context &) { return std::make_shared<FunctionArrayUniq>(); }
 
 String FunctionArrayUniq::getName() const
 {
@@ -1594,7 +1594,7 @@ void FunctionArrayUniq::executeHashed(
 
 /// Implementation of FunctionArrayEnumerateUniq.
 
-FunctionPtr FunctionArrayEnumerateUniq::create(const Context & context)
+FunctionPtr FunctionArrayEnumerateUniq::create(const Context &)
 {
     return std::make_shared<FunctionArrayEnumerateUniq>();
 }
@@ -1905,7 +1905,7 @@ void FunctionArrayEnumerateUniq::executeHashed(
 
 /// Implementation of FunctionEmptyArrayToSingle.
 
-FunctionPtr FunctionEmptyArrayToSingle::create(const Context & context) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
+FunctionPtr FunctionEmptyArrayToSingle::create(const Context &) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
 
 String FunctionEmptyArrayToSingle::getName() const
 {
@@ -2419,7 +2419,7 @@ void FunctionRange::executeImpl(Block & block, const ColumnNumbers & arguments, 
 
 /// Implementation of FunctionArrayReverse.
 
-FunctionPtr FunctionArrayReverse::create(const Context & context)
+FunctionPtr FunctionArrayReverse::create(const Context &)
 {
     return std::make_shared<FunctionArrayReverse>();
 }
@@ -2726,7 +2726,7 @@ bool FunctionArrayReverse::executeString(
 
 /// Implementation of FunctionArrayReduce.
 
-FunctionPtr FunctionArrayReduce::create(const Context & context)
+FunctionPtr FunctionArrayReduce::create(const Context &)
 {
     return std::make_shared<FunctionArrayReduce>();
 }
@@ -2739,7 +2739,7 @@ String FunctionArrayReduce::getName() const
 void FunctionArrayReduce::getReturnTypeAndPrerequisitesImpl(
     const ColumnsWithTypeAndName & arguments,
     DataTypePtr & out_return_type,
-    std::vector<ExpressionAction> & out_prerequisites)
+    std::vector<ExpressionAction> & /*out_prerequisites*/)
 {
     /// The first argument is a constant string with the name of the aggregate function
     ///  (possibly with parameters in parentheses, for example: "quantile(0.99)").
@@ -2878,7 +2878,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
 /// Implementation of FunctionArrayConcat.
 
-FunctionPtr FunctionArrayConcat::create(const Context & context)
+FunctionPtr FunctionArrayConcat::create(const Context &)
 {
     return std::make_shared<FunctionArrayConcat>();
 }
@@ -2967,7 +2967,7 @@ void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & argum
 
 /// Implementation of FunctionArraySlice.
 
-FunctionPtr FunctionArraySlice::create(const Context & context)
+FunctionPtr FunctionArraySlice::create(const Context &)
 {
     return std::make_shared<FunctionArraySlice>();
 }
@@ -3175,14 +3175,14 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
 
 /// Implementation of FunctionArrayPushFront.
 
-FunctionPtr FunctionArrayPushFront::create(const Context & context)
+FunctionPtr FunctionArrayPushFront::create(const Context &)
 {
     return std::make_shared<FunctionArrayPushFront>();
 }
 
 /// Implementation of FunctionArrayPushBack.
 
-FunctionPtr FunctionArrayPushBack::create(const Context & context)
+FunctionPtr FunctionArrayPushBack::create(const Context &)
 {
     return std::make_shared<FunctionArrayPushBack>();
 }
@@ -3243,14 +3243,14 @@ void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & argument
 
 /// Implementation of FunctionArrayPopFront.
 
-FunctionPtr FunctionArrayPopFront::create(const Context &context)
+FunctionPtr FunctionArrayPopFront::create(const Context &)
 {
     return std::make_shared<FunctionArrayPopFront>();
 }
 
 /// Implementation of FunctionArrayPopBack.
 
-FunctionPtr FunctionArrayPopBack::create(const Context &context)
+FunctionPtr FunctionArrayPopBack::create(const Context &)
 {
     return std::make_shared<FunctionArrayPopBack>();
 }

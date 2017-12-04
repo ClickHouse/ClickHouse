@@ -77,8 +77,7 @@ template <>
 struct PredicateBase<Null>
 {
 protected:
-    static bool appendBranchInfo(size_t index, const Block & block,
-        const ColumnNumbers & args, Branches & branches)
+    static bool appendBranchInfo(size_t index, const Block &, const ColumnNumbers &, Branches & branches)
     {
         Branch branch;
         branch.is_const = true;
@@ -144,8 +143,7 @@ struct ElsePredicate final : public PredicateBase<TType>
 template <typename Nullity>
 struct ElsePredicate<NumberTraits::Enriched::Void<Nullity>, Null> final : public PredicateBase<Null>
 {
-    static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-        size_t result, NullMapBuilder & builder, Branches & branches)
+    static bool execute(size_t, Block &, const ColumnNumbers &, size_t, NullMapBuilder &, Branches &)
     {
         throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
@@ -155,8 +153,7 @@ struct ElsePredicate<NumberTraits::Enriched::Void<Nullity>, Null> final : public
 template <typename TResult>
 struct ElsePredicate<TResult, NumberTraits::Error> : public PredicateBase<NumberTraits::Error>
 {
-    static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-        size_t result, NullMapBuilder & builder, Branches & branches)
+    static bool execute(size_t, Block &, const ColumnNumbers &, size_t, NullMapBuilder &, Branches &)
     {
         throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
@@ -166,8 +163,7 @@ struct ElsePredicate<TResult, NumberTraits::Error> : public PredicateBase<Number
 template <typename TType>
 struct ElsePredicate<NumberTraits::Error, TType>
 {
-    static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-        size_t result, NullMapBuilder & builder, Branches & branches)
+    static bool execute(size_t, Block &, const ColumnNumbers &, size_t, NullMapBuilder &, Branches &)
     {
         throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
@@ -233,8 +229,7 @@ struct ThenPredicate final : public PredicateBase<TType>
 template <typename TResult>
 struct ThenPredicate<TResult, NumberTraits::Error>
 {
-    static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-        size_t result, NullMapBuilder & builder, Branches & branches)
+    static bool execute(size_t, Block &, const ColumnNumbers &, size_t, NullMapBuilder &, Branches &)
     {
         throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
@@ -244,8 +239,7 @@ struct ThenPredicate<TResult, NumberTraits::Error>
 template <typename TType>
 struct ThenPredicate<NumberTraits::Error, TType>
 {
-    static bool execute(size_t index, Block & block, const ColumnNumbers & args,
-        size_t result, NullMapBuilder & builder, Branches & branches)
+    static bool execute(size_t, Block &, const ColumnNumbers &, size_t, NullMapBuilder &, Branches &)
     {
         throw Exception{"Unexpected type in multiIf function", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }

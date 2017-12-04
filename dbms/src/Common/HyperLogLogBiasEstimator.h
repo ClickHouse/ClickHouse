@@ -101,7 +101,7 @@ struct TrivialBiasEstimator
         return 0.0;
     }
 
-    static double getBias(double raw_estimate)
+    static double getBias(double /*raw_estimate*/)
     {
         return 0.0;
     }

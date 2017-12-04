@@ -102,41 +102,10 @@ private:
         throw Exception("Internal logic error: invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 public:
-    static void vector_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a, const PaddedPODArray<B> & b,
-        Block & block,
-        size_t result)
-    {
-        throw_error();
-    }
-
-    static void vector_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a, B b,
-        Block & block,
-        size_t result)
-    {
-        throw_error();
-    }
-
-    static void constant_vector(
-        const PaddedPODArray<UInt8> & cond,
-        A a, const PaddedPODArray<B> & b,
-        Block & block,
-        size_t result)
-    {
-        throw_error();
-    }
-
-    static void constant_constant(
-        const PaddedPODArray<UInt8> & cond,
-        A a, B b,
-        Block & block,
-        size_t result)
-    {
-        throw_error();
-    }
+    template <typename... Args> static void vector_vector(Args &&...) { throw_error(); }
+    template <typename... Args> static void vector_constant(Args &&...) { throw_error(); }
+    template <typename... Args> static void constant_vector(Args &&...) { throw_error(); }
+    template <typename... Args> static void constant_constant(Args &&...) { throw_error(); }
 };
 
 
@@ -144,7 +113,7 @@ class FunctionIf : public IFunction
 {
 public:
     static constexpr auto name = "if";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIf>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIf>(); }
 
 private:
     template <typename T0, typename T1>
@@ -234,123 +203,115 @@ private:
     }
 
     template <typename T0, typename T1>
-    typename std::enable_if<!std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
-    executeRightTypeArray(
-        const ColumnUInt8 * cond_col,
-        Block & block,
-        const ColumnNumbers & arguments,
-        size_t result,
-        const ColumnArray * col_left_array,
-        const ColumnVector<T0> * col_left)
+    bool executeRightTypeArray(
+        [[maybe_unused]] const ColumnUInt8 * cond_col,
+        [[maybe_unused]] Block & block,
+        [[maybe_unused]] const ColumnNumbers & arguments,
+        [[maybe_unused]] size_t result,
+        [[maybe_unused]] const ColumnArray * col_left_array)
     {
-        const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
-
-        const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
-        const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
-
-        if (!col_right_array && !col_right_const_array)
+        if constexpr (std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value)
             return false;
-
-        using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
-
-        if (col_right_array)
-        {
-            const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(&col_right_array->getData());
-
-            if (!col_right_vec)
-                return false;
-
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
-
-            conditional(
-                NumericArraySource<T0>(*col_left_array),
-                NumericArraySource<T1>(*col_right_array),
-                NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
-                cond_col->getData());
-        }
         else
         {
-            const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
-            if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
+            const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
+
+            const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
+            const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
+
+            if (!col_right_array && !col_right_const_array)
                 return false;
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+            using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
-            conditional(
-                NumericArraySource<T0>(*col_left_array),
-                ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
-                cond_col->getData());
+            if (col_right_array)
+            {
+                const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(&col_right_array->getData());
+
+                if (!col_right_vec)
+                    return false;
+
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+
+                conditional(
+                    NumericArraySource<T0>(*col_left_array),
+                    NumericArraySource<T1>(*col_right_array),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                    cond_col->getData());
+            }
+            else
+            {
+                const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
+                if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
+                    return false;
+
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+
+                conditional(
+                    NumericArraySource<T0>(*col_left_array),
+                    ConstSource<NumericArraySource<T1>>(*col_right_const_array),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                    cond_col->getData());
+            }
+
+            return true;
         }
-
-        return true;
     }
 
     template <typename T0, typename T1>
-    typename std::enable_if<!std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
-    executeConstRightTypeArray(
-        const ColumnUInt8 * cond_col,
-        Block & block,
-        const ColumnNumbers & arguments,
-        size_t result,
-        const ColumnConst * col_left_const_array)
+    bool executeConstRightTypeArray(
+        [[maybe_unused]] const ColumnUInt8 * cond_col,
+        [[maybe_unused]] Block & block,
+        [[maybe_unused]] const ColumnNumbers & arguments,
+        [[maybe_unused]] size_t result,
+        [[maybe_unused]] const ColumnConst * col_left_const_array)
     {
-        const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
-
-        const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
-        const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
-
-        if (!col_right_array && !col_right_const_array)
+        if constexpr (std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value)
             return false;
-
-        using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
-
-        if (col_right_array)
-        {
-            const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(&col_right_array->getData());
-
-            if (!col_right_vec)
-                return false;
-
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
-
-            conditional(
-                ConstSource<NumericArraySource<T0>>(*col_left_const_array),
-                NumericArraySource<T1>(*col_right_array),
-                NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
-                cond_col->getData());
-        }
         else
         {
-            const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
-            if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
+            const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
+
+            const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
+            const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
+
+            if (!col_right_array && !col_right_const_array)
                 return false;
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+            using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
-            conditional(
-                ConstSource<NumericArraySource<T0>>(*col_left_const_array),
-                ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
-                cond_col->getData());
+            if (col_right_array)
+            {
+                const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(&col_right_array->getData());
+
+                if (!col_right_vec)
+                    return false;
+
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+
+                conditional(
+                    ConstSource<NumericArraySource<T0>>(*col_left_const_array),
+                    NumericArraySource<T1>(*col_right_array),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                    cond_col->getData());
+            }
+            else
+            {
+                const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
+                if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
+                    return false;
+
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
+
+                conditional(
+                    ConstSource<NumericArraySource<T0>>(*col_left_const_array),
+                    ConstSource<NumericArraySource<T1>>(*col_right_const_array),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*block.getByPosition(result).column), block.rows()),
+                    cond_col->getData());
+            }
+
+            return true;
         }
-
-        return true;
-    }
-
-    /// Specializations for incompatible data types. Example: if(cond, Int64, UInt64) cannot be executed, because Int64 and UInt64 are incompatible.
-    template <typename T0, typename T1, typename... Args>
-    typename std::enable_if<std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
-    executeRightTypeArray(Args &&... args)
-    {
-        return false;
-    }
-
-    template <typename T0, typename T1, typename... Args>
-    typename std::enable_if<std::is_same<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>::value, bool>::type
-    executeConstRightTypeArray(Args &&... args)
-    {
-        return false;
     }
 
     template <typename T0>
@@ -417,16 +378,16 @@ private:
         }
         else if (col_arr_left && col_arr_left_elems)
         {
-            if (   executeRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                || executeRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                || executeRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                || executeRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                || executeRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                || executeRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                || executeRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                || executeRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                || executeRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems)
-                || executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, col_arr_left_elems))
+            if (   executeRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_arr_left)
+                || executeRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_arr_left)
+                || executeRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_arr_left)
+                || executeRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_arr_left)
+                || executeRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_arr_left)
+                || executeRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_arr_left)
+                || executeRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_arr_left)
+                || executeRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_arr_left)
+                || executeRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_arr_left)
+                || executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left))
                 return true;
             else
                 throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
@@ -573,7 +534,7 @@ private:
         return false;
     }
 
-    bool executeTuple(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         /// Calculate function for each corresponding elements of tuples.
 
@@ -1051,7 +1012,7 @@ public:
                 || executeLeftType<Float64>(cond_col, block, arguments, result)
                 || executeString(cond_col, block, arguments, result)
                 || executeGenericArray(cond_col, block, arguments, result)
-                || executeTuple(cond_col, block, arguments, result)))
+                || executeTuple(block, arguments, result)))
                 throw Exception("Illegal columns " + arg_then.column->getName()
                     + " and " + arg_else.column->getName()
                     + " of second (then) and third (else) arguments of function " + getName(),

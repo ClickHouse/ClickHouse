@@ -42,7 +42,7 @@ struct ArrayMapImpl
     /// true if the array must be exactly one.
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeArray>(expression_return);
     }
@@ -61,7 +61,7 @@ struct ArrayFilterImpl
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         return std::make_shared<DataTypeArray>(array_element);
     }
@@ -116,7 +116,7 @@ struct ArrayCountImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt32>();
     }
@@ -178,7 +178,7 @@ struct ArrayExistsImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -244,7 +244,7 @@ struct ArrayAllImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -310,7 +310,7 @@ struct ArraySumImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
         if (checkDataType<DataTypeUInt8>(&*expression_return) ||
             checkDataType<DataTypeUInt16>(&*expression_return) ||
@@ -405,7 +405,7 @@ struct ArrayFirstImpl
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         return array_element;
     }
@@ -482,7 +482,7 @@ struct ArrayFirstIndexImpl
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt32>();
     }
@@ -553,7 +553,7 @@ struct ArraySortImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         return std::make_shared<DataTypeArray>(array_element);
     }
@@ -602,7 +602,7 @@ class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayMapped>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayMapped>(); };
 
     String getName() const override
     {

@@ -45,26 +45,11 @@ public:
     /// Initialize read_buffer, depending on the data source. By default, does nothing.
     virtual void initReadBuffer() {};
 
-    /// Initialize sample_block according to the structure of the table stored in the `structure`
-    virtual void initSampleBlock(const Context & context)
-    {
-        const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-
-        for (size_t i = 0; i < structure.size(); ++i)
-        {
-            ColumnWithTypeAndName column;
-            column.name = structure[i].first;
-            column.type = data_type_factory.get(structure[i].second);
-            column.column = column.type->createColumn();
-            sample_block.insert(std::move(column));
-        }
-    }
-
     /// Get the table data - a pair (a thread with the contents of the table, the name of the table)
-    virtual ExternalTableData getData(const Context & context)
+    ExternalTableData getData(const Context & context)
     {
         initReadBuffer();
-        initSampleBlock(context);
+        initSampleBlock();
         ExternalTableData res = std::make_pair(std::make_shared<AsynchronousBlockInputStream>(context.getInputFormat(
             format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE)), name);
         return res;
@@ -120,6 +105,22 @@ protected:
         for (size_t i = 0; i < vals.size(); ++i)
             structure.emplace_back("_" + toString(i + 1), vals[i]);
     }
+
+private:
+    /// Initialize sample_block according to the structure of the table stored in the `structure`
+    void initSampleBlock()
+    {
+        const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
+        for (size_t i = 0; i < structure.size(); ++i)
+        {
+            ColumnWithTypeAndName column;
+            column.name = structure[i].first;
+            column.type = data_type_factory.get(structure[i].second);
+            column.column = column.type->createColumn();
+            sample_block.insert(std::move(column));
+        }
+    }
 };
 
 
@@ -127,7 +128,7 @@ protected:
 class ExternalTable : public BaseExternalTable
 {
 public:
-    void initReadBuffer()
+    void initReadBuffer() override
     {
         if (file == "-")
             read_buffer = std::make_unique<ReadBufferFromFileDescriptor>(STDIN_FILENO);

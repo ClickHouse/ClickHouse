@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int FORMAT_VERSION_TOO_OLD;
     extern const int UNKNOWN_FORMAT;
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
+    extern const int NOT_FOUND_EXPECTED_DATA_PART;
 }
 
 
@@ -492,7 +493,7 @@ MergeTreeDataPart::~MergeTreeDataPart()
     }
 }
 
-size_t MergeTreeDataPart::calcTotalSize(const String & from)
+size_t MergeTreeDataPart::calculateTotalSize(const String & from)
 {
     Poco::File cur(from);
     if (cur.isFile())
@@ -501,7 +502,7 @@ size_t MergeTreeDataPart::calcTotalSize(const String & from)
     cur.list(files);
     size_t res = 0;
     for (const auto & file : files)
-        res += calcTotalSize(from + file);
+        res += calculateTotalSize(from + file);
     return res;
 }
 
@@ -589,7 +590,7 @@ void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix)
 
     if (to_detached)
     {
-        /** If you need to unhook a part, and directory into which we want to rename it already exists,
+        /** If you need to detach a part, and directory into which we want to rename it already exists,
             *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
             * This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
             * No more than 10 attempts are made so that there are not too many junk directories left.
@@ -659,7 +660,7 @@ void MergeTreeDataPart::loadIndex()
             throw Exception("Index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
     }
 
-    size_in_bytes = calcTotalSize(getFullPath());
+    size_in_bytes = calculateTotalSize(getFullPath());
 }
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
@@ -755,9 +756,16 @@ void MergeTreeDataPart::loadRowsCount()
 void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
 {
     std::shared_lock<std::shared_mutex> part_lock(columns_lock);
-    for (const NameAndTypePair & column : *storage.columns)
-        if (Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").exists())
-            column_to_size[column.name] += Poco::File(getFullPath() + escapeForFileName(column.name) + ".bin").getSize();
+
+    for (const NameAndTypePair & name_type : *storage.columns)
+    {
+        name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+        {
+            Poco::File bin_file(getFullPath() + IDataType::getFileNameForStream(name_type.name, substream_path) + ".bin");
+            if (bin_file.exists())
+                column_to_size[name_type.name] += bin_file.getSize();
+        }, {});
+    }
 }
 
 void MergeTreeDataPart::loadColumns(bool require)
@@ -800,12 +808,20 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
         if (require_part_metadata)
         {
-            for (const NameAndTypePair & it : columns)
+            for (const NameAndTypePair & name_type : columns)
             {
-                String name = escapeForFileName(it.name);
-                if (!checksums.files.count(name + ".mrk") ||
-                    !checksums.files.count(name + ".bin"))
-                    throw Exception("No .mrk or .bin file checksum for column " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+                name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+                {
+                    String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
+                    String mrk_file_name = file_name + ".mrk";
+                    String bin_file_name = file_name + ".bin";
+                    if (!checksums.files.count(mrk_file_name))
+                        throw Exception("No " + mrk_file_name + " file checksum for column " + name + " in part " + path,
+                            ErrorCodes::NO_FILE_IN_DATA_PART);
+                    if (!checksums.files.count(bin_file_name))
+                        throw Exception("No " + bin_file_name + " file checksum for column " + name + " in part " + path,
+                            ErrorCodes::NO_FILE_IN_DATA_PART);
+                }, {});
             }
         }
 
@@ -852,45 +868,44 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         }
 
         /// Check that all marks are nonempty and have the same size.
-        auto check_marks = [&path](const NamesAndTypesList & columns, const std::string & extension)
+
+        std::optional<size_t> marks_size;
+        for (const NameAndTypePair & name_type : columns)
         {
-            ssize_t marks_size = -1;
-            for (const NameAndTypePair & it : columns)
+            name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
             {
-                Poco::File marks_file(path + escapeForFileName(it.name) + extension);
+                Poco::File file(IDataType::getFileNameForStream(name_type.name, substream_path) + ".mrk");
 
-                /// When you add a new column to the table, the .mrk files are not created. We will not delete anything.
-                if (!marks_file.exists())
-                    continue;
-
-                if (marks_size == -1)
+                /// Missing file is Ok for case when new column was added.
+                if (file.exists())
                 {
-                    marks_size = marks_file.getSize();
+                    size_t file_size = file.getSize();
 
-                    if (0 == marks_size)
-                        throw Exception("Part " + path + " is broken: " + marks_file.path() + " is empty.",
+                    if (!file_size)
+                        throw Exception("Part " + path + " is broken: " + file.path() + " is empty.",
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-                }
-                else
-                {
-                    if (static_cast<ssize_t>(marks_file.getSize()) != marks_size)
+
+                    if (!marks_size)
+                        marks_size = file_size;
+                    else if (file_size != *marks_size)
                         throw Exception("Part " + path + " is broken: marks have different sizes.",
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
                 }
-            }
-        };
-
-        check_marks(columns, ".mrk");
-        check_marks(columns, ".null.mrk");
+            }, {});
+        }
     }
 }
 
 bool MergeTreeDataPart::hasColumnFiles(const String & column) const
 {
+    /// NOTE: For multi-streams columns we check that just first file exist.
+    /// That's Ok under assumption that files exist either for all or for no streams.
+
     String prefix = getFullPath();
+
     String escaped_column = escapeForFileName(column);
-    return Poco::File(prefix + escaped_column + ".bin").exists() &&
-        Poco::File(prefix + escaped_column + ".mrk").exists();
+    return Poco::File(prefix + escaped_column + ".bin").exists()
+        && Poco::File(prefix + escaped_column + ".mrk").exists();
 }
 
 
@@ -925,13 +940,25 @@ String MergeTreeDataPart::stateToString(MergeTreeDataPart::State state)
         case State::Deleting:
             return "Deleting";
         default:
-            throw Exception("Unknown part state " + std::to_string(static_cast<int>(state)), ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Unknown part state " + toString(static_cast<int>(state)), ErrorCodes::LOGICAL_ERROR);
     }
 }
 
 String MergeTreeDataPart::stateString() const
 {
     return stateToString(state);
+}
+
+void MergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPart::State> & affordable_states) const
+{
+    if (!checkState(affordable_states))
+    {
+        String states_str;
+        for (auto state : affordable_states)
+            states_str += stateToString(state) + " ";
+
+        throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
+    }
 }
 
 }

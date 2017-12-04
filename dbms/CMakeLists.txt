@@ -18,6 +18,8 @@ get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
 
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
@@ -27,6 +29,8 @@ find_package (Threads)
 
 add_subdirectory (src)
 
+# These files are located in separate library, because they are used by Yandex.Metrika code
+#  in places when no dependency on whole "dbms" library is possible.
 add_library(string_utils
     src/Common/StringUtils.h
     src/Common/StringUtils.cpp)
@@ -49,6 +53,7 @@ add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
 add_headers_and_sources(dbms src/Dictionaries)
 add_headers_and_sources(dbms src/Dictionaries/Embedded)
+add_headers_and_sources(dbms src/Dictionaries/Embedded/GeodataProviders)
 add_headers_and_sources(dbms src/Interpreters)
 add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Columns)

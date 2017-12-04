@@ -24,7 +24,7 @@ void registerFunctionsNull(FunctionFactory & factory)
 
 /// Implementation of isNull.
 
-FunctionPtr FunctionIsNull::create(const Context & context)
+FunctionPtr FunctionIsNull::create(const Context &)
 {
     return std::make_shared<FunctionIsNull>();
 }
@@ -34,7 +34,7 @@ std::string FunctionIsNull::getName() const
     return name;
 }
 
-DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes & arguments) const
+DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes &) const
 {
     return std::make_shared<DataTypeUInt8>();
 }
@@ -63,7 +63,7 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 
 /// Implementation of isNotNull.
 
-FunctionPtr FunctionIsNotNull::create(const Context & context)
+FunctionPtr FunctionIsNotNull::create(const Context &)
 {
     return std::make_shared<FunctionIsNotNull>();
 }
@@ -73,7 +73,7 @@ std::string FunctionIsNotNull::getName() const
     return name;
 }
 
-DataTypePtr FunctionIsNotNull::getReturnTypeImpl(const DataTypes & arguments) const
+DataTypePtr FunctionIsNotNull::getReturnTypeImpl(const DataTypes &) const
 {
     return std::make_shared<DataTypeUInt8>();
 }
@@ -111,7 +111,7 @@ static const DataTypePtr getNestedDataType(const DataTypePtr & type)
     return type;
 }
 
-FunctionPtr FunctionCoalesce::create(const Context & context)
+FunctionPtr FunctionCoalesce::create(const Context &)
 {
     return std::make_shared<FunctionCoalesce>();
 }
@@ -241,7 +241,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
 /// Implementation of ifNull.
 
-FunctionPtr FunctionIfNull::create(const Context & context)
+FunctionPtr FunctionIfNull::create(const Context &)
 {
     return std::make_shared<FunctionIfNull>();
 }
@@ -296,7 +296,7 @@ void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 
 /// Implementation of nullIf.
 
-FunctionPtr FunctionNullIf::create(const Context & context)
+FunctionPtr FunctionNullIf::create(const Context & )
 {
     return std::make_shared<FunctionNullIf>();
 }
@@ -340,7 +340,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 
 /// Implementation of assumeNotNull.
 
-FunctionPtr FunctionAssumeNotNull::create(const Context & context)
+FunctionPtr FunctionAssumeNotNull::create(const Context &)
 {
     return std::make_shared<FunctionAssumeNotNull>();
 }
@@ -371,7 +371,7 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
 
 /// Implementation of toNullable.
 
-FunctionPtr FunctionToNullable::create(const Context & context)
+FunctionPtr FunctionToNullable::create(const Context &)
 {
     return std::make_shared<FunctionToNullable>();
 }

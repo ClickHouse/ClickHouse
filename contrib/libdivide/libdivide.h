@@ -1220,14 +1220,14 @@ namespace libdivide_internal {
 #endif
 
     /* Some bogus unswitch functions for unsigned types so the same (presumably templated) code can work for both signed and unsigned. */
-    uint32_t crash_u32(uint32_t, const libdivide_u32_t *) { abort(); return *(uint32_t *)NULL; }
-    uint64_t crash_u64(uint64_t, const libdivide_u64_t *) { abort(); return *(uint64_t *)NULL; }
+    uint32_t crash_u32(uint32_t, const libdivide_u32_t *) { abort(); }
+    uint64_t crash_u64(uint64_t, const libdivide_u64_t *) { abort(); }
 #ifdef __APPLE__
-    UInt64 crash_u64(UInt64, const libdivide_u64_t *) { abort(); return *(UInt64 *)NULL; }
+    UInt64 crash_u64(UInt64, const libdivide_u64_t *) { abort(); }
 #endif
 #if LIBDIVIDE_USE_SSE2
-    __m128i crash_u32_vector(__m128i, const libdivide_u32_t *) { abort(); return *(__m128i *)NULL; }
-    __m128i crash_u64_vector(__m128i, const libdivide_u64_t *) { abort(); return *(__m128i *)NULL; }
+    __m128i crash_u32_vector(__m128i, const libdivide_u32_t *) { abort(); }
+    __m128i crash_u64_vector(__m128i, const libdivide_u64_t *) { abort(); }
 #endif
 
     template<typename IntType, typename DenomType, DenomType gen_func(IntType), int get_algo(const DenomType *), IntType do_func(IntType, const DenomType *), MAYBE_VECTOR_PARAM>

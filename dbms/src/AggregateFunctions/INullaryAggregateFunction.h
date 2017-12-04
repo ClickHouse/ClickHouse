@@ -26,12 +26,12 @@ public:
     }
 
     /// Accumulate a value.
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override final
+    void add(AggregateDataPtr place, const IColumn ** /*columns*/, size_t /*row_num*/, Arena *) const override final
     {
         getDerived().addImpl(place);
     }
 
-    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *)
+    static void addFree(const IAggregateFunction * that, AggregateDataPtr place, const IColumn ** /*columns*/, size_t /*row_num*/, Arena *)
     {
         return static_cast<const Derived &>(*that).addImpl(place);
     }

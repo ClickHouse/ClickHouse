@@ -9,7 +9,7 @@
 namespace DB
 {
 
-void Progress::read(ReadBuffer & in, UInt64 server_revision)
+void Progress::read(ReadBuffer & in, UInt64 /*server_revision*/)
 {
     size_t new_rows = 0;
     size_t new_bytes = 0;
@@ -25,7 +25,7 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
 }
 
 
-void Progress::write(WriteBuffer & out, UInt64 client_revision) const
+void Progress::write(WriteBuffer & out, UInt64 /*client_revision*/) const
 {
     writeVarUInt(rows.load(), out);
     writeVarUInt(bytes.load(), out);

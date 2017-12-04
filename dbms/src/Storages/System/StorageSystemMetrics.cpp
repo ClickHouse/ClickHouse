@@ -15,8 +15,8 @@ StorageSystemMetrics::StorageSystemMetrics(const std::string & name_)
     : name(name_),
     columns
     {
-        {"metric",         std::make_shared<DataTypeString>()},
-        {"value",        std::make_shared<DataTypeInt64>()},
+        {"metric", std::make_shared<DataTypeString>()},
+        {"value",  std::make_shared<DataTypeInt64>()},
     }
 {
 }
@@ -24,11 +24,11 @@ StorageSystemMetrics::StorageSystemMetrics(const std::string & name_)
 
 BlockInputStreams StorageSystemMetrics::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    const SelectQueryInfo &,
+    const Context &,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

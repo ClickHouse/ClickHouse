@@ -165,7 +165,7 @@ TestSet test_set =
 
 std::string createTmpPath(const std::string & filename);
 void createFile(const std::string & filename, const char * data);
-void runOneTest(size_t test_num, const TestDescriptor & test_descriptor);
+void runOneTest(const TestDescriptor & test_descriptor);
 auto runTestSet(const TestSet & test_set);
 
 std::string createTmpPath(const std::string & filename)
@@ -186,7 +186,7 @@ void createFile(const std::string & filename, const char * data)
     ofs << data;
 }
 
-void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
+void runOneTest(const TestDescriptor & test_descriptor)
 {
     const auto path_name = createTmpPath("users.xml");
     createFile(path_name, test_descriptor.config_content);
@@ -252,7 +252,7 @@ auto runTestSet(const TestSet & test_set)
     {
         try
         {
-            runOneTest(test_num, test_descriptor);
+            runOneTest(test_descriptor);
             std::cout << "Test " << test_num << " passed\n";
         }
         catch (const std::runtime_error & ex)
