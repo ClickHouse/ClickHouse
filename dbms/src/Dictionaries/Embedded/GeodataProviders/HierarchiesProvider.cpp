@@ -118,7 +118,8 @@ void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
 
 std::vector<std::string> RegionsHierarchiesDataProvider::listCustomHierarchies() const
 {
-    std::vector<std::string> names(hierarchy_files.size());
+    std::vector<std::string> names;
+    names.reserve(hierarchy_files.size());
     for (const auto & it : hierarchy_files)
         names.push_back(it.first);
     return names;
