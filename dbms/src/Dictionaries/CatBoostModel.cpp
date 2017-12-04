@@ -460,6 +460,8 @@ CatBoostModel::CatBoostModel(std::string name_, std::string model_path_, std::st
     {
         creation_exception = std::current_exception();
     }
+
+    creation_time = std::chrono::system_clock::now();
 }
 
 void CatBoostModel::init(const std::string & lib_path)
