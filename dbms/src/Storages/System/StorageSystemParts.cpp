@@ -242,17 +242,7 @@ BlockInputStreams StorageSystemParts::read(
             block.getByPosition(i++).column->insert(part->name);
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part_state == State::Committed));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->marks_count));
-
-            size_t marks_size = 0;
-            for (const NameAndTypePair & it : part->columns)
-            {
-                String name = escapeForFileName(it.name);
-                auto checksum = part->checksums.files.find(name + ".mrk");
-                if (checksum != part->checksums.files.end())
-                    marks_size += checksum->second.file_size;
-            }
-            block.getByPosition(i++).column->insert(static_cast<UInt64>(marks_size));
-
+            block.getByPosition(i++).column->insert(static_cast<UInt64>(part->getTotalMrkSizeInBytes()));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->rows_count));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->size_in_bytes));
             block.getByPosition(i++).column->insert(static_cast<UInt64>(part->modification_time));

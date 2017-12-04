@@ -10,6 +10,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -23,7 +24,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name_)
                           {"name",                std::make_shared<DataTypeString>()},
                           {"active",              std::make_shared<DataTypeUInt8>()},
                           {"marks",               std::make_shared<DataTypeUInt64>()},
-                          {"marks_size",          std::make_shared<DataTypeUInt64>()},
+                          {"marks_bytes_in_block",        std::make_shared<DataTypeUInt64>()},
                           {"rows",                std::make_shared<DataTypeUInt64>()},
                           {"bytes",               std::make_shared<DataTypeUInt64>()},
                           {"modification_time",   std::make_shared<DataTypeDateTime>()},
@@ -39,7 +40,14 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const std::string & name_)
 
                           {"database",            std::make_shared<DataTypeString>()},
                           {"table",               std::make_shared<DataTypeString>()},
-                          {"engine",              std::make_shared<DataTypeString>()}
+                          {"engine",              std::make_shared<DataTypeString>()},
+                          {"column",              std::make_shared<DataTypeString>()},
+                          { "type",               std::make_shared<DataTypeString>() },
+                          { "default_kind",       std::make_shared<DataTypeString>() },
+                          { "default_expression", std::make_shared<DataTypeString>() },
+                          { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
+                          { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
+                          { "marks_bytes_in_column",      std::make_shared<DataTypeUInt64>() },
                   }
 {
 }
@@ -96,6 +104,7 @@ BlockInputStreams StorageSystemPartsColumns::read(
         database_column = block_to_filter.getByName("database").column;
         size_t rows = database_column->size();
 
+        IColumn::Offsets_t offsets(rows);
         ColumnPtr table_column = std::make_shared<ColumnString>();
         ColumnPtr engine_column = std::make_shared<ColumnString>();
         ColumnPtr active_column = std::make_shared<ColumnUInt8>();
@@ -105,6 +114,7 @@ BlockInputStreams StorageSystemPartsColumns::read(
             String database_name = (*database_column)[i].get<String>();
             const DatabasePtr database = databases.at(database_name);
 
+            offsets[i] = i ? offsets[i - 1] : 0;
             for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
             {
                 String table_name = iterator->name();
@@ -118,13 +128,21 @@ BlockInputStreams StorageSystemPartsColumns::read(
                 storages[std::make_pair(database_name, iterator->name())] = storage;
 
                 /// Add all combinations of flag 'active'.
-                for (auto active : {0, 1})
+                for (UInt64 active : {0, 1})
                 {
                     table_column->insert(table_name);
                     engine_column->insert(engine_name);
                     active_column->insert(active);
                 }
+
+                offsets[i] += 2;
             }
+        }
+
+        for (size_t i = 0; i < block_to_filter.columns(); ++i)
+        {
+            ColumnPtr & column = block_to_filter.safeGetByPosition(i).column;
+            column = column->replicate(offsets);
         }
 
         block_to_filter.insert(ColumnWithTypeAndName(table_column, std::make_shared<DataTypeString>(), "table"));
@@ -216,6 +234,30 @@ BlockInputStreams StorageSystemPartsColumns::read(
         else
             all_parts = data->getDataPartsVector({State::Committed}, &all_parts_state);
 
+        struct ColumnInfo
+        {
+            String default_kind;
+            String default_expression;
+        };
+
+        NamesAndTypesList columns = storage->getColumnsList();
+        columns.insert(std::end(columns), std::begin(storage->alias_columns), std::end(storage->alias_columns));
+        column_defaults = storage->column_defaults;
+        std::unordered_map<String, ColumnInfo> columns_info;
+
+        for (const auto & column : columns)
+        {
+            ColumnInfo column_info;
+
+            const auto it = column_defaults.find(column.name);
+            if (it != std::end(column_defaults))
+            {
+                column_info.default_kind = toString(it->second.type);
+                column_info.default_expression = queryToString(it->second.expression);
+            }
+
+            columns_info[column.name] = column_info;
+        }
 
         /// Finally, we'll go through the list of parts.
         for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
@@ -223,39 +265,67 @@ BlockInputStreams StorageSystemPartsColumns::read(
             const auto & part = all_parts[part_number];
             auto part_state = all_parts_state[part_number];
 
-            size_t j = 0;
-            {
-                WriteBufferFromOwnString out;
-                part->partition.serializeTextQuoted(*data, out);
-                block.getByPosition(j++).column->insert(out.str());
-            }
-            block.getByPosition(j++).column->insert(part->name);
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part_state == State::Committed));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->marks_count));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->getTotalMrkSizeInBytes()));
-
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->rows_count));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->size_in_bytes));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->modification_time));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->remove_time));
-
+            auto total_mrk_size_in_bytes = part->getTotalMrkSizeInBytes();
             /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part.use_count() - 1));
+            auto use_count = part.use_count() - 1;
+            auto min_date = part->getMinDate();
+            auto max_date = part->getMaxDate();
+            auto index_size_in_bytes = part->getIndexSizeInBytes();
+            auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
 
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->getMinDate()));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->getMaxDate()));
-            block.getByPosition(j++).column->insert(part->info.min_block);
-            block.getByPosition(j++).column->insert(part->info.max_block);
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->info.level));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
-            block.getByPosition(j++).column->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
+            for (const auto & column : part->columns)
+            {
+                size_t j = 0;
+                {
+                    WriteBufferFromOwnString out;
+                    part->partition.serializeTextQuoted(*data, out);
+                    block.getByPosition(j++).column->insert(out.str());
+                }
+                block.getByPosition(j++).column->insert(part->name);
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(part_state == State::Committed));
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(part->marks_count));
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(total_mrk_size_in_bytes));
 
-            block.getByPosition(j++).column->insert(database);
-            block.getByPosition(j++).column->insert(table);
-            block.getByPosition(j++).column->insert(engine);
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(part->rows_count));
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(part->size_in_bytes));
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(part->modification_time));
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(part->remove_time));
 
-            if (has_state_column)
-                block.getByPosition(j++).column->insert(part->stateString());
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(use_count));
+
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(min_date));
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(max_date));
+                block.getByPosition(j++).column->insert(part->info.min_block);
+                block.getByPosition(j++).column->insert(part->info.max_block);
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(part->info.level));
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(index_size_in_bytes));
+                block.getByPosition(j++).column->insert(static_cast<UInt64>(index_size_in_allocated_bytes));
+
+                block.getByPosition(j++).column->insert(database);
+                block.getByPosition(j++).column->insert(table);
+                block.getByPosition(j++).column->insert(engine);
+                block.getByPosition(j++).column->insert(column.name);
+                block.getByPosition(j++).column->insert(column.type->getName());
+
+                auto column_info_it = columns_info.find(column.name);
+                if (column_info_it != columns_info.end())
+                {
+                    block.getByPosition(j++).column->insert(column_info_it->second.default_kind);
+                    block.getByPosition(j++).column->insert(column_info_it->second.default_expression);
+                }
+                else
+                {
+                    block.getByPosition(j++).column->insertDefault();
+                    block.getByPosition(j++).column->insertDefault();
+                }
+
+                block.getByPosition(j++).column->insert(part->getColumnCompressedSize(column.name));
+                block.getByPosition(j++).column->insert(part->getColumnUncompressedSize(column.name));
+                block.getByPosition(j++).column->insert(part->getColumnMrkSize(column.name));
+
+                if (has_state_column)
+                    block.getByPosition(j++).column->insert(part->stateString());
+            }
         }
     }
 
