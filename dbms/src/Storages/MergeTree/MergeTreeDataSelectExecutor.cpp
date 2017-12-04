@@ -12,8 +12,7 @@
 #include <Parsers/ASTSampleRatio.h>
 
 /// Allow to use __uint128_t as a template parameter for boost::rational.
-/*
-#if __clang__ && __clang_major__ < 4
+#if defined(__GNUC__) && !defined(__clang__)
 namespace std
 {
     template <>
@@ -28,7 +27,6 @@ namespace std
     };
 }
 #endif
-*/
 
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
