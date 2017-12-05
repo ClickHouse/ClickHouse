@@ -180,6 +180,22 @@ public:
     {
         return size_in_bytes;
     }
+
+    /** You can allocate data lazily, up to the size of remaining space in current chunk,
+      *  if you don't know exact size in advance:
+      *
+      * Call to getRemainingBufferInCurrentChunk to obtain memory region to write data.
+      * After you finish writing data, call assumeAllocated, to keep the fact that the memory was used.
+      */
+    std::pair<char *, size_t> getRemainingBufferInCurrentChunk()
+    {
+        return { head->pos, head->size() };
+    }
+
+    void assumeAllocated(size_t size)
+    {
+        head->pos += size;
+    }
 };
 
 using ArenaPtr = std::shared_ptr<Arena>;

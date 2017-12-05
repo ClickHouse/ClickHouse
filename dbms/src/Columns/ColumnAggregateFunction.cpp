@@ -283,6 +283,8 @@ void ColumnAggregateFunction::insertDefault()
 
 StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t, Arena &, const char *&) const
 {
+    IAggregateFunction * function = func.get();
+
     throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
