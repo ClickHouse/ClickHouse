@@ -120,11 +120,16 @@ public:
         }
         else
         {
-            const size_t old_size = chars.size();
-            const size_t size_to_append = src.offsets[0];
-            const size_t new_size = old_size + size_to_append;
-
-            chars.resize(new_size);
+            size_t size_to_append = 0;
+            size_t old_size = chars.size();
+            size_t new_size = old_size;
+            if (src.offsets.size() > 0)
+            {
+                size_to_append = src.offsets[0];
+                old_size = chars.size();
+                new_size = old_size + size_to_append;
+                chars.resize(new_size);
+            }
             memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[0], size_to_append);
             offsets.push_back(new_size);
         }
