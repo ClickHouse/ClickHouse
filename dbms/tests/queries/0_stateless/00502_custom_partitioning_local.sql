@@ -1,5 +1,3 @@
-SET experimental_allow_extended_storage_definition_syntax = 1;
-
 SELECT '*** Not partitioned ***';
 
 DROP TABLE IF EXISTS test.not_partitioned;
