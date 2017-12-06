@@ -59,7 +59,8 @@ private:
                 delete prev;
         }
 
-        size_t size() { return end - begin; }
+        size_t size() const { return end - begin; }
+        size_t remaining() const { return end - pos; }
     };
 
     size_t growth_factor;
@@ -179,6 +180,11 @@ public:
     size_t size() const
     {
         return size_in_bytes;
+    }
+
+    size_t remainingSpaceInCurrentChunk() const
+    {
+        return head->remaining();
     }
 };
 
