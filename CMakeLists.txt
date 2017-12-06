@@ -54,7 +54,7 @@ endif ()
 
 set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
-if (CCACHE_FOUND)
+if (CCACHE_FOUND AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # clang-6.0: warning: argument unused during compilation: '-stdlib=libc++'
     set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
