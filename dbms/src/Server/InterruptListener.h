@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 #ifdef __APPLE__
 // We only need to support timeout = {0, 0} at this moment
-static int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec *timeout) {
+static int sigtimedwait(const sigset_t *set, siginfo_t *info, const struct timespec * /*timeout*/) {
     sigset_t pending;
     int signo;
     sigpending(&pending);
