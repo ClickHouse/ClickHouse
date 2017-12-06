@@ -59,7 +59,8 @@ private:
                 delete prev;
         }
 
-        size_t size() { return end - begin; }
+        size_t size() const { return end - begin; }
+        size_t remaining() const { return end - pos; }
     };
 
     size_t growth_factor;
@@ -181,20 +182,9 @@ public:
         return size_in_bytes;
     }
 
-    /** You can allocate data lazily, up to the size of remaining space in current chunk,
-      *  if you don't know exact size in advance:
-      *
-      * Call to getRemainingBufferInCurrentChunk to obtain memory region to write data.
-      * After you finish writing data, call assumeAllocated, to keep the fact that the memory was used.
-      */
-    std::pair<char *, size_t> getRemainingBufferInCurrentChunk()
+    size_t remainingSpaceInCurrentChunk() const
     {
-        return { head->pos, head->size() };
-    }
-
-    void assumeAllocated(size_t size)
-    {
-        head->pos += size;
+        return head->remaining();
     }
 };
 

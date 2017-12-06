@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Arena.h>
+#include <common/StringRef.h>
 #include <IO/WriteBuffer.h>
 
 
@@ -9,42 +10,46 @@ namespace DB
 
 /** Writes data contiguously into Arena.
   * As it will be located in contiguous memory segment, it can be read back with ReadBufferFromMemory.
+  *
+  * While using this object, no other allocations in arena are possible.
   */
 class WriteBufferFromArena : public WriteBuffer
 {
 private:
     Arena & arena;
-
-    void acquireSpaceInArena()
-    {
-        /// We will write directly to the remaining space in last chunk in arena.
-        /// If it will be not enough, we will allocate and move data to the next, larger chunk.
-        auto ptr_size = arena.getRemainingBufferInCurrentChunk();
-        set(ptr_size.first, ptr_size.second);
-    }
+    const char *& begin;
 
     void nextImpl() override
     {
-        if (!hasPendingData())
-        {
-            /// Allocate new chunk in Arena, at least twice in size of used buffer,
-            /// and copy the data in front of it.
+        /// Allocate more memory. At least same size as used before (this gives 2x growth ratio),
+        ///  and at most grab all remaining size in current chunk of arena.
+        size_t continuation_size = std::max(count(), arena.remainingSpaceInCurrentChunk());
 
-            size_t data_size = count();
+        /// allocContinue method will possibly move memory region to new place and modify "begin" pointer.
 
-            arena.assumeAllocated(data_size);
-            arena.realloc(buffer().begin(), data_size, data_size * 2);
-        }
+        char * continuation = arena.allocContinue(continuation_size, begin);
+        char * end = continuation + continuation_size;
 
-        /// After we possibly moved old data, we can append new data contiguously after it.
-        acquireSpaceInArena();
+        /// internal buffer points to whole memory segment and working buffer - to free space for writing.
+        internalBuffer() = Buffer(const_cast<char *>(begin), end);
+        buffer() = Buffer(continuation, end);
     }
 
 public:
-    WriteBufferFromArena(Arena & arena_)
-        : WriteBuffer(nullptr, 0), arena(arena_)
+    /// begin_ - start of previously used contiguous memory segment or nullptr (see Arena::allocContinue method).
+    WriteBufferFromArena(Arena & arena_, const char *& begin_)
+        : WriteBuffer(nullptr, 0), arena(arena_), begin(begin_)
     {
-        acquireSpaceInArena();
+        nextImpl();
+        pos = working_buffer.begin();
+    }
+
+    StringRef finish()
+    {
+        /// Return over-allocated memory back into arena.
+        arena.rollback(buffer().end() - position());
+        /// Reference to written data.
+        return { position() - count(), count() };
     }
 };
 
