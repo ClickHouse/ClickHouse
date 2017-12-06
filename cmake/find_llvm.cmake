@@ -32,6 +32,8 @@ if (USE_EMBEDDED_COMPILER)
     if(NOT LLVM_CONFIG_EXECUTABLE)
         message(FATAL_ERROR "Cannot find LLVM (looking for `llvm-config`). Please, provide LLVM_ROOT environment variable.")
     else()
+        message(STATUS "LLVM config: ${LLVM_CONFIG_EXECUTABLE}")
+
         set(LLVM_FOUND TRUE)
 
         execute_process(
