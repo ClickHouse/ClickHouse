@@ -1,13 +1,9 @@
 #include <Functions/FunctionsConditional.h>
 #include <Functions/FunctionsArray.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionsTransform.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/Conditional/common.h>
-#include <Functions/Conditional/NullMapBuilder.h>
-#include <Functions/Conditional/CondSource.h>
-#include <Functions/Conditional/NumericPerformer.h>
-#include <Functions/Conditional/StringEvaluator.h>
-#include <Functions/Conditional/StringArrayEvaluator.h>
 #include <Columns/ColumnNullable.h>
 
 namespace DB
@@ -18,89 +14,19 @@ void registerFunctionsConditional(FunctionFactory & factory)
     factory.registerFunction<FunctionIf>();
     factory.registerFunction<FunctionMultiIf>();
     factory.registerFunction<FunctionCaseWithExpression>();
-    factory.registerFunction<FunctionCaseWithoutExpression>();
 
     /// These are obsolete function names.
     factory.registerFunction("caseWithExpr", FunctionCaseWithExpression::create);
-    factory.registerFunction("caseWithoutExpr", FunctionCaseWithoutExpression::create);
+    factory.registerFunction("caseWithoutExpr", FunctionMultiIf::create);
+    factory.registerFunction("caseWithoutExpression", FunctionMultiIf::create);
 }
 
-
-namespace
-{
-
-/// Check whether at least one of the specified branches of the function multiIf
-/// is either a nullable column or a null column inside a given block.
-bool blockHasSpecialBranches(const Block & block, const ColumnNumbers & args)
-{
-    auto check = [](const Block & block, size_t arg)
-    {
-        const auto & elem = block.getByPosition(arg);
-        return elem.column->isNullable() || elem.column->isNull();
-    };
-
-    size_t else_arg = Conditional::elseArg(args);
-    for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
-    {
-        if (check(block, args[i]))
-            return true;
-    }
-
-    if (check(block, args[else_arg]))
-        return true;
-
-    return false;
-}
-
-/// Check whether at least one of the specified datatypes is either nullable or null.
-bool hasSpecialDataTypes(const DataTypes & args)
-{
-    size_t else_arg = Conditional::elseArg(args);
-
-    for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
-    {
-        if (args[i]->isNullable() || args[i]->isNull())
-            return true;
-    }
-
-    return args[else_arg]->isNullable() || args[else_arg]->isNull();
-}
-
-/// Return the type of the first non-null branch. Make it nullable
-/// if there is at least one nullable branch or one null branch.
-/// This function is used in a very few number of cases in getReturnTypeImpl().
-DataTypePtr getReturnTypeFromFirstNonNullBranch(const DataTypes & args, bool has_special_types)
-{
-    auto get_type_to_return = [has_special_types](const DataTypePtr & arg) -> DataTypePtr
-    {
-        if (arg->isNullable())
-            return arg;
-        else if (has_special_types)
-            return std::make_shared<DataTypeNullable>(arg);
-        else
-            return arg;
-    };
-
-    for (size_t i = Conditional::firstThen(); i < Conditional::elseArg(args); i = Conditional::nextThen(i))
-    {
-        if (!args[i]->isNull())
-            return get_type_to_return(args[i]);
-    }
-
-    size_t i = Conditional::elseArg(args);
-    if (!args[i]->isNull())
-        return get_type_to_return(args[i]);
-
-    return {};
-}
-
-}
 
 /// Implementation of FunctionMultiIf.
 
-FunctionPtr FunctionMultiIf::create(const Context &)
+FunctionPtr FunctionMultiIf::create(const Context & context)
 {
-    return std::make_shared<FunctionMultiIf>();
+    return std::make_shared<FunctionMultiIf>(context);
 }
 
 String FunctionMultiIf::getName() const
@@ -108,42 +34,151 @@ String FunctionMultiIf::getName() const
     return name;
 }
 
-void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+
+static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const Context & context)
 {
-    if (!blockHasSpecialBranches(block, args))
+    Block temporary_block
     {
-        /// All the branch types are ordinary. No special processing required.
-        Conditional::NullMapBuilder builder;
-        perform(block, args, result, builder);
-        return;
+        arg,
+        {
+            DataTypeString().createConstColumn(arg.column->size(), type->getName()),
+            std::make_shared<DataTypeString>(),
+            ""
+        },
+        {
+            nullptr,
+            type,
+            ""
+        }
+    };
+
+    FunctionCast func_cast(context);
+
+    {
+        DataTypePtr unused_return_type;
+        ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
+        std::vector<ExpressionAction> unused_prerequisites;
+
+        /// Prepares function to execution. TODO It is not obvious.
+        func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
     }
 
-    /// From the block to be processed, deduce a block whose specified
-    /// columns are not nullable. We accept null columns because they
-    /// are processed independently later.
-    ColumnNumbers args_to_transform;
-    size_t else_arg = Conditional::elseArg(args);
-    for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
-        args_to_transform.push_back(args[i]);
-    args_to_transform.push_back(args[else_arg]);
+    func_cast.execute(temporary_block, {0, 1}, 2);
+    return temporary_block.getByPosition(2).column;
+}
 
-    Block block_with_nested_cols = createBlockWithNestedColumns(block, args_to_transform);
 
-    /// Create an object that will incrementally build the null map of the
-    /// result column to be returned.
-    Conditional::NullMapBuilder builder{block};
+void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+{
+    struct Instruction
+    {
+        const IColumn * condition = nullptr;
+        const IColumn * source = nullptr;
 
-    /// Now perform multiIf.
-    perform(block_with_nested_cols, args, result, builder);
+        bool condition_always_true = false;
+        bool condition_is_nullable = false;
+        bool source_is_constant = false;
+    };
 
-    /// Store the result.
-    const ColumnWithTypeAndName & source_col = block_with_nested_cols.getByPosition(result);
-    ColumnWithTypeAndName & dest_col = block.getByPosition(result);
+    std::vector<Instruction> instructions;
+    instructions.reserve(Conditional::getBranchCount(args));
 
-    if (source_col.column->isNull())
-        dest_col.column = source_col.column;
-    else
-        dest_col.column = std::make_shared<ColumnNullable>(source_col.column, builder.getNullMap());
+    Columns converted_columns_holder;
+    converted_columns_holder.reserve(instructions.size());
+
+    const DataTypePtr & return_type = block.getByPosition(result).type;
+
+    for (size_t i = 0; i < args.size(); i += 2)
+    {
+        Instruction instruction;
+        size_t source_idx = i + 1;
+
+        if (source_idx == args.size())
+        {
+            /// The last, "else" branch can be treated as a branch with always true condition "else if (true)".
+            --source_idx;
+            instruction.condition_always_true = true;
+        }
+        else
+        {
+            const ColumnWithTypeAndName & cond_col = block.getByPosition(i);
+
+            if (cond_col.column->isNull())
+                continue;
+
+            if (cond_col.column->isConst())
+            {
+                Field value = typeid_cast<const ColumnConst &>(*cond_col.column).getField();
+                if (value.isNull())
+                    continue;
+                if (value.get<UInt64>() == 0)
+                    continue;
+                instruction.condition_always_true = true;
+            }
+            else
+            {
+                if (cond_col.column->isNullable())
+                    instruction.condition_is_nullable = true;
+
+                instruction.condition = cond_col.column.get();
+            }
+        }
+
+        const ColumnWithTypeAndName & source_col = block.getByPosition(source_idx);
+        if (source_col.type->equals(*return_type))
+        {
+            instruction.source = source_col.column.get();
+        }
+        else
+        {
+            converted_columns_holder.emplace_back(castColumn(source_col, return_type, context));
+            instruction.source = converted_columns_holder.back().get();
+        }
+
+        if (instruction.source && instruction.source->isConst())
+            instruction.source_is_constant = true;
+
+        instructions.emplace_back(std::move(instruction));
+
+        if (instructions.back().condition_always_true)
+            break;
+    }
+
+    size_t rows = block.rows();
+    ColumnPtr res = return_type->createColumn();
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        for (const auto & instruction : instructions)
+        {
+            bool insert = false;
+
+            if (instruction.condition_always_true)
+                insert = true;
+            else if (!instruction.condition_is_nullable)
+                insert = static_cast<const ColumnUInt8 &>(*instruction.condition).getData()[i];
+            else
+            {
+                const ColumnNullable & condition_nullable = static_cast<const ColumnNullable &>(*instruction.condition);
+                const ColumnUInt8 & condition_nested = static_cast<const ColumnUInt8 &>(*condition_nullable.getNestedColumn());
+                const NullMap & condition_null_map = condition_nullable.getNullMap();
+
+                insert = !condition_null_map[i] && condition_nested.getData()[i];
+            }
+
+            if (insert)
+            {
+                if (!instruction.source_is_constant)
+                    res->insertFrom(*instruction.source, i);
+                else
+                    res->insertFrom(static_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
+
+                break;
+            }
+        }
+    }
+
+    block.getByPosition(result).column = std::move(res);
 }
 
 DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
@@ -194,7 +229,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
         }
 
         if (!checkDataType<DataTypeUInt8>(observed_type) && !observed_type->isNull())
-            throw Exception{"Illegal type of argument " + toString(i) + " (condition) "
+            throw Exception{"Illegal type of argument (condition) "
                 "of function " + getName() + ". Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     });
@@ -215,105 +250,6 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
     return have_nullable_condition
         ? makeNullableDataTypeIfNot(common_type_of_branches)
         : common_type_of_branches;
-}
-
-void FunctionMultiIf::perform(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder)
-{
-    if (performTrivialCase(block, args, result, builder))
-        return;
-    if (Conditional::NumericPerformer::perform(block, args, result, builder))
-        return;
-    if (Conditional::StringEvaluator::perform(block, args, result, builder))
-        return;
-    if (Conditional::StringArrayEvaluator::perform(block, args, result, builder))
-        return;
-
-    throw Exception{"One or more branch (then, else) columns of function "
-        + getName() + " have illegal or incompatible types",
-        ErrorCodes::ILLEGAL_COLUMN};
-}
-
-bool FunctionMultiIf::performTrivialCase(Block & block, const ColumnNumbers & args,
-    size_t result, Conditional::NullMapBuilder & builder)
-{
-    /// Check that all the branches have the same type. Moreover
-    /// some or all these branches may be null.
-    DataTypePtr type;
-
-    size_t else_arg = Conditional::elseArg(args);
-    for (size_t i = Conditional::firstThen(); i < else_arg; i = Conditional::nextThen(i))
-    {
-        if (!block.getByPosition(args[i]).type->isNull())
-        {
-            if (!type)
-                type = block.getByPosition(args[i]).type;
-            else if (!type->equals(*block.getByPosition(args[i]).type))
-                return false;
-        }
-    }
-
-    if (!block.getByPosition(args[else_arg]).type->isNull())
-    {
-        if (!type)
-            type = block.getByPosition(args[else_arg]).type;
-        else if (!type->equals(*block.getByPosition(args[else_arg]).type))
-            return false;
-    }
-
-    size_t row_count = block.rows();
-    auto & res_col = block.getByPosition(result).column;
-
-    if (!type)
-    {
-        /// Degenerate case: all the branches are null.
-        res_col = block.getByPosition(result).type->createConstColumn(row_count, Null());
-        return true;
-    }
-
-    /// Check that all the conditions are constants.
-    for (size_t i = Conditional::firstCond(); i < else_arg; i = Conditional::nextCond(i))
-    {
-        const IColumn * col = block.getByPosition(args[i]).column.get();
-        if (!col->isConst())
-            return false;
-    }
-
-    /// Initialize readers for the conditions.
-    Conditional::CondSources conds;
-    conds.reserve(Conditional::getCondCount(args));
-
-    for (size_t i = Conditional::firstCond(); i < else_arg; i = Conditional::nextCond(i))
-        conds.emplace_back(block, args, i);
-
-    /// Perform multiIf.
-
-    auto make_result = [&](size_t index)
-    {
-        res_col = block.getByPosition(index).column;
-        if (res_col->isNull())
-        {
-            /// The return type of multiIf is Nullable(T). Therefore we create
-            /// a constant column whose type is T with a default value.
-            /// Subsequently the null map builder will mark it as null.
-            res_col = type->createConstColumn(row_count, type->getDefault());
-        }
-        if (builder)
-            builder.build(index);
-    };
-
-    size_t i = Conditional::firstCond();
-    for (const auto & cond : conds)
-    {
-        if (cond.get(0))
-        {
-            make_result(args[Conditional::thenFromCond(i)]);
-            return true;
-        }
-        i = Conditional::nextCond(i);
-    }
-
-    make_result(args[else_arg]);
-    return true;
 }
 
 
@@ -414,30 +350,6 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
 
     /// Put the result into the original block.
     block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
-}
-
-
-FunctionPtr FunctionCaseWithoutExpression::create(const Context &)
-{
-    return std::make_shared<FunctionCaseWithoutExpression>();
-}
-
-String FunctionCaseWithoutExpression::getName() const
-{
-    return name;
-}
-
-DataTypePtr FunctionCaseWithoutExpression::getReturnTypeImpl(const DataTypes & args) const
-{
-    FunctionMultiIf fun_multi_if;
-    return fun_multi_if.getReturnTypeImpl(args);
-}
-
-void FunctionCaseWithoutExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
-{
-    /// A CASE construction without any expression is a straightforward multiIf.
-    FunctionMultiIf fun_multi_if;
-    fun_multi_if.executeImpl(block, args, result);
 }
 
 }

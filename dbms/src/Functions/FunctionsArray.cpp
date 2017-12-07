@@ -6,7 +6,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
 #include <DataTypes/getLeastCommonType.h>
-#include <Functions/Conditional/CondException.h>
 #include <Functions/GatherUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/ClearableHashMap.h>
@@ -75,15 +74,11 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         String elem_type_name = elem_type->getName();
         ColumnPtr preprocessed_column = arg.column;
 
-        if (arg.type->getName() != elem_type_name)
+        if (!arg.type->equals(*elem_type))
         {
             Block temporary_block
             {
-                {
-                    arg.column,
-                    arg.type,
-                    arg.name
-                },
+                arg,
                 {
                     DataTypeString().createConstColumn(block_size, elem_type_name),
                     std::make_shared<DataTypeString>(),

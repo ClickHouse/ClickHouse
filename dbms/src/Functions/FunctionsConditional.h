@@ -109,6 +109,15 @@ public:
 };
 
 
+inline const DataTypePtr makeNullableDataTypeIfNot(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return type;
+
+    return std::make_shared<DataTypeNullable>(type);
+}
+
+
 class FunctionIf : public IFunction
 {
 public:
@@ -654,14 +663,6 @@ private:
             materializeColumnIfConst(column), std::make_shared<ColumnUInt8>(column->size(), 0));
     }
 
-    static const DataTypePtr makeNullableDataTypeIfNot(const DataTypePtr & type)
-    {
-        if (type->isNullable())
-            return type;
-
-        return std::make_shared<DataTypeNullable>(type);
-    }
-
     static const ColumnPtr getNestedColumn(const ColumnPtr & column)
     {
         if (column->isNullable())
@@ -1025,12 +1026,6 @@ public:
     }
 };
 
-namespace Conditional
-{
-
-class NullMapBuilder;
-
-}
 
 /// Function multiIf, which generalizes the function if.
 ///
@@ -1052,6 +1047,7 @@ class FunctionMultiIf final : public IFunction
 public:
     static constexpr auto name = "multiIf";
     static FunctionPtr create(const Context & context);
+    FunctionMultiIf(const Context & context) : context(context) {};
 
 public:
     String getName() const override;
@@ -1062,17 +1058,9 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 
 private:
-    /// Internal version of multiIf.
-    /// The builder parameter is an object that incrementally builds the null map
-    /// of the result column if it is nullable. When no builder is necessary,
-    /// just pass a default parameter.
-    void perform(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
-
-    /// Perform multiIf in the case where all the non-null branches have the same type and all
-    /// the conditions are constant. The same remark as above applies with regards to
-    /// the builder parameter.
-    bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
+    const Context & context;
 };
+
 
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
@@ -1092,23 +1080,6 @@ public:
 
 private:
     const Context & context;
-};
-
-/// Implements the CASE construction when it
-/// isn't provided any expression. Users should not call this function.
-class FunctionCaseWithoutExpression : public IFunction
-{
-public:
-    static constexpr auto name = "caseWithoutExpression";
-    static FunctionPtr create(const Context & context_);
-
-public:
-    String getName() const override;
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 };
 
 }

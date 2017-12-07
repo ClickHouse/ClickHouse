@@ -117,15 +117,15 @@ public:
         }
         else
         {
-            const IDataType * type_default = arguments[3].get();
+            const DataTypePtr & type_default = arguments[3];
 
-            if (!type_default->isNumeric() && !checkDataType<DataTypeString>(type_default))
+            if (!type_default->isNumeric() && !checkDataType<DataTypeString>(type_default.get()))
                 throw Exception{"Unsupported type " + type_default->getName()
                     + " of fourth argument (default value) of function " + getName()
                     + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
             if ((type_default->isNumeric() != type_arr_to_nested->isNumeric())
-                || (!!checkDataType<DataTypeString>(type_default) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
+                || (!!checkDataType<DataTypeString>(type_default.get()) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
