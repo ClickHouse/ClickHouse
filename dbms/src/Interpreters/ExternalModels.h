@@ -36,6 +36,9 @@ protected:
     std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
                                               const std::string & config_prefix) override;
 
+    using ExternalLoader::getObjectsMap;
+
+    friend class StorageSystemModels;
 private:
 
     Context & context;

@@ -55,4 +55,4 @@ toFloat32OrZero('NaN+'),
 toFloat32OrZero('-NaNa'),
 toFloat32OrZero('+Na')
 
-FORMAT BlockTabSeparated;
+FORMAT TabSeparated;

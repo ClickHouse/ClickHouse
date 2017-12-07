@@ -526,13 +526,14 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
     String filename;
 
     /** We take marks from first column.
-      * If this is an array, then we take the marks corresponding to the sizes, and not to the internals of the arrays.
+      * If this is a data type with multiple stream, get the first stream, that we assume have real row count.
+      * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
-
-    if (typeid_cast<const DataTypeArray *>(&column_type))
-        filename = DataTypeNested::extractNestedTableName(column_name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX "0";
-    else
-        filename = column_name;
+    column_type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        if (filename.empty())
+            filename = IDataType::getFileNameForStream(column_name, substream_path);
+    },  {});
 
     Files_t::const_iterator it = files.find(filename);
     if (files.end() == it)

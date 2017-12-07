@@ -34,6 +34,7 @@ class IModel : public IExternalLoadable
 {
 public:
     virtual ColumnPtr evaluate(const ConstColumnPlainPtrs & columns) const = 0;
+    virtual std::string getTypeName() const = 0;
 };
 
 class CatBoostModel : public IModel
@@ -43,6 +44,7 @@ public:
                   std::string lib_path, const ExternalLoadableLifetime & lifetime);
 
     ColumnPtr evaluate(const ConstColumnPlainPtrs & columns) const override;
+    std::string getTypeName() const override { return "catboost"; }
 
     size_t getFloatFeaturesCount() const;
     size_t getCatFeaturesCount() const;
@@ -59,6 +61,7 @@ public:
 
     std::unique_ptr<IExternalLoadable> clone() const override;
 
+    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
     std::exception_ptr getCreationException() const override { return creation_exception; }
 
 private:
@@ -66,7 +69,6 @@ private:
     std::string model_path;
     std::string lib_path;
     ExternalLoadableLifetime lifetime;
-    std::exception_ptr creation_exception;
     std::shared_ptr<CatBoostWrapperAPIProvider> api_provider;
     const CatBoostWrapperAPI * api;
 
@@ -74,6 +76,9 @@ private:
 
     size_t float_features_count;
     size_t cat_features_count;
+
+    std::chrono::time_point<std::chrono::system_clock> creation_time;
+    std::exception_ptr creation_exception;
 
     void init(const std::string & lib_path);
 };
