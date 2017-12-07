@@ -67,10 +67,14 @@ if (USE_EMBEDDED_COMPILER)
 
         string(REPLACE " " ";" LLVM_TARGETS_BUILT "${LLVM_TARGETS_BUILT}")
 
+        if (USE_STATIC_LIBRARIES)
+            set (LLVM_CONFIG_ADD "--link-static")
+        endif()
+
         # Get the link libs we need.
         function(llvm_map_components_to_libraries RESULT)
             execute_process(
-                COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs ${ARGN}
+                COMMAND ${LLVM_CONFIG_EXECUTABLE} ${LLVM_CONFIG_ADD} --libs ${ARGN}
                 OUTPUT_VARIABLE _tmp
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
 

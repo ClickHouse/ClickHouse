@@ -34,9 +34,9 @@ lldCore
 
 ${REQUIRED_LLVM_LIBRARIES}
 
-Polly
-PollyISL
-PollyPPCG
+#Polly
+#PollyISL
+#PollyPPCG
 
 libtinfo.a
 common)
