@@ -14,6 +14,22 @@ namespace ErrorCodes
 }
 
 
+std::string ColumnTuple::getName() const
+{
+    std::stringstream res;
+    res << "Tuple(";
+    bool is_first = true;
+    for (const auto & column : columns)
+    {
+        if (!is_first)
+            res << ", ";
+        is_first = false;
+        res << column->getName();
+    }
+    res << ")";
+    return res.str();
+}
+
 ColumnTuple::ColumnTuple(Block data_) : data(data_)
 {
     size_t size = data.columns();

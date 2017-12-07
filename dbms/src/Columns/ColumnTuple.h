@@ -8,7 +8,7 @@ namespace DB
 
 /** Column, that is just group of few another columns.
   *
-  * For constant Tuples, see ColumnConstTuple.
+  * For constant Tuples, see ColumnConst.
   * Mixed constant/non-constant columns is prohibited in tuple
   *  for implementation simplicity.
   */
@@ -25,7 +25,7 @@ public:
     ColumnTuple() {}
     ColumnTuple(Block data_);
 
-    std::string getName() const override { return "Tuple"; }
+    std::string getName() const override;
 
     ColumnPtr cloneEmpty() const override;
 
