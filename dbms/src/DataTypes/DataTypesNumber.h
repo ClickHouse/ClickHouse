@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/DataTypeNumberBase.h>
-#include <DataTypes/IDataTypeDummy.h>
 
 
 namespace DB

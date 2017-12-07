@@ -4,7 +4,6 @@
 #include <Functions/FunctionsConditional.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
 
@@ -42,12 +41,7 @@ DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes &) const
 void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
-    if (elem.column->isNull())
-    {
-        /// Trivial case.
-        block.getByPosition(result).column = DataTypeUInt8().createConstColumn(elem.column->size(), UInt64(1));
-    }
-    else if (elem.column->isNullable())
+    if (elem.column->isNullable())
     {
         /// Merely return the embedded null map.
         ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*elem.column);
@@ -128,9 +122,6 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
     filtered_args.reserve(arguments.size());
     for (const auto & arg : arguments)
     {
-        if (arg->isNull())
-            continue;
-
         filtered_args.push_back(arg);
 
         if (!arg->isNullable())
@@ -154,7 +145,7 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
     }
 
     if (new_args.empty())
-        return std::make_shared<DataTypeNull>();
+        throw Exception("Logical error in implementation of function coalesce", ErrorCodes::LOGICAL_ERROR);
     if (new_args.size() == 1)
         return new_args.front();
 
@@ -308,7 +299,7 @@ std::string FunctionNullIf::getName() const
 
 DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeNull>(), arguments[0]});
+    return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), makeNullableDataTypeIfNot(arguments[0]), arguments[0]});
 }
 
 void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -327,8 +318,8 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 
     /// Append a NULL column.
     ColumnWithTypeAndName null_elem;
-    null_elem.column = DataTypeNull().createConstColumn(temp_block.rows(), Null());
-    null_elem.type = std::make_shared<DataTypeNull>();
+    null_elem.type = block.getByPosition(result).type;
+    null_elem.column = null_elem.type->createConstColumn(temp_block.rows(), Null());
     null_elem.name = "NULL";
 
     temp_block.insert(null_elem);

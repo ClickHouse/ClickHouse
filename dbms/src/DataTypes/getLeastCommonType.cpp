@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDate.h>
@@ -49,7 +50,7 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
     /// Trivial cases
 
     if (types.empty())
-        throw Exception("Empty list of types passed to getLeastCommonType function", ErrorCodes::BAD_ARGUMENTS);
+        return std::make_shared<DataTypeNothing>();
 
     if (types.size() == 1)
         return types[0];
@@ -157,11 +158,6 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
             {
                 have_nullable = true;
                 nested_types.emplace_back(type_nullable->getNestedType());
-            }
-            else if (type->isNull())
-            {
-                /// Just skip NULL.
-                have_nullable = true;
             }
             else
                 nested_types.emplace_back(type);

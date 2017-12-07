@@ -1,8 +1,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/typeid_cast.h>
@@ -242,7 +242,7 @@ DataTypePtr IFunction::getReturnType(const DataTypes & arguments) const
     {
         NullPresense null_presense = getNullPresense(arguments);
         if (null_presense.has_null_constant)
-            return std::make_shared<DataTypeNull>();
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
         if (null_presense.has_nullable)
             return std::make_shared<DataTypeNullable>(getReturnTypeImpl(toNestedDataTypes(arguments)));
     }
@@ -264,7 +264,7 @@ void IFunction::getReturnTypeAndPrerequisites(
 
         if (null_presense.has_null_constant)
         {
-            out_return_type = std::make_shared<DataTypeNull>();
+            out_return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             return;
         }
         if (null_presense.has_nullable)

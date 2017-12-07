@@ -71,7 +71,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     bool has_nullable_types = false;
     for (const auto & arg_type : argument_types)
     {
-        if (arg_type->isNullable() || arg_type->isNull())
+        if (arg_type->isNullable())
         {
             has_nullable_types = true;
             break;

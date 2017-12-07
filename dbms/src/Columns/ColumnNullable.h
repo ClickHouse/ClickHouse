@@ -25,7 +25,6 @@ public:
     std::string getName() const override {     return "ColumnNullable(" + nested_column->getName() + ")"; }
     bool isNumeric() const override { return nested_column->isNumeric(); }
     bool isNumericNotNullable() const override { return false; }
-    bool isConst() const override { return nested_column->isConst(); }
     bool isFixed() const override { return nested_column->isFixed(); }
     size_t sizeOfField() const override;
     bool isNullable() const override { return true; }

@@ -41,11 +41,11 @@ public:
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
-    /// Is this type the null type? TODO Move this method to separate "traits" classes.
-    virtual bool isNull() const { return false; }
-
     /// Is this type nullable?
     virtual bool isNullable() const { return false; }
+
+    /// Is this type can represent only NULL value? (It also implies isNullable)
+    virtual bool isNull() const { return false; }
 
     /// Is this type numeric? Date and DateTime types are considered as such.
     virtual bool isNumeric() const { return false; }
