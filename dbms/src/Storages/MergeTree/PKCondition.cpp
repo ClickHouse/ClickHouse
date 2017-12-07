@@ -7,8 +7,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnSet.h>
-#include <Columns/ColumnTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>

@@ -2,6 +2,13 @@
 #include <AggregateFunctions/AggregateFunctionUniq.h>
 #include <AggregateFunctions/Helpers.h>
 
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+
+
 namespace DB
 {
 

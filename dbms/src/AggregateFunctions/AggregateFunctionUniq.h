@@ -9,9 +9,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
 
 #include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/HashSet.h>
@@ -19,8 +17,6 @@
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/MemoryTracker.h>
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 
 #include <AggregateFunctions/IUnaryAggregateFunction.h>
