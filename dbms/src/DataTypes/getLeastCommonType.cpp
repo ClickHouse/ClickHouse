@@ -32,7 +32,7 @@ namespace
         bool first = true;
         for (const auto & type : types)
         {
-            if (first)
+            if (!first)
                 res << ", ";
             first = false;
 
@@ -157,6 +157,11 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
             {
                 have_nullable = true;
                 nested_types.emplace_back(type_nullable->getNestedType());
+            }
+            else if (type->isNull())
+            {
+                /// Just skip NULL.
+                have_nullable = true;
             }
             else
                 nested_types.emplace_back(type);
