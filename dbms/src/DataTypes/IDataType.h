@@ -97,8 +97,13 @@ public:
 
             NullableElements,
             NullMap,
+
+            TupleElement,
         };
         Type type;
+
+        /// Index of tuple element, starting at 1.
+        size_t tuple_element = 0;
 
         Substream(Type type) : type(type) {}
     };
