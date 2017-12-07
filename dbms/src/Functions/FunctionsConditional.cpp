@@ -4,7 +4,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/Conditional/common.h>
 #include <Functions/Conditional/NullMapBuilder.h>
-#include <Functions/Conditional/ArgsInfo.h>
 #include <Functions/Conditional/CondSource.h>
 #include <Functions/Conditional/NumericPerformer.h>
 #include <Functions/Conditional/StringEvaluator.h>
@@ -109,11 +108,6 @@ String FunctionMultiIf::getName() const
     return name;
 }
 
-DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
-{
-    return getReturnTypeInternal(args);
-}
-
 void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
 {
     if (!blockHasSpecialBranches(block, args))
@@ -152,127 +146,75 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
         dest_col.column = std::make_shared<ColumnNullable>(source_col.column, builder.getNullMap());
 }
 
-DataTypePtr FunctionMultiIf::getReturnTypeInternal(const DataTypes & args) const
+DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
 {
+    /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
+
+    auto for_conditions = [&args](auto && f)
+    {
+        size_t conditions_end = args.size() - 1;
+        for (size_t i = 0; i < conditions_end; i += 2)
+            f(args[i]);
+    };
+
+    auto for_branches = [&args](auto && f)
+    {
+        size_t branches_end = args.size();
+        for (size_t i = 1; i < branches_end; i += 2)
+            f(args[i]);
+        f(args.back());
+    };
+
     if (!Conditional::hasValidArgCount(args))
         throw Exception{"Invalid number of arguments for function " + getName(),
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    /// Check that conditions have valid types.
-    for (size_t i = Conditional::firstCond(); i < Conditional::elseArg(args); i = Conditional::nextCond(i))
+    /// Conditions must be UInt8, Nullable(UInt8) or Null. If one of conditions is Nullable, the result is also Nullable.
+    bool have_nullable_condition = false;
+    bool all_conditions_are_null = true;
+
+    for_conditions([&](const DataTypePtr & arg)
     {
         const IDataType * observed_type;
-        if (args[i]->isNullable())
+        if (arg->isNullable())
         {
-            const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
+            have_nullable_condition = true;
+            all_conditions_are_null = false;
+            const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
             observed_type = nullable_type.getNestedType().get();
         }
+        else if (arg->isNull())
+        {
+            have_nullable_condition = true;
+        }
         else
-            observed_type = args[i].get();
+        {
+            all_conditions_are_null = false;
+            observed_type = arg.get();
+        }
 
         if (!checkDataType<DataTypeUInt8>(observed_type) && !observed_type->isNull())
             throw Exception{"Illegal type of argument " + toString(i) + " (condition) "
                 "of function " + getName() + ". Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-    }
+    });
 
-    bool has_special_types = hasSpecialDataTypes(args);
-
-    if (Conditional::hasArithmeticBranches(args))
-        return Conditional::getReturnTypeForArithmeticArgs(args);
-    else if (Conditional::hasArrayBranches(args))
-    {
-        /// NOTE Error messages will refer to the types of array elements, which is slightly incorrect.
-        DataTypes new_args;
-        new_args.reserve(args.size());
-
-        auto push_branch_arg = [&args, &new_args](size_t i)
-        {
-            if (args[i]->isNull())
-                new_args.push_back(args[i]);
-            else
-            {
-                const IDataType * observed_type;
-                if (args[i]->isNullable())
-                {
-                    const auto & nullable_type = static_cast<const DataTypeNullable &>(*args[i]);
-                    observed_type = nullable_type.getNestedType().get();
-                }
-                else
-                    observed_type = args[i].get();
-
-                const DataTypeArray * type_arr = checkAndGetDataType<DataTypeArray>(observed_type);
-                if (!type_arr)
-                    throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-                new_args.push_back(type_arr->getNestedType());
-            }
-        };
-
-        for (size_t i = 0; i < Conditional::elseArg(args); ++i)
-        {
-            if (Conditional::isCond(i))
-                new_args.push_back(args[i]);
-            else
-                push_branch_arg(i);
-        }
-
-        push_branch_arg(Conditional::elseArg(args));
-
-        /// NOTE: in a future release, this code will be rewritten. Indeed
-        /// the current approach is flawed since it cannot appropriately
-        /// deal with null arguments and arrays that contain null elements.
-        /// For now we assume that arrays do not contain any such elements.
-        DataTypePtr elt_type = getReturnTypeImpl(new_args);
-        if (elt_type->isNullable())
-        {
-            DataTypeNullable & nullable_type = static_cast<DataTypeNullable &>(*elt_type);
-            elt_type = nullable_type.getNestedType();
-        }
-
-        DataTypePtr type = std::make_shared<DataTypeArray>(elt_type);
-        if (has_special_types)
-            type = std::make_shared<DataTypeNullable>(type);
-        return type;
-    }
-    else if (!Conditional::hasIdenticalTypes(args))
-    {
-        if (Conditional::hasFixedStrings(args))
-        {
-            if (!Conditional::hasFixedStringsOfIdenticalLength(args))
-                throw Exception{"Branch (then, else) arguments of function " + getName() +
-                    " have FixedString type and different sizes",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-            auto type = getReturnTypeFromFirstNonNullBranch(args, has_special_types);
-            if (type)
-                return type;
-            else
-            {
-                /// This cannot happen: at least one fixed string is not null.
-                throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-            }
-        }
-        else if (Conditional::hasStrings(args))
-        {
-            DataTypePtr type = std::make_shared<DataTypeString>();
-            if (has_special_types)
-                type = std::make_shared<DataTypeNullable>(type);
-            return type;
-        }
-        else
-            throw Exception{
-                "Incompatible branch (then, else) arguments for function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-    }
-    else
-    {
-        auto type = getReturnTypeFromFirstNonNullBranch(args, has_special_types);
-        if (type)
-            return type;
-
-        /// All the branches are null.
+    if (all_conditions_are_null)
         return std::make_shared<DataTypeNull>();
-    }
+
+    DataTypes types_of_branches;
+    types_of_branches.reserve(Conditional::getBranchCount(args));
+
+    for_branches([&](const DataTypePtr & arg)
+    {
+        types_of_branches.emplace_back(arg);
+    });
+
+    DataTypePtr common_type_of_branches = getLeastCommonType(types_of_branches);
+
+    return have_nullable_condition
+        ? makeNullableDataTypeIfNot(common_type_of_branches)
+        : common_type_of_branches;
 }
 
 void FunctionMultiIf::perform(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder)

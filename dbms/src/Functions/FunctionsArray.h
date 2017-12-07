@@ -101,8 +101,6 @@ private:
     String getName() const override;
 
     bool addField(DataTypePtr type_res, const Field & f, Array & arr) const;
-    static const DataTypePtr & getScalarType(const DataTypePtr & type);
-    DataTypeTraits::EnrichedDataTypePtr getLeastCommonType(const DataTypes & arguments) const;
 
 private:
     const Context & context;
