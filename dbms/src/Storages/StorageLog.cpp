@@ -510,19 +510,8 @@ void StorageLog::rename(const String & new_path_to_db, const String & /*new_data
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
-    auto init_column_type = [&]()
-    {
-        const IDataType * type = columns->front().type.get();
-        if (type->isNullable())
-        {
-            const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*type);
-            type = nullable_type.getNestedType().get();
-        }
-        return type;
-    };
-
     const String & column_name = columns->front().name;
-    const IDataType & column_type = *init_column_type();
+    const IDataType & column_type = *columns->front().type;
     String filename;
 
     /** We take marks from first column.
