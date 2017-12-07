@@ -64,12 +64,12 @@ DataTypePtr FieldToDataType::operator() (Array & x) const
     for (Field & elem : x)
         element_types.emplace_back(applyVisitor(FieldToDataType(), elem));
 
-    DataTypePtr res = std::make_shared<DataTypeArray>(getLeastCommonType(element_types));
+    DataTypePtr res = getLeastCommonType(element_types);
 
     for (Field & elem : x)
         elem = convertFieldToType(elem, *res);
 
-    return res;
+    return std::make_shared<DataTypeArray>(res);
 }
 
 
