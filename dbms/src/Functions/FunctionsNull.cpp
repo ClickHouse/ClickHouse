@@ -111,9 +111,9 @@ static const DataTypePtr getNestedDataType(const DataTypePtr & type)
     return type;
 }
 
-FunctionPtr FunctionCoalesce::create(const Context &)
+FunctionPtr FunctionCoalesce::create(const Context & context)
 {
-    return std::make_shared<FunctionCoalesce>();
+    return std::make_shared<FunctionCoalesce>(context);
 }
 
 std::string FunctionCoalesce::getName() const
@@ -158,7 +158,7 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
     if (new_args.size() == 1)
         return new_args.front();
 
-    auto res = FunctionMultiIf{}.getReturnTypeImpl(new_args);
+    auto res = FunctionMultiIf{context}.getReturnTypeImpl(new_args);
 
     /// if last argument is not nullable, result should be also not nullable
     if (!new_args.back()->isNullable() && res->isNullable())
@@ -228,7 +228,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
         return;
     }
 
-    FunctionMultiIf{}.executeImpl(temp_block, multi_if_args, result);
+    FunctionMultiIf{context}.executeImpl(temp_block, multi_if_args, result);
 
     auto res = std::move(temp_block.getByPosition(result).column);
 
