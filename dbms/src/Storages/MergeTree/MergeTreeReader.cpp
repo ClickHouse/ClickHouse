@@ -98,23 +98,8 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
             bool read_offsets = true;
 
-            const IDataType * observed_type;
-            bool is_nullable;
-
-            if (column.type->isNullable())
-            {
-                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
-                observed_type = nullable_type.getNestedType().get();
-                is_nullable = true;
-            }
-            else
-            {
-                observed_type = column.type.get();
-                is_nullable = false;
-            }
-
             /// For nested data structures collect pointers to offset columns.
-            if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
+            if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column.type.get()))
             {
                 String name = DataTypeNested::extractNestedTableName(column.name);
 
@@ -124,11 +109,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
                     read_offsets = false; /// offsets have already been read on the previous iteration
 
                 if (!append)
-                {
                     column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
-                    if (is_nullable)
-                        column.column = std::make_shared<ColumnNullable>(column.column, std::make_shared<ColumnUInt8>());
-                }
             }
             else if (!append)
                 column.column = column.type->createColumn();
