@@ -34,7 +34,7 @@ ColumnPtr ColumnConst::convertToFullColumn() const
 String ColumnConst::dump() const
 {
     WriteBufferFromOwnString out;
-    out << "ColumnConst, size: " << s << ", nested column: " << data->getName() << ", nested size: " << data->size();
+    out << "Const, size: " << s << ", nested column: " << data->getName() << ", nested size: " << data->size();
     if (data->size())
         out << ", value: " << applyVisitor(FieldVisitorDump(), (*data)[0]);
 

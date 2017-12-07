@@ -42,7 +42,12 @@ public:
 
     std::string getName() const override
     {
-        return "ColumnConst(" + data->getName() + ")";
+        return "Const(" + data->getName() + ")";
+    }
+
+    const char * getFamilyName() const override
+    {
+        return "Const";
     }
 
     bool isNumeric() const override

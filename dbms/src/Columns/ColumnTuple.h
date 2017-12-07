@@ -26,6 +26,7 @@ public:
     ColumnTuple(Block data_);
 
     std::string getName() const override;
+    const char * getFamilyName() const override { return "Tuple"; }
 
     ColumnPtr cloneEmpty() const override;
 

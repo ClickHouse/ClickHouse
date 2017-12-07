@@ -51,7 +51,7 @@ ColumnArray::ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column)
 }
 
 
-std::string ColumnArray::getName() const { return "ColumnArray(" + getData().getName() + ")"; }
+std::string ColumnArray::getName() const { return "Array(" + getData().getName() + ")"; }
 
 
 ColumnPtr ColumnArray::cloneResized(size_t to_size) const
