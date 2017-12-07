@@ -67,6 +67,9 @@ void RegionsNames::reload()
         {
             size_t old_size = new_chars.size();
 
+            if (new_chars.capacity() < old_size + name_entry.name.length() + 1)
+                throw Poco::Exception("Logical error. Maybe size estimate of " + names_source->getSourceName() + " is wrong.");
+
             new_chars.resize(old_size + name_entry.name.length() + 1);
             memcpy(&new_chars[old_size], name_entry.name.c_str(), name_entry.name.length() + 1);
 
