@@ -1,6 +1,5 @@
 #include <Functions/Conditional/NumericPerformer.h>
 #include <Functions/Conditional/NullMapBuilder.h>
-#include <Functions/Conditional/ArgsInfo.h>
 #include <Functions/Conditional/NumericEvaluator.h>
 #include <Functions/Conditional/ArrayEvaluator.h>
 #include <DataTypes/NumberTraits.h>

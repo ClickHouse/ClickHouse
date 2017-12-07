@@ -15,7 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/EnrichedDataTypePtr.h>
+#include <DataTypes/getLeastCommonType.h>
 
 
 namespace DB
@@ -31,8 +31,6 @@ namespace ErrorCodes
 
 /** transform(x, from_array, to_array[, default]) - convert x according to an explicitly passed match.
   */
-
-DataTypeTraits::EnrichedDataTypePtr getSmallestCommonNumericType(const DataTypeTraits::EnrichedDataTypePtr & type1, const IDataType & type2);
 
 /** transform(x, [from...], [to...], default)
   * - converts the values according to the explicitly specified mapping.
@@ -105,8 +103,7 @@ public:
             throw Exception{"Third argument of function " + getName()
                 + ", must be array of destination values to transform to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        const auto enriched_type_arr_to_nested = type_arr_to->getEnrichedNestedType();
-        const auto & type_arr_to_nested = enriched_type_arr_to_nested.first;
+        const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
 
         if (args_size == 3)
         {
@@ -136,8 +133,7 @@ public:
             if (type_arr_to_nested->behavesAsNumber() && type_default->behavesAsNumber())
             {
                 /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                DataTypeTraits::EnrichedDataTypePtr res = getSmallestCommonNumericType(enriched_type_arr_to_nested, *type_default);
-                return res.first;
+                return getLeastCommonType({type_arr_to_nested, type_default});
             }
 
             /// TODO More checks.

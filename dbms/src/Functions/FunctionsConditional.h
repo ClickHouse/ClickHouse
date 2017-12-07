@@ -1062,8 +1062,6 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 
 private:
-    DataTypePtr getReturnTypeInternal(const DataTypes & args) const;
-
     /// Internal version of multiIf.
     /// The builder parameter is an object that incrementally builds the null map
     /// of the result column if it is nullable. When no builder is necessary,

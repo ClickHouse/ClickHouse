@@ -18,7 +18,6 @@
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
-#include <DataTypes/EnrichedDataTypePtr.h>
 
 namespace DB
 {

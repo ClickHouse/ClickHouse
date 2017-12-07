@@ -30,16 +30,11 @@ namespace ErrorCodes
 
 
 DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
-    : enriched_nested(std::make_pair(nested_, std::make_shared<DataTypeVoid>())), nested{nested_}
+    : nested{nested_}
 {
     offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
 }
 
-DataTypeArray::DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_)
-    : enriched_nested{enriched_nested_}, nested{enriched_nested.first}
-{
-    offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
-}
 
 void DataTypeArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {

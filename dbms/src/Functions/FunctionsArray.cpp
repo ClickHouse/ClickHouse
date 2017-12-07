@@ -5,7 +5,7 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsConversion.h>
-#include <Functions/Conditional/getArrayType.h>
+#include <DataTypes/getLeastCommonType.h>
 #include <Functions/Conditional/CondException.h>
 #include <Functions/GatherUtils.h>
 #include <Common/HashTable/HashMap.h>
@@ -42,318 +42,105 @@ FunctionArray::FunctionArray(const Context & context)
 {
 }
 
-
-namespace
-{
-
-/// Is there at least one numeric argument among the specified ones?
-bool foundNumericType(const DataTypes & args)
-{
-    for (size_t i = 0; i < args.size(); ++i)
-    {
-        if (args[i]->behavesAsNumber())
-            return true;
-        else if (!args[i]->isNull())
-            return false;
-    }
-
-    return false;
-}
-
-
-/// Check if the specified arguments have the same type up to nullability or nullity.
-bool hasArrayIdenticalTypes(const DataTypes & args)
-{
-    std::string first_type_name;
-
-    for (size_t i = 0; i < args.size(); ++i)
-    {
-        if (!args[i]->isNull())
-        {
-            const IDataType * observed_type = DataTypeTraits::removeNullable(args[i]).get();
-            const std::string & name = observed_type->getName();
-
-            if (first_type_name.empty())
-                first_type_name = name;
-            else if (name != first_type_name)
-                return false;
-        }
-    }
-
-    return true;
-}
-
-/// Given a set, 'args', of types that have been deemed to be identical by the
-/// function hasArrayIdenticalTypes(), deduce the element type of an array that
-/// would be constructed from a set of values V, such that, for each i, the
-/// type of V[i] is args[i].
-DataTypePtr getArrayElementType(const DataTypes & args)
-{
-    bool found_null = false;
-    bool found_nullable = false;
-
-    const DataTypePtr * ret = nullptr;
-
-    for (size_t i = 0; i < args.size(); ++i)
-    {
-        const auto & type = args[i];
-
-        if (type->isNull())
-            found_null = true;
-        else if (type->isNullable())
-        {
-            ret = &type;
-            found_nullable = true;
-            break;
-        }
-        else
-            ret = &type;
-    }
-
-    if (found_nullable)
-        return *ret;
-    else if (found_null)
-    {
-        if (ret)
-            return std::make_shared<DataTypeNullable>(*ret);
-        else
-            return std::make_shared<DataTypeNull>();
-    }
-    else
-    {
-        if (!ret)
-            throw Exception{"getArrayElementType: internal error", ErrorCodes::LOGICAL_ERROR};
-        else
-            return *ret;
-    }
-}
-
-template <typename T0, typename T1>
-bool tryAddField(DataTypePtr type_res, const Field & f, Array & arr)
-{
-    if (typeid_cast<const T0 *>(type_res.get()))
-    {
-        if (f.isNull())
-            arr.emplace_back();
-        else
-            arr.push_back(applyVisitor(FieldVisitorConvertToNumber<typename T1::FieldType>(), f));
-        return true;
-    }
-    return false;
-}
-
-}
-
-bool FunctionArray::addField(DataTypePtr type_res, const Field & f, Array & arr) const
-{
-    /// Otherwise, it is necessary
-    if (    tryAddField<DataTypeUInt8, DataTypeUInt64>(type_res, f, arr)
-        ||    tryAddField<DataTypeUInt16, DataTypeUInt64>(type_res, f, arr)
-        ||    tryAddField<DataTypeUInt32, DataTypeUInt64>(type_res, f, arr)
-        ||    tryAddField<DataTypeUInt64, DataTypeUInt64>(type_res, f, arr)
-        ||    tryAddField<DataTypeInt8, DataTypeInt64>(type_res, f, arr)
-        ||    tryAddField<DataTypeInt16, DataTypeInt64>(type_res, f, arr)
-        ||    tryAddField<DataTypeInt32, DataTypeInt64>(type_res, f, arr)
-        ||    tryAddField<DataTypeInt64, DataTypeInt64>(type_res, f, arr)
-        ||    tryAddField<DataTypeFloat32, DataTypeFloat64>(type_res, f, arr)
-        ||    tryAddField<DataTypeFloat64, DataTypeFloat64>(type_res, f, arr) )
-        return true;
-    else
-    {
-        throw Exception{"Illegal result type " + type_res->getName() + " of function " + getName(),
-            ErrorCodes::LOGICAL_ERROR};
-    }
-}
-
-const DataTypePtr & FunctionArray::getScalarType(const DataTypePtr & type)
-{
-    const auto array = checkAndGetDataType<DataTypeArray>(type.get());
-
-    if (!array)
-        return type;
-
-    return getScalarType(array->getNestedType());
-}
-
-DataTypeTraits::EnrichedDataTypePtr FunctionArray::getLeastCommonType(const DataTypes & arguments) const
-{
-    DataTypeTraits::EnrichedDataTypePtr result_type;
-
-    try
-    {
-        result_type = Conditional::getArrayType(arguments);
-    }
-    catch (const Conditional::CondException & ex)
-    {
-        /// Translate a context-free error into a contextual error.
-        if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_ILLEGAL_COLUMN_TYPE)
-            throw Exception{"Illegal type of column " + ex.getMsg1() +
-                " in array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        else if (ex.getCode() == Conditional::CondErrorCodes::TYPE_DEDUCER_UPSCALING_ERROR)
-            throw Exception("Arguments of function " + getName() + " are not upscalable "
-                "to a common type without loss of precision.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        else
-            throw Exception{"An unexpected error has occurred in function " + getName(),
-                ErrorCodes::LOGICAL_ERROR};
-    }
-
-    return result_type;
-}
-
-
 DataTypePtr FunctionArray::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments.empty())
         throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    if (foundNumericType(arguments))
-    {
-        /// Since we have found at least one numeric argument, we infer that all
-        /// the arguments are numeric up to nullity. Let's determine the least
-        /// common type.
-        auto enriched_result_type = getLeastCommonType(arguments);
-        return std::make_shared<DataTypeArray>(enriched_result_type);
-    }
-    else
-    {
-        /// Otherwise all the arguments must have the same type up to nullability or nullity.
-        if (!hasArrayIdenticalTypes(arguments))
-            throw Exception{"Arguments for function array must have same type or behave as number.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeArray>(getArrayElementType(arguments));
-    }
+    return std::make_shared<DataTypeArray>(getLeastCommonType(arguments));
 }
 
 void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     size_t num_elements = arguments.size();
-    bool is_const = true;
-
-    for (const auto arg_num : arguments)
-    {
-        if (!block.getByPosition(arg_num).column->isConst())
-        {
-            is_const = false;
-            break;
-        }
-    }
 
     const DataTypePtr & return_type = block.getByPosition(result).type;
     const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*return_type).getNestedType();
 
-    if (is_const)
+    size_t block_size = block.rows();
+
+    /** If part of columns have not same type as common type of all elements of array,
+        *  then convert them to common type.
+        * If part of columns are constants,
+        *  then convert them to full columns.
+        */
+
+    Columns columns_holder(num_elements);
+    const IColumn * columns[num_elements];
+
+    for (size_t i = 0; i < num_elements; ++i)
     {
-        const DataTypePtr & observed_type = DataTypeTraits::removeNullable(elem_type);
+        const auto & arg = block.getByPosition(arguments[i]);
 
-        Array arr;
-        for (const auto arg_num : arguments)
+        String elem_type_name = elem_type->getName();
+        ColumnPtr preprocessed_column = arg.column;
+
+        if (arg.type->getName() != elem_type_name)
         {
-            const auto & elem = block.getByPosition(arg_num);
-
-            if (DataTypeTraits::removeNullable(elem.type)->equals(*observed_type))
+            Block temporary_block
             {
-                /// If an element of the same type as the result, just add it in response
-                arr.push_back((*elem.column)[0]);
-            }
-            else if (elem.type->isNull())
-                arr.emplace_back();
-            else
-            {
-                /// Otherwise, you need to cast it to the result type
-                addField(observed_type, (*elem.column)[0], arr);
-            }
-        }
-
-        const auto first_arg = block.getByPosition(arguments[0]);
-        block.getByPosition(result).column = return_type->createConstColumn(first_arg.column->size(), arr);
-    }
-    else
-    {
-        size_t block_size = block.rows();
-
-        /** If part of columns have not same type as common type of all elements of array,
-          *  then convert them to common type.
-          * If part of columns are constants,
-          *  then convert them to full columns.
-          */
-
-        Columns columns_holder(num_elements);
-        const IColumn * columns[num_elements];
-
-        for (size_t i = 0; i < num_elements; ++i)
-        {
-            const auto & arg = block.getByPosition(arguments[i]);
-
-            String elem_type_name = elem_type->getName();
-            ColumnPtr preprocessed_column = arg.column;
-
-            if (arg.type->getName() != elem_type_name)
-            {
-                Block temporary_block
                 {
-                    {
-                        arg.column,
-                        arg.type,
-                        arg.name
-                    },
-                    {
-                        DataTypeString().createConstColumn(block_size, elem_type_name),
-                        std::make_shared<DataTypeString>(),
-                        ""
-                    },
-                    {
-                        nullptr,
-                        elem_type,
-                        ""
-                    }
-                };
-
-                FunctionCast func_cast(context);
-
+                    arg.column,
+                    arg.type,
+                    arg.name
+                },
                 {
-                    DataTypePtr unused_return_type;
-                    ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
-                    std::vector<ExpressionAction> unused_prerequisites;
-
-                    /// Prepares function to execution. TODO It is not obvious.
-                    func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
+                    DataTypeString().createConstColumn(block_size, elem_type_name),
+                    std::make_shared<DataTypeString>(),
+                    ""
+                },
+                {
+                    nullptr,
+                    elem_type,
+                    ""
                 }
+            };
 
-                func_cast.execute(temporary_block, {0, 1}, 2);
-                preprocessed_column = temporary_block.getByPosition(2).column;
+            FunctionCast func_cast(context);
+
+            {
+                DataTypePtr unused_return_type;
+                ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
+                std::vector<ExpressionAction> unused_prerequisites;
+
+                /// Prepares function to execution. TODO It is not obvious.
+                func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
             }
 
-            if (auto materialized_column = preprocessed_column->convertToFullColumnIfConst())
-                preprocessed_column = materialized_column;
-
-            columns_holder[i] = std::move(preprocessed_column);
-            columns[i] = columns_holder[i].get();
+            func_cast.execute(temporary_block, {0, 1}, 2);
+            preprocessed_column = temporary_block.getByPosition(2).column;
         }
 
-        /** Create and fill the result array.
-          */
+        if (auto materialized_column = preprocessed_column->convertToFullColumnIfConst())
+            preprocessed_column = materialized_column;
 
-        auto out = std::make_shared<ColumnArray>(elem_type->createColumn());
-        IColumn & out_data = out->getData();
-        IColumn::Offsets_t & out_offsets = out->getOffsets();
-
-        out_data.reserve(block_size * num_elements);
-        out_offsets.resize(block_size);
-
-        IColumn::Offset_t current_offset = 0;
-        for (size_t i = 0; i < block_size; ++i)
-        {
-            for (size_t j = 0; j < num_elements; ++j)
-                out_data.insertFrom(*columns[j], i);
-
-            current_offset += num_elements;
-            out_offsets[i] = current_offset;
-        }
-
-        block.getByPosition(result).column = out;
+        columns_holder[i] = std::move(preprocessed_column);
+        columns[i] = columns_holder[i].get();
     }
+
+    /** Create and fill the result array.
+        */
+
+    auto out = std::make_shared<ColumnArray>(elem_type->createColumn());
+    IColumn & out_data = out->getData();
+    IColumn::Offsets_t & out_offsets = out->getOffsets();
+
+    out_data.reserve(block_size * num_elements);
+    out_offsets.resize(block_size);
+
+    IColumn::Offset_t current_offset = 0;
+    for (size_t i = 0; i < block_size; ++i)
+    {
+        for (size_t j = 0; j < num_elements; ++j)
+            out_data.insertFrom(*columns[j], i);
+
+        current_offset += num_elements;
+        out_offsets[i] = current_offset;
+    }
+
+    block.getByPosition(result).column = out;
 }
+
 
 /// Implementation of FunctionArrayElement.
 
@@ -2893,37 +2680,12 @@ DataTypePtr FunctionArrayConcat::getReturnTypeImpl(const DataTypes & arguments) 
     if (arguments.empty())
         throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    DataTypes nested_types;
-    nested_types.reserve(arguments.size());
-    for (size_t i : ext::range(0, arguments.size()))
-    {
-        auto argument = arguments[i].get();
+    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    if (!array_type)
+        throw Exception("First argument for function " + getName() + " must be an array but it has type "
+            + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (auto data_type_array = checkAndGetDataType<DataTypeArray>(argument))
-            nested_types.push_back(data_type_array->getNestedType());
-        else
-            throw Exception(
-                    "Argument " + toString(i) + " for function " + getName() + " must be an array but it has type "
-                    + argument->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-    if (foundNumericType(nested_types))
-    {
-        /// Since we have found at least one numeric argument, we infer that all
-        /// the arguments are numeric up to nullity. Let's determine the least
-        /// common type.
-        auto enriched_result_type = Conditional::getArrayType(nested_types);
-        return std::make_shared<DataTypeArray>(enriched_result_type);
-    }
-    else
-    {
-        /// Otherwise all the arguments must have the same type up to nullability or nullity.
-        if (!hasArrayIdenticalTypes(nested_types))
-            throw Exception{"Arguments for function " + getName() + " must have same type or behave as number.",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeArray>(getArrayElementType(nested_types));
-    }
+    return getLeastCommonType(arguments);
 }
 
 void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -3088,9 +2850,6 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
 
 DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments[0]->isNull())
-        return arguments[0];
-
     auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
@@ -3100,23 +2859,7 @@ DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) co
 
     DataTypes types = {nested_type, arguments[1]};
 
-    if (foundNumericType(types))
-    {
-        /// Since we have found at least one numeric argument, we infer that all
-        /// the arguments are numeric up to nullity. Let's determine the least
-        /// common type.
-        auto enriched_result_type = Conditional::getArrayType(types);
-        return std::make_shared<DataTypeArray>(enriched_result_type);
-    }
-    else
-    {
-        /// Otherwise all the arguments must have the same type up to nullability or nullity.
-        if (!hasArrayIdenticalTypes(types))
-            throw Exception{"Arguments for function " + getName() + " must have same type or behave as number.",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeArray>(getArrayElementType(types));
-    }
+    return std::make_shared<DataTypeArray>(getLeastCommonType(types));
 }
 
 void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
