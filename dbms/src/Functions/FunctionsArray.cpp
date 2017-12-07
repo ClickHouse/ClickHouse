@@ -319,7 +319,7 @@ struct ArrayElementStringImpl
             {
                 size_t adjusted_index = !negative ? index : (array_size - index - 1);
 
-                size_t j =  (current_offset == 0 && adjusted_index == 0) ? 0 : current_offset + adjusted_index;
+                size_t j = (current_offset == 0 && adjusted_index == 0) ? 0 : current_offset + adjusted_index;
                 if (builder)
                     builder.update(j);
 
@@ -723,19 +723,19 @@ bool FunctionArrayElement::executeArgument(Block & block, const ColumnNumbers & 
     if (builder)
         builder.initSink(index_data.size());
 
-    if (!(    executeNumber<IndexType, UInt8>        (block, arguments, result, index_data, builder)
-        ||    executeNumber<IndexType, UInt16>    (block, arguments, result, index_data, builder)
-        ||    executeNumber<IndexType, UInt32>    (block, arguments, result, index_data, builder)
-        ||    executeNumber<IndexType, UInt64>    (block, arguments, result, index_data, builder)
-        ||    executeNumber<IndexType, Int8>        (block, arguments, result, index_data, builder)
-        ||    executeNumber<IndexType, Int16>        (block, arguments, result, index_data, builder)
-        ||    executeNumber<IndexType, Int32>        (block, arguments, result, index_data, builder)
-        ||    executeNumber<IndexType, Int64>        (block, arguments, result, index_data, builder)
-        ||    executeNumber<IndexType, Float32>    (block, arguments, result, index_data, builder)
-        ||    executeNumber<IndexType, Float64>    (block, arguments, result, index_data, builder)
-        ||    executeConst <IndexType>            (block, arguments, result, index_data, builder)
-        ||    executeString<IndexType>            (block, arguments, result, index_data, builder)
-        ||    executeGeneric<IndexType>            (block, arguments, result, index_data, builder)))
+    if (!( executeNumber<IndexType, UInt8>(block, arguments, result, index_data, builder)
+        || executeNumber<IndexType, UInt16>(block, arguments, result, index_data, builder)
+        || executeNumber<IndexType, UInt32>(block, arguments, result, index_data, builder)
+        || executeNumber<IndexType, UInt64>(block, arguments, result, index_data, builder)
+        || executeNumber<IndexType, Int8>(block, arguments, result, index_data, builder)
+        || executeNumber<IndexType, Int16>(block, arguments, result, index_data, builder)
+        || executeNumber<IndexType, Int32>(block, arguments, result, index_data, builder)
+        || executeNumber<IndexType, Int64>(block, arguments, result, index_data, builder)
+        || executeNumber<IndexType, Float32>(block, arguments, result, index_data, builder)
+        || executeNumber<IndexType, Float64>(block, arguments, result, index_data, builder)
+        || executeConst <IndexType>(block, arguments, result, index_data, builder)
+        || executeString<IndexType>(block, arguments, result, index_data, builder)
+        || executeGeneric<IndexType>(block, arguments, result, index_data, builder)))
     throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
@@ -783,6 +783,8 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
         block_of_temporary_results.insert(array_of_tuple_section);
 
         ColumnWithTypeAndName array_elements_of_tuple_section;
+        array_elements_of_tuple_section.type = getReturnTypeImpl(
+            {block_of_temporary_results.getByPosition(i * 2 + 1).type, block_of_temporary_results.getByPosition(0).type});
         block_of_temporary_results.insert(array_elements_of_tuple_section);
 
         executeImpl(block_of_temporary_results, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2);
@@ -911,14 +913,14 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
     }
     else if (!block.getByPosition(arguments[1]).column->isConst())
     {
-        if (!(    executeArgument<UInt8>   (block, arguments, result, builder)
-            ||    executeArgument<UInt16>  (block, arguments, result, builder)
-            ||    executeArgument<UInt32>  (block, arguments, result, builder)
-            ||    executeArgument<UInt64>  (block, arguments, result, builder)
-            ||    executeArgument<Int8>    (block, arguments, result, builder)
-            ||    executeArgument<Int16>   (block, arguments, result, builder)
-            ||    executeArgument<Int32>   (block, arguments, result, builder)
-            ||    executeArgument<Int64>   (block, arguments, result, builder)))
+        if (!( executeArgument<UInt8>(block, arguments, result, builder)
+            || executeArgument<UInt16>(block, arguments, result, builder)
+            || executeArgument<UInt32>(block, arguments, result, builder)
+            || executeArgument<UInt64>(block, arguments, result, builder)
+            || executeArgument<Int8>(block, arguments, result, builder)
+            || executeArgument<Int16>(block, arguments, result, builder)
+            || executeArgument<Int32>(block, arguments, result, builder)
+            || executeArgument<Int64>(block, arguments, result, builder)))
         throw Exception("Second argument for function " + getName() + " must must have UInt or Int type.",
                         ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -932,18 +934,18 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
         if (index == UInt64(0))
             throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
 
-        if (!(    executeNumberConst<UInt8>   (block, arguments, result, index, builder)
-            ||    executeNumberConst<UInt16>  (block, arguments, result, index, builder)
-            ||    executeNumberConst<UInt32>  (block, arguments, result, index, builder)
-            ||    executeNumberConst<UInt64>  (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int8>    (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int16>   (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int32>   (block, arguments, result, index, builder)
-            ||    executeNumberConst<Int64>   (block, arguments, result, index, builder)
-            ||    executeNumberConst<Float32> (block, arguments, result, index, builder)
-            ||    executeNumberConst<Float64> (block, arguments, result, index, builder)
-            ||    executeStringConst          (block, arguments, result, index, builder)
-            ||    executeGenericConst         (block, arguments, result, index, builder)))
+        if (!( executeNumberConst<UInt8>(block, arguments, result, index, builder)
+            || executeNumberConst<UInt16>(block, arguments, result, index, builder)
+            || executeNumberConst<UInt32>(block, arguments, result, index, builder)
+            || executeNumberConst<UInt64>(block, arguments, result, index, builder)
+            || executeNumberConst<Int8>(block, arguments, result, index, builder)
+            || executeNumberConst<Int16>(block, arguments, result, index, builder)
+            || executeNumberConst<Int32>(block, arguments, result, index, builder)
+            || executeNumberConst<Int64>(block, arguments, result, index, builder)
+            || executeNumberConst<Float32>(block, arguments, result, index, builder)
+            || executeNumberConst<Float64>(block, arguments, result, index, builder)
+            || executeStringConst (block, arguments, result, index, builder)
+            || executeGenericConst (block, arguments, result, index, builder)))
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
@@ -1104,17 +1106,17 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 
     if (arguments.size() == 1)
     {
-        if (!(    executeNumber<UInt8>    (first_array, first_null_map, res_values)
-            ||    executeNumber<UInt16>    (first_array, first_null_map, res_values)
-            ||    executeNumber<UInt32>    (first_array, first_null_map, res_values)
-            ||    executeNumber<UInt64>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Int8>        (first_array, first_null_map, res_values)
-            ||    executeNumber<Int16>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Int32>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Int64>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Float32>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Float64>    (first_array, first_null_map, res_values)
-            ||    executeString            (first_array, first_null_map, res_values)))
+        if (!( executeNumber<UInt8>(first_array, first_null_map, res_values)
+            || executeNumber<UInt16>(first_array, first_null_map, res_values)
+            || executeNumber<UInt32>(first_array, first_null_map, res_values)
+            || executeNumber<UInt64>(first_array, first_null_map, res_values)
+            || executeNumber<Int8>(first_array, first_null_map, res_values)
+            || executeNumber<Int16>(first_array, first_null_map, res_values)
+            || executeNumber<Int32>(first_array, first_null_map, res_values)
+            || executeNumber<Int64>(first_array, first_null_map, res_values)
+            || executeNumber<Float32>(first_array, first_null_map, res_values)
+            || executeNumber<Float64>(first_array, first_null_map, res_values)
+            || executeString (first_array, first_null_map, res_values)))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -1429,17 +1431,17 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 
     if (arguments.size() == 1)
     {
-        if (!(    executeNumber<UInt8>    (first_array, first_null_map, res_values)
-            ||    executeNumber<UInt16>    (first_array, first_null_map, res_values)
-            ||    executeNumber<UInt32>    (first_array, first_null_map, res_values)
-            ||    executeNumber<UInt64>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Int8>        (first_array, first_null_map, res_values)
-            ||    executeNumber<Int16>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Int32>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Int64>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Float32>    (first_array, first_null_map, res_values)
-            ||    executeNumber<Float64>    (first_array, first_null_map, res_values)
-            ||    executeString            (first_array, first_null_map, res_values)))
+        if (!( executeNumber<UInt8>(first_array, first_null_map, res_values)
+            || executeNumber<UInt16>(first_array, first_null_map, res_values)
+            || executeNumber<UInt32>(first_array, first_null_map, res_values)
+            || executeNumber<UInt64>(first_array, first_null_map, res_values)
+            || executeNumber<Int8>(first_array, first_null_map, res_values)
+            || executeNumber<Int16>(first_array, first_null_map, res_values)
+            || executeNumber<Int32>(first_array, first_null_map, res_values)
+            || executeNumber<Int64>(first_array, first_null_map, res_values)
+            || executeNumber<Float32>(first_array, first_null_map, res_values)
+            || executeNumber<Float64>(first_array, first_null_map, res_values)
+            || executeString (first_array, first_null_map, res_values)))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                     + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -2223,18 +2225,18 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
         inner_res_col = &res_data;
     }
 
-    if (!(    executeNumber<UInt8>    (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeNumber<UInt16>    (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeNumber<UInt32>    (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeNumber<UInt64>    (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeNumber<Int8>        (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeNumber<Int16>    (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeNumber<Int32>    (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeNumber<Int64>    (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeNumber<Float32>    (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeNumber<Float64>    (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeString            (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
-        ||    executeFixedString        (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)))
+    if (!( executeNumber<UInt8>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeNumber<UInt16>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeNumber<UInt32>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeNumber<UInt64>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeNumber<Int8>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeNumber<Int16>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeNumber<Int32>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeNumber<Int64>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeNumber<Float32>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeNumber<Float64>(*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeString (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)
+        || executeFixedString (*inner_col, offsets, *inner_res_col, nullable_col, nullable_res_col)))
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);

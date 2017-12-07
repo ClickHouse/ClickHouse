@@ -1,13 +1,6 @@
 #pragma once
 
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <DataTypes/NumberTraits.h>
-#include <Interpreters/ExpressionActions.h>
 
 
 namespace DB

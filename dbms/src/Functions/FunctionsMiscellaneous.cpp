@@ -6,6 +6,11 @@
 #include <Poco/Net/DNS.h>
 #include <Common/ClickHouseRevision.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/FieldVisitors.h>
@@ -17,10 +22,12 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/NumberTraits.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
 #include <TableFunctions/getStructureOfRemoteTable.h>
