@@ -62,7 +62,7 @@ target_link_libraries(clickhouse
     )
 
 if (USE_EMBEDDED_COMPILER)
-    add_subdirectory ("Compiler${LLVM_VERSION_POSTFIX}")
+    add_subdirectory ("Compiler-${LLVM_VERSION}")
     target_link_libraries (clickhouse clickhouse-compiler)
 endif ()
 
