@@ -43,10 +43,6 @@ target_link_libraries (clickhouse-compressor-lib clickhouse_common_io ${Boost_PR
 add_library (clickhouse-format ${SPLIT_SHARED} Format.cpp)
 target_link_libraries (clickhouse-format clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
-if (USE_EMBEDDED_COMPILER)
-    link_directories (${LLVM_LIBRARY_DIRS})
-endif ()
-
 add_executable(clickhouse main.cpp)
 target_include_directories(clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 target_link_libraries(clickhouse
