@@ -69,6 +69,9 @@ static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr
 
 void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
 {
+    /** We will gather values from columns in branches to result column,
+      *  depending on values of conditions.
+      */
     struct Instruction
     {
         const IColumn * condition = nullptr;
@@ -100,7 +103,10 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
         }
         else
         {
-            const ColumnWithTypeAndName & cond_col = block.getByPosition(i);
+            const ColumnWithTypeAndName & cond_col = block.getByPosition(args[i]);
+
+            /// We skip branches that are always false.
+            /// If we encounter a branch that is always true, we can finish.
 
             if (cond_col.column->isNull())
                 continue;
@@ -123,13 +129,14 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
             }
         }
 
-        const ColumnWithTypeAndName & source_col = block.getByPosition(source_idx);
+        const ColumnWithTypeAndName & source_col = block.getByPosition(args[source_idx]);
         if (source_col.type->equals(*return_type))
         {
             instruction.source = source_col.column.get();
         }
         else
         {
+            /// Cast all columns to result type.
             converted_columns_holder.emplace_back(castColumn(source_col, return_type, context));
             instruction.source = converted_columns_holder.back().get();
         }
