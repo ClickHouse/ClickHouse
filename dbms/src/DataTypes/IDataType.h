@@ -36,7 +36,7 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    virtual String getName() const = 0;
+    virtual String getName() const { return getFamilyName(); };
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;

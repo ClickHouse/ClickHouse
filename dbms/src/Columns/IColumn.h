@@ -37,7 +37,10 @@ class IColumn : private boost::noncopyable
 {
 public:
     /// Name of a Column. It is used in info messages.
-    virtual std::string getName() const = 0;
+    virtual std::string getName() const { return getFamilyName(); };
+
+    /// Name of a Column kind, without parameters (example: FixedString, Array).
+    virtual const char * getFamilyName() const = 0;
 
     /// Column is vector of numbers or numeric constant.
     virtual bool isNumeric() const { return false; }
@@ -269,6 +272,8 @@ public:
     virtual void forEachSubcolumn(ColumnCallback) {}
 
     virtual ~IColumn() {}
+
+    String dumpStructure() const;
 
 protected:
 

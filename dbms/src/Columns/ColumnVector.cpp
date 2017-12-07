@@ -97,9 +97,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 }
 
 template <typename T>
-std::string ColumnVector<T>::getName() const
+const char * ColumnVector<T>::getFamilyName() const
 {
-    return "ColumnVector<" + String(TypeName<T>::get()) + ">";
+    return TypeName<T>::get();
 }
 
 template <typename T>

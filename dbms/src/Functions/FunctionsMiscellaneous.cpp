@@ -297,6 +297,45 @@ public:
 };
 
 
+
+/// Dump the structure of type and column.
+class FunctionDumpColumnStructure : public IFunction
+{
+public:
+    static constexpr auto name = "dumpColumnStructure";
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionDumpColumnStructure>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 1;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    {
+        const auto & elem = block.getByPosition(arguments[0]);
+
+        block.getByPosition(result).column
+            = DataTypeString().createConstColumn(block.rows(),
+                elem.type->getName() + ", " + elem.column->dumpStructure());
+    }
+};
+
+
 /// Returns global default value for type of passed argument (example: 0 for numeric types, '' for String).
 class FunctionDefaultValueOfArgumentType : public IFunction
 {
@@ -1829,6 +1868,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionToTypeName>();
     factory.registerFunction<FunctionGetSizeOfEnumType>();
     factory.registerFunction<FunctionToColumnTypeName>();
+    factory.registerFunction<FunctionDumpColumnStructure>();
     factory.registerFunction<FunctionDefaultValueOfArgumentType>();
     factory.registerFunction<FunctionBlockSize>();
     factory.registerFunction<FunctionBlockNumber>();

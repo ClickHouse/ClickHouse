@@ -22,7 +22,8 @@ class ColumnNullable final : public IColumn
 {
 public:
     ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_);
-    std::string getName() const override {     return "ColumnNullable(" + nested_column->getName() + ")"; }
+    const char * getFamilyName() const override { return "Nullable"; }
+    std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     bool isNumeric() const override { return nested_column->isNumeric(); }
     bool isNumericNotNullable() const override { return false; }
     bool isFixed() const override { return nested_column->isFixed(); }
