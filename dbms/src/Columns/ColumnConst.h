@@ -243,6 +243,11 @@ public:
         data->getExtremes(min, max);
     }
 
+    void forEachSubcolumn(ColumnCallback callback) override
+    {
+        callback(data);
+    }
+
 
     /// Not part of the common interface.
 

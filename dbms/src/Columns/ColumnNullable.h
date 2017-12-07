@@ -68,6 +68,12 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+    void forEachSubcolumn(ColumnCallback callback) override
+    {
+        callback(nested_column);
+        callback(null_map);
+    }
+
     /// Return the column that represents values.
     ColumnPtr & getNestedColumn() { return nested_column; }
     const ColumnPtr & getNestedColumn() const { return nested_column; }

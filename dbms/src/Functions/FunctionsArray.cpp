@@ -667,42 +667,6 @@ bool FunctionArrayElement::executeGeneric(Block & block, const ColumnNumbers & a
     return true;
 }
 
-bool FunctionArrayElement::executeConstConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
-    ArrayImpl::NullMapBuilder & builder)
-{
-    const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get());
-
-    if (!col_array)
-        return false;
-
-    Array array = col_array->getValue<Array>();
-    size_t array_size = array.size();
-    size_t real_index = 0;
-
-    if (index.getType() == Field::Types::UInt64)
-        real_index = safeGet<UInt64>(index) - 1;
-    else if (index.getType() == Field::Types::Int64)
-        real_index = array_size + safeGet<Int64>(index);
-    else
-        throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
-
-    Field value;
-    if (real_index < array_size)
-        value = array.at(real_index);
-
-    if (value.isNull())
-        value = block.getByPosition(result).type->getDefault();
-
-    block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
-        block.rows(),
-        value);
-
-    if (builder)
-        builder.update(real_index);
-
-    return true;
-}
-
 template <typename IndexType>
 bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
     ArrayImpl::NullMapBuilder & builder)
@@ -978,7 +942,6 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
             ||    executeNumberConst<Int64>   (block, arguments, result, index, builder)
             ||    executeNumberConst<Float32> (block, arguments, result, index, builder)
             ||    executeNumberConst<Float64> (block, arguments, result, index, builder)
-            ||    executeConstConst           (block, arguments, result, index, builder)
             ||    executeStringConst          (block, arguments, result, index, builder)
             ||    executeGenericConst         (block, arguments, result, index, builder)))
         throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
