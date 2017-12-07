@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnNullable.h>
@@ -27,6 +28,12 @@ DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
 {
     if (!nested_data_type->canBeInsideNullable())
         throw Exception("Nested type " + nested_data_type->getName() + " cannot be inside Nullable type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
+
+bool DataTypeNullable::isNull() const
+{
+    return typeid_cast<const DataTypeNothing *>(nested_data_type.get());
 }
 
 
@@ -270,8 +277,7 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
 
 ColumnPtr DataTypeNullable::createColumn() const
 {
-    ColumnPtr new_col = nested_data_type->createColumn();
-    return std::make_shared<ColumnNullable>(new_col, std::make_shared<ColumnUInt8>());
+    return std::make_shared<ColumnNullable>(nested_data_type->createColumn(), std::make_shared<ColumnUInt8>());
 }
 
 

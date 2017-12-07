@@ -152,11 +152,7 @@ Block SummingSortedBlockInputStream::readImpl()
             else
             {
                 /// Leave only numeric types. Note that dates and datetime here are not considered such.
-                if (!column.type->isNumeric() ||
-                    column.type->getName() == "Date" ||
-                    column.type->getName() == "DateTime" ||
-                    column.type->getName() == "Nullable(Date)" ||
-                    column.type->getName() == "Nullable(DateTime)")
+                if (!column.type->behavesAsNumber())
                 {
                     column_numbers_not_to_aggregate.push_back(i);
                     continue;

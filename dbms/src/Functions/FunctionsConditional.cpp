@@ -212,7 +212,6 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
 
     /// Conditions must be UInt8, Nullable(UInt8) or Null. If one of conditions is Nullable, the result is also Nullable.
     bool have_nullable_condition = false;
-    bool all_conditions_are_null = true;
 
     for_conditions([&](const DataTypePtr & arg)
     {
@@ -220,28 +219,19 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
         if (arg->isNullable())
         {
             have_nullable_condition = true;
-            all_conditions_are_null = false;
             const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
             observed_type = nullable_type.getNestedType().get();
         }
-        else if (arg->isNull())
-        {
-            have_nullable_condition = true;
-        }
         else
         {
-            all_conditions_are_null = false;
             observed_type = arg.get();
         }
 
-        if (!checkDataType<DataTypeUInt8>(observed_type) && !observed_type->isNull())
+        if (!checkDataType<DataTypeUInt8>(observed_type))
             throw Exception{"Illegal type of argument (condition) "
                 "of function " + getName() + ". Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     });
-
-    if (all_conditions_are_null)
-        return std::make_shared<DataTypeNull>();
 
     DataTypes types_of_branches;
     types_of_branches.reserve(args.size() / 2 + 1);

@@ -1,11 +1,11 @@
 #include <Common/FieldVisitors.h>
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNull.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/getLeastCommonType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/Exception.h>
@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 DataTypePtr FieldToDataType::operator() (Null &) const
 {
-    return std::make_shared<DataTypeNull>();
+    return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
 }
 
 DataTypePtr FieldToDataType::operator() (UInt64 & x) const

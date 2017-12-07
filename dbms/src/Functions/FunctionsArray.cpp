@@ -2845,6 +2845,9 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
 
 DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) const
 {
+    if (arguments[0]->isNull())
+        return arguments[0];
+
     auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
