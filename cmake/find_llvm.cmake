@@ -18,14 +18,8 @@ if (USE_EMBEDDED_COMPILER)
     set(LLVM_VERSION_POSTFIX "-5.0" CACHE INTERNAL "")
 
     find_program(LLVM_CONFIG_EXECUTABLE
-        NAMES "llvm-config${LLVM_VERSION_POSTFIX}"
+        NAMES llvm-config${LLVM_VERSION_POSTFIX} llvm-config
         PATHS $ENV{LLVM_ROOT}/bin)
-
-    if (NOT LLVM_CONFIG_EXECUTABLE)
-      find_program(LLVM_CONFIG_EXECUTABLE
-        NAMES llvm-config
-        PATHS $ENV{LLVM_ROOT}/bin)
-    endif()
 
     mark_as_advanced(LLVM_CONFIG_EXECUTABLE)
 
