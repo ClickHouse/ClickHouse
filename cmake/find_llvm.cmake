@@ -26,7 +26,6 @@ if (USE_EMBEDDED_COMPILER)
     if(NOT LLVM_CONFIG_EXECUTABLE)
         message(FATAL_ERROR "Cannot find LLVM (looking for `llvm-config`). Please, provide LLVM_ROOT environment variable.")
     else()
-        message(STATUS "LLVM config: ${LLVM_CONFIG_EXECUTABLE}")
 
         set(LLVM_FOUND TRUE)
 
@@ -38,6 +37,8 @@ if (USE_EMBEDDED_COMPILER)
         if(LLVM_VERSION VERSION_LESS "5")
             message(FATAL_ERROR "LLVM 5+ is required.")
         endif()
+
+        message(STATUS "LLVM config: ${LLVM_CONFIG_EXECUTABLE}; version: ${LLVM_VERSION}")
 
         execute_process(
             COMMAND ${LLVM_CONFIG_EXECUTABLE} --includedir
