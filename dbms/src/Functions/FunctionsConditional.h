@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNull.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -16,7 +18,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/DataTypeTraits.h>
+#include <DataTypes/getLeastCommonType.h>
 #include <Functions/GatherUtils.h>
 
 
@@ -125,44 +127,6 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionIf>(); }
 
 private:
-    template <typename T0, typename T1>
-    bool checkRightType(const DataTypes & arguments, DataTypePtr & type_res) const
-    {
-        if (typeid_cast<const T1 *>(&*arguments[2]))
-        {
-            using ResultType = typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type;
-            type_res = DataTypeTraits::DataTypeFromFieldTypeOrError<ResultType>::getDataType();
-            if (!type_res)
-                throw Exception("Arguments 2 and 3 of function " + getName() + " are not upscalable to a common type without loss of precision: "
-                    + arguments[1]->getName() + " and " + arguments[2]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            return true;
-        }
-        return false;
-    }
-
-    template <typename T0>
-    bool checkLeftType(const DataTypes & arguments, DataTypePtr & type_res) const
-    {
-        if (typeid_cast<const T0 *>(&*arguments[1]))
-        {
-            if (    checkRightType<T0, DataTypeUInt8>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt16>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt32>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt64>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt8>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt16>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt32>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt64>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeFloat32>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeFloat64>(arguments, type_res))
-                return true;
-            else
-                throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-        return false;
-    }
-
     template <typename T0, typename T1>
     bool executeRightType(
         const ColumnUInt8 * cond_col,
@@ -895,77 +859,7 @@ public:
             throw Exception("Illegal type of first argument (condition) of function if. Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        const DataTypeArray * type_arr1 = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-        const DataTypeArray * type_arr2 = checkAndGetDataType<DataTypeArray>(arguments[2].get());
-
-        const DataTypeTuple * type_tuple1 = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
-        const DataTypeTuple * type_tuple2 = checkAndGetDataType<DataTypeTuple>(arguments[2].get());
-
-        if (arguments[1]->behavesAsNumber() && arguments[2]->behavesAsNumber())
-        {
-            DataTypePtr type_res;
-            if (!(    checkLeftType<DataTypeUInt8>(arguments, type_res)
-                ||    checkLeftType<DataTypeUInt16>(arguments, type_res)
-                ||    checkLeftType<DataTypeUInt32>(arguments, type_res)
-                ||    checkLeftType<DataTypeUInt64>(arguments, type_res)
-                ||    checkLeftType<DataTypeInt8>(arguments, type_res)
-                ||    checkLeftType<DataTypeInt16>(arguments, type_res)
-                ||    checkLeftType<DataTypeInt32>(arguments, type_res)
-                ||    checkLeftType<DataTypeInt64>(arguments, type_res)
-                ||    checkLeftType<DataTypeFloat32>(arguments, type_res)
-                ||    checkLeftType<DataTypeFloat64>(arguments, type_res)))
-                throw Exception("Internal error: unexpected type " + arguments[1]->getName() + " of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            return type_res;
-        }
-        else if (type_arr1 && type_arr2)
-        {
-            /// NOTE Error messages will refer to the types of array elements, which is slightly incorrect.
-            return std::make_shared<DataTypeArray>(getReturnTypeImpl({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
-        }
-        else if (type_tuple1 && type_tuple2)
-        {
-            const size_t tuple_size = type_tuple1->getElements().size();
-
-            if (tuple_size != type_tuple2->getElements().size())
-                throw Exception("Different sizes of tuples in 'then' and 'else' argument of function if",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            DataTypes result_tuple(tuple_size);
-
-            for (size_t i = 0; i < tuple_size; ++i)
-                result_tuple[i] = getReturnTypeImpl({arguments[0], type_tuple1->getElements()[i], type_tuple2->getElements()[i]});
-
-            return std::make_shared<DataTypeTuple>(std::move(result_tuple));
-        }
-        else if (!arguments[1]->equals(*arguments[2]))
-        {
-            const DataTypeString * type_string1 = checkAndGetDataType<DataTypeString>(arguments[1].get());
-            const DataTypeString * type_string2 = checkAndGetDataType<DataTypeString>(arguments[2].get());
-            const DataTypeFixedString * type_fixed_string1 = checkAndGetDataType<DataTypeFixedString>(arguments[1].get());
-            const DataTypeFixedString * type_fixed_string2 = checkAndGetDataType<DataTypeFixedString>(arguments[2].get());
-
-            if (type_fixed_string1 && type_fixed_string2)
-            {
-                if (type_fixed_string1->getN() != type_fixed_string2->getN())
-                    throw Exception("FixedString types as 'then' and 'else' arguments of function 'if' has different sizes",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-                return std::make_shared<DataTypeFixedString>(type_fixed_string1->getN());
-            }
-            else if ((type_string1 || type_fixed_string1) && (type_string2 || type_fixed_string2))
-            {
-                return std::make_shared<DataTypeString>();
-            }
-
-            throw Exception{
-                "Incompatible second and third arguments for function " + getName() + ": " +
-                    arguments[1]->getName() + " and " + arguments[2]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
-        }
-
-        return arguments[1];
+        return getLeastCommonType({arguments[1], arguments[2]});
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override

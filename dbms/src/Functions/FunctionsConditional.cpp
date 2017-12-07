@@ -3,7 +3,6 @@
 #include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionsTransform.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/Conditional/common.h>
 #include <Columns/ColumnNullable.h>
 
 namespace DB
@@ -81,7 +80,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
     };
 
     std::vector<Instruction> instructions;
-    instructions.reserve(Conditional::getBranchCount(args));
+    instructions.reserve(args.size() / 2 + 1);
 
     Columns converted_columns_holder;
     converted_columns_holder.reserve(instructions.size());
@@ -200,7 +199,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
         f(args.back());
     };
 
-    if (!Conditional::hasValidArgCount(args))
+    if (!(args.size() >= 3 && args.size() % 2 == 1))
         throw Exception{"Invalid number of arguments for function " + getName(),
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
@@ -238,7 +237,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
         return std::make_shared<DataTypeNull>();
 
     DataTypes types_of_branches;
-    types_of_branches.reserve(Conditional::getBranchCount(args));
+    types_of_branches.reserve(args.size() / 2 + 1);
 
     for_branches([&](const DataTypePtr & arg)
     {
