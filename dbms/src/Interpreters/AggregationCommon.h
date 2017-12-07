@@ -11,7 +11,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 
 
 template <>

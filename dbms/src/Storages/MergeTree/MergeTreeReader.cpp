@@ -1,7 +1,5 @@
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Common/escapeForFileName.h>
 #include <Common/MemoryTracker.h>
 #include <IO/CachedCompressedReadBuffer.h>
@@ -9,7 +7,6 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
-#include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
 #include <Poco/File.h>
 

@@ -2,7 +2,6 @@
 
 #include <shared_mutex>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Limits.h>
 #include <Interpreters/SetVariants.h>

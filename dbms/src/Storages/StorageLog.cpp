@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
