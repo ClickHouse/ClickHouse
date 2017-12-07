@@ -12,7 +12,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 
 #include <DataStreams/IBlockInputStream.h>
 
