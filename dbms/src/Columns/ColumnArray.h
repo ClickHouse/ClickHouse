@@ -85,6 +85,12 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
+    void forEachSubcolumn(ColumnCallback callback) override
+    {
+        callback(offsets);
+        callback(data);
+    }
+
 private:
     ColumnPtr data;
     ColumnPtr offsets;  /// Displacements can be shared across multiple columns - to implement nested data structures.

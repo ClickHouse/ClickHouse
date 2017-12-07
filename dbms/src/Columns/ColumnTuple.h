@@ -59,6 +59,7 @@ public:
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     ColumnPtr convertToFullColumnIfConst() const override;
+    void forEachSubcolumn(ColumnCallback callback) override;
 
     const Block & getData() const { return data; }
     Block & getData() { return data; }

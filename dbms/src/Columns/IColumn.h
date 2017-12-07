@@ -263,6 +263,11 @@ public:
     /// Zero, if could be determined.
     virtual size_t allocatedBytes() const = 0;
 
+    /// If the column contains subcolumns (such as Array, Nullable, etc), enumerate them.
+    /// Shallow: doesn't do recursive calls.
+    using ColumnCallback = std::function<void(ColumnPtr&)>;
+    virtual void forEachSubcolumn(ColumnCallback) {}
+
     virtual ~IColumn() {}
 
 protected:

@@ -299,5 +299,12 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
         columns[i]->getExtremes(min_backend[i], max_backend[i]);
 }
 
+void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
+{
+    for (auto & column : columns)
+        callback(column);
+}
+
+
 
 }

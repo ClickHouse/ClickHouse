@@ -157,7 +157,9 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
             if (const DataTypeNullable * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
             {
                 have_nullable = true;
-                nested_types.emplace_back(type_nullable->getNestedType());
+
+                if (!type_nullable->isNull())
+                    nested_types.emplace_back(type_nullable->getNestedType());
             }
             else
                 nested_types.emplace_back(type);

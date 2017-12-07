@@ -734,17 +734,9 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        bool cond_is_nullable = arguments[0]->isNullable();
-        bool then_is_nullable = arguments[1]->isNullable();
-        bool else_is_nullable = arguments[2]->isNullable();
-
-        if (cond_is_nullable || then_is_nullable || else_is_nullable)
-        {
+        if (arguments[0]->isNullable())
             return makeNullableDataTypeIfNot(getReturnTypeImpl({
-                getNestedDataType(arguments[0]),
-                getNestedDataType(arguments[1]),
-                getNestedDataType(arguments[2])}));
-        }
+                getNestedDataType(arguments[0]), arguments[1], arguments[2]}));
 
         if (!checkDataType<DataTypeUInt8>(arguments[0].get()))
             throw Exception("Illegal type of first argument (condition) of function if. Must be UInt8.",
