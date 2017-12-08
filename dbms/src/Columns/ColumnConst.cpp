@@ -33,16 +33,4 @@ ColumnPtr ColumnConst::convertToFullColumn() const
     return data->replicate(Offsets_t(1, s));
 }
 
-
-
-String ColumnConst::dump() const
-{
-    WriteBufferFromOwnString out;
-    out << "Const, size: " << s << ", nested column: " << data->getName() << ", nested size: " << data->size();
-    if (data->size())
-        out << ", value: " << applyVisitor(FieldVisitorDump(), (*data)[0]);
-
-    return out.str();
-}
-
 }
