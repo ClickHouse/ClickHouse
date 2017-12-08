@@ -255,12 +255,12 @@ DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args
 
     FunctionArray fun_array{context};
 
-    DataTypePtr src_array_type = fun_array.getReturnTypeImpl(src_array_types);
-    DataTypePtr dst_array_type = fun_array.getReturnTypeImpl(dst_array_types);
+    DataTypePtr src_array_type = fun_array.getReturnType(src_array_types);
+    DataTypePtr dst_array_type = fun_array.getReturnType(dst_array_types);
 
     /// Finally get the return type of the transform function.
     FunctionTransform fun_transform;
-    return fun_transform.getReturnTypeImpl({args.front(), src_array_type, dst_array_type, args.back()});
+    return fun_transform.getReturnType({args.front(), src_array_type, dst_array_type, args.back()});
 }
 
 void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
@@ -296,8 +296,8 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
 
     FunctionArray fun_array{context};
 
-    DataTypePtr src_array_type = fun_array.getReturnTypeImpl(src_array_types);
-    DataTypePtr dst_array_type = fun_array.getReturnTypeImpl(dst_array_types);
+    DataTypePtr src_array_type = fun_array.getReturnType(src_array_types);
+    DataTypePtr dst_array_type = fun_array.getReturnType(dst_array_types);
 
     Block temp_block = block;
 
@@ -307,14 +307,14 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
     size_t dst_array_pos = temp_block.columns();
     temp_block.insert({nullptr, dst_array_type, ""});
 
-    fun_array.executeImpl(temp_block, src_array_args, src_array_pos);
-    fun_array.executeImpl(temp_block, dst_array_args, dst_array_pos);
+    fun_array.execute(temp_block, src_array_args, src_array_pos);
+    fun_array.execute(temp_block, dst_array_args, dst_array_pos);
 
     /// Execute transform.
     FunctionTransform fun_transform;
 
     ColumnNumbers transform_args{args.front(), src_array_pos, dst_array_pos, args.back()};
-    fun_transform.executeImpl(temp_block, transform_args, result);
+    fun_transform.execute(temp_block, transform_args, result);
 
     /// Put the result into the original block.
     block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
