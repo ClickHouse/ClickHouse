@@ -42,6 +42,9 @@
 #include <sys/resource.h>
 #endif
 
+// have no .a version in packages
+#undef LINK_POLLY_INTO_TOOLS
+
 using namespace clang;
 using namespace llvm::opt;
 
