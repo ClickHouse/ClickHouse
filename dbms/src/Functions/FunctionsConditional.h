@@ -723,6 +723,100 @@ private:
         return true;
     }
 
+    bool executeForNullThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
+    {
+        const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
+
+        bool then_is_null = arg_then.column->isNull();
+        bool else_is_null = arg_else.column->isNull();
+
+        if (!then_is_null && !else_is_null)
+            return false;
+
+        if (then_is_null && else_is_null)
+        {
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
+            return true;
+        }
+
+        const ColumnUInt8 * cond_col = typeid_cast<const ColumnUInt8 *>(arg_cond.column.get());
+        const ColumnConst * cond_const_col = checkAndGetColumnConst<ColumnVector<UInt8>>(arg_cond.column.get());
+
+        /// If then is NULL, we create Nullable column with null mask OR-ed with condition.
+        if (then_is_null)
+        {
+            if (cond_col)
+            {
+                if (arg_else.column->isNullable())
+                {
+                    auto result_column = arg_else.column->clone();
+                    static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    block.getByPosition(result).column = result_column;
+                }
+                else
+                {
+                    block.getByPosition(result).column = std::make_shared<ColumnNullable>(
+                        materializeColumnIfConst(arg_else.column), arg_cond.column->clone());
+                }
+            }
+            else if (cond_const_col)
+            {
+                block.getByPosition(result).column = cond_const_col->getValue<UInt8>()
+                    ? block.getByPosition(result).type->createColumn()->cloneResized(block.rows())
+                    : makeNullableColumnIfNot(arg_else.column);
+            }
+            else
+                throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
+                    + ". Must be ColumnUInt8 or ColumnConstUInt8.",
+                    ErrorCodes::ILLEGAL_COLUMN);
+            return true;
+        }
+
+        /// If else is NULL, we create Nullable column with null mask OR-ed with negated condition.
+        if (else_is_null)
+        {
+            if (cond_col)
+            {
+                size_t size = block.rows();
+                auto & null_map_data = cond_col->getData();
+
+                auto negated_null_map = std::make_shared<ColumnUInt8>();
+                auto & negated_null_map_data = negated_null_map->getData();
+                negated_null_map_data.resize(size);
+
+                for (size_t i = 0; i < size; ++i)
+                    negated_null_map_data[i] = !null_map_data[i];
+
+                if (arg_then.column->isNullable())
+                {
+                    auto result_column = arg_then.column->clone();
+                    static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
+                    block.getByPosition(result).column = result_column;
+                }
+                else
+                {
+                    block.getByPosition(result).column = std::make_shared<ColumnNullable>(
+                        materializeColumnIfConst(arg_then.column), negated_null_map);
+                }
+            }
+            else if (cond_const_col)
+            {
+                block.getByPosition(result).column = cond_const_col->getValue<UInt8>()
+                    ? makeNullableColumnIfNot(arg_then.column)
+                    : block.getByPosition(result).type->createColumn()->cloneResized(block.rows());
+            }
+            else
+                throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
+                    + ". Must be ColumnUInt8 or ColumnConstUInt8.",
+                    ErrorCodes::ILLEGAL_COLUMN);
+            return true;
+        }
+
+        return false;
+    }
+
 public:
     String getName() const override
     {
@@ -750,6 +844,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (executeForNullableCondition(block, arguments, result)
+            || executeForNullThenElse(block, arguments, result)
             || executeForNullableThenElse(block, arguments, result))
             return;
 
