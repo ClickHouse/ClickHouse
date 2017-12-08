@@ -1,7 +1,7 @@
 find_package (Threads)
 
 add_executable (clickhouse-compressor main.cpp)
-target_link_libraries (clickhouse-compressor clickhouse-compressor-lib)
+target_link_libraries (clickhouse-compressor libclickhouse-compressor)
 
 install (TARGETS clickhouse-compressor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse-compressor)
 
