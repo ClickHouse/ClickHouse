@@ -9,6 +9,8 @@ void registerTableFunctionMerge(TableFunctionFactory & factory);
 void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionShardByHash(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
+void registerTableFunctionMySQL(TableFunctionFactory & factory);
+void registerTableFunctionODBC(TableFunctionFactory & factory);
 
 
 void registerTableFunctions()
@@ -19,6 +21,8 @@ void registerTableFunctions()
     registerTableFunctionRemote(factory);
     registerTableFunctionShardByHash(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionMySQL(factory);
+    registerTableFunctionODBC(factory);
 }
 
 }
