@@ -4,8 +4,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsConversion.h>
 #include <DataTypes/getLeastCommonType.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Functions/GatherUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/ClearableHashMap.h>
@@ -16,6 +16,7 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Interpreters/castColumn.h>
 #include <tuple>
 #include <array>
 
@@ -64,54 +65,24 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         *  then convert them to full columns.
         */
 
-    Columns columns_holder(num_elements);
-    const IColumn * columns[num_elements];
+                Columns columns_holder(num_elements);
+                const IColumn * columns[num_elements];
 
-    for (size_t i = 0; i < num_elements; ++i)
-    {
-        const auto & arg = block.getByPosition(arguments[i]);
-
-        String elem_type_name = elem_type->getName();
-        ColumnPtr preprocessed_column = arg.column;
-
-        if (!arg.type->equals(*elem_type))
-        {
-            Block temporary_block
-            {
-                arg,
+                for (size_t i = 0; i < num_elements; ++i)
                 {
-                    DataTypeString().createConstColumn(block_size, elem_type_name),
-                    std::make_shared<DataTypeString>(),
-                    ""
-                },
-                {
-                    nullptr,
-                    elem_type,
-                    ""
+                    const auto & arg = block.getByPosition(arguments[i]);
+
+                    ColumnPtr preprocessed_column = arg.column;
+
+                    if (!arg.type->equals(*elem_type))
+                        preprocessed_column = castColumn(arg, elem_type, context);
+
+                    if (auto materialized_column = preprocessed_column->convertToFullColumnIfConst())
+                        preprocessed_column = materialized_column;
+
+                    columns_holder[i] = std::move(preprocessed_column);
+                    columns[i] = columns_holder[i].get();
                 }
-            };
-
-            FunctionCast func_cast(context);
-
-            {
-                DataTypePtr unused_return_type;
-                ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
-                std::vector<ExpressionAction> unused_prerequisites;
-
-                /// Prepares function to execution. TODO It is not obvious.
-                func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
-            }
-
-            func_cast.execute(temporary_block, {0, 1}, 2);
-            preprocessed_column = temporary_block.getByPosition(2).column;
-        }
-
-        if (auto materialized_column = preprocessed_column->convertToFullColumnIfConst())
-            preprocessed_column = materialized_column;
-
-        columns_holder[i] = std::move(preprocessed_column);
-        columns[i] = columns_holder[i].get();
-    }
 
     /** Create and fill the result array.
         */
@@ -757,7 +728,8 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
     const Columns & tuple_columns = col_nested->getColumns();
     size_t tuple_size = tuple_columns.size();
 
-    const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type).getElements();
+    const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(
+        *typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getElements();
 
     /** We will calculate the function for the tuple of the internals of the array.
       * To do this, create a temporary block.
@@ -2624,9 +2596,9 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
 
 /// Implementation of FunctionArrayConcat.
 
-FunctionPtr FunctionArrayConcat::create(const Context &)
+FunctionPtr FunctionArrayConcat::create(const Context & context)
 {
-    return std::make_shared<FunctionArrayConcat>();
+    return std::make_shared<FunctionArrayConcat>(context);
 }
 
 String FunctionArrayConcat::getName() const
@@ -2653,35 +2625,47 @@ void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & argum
     const DataTypePtr & return_type = block.getByPosition(result).type;
     result_column = return_type->createColumn();
 
-    size_t size = 0;
-
-    for (auto argument : arguments)
+    if (return_type->isNull())
     {
-        const auto & argument_column = block.safeGetByPosition(argument).column;
-        size = argument_column->size();
+        result_column = return_type->createConstColumn(block.rows(), Null());
+        return;
+    }
+
+    size_t rows = block.rows();
+    size_t num_args = arguments.size();
+
+    Columns preprocessed_columns(num_args);
+
+    for (size_t i = 0; i < num_args; ++i)
+    {
+        const ColumnWithTypeAndName & arg = block.getByPosition(arguments[i]);
+        ColumnPtr preprocessed_column = arg.column;
+
+        if (!arg.type->equals(*return_type))
+            preprocessed_column = castColumn(arg, return_type, context);
+
+        preprocessed_columns[i] = std::move(preprocessed_column);
     }
 
     std::vector<std::unique_ptr<IArraySource>> sources;
 
-    for (auto argument : arguments)
+    for (auto & argument_column : preprocessed_columns)
     {
-        auto argument_column = block.getByPosition(argument).column.get();
-        size_t column_size = argument_column->size();
         bool is_const = false;
 
-        if (auto argument_column_const = typeid_cast<ColumnConst *>(argument_column))
+        if (auto argument_column_const = typeid_cast<ColumnConst *>(argument_column.get()))
         {
             is_const = true;
-            argument_column = &argument_column_const->getDataColumn();
+            argument_column = argument_column_const->getDataColumnPtr();
         }
 
-        if (auto argument_column_array = typeid_cast<ColumnArray *>(argument_column))
-            sources.emplace_back(createArraySource(*argument_column_array, is_const, column_size));
+        if (auto argument_column_array = typeid_cast<ColumnArray *>(argument_column.get()))
+            sources.emplace_back(createArraySource(*argument_column_array, is_const, rows));
         else
             throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
     }
 
-    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column.get()), size);
+    auto sink = createArraySink(typeid_cast<ColumnArray &>(*result_column.get()), rows);
     concat(sources, *sink);
 }
 
@@ -2829,7 +2813,6 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
     auto & result_colum_with_name_and_type = block.getByPosition(result);
     auto & result_column = result_colum_with_name_and_type.column;
     auto & return_type = result_colum_with_name_and_type.type;
-    result_column = return_type->createColumn();
 
     auto array_column = block.getByPosition(arguments[0]).column;
     auto appended_column = block.getByPosition(arguments[1]).column;
@@ -2839,6 +2822,15 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
         result_column = array_column->clone();
         return;
     }
+
+    result_column = return_type->createColumn();
+
+    if (!block.getByPosition(arguments[0]).type->equals(*return_type))
+        array_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
+
+    const DataTypePtr & return_nested_type = typeid_cast<const DataTypeArray &>(*return_type).getNestedType();
+    if (!block.getByPosition(arguments[1]).type->equals(*return_nested_type))
+        appended_column = castColumn(block.getByPosition(arguments[1]), return_nested_type, context);
 
     std::vector<std::unique_ptr<IArraySource>> sources;
 
@@ -2880,16 +2872,16 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
 
 /// Implementation of FunctionArrayPushFront.
 
-FunctionPtr FunctionArrayPushFront::create(const Context &)
+FunctionPtr FunctionArrayPushFront::create(const Context & context)
 {
-    return std::make_shared<FunctionArrayPushFront>();
+    return std::make_shared<FunctionArrayPushFront>(context);
 }
 
 /// Implementation of FunctionArrayPushBack.
 
-FunctionPtr FunctionArrayPushBack::create(const Context &)
+FunctionPtr FunctionArrayPushBack::create(const Context & context)
 {
-    return std::make_shared<FunctionArrayPushBack>();
+    return std::make_shared<FunctionArrayPushBack>(context);
 }
 
 /// Implementation of FunctionArrayPop.

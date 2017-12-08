@@ -1,9 +1,10 @@
 #include <Functions/FunctionsConditional.h>
 #include <Functions/FunctionsArray.h>
-#include <Functions/FunctionsConversion.h>
 #include <Functions/FunctionsTransform.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnNullable.h>
+#include <Interpreters/castColumn.h>
+
 
 namespace DB
 {
@@ -31,39 +32,6 @@ FunctionPtr FunctionMultiIf::create(const Context & context)
 String FunctionMultiIf::getName() const
 {
     return name;
-}
-
-
-static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const Context & context)
-{
-    Block temporary_block
-    {
-        arg,
-        {
-            DataTypeString().createConstColumn(arg.column->size(), type->getName()),
-            std::make_shared<DataTypeString>(),
-            ""
-        },
-        {
-            nullptr,
-            type,
-            ""
-        }
-    };
-
-    FunctionCast func_cast(context);
-
-    {
-        DataTypePtr unused_return_type;
-        ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
-        std::vector<ExpressionAction> unused_prerequisites;
-
-        /// Prepares function to execution. TODO It is not obvious.
-        func_cast.getReturnTypeAndPrerequisites(arguments, unused_return_type, unused_prerequisites);
-    }
-
-    func_cast.execute(temporary_block, {0, 1}, 2);
-    return temporary_block.getByPosition(2).column;
 }
 
 
