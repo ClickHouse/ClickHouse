@@ -5,6 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <Columns/ColumnNullable.h>
 
 namespace DB
@@ -122,6 +123,9 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
     filtered_args.reserve(arguments.size());
     for (const auto & arg : arguments)
     {
+        if (arg->isNull())
+            continue;
+
         filtered_args.push_back(arg);
 
         if (!arg->isNullable())
@@ -145,7 +149,7 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
     }
 
     if (new_args.empty())
-        throw Exception("Logical error in implementation of function coalesce", ErrorCodes::LOGICAL_ERROR);
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     if (new_args.size() == 1)
         return new_args.front();
 

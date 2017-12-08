@@ -183,20 +183,24 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
 
     for_conditions([&](const DataTypePtr & arg)
     {
-        const IDataType * observed_type;
+        const IDataType * nested_type;
         if (arg->isNullable())
         {
             have_nullable_condition = true;
+
+            if (arg->isNull())
+                return;
+
             const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
-            observed_type = nullable_type.getNestedType().get();
+            nested_type = nullable_type.getNestedType().get();
         }
         else
         {
-            observed_type = arg.get();
+            nested_type = arg.get();
         }
 
-        if (!checkDataType<DataTypeUInt8>(observed_type))
-            throw Exception{"Illegal type of argument (condition) "
+        if (!checkDataType<DataTypeUInt8>(nested_type))
+            throw Exception{"Illegal type " + arg->getName() + " of argument (condition) "
                 "of function " + getName() + ". Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     });
