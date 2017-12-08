@@ -1,6 +1,4 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -10,8 +8,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNull.h>
-#include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/IAST.h>
 
@@ -30,16 +26,11 @@ namespace ErrorCodes
 
 
 DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
-    : enriched_nested(std::make_pair(nested_, std::make_shared<DataTypeVoid>())), nested{nested_}
+    : nested{nested_}
 {
     offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
 }
 
-DataTypeArray::DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_)
-    : enriched_nested{enriched_nested_}, nested{enriched_nested.first}
-{
-    offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
-}
 
 void DataTypeArray::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
@@ -431,16 +422,7 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 ColumnPtr DataTypeArray::createColumn() const
 {
-    if (nested->isNull())
-    {
-        ColumnPtr col = std::make_shared<ColumnUInt8>();
-        ColumnPtr null_map = std::make_shared<ColumnUInt8>();
-        ColumnPtr nullable_col = std::make_shared<ColumnNullable>(col, null_map);
-
-        return std::make_shared<ColumnArray>(nullable_col);
-    }
-    else
-        return std::make_shared<ColumnArray>(nested->createColumn());
+    return std::make_shared<ColumnArray>(nested->createColumn());
 }
 
 
@@ -455,17 +437,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!arguments || arguments->children.size() != 1)
         throw Exception("Array data type family must have exactly one argument - type of elements", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    DataTypePtr nested_type = DataTypeFactory::instance().get(arguments->children[0]);
-
-    if (typeid_cast<const DataTypeNull *>(nested_type.get()))
-    {
-        /// Special case: Array(Null) is actually Array(Nullable(UInt8)).
-        return std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeNullable>(
-                std::make_shared<DataTypeUInt8>()));
-    }
-
-    return std::make_shared<DataTypeArray>(nested_type);
+    return std::make_shared<DataTypeArray>(DataTypeFactory::instance().get(arguments->children[0]));
 }
 
 

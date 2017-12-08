@@ -205,7 +205,7 @@ public:
         data.reserve(n);
     }
 
-    std::string getName() const override;
+    const char * getFamilyName() const override;
 
     ColumnPtr cloneResized(size_t size) const override;
 

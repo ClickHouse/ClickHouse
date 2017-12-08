@@ -1,10 +1,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataStreams/PrettyBlockOutputStream.h>
-#include <Columns/ColumnsNumber.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>

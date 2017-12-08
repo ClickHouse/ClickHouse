@@ -2,8 +2,6 @@
 #include <thread>
 #include <future>
 
-#include <cxxabi.h>
-
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 
@@ -22,6 +20,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
+#include <Common/demangle.h>
 #include <Interpreters/config_compile.h>
 
 
@@ -229,9 +228,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
         IAggregateFunction & func = *aggregate_functions[i];
 
         int status = 0;
-        char * type_name_ptr = abi::__cxa_demangle(typeid(func).name(), 0, 0, &status);
-        std::string type_name = type_name_ptr;
-        free(type_name_ptr);
+        std::string type_name = demangle(typeid(func).name(), status);
 
         if (status)
             throw Exception("Cannot compile code: cannot demangle name " + String(typeid(func).name())

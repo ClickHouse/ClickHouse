@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/DataTypeNumberBase.h>
-#include <DataTypes/IDataTypeDummy.h>
 
 
 namespace DB
@@ -24,34 +23,5 @@ using DataTypeInt32 = DataTypeNumber<Int32>;
 using DataTypeInt64 = DataTypeNumber<Int64>;
 using DataTypeFloat32 = DataTypeNumber<Float32>;
 using DataTypeFloat64 = DataTypeNumber<Float64>;
-
-
-/// Used only to indicate error case in calculations on data types.
-
-template <>
-class DataTypeNumber<void> final : public IDataTypeDummy
-{
-public:
-    using FieldType = void;
-    static constexpr bool is_parametric = false;
-
-    std::string getName() const override { return "Void"; }
-    const char * getFamilyName() const override { return "Void"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<void>>(); }
-};
-
-using DataTypeVoid = DataTypeNumber<void>;
-
-template <>
-class DataTypeNumber<Null> final : public IDataTypeDummy
-{
-public:
-    using FieldType = Null;
-    static constexpr bool is_parametric = false;
-
-    std::string getName() const override { return "Null"; }
-    const char * getFamilyName() const override { return "Null"; }
-    DataTypePtr clone() const override { return std::make_shared<DataTypeNumber<Null>>(); }
-};
 
 }

@@ -19,14 +19,12 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 
 #include <Common/typeid_cast.h>
 

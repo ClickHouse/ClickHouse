@@ -4,12 +4,6 @@
 #include <IO/VarInt.h>
 #include <IO/CompressedReadBufferFromFile.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>

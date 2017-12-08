@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/EnrichedDataTypePtr.h>
 
 
 namespace DB
@@ -11,8 +10,6 @@ namespace DB
 class DataTypeArray final : public IDataType
 {
 private:
-    /// Extended type of array elements.
-    DataTypeTraits::EnrichedDataTypePtr enriched_nested;
     /// The type of array elements.
     DataTypePtr nested;
     /// Type of offsets.
@@ -22,7 +19,6 @@ public:
     static constexpr bool is_parametric = true;
 
     DataTypeArray(const DataTypePtr & nested_);
-    DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_);
 
     std::string getName() const override
     {
@@ -41,7 +37,7 @@ public:
 
     DataTypePtr clone() const override
     {
-        return std::make_shared<DataTypeArray>(enriched_nested);
+        return std::make_shared<DataTypeArray>(nested);
     }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
@@ -95,7 +91,6 @@ public:
     Field getDefault() const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
-    const DataTypeTraits::EnrichedDataTypePtr & getEnrichedNestedType() const { return enriched_nested; }
     const DataTypePtr & getOffsetsType() const { return offsets; }
 };
 
