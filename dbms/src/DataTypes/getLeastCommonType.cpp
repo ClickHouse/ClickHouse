@@ -1,4 +1,5 @@
-#include <sstream>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/getLeastCommonType.h>
@@ -27,7 +28,7 @@ namespace
 {
     String getExceptionMessagePrefix(const DataTypes & types)
     {
-        std::stringstream res;
+        WriteBufferFromOwnString res;
         res << "There is no common type for types ";
 
         bool first = true;
@@ -130,18 +131,18 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
             }
             else
                 all_tuples = false;
+        }
 
-            if (have_tuple)
-            {
-                if (!all_tuples)
-                    throw Exception(getExceptionMessagePrefix(types) + " because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+        if (have_tuple)
+        {
+            if (!all_tuples)
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-                DataTypes common_tuple_types(tuple_size);
-                for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                    common_tuple_types[elem_idx] = getLeastCommonType(nested_types[elem_idx]);
+            DataTypes common_tuple_types(tuple_size);
+            for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
+                common_tuple_types[elem_idx] = getLeastCommonType(nested_types[elem_idx]);
 
-                return std::make_shared<DataTypeTuple>(common_tuple_types);
-            }
+            return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
     }
 
