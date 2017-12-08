@@ -744,18 +744,20 @@ bool FunctionArrayElement::executeArgument(Block & block, const ColumnNumbers & 
 
 bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    ColumnArray * col_array = typeid_cast<ColumnArray *>(block.getByPosition(arguments[0]).column.get());
+    const ColumnArray * col_array = typeid_cast<const ColumnArray *>(block.getByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
 
-    ColumnTuple * col_nested = typeid_cast<ColumnTuple *>(&col_array->getData());
+    const ColumnTuple * col_nested = typeid_cast<const ColumnTuple *>(&col_array->getData());
 
     if (!col_nested)
         return false;
 
-    Block & tuple_block = col_nested->getData();
-    size_t tuple_size = tuple_block.columns();
+    const Columns & tuple_columns = col_nested->getColumns();
+    size_t tuple_size = tuple_columns.size();
+
+    const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type).getElements();
 
     /** We will calculate the function for the tuple of the internals of the array.
       * To do this, create a temporary block.
@@ -771,15 +773,13 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
     block_of_temporary_results.insert(block.getByPosition(arguments[1]));
 
     /// results of taking elements by index for arrays from each element of the tuples;
-    Block result_tuple_block;
+    Columns result_tuple_columns;
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
         ColumnWithTypeAndName array_of_tuple_section;
-        array_of_tuple_section.column = std::make_shared<ColumnArray>(
-            tuple_block.getByPosition(i).column, col_array->getOffsetsColumn());
-        array_of_tuple_section.type = std::make_shared<DataTypeArray>(
-            tuple_block.getByPosition(i).type);
+        array_of_tuple_section.column = std::make_shared<ColumnArray>(tuple_columns[i], col_array->getOffsetsColumn());
+        array_of_tuple_section.type = std::make_shared<DataTypeArray>(tuple_types[i]);
         block_of_temporary_results.insert(array_of_tuple_section);
 
         ColumnWithTypeAndName array_elements_of_tuple_section;
@@ -789,11 +789,10 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
 
         executeImpl(block_of_temporary_results, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2);
 
-        result_tuple_block.insert(block_of_temporary_results.getByPosition(i * 2 + 2));
+        result_tuple_columns.emplace_back(std::move(block_of_temporary_results.getByPosition(i * 2 + 2).column));
     }
 
-    auto col_res = std::make_shared<ColumnTuple>(result_tuple_block);
-    block.getByPosition(result).column = col_res;
+    block.getByPosition(result).column = std::make_shared<ColumnTuple>(result_tuple_columns);
 
     return true;
 }

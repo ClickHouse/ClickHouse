@@ -271,12 +271,12 @@ Block SummingSortedBlockInputStream::readImpl()
         // Wrap aggregated columns in a tuple to match function signature
         if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
         {
-            auto tuple = std::make_shared<ColumnTuple>();
-            auto & tuple_columns = tuple->getColumns();
-            for (auto i : desc.column_numbers)
-                tuple_columns.push_back(merged_block.safeGetByPosition(i).column);
+            size_t tuple_size = desc.column_numbers.size();
+            Columns tuple_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i] = merged_block.safeGetByPosition(i).column;
 
-            desc.merged_column = tuple;
+            desc.merged_column = std::make_shared<ColumnTuple>(tuple_columns);;
         }
         else
             desc.merged_column = merged_block.safeGetByPosition(desc.column_numbers[0]).column;

@@ -156,18 +156,17 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        const auto & tuple_block = tuple_col->getData();
-        const auto & x = tuple_block.safeGetByPosition(0);
-        const auto & y = tuple_block.safeGetByPosition(1);
+        const Columns & tuple_columns = tuple_col->getColumns();
+        const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type).getElements();
 
-        bool use_float64 = checkDataType<DataTypeFloat64>(x.type.get()) || checkDataType<DataTypeFloat64>(y.type.get());
+        bool use_float64 = checkDataType<DataTypeFloat64>(tuple_types[0].get()) || checkDataType<DataTypeFloat64>(tuple_types[1].get());
 
         auto & result_column = block.safeGetByPosition(result).column;
 
         if (use_float64)
-            result_column = executeForType<Float64>(*x.column, *y.column, block, arguments);
+            result_column = executeForType<Float64>(*tuple_columns[0], *tuple_columns[1], block, arguments);
         else
-            result_column = executeForType<Float32>(*x.column, *y.column, block, arguments);
+            result_column = executeForType<Float32>(*tuple_columns[0], *tuple_columns[1], block, arguments);
 
         if (const_tuple_col)
             result_column = std::make_shared<ColumnConst>(result_column, const_tuple_col->size());
@@ -209,9 +208,9 @@ private:
             if (!tuple_col)
                 throw Exception(getMsgPrefix(i) + " must be constant array of tuples.", ErrorCodes::ILLEGAL_COLUMN);
 
-            const auto & tuple_block = tuple_col->getData();
-            const auto & column_x = tuple_block.safeGetByPosition(0).column;
-            const auto & column_y = tuple_block.safeGetByPosition(1).column;
+            const auto & tuple_columns = tuple_col->getColumns();
+            const auto & column_x = tuple_columns[0];
+            const auto & column_y = tuple_columns[1];
 
             if (!polygon.outer().empty())
                 polygon.inners().emplace_back();

@@ -1264,8 +1264,7 @@ private:
         for (const auto & idx_type : ext::enumerate(from_type->getElements()))
             element_wrappers.push_back(prepareImpl(idx_type.second, to_element_types[idx_type.first].get()));
 
-        auto function_tuple = FunctionTuple::create(context);
-        return [element_wrappers, function_tuple, from_element_types, to_element_types]
+        return [element_wrappers, from_element_types, to_element_types]
             (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
             const auto col = block.getByPosition(arguments.front()).column.get();
@@ -1273,34 +1272,30 @@ private:
             /// copy tuple elements to a separate block
             Block element_block;
 
-            /// @todo retain constness
-            if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
-                element_block = column_tuple->getData();
+            size_t tuple_size = from_element_types.size();
+            const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
+
+            /// create columns for source elements
+            for (size_t i = 0; i < tuple_size; ++i)
+                element_block.insert({ column_tuple.getColumns()[i], from_element_types[i], "" });
 
             /// create columns for converted elements
             for (const auto & to_element_type : to_element_types)
                 element_block.insert({ nullptr, to_element_type, "" });
 
-            /// store position for converted tuple
-            const auto converted_tuple_pos = element_block.columns();
-
             /// insert column for converted tuple
             element_block.insert({ nullptr, std::make_shared<DataTypeTuple>(to_element_types), "" });
-
-            const auto converted_element_offset = from_element_types.size();
 
             /// invoke conversion for each element
             for (const auto & idx_element_wrapper : ext::enumerate(element_wrappers))
                 idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
-                    converted_element_offset + idx_element_wrapper.first);
+                    tuple_size + idx_element_wrapper.first);
 
-            /// form tuple from converted elements using FunctionTuple
-            function_tuple->execute(element_block,
-                ext::collection_cast<ColumnNumbers>(ext::range(converted_element_offset, 2 * converted_element_offset)),
-                converted_tuple_pos);
+            Columns converted_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                converted_columns[i] = element_block.getByPosition(tuple_size + i).column;
 
-            /// copy FunctionTuple's result from element_block to resulting block
-            block.getByPosition(result).column = element_block.getByPosition(converted_tuple_pos).column;
+            block.getByPosition(result).column = std::make_shared<ColumnTuple>(converted_columns);
         };
     }
 
