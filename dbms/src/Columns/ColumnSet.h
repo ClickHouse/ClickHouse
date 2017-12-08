@@ -22,7 +22,7 @@ public:
     /// The column is not a constant. Otherwise, the column will be used in calculations in ExpressionActions::prepare, when a set from subquery is not ready yet.
     bool isConst() const override { return false; }
 
-    std::string getName() const override { return "ColumnSet"; }
+    const char * getFamilyName() const override { return "Set"; }
     ColumnPtr cloneDummy(size_t s_) const override { return std::make_shared<ColumnSet>(s_, data); }
 
     ConstSetPtr getData() const { return data; }

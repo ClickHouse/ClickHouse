@@ -1120,14 +1120,14 @@ using FunctionToFloat64OrZero = FunctionConvertOrZero<DataTypeFloat64, NameToFlo
 
 class FunctionCast final : public IFunction
 {
+public:
+    FunctionCast(const Context & context) : context(context) {}
+
+private:
     using WrapperType = std::function<void(Block &, const ColumnNumbers &, size_t)>;
     const Context & context;
     WrapperType wrapper_function;
     std::function<Monotonicity(const IDataType &, const Field &, const Field &)> monotonicity_for_range;
-
-public:
-    FunctionCast(const Context & context) : context(context) {}
-private:
 
     template <typename DataType>
     WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const)
@@ -1194,9 +1194,9 @@ private:
                 ErrorCodes::TYPE_MISMATCH};
 
         /// Prepare nested type conversion
-        const auto nested_function = prepareImpl(from_nested_type, to_nested_type.get());
+        const auto nested_function = prepare(from_nested_type, to_nested_type.get());
 
-        return [nested_function, from_nested_type, to_nested_type] (
+        return [nested_function, from_nested_type, to_nested_type](
             Block & block, const ColumnNumbers & arguments, const size_t result)
         {
             auto array_arg = block.getByPosition(arguments.front());
@@ -1217,14 +1217,15 @@ private:
                 }
 
                 /// create block for converting nested column containing original and result columns
-                Block nested_block{
+                Block nested_block
+                {
                     { col_array->getDataPtr(), from_nested_type, "" },
                     { nullptr, to_nested_type, "" }
                 };
 
                 const auto nested_result = 1;
                 /// convert nested column
-                nested_function(nested_block, {0 }, nested_result);
+                nested_function(nested_block, {0}, nested_result);
 
                 /// set converted nested column to result
                 res->getDataPtr() = nested_block.getByPosition(nested_result).column;
@@ -1267,10 +1268,9 @@ private:
 
         /// Create conversion wrapper for each element in tuple
         for (const auto & idx_type : ext::enumerate(from_type->getElements()))
-            element_wrappers.push_back(prepareImpl(idx_type.second, to_element_types[idx_type.first].get()));
+            element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
 
-        auto function_tuple = FunctionTuple::create(context);
-        return [element_wrappers, function_tuple, from_element_types, to_element_types]
+        return [element_wrappers, from_element_types, to_element_types]
             (Block & block, const ColumnNumbers & arguments, const size_t result)
         {
             const auto col = block.getByPosition(arguments.front()).column.get();
@@ -1278,34 +1278,30 @@ private:
             /// copy tuple elements to a separate block
             Block element_block;
 
-            /// @todo retain constness
-            if (const auto column_tuple = typeid_cast<const ColumnTuple *>(col))
-                element_block = column_tuple->getData();
+            size_t tuple_size = from_element_types.size();
+            const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
+
+            /// create columns for source elements
+            for (size_t i = 0; i < tuple_size; ++i)
+                element_block.insert({ column_tuple.getColumns()[i], from_element_types[i], "" });
 
             /// create columns for converted elements
             for (const auto & to_element_type : to_element_types)
                 element_block.insert({ nullptr, to_element_type, "" });
 
-            /// store position for converted tuple
-            const auto converted_tuple_pos = element_block.columns();
-
             /// insert column for converted tuple
             element_block.insert({ nullptr, std::make_shared<DataTypeTuple>(to_element_types), "" });
-
-            const auto converted_element_offset = from_element_types.size();
 
             /// invoke conversion for each element
             for (const auto & idx_element_wrapper : ext::enumerate(element_wrappers))
                 idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
-                    converted_element_offset + idx_element_wrapper.first);
+                    tuple_size + idx_element_wrapper.first);
 
-            /// form tuple from converted elements using FunctionTuple
-            function_tuple->execute(element_block,
-                ext::collection_cast<ColumnNumbers>(ext::range(converted_element_offset, 2 * converted_element_offset)),
-                converted_tuple_pos);
+            Columns converted_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                converted_columns[i] = element_block.getByPosition(tuple_size + i).column;
 
-            /// copy FunctionTuple's result from element_block to resulting block
-            block.getByPosition(result).column = element_block.getByPosition(converted_tuple_pos).column;
+            block.getByPosition(result).column = std::make_shared<ColumnTuple>(converted_columns);
         };
     }
 
@@ -1415,32 +1411,62 @@ private:
     }
 
     /// Actions to be taken when performing a conversion.
-    struct Action
+    struct NullableConversion
     {
-        /// If neither the input type nor the output type is nullable or null,
-        /// we perform the conversion without any pre and/or processing.
-        static constexpr auto NONE = UInt64(0);
-        /// The input has a nullable type. We must extract its nested type
-        /// before performing any conversion.
-        static constexpr auto UNWRAP_NULLABLE_INPUT = UInt64(1) << 0;
-        /// The output has a nullable type. We must wrap the result from the
-        /// conversion into a ColumnNullable.
-        static constexpr auto WRAP_RESULT_INTO_NULLABLE = UInt64(1) << 1;
-        /// The input is the NULL value. Before performing any conversion,
-        /// we will turn it into a single UInt8 zero value.
-        static constexpr auto CONVERT_NULL = UInt64(1) << 2;
+        bool source_is_nullable = false;
+        bool result_is_nullable = false;
     };
 
-    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type, const uint64_t action)
+    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type)
     {
-        auto wrapper = prepareImpl((action & Action::CONVERT_NULL) ?
-                                        std::make_shared<DataTypeUInt8>() :
-                                        from_type,
-                                    to_type);
+        /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
-        if (action & Action::WRAP_RESULT_INTO_NULLABLE)
+        NullableConversion nullable_conversion;
+        nullable_conversion.source_is_nullable = from_type->isNullable();
+        nullable_conversion.result_is_nullable = to_type->isNullable();
+
+        /// Check that the requested conversion is allowed.
+        if (nullable_conversion.source_is_nullable && !nullable_conversion.result_is_nullable)
+            throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
+                ErrorCodes::CANNOT_CONVERT_TYPE};
+
+        if (from_type->isNull())
         {
-            return [wrapper, action] (Block & block, const ColumnNumbers & arguments, const size_t result)
+            return [](Block & block, const ColumnNumbers &, const size_t result)
+            {
+                auto & res = block.getByPosition(result);
+                res.column = res.type->createConstColumn(block.rows(), Null())->convertToFullColumnIfConst();
+            };
+        }
+
+        DataTypePtr from_inner_type;
+        const IDataType * to_inner_type;
+
+        /// Create the requested conversion.
+        if (nullable_conversion.result_is_nullable)
+        {
+            if (nullable_conversion.source_is_nullable)
+            {
+                const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
+                from_inner_type = nullable_type.getNestedType();
+            }
+            else
+                from_inner_type = from_type;
+
+            const auto & nullable_type = static_cast<const DataTypeNullable &>(*to_type);
+            to_inner_type = nullable_type.getNestedType().get();
+        }
+        else
+        {
+            from_inner_type = from_type;
+            to_inner_type = to_type;
+        }
+
+        auto wrapper = prepareImpl(from_inner_type, to_inner_type);
+
+        if (nullable_conversion.result_is_nullable)
+        {
+            return [wrapper, nullable_conversion] (Block & block, const ColumnNumbers & arguments, const size_t result)
             {
                 /// Create a temporary block on which to perform the operation.
                 auto & res = block.getByPosition(result);
@@ -1449,17 +1475,8 @@ private:
                 const auto & nested_type = nullable_type.getNestedType();
 
                 Block tmp_block;
-                if (action & Action::UNWRAP_NULLABLE_INPUT)
+                if (nullable_conversion.source_is_nullable)
                     tmp_block = createBlockWithNestedColumns(block, arguments);
-                else if (action & Action::CONVERT_NULL)
-                {
-                    /// The input is replaced by a trivial UInt8 column
-                    /// which contains only one row whose value is 0.
-                    tmp_block = block;
-                    auto & elem = tmp_block.getByPosition(arguments[0]);
-                    elem.column = std::make_shared<ColumnUInt8>(block.rows(), 0);
-                    elem.type = std::make_shared<DataTypeUInt8>();
-                }
                 else
                     tmp_block = block;
 
@@ -1472,18 +1489,13 @@ private:
                 /// Wrap the result into a nullable column.
                 ColumnPtr null_map;
 
-                if (action & Action::UNWRAP_NULLABLE_INPUT)
+                if (nullable_conversion.source_is_nullable)
                 {
                     /// This is a conversion from a nullable to a nullable type.
                     /// So we just keep the null map of the input argument.
                     const auto & col = block.getByPosition(arguments[0]).column;
                     const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
                     null_map = nullable_col.getNullMapColumn();
-                }
-                else if (action & Action::CONVERT_NULL)
-                {
-                    /// A NULL value has been converted to a nullable type.
-                    null_map = std::make_shared<ColumnUInt8>(block.rows(), 1);
                 }
                 else
                 {
@@ -1545,8 +1557,7 @@ private:
         ///  but it is disabled because deserializing aggregate functions state might be unsafe.
 
         throw Exception{
-            "Conversion from " + from_type->getName() + " to " + to_type->getName() +
-                " is not supported",
+            "Conversion from " + from_type->getName() + " to " + to_type->getName() + " is not supported",
             ErrorCodes::CANNOT_CONVERT_TYPE};
     }
 
@@ -1615,55 +1626,9 @@ public:
 
         out_return_type = DataTypeFactory::instance().get(type_col->getValue<String>());
 
-        /// Determine whether pre-processing and/or post-processing must take
-        /// place during conversion.
-        uint64_t action = Action::NONE;
-        const auto & from_type = arguments.front().type;
-
-        if (from_type->isNullable())
-            action |= Action::UNWRAP_NULLABLE_INPUT;
-        else if (from_type->isNull() && !out_return_type->isNull())
-            action |= Action::CONVERT_NULL;
-
-        if (out_return_type->isNullable())
-            action |= Action::WRAP_RESULT_INTO_NULLABLE;
-
-        /// Check that the requested conversion is allowed.
-        if (!(action & Action::WRAP_RESULT_INTO_NULLABLE))
-        {
-            if (action & Action::CONVERT_NULL)
-                throw Exception{"Cannot convert NULL into a non-nullable type",
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
-            else if (action & Action::UNWRAP_NULLABLE_INPUT)
-                throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
-                    ErrorCodes::CANNOT_CONVERT_TYPE};
-        }
-
-        DataTypePtr from_inner_type;
-        const IDataType * to_inner_type;
-
-        /// Create the requested conversion.
-        if (action & Action::WRAP_RESULT_INTO_NULLABLE)
-        {
-            if (action & Action::UNWRAP_NULLABLE_INPUT)
-            {
-                const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
-                from_inner_type = nullable_type.getNestedType();
-            }
-            else
-                from_inner_type = from_type;
-
-            const auto & nullable_type = static_cast<const DataTypeNullable &>(*out_return_type);
-            to_inner_type = nullable_type.getNestedType().get();
-        }
-        else
-        {
-            from_inner_type = from_type;
-            to_inner_type = out_return_type.get();
-        }
-
-        wrapper_function = prepare(from_inner_type, to_inner_type, action);
-        prepareMonotonicityInformation(from_inner_type, to_inner_type);
+        const DataTypePtr & from_type = arguments.front().type;
+        wrapper_function = prepare(from_type, out_return_type.get());
+        prepareMonotonicityInformation(from_type, out_return_type.get());
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

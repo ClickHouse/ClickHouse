@@ -152,11 +152,7 @@ Block SummingSortedBlockInputStream::readImpl()
             else
             {
                 /// Leave only numeric types. Note that dates and datetime here are not considered such.
-                if (!column.type->isNumeric() ||
-                    column.type->getName() == "Date" ||
-                    column.type->getName() == "DateTime" ||
-                    column.type->getName() == "Nullable(Date)" ||
-                    column.type->getName() == "Nullable(DateTime)")
+                if (!column.type->behavesAsNumber())
                 {
                     column_numbers_not_to_aggregate.push_back(i);
                     continue;
@@ -275,12 +271,12 @@ Block SummingSortedBlockInputStream::readImpl()
         // Wrap aggregated columns in a tuple to match function signature
         if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
         {
-            auto tuple = std::make_shared<ColumnTuple>();
-            auto & tuple_columns = tuple->getColumns();
-            for (auto i : desc.column_numbers)
-                tuple_columns.push_back(merged_block.safeGetByPosition(i).column);
+            size_t tuple_size = desc.column_numbers.size();
+            Columns tuple_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+                tuple_columns[i] = merged_block.safeGetByPosition(desc.column_numbers[i]).column;
 
-            desc.merged_column = tuple;
+            desc.merged_column = std::make_shared<ColumnTuple>(tuple_columns);
         }
         else
             desc.merged_column = merged_block.safeGetByPosition(desc.column_numbers[0]).column;

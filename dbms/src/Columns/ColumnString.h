@@ -42,7 +42,7 @@ private:
     struct lessWithCollation;
 
 public:
-    std::string getName() const override { return "ColumnString"; }
+    const char * getFamilyName() const override { return "String"; }
 
     size_t size() const override
     {

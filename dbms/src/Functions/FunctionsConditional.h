@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -16,7 +17,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/NumberTraits.h>
-#include <DataTypes/DataTypeTraits.h>
+#include <DataTypes/getLeastCommonType.h>
 #include <Functions/GatherUtils.h>
 
 
@@ -109,6 +110,15 @@ public:
 };
 
 
+inline const DataTypePtr makeNullableDataTypeIfNot(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return type;
+
+    return std::make_shared<DataTypeNullable>(type);
+}
+
+
 class FunctionIf : public IFunction
 {
 public:
@@ -116,44 +126,6 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionIf>(); }
 
 private:
-    template <typename T0, typename T1>
-    bool checkRightType(const DataTypes & arguments, DataTypePtr & type_res) const
-    {
-        if (typeid_cast<const T1 *>(&*arguments[2]))
-        {
-            using ResultType = typename NumberTraits::ResultOfIf<typename T0::FieldType, typename T1::FieldType>::Type;
-            type_res = DataTypeTraits::DataTypeFromFieldTypeOrError<ResultType>::getDataType();
-            if (!type_res)
-                throw Exception("Arguments 2 and 3 of function " + getName() + " are not upscalable to a common type without loss of precision: "
-                    + arguments[1]->getName() + " and " + arguments[2]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            return true;
-        }
-        return false;
-    }
-
-    template <typename T0>
-    bool checkLeftType(const DataTypes & arguments, DataTypePtr & type_res) const
-    {
-        if (typeid_cast<const T0 *>(&*arguments[1]))
-        {
-            if (    checkRightType<T0, DataTypeUInt8>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt16>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt32>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeUInt64>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt8>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt16>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt32>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeInt64>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeFloat32>(arguments, type_res)
-                ||    checkRightType<T0, DataTypeFloat64>(arguments, type_res))
-                return true;
-            else
-                throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-        return false;
-    }
-
     template <typename T0, typename T1>
     bool executeRightType(
         const ColumnUInt8 * cond_col,
@@ -568,6 +540,7 @@ private:
         temporary_block.insert(block.getByPosition(arguments[0]));
 
         size_t tuple_size = type1.getElements().size();
+        Columns tuple_columns(tuple_size);
 
         for (size_t i = 0; i < tuple_size; ++i)
         {
@@ -575,19 +548,20 @@ private:
                 getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
                 {}});
 
-            temporary_block.insert({col1->getData().getByPosition(i).column, type1.getElements()[i], {}});
-            temporary_block.insert({col2->getData().getByPosition(i).column, type2.getElements()[i], {}});
+            temporary_block.insert({col1->getColumns()[i], type1.getElements()[i], {}});
+            temporary_block.insert({col2->getColumns()[i], type2.getElements()[i], {}});
 
             /// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
             executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1);
             temporary_block.erase(i + 3);
             temporary_block.erase(i + 2);
+
+            tuple_columns[i] = temporary_block.getByPosition(i + 1).column;
         }
 
         /// temporary_block is: cond, res_0, res_1, res_2...
 
-        temporary_block.erase(0);
-        block.getByPosition(result).column = std::make_shared<ColumnTuple>(temporary_block);
+        block.getByPosition(result).column = std::make_shared<ColumnTuple>(tuple_columns);
         return true;
     }
 
@@ -654,14 +628,6 @@ private:
             materializeColumnIfConst(column), std::make_shared<ColumnUInt8>(column->size(), 0));
     }
 
-    static const DataTypePtr makeNullableDataTypeIfNot(const DataTypePtr & type)
-    {
-        if (type->isNullable())
-            return type;
-
-        return std::make_shared<DataTypeNullable>(type);
-    }
-
     static const ColumnPtr getNestedColumn(const ColumnPtr & column)
     {
         if (column->isNullable())
@@ -676,6 +642,85 @@ private:
             return static_cast<const DataTypeNullable &>(*type).getNestedType();
 
         return type;
+    }
+
+    bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
+    {
+        const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
+        const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
+
+        bool then_is_nullable = typeid_cast<const ColumnNullable *>(arg_then.column.get());
+        bool else_is_nullable = typeid_cast<const ColumnNullable *>(arg_else.column.get());
+
+        if (!then_is_nullable && !else_is_nullable)
+            return false;
+
+        /** Calculate null mask of result and nested column separately.
+          */
+        ColumnPtr result_null_mask;
+
+        {
+            Block temporary_block(
+            {
+                arg_cond,
+                {
+                    then_is_nullable
+                        ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumn()
+                        : DataTypeUInt8().createConstColumn(block.rows(), UInt64(0)),
+                    std::make_shared<DataTypeUInt8>(),
+                    ""
+                },
+                {
+                    else_is_nullable
+                        ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumn()
+                        : DataTypeUInt8().createConstColumn(block.rows(), UInt64(0)),
+                    std::make_shared<DataTypeUInt8>(),
+                    ""
+                },
+                {
+                    nullptr,
+                    std::make_shared<DataTypeUInt8>(),
+                    ""
+                }
+            });
+
+            executeImpl(temporary_block, {0, 1, 2}, 3);
+
+            result_null_mask = temporary_block.getByPosition(3).column;
+        }
+
+        ColumnPtr result_nested_column;
+
+        {
+            Block temporary_block(
+            {
+                arg_cond,
+                {
+                    getNestedColumn(arg_then.column),
+                    getNestedDataType(arg_then.type),
+                    ""
+                },
+                {
+                    getNestedColumn(arg_else.column),
+                    getNestedDataType(arg_else.type),
+                    ""
+                },
+                {
+                    nullptr,
+                    getNestedDataType(block.getByPosition(result).type),
+                    ""
+                }
+            });
+
+            executeImpl(temporary_block, {0, 1, 2}, 3);
+
+            result_nested_column = temporary_block.getByPosition(3).column;
+        }
+
+        block.getByPosition(result).column = std::make_shared<ColumnNullable>(
+            materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
+        return true;
     }
 
     bool executeForNullThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -772,85 +817,6 @@ private:
         return false;
     }
 
-    bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
-    {
-        const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
-        const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
-        const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
-
-        bool then_is_nullable = typeid_cast<const ColumnNullable *>(arg_then.column.get());
-        bool else_is_nullable = typeid_cast<const ColumnNullable *>(arg_else.column.get());
-
-        if (!then_is_nullable && !else_is_nullable)
-            return false;
-
-        /** Calculate null mask of result and nested column separately.
-          */
-        ColumnPtr result_null_mask;
-
-        {
-            Block temporary_block(
-            {
-                arg_cond,
-                {
-                    then_is_nullable
-                        ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumn()
-                        : DataTypeUInt8().createConstColumn(block.rows(), UInt64(0)),
-                    std::make_shared<DataTypeUInt8>(),
-                    ""
-                },
-                {
-                    else_is_nullable
-                        ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumn()
-                        : DataTypeUInt8().createConstColumn(block.rows(), UInt64(0)),
-                    std::make_shared<DataTypeUInt8>(),
-                    ""
-                },
-                {
-                    nullptr,
-                    std::make_shared<DataTypeUInt8>(),
-                    ""
-                }
-            });
-
-            executeImpl(temporary_block, {0, 1, 2}, 3);
-
-            result_null_mask = temporary_block.getByPosition(3).column;
-        }
-
-        ColumnPtr result_nested_column;
-
-        {
-            Block temporary_block(
-            {
-                arg_cond,
-                {
-                    getNestedColumn(arg_then.column),
-                    getNestedDataType(arg_then.type),
-                    ""
-                },
-                {
-                    getNestedColumn(arg_else.column),
-                    getNestedDataType(arg_else.type),
-                    ""
-                },
-                {
-                    nullptr,
-                    getNestedDataType(block.getByPosition(result).type),
-                    ""
-                }
-            });
-
-            executeImpl(temporary_block, {0, 1, 2}, 3);
-
-            result_nested_column = temporary_block.getByPosition(3).column;
-        }
-
-        block.getByPosition(result).column = std::make_shared<ColumnNullable>(
-            materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
-        return true;
-    }
-
 public:
     String getName() const override
     {
@@ -864,107 +830,18 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        bool cond_is_null = arguments[0]->isNull();
-        bool then_is_null = arguments[1]->isNull();
-        bool else_is_null = arguments[2]->isNull();
+        if (arguments[0]->isNull())
+            return arguments[0];
 
-        if (cond_is_null
-            || (then_is_null && else_is_null))
-            return std::make_shared<DataTypeNull>();
-
-        if (then_is_null)
-            return makeNullableDataTypeIfNot(getNestedDataType(arguments[2]));
-
-        if (else_is_null)
-            return makeNullableDataTypeIfNot(getNestedDataType(arguments[1]));
-
-        bool cond_is_nullable = arguments[0]->isNullable();
-        bool then_is_nullable = arguments[1]->isNullable();
-        bool else_is_nullable = arguments[2]->isNullable();
-
-        if (cond_is_nullable || then_is_nullable || else_is_nullable)
-        {
+        if (arguments[0]->isNullable())
             return makeNullableDataTypeIfNot(getReturnTypeImpl({
-                getNestedDataType(arguments[0]),
-                getNestedDataType(arguments[1]),
-                getNestedDataType(arguments[2])}));
-        }
+                getNestedDataType(arguments[0]), arguments[1], arguments[2]}));
 
         if (!checkDataType<DataTypeUInt8>(arguments[0].get()))
-            throw Exception("Illegal type of first argument (condition) of function if. Must be UInt8.",
+            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument (condition) of function if. Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        const DataTypeArray * type_arr1 = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-        const DataTypeArray * type_arr2 = checkAndGetDataType<DataTypeArray>(arguments[2].get());
-
-        const DataTypeTuple * type_tuple1 = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
-        const DataTypeTuple * type_tuple2 = checkAndGetDataType<DataTypeTuple>(arguments[2].get());
-
-        if (arguments[1]->behavesAsNumber() && arguments[2]->behavesAsNumber())
-        {
-            DataTypePtr type_res;
-            if (!(    checkLeftType<DataTypeUInt8>(arguments, type_res)
-                ||    checkLeftType<DataTypeUInt16>(arguments, type_res)
-                ||    checkLeftType<DataTypeUInt32>(arguments, type_res)
-                ||    checkLeftType<DataTypeUInt64>(arguments, type_res)
-                ||    checkLeftType<DataTypeInt8>(arguments, type_res)
-                ||    checkLeftType<DataTypeInt16>(arguments, type_res)
-                ||    checkLeftType<DataTypeInt32>(arguments, type_res)
-                ||    checkLeftType<DataTypeInt64>(arguments, type_res)
-                ||    checkLeftType<DataTypeFloat32>(arguments, type_res)
-                ||    checkLeftType<DataTypeFloat64>(arguments, type_res)))
-                throw Exception("Internal error: unexpected type " + arguments[1]->getName() + " of first argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            return type_res;
-        }
-        else if (type_arr1 && type_arr2)
-        {
-            /// NOTE Error messages will refer to the types of array elements, which is slightly incorrect.
-            return std::make_shared<DataTypeArray>(getReturnTypeImpl({arguments[0], type_arr1->getNestedType(), type_arr2->getNestedType()}));
-        }
-        else if (type_tuple1 && type_tuple2)
-        {
-            const size_t tuple_size = type_tuple1->getElements().size();
-
-            if (tuple_size != type_tuple2->getElements().size())
-                throw Exception("Different sizes of tuples in 'then' and 'else' argument of function if",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            DataTypes result_tuple(tuple_size);
-
-            for (size_t i = 0; i < tuple_size; ++i)
-                result_tuple[i] = getReturnTypeImpl({arguments[0], type_tuple1->getElements()[i], type_tuple2->getElements()[i]});
-
-            return std::make_shared<DataTypeTuple>(std::move(result_tuple));
-        }
-        else if (!arguments[1]->equals(*arguments[2]))
-        {
-            const DataTypeString * type_string1 = checkAndGetDataType<DataTypeString>(arguments[1].get());
-            const DataTypeString * type_string2 = checkAndGetDataType<DataTypeString>(arguments[2].get());
-            const DataTypeFixedString * type_fixed_string1 = checkAndGetDataType<DataTypeFixedString>(arguments[1].get());
-            const DataTypeFixedString * type_fixed_string2 = checkAndGetDataType<DataTypeFixedString>(arguments[2].get());
-
-            if (type_fixed_string1 && type_fixed_string2)
-            {
-                if (type_fixed_string1->getN() != type_fixed_string2->getN())
-                    throw Exception("FixedString types as 'then' and 'else' arguments of function 'if' has different sizes",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-                return std::make_shared<DataTypeFixedString>(type_fixed_string1->getN());
-            }
-            else if ((type_string1 || type_fixed_string1) && (type_string2 || type_fixed_string2))
-            {
-                return std::make_shared<DataTypeString>();
-            }
-
-            throw Exception{
-                "Incompatible second and third arguments for function " + getName() + ": " +
-                    arguments[1]->getName() + " and " + arguments[2]->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-            };
-        }
-
-        return arguments[1];
+        return getLeastCommonType({arguments[1], arguments[2]});
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -1025,12 +902,6 @@ public:
     }
 };
 
-namespace Conditional
-{
-
-class NullMapBuilder;
-
-}
 
 /// Function multiIf, which generalizes the function if.
 ///
@@ -1052,6 +923,7 @@ class FunctionMultiIf final : public IFunction
 public:
     static constexpr auto name = "multiIf";
     static FunctionPtr create(const Context & context);
+    FunctionMultiIf(const Context & context) : context(context) {};
 
 public:
     String getName() const override;
@@ -1062,19 +934,9 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 
 private:
-    DataTypePtr getReturnTypeInternal(const DataTypes & args) const;
-
-    /// Internal version of multiIf.
-    /// The builder parameter is an object that incrementally builds the null map
-    /// of the result column if it is nullable. When no builder is necessary,
-    /// just pass a default parameter.
-    void perform(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
-
-    /// Perform multiIf in the case where all the non-null branches have the same type and all
-    /// the conditions are constant. The same remark as above applies with regards to
-    /// the builder parameter.
-    bool performTrivialCase(Block & block, const ColumnNumbers & args, size_t result, Conditional::NullMapBuilder & builder);
+    const Context & context;
 };
+
 
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
@@ -1094,23 +956,6 @@ public:
 
 private:
     const Context & context;
-};
-
-/// Implements the CASE construction when it
-/// isn't provided any expression. Users should not call this function.
-class FunctionCaseWithoutExpression : public IFunction
-{
-public:
-    static constexpr auto name = "caseWithoutExpression";
-    static FunctionPtr create(const Context & context_);
-
-public:
-    String getName() const override;
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
 };
 
 }

@@ -401,7 +401,6 @@ void Connection::sendData(const Block & block, const String & name)
 
     size_t prev_bytes = out->count();
 
-    block.checkNestedArraysOffsets();
     block_out->write(block);
     maybe_compressed_out->next();
     out->next();

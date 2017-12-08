@@ -45,8 +45,6 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual const DictionaryStructure & getStructure() const = 0;
 
-    virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
-
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;

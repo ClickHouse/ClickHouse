@@ -33,7 +33,8 @@ public:
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
 
-    std::string getName() const override { return "ColumnFixedString"; }
+    std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
+    const char * getFamilyName() const override { return "FixedString"; }
 
     ColumnPtr cloneResized(size_t size) const override;
 

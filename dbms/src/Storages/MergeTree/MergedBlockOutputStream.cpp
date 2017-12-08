@@ -2,10 +2,6 @@
 #include <IO/createWriteBufferFromFileBase.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
