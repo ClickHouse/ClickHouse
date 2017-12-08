@@ -265,9 +265,6 @@ public:
 
     template <typename T>
     T getValue() const { return getField().safeGet<typename NearestFieldType<T>::Type>(); }
-
-    /// Debug output.
-    String dump() const;
 };
 
 }

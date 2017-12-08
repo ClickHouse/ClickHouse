@@ -138,7 +138,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
         const auto & col = block.getByPosition(0);
         if (const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(col.type.get()))
         {
-            const ColumnTuple & column = typeid_cast<const ColumnTuple &>(*col.column);
+            const ColumnTuple & column = typeid_cast<const ColumnTuple &>(*key_columns[0]);
 
             key_columns.pop_back();
             const Columns & tuple_elements = column.getColumns();
