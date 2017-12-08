@@ -269,7 +269,9 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
             /// Example, common of Int32, UInt32 = Int64.
 
             size_t min_bit_width_of_integer = std::max(max_bits_of_signed_integer, max_bits_of_unsigned_integer);
-            if (max_bits_of_signed_integer == max_bits_of_unsigned_integer)
+
+            /// If unsigned is not covered by signed.
+            if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer)
                 ++min_bit_width_of_integer;
 
             /// If the result must be floating.
