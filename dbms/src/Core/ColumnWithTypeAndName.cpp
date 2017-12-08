@@ -11,7 +11,8 @@ ColumnWithTypeAndName ColumnWithTypeAndName::cloneEmpty() const
     ColumnWithTypeAndName res;
 
     res.name = name;
-    res.type = type->clone();
+    if (type)
+        res.type = type->clone();
     if (column)
         res.column = column->cloneEmpty();
 
@@ -22,7 +23,7 @@ ColumnWithTypeAndName ColumnWithTypeAndName::cloneEmpty() const
 bool ColumnWithTypeAndName::operator== (const ColumnWithTypeAndName & other) const
 {
     return name == other.name
-        && ((!type && !other.type) || (type && other.type && type->getName() == other.type->getName()))
+        && ((!type && !other.type) || (type && other.type && type->equals(*other.type)))
         && ((!column && !other.column) || (column && other.column && column->getName() == other.column->getName()));
 }
 

@@ -96,7 +96,8 @@ public:
       */
     ColumnPtr convertToValues() const;
 
-    std::string getName() const override { return "ColumnAggregateFunction"; }
+    std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
+    const char * getFamilyName() const override { return "AggregateFunction"; }
 
     size_t sizeOfField() const override { return sizeof(getData()[0]); }
 

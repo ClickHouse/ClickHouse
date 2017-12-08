@@ -10,9 +10,13 @@
 namespace DB
 {
 
-ColumnConst::ColumnConst(ColumnPtr data, size_t s)
-    : data(data), s(s)
+ColumnConst::ColumnConst(ColumnPtr data_, size_t s)
+    : data(data_), s(s)
 {
+    /// Squash Const of Const.
+    while (ColumnConst * const_data = typeid_cast<ColumnConst *>(data.get()))
+        data = const_data->getDataColumnPtr();
+
     if (data->size() != 1)
         throw Exception("Incorrect size of nested column in constructor of ColumnConst: " + toString(data->size()) + ", must be 1.",
             ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -34,7 +38,7 @@ ColumnPtr ColumnConst::convertToFullColumn() const
 String ColumnConst::dump() const
 {
     WriteBufferFromOwnString out;
-    out << "ColumnConst, size: " << s << ", nested column: " << data->getName() << ", nested size: " << data->size();
+    out << "Const, size: " << s << ", nested column: " << data->getName() << ", nested size: " << data->size();
     if (data->size())
         out << ", value: " << applyVisitor(FieldVisitorDump(), (*data)[0]);
 

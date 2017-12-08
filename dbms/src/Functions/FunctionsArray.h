@@ -89,6 +89,7 @@ public:
     FunctionArray(const Context & context);
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -101,8 +102,6 @@ private:
     String getName() const override;
 
     bool addField(DataTypePtr type_res, const Field & f, Array & arr) const;
-    static const DataTypePtr & getScalarType(const DataTypePtr & type);
-    DataTypeTraits::EnrichedDataTypePtr getLeastCommonType(const DataTypes & arguments) const;
 
 private:
     const Context & context;
@@ -121,6 +120,7 @@ public:
 
     String getName() const override;
 
+    bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -150,9 +150,6 @@ private:
 
     template <typename IndexType>
     bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
-        ArrayImpl::NullMapBuilder & builder);
-
-    bool executeConstConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>
@@ -1422,6 +1419,7 @@ class FunctionArrayConcat : public IFunction
 public:
     static constexpr auto name = "arrayConcat";
     static FunctionPtr create(const Context & context);
+    FunctionArrayConcat(const Context & context) : context(context) {};
 
     String getName() const override;
 
@@ -1433,6 +1431,9 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+private:
+    const Context & context;
 };
 
 
@@ -1459,7 +1460,8 @@ public:
 class FunctionArrayPush : public IFunction
 {
 public:
-    FunctionArrayPush(bool push_front, const char * name) : push_front(push_front), name(name) {}
+    FunctionArrayPush(const Context & context, bool push_front, const char * name)
+        : context(context), push_front(push_front), name(name) {}
 
     String getName() const override { return name; }
 
@@ -1474,6 +1476,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
 
 private:
+    const Context & context;
     bool push_front;
     const char * name;
 };
@@ -1484,8 +1487,7 @@ public:
     static constexpr auto name = "arrayPushFront";
 
     static FunctionPtr create(const Context & context);
-
-    FunctionArrayPushFront() : FunctionArrayPush(true, name) {}
+    FunctionArrayPushFront(const Context & context) : FunctionArrayPush(context, true, name) {}
 };
 
 class FunctionArrayPushBack : public FunctionArrayPush
@@ -1494,8 +1496,7 @@ public:
     static constexpr auto name = "arrayPushBack";
 
     static FunctionPtr create(const Context & context);
-
-    FunctionArrayPushBack() : FunctionArrayPush(false, name) {}
+    FunctionArrayPushBack(const Context & context) : FunctionArrayPush(context, false, name) {}
 };
 
 class FunctionArrayPop : public IFunction

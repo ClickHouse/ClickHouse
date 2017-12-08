@@ -13,7 +13,6 @@
 #include <Common/StringUtils.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Columns/ColumnNullable.h>
 
 #include <Poco/File.h>
 #include <Poco/Path.h>

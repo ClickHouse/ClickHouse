@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Arena.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsCommon.h>
 
@@ -25,7 +26,6 @@ public:
     virtual ColumnPtr cloneDummy(size_t s_) const = 0;
 
     ColumnPtr cloneResized(size_t s_) const override { return cloneDummy(s_); }
-    bool isConst() const override { return true; }
     size_t size() const override { return s; }
     void insertDefault() override { ++s; }
     void popBack(size_t n) override { s -= n; }
@@ -36,22 +36,35 @@ public:
     Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
     void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
     void insert(const Field &) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    StringRef getDataAt(size_t) const override { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void insertData(const char *, size_t) override { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
-    StringRef serializeValueIntoArena(size_t /*n*/, Arena & /*arena*/, char const *& /*begin*/) const override
+    StringRef getDataAt(size_t) const override
     {
-        throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        return {};
     }
 
-    const char * deserializeAndInsertFromArena(const char * /*pos*/) override
+    void insertData(const char *, size_t) override
     {
-        throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        ++s;
+    }
+
+    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override
+    {
+        return { arena.allocContinue(0, begin), 0 };
+    }
+
+    const char * deserializeAndInsertFromArena(const char * pos) override
+    {
+        ++s;
+        return pos;
     }
 
     void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {
-        throw Exception("Method updateHashWithValue is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void insertFrom(const IColumn &, size_t) override
+    {
+        ++s;
     }
 
     void insertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
@@ -110,7 +123,11 @@ public:
 
     void getExtremes(Field &, Field &) const override
     {
-        throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void addSize(size_t delta)
+    {
+        s += delta;
     }
 
 private:
