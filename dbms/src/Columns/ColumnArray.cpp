@@ -51,7 +51,7 @@ ColumnArray::ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column)
 }
 
 
-std::string ColumnArray::getName() const { return "ColumnArray(" + getData().getName() + ")"; }
+std::string ColumnArray::getName() const { return "Array(" + getData().getName() + ")"; }
 
 
 ColumnPtr ColumnArray::cloneResized(size_t to_size) const
@@ -585,12 +585,12 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
     for (size_t i = 0; i < tuple_size; ++i)
         temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsColumn()).filter(filt, result_size_hint);
 
-    Block tuple_block = tuple.getData().cloneEmpty();
+    Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        tuple_block.getByPosition(i).column = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+        tuple_columns[i] = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
 
     return std::make_shared<ColumnArray>(
-        std::make_shared<ColumnTuple>(tuple_block),
+        std::make_shared<ColumnTuple>(tuple_columns),
         static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
 }
 
@@ -900,12 +900,12 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets_t & replicate_offsets) const
     for (size_t i = 0; i < tuple_size; ++i)
         temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsColumn()).replicate(replicate_offsets);
 
-    Block tuple_block = tuple.getData().cloneEmpty();
+    Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        tuple_block.getByPosition(i).column = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+        tuple_columns[i] = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
 
     return std::make_shared<ColumnArray>(
-        std::make_shared<ColumnTuple>(tuple_block),
+        std::make_shared<ColumnTuple>(tuple_columns),
         static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
 }
 

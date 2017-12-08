@@ -17,6 +17,7 @@ public:
     std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
     bool isNullable() const override { return true; }
+    bool isNull() const override;
 
     bool isNumeric() const override { return nested_data_type->isNumeric(); }    /// TODO Absolutely wrong.
     bool isNumericNotNullable() const override { return false; }

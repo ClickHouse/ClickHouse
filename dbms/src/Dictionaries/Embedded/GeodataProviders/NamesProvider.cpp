@@ -1,45 +1,7 @@
 #include <Dictionaries/Embedded/GeodataProviders/NamesProvider.h>
+#include <Dictionaries/Embedded/GeodataProviders/NamesFormatReader.h>
 
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-
-
-class LanguageRegionsNamesFileReader : public ILanguageRegionsNamesReader
-{
-private:
-    DB::ReadBufferFromFile in;
-
-public:
-    LanguageRegionsNamesFileReader(const std::string & path)
-        : in(path)
-    {}
-
-    bool readNext(RegionNameEntry & entry) override;
-};
-
-bool LanguageRegionsNamesFileReader::readNext(RegionNameEntry & entry)
-{
-    while (!in.eof())
-    {
-        Int32 read_region_id;
-        std::string region_name;
-
-        DB::readIntText(read_region_id, in);
-        DB::assertChar('\t', in);
-        DB::readString(region_name, in);
-        DB::assertChar('\n', in);
-
-        if (read_region_id <= 0)
-            continue;
-
-        entry.id = read_region_id;
-        entry.name = region_name;
-        return true;
-    }
-
-    return false;
-}
 
 
 bool LanguageRegionsNamesDataSource::isModified() const
@@ -55,7 +17,8 @@ size_t LanguageRegionsNamesDataSource::estimateTotalSize() const
 ILanguageRegionsNamesReaderPtr LanguageRegionsNamesDataSource::createReader()
 {
     updates_tracker.fixCurrentVersion();
-    return std::make_unique<LanguageRegionsNamesFileReader>(path);
+    auto file_reader = std::make_shared<DB::ReadBufferFromFile>(path);
+    return std::make_unique<LanguageRegionsNamesFormatReader>(std::move(file_reader));
 }
 
 std::string LanguageRegionsNamesDataSource::getLanguage() const

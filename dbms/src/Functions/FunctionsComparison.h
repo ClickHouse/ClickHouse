@@ -854,7 +854,7 @@ private:
             left_is_num ? enum_col.get() : column_number);
     }
 
-    void executeTuple(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
+    void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1)
     {
         /** We will lexicographically compare the tuples. This is done as follows:
           * x == y : x1 == y1 && x2 == y2 ...
@@ -864,34 +864,25 @@ private:
           * x > y:   x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn > yn))
           * x <= y:  x1 < y1 || (x1 == y1 && (x2 < y2 || (x2 == y2 ... && xn <= yn))
           *
-          * Recursive record:
+          * Recursive form:
           * x <= y:  x1 < y1 || (x1 == y1 && x_tail <= y_tail)
           *
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
           */
 
-        auto x_const = checkAndGetColumnConst<ColumnTuple>(c0);
-        auto y_const = checkAndGetColumnConst<ColumnTuple>(c1);
+        ColumnWithTypeAndName x = c0;
+        ColumnWithTypeAndName y = c1;
 
-        ColumnPtr x_tuple_of_consts;
-        ColumnPtr y_tuple_of_consts;
-
-        auto x = static_cast<const ColumnTuple *>(c0);
-        auto y = static_cast<const ColumnTuple *>(c1);
+        auto x_const = checkAndGetColumnConst<ColumnTuple>(x.column.get());
+        auto y_const = checkAndGetColumnConst<ColumnTuple>(y.column.get());
 
         if (x_const)
-        {
-            x_tuple_of_consts = convertConstTupleToTupleOfConstants(*x_const);
-            x = static_cast<const ColumnTuple *>(x_tuple_of_consts.get());
-        }
+            x.column = convertConstTupleToTupleOfConstants(*x_const);
 
         if (y_const)
-        {
-            y_tuple_of_consts = convertConstTupleToTupleOfConstants(*y_const);
-            y = static_cast<const ColumnTuple *>(y_tuple_of_consts.get());
-        }
+            y.column = convertConstTupleToTupleOfConstants(*y_const);
 
-        const size_t tuple_size = x->getData().columns();
+        const size_t tuple_size = typeid_cast<const ColumnTuple &>(*x.column).getColumns().size();
 
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
@@ -899,10 +890,10 @@ private:
         executeTupleImpl(block, result, x, y, tuple_size);
     }
 
-    void executeTupleImpl(Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size);
+    void executeTupleImpl(Block & block, size_t result, const ColumnWithTypeAndName & x, const ColumnWithTypeAndName & y, size_t tuple_size);
 
     template <typename ComparisonFunction, typename ConvolutionFunction>
-    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
+    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnWithTypeAndName & x, const ColumnWithTypeAndName & y, size_t tuple_size)
     {
         ComparisonFunction func_compare;
         ConvolutionFunction func_convolution;
@@ -910,8 +901,8 @@ private:
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert(x->getData().getByPosition(i));
-            tmp_block.insert(y->getData().getByPosition(i));
+            tmp_block.insert({static_cast<const ColumnTuple &>(*x.column).getColumns()[i], static_cast<const DataTypeTuple &>(*x.type).getElements()[i], "x"});
+            tmp_block.insert({static_cast<const ColumnTuple &>(*y.column).getColumns()[i], static_cast<const DataTypeTuple &>(*y.type).getElements()[i], "y"});
 
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
@@ -930,7 +921,7 @@ private:
     }
 
     template <typename HeadComparisonFunction, typename TailComparisonFunction>
-    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
+    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnWithTypeAndName & x, const ColumnWithTypeAndName & y, size_t tuple_size)
     {
         HeadComparisonFunction func_compare_head;
         TailComparisonFunction func_compare_tail;
@@ -943,8 +934,8 @@ private:
         /// Pairwise comparison of the inequality of all elements; on the equality of all elements except the last.
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert(x->getData().getByPosition(i));
-            tmp_block.insert(y->getData().getByPosition(i));
+            tmp_block.insert({static_cast<const ColumnTuple &>(*x.column).getColumns()[i], static_cast<const DataTypeTuple &>(*x.type).getElements()[i], "x"});
+            tmp_block.insert({static_cast<const ColumnTuple &>(*y.column).getColumns()[i], static_cast<const DataTypeTuple &>(*y.type).getElements()[i], "y"});
 
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
@@ -1111,7 +1102,7 @@ public:
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (checkAndGetDataType<DataTypeTuple>(col_with_type_and_name_left.type.get()))
-            executeTuple(block, result, col_left_untyped, col_right_untyped);
+            executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right);
         else if (!left_is_num && !right_is_num && executeString(block, result, col_left_untyped, col_right_untyped))
             ;
         else if (col_with_type_and_name_left.type->equals(*col_with_type_and_name_right.type))

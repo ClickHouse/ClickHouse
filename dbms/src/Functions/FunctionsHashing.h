@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -540,12 +541,11 @@ private:
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
         {
-            const Block & tuple_data = tuple->getData();
-            for (size_t i = 0, size = tuple_data.columns(); i < size; ++i)
-            {
-                const ColumnWithTypeAndName & col = tuple_data.getByPosition(i);
-                executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
-            }
+            const Columns & tuple_columns = tuple->getColumns();
+            const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
+            size_t tuple_size = tuple_columns.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+                executeForArgument(tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
         else if (const ColumnConst * tuple = checkAndGetColumnConst<ColumnTuple>(column))
         {

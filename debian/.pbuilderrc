@@ -24,6 +24,8 @@
 # sudo DIST=stable       ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=stable       ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=testing      ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=testing      ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
+# with embedded compiler (only artful have clang-5.0):
+# env EXTRAPACKAGES="liblld-5.0-dev libclang-5.0-dev liblld-5.0" CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1" DIST=artful pdebuild --configfile debian/.pbuilderrc
 
 # Your packages built here: /var/cache/pbuilder/*-*/result
 

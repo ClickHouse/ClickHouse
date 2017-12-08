@@ -253,7 +253,7 @@ bool Join::checkSizeLimits() const
 
 static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
-    if (column.type->isNullable() || column.type->isNull())
+    if (column.type->isNullable())
         return;
 
     column.type = std::make_shared<DataTypeNullable>(column.type);
