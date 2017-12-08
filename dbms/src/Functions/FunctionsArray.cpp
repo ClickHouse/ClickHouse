@@ -116,59 +116,39 @@ namespace ArrayImpl
 class NullMapBuilder
 {
 public:
-    operator bool() const { return src_nullable_col || src_array; }
-    bool operator!() const { return !src_nullable_col && !src_array; }
+    operator bool() const { return src_null_map; }
+    bool operator!() const { return !src_null_map; }
 
-    void initSource(const ColumnNullable & src_nullable_col_)
+    void initSource(const UInt8 * src_null_map_)
     {
-        src_nullable_col = &src_nullable_col_;
+        src_null_map = src_null_map_;
     }
 
-    void initSource(const Array & src_array_)
+    void initSink(size_t size)
     {
-        src_array = &src_array_;
-    }
-
-    void initSink(size_t s)
-    {
-        sink_null_map = std::make_shared<ColumnUInt8>(s);
-        size = s;
+        auto sink = std::make_shared<ColumnUInt8>(size);
+        sink_null_map = sink->getData().data();
+        sink_null_map_holder = sink;
     }
 
     void update(size_t from)
     {
-        if (index >= size)
-            throw Exception{"Logical error: index passed to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
-
-        bool is_null;
-        if (src_nullable_col)
-            is_null = src_nullable_col->isNullAt(from);
-        else
-            is_null = from < src_array->size() ? (*src_array)[from].isNull() : true;
-
-        auto & null_map_data = static_cast<ColumnUInt8 &>(*sink_null_map).getData();
-        null_map_data[index] = is_null ? 1 : 0;
-
+        sink_null_map[index] = bool(src_null_map && src_null_map[from]);
         ++index;
     }
 
     void update()
     {
-        if (index >= size)
-            throw Exception{"Logical error: index passed to NullMapBuilder is out of range of column.", ErrorCodes::LOGICAL_ERROR};
-
-        auto & null_map_data = static_cast<ColumnUInt8 &>(*sink_null_map).getData();
-        null_map_data[index] = 0;
+        sink_null_map[index] = bool(src_null_map);
         ++index;
     }
 
-    ColumnPtr getNullMap() const { return sink_null_map; }
+    ColumnPtr getNullMap() const { return sink_null_map_holder; }
 
 private:
-    const ColumnNullable * src_nullable_col = nullptr;
-    const Array * src_array = nullptr;
-    ColumnPtr sink_null_map;
-    size_t size = 0;
+    const UInt8 * src_null_map = nullptr;
+    UInt8 * sink_null_map = nullptr;
+    ColumnPtr sink_null_map_holder;
     size_t index = 0;
 };
 
@@ -181,8 +161,8 @@ template <typename T>
 struct ArrayElementNumImpl
 {
     /** Implementation for constant index.
-      * If negative = false - index is from beginning of array, started from 1.
-      * If negative = true - index is from end of array, started from -1.
+      * If negative = false - index is from beginning of array, started from 0.
+      * If negative = true - index is from end of array, started from 0.
       */
     template <bool negative>
     static void vectorConst(
@@ -265,10 +245,6 @@ struct ArrayElementNumImpl
 
 struct ArrayElementStringImpl
 {
-    /** Implementation for constant index.
-      * If negative = false - index is from beginning of array, started from 1.
-      * If negative = true - index is from end of array, started from -1.
-      */
     template <bool negative>
     static void vectorConst(
         const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
@@ -290,7 +266,7 @@ struct ArrayElementStringImpl
             {
                 size_t adjusted_index = !negative ? index : (array_size - index - 1);
 
-                size_t j = (current_offset == 0 && adjusted_index == 0) ? 0 : current_offset + adjusted_index;
+                size_t j = current_offset + adjusted_index;
                 if (builder)
                     builder.update(j);
 
@@ -351,7 +327,7 @@ struct ArrayElementStringImpl
 
             if (adjusted_index < array_size)
             {
-                size_t j = (current_offset == 0 && adjusted_index == 0) ? 0 : current_offset + adjusted_index - 1;
+                size_t j = current_offset + adjusted_index;
                 if (builder)
                     builder.update(j);
 
@@ -386,10 +362,6 @@ struct ArrayElementStringImpl
 /// Generic implementation for other nested types.
 struct ArrayElementGenericImpl
 {
-    /** Implementation for constant index.
-      * If negative = false - index is from beginning of array, started from 1.
-      * If negative = true - index is from end of array, started from -1.
-      */
     template <bool negative>
     static void vectorConst(
         const IColumn & data, const ColumnArray::Offsets_t & offsets,
@@ -642,36 +614,38 @@ template <typename IndexType>
 bool FunctionArrayElement::executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
     ArrayImpl::NullMapBuilder & builder)
 {
-    const ColumnConst * col_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+    const ColumnArray * col_array = checkAndGetColumnConstData<ColumnArray>(block.getByPosition(arguments[0]).column.get());
 
     if (!col_array)
         return false;
 
-    Array array = col_array->getValue<Array>();
-    size_t array_size = array.size();
-
     block.getByPosition(result).column = block.getByPosition(result).type->createColumn();
 
-    for (size_t i = 0; i < col_array->size(); ++i)
+    size_t rows = block.rows();
+    IColumn & result_column = *block.getByPosition(result).column;
+    const IColumn & array_elements = col_array->getData();
+    size_t array_size = array_elements.size();
+
+    for (size_t i = 0; i < rows; ++i)
     {
         IndexType index = indices[i];
         if (index > 0 && static_cast<size_t>(index) <= array_size)
         {
             size_t j = index - 1;
-            block.getByPosition(result).column->insert(array[j]);
+            result_column.insertFrom(array_elements, j);
             if (builder)
                 builder.update(j);
         }
         else if (index < 0 && static_cast<size_t>(-index) <= array_size)
         {
             size_t j = array_size + index;
-            block.getByPosition(result).column->insert(array[j]);
+            result_column.insertFrom(array_elements, j);
             if (builder)
                 builder.update(j);
         }
         else
         {
-            block.getByPosition(result).column->insertDefault();
+            result_column.insertDefault();
             if (builder)
                 builder.update();
         }
@@ -790,28 +764,25 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
 void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     /// Check nullability.
-    bool is_nullable = false;
+    bool is_nullable_array = false;
 
     const ColumnArray * col_array = nullptr;
-    const ColumnConst * col_const_array = nullptr;
+    const ColumnArray * col_const_array = nullptr;
 
     col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
     if (col_array)
-        is_nullable = col_array->getData().isNullable();
+        is_nullable_array = col_array->getData().isNullable();
     else
     {
-        col_const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+        col_const_array = checkAndGetColumnConstData<ColumnArray>(block.getByPosition(arguments[0]).column.get());
         if (col_const_array)
-        {
-            Array arr = col_const_array->getValue<Array>();
-            is_nullable = std::any_of(arr.begin(), arr.end(), [](const Field & f){ return f.isNull(); });
-        }
+            is_nullable_array = col_const_array->getData().isNullable();
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    if (!is_nullable)
+    if (!is_nullable_array)
     {
         ArrayImpl::NullMapBuilder builder;
         perform(block, arguments, result, builder);
@@ -822,13 +793,12 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         ArrayImpl::NullMapBuilder builder;
         Block source_block;
 
-        const auto & input_type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
-        const auto & tmp_ret_type = static_cast<const DataTypeNullable &>(*block.getByPosition(result).type).getNestedType();
+        const auto & input_type = typeid_cast<const DataTypeNullable &>(*typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getNestedType();
+        const auto & tmp_ret_type = typeid_cast<const DataTypeNullable &>(*block.getByPosition(result).type).getNestedType();
 
-        Array const_array;
         if (col_array)
         {
-            const auto & nullable_col = static_cast<const ColumnNullable &>(col_array->getData());
+            const auto & nullable_col = typeid_cast<const ColumnNullable &>(col_array->getData());
             const auto & nested_col = nullable_col.getNestedColumn();
 
             /// Put nested_col inside a ColumnArray.
@@ -847,14 +817,21 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
                 }
             };
 
-            builder.initSource(nullable_col);
+            builder.initSource(nullable_col.getNullMap().data());
         }
         else
         {
-            /// Almost a copy of block.
+            /// ColumnConst(ColumnArray(ColumnNullable(...)))
+            const auto & nullable_col = static_cast<const ColumnNullable &>(col_const_array->getData());
+            const auto & nested_col = nullable_col.getNestedColumn();
+
             source_block =
             {
-                block.getByPosition(arguments[0]),
+                {
+                    std::make_shared<ColumnConst>(std::make_shared<ColumnArray>(nested_col, col_const_array->getOffsetsColumn()), block.rows()),
+                    std::make_shared<DataTypeArray>(input_type),
+                    ""
+                },
                 block.getByPosition(arguments[1]),
                 {
                     nullptr,
@@ -863,8 +840,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
                 }
             };
 
-            const_array = col_const_array->getValue<Array>();
-            builder.initSource(const_array);
+            builder.initSource(nullable_col.getNullMap().data());
         }
 
         perform(source_block, {0, 1}, 2, builder);
