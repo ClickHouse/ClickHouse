@@ -74,6 +74,7 @@ list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionState.cpp
     src/AggregateFunctions/AggregateFunctionArray.cpp
     src/AggregateFunctions/AggregateFunctionNull.cpp
+    src/AggregateFunctions/AggregateFunctionNothing.cpp
     src/AggregateFunctions/AggregateFunctionForEach.cpp
     src/AggregateFunctions/AggregateFunctionIf.cpp
     src/AggregateFunctions/AggregateFunctionMerge.cpp
@@ -86,6 +87,7 @@ list (APPEND dbms_headers
     src/AggregateFunctions/AggregateFunctionState.h
     src/AggregateFunctions/AggregateFunctionArray.h
     src/AggregateFunctions/AggregateFunctionNull.h
+    src/AggregateFunctions/AggregateFunctionNothing.h
     src/AggregateFunctions/AggregateFunctionForEach.h
     src/AggregateFunctions/AggregateFunctionIf.h
     src/AggregateFunctions/AggregateFunctionMerge.h
