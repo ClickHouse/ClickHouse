@@ -1189,9 +1189,9 @@ private:
                 ErrorCodes::TYPE_MISMATCH};
 
         /// Prepare nested type conversion
-        const auto nested_function = prepareImpl(from_nested_type, to_nested_type.get());
+        const auto nested_function = prepare(from_nested_type, to_nested_type.get());
 
-        return [nested_function, from_nested_type, to_nested_type] (
+        return [nested_function, from_nested_type, to_nested_type](
             Block & block, const ColumnNumbers & arguments, const size_t result)
         {
             auto array_arg = block.getByPosition(arguments.front());
@@ -1212,14 +1212,15 @@ private:
                 }
 
                 /// create block for converting nested column containing original and result columns
-                Block nested_block{
+                Block nested_block
+                {
                     { col_array->getDataPtr(), from_nested_type, "" },
                     { nullptr, to_nested_type, "" }
                 };
 
                 const auto nested_result = 1;
                 /// convert nested column
-                nested_function(nested_block, {0 }, nested_result);
+                nested_function(nested_block, {0}, nested_result);
 
                 /// set converted nested column to result
                 res->getDataPtr() = nested_block.getByPosition(nested_result).column;
@@ -1262,7 +1263,7 @@ private:
 
         /// Create conversion wrapper for each element in tuple
         for (const auto & idx_type : ext::enumerate(from_type->getElements()))
-            element_wrappers.push_back(prepareImpl(idx_type.second, to_element_types[idx_type.first].get()));
+            element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first].get()));
 
         return [element_wrappers, from_element_types, to_element_types]
             (Block & block, const ColumnNumbers & arguments, const size_t result)
@@ -1411,9 +1412,52 @@ private:
         bool result_is_nullable = false;
     };
 
-    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type, const NullableConversion nullable_conversion)
+    WrapperType prepare(const DataTypePtr & from_type, const IDataType * to_type)
     {
-        auto wrapper = prepareImpl(from_type, to_type);
+        /// Determine whether pre-processing and/or post-processing must take place during conversion.
+
+        NullableConversion nullable_conversion;
+        nullable_conversion.source_is_nullable = from_type->isNullable();
+        nullable_conversion.result_is_nullable = to_type->isNullable();
+
+        /// Check that the requested conversion is allowed.
+        if (nullable_conversion.source_is_nullable && !nullable_conversion.result_is_nullable)
+            throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
+                ErrorCodes::CANNOT_CONVERT_TYPE};
+
+        if (from_type->isNull())
+        {
+            return [](Block & block, const ColumnNumbers &, const size_t result)
+            {
+                auto & res = block.getByPosition(result);
+                res.column = res.type->createConstColumn(block.rows(), Null())->convertToFullColumnIfConst();
+            };
+        }
+
+        DataTypePtr from_inner_type;
+        const IDataType * to_inner_type;
+
+        /// Create the requested conversion.
+        if (nullable_conversion.result_is_nullable)
+        {
+            if (nullable_conversion.source_is_nullable)
+            {
+                const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
+                from_inner_type = nullable_type.getNestedType();
+            }
+            else
+                from_inner_type = from_type;
+
+            const auto & nullable_type = static_cast<const DataTypeNullable &>(*to_type);
+            to_inner_type = nullable_type.getNestedType().get();
+        }
+        else
+        {
+            from_inner_type = from_type;
+            to_inner_type = to_type;
+        }
+
+        auto wrapper = prepareImpl(from_inner_type, to_inner_type);
 
         if (nullable_conversion.result_is_nullable)
         {
@@ -1577,53 +1621,9 @@ public:
 
         out_return_type = DataTypeFactory::instance().get(type_col->getValue<String>());
 
-        /// Determine whether pre-processing and/or post-processing must take place during conversion.
         const DataTypePtr & from_type = arguments.front().type;
-
-        NullableConversion nullable_conversion;
-        nullable_conversion.source_is_nullable = from_type->isNullable();
-        nullable_conversion.result_is_nullable = out_return_type->isNullable();
-
-        /// Check that the requested conversion is allowed.
-        if (nullable_conversion.source_is_nullable && !nullable_conversion.result_is_nullable)
-            throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
-                ErrorCodes::CANNOT_CONVERT_TYPE};
-
-        if (from_type->isNull())
-        {
-            wrapper_function = [](Block & block, const ColumnNumbers &, const size_t result)
-            {
-                auto & res = block.getByPosition(result);
-                res.column = res.type->createConstColumn(block.rows(), Null())->convertToFullColumnIfConst();
-            };
-            return;
-        }
-
-        DataTypePtr from_inner_type;
-        const IDataType * to_inner_type;
-
-        /// Create the requested conversion.
-        if (nullable_conversion.result_is_nullable)
-        {
-            if (nullable_conversion.source_is_nullable)
-            {
-                const auto & nullable_type = static_cast<const DataTypeNullable &>(*from_type);
-                from_inner_type = nullable_type.getNestedType();
-            }
-            else
-                from_inner_type = from_type;
-
-            const auto & nullable_type = static_cast<const DataTypeNullable &>(*out_return_type);
-            to_inner_type = nullable_type.getNestedType().get();
-        }
-        else
-        {
-            from_inner_type = from_type;
-            to_inner_type = out_return_type.get();
-        }
-
-        wrapper_function = prepare(from_inner_type, to_inner_type, nullable_conversion);
-        prepareMonotonicityInformation(from_inner_type, to_inner_type);
+        wrapper_function = prepare(from_type, out_return_type.get());
+        prepareMonotonicityInformation(from_type, out_return_type.get());
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
