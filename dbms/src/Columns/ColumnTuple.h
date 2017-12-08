@@ -15,15 +15,13 @@ namespace DB
 class ColumnTuple final : public IColumn
 {
 private:
-    Block data;
     Columns columns;
 
     template <bool positive>
     struct Less;
 
 public:
-    ColumnTuple() {}
-    ColumnTuple(Block data_);
+    ColumnTuple(const Columns & columns);
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
@@ -32,7 +30,7 @@ public:
 
     size_t size() const override
     {
-        return data.rows();
+        return columns.at(0)->size();
     }
 
     Field operator[](size_t n) const override;
@@ -61,9 +59,6 @@ public:
     size_t allocatedBytes() const override;
     ColumnPtr convertToFullColumnIfConst() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
-
-    const Block & getData() const { return data; }
-    Block & getData() { return data; }
 
     const Columns & getColumns() const { return columns; }
     Columns & getColumns() { return columns; }

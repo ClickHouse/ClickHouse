@@ -34,12 +34,12 @@ std::string DataTypeTuple::getName() const
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
-    return *static_cast<ColumnTuple &>(column).getData().getByPosition(idx).column;
+    return *static_cast<ColumnTuple &>(column).getColumns()[idx];
 }
 
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
-    return *static_cast<const ColumnTuple &>(column).getData().getByPosition(idx).column;
+    return *static_cast<const ColumnTuple &>(column).getColumns()[idx];
 }
 
 
@@ -70,7 +70,7 @@ template <typename F>
 static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
 {
     /// We use the assumption that tuples of zero size do not exist.
-    size_t old_size = extractElementColumn(column, 0).size();
+    size_t old_size = column.size();
 
     try
     {
@@ -275,15 +275,11 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
 
 ColumnPtr DataTypeTuple::createColumn() const
 {
-    Block tuple_block;
-    for (size_t i = 0, size = elems.size(); i < size; ++i)
-    {
-        ColumnWithTypeAndName col;
-        col.column = elems[i]->createColumn();
-        col.type = elems[i]->clone();
-        tuple_block.insert(std::move(col));
-    }
-    return std::make_shared<ColumnTuple>(tuple_block);
+    size_t size = elems.size();
+    Columns tuple_columns(size);
+    for (size_t i = 0; i < size; ++i)
+        tuple_columns[i] = elems[i]->createColumn();
+    return std::make_shared<ColumnTuple>(tuple_columns);
 }
 
 Field DataTypeTuple::getDefault() const

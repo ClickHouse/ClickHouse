@@ -540,6 +540,7 @@ private:
         temporary_block.insert(block.getByPosition(arguments[0]));
 
         size_t tuple_size = type1.getElements().size();
+        Columns tuple_columns(tuple_size);
 
         for (size_t i = 0; i < tuple_size; ++i)
         {
@@ -547,19 +548,20 @@ private:
                 getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
                 {}});
 
-            temporary_block.insert({col1->getData().getByPosition(i).column, type1.getElements()[i], {}});
-            temporary_block.insert({col2->getData().getByPosition(i).column, type2.getElements()[i], {}});
+            temporary_block.insert({col1->getColumns()[i], type1.getElements()[i], {}});
+            temporary_block.insert({col2->getColumns()[i], type2.getElements()[i], {}});
 
             /// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
             executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1);
             temporary_block.erase(i + 3);
             temporary_block.erase(i + 2);
+
+            tuple_columns[i] = temporary_block.getByPosition(i + 1).column;
         }
 
         /// temporary_block is: cond, res_0, res_1, res_2...
 
-        temporary_block.erase(0);
-        block.getByPosition(result).column = std::make_shared<ColumnTuple>(temporary_block);
+        block.getByPosition(result).column = std::make_shared<ColumnTuple>(tuple_columns);
         return true;
     }
 
