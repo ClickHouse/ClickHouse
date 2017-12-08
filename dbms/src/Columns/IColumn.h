@@ -56,6 +56,7 @@ public:
 
     /// Is this a null column?
     virtual bool isNull() const { return false; }
+    virtual bool isNullAt(size_t n) const { return false; }
 
     /** If column isn't constant, returns nullptr (or itself).
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.

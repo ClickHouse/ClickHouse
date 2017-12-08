@@ -24,8 +24,13 @@ ColumnConst::ColumnConst(ColumnPtr data_, size_t s)
 
 bool ColumnConst::isNull() const
 {
-    const ColumnNullable * column_nullable = typeid_cast<const ColumnNullable *>(data.get());
-    return column_nullable && column_nullable->isNullAt(0);
+    return isNullAt(0);
+}
+
+bool ColumnConst::isNullAt(size_t n) const
+{
+    /// Ignore n
+    return data->isNullAt(0);
 }
 
 ColumnPtr ColumnConst::convertToFullColumn() const

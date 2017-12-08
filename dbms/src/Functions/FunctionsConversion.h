@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
 }
 
 
@@ -729,6 +730,10 @@ public:
 private:
     void executeInternal(Block & block, const ColumnNumbers & arguments, size_t result)
     {
+        if (!arguments.size())
+            throw Exception{"Function " + getName() + " expects at least 1 arguments",
+               ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+
         IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if      (checkDataType<DataTypeUInt8>(from_type)) ConvertImpl<DataTypeUInt8, ToDataType, Name>::execute(block, arguments, result);

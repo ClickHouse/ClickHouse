@@ -66,6 +66,7 @@ public:
     }
 
     bool isNull() const override;
+    bool isNullAt(size_t n) const override;
 
     bool isFixed() const override
     {
