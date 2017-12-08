@@ -874,7 +874,7 @@ private:
         ColumnWithTypeAndName y = c1;
 
         auto x_const = checkAndGetColumnConst<ColumnTuple>(x.column.get());
-        auto y_const = checkAndGetColumnConst<ColumnTuple>(x.column.get());
+        auto y_const = checkAndGetColumnConst<ColumnTuple>(y.column.get());
 
         if (x_const)
             x.column = convertConstTupleToTupleOfConstants(*x_const);
