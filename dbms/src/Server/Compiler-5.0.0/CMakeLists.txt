@@ -1,3 +1,5 @@
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error")
+
 add_library(clickhouse-compiler
     driver.cpp
     cc1_main.cpp
@@ -25,18 +27,21 @@ clangASTMatchers clangStaticAnalyzerCore clangAnalysis clangAST clangRewrite cla
 lldCOFF
 lldDriver
 lldELF
-lldMinGW
+#lldMinGW
 lldMachO
 lldReaderWriter
 lldYAML
-lldCommon
+#lldCommon
 lldCore
+lldConfig
 
 ${REQUIRED_LLVM_LIBRARIES}
 
-Polly
-PollyISL
-PollyPPCG
+LLVMSupport
+
+#Polly
+#PollyISL
+#PollyPPCG
 
 libtinfo.a
 common)

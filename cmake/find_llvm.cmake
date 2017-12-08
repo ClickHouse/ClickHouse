@@ -15,8 +15,10 @@ if (USE_EMBEDDED_COMPILER)
     #  llvm_map_components_to_libraries - Maps LLVM used components to required libraries.
     #  Usage: llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES core jit interpreter native ...)
 
+    set(LLVM_VERSION_POSTFIX "-5.0" CACHE INTERNAL "")
+
     find_program(LLVM_CONFIG_EXECUTABLE
-        NAMES llvm-config
+        NAMES llvm-config${LLVM_VERSION_POSTFIX} llvm-config
         PATHS $ENV{LLVM_ROOT}/bin)
 
     mark_as_advanced(LLVM_CONFIG_EXECUTABLE)
@@ -24,6 +26,7 @@ if (USE_EMBEDDED_COMPILER)
     if(NOT LLVM_CONFIG_EXECUTABLE)
         message(FATAL_ERROR "Cannot find LLVM (looking for `llvm-config`). Please, provide LLVM_ROOT environment variable.")
     else()
+
         set(LLVM_FOUND TRUE)
 
         execute_process(
@@ -34,6 +37,8 @@ if (USE_EMBEDDED_COMPILER)
         if(LLVM_VERSION VERSION_LESS "5")
             message(FATAL_ERROR "LLVM 5+ is required.")
         endif()
+
+        message(STATUS "LLVM config: ${LLVM_CONFIG_EXECUTABLE}; version: ${LLVM_VERSION}")
 
         execute_process(
             COMMAND ${LLVM_CONFIG_EXECUTABLE} --includedir
@@ -57,10 +62,14 @@ if (USE_EMBEDDED_COMPILER)
 
         string(REPLACE " " ";" LLVM_TARGETS_BUILT "${LLVM_TARGETS_BUILT}")
 
+        if (USE_STATIC_LIBRARIES)
+            set (LLVM_CONFIG_ADD "--link-static")
+        endif()
+
         # Get the link libs we need.
         function(llvm_map_components_to_libraries RESULT)
             execute_process(
-                COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs ${ARGN}
+                COMMAND ${LLVM_CONFIG_EXECUTABLE} ${LLVM_CONFIG_ADD} --libs ${ARGN}
                 OUTPUT_VARIABLE _tmp
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
 
