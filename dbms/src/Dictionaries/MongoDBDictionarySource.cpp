@@ -2,10 +2,15 @@
 #if Poco_MongoDB_FOUND
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
-#include <Poco/MongoDB/Connection.h>
-#include <Poco/MongoDB/Database.h>
-#include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/Array.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+    #include <Poco/MongoDB/Connection.h>
+    #include <Poco/MongoDB/Database.h>
+    #include <Poco/MongoDB/Cursor.h>
+    #include <Poco/MongoDB/Array.h>
+#pragma GCC diagnostic pop
+
 #include <Poco/Version.h>
 
 // only after poco
@@ -14,7 +19,7 @@
 // dbms/src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <ext/enumerate.h>
 
 

@@ -10,7 +10,7 @@
 
 /// Parses query from stdin and print same query with translated positional arguments.
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;
@@ -26,7 +26,7 @@ try
     TranslatePositionalArguments translator;
     translator.process(ast);
 
-    formatAST(*ast, std::cout, 0, false);
+    formatAST(*ast, std::cout, false);
     std::cout << "\n";
     return 0;
 }

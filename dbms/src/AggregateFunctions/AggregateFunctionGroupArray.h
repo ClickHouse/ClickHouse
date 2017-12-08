@@ -62,7 +62,7 @@ public:
         return std::make_shared<DataTypeArray>(data_type);
     }
 
-    void setArgument(const DataTypePtr & argument) {}
+    void setArgument(const DataTypePtr & /*argument*/) {}
 
     void setParameters(const Array & params) override
     {

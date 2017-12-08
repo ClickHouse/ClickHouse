@@ -1,6 +1,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
+#include <IO/WriteBufferFromArena.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 
@@ -222,7 +223,7 @@ StringRef ColumnAggregateFunction::getDataAt(size_t n) const
     return StringRef(reinterpret_cast<const char *>(&getData()[n]), sizeof(getData()[n]));
 }
 
-void ColumnAggregateFunction::insertData(const char * pos, size_t length)
+void ColumnAggregateFunction::insertData(const char * pos, size_t /*length*/)
 {
     getData().push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 }
@@ -281,14 +282,37 @@ void ColumnAggregateFunction::insertDefault()
     function->create(getData().back());
 }
 
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & dst, const char *& begin) const
 {
-    throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    IAggregateFunction * function = func.get();
+    WriteBufferFromArena out(dst, begin);
+    function->serialize(getData()[n], out);
+    return out.finish();
 }
 
-const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * pos)
+const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * src_arena)
 {
-    throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    IAggregateFunction * function = func.get();
+
+    /** Parameter "src_arena" points to Arena, from which we will deserialize the state.
+      * And "dst_arena" is another Arena, that aggregate function state will use to store its data.
+      */
+    Arena & dst_arena = createOrGetArena();
+
+    getData().push_back(dst_arena.alloc(function->sizeOfData()));
+    function->create(getData().back());
+
+    /** We will read from src_arena.
+      * There is no limit for reading - it is assumed, that we can read all that we need after src_arena pointer.
+      * Buf ReadBufferFromMemory requires some bound. We will use arbitary big enough number, that will not overflow pointer.
+      * NOTE Technically, this is not compatible with C++ standard,
+      *  as we cannot legally compare pointers after last element + 1 of some valid memory region.
+      *  Probably this will not work under UBSan.
+      */
+    ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena);
+    function->deserialize(getData().back(), read_buffer, &dst_arena);
+
+    return read_buffer.position();
 }
 
 void ColumnAggregateFunction::popBack(size_t n)
@@ -353,7 +377,7 @@ Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const
     return columns;
 }
 
-void ColumnAggregateFunction::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
+void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const
 {
     size_t s = getData().size();
     res.resize(s);

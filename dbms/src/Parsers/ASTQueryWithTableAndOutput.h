@@ -20,7 +20,7 @@ public:
     ASTQueryWithTableAndOutput(const StringRange range_) : ASTQueryWithOutput(range_) {}
 
 protected:
-    void formatHelper(const FormatSettings & settings, FormatState & state, FormatStateStacked frame, const char * name) const
+    void formatHelper(const FormatSettings & settings, const char * name) const
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << name << " " << (settings.hilite ? hilite_none : "")
             << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
@@ -46,9 +46,9 @@ protected:
         } \
     \
     protected: \
-        void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override \
+        void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override \
         { \
-            formatHelper(settings, state, frame, Query); \
+            formatHelper(settings, Query); \
         } \
     };
 }

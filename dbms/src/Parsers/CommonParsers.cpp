@@ -25,7 +25,7 @@ const char * ParserKeyword::getName() const
 }
 
 
-bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
 {
     if (pos->type != TokenType::BareWord)
         return false;

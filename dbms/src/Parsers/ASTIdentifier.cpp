@@ -6,7 +6,7 @@
 namespace DB
 {
 
-void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     auto format_element = [&](const String & name)
     {

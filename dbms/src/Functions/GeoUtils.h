@@ -8,16 +8,17 @@
 #include <ext/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
-#if !__clang__
 #pragma GCC diagnostic push
+
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #include <boost/geometry.hpp>
 
-#if !__clang__
 #pragma GCC diagnostic pop
-#endif
 
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -558,15 +559,15 @@ template <>
 struct CallPointInPolygon<>
 {
     template <typename T, typename PointInPolygonImpl>
-    static ColumnPtr call(const ColumnVector<T> & x, const IColumn & y, PointInPolygonImpl && impl)
+    static ColumnPtr call(const ColumnVector<T> &, const IColumn & y, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + typeid(y).name(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(y).name()), ErrorCodes::LOGICAL_ERROR);
     }
 
     template <typename PointInPolygonImpl>
-    static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
+    static ColumnPtr call(const IColumn & x, const IColumn &, PointInPolygonImpl &&)
     {
-        throw Exception(std::string("Unknown numeric column type: ") + typeid(x).name(), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(std::string("Unknown numeric column type: ") + demangle(typeid(x).name()), ErrorCodes::LOGICAL_ERROR);
     }
 };
 

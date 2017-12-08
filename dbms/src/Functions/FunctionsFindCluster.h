@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -18,7 +18,6 @@
 #include <Common/typeid_cast.h>
 #include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
-#include <DataTypes/EnrichedDataTypePtr.h>
 
 namespace DB
 {

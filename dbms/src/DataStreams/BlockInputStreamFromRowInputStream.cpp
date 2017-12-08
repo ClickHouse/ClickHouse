@@ -122,8 +122,6 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 
     if (res.rows() == 0)
         res.clear();
-    else
-        res.optimizeNestedArraysOffsets();
 
     return res;
 }

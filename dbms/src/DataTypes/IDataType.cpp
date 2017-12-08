@@ -1,11 +1,25 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
 
+#include <Common/Exception.h>
+#include <Common/escapeForFileName.h>
+
+#include <Core/Defines.h>
+
+#include <IO/WriteHelpers.h>
+
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNested.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int MULTIPLE_STREAMS_REQUIRED;
+}
+
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
@@ -29,6 +43,41 @@ ColumnPtr IDataType::createConstColumn(size_t size, const Field & field) const
     column->insert(field);
     return std::make_shared<ColumnConst>(column, size);
 }
+
+
+void IDataType::serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const
+{
+    throw Exception("Data type " + getName() + " must be serialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);
+}
+
+void IDataType::deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const
+{
+    throw Exception("Data type " + getName() + " must be deserialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);
+}
+
+
+String IDataType::getFileNameForStream(const String & column_name, const IDataType::SubstreamPath & path)
+{
+    String nested_table_name = DataTypeNested::extractNestedTableName(column_name);
+    bool is_sizes_of_nested_type = !path.empty() && path.back().type == IDataType::Substream::ArraySizes
+        && nested_table_name != column_name;
+
+    size_t array_level = 0;
+    String stream_name = escapeForFileName(is_sizes_of_nested_type ? nested_table_name : column_name);
+    for (const Substream & elem : path)
+    {
+        if (elem.type == Substream::NullMap)
+            stream_name += ".null";
+        else if (elem.type == Substream::ArraySizes)
+            stream_name += ".size" + toString(array_level);
+        else if (elem.type == Substream::ArrayElements)
+            ++array_level;
+        else if (elem.type == Substream::TupleElement)
+            stream_name += "." + toString(elem.tuple_element);
+    }
+    return stream_name;
+}
+
 
 void IDataType::insertDefaultInto(IColumn & column) const
 {

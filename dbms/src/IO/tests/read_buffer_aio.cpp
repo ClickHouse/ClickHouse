@@ -14,7 +14,7 @@ namespace
 {
 
 void run();
-void prepare(size_t s, std::string & filename, std::string & buf);
+void prepare(std::string & filename, std::string & buf);
 void prepare2(std::string & filename, std::string & buf);
 void prepare3(std::string & filename, std::string & buf);
 void prepare4(std::string & filename, std::string & buf);
@@ -49,11 +49,11 @@ void run()
 
     std::string filename;
     std::string buf;
-    prepare(10 * DEFAULT_AIO_FILE_BLOCK_SIZE, filename, buf);
+    prepare(filename, buf);
 
     std::string filename2;
     std::string buf2;
-    prepare(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 3, filename2, buf2);
+    prepare(filename2, buf2);
 
     std::string filename3;
     std::string buf3;
@@ -105,7 +105,7 @@ void run()
     fs::remove_all(fs::path(filename5).parent_path().string());
 }
 
-void prepare(size_t s, std::string & filename, std::string & buf)
+void prepare(std::string & filename, std::string & buf)
 {
     static const std::string symbols = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -402,7 +402,7 @@ bool test11(const std::string & filename)
     return ok;
 }
 
-bool test12(const std::string & filename, const std::string & buf)
+bool test12(const std::string & filename, const std::string &)
 {
     bool ok = false;
 
@@ -426,7 +426,7 @@ bool test12(const std::string & filename, const std::string & buf)
     return ok;
 }
 
-bool test13(const std::string & filename, const std::string & buf)
+bool test13(const std::string & filename, const std::string &)
 {
     std::string newbuf;
     newbuf.resize(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 3);
@@ -457,7 +457,7 @@ bool test14(const std::string & filename, const std::string & buf)
     return true;
 }
 
-bool test15(const std::string & filename, const std::string & buf)
+bool test15(const std::string & filename, const std::string &)
 {
     std::string newbuf;
     newbuf.resize(1000);
@@ -472,7 +472,7 @@ bool test15(const std::string & filename, const std::string & buf)
     return true;
 }
 
-bool test16(const std::string & filename, const std::string & buf)
+bool test16(const std::string & filename, const std::string &)
 {
     DB::ReadBufferAIO in(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
     size_t count;

@@ -11,7 +11,7 @@
 
 #include <Common/SpaceSaving.h>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <AggregateFunctions/AggregateFunctionGroupArray.h>
 
@@ -57,7 +57,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNumber<T>>());
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void setArgument(const DataTypePtr & /*argument*/)
     {
     }
 
@@ -84,7 +84,7 @@ public:
         set.insert(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).value.merge(this->data(rhs).value);
     }
@@ -213,7 +213,7 @@ public:
         set.readAlphaMap(buf);
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
     {
         auto & set = this->data(place).value;
         if (set.capacity() != reserved)
@@ -225,7 +225,7 @@ public:
         set.insert(str_serialized);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).value.merge(this->data(rhs).value);
     }

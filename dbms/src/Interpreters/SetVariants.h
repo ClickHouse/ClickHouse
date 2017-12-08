@@ -42,10 +42,10 @@ struct SetMethodOneNumber
 
         /// Get key from key columns for insertion into hash table.
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,    /// Key columns.
-            size_t keys_size,                            /// Number of key columns.
-            size_t i,                        /// From what row of the block I get the key.
-            const Sizes & key_sizes) const    /// If keys of a fixed length - their lengths. Not used in methods for variable length keys.
+            const ConstColumnPlainPtrs & /*key_columns*/,
+            size_t /*keys_size*/,                 /// Number of key columns.
+            size_t i,                             /// From what row of the block I get the key.
+            const Sizes & /*key_sizes*/) const    /// If keys of a fixed length - their lengths. Not used in methods for variable length keys.
         {
             return unionCastToUInt64(vec[i]);
         }
@@ -53,7 +53,7 @@ struct SetMethodOneNumber
 
     /** Place additional data, if necessary, in case a new key was inserted into the hash table.
       */
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
+    static void onNewKey(typename Data::value_type & /*value*/, size_t /*keys_size*/, Arena & /*pool*/) {}
 };
 
 /// For the case where there is one string key.
@@ -79,10 +79,10 @@ struct SetMethodString
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
-            size_t keys_size,
+            const ConstColumnPlainPtrs &,
+            size_t,
             size_t i,
-            const Sizes & key_sizes) const
+            const Sizes &) const
         {
             return StringRef(
                 &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
@@ -90,7 +90,7 @@ struct SetMethodString
         }
     };
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t, Arena & pool)
     {
         value.data = pool.insert(value.data, value.size);
     }
@@ -119,16 +119,16 @@ struct SetMethodFixedString
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
-            size_t keys_size,
+            const ConstColumnPlainPtrs &,
+            size_t,
             size_t i,
-            const Sizes & key_sizes) const
+            const Sizes &) const
         {
             return StringRef(&(*chars)[i * n], n);
         }
     };
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t, Arena & pool)
     {
         value.data = pool.insert(value.data, value.size);
     }
@@ -210,7 +210,7 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    void init(const ConstColumnPlainPtrs & key_columns)
+    void init(const ConstColumnPlainPtrs &)
     {
         throw Exception{"Internal error: calling init() for non-nullable"
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
@@ -222,7 +222,7 @@ protected:
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 
-    KeysNullMap<Key> createBitmap(size_t row) const
+    KeysNullMap<Key> createBitmap(size_t) const
     {
         throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
             " is forbidden", ErrorCodes::LOGICAL_ERROR};
@@ -268,7 +268,7 @@ struct SetMethodKeysFixed
         }
     };
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
+    static void onNewKey(typename Data::value_type &, size_t, Arena &) {}
 };
 
 /// For other cases. 128 bit hash from the key.
@@ -282,7 +282,7 @@ struct SetMethodHashed
 
     struct State
     {
-        void init(const ConstColumnPlainPtrs & key_columns)
+        void init(const ConstColumnPlainPtrs &)
         {
         }
 
@@ -290,13 +290,13 @@ struct SetMethodHashed
             const ConstColumnPlainPtrs & key_columns,
             size_t keys_size,
             size_t i,
-            const Sizes & key_sizes) const
+            const Sizes &) const
         {
             return hash128(i, keys_size, key_columns);
         }
     };
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, Arena & pool) {}
+    static void onNewKey(typename Data::value_type &, size_t, Arena &) {}
 };
 
 

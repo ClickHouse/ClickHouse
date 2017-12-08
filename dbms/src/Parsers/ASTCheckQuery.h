@@ -24,7 +24,7 @@ struct ASTCheckQuery : public ASTQueryWithOutput
     std::string table;
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked frame) const override
     {
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
 

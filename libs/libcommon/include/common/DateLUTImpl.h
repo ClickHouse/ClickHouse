@@ -475,17 +475,9 @@ public:
     /// Example: 31 Aug + 1 month = 30 Sep.
     inline time_t addMonths(time_t t, Int64 delta) const
     {
-        size_t index = findIndex(t);
-        const Values & values = lut[index];
+        DayNum_t result_day = addMonths(toDayNum(t), delta);
 
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
-
-        auto month = values.month + delta;
-        auto year = values.year + (month - 1) / 12;
-        month = ((month - 1) % 12) + 1;
-        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
-
-        DayNum_t result_day = makeDayNum(year, month, day_of_month);
 
         if (time_offset >= lut[result_day].time_at_offset_change)
             time_offset -= lut[result_day].amount_of_offset_change;
@@ -497,31 +489,32 @@ public:
     {
         const Values & values = lut[d];
 
-        auto month = values.month + delta;
-        auto year = values.year + (month - 1) / 12;
-        month = ((month - 1) % 12) + 1;
-        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+        Int64 month = static_cast<Int64>(values.month) + delta;
 
-        return makeDayNum(year, month, day_of_month);
+        if (month > 0)
+        {
+            auto year = values.year + (month - 1) / 12;
+            month = ((month - 1) % 12) + 1;
+            auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+
+            return makeDayNum(year, month, day_of_month);
+        }
+        else
+        {
+            auto year = values.year - (12 - month) / 12;
+            month = 12 - (-month % 12);
+            auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
+
+            return makeDayNum(year, month, day_of_month);
+        }
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
     inline time_t addYears(time_t t, Int64 delta) const
     {
-        size_t index = findIndex(t);
-        const Values & values = lut[index];
+        DayNum_t result_day = addYears(toDayNum(t), delta);
 
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
-
-        auto year = values.year + delta;
-        auto month = values.month;
-        auto day_of_month = values.day_of_month;
-
-        /// Saturation to 28 Feb can happen.
-        if (unlikely(day_of_month == 29 && month == 2))
-            day_of_month = saturateDayOfMonth(year, month, day_of_month);
-
-        DayNum_t result_day = makeDayNum(year, month, day_of_month);
 
         if (time_offset >= lut[result_day].time_at_offset_change)
             time_offset -= lut[result_day].amount_of_offset_change;

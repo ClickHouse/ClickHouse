@@ -9,6 +9,12 @@ try
 
     auto nodes = zookeeper.getChildren("/tmp");
 
+    if (argc < 2)
+    {
+        std::cerr << "Usage: program num_threads\n";
+        return 1;
+    }
+
     size_t num_threads = DB::parse<size_t>(argv[1]);
     std::vector<std::thread> threads;
     for (size_t i = 0; i < num_threads; ++i)

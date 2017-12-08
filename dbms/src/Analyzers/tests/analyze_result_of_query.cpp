@@ -14,7 +14,7 @@
 
 /// Parses query from stdin and print names and types of result columns.
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;

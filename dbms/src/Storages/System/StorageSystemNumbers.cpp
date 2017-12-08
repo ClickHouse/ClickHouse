@@ -57,8 +57,8 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multi
 
 BlockInputStreams StorageSystemNumbers::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    const SelectQueryInfo &,
+    const Context &,
     QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
     unsigned num_streams)

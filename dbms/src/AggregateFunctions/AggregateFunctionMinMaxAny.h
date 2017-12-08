@@ -42,14 +42,14 @@ struct SingleValueDataFixed
             static_cast<ColumnVector<T> &>(to).insertDefault();
     }
 
-    void write(WriteBuffer & buf, const IDataType & data_type) const
+    void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
     {
         writeBinary(has(), buf);
         if (has())
             writeBinary(value, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & data_type)
+    void read(ReadBuffer & buf, const IDataType & /*data_type*/)
     {
         readBinary(has_value, buf);
         if (has())
@@ -212,14 +212,14 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
             static_cast<ColumnString &>(to).insertDefault();
     }
 
-    void write(WriteBuffer & buf, const IDataType & data_type) const
+    void write(WriteBuffer & buf, const IDataType & /*data_type*/) const
     {
         writeBinary(size, buf);
         if (has())
             buf.write(getData(), size);
     }
 
-    void read(ReadBuffer & buf, const IDataType & data_type)
+    void read(ReadBuffer & buf, const IDataType & /*data_type*/)
     {
         Int32 rhs_size;
         readBinary(rhs_size, buf);
@@ -707,7 +707,7 @@ public:
         this->data(place).changeIfBetter(column, row_num);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).changeIfBetter(this->data(rhs));
     }

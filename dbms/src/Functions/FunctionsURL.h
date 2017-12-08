@@ -572,7 +572,7 @@ public:
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void init(Block & block, const ColumnNumbers & arguments) {}
+    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
 
     /// Returns the position of the argument that is the column of rows
     size_t getStringsArgumentPosition()
@@ -663,7 +663,7 @@ public:
         return 0;
     }
 
-    void init(Block & block, const ColumnNumbers & arguments) {}
+    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
@@ -734,7 +734,7 @@ public:
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void init(Block & block, const ColumnNumbers & arguments) {}
+    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
 
     /// Returns the position of the argument that is the column of rows
     size_t getStringsArgumentPosition()
@@ -829,7 +829,7 @@ public:
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void init(Block & block, const ColumnNumbers & arguments) {}
+    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
 
     /// Returns the position of the argument that is the column of rows
     size_t getStringsArgumentPosition()
@@ -942,8 +942,7 @@ struct ExtractSubstringImpl
         res_data.assign(start, length);
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
-        ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
     {
         throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -998,8 +997,7 @@ struct CutSubstringImpl
         res_data.append(start + length, data.data() + data.size());
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
-        ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
     {
         throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
     }

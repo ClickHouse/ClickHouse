@@ -1,5 +1,5 @@
 #include <Common/ConfigProcessor.h>
-#include <Interpreters/Users.h>
+#include <Interpreters/SecurityManager.h>
 
 #include <boost/filesystem.hpp>
 
@@ -165,7 +165,7 @@ TestSet test_set =
 
 std::string createTmpPath(const std::string & filename);
 void createFile(const std::string & filename, const char * data);
-void runOneTest(size_t test_num, const TestDescriptor & test_descriptor);
+void runOneTest(const TestDescriptor & test_descriptor);
 auto runTestSet(const TestSet & test_set);
 
 std::string createTmpPath(const std::string & filename)
@@ -186,7 +186,7 @@ void createFile(const std::string & filename, const char * data)
     ofs << data;
 }
 
-void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
+void runOneTest(const TestDescriptor & test_descriptor)
 {
     const auto path_name = createTmpPath("users.xml");
     createFile(path_name, test_descriptor.config_content);
@@ -195,7 +195,7 @@ void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
 
     try
     {
-        config = ConfigProcessor{}.loadConfig(path_name).configuration;
+        config = ConfigProcessor(path_name).loadConfig().configuration;
     }
     catch (const Poco::Exception & ex)
     {
@@ -204,11 +204,11 @@ void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
         throw std::runtime_error(os.str());
     }
 
-    DB::Users users;
+    DB::SecurityManager security_manager;
 
     try
     {
-        users.loadFromConfig(*config);
+        security_manager.loadFromConfig(*config);
     }
     catch (const Poco::Exception & ex)
     {
@@ -223,7 +223,7 @@ void runOneTest(size_t test_num, const TestDescriptor & test_descriptor)
 
         try
         {
-            res = users.isAllowedDatabase(entry.user_name, entry.database_name);
+            res = security_manager.hasAccessToDatabase(entry.user_name, entry.database_name);
         }
         catch (const Poco::Exception &)
         {
@@ -252,7 +252,7 @@ auto runTestSet(const TestSet & test_set)
     {
         try
         {
-            runOneTest(test_num, test_descriptor);
+            runOneTest(test_descriptor);
             std::cout << "Test " << test_num << " passed\n";
         }
         catch (const std::runtime_error & ex)

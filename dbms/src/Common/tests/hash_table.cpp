@@ -8,7 +8,7 @@
 
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     {
         using Cont = HashSet<int, DefaultHash<int>, HashTableGrower<1>>;

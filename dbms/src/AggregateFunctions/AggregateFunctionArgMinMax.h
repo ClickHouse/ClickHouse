@@ -47,7 +47,7 @@ public:
             this->data(place).result.change(column_arg, row_num);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         if (this->data(place).value.changeIfBetter(this->data(rhs).value))
             this->data(place).result.change(this->data(rhs).result);
