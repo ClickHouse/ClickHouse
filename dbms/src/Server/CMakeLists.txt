@@ -2,7 +2,7 @@
 # that contain multiple execution modes (client, server, etc.)
 # each of them is built and linked as a separate library, defined below.
 
-add_library (libclickhouse-server
+add_library (clickhouse-server-lib
     ConfigReloader.cpp
     HTTPHandler.cpp
     InterserverIOHTTPHandler.cpp
@@ -16,32 +16,32 @@ add_library (libclickhouse-server
     TCPHandler.cpp
     )
 
-target_link_libraries (libclickhouse-server clickhouse_common_io daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
-target_include_directories (libclickhouse-server PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
+target_link_libraries (clickhouse-server-lib clickhouse_common_io daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+target_include_directories (clickhouse-server-lib PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
-add_library (libclickhouse-local LocalServer.cpp)
-target_link_libraries (libclickhouse-local libclickhouse-server clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+add_library (clickhouse-local-lib LocalServer.cpp)
+target_link_libraries (clickhouse-local-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
 
-add_library (libclickhouse-extract-from-config ${SPLIT_SHARED} ExtractFromConfig.cpp)
-target_link_libraries (libclickhouse-extract-from-config clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+add_library (clickhouse-extract-from-config-lib ${SPLIT_SHARED} ExtractFromConfig.cpp)
+target_link_libraries (clickhouse-extract-from-config-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
-add_library (libclickhouse-client Client.cpp)
-target_link_libraries (libclickhouse-client clickhouse_functions clickhouse_aggregate_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
+add_library (clickhouse-client-lib Client.cpp)
+target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse-client RENAME config.xml)
 
-add_library (libclickhouse-benchmark ${SPLIT_SHARED} Benchmark.cpp)
-target_link_libraries (libclickhouse-benchmark clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
-target_include_directories (libclickhouse-benchmark PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
+add_library (clickhouse-benchmark-lib ${SPLIT_SHARED} Benchmark.cpp)
+target_link_libraries (clickhouse-benchmark-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_include_directories (clickhouse-benchmark-lib PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
-add_library (libclickhouse-performance-test ${SPLIT_SHARED} PerformanceTest.cpp)
-target_link_libraries (libclickhouse-performance-test clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
-target_include_directories (libclickhouse-performance-test PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
+add_library (clickhouse-performance-test-lib ${SPLIT_SHARED} PerformanceTest.cpp)
+target_link_libraries (clickhouse-performance-test-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_include_directories (clickhouse-performance-test-lib PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
-add_library (libclickhouse-compressor ${SPLIT_SHARED} Compressor.cpp)
-target_link_libraries (libclickhouse-compressor clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+add_library (clickhouse-compressor-lib ${SPLIT_SHARED} Compressor.cpp)
+target_link_libraries (clickhouse-compressor-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
-add_library (libclickhouse-format ${SPLIT_SHARED} Format.cpp)
-target_link_libraries (libclickhouse-format clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+add_library (clickhouse-format-lib ${SPLIT_SHARED} Format.cpp)
+target_link_libraries (clickhouse-format-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 if (USE_EMBEDDED_COMPILER)
     link_directories (${LLVM_LIBRARY_DIRS})
@@ -50,14 +50,14 @@ endif ()
 add_executable (clickhouse main.cpp)
 target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 target_link_libraries (clickhouse
-    libclickhouse-server
-    libclickhouse-client
-    libclickhouse-local
-    libclickhouse-benchmark
-    libclickhouse-performance-test
-    libclickhouse-extract-from-config
-    libclickhouse-compressor
-    libclickhouse-format
+    clickhouse-server-lib
+    clickhouse-client-lib
+    clickhouse-local-lib
+    clickhouse-benchmark-lib
+    clickhouse-performance-test-lib
+    clickhouse-extract-from-config-lib
+    clickhouse-compressor-lib
+    clickhouse-format-lib
     dbms
     )
 
