@@ -15,7 +15,7 @@ int main()
             p = alloc.realloc(p, old_size, size);
             old_size = size;
         }
-        alloc.free(p, size);
+        alloc.free(p, old_size);
         std::cerr << "50mb+50mb+.. ok.\n";
     }
 
@@ -38,7 +38,7 @@ int main()
             size = old_size;
             std::cerr << "ok. impossible catch.\n";
         } */
-        alloc.free(p, size);
+        alloc.free(p, old_size);
         std::cerr << "1gb,512mb,128mb,.. ok.\n";
     }
 
@@ -53,7 +53,7 @@ int main()
             p = alloc.realloc(p, old_size, size);
             old_size = size;
         }
-        alloc.free(p, size);
+        alloc.free(p, old_size);
         std::cerr << "1,2,4,8,..,1G  ok.\n";
     }
 

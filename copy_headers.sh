@@ -33,7 +33,7 @@ START_HEADERS=$(echo \
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 # The latter options are the same that are added while building packages.
 
-for src_file in $(echo | $CLANG -M -xc++ -std=gnu++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC -fstack-protector -D_FORTIFY_SOURCE=2 \
+for src_file in $(echo | $CLANG -M -xc++ -std=c++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC -fstack-protector -D_FORTIFY_SOURCE=2 \
     $(cat "$BUILD_PATH/include_directories.txt") \
     $(echo $START_HEADERS | sed -r -e 's/[^ ]+/-include \0/g') \
     - |

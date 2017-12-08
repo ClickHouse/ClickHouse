@@ -28,18 +28,16 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 
 ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column)
 {
-    Block res;
     const ColumnTuple & src_tuple = static_cast<const ColumnTuple &>(column.getDataColumn());
-    const Block & src_tuple_block = src_tuple.getData();
-    size_t rows = src_tuple_block.rows();
+    const Columns & src_tuple_columns = src_tuple.getColumns();
+    size_t tuple_size = src_tuple_columns.size();
+    size_t rows = column.size();
 
-    for (size_t i = 0, size = src_tuple_block.columns(); i < size; ++i)
-        res.insert({
-            std::make_shared<ColumnConst>(src_tuple_block.getByPosition(i).column, rows),
-            src_tuple_block.getByPosition(i).type,
-            src_tuple_block.getByPosition(i).name});
+    Columns res_tuple_columns(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+        res_tuple_columns[i] = std::make_shared<ColumnConst>(src_tuple_columns[i], rows);
 
-    return std::make_shared<ColumnTuple>(res);
+    return std::make_shared<ColumnTuple>(res_tuple_columns);
 }
 
 

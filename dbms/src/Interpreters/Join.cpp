@@ -253,7 +253,7 @@ bool Join::checkSizeLimits() const
 
 static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
-    if (column.type->isNullable() || column.type->isNull())
+    if (column.type->isNullable())
         return;
 
     column.type = std::make_shared<DataTypeNullable>(column.type);
@@ -558,7 +558,7 @@ namespace
     struct Adder<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/,
             size_t num_columns_to_skip)
         {
             for (size_t j = 0; j < num_columns_to_add; ++j)
@@ -566,7 +566,7 @@ namespace
         }
 
         static void addNotFound(size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/)
         {
             for (size_t j = 0; j < num_columns_to_add; ++j)
                 added_columns[j]->insertDefault();
@@ -577,7 +577,7 @@ namespace
     struct Adder<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+            size_t i, IColumn::Filter * filter, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/,
             size_t num_columns_to_skip)
         {
             (*filter)[i] = 1;
@@ -586,8 +586,8 @@ namespace
                 added_columns[j]->insertFrom(*it->second.block->getByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
         }
 
-        static void addNotFound(size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+        static void addNotFound(size_t /*num_columns_to_add*/, ColumnPlainPtrs & /*added_columns*/,
+            size_t i, IColumn::Filter * filter, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/)
         {
             (*filter)[i] = 0;
         }
@@ -597,7 +597,7 @@ namespace
     struct Adder<KIND, ASTTableJoin::Strictness::All, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
             size_t num_columns_to_skip)
         {
             size_t rows_joined = 0;
@@ -614,7 +614,7 @@ namespace
         }
 
         static void addNotFound(size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
         {
             if (KIND == ASTTableJoin::Kind::Inner)
             {
@@ -633,7 +633,7 @@ namespace
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
     void NO_INLINE joinBlockImplTypeCase(
-        Block & block, const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
+        const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
         size_t num_columns_to_add, size_t num_columns_to_skip, ColumnPlainPtrs & added_columns, ConstNullMapPtr null_map,
         std::unique_ptr<IColumn::Filter> & filter,
         IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate)
@@ -667,18 +667,18 @@ namespace
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
     void joinBlockImplType(
-        Block & block, const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
+        const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
         size_t num_columns_to_add, size_t num_columns_to_skip, ColumnPlainPtrs & added_columns, ConstNullMapPtr null_map,
         std::unique_ptr<IColumn::Filter> & filter,
         IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate)
     {
         if (null_map)
             joinBlockImplTypeCase<KIND, STRICTNESS, KeyGetter, Map, true>(
-                block, map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
+                map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
                 added_columns, null_map, filter, current_offset, offsets_to_replicate);
         else
             joinBlockImplTypeCase<KIND, STRICTNESS, KeyGetter, Map, false>(
-                block, map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
+                map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
                 added_columns, null_map, filter, current_offset, offsets_to_replicate);
     }
 }
@@ -777,7 +777,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     #define M(TYPE) \
         case Join::Type::TYPE: \
             joinBlockImplType<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE>::Type>(\
-                block, *maps.TYPE, rows, key_columns, keys_size, key_sizes, \
+                *maps.TYPE, rows, key_columns, keys_size, key_sizes, \
                 num_columns_to_add, num_columns_to_skip, added_columns, null_map, \
                 filter, current_offset, offsets_to_replicate); \
             break;

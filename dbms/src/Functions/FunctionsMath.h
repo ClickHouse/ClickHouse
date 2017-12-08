@@ -51,12 +51,12 @@ private:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
     {
         block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Impl::value);
     }

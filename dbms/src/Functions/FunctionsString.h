@@ -56,7 +56,7 @@ inline UInt8 xor_or_identity<false>(const UInt8 c, const int)
 
 /// It is caller's responsibility to ensure the presence of a valid cyrillic sequence in array
 template <bool to_lower>
-inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
+inline void UTF8CyrillicToCase(const UInt8 *& src, UInt8 *& dst)
 {
     if (src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0x8Fu))
     {
@@ -105,7 +105,7 @@ inline void UTF8CyrillicToCase(const UInt8 *& src, const UInt8 * src_end, UInt8 
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 struct LowerUpperUTF8Impl
 {
     static void vector(const ColumnString::Chars_t & data,
@@ -134,7 +134,7 @@ class FunctionStringToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionStringToString>();
     }

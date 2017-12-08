@@ -57,7 +57,7 @@ struct PositionCaseSensitiveASCII
 
     /// Convert string to lowercase. Only for case-insensitive search.
     /// Implementation is permitted to be inefficient because it is called for single string.
-    static void toLowerIfNeed(std::string & s)
+    static void toLowerIfNeed(std::string &)
     {
     }
 };
@@ -68,7 +68,7 @@ struct PositionCaseInsensitiveASCII
     using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
     using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
 
-    static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+    static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t /*haystack_size_hint*/)
     {
         return SearcherInBigHaystack(needle_data, needle_size);
     }
@@ -113,7 +113,7 @@ struct PositionCaseSensitiveUTF8
         return res;
     }
 
-    static void toLowerIfNeed(std::string & s)
+    static void toLowerIfNeed(std::string &)
     {
     }
 };
@@ -496,20 +496,13 @@ struct MatchImpl
         res = revert ^ regexp->match(data);
     }
 
-    static void vector_vector(const ColumnString::Chars_t & haystack_data,
-        const ColumnString::Offsets_t & haystack_offsets,
-        const ColumnString::Chars_t & needle_data,
-        const ColumnString::Offsets_t & needle_offsets,
-        PaddedPODArray<UInt8> & res)
+    template <typename... Args> static void vector_vector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
-    static void constant_vector(const String & haystack,
-        const ColumnString::Chars_t & needle_data,
-        const ColumnString::Offsets_t & needle_offsets,
-        PaddedPODArray<UInt8> & res)
+    template <typename... Args> static void constant_vector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -945,7 +938,7 @@ class FunctionStringReplace : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionStringReplace>();
     }

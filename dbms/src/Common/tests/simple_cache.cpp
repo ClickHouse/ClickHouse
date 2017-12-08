@@ -9,7 +9,7 @@ int func(int x, int y)
 }
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     SimpleCache<decltype(func), &func> func_cached;
 

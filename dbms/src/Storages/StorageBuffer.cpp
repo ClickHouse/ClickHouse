@@ -325,7 +325,7 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
 }
@@ -365,7 +365,7 @@ void StorageBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageBuffer::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+bool StorageBuffer::optimize(const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & /*context*/)
 {
     if (partition)
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);

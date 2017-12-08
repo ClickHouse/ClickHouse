@@ -21,7 +21,7 @@
 
 /// Parses query from stdin and print same query with optimized GROUP BY, ORDER BY, LIMIT BY.
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;
@@ -67,7 +67,7 @@ try
     OptimizeGroupOrderLimitBy optimizer;
     optimizer.process(ast, inference);
 
-    formatAST(*ast, std::cout, 0, false);
+    formatAST(*ast, std::cout, false);
     std::cout << "\n";
     return 0;
 

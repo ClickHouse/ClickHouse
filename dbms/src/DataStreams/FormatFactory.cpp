@@ -9,7 +9,6 @@
 #include <DataStreams/BinaryRowOutputStream.h>
 #include <DataStreams/ValuesRowInputStream.h>
 #include <DataStreams/ValuesRowOutputStream.h>
-#include <DataStreams/TabSeparatedBlockOutputStream.h>
 #include <DataStreams/PrettyBlockOutputStream.h>
 #include <DataStreams/PrettyCompactBlockOutputStream.h>
 #include <DataStreams/PrettySpaceBlockOutputStream.h>
@@ -113,7 +112,6 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 #endif
     else if (name == "TabSeparatedRaw"
         || name == "TSVRaw"
-        || name == "BlockTabSeparated"
         || name == "Pretty"
         || name == "PrettyCompact"
         || name == "PrettyCompactMonoBlock"
@@ -154,8 +152,6 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true));
     else if (name == "TabSeparatedRaw" || name == "TSVRaw")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample));
-    else if (name == "BlockTabSeparated")
-        return std::make_shared<TabSeparatedBlockOutputStream>(buf);
     else if (name == "CSV")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample));
     else if (name == "CSVWithNames")
@@ -181,10 +177,10 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<PrettySpaceBlockOutputStream>(buf, true, settings.output_format_pretty_max_rows, context);
     else if (name == "Vertical")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(
-            buf, sample, settings.output_format_pretty_max_rows, context));
+            buf, sample, settings.output_format_pretty_max_rows));
     else if (name == "VerticalRaw")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRawRowOutputStream>(
-            buf, sample, settings.output_format_pretty_max_rows, context));
+            buf, sample, settings.output_format_pretty_max_rows));
     else if (name == "Values")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf));
     else if (name == "JSON")

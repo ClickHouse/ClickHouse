@@ -5,14 +5,6 @@
 #include <IO/VarInt.h>
 #include <IO/CompressedWriteBuffer.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
-
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-
 #include <DataStreams/MarkInCompressedFile.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 
@@ -60,56 +52,8 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
     else
         full_column = column;
 
-    if (type.isNullable())
-    {
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
-
-        const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*full_column.get());
-        const ColumnPtr & nested_col = nullable_col.getNestedColumn();
-
-        const IColumn & null_map = nullable_col.getNullMapConcreteColumn();
-        DataTypeUInt8{}.serializeBinaryBulk(null_map, ostr, offset, limit);
-
-        writeData(nested_type, nested_col, ostr, offset, limit);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /** For arrays, we serialize the offsets first, and then the values.
-          */
-        const ColumnArray & column_array = typeid_cast<const ColumnArray &>(*full_column);
-        type_arr->getOffsetsType()->serializeBinaryBulk(*column_array.getOffsetsColumn(), ostr, offset, limit);
-
-        if (!column_array.getData().empty())
-        {
-            const ColumnArray::Offsets_t & offsets = column_array.getOffsets();
-
-            if (offset > offsets.size())
-                return;
-
-            /** offset - from which array to write.
-              * limit - how many arrays should be written, or 0, if you write everything that is.
-              * end - up to which array written part finishes.
-              *
-              * nested_offset - from which nested element to write.
-              * nested_limit - how many nested elements to write, or 0, if you write everything that is.
-              */
-
-            size_t end = std::min(offset + limit, offsets.size());
-
-            size_t nested_offset = offset ? offsets[offset - 1] : 0;
-            size_t nested_limit = limit
-                ? offsets[end - 1] - nested_offset
-                : 0;
-
-            const DataTypePtr & nested_type = type_arr->getNestedType();
-
-            if (limit == 0 || nested_limit)
-                writeData(*nested_type, column_array.getDataPtr(), ostr, nested_offset, nested_limit);
-        }
-    }
-    else
-        type.serializeBinaryBulk(*full_column, ostr, offset, limit);
+    IDataType::OutputStreamGetter output_stream_getter = [&] (const IDataType::SubstreamPath &) { return &ostr; };
+    type.serializeBinaryBulkWithMultipleStreams(*full_column, output_stream_getter, offset, limit, false, {});
 }
 
 

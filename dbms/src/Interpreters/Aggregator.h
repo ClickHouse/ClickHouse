@@ -120,12 +120,12 @@ struct AggregationMethodOneNumber
 
         /// Get the key from the key columns for insertion into the hash table.
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,    /// Key columns.
-            size_t keys_size,                            /// Number of key columns.
+            const ConstColumnPlainPtrs & /*key_columns*/,
+            size_t /*keys_size*/,         /// Number of key columns.
             size_t i,                     /// From which row of the block, get the key.
-            const Sizes & key_sizes,      /// If the keys of a fixed length - their lengths. It is not used in aggregation methods for variable length keys.
-            StringRefs & keys,            /// Here references to key data in columns can be written. They can be used in the future.
-            Arena & pool) const
+            const Sizes & /*key_sizes*/,  /// If the keys of a fixed length - their lengths. It is not used in aggregation methods for variable length keys.
+            StringRefs & /*keys*/,        /// Here references to key data in columns can be written. They can be used in the future.
+            Arena & /*pool*/) const
         {
             return unionCastToUInt64(vec[i]);
         }
@@ -137,13 +137,13 @@ struct AggregationMethodOneNumber
 
     /** Place additional data, if necessary, in case a new key was inserted into the hash table.
       */
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & /*value*/, size_t /*keys_size*/, StringRefs & /*keys*/, Arena & /*pool*/)
     {
     }
 
     /** The action to be taken if the key is not new. For example, roll back the memory allocation in the pool.
       */
-    static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+    static void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
 
     /** Do not use optimization for consecutive keys.
       */
@@ -151,7 +151,7 @@ struct AggregationMethodOneNumber
 
     /** Insert the key from the hash table into columns.
       */
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t /*keys_size*/, const Sizes & /*key_sizes*/)
     {
         static_cast<ColumnVector<FieldType> *>(key_columns[0])->insertData(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
@@ -189,12 +189,12 @@ struct AggregationMethodString
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
-            size_t keys_size,
+            const ConstColumnPlainPtrs & /*key_columns*/,
+            size_t /*keys_size*/,
             size_t i,
-            const Sizes & key_sizes,
-            StringRefs & keys,
-            Arena & pool) const
+            const Sizes & /*key_sizes*/,
+            StringRefs & /*keys*/,
+            Arena & /*pool*/) const
         {
             return StringRef(
                 &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
@@ -205,16 +205,16 @@ struct AggregationMethodString
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t /*keys_size*/, StringRefs & /*keys*/, Arena & pool)
     {
         value.first.data = pool.insert(value.first.data, value.first.size);
     }
 
-    static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+    static void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
 
     static const bool no_consecutive_keys_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t, const Sizes &)
     {
         key_columns[0]->insertData(value.first.data, value.first.size);
     }
@@ -252,12 +252,12 @@ struct AggregationMethodFixedString
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
-            size_t keys_size,
+            const ConstColumnPlainPtrs &,
+            size_t,
             size_t i,
-            const Sizes & key_sizes,
-            StringRefs & keys,
-            Arena & pool) const
+            const Sizes &,
+            StringRefs &,
+            Arena &) const
         {
             return StringRef(&(*chars)[i * n], n);
         }
@@ -266,16 +266,16 @@ struct AggregationMethodFixedString
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t, StringRefs &, Arena & pool)
     {
         value.first.data = pool.insert(value.first.data, value.first.size);
     }
 
-    static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+    static void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t, const Sizes &)
     {
         key_columns[0]->insertData(value.first.data, value.first.size);
     }
@@ -357,7 +357,7 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    void init(const ConstColumnPlainPtrs & key_columns)
+    void init(const ConstColumnPlainPtrs &)
     {
         throw Exception{"Internal error: calling init() for non-nullable"
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
@@ -369,7 +369,7 @@ protected:
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 
-    KeysNullMap<Key> createBitmap(size_t row) const
+    KeysNullMap<Key> createBitmap(size_t) const
     {
         throw Exception{"Internal error: calling createBitmap() for non-nullable keys"
             " is forbidden", ErrorCodes::LOGICAL_ERROR};
@@ -412,8 +412,8 @@ struct AggregationMethodKeysFixed
             size_t keys_size,
             size_t i,
             const Sizes & key_sizes,
-            StringRefs & keys,
-            Arena & pool) const
+            StringRefs &,
+            Arena &) const
         {
             if (has_nullable_keys)
             {
@@ -428,11 +428,11 @@ struct AggregationMethodKeysFixed
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
     {
     }
 
-    static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+    static void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
 
@@ -506,7 +506,7 @@ struct AggregationMethodConcat
 
     struct State
     {
-        void init(ConstColumnPlainPtrs & key_columns)
+        void init(ConstColumnPlainPtrs &)
         {
         }
 
@@ -514,7 +514,7 @@ struct AggregationMethodConcat
             const ConstColumnPlainPtrs & key_columns,
             size_t keys_size,
             size_t i,
-            const Sizes & key_sizes,
+            const Sizes &,
             StringRefs & keys,
             Arena & pool) const
         {
@@ -525,7 +525,7 @@ struct AggregationMethodConcat
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
     {
     }
 
@@ -544,7 +544,7 @@ struct AggregationMethodConcat
 
 private:
     /// Insert the values of the specified keys into the corresponding columns.
-    static void insertKeyIntoColumnsImpl(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+    static void insertKeyIntoColumnsImpl(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes &)
     {
         /// See function extractKeysAndPlaceInPoolContiguous.
         const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
@@ -591,7 +591,7 @@ struct AggregationMethodSerialized
 
     struct State
     {
-        void init(ConstColumnPlainPtrs & key_columns)
+        void init(ConstColumnPlainPtrs &)
         {
         }
 
@@ -599,22 +599,22 @@ struct AggregationMethodSerialized
             const ConstColumnPlainPtrs & key_columns,
             size_t keys_size,
             size_t i,
-            const Sizes & key_sizes,
-            StringRefs & keys,
+            const Sizes &,
+            StringRefs &,
             Arena & pool) const
         {
-            return serializeKeysToPoolContiguous(i, keys_size, key_columns, keys, pool);
+            return serializeKeysToPoolContiguous(i, keys_size, key_columns, pool);
         }
     };
 
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
     {
     }
 
-    static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool)
+    static void onExistingKey(const Key & key, StringRefs &, Arena & pool)
     {
         pool.rollback(key.size);
     }
@@ -622,7 +622,7 @@ struct AggregationMethodSerialized
     /// If the key already was, it is removed from the pool (overwritten), and the next key can not be compared with it.
     static const bool no_consecutive_keys_optimization = true;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes &)
     {
         auto pos = value.first.data;
         for (size_t i = 0; i < keys_size; ++i)
@@ -650,7 +650,7 @@ struct AggregationMethodHashed
 
     struct State
     {
-        void init(ConstColumnPlainPtrs & key_columns)
+        void init(ConstColumnPlainPtrs &)
         {
         }
 
@@ -658,9 +658,9 @@ struct AggregationMethodHashed
             const ConstColumnPlainPtrs & key_columns,
             size_t keys_size,
             size_t i,
-            const Sizes & key_sizes,
+            const Sizes &,
             StringRefs & keys,
-            Arena & pool) const
+            Arena &) const
         {
             return hash128(i, keys_size, key_columns, keys);
         }
@@ -669,16 +669,16 @@ struct AggregationMethodHashed
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value.second; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value.second; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, size_t i, StringRefs & keys, Arena & pool)
+    static void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
     {
-        value.second.first = placeKeysInPool(i, keys_size, keys, pool);
+        value.second.first = placeKeysInPool(keys_size, keys, pool);
     }
 
-    static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool) {}
+    static void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes &)
     {
         for (size_t i = 0; i < keys_size; ++i)
             key_columns[i]->insertDataWithTerminatingZero(value.second.first[i].data, value.second.first[i].size);
@@ -1238,8 +1238,7 @@ protected:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        IBlockOutputStream & out,
-        const String & path);
+        IBlockOutputStream & out);
 
 public:
     /// Templates that are instantiated by dynamic code compilation - see SpecializedAggregator.h
@@ -1394,9 +1393,7 @@ protected:
         std::vector<Block> & destinations) const;
 
     template <typename Method, typename Table>
-    void destroyImpl(
-        Method & method,
-        Table & table) const;
+    void destroyImpl(Table & table) const;
 
     void destroyWithoutKey(
         AggregatedDataVariants & result) const;

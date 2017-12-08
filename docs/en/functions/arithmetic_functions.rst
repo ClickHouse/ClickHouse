@@ -64,3 +64,13 @@ abs(a)
 ------
 Calculates the absolute value of the number 'a'. That is, if a< 0, it returns -a.
 For unsigned types, it doesn't do anything. For signed integer types, it returns an unsigned number.
+
+gcd(a, b)
+---------
+Calculates the greatest common divisor of the numbers.
+When dividing by zero or when dividing a minimal negative number by minus one, an exception is thrown.
+
+lcm(a, b)
+---------
+Calculates the least common multiple of the numbers.
+When dividing by zero or when dividing a minimal negative number by minus one, an exception is thrown.

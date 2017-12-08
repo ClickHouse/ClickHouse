@@ -11,7 +11,6 @@ class DataTypeDate final : public DataTypeNumberBase<UInt16>
 public:
     bool behavesAsNumber() const override { return false; }
 
-    std::string getName() const override { return "Date"; }
     const char * getFamilyName() const override { return "Date"; }
     DataTypePtr clone() const override { return std::make_shared<DataTypeDate>(); }
 

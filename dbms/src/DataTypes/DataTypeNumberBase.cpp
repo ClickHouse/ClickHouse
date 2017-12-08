@@ -25,22 +25,15 @@ void DataTypeNumberBase<T>::serializeTextEscaped(const IColumn & column, size_t 
 
 
 template <typename T>
-static void readTextUnsafeIfIntegral(typename std::enable_if<std::is_integral<T>::value && std::is_arithmetic<T>::value, T>::type & x, ReadBuffer & istr)
-{
-    readIntTextUnsafe(x, istr);
-}
-
-template <typename T>
-static void readTextUnsafeIfIntegral(typename std::enable_if<!std::is_integral<T>::value || !std::is_arithmetic<T>::value, T>::type & x, ReadBuffer & istr)
-{
-    readText(x, istr);
-}
-
-template <typename T>
 static void deserializeText(IColumn & column, ReadBuffer & istr)
 {
     T x;
-    readTextUnsafeIfIntegral<T>(x, istr);
+
+    if constexpr (std::is_integral<T>::value && std::is_arithmetic<T>::value)
+        readIntTextUnsafe(x, istr);
+    else
+        readText(x, istr);
+
     static_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
@@ -65,26 +58,31 @@ void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer &
 
 
 template <typename T>
-static inline typename std::enable_if<std::is_floating_point<T>::value, void>::type writeDenormalNumber(T x, WriteBuffer & ostr)
+static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
 {
-    if (std::signbit(x))
+    if constexpr (std::is_floating_point<T>::value)
     {
-        if (isNaN(x))
-            writeCString("-nan", ostr);
+        if (std::signbit(x))
+        {
+            if (isNaN(x))
+                writeCString("-nan", ostr);
+            else
+                writeCString("-inf", ostr);
+        }
         else
-            writeCString("-inf", ostr);
+        {
+            if (isNaN(x))
+                writeCString("nan", ostr);
+            else
+                writeCString("inf", ostr);
+        }
     }
     else
     {
-        if (isNaN(x))
-            writeCString("nan", ostr);
-        else
-            writeCString("inf", ostr);
+        /// This function is not called for non floating point numbers.
+        (void)x;
     }
 }
-
-template <typename T>
-static inline typename std::enable_if<!std::is_floating_point<T>::value, void>::type writeDenormalNumber(T x, WriteBuffer & ostr) {}
 
 
 template <typename T>
@@ -168,7 +166,7 @@ void DataTypeNumberBase<T>::serializeTextCSV(const IColumn & column, size_t row_
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
 {
     FieldType x;
     readCSV(x, istr);
@@ -225,7 +223,7 @@ void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuf
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     typename ColumnVector<T>::Container_t & x = typeid_cast<ColumnVector<T> &>(column).getData();
     size_t initial_size = x.size();

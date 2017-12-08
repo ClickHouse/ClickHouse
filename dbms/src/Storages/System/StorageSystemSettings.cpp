@@ -14,9 +14,10 @@ namespace DB
 StorageSystemSettings::StorageSystemSettings(const std::string & name_)
     : name(name_)
     , columns{
-        { "name",             std::make_shared<DataTypeString>()    },
-        { "value",            std::make_shared<DataTypeString>()    },
-        { "changed",         std::make_shared<DataTypeUInt8>()    },
+        { "name",        std::make_shared<DataTypeString>() },
+        { "value",       std::make_shared<DataTypeString>() },
+        { "changed",     std::make_shared<DataTypeUInt8>() },
+        { "description", std::make_shared<DataTypeString>() },
     }
 {
 }
@@ -24,11 +25,11 @@ StorageSystemSettings::StorageSystemSettings(const std::string & name_)
 
 BlockInputStreams StorageSystemSettings::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo &,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -38,20 +39,22 @@ BlockInputStreams StorageSystemSettings::read(
     ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
     ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "value"};
     ColumnWithTypeAndName col_changed{std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "changed"};
+    ColumnWithTypeAndName col_description{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "description"};
 
-#define ADD_SETTING(TYPE, NAME, DEFAULT) \
+#define ADD_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
     col_name.column->insert(String(#NAME)); \
     col_value.column->insert(settings.NAME.toString()); \
-    col_changed.column->insert(UInt64(settings.NAME.changed));
+    col_changed.column->insert(UInt64(settings.NAME.changed)); \
+    col_description.column->insert(String(DESCRIPTION));
 
     APPLY_FOR_SETTINGS(ADD_SETTING)
 #undef ADD_SETTING
 
-#define ADD_LIMIT(TYPE, NAME, DEFAULT) \
+#define ADD_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
     col_name.column->insert(String(#NAME)); \
     col_value.column->insert(settings.limits.NAME.toString()); \
-    col_changed.column->insert(UInt64(settings.limits.NAME.changed));
-
+    col_changed.column->insert(UInt64(settings.limits.NAME.changed)); \
+    col_description.column->insert(String(DESCRIPTION));
     APPLY_FOR_LIMITS(ADD_LIMIT)
 #undef ADD_LIMIT
 
@@ -59,6 +62,7 @@ BlockInputStreams StorageSystemSettings::read(
         col_name,
         col_value,
         col_changed,
+        col_description,
     };
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));

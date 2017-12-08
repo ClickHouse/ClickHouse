@@ -81,7 +81,7 @@ public:
             += static_cast<const ColumnVector<WeightType> &>(column_weight).getData()[row_num];
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & map = this->data(place).map;
         const auto & rhs_map = this->data(rhs).map;
@@ -198,7 +198,7 @@ public:
             += static_cast<const ColumnVector<WeightType> &>(column_weight).getData()[row_num];
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & map = this->data(place).map;
         const auto & rhs_map = this->data(rhs).map;

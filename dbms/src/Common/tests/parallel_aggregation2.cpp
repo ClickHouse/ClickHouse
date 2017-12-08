@@ -124,7 +124,7 @@ struct MergeSequential
     template <typename Merger>
     static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
                         Merger && merger,
-                        ThreadPool & pool)
+                        ThreadPool &)
     {
         for (size_t i = 1; i < num_maps; ++i)
         {
@@ -144,7 +144,7 @@ struct MergeSequentialTransposed    /// In practice not better than usual.
     template <typename Merger>
     static void NO_INLINE execute(Map ** source_maps, size_t num_maps, Map *& result_map,
                         Merger && merger,
-                        ThreadPool & pool)
+                        ThreadPool &)
     {
         std::vector<typename Map::iterator> iterators(num_maps);
         for (size_t i = 1; i < num_maps; ++i)
@@ -260,7 +260,7 @@ using Mutex = std::mutex;
 
 struct Creator
 {
-    void operator()(Value & x) const {}
+    void operator()(Value &) const {}
 };
 
 #if !__clang__

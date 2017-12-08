@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /** Higher-order functions for arrays:
@@ -42,7 +43,7 @@ struct ArrayMapImpl
     /// true if the array must be exactly one.
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeArray>(expression_return);
     }
@@ -61,7 +62,7 @@ struct ArrayFilterImpl
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         return std::make_shared<DataTypeArray>(array_element);
     }
@@ -116,7 +117,7 @@ struct ArrayCountImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt32>();
     }
@@ -178,7 +179,7 @@ struct ArrayExistsImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -244,7 +245,7 @@ struct ArrayAllImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -310,7 +311,7 @@ struct ArraySumImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
         if (checkDataType<DataTypeUInt8>(&*expression_return) ||
             checkDataType<DataTypeUInt16>(&*expression_return) ||
@@ -405,7 +406,7 @@ struct ArrayFirstImpl
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         return array_element;
     }
@@ -482,7 +483,7 @@ struct ArrayFirstIndexImpl
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
         return std::make_shared<DataTypeUInt32>();
     }
@@ -553,7 +554,7 @@ struct ArraySortImpl
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
 
-    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & array_element)
+    static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & array_element)
     {
         return std::make_shared<DataTypeArray>(array_element);
     }
@@ -602,7 +603,7 @@ class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayMapped>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayMapped>(); };
 
     String getName() const override
     {
@@ -885,16 +886,16 @@ public:
 };
 
 
-struct NameArrayMap            { static constexpr auto name = "arrayMap"; };
-struct NameArrayFilter        { static constexpr auto name = "arrayFilter"; };
-struct NameArrayCount        { static constexpr auto name = "arrayCount"; };
-struct NameArrayExists        { static constexpr auto name = "arrayExists"; };
-struct NameArrayAll            { static constexpr auto name = "arrayAll"; };
-struct NameArraySum            { static constexpr auto name = "arraySum"; };
-struct NameArrayFirst        { static constexpr auto name = "arrayFirst"; };
-struct NameArrayFirstIndex    { static constexpr auto name = "arrayFirstIndex"; };
+struct NameArrayMap         { static constexpr auto name = "arrayMap"; };
+struct NameArrayFilter      { static constexpr auto name = "arrayFilter"; };
+struct NameArrayCount       { static constexpr auto name = "arrayCount"; };
+struct NameArrayExists      { static constexpr auto name = "arrayExists"; };
+struct NameArrayAll         { static constexpr auto name = "arrayAll"; };
+struct NameArraySum         { static constexpr auto name = "arraySum"; };
+struct NameArrayFirst       { static constexpr auto name = "arrayFirst"; };
+struct NameArrayFirstIndex  { static constexpr auto name = "arrayFirstIndex"; };
 struct NameArraySort        { static constexpr auto name = "arraySort"; };
-struct NameArrayReverseSort    { static constexpr auto name = "arrayReverseSort"; };
+struct NameArrayReverseSort { static constexpr auto name = "arrayReverseSort"; };
 
 using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, NameArrayMap>;
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;

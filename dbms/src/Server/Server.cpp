@@ -9,7 +9,6 @@
 
 #include <ext/scope_guard.h>
 
-#include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 
@@ -80,7 +79,7 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path")) + "cores";
 }
 
-int Server::main(const std::vector<std::string> & args)
+int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
 
@@ -108,8 +107,10 @@ int Server::main(const std::vector<std::string> & args)
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
-        loaded_config = ConfigProcessor().loadConfigWithZooKeeperIncludes(
-            config_path, main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+        ConfigProcessor config_processor(config_path);
+        loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
+            main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+        config_processor.savePreprocessedConfig(loaded_config);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
@@ -552,4 +553,17 @@ int Server::main(const std::vector<std::string> & args)
 }
 }
 
-YANDEX_APP_SERVER_MAIN_FUNC(DB::Server, mainEntryClickHouseServer);
+int mainEntryClickHouseServer(int argc, char ** argv)
+{
+    DB::Server app;
+    try
+    {
+        return app.run(argc, argv);
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
+}

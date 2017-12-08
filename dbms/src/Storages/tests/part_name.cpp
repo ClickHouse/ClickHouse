@@ -3,7 +3,7 @@
 #include <common/LocalDateTime.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     DayNum_t today = DateLUT::instance().toDayNum(time(0));
 

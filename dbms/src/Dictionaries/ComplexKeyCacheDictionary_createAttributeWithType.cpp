@@ -5,7 +5,7 @@ namespace DB
 
 ComplexKeyCacheDictionary::Attribute ComplexKeyCacheDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type};
+    Attribute attr{type, {}, {}};
 
     switch (type)
     {

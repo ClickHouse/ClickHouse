@@ -1,3 +1,5 @@
+<a name="functions_arrayjoin"></a>
+
 Функция arrayJoin
 =================
 

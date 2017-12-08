@@ -32,7 +32,7 @@ class FunctionBitmaskToList : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToList";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBitmaskToList>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmaskToList>(); }
 
     String getName() const override
     {
@@ -132,7 +132,7 @@ class FunctionFormatReadableSize : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableSize";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionFormatReadableSize>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatReadableSize>(); }
 
     String getName() const override
     {

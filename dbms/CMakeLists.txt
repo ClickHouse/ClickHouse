@@ -18,6 +18,8 @@ get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 string (TIMESTAMP BUILD_DATE "%Y-%m-%d" UTC)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_build.cpp.in ${CONFIG_BUILD})
 
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
+
 if (NOT NO_WERROR)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
@@ -27,6 +29,8 @@ find_package (Threads)
 
 add_subdirectory (src)
 
+# These files are located in separate library, because they are used by Yandex.Metrika code
+#  in places when no dependency on whole "dbms" library is possible.
 add_library(string_utils
     src/Common/StringUtils.h
     src/Common/StringUtils.cpp)
@@ -49,6 +53,7 @@ add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
 add_headers_and_sources(dbms src/Dictionaries)
 add_headers_and_sources(dbms src/Dictionaries/Embedded)
+add_headers_and_sources(dbms src/Dictionaries/Embedded/GeodataProviders)
 add_headers_and_sources(dbms src/Interpreters)
 add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Columns)
@@ -69,6 +74,7 @@ list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionState.cpp
     src/AggregateFunctions/AggregateFunctionArray.cpp
     src/AggregateFunctions/AggregateFunctionNull.cpp
+    src/AggregateFunctions/AggregateFunctionNothing.cpp
     src/AggregateFunctions/AggregateFunctionForEach.cpp
     src/AggregateFunctions/AggregateFunctionIf.cpp
     src/AggregateFunctions/AggregateFunctionMerge.cpp
@@ -81,6 +87,7 @@ list (APPEND dbms_headers
     src/AggregateFunctions/AggregateFunctionState.h
     src/AggregateFunctions/AggregateFunctionArray.h
     src/AggregateFunctions/AggregateFunctionNull.h
+    src/AggregateFunctions/AggregateFunctionNothing.h
     src/AggregateFunctions/AggregateFunctionForEach.h
     src/AggregateFunctions/AggregateFunctionIf.h
     src/AggregateFunctions/AggregateFunctionMerge.h
@@ -157,11 +164,12 @@ target_link_libraries (clickhouse_common_io
     ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
+    ${PLATFORM_LIBS}
 )
 
 target_link_libraries (dbms
-    clickhouse_common_io
     clickhouse_parsers
+    clickhouse_common_io
     ${MYSQLXX_LIBRARY}
     ${FARMHASH_LIBRARIES}
     ${METROHASH_LIBRARIES}
@@ -197,9 +205,8 @@ if (USE_CAPNP)
 endif ()
 
 target_link_libraries (dbms
-    ${PLATFORM_LIBS}
     ${CMAKE_DL_LIBS}
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
 )
 
 target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})

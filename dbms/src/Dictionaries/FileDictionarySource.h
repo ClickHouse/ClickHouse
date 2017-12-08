@@ -21,13 +21,13 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception{"Method loadIds is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
     BlockInputStreamPtr loadKeys(
-        const Columns & key_columns, const std::vector<size_t> & requested_rows) override
+        const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
     {
         throw Exception{"Method loadKeys is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
