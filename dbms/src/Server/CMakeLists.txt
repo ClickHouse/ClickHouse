@@ -37,8 +37,8 @@ add_library (libclickhouse-performance-test ${SPLIT_SHARED} PerformanceTest.cpp)
 target_link_libraries (libclickhouse-performance-test clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (libclickhouse-performance-test PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
-add_library (libclickhouse-compressor-lib ${SPLIT_SHARED} Compressor.cpp)
-target_link_libraries (libclickhouse-compressor-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+add_library (libclickhouse-compressor ${SPLIT_SHARED} Compressor.cpp)
+target_link_libraries (libclickhouse-compressor clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (libclickhouse-format ${SPLIT_SHARED} Format.cpp)
 target_link_libraries (libclickhouse-format clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
@@ -56,7 +56,7 @@ target_link_libraries (clickhouse
     libclickhouse-benchmark
     libclickhouse-performance-test
     libclickhouse-extract-from-config
-    libclickhouse-compressor-lib
+    libclickhouse-compressor
     libclickhouse-format
     dbms
     )
