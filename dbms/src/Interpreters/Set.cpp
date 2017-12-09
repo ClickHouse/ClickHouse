@@ -330,7 +330,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
             throw Exception("Array(Nullable(...)) for left hand side of IN is not supported.", ErrorCodes::NOT_IMPLEMENTED);
 
         if (!array_type->getNestedType()->equals(*data_types[0]))
-            throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() +
+            throw Exception("Types in section IN don't match: " + data_types[0]->getName() +
                 " on the right, " + array_type->getNestedType()->getName() + " on the left.",
                 ErrorCodes::TYPE_MISMATCH);
 
@@ -367,7 +367,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         {
             key_columns.push_back(block.safeGetByPosition(i).column.get());
 
-            if (removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
+            if (!removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
                 throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
                     + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
                     " on the left.", ErrorCodes::TYPE_MISMATCH);
