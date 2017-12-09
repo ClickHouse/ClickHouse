@@ -117,7 +117,7 @@ def main(args):
                 if args.random:
                     return random()
                 prefix, suffix = item.split('_', 1)
-                return -int(prefix), suffix
+                return int(prefix), suffix
             for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir)), key=key_func):
                 if SERVER_DIED:
                     break
