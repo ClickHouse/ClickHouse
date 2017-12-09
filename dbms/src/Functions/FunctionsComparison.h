@@ -135,11 +135,6 @@ struct NumComparisonImpl
     {
         NumComparisonImpl<B, A, typename Op::SymmetricOp>::vector_constant(b, a, c);
     }
-
-    static void constant_constant(A a, B b, UInt8 & c)
-    {
-        c = Op::apply(a, b);
-    }
 };
 
 
@@ -338,18 +333,6 @@ struct StringComparisonImpl
     {
         StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vector_constant(b_data, b_n, a, c);
     }
-
-    static void constant_constant(
-        const std::string & a,
-        const std::string & b,
-        UInt8 & c)
-    {
-        size_t a_n = a.size();
-        size_t b_n = b.size();
-
-        int res = memcmp(a.data(), b.data(), std::min(a_n, b_n));
-        c = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
-    }
 };
 
 
@@ -490,14 +473,6 @@ struct StringEqualsImpl
         }
     }
 
-    static void constant_constant(
-        const std::string & a,
-        const std::string & b,
-        UInt8 & c)
-    {
-        c = positive == (a == b);
-    }
-
     static void fixed_string_vector_string_vector(
         const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
         const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
@@ -551,11 +526,6 @@ struct GenericComparisonImpl
     static void constant_vector(const IColumn & a, const IColumn & b, PaddedPODArray<UInt8> & c)
     {
         GenericComparisonImpl<typename Op::SymmetricOp>::vector_constant(b, a, c);
-    }
-
-    static void constant_constant(const IColumn & a, const IColumn & b, UInt8 & c)
-    {
-        c = Op::apply(a.compareAt(0, 0, b, 1), 0);
     }
 };
 
@@ -618,16 +588,6 @@ private:
             ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
-
-            return true;
-        }
-        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
-        {
-            UInt8 res = 0;
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-
-            auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), toField(res));
-            block.getByPosition(result).column = col_res;
 
             return true;
         }
@@ -694,65 +654,56 @@ private:
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
 
-        if (c0_const && c1_const)
-        {
-            UInt8 res = 0;
-            StringImpl::constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(c0_const->size(), toField(res));
-        }
-        else
-        {
-            auto c_res = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = c_res;
-            ColumnUInt8::Container_t & vec_res = c_res->getData();
-            vec_res.resize(c0->size());
+        auto c_res = std::make_shared<ColumnUInt8>();
+        block.getByPosition(result).column = c_res;
+        ColumnUInt8::Container_t & vec_res = c_res->getData();
+        vec_res.resize(c0->size());
 
-            if (c0_string && c1_string)
-                StringImpl::string_vector_string_vector(
-                    c0_string->getChars(), c0_string->getOffsets(),
-                    c1_string->getChars(), c1_string->getOffsets(),
-                    c_res->getData());
-            else if (c0_string && c1_fixed_string)
-                StringImpl::string_vector_fixed_string_vector(
-                    c0_string->getChars(), c0_string->getOffsets(),
-                    c1_fixed_string->getChars(), c1_fixed_string->getN(),
-                    c_res->getData());
-            else if (c0_string && c1_const)
-                StringImpl::string_vector_constant(
-                    c0_string->getChars(), c0_string->getOffsets(),
-                    c1_const->getValue<String>(),
-                    c_res->getData());
-            else if (c0_fixed_string && c1_string)
-                StringImpl::fixed_string_vector_string_vector(
-                    c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                    c1_string->getChars(), c1_string->getOffsets(),
-                    c_res->getData());
-            else if (c0_fixed_string && c1_fixed_string)
-                StringImpl::fixed_string_vector_fixed_string_vector(
-                    c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                    c1_fixed_string->getChars(), c1_fixed_string->getN(),
-                    c_res->getData());
-            else if (c0_fixed_string && c1_const)
-                StringImpl::fixed_string_vector_constant(
-                    c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                    c1_const->getValue<String>(),
-                    c_res->getData());
-            else if (c0_const && c1_string)
-                StringImpl::constant_string_vector(
-                    c0_const->getValue<String>(),
-                    c1_string->getChars(), c1_string->getOffsets(),
-                    c_res->getData());
-            else if (c0_const && c1_fixed_string)
-                StringImpl::constant_fixed_string_vector(
-                    c0_const->getValue<String>(),
-                    c1_fixed_string->getChars(), c1_fixed_string->getN(),
-                    c_res->getData());
-            else
-                throw Exception("Illegal columns "
-                    + c0->getName() + " and " + c1->getName()
-                    + " of arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
+        if (c0_string && c1_string)
+            StringImpl::string_vector_string_vector(
+                c0_string->getChars(), c0_string->getOffsets(),
+                c1_string->getChars(), c1_string->getOffsets(),
+                c_res->getData());
+        else if (c0_string && c1_fixed_string)
+            StringImpl::string_vector_fixed_string_vector(
+                c0_string->getChars(), c0_string->getOffsets(),
+                c1_fixed_string->getChars(), c1_fixed_string->getN(),
+                c_res->getData());
+        else if (c0_string && c1_const)
+            StringImpl::string_vector_constant(
+                c0_string->getChars(), c0_string->getOffsets(),
+                c1_const->getValue<String>(),
+                c_res->getData());
+        else if (c0_fixed_string && c1_string)
+            StringImpl::fixed_string_vector_string_vector(
+                c0_fixed_string->getChars(), c0_fixed_string->getN(),
+                c1_string->getChars(), c1_string->getOffsets(),
+                c_res->getData());
+        else if (c0_fixed_string && c1_fixed_string)
+            StringImpl::fixed_string_vector_fixed_string_vector(
+                c0_fixed_string->getChars(), c0_fixed_string->getN(),
+                c1_fixed_string->getChars(), c1_fixed_string->getN(),
+                c_res->getData());
+        else if (c0_fixed_string && c1_const)
+            StringImpl::fixed_string_vector_constant(
+                c0_fixed_string->getChars(), c0_fixed_string->getN(),
+                c1_const->getValue<String>(),
+                c_res->getData());
+        else if (c0_const && c1_string)
+            StringImpl::constant_string_vector(
+                c0_const->getValue<String>(),
+                c1_string->getChars(), c1_string->getOffsets(),
+                c_res->getData());
+        else if (c0_const && c1_fixed_string)
+            StringImpl::constant_fixed_string_vector(
+                c0_const->getValue<String>(),
+                c1_fixed_string->getChars(), c1_fixed_string->getN(),
+                c_res->getData());
+        else
+            throw Exception("Illegal columns "
+                + c0->getName() + " and " + c1->getName()
+                + " of arguments of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
 
         return true;
     }
@@ -870,30 +821,46 @@ private:
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
           */
 
-        ColumnWithTypeAndName x = c0;
-        ColumnWithTypeAndName y = c1;
-
-        auto x_const = checkAndGetColumnConst<ColumnTuple>(x.column.get());
-        auto y_const = checkAndGetColumnConst<ColumnTuple>(y.column.get());
-
-        if (x_const)
-            x.column = convertConstTupleToTupleOfConstants(*x_const);
-
-        if (y_const)
-            y.column = convertConstTupleToTupleOfConstants(*y_const);
-
-        const size_t tuple_size = typeid_cast<const ColumnTuple &>(*x.column).getColumns().size();
+        const size_t tuple_size = typeid_cast<const DataTypeTuple &>(*c0.type).getElements().size();
 
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
+        ColumnsWithTypeAndName x(tuple_size);
+        ColumnsWithTypeAndName y(tuple_size);
+
+        auto x_const = checkAndGetColumnConst<ColumnTuple>(c0.column.get());
+        auto y_const = checkAndGetColumnConst<ColumnTuple>(c1.column.get());
+
+        Columns x_columns;
+        Columns y_columns;
+
+        if (x_const)
+            x_columns = convertConstTupleToConstantElements(*x_const);
+        else
+            x_columns = static_cast<const ColumnTuple &>(*c0.column).getColumns();
+
+        if (y_const)
+            y_columns = convertConstTupleToConstantElements(*y_const);
+        else
+            y_columns = static_cast<const ColumnTuple &>(*c1.column).getColumns();
+
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            x[i].type = static_cast<const DataTypeTuple &>(*c0.type).getElements()[i];
+            y[i].type = static_cast<const DataTypeTuple &>(*c1.type).getElements()[i];
+
+            x[i].column = x_columns[i];
+            y[i].column = y_columns[i];
+        }
+
         executeTupleImpl(block, result, x, y, tuple_size);
     }
 
-    void executeTupleImpl(Block & block, size_t result, const ColumnWithTypeAndName & x, const ColumnWithTypeAndName & y, size_t tuple_size);
+    void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size);
 
     template <typename ComparisonFunction, typename ConvolutionFunction>
-    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnWithTypeAndName & x, const ColumnWithTypeAndName & y, size_t tuple_size)
+    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
     {
         ComparisonFunction func_compare;
         ConvolutionFunction func_convolution;
@@ -901,8 +868,8 @@ private:
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert({static_cast<const ColumnTuple &>(*x.column).getColumns()[i], static_cast<const DataTypeTuple &>(*x.type).getElements()[i], "x"});
-            tmp_block.insert({static_cast<const ColumnTuple &>(*y.column).getColumns()[i], static_cast<const DataTypeTuple &>(*y.type).getElements()[i], "y"});
+            tmp_block.insert(x[i]);
+            tmp_block.insert(y[i]);
 
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
@@ -921,7 +888,7 @@ private:
     }
 
     template <typename HeadComparisonFunction, typename TailComparisonFunction>
-    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnWithTypeAndName & x, const ColumnWithTypeAndName & y, size_t tuple_size)
+    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
     {
         HeadComparisonFunction func_compare_head;
         TailComparisonFunction func_compare_tail;
@@ -934,8 +901,8 @@ private:
         /// Pairwise comparison of the inequality of all elements; on the equality of all elements except the last.
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert({static_cast<const ColumnTuple &>(*x.column).getColumns()[i], static_cast<const DataTypeTuple &>(*x.type).getElements()[i], "x"});
-            tmp_block.insert({static_cast<const ColumnTuple &>(*y.column).getColumns()[i], static_cast<const DataTypeTuple &>(*y.type).getElements()[i], "y"});
+            tmp_block.insert(x[i]);
+            tmp_block.insert(y[i]);
 
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
@@ -970,26 +937,17 @@ private:
         bool c0_const = c0->isColumnConst();
         bool c1_const = c1->isColumnConst();
 
-        if (c0_const && c1_const)
-        {
-            UInt8 res = 0;
-            GenericComparisonImpl<Op<int, int>>::constant_constant(*c0, *c1, res);
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(c0->size(), toField(res));
-        }
-        else
-        {
-            auto c_res = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = c_res;
-            ColumnUInt8::Container_t & vec_res = c_res->getData();
-            vec_res.resize(c0->size());
+        auto c_res = std::make_shared<ColumnUInt8>();
+        block.getByPosition(result).column = c_res;
+        ColumnUInt8::Container_t & vec_res = c_res->getData();
+        vec_res.resize(c0->size());
 
-            if (c0_const)
-                GenericComparisonImpl<Op<int, int>>::constant_vector(*c0, *c1, vec_res);
-            else if (c1_const)
-                GenericComparisonImpl<Op<int, int>>::vector_constant(*c0, *c1, vec_res);
-            else
-                GenericComparisonImpl<Op<int, int>>::vector_vector(*c0, *c1, vec_res);
-        }
+        if (c0_const)
+            GenericComparisonImpl<Op<int, int>>::constant_vector(*c0, *c1, vec_res);
+        else if (c1_const)
+            GenericComparisonImpl<Op<int, int>>::vector_constant(*c0, *c1, vec_res);
+        else
+            GenericComparisonImpl<Op<int, int>>::vector_vector(*c0, *c1, vec_res);
     }
 
 public:
@@ -997,6 +955,8 @@ public:
     {
         return name;
     }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

@@ -65,6 +65,13 @@ public:
     ColumnWithTypeAndName & getByName(const std::string & name);
     const ColumnWithTypeAndName & getByName(const std::string & name) const;
 
+    Container::iterator begin() { return data.begin(); }
+    Container::iterator end() { return data.end(); }
+    Container::const_iterator begin() const { return data.begin(); }
+    Container::const_iterator end() const { return data.end(); }
+    Container::const_iterator cbegin() const { return data.cbegin(); }
+    Container::const_iterator cend() const { return data.cend(); }
+
     bool has(const std::string & name) const;
 
     size_t getPositionByName(const std::string & name) const;
