@@ -297,6 +297,33 @@ void DataTypeTuple::insertDefaultInto(IColumn & column) const
 }
 
 
+bool DataTypeTuple::textCanContainOnlyValidUTF8() const
+{
+    return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->textCanContainOnlyValidUTF8(); });
+}
+
+bool DataTypeTuple::haveMaximumSizeOfValue() const
+{
+    return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
+}
+
+size_t DataTypeTuple::getMaximumSizeOfValueInMemory() const
+{
+    size_t res = 0;
+    for (const auto & elem : elems)
+        res += elem->getMaximumSizeOfValueInMemory();
+    return res;
+}
+
+size_t DataTypeTuple::getSizeOfValueInMemory() const
+{
+    size_t res = 0;
+    for (const auto & elem : elems)
+        res += elem->getSizeOfValueInMemory();
+    return res;
+}
+
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (arguments->children.empty())

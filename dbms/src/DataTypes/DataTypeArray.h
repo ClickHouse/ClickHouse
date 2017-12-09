@@ -12,8 +12,6 @@ class DataTypeArray final : public IDataType
 private:
     /// The type of array elements.
     DataTypePtr nested;
-    /// Type of offsets.
-    DataTypePtr offsets;
 
 public:
     static constexpr bool is_parametric = true;
@@ -90,8 +88,18 @@ public:
 
     Field getDefault() const override;
 
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return true; }
+    bool cannotBeStoredInTables() const override { return nested->cannotBeStoredInTables(); }
+    bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
+    bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
+
+    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
+    {
+        return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
+    }
+
     const DataTypePtr & getNestedType() const { return nested; }
-    const DataTypePtr & getOffsetsType() const { return offsets; }
 };
 
 }

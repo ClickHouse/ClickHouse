@@ -78,8 +78,9 @@ size_t find_centroid(Float64 x, std::vector<Float64>& centroids)
  * findClusterValue(T, Array(T)) -> T
  *
  * T can be any numeric type.
+ * centroids_array must be constant
  */
-class FunctionFindClusterIndex: public IFunction
+class FunctionFindClusterIndex : public IFunction
 {
 public:
     static constexpr auto name = "findClusterIndex";
@@ -103,6 +104,9 @@ public:
         return 0;
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto args_size = arguments.size();
@@ -112,7 +116,7 @@ public:
 
         const auto type_x = arguments[0];
 
-        if (!type_x->isNumeric())
+        if (!type_x->isNumber())
             throw Exception{"Unsupported type " + type_x->getName() + " of first argument of function " + getName() + " must be a numeric type",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -159,7 +163,7 @@ protected:
                 && !executeOperation<Float64, UInt64>(in_untyped, out_untyped, centroids_array_untyped))
         {
             throw Exception{"Function " + getName() + " expects both x and centroids_array of a numeric type."
-                    "Passed arguments are " + in_untyped->getName() + " and " + centroids_array_untyped->getName(), ErrorCodes::ILLEGAL_COLUMN};
+                    " Passed arguments are " + in_untyped->getName() + " and " + centroids_array_untyped->getName(), ErrorCodes::ILLEGAL_COLUMN};
 
         }
     }
@@ -254,7 +258,7 @@ protected:
 
 };
 
-class FunctionFindClusterValue: public FunctionFindClusterIndex
+class FunctionFindClusterValue : public FunctionFindClusterIndex
 {
 public:
     static constexpr auto name = "findClusterValue";

@@ -124,7 +124,7 @@ public:
 
     void setArgument(const DataTypePtr & argument)
     {
-        if (!argument->behavesAsNumber())
+        if (!argument->isNumber())
             throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -381,11 +381,11 @@ public:
 
     void setArgumentsImpl(const DataTypes & arguments)
     {
-        if (!arguments[0]->behavesAsNumber())
+        if (!arguments[0]->isNumber())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument to function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->behavesAsNumber())
+        if (!arguments[1]->isNumber())
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument to function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

@@ -44,9 +44,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const IDataType * type = &*arguments[0];
-        if (!type->isNumeric() &&
-            !checkDataType<DataTypeDate>(type) &&
-            !checkDataType<DataTypeDateTime>(type))
+        if (!type->isValueRepresentedByNumber())
             throw Exception("Cannot reinterpret " + type->getName() + " as String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();

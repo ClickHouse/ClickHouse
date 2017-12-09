@@ -31,7 +31,7 @@ DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
 }
 
 
-bool DataTypeNullable::isNull() const
+bool DataTypeNullable::onlyNull() const
 {
     return typeid_cast<const DataTypeNothing *>(nested_data_type.get());
 }
@@ -278,6 +278,12 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
 ColumnPtr DataTypeNullable::createColumn() const
 {
     return std::make_shared<ColumnNullable>(nested_data_type->createColumn(), std::make_shared<ColumnUInt8>());
+}
+
+
+size_t DataTypeNullable::getSizeOfValueInMemory() const
+{
+    throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
 }
 
 

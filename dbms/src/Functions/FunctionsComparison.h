@@ -1045,7 +1045,7 @@ public:
 
         const bool right_is_enum = right_is_enum8 || right_is_enum16;
 
-        if (!((arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
+        if (!((arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber())
             || ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
             || (left_is_date && right_is_date)
             || (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.

@@ -16,6 +16,7 @@ private:
 
 public:
     static constexpr bool is_parametric = true;
+    bool isParametric() const override { return true; }
 
     /// Some types could be still unknown.
     DataTypeExpression(const DataTypes & argument_types_ = DataTypes(), const DataTypePtr & return_type_ = nullptr)

@@ -3,12 +3,19 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <ext/range.h>
+#include <common/LocalDateTime.h>
 #include <mysqlxx/PoolWithFailover.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 
-namespace Poco { class Logger; }
+namespace Poco
+{
+    class Logger;
+
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
 
 
 namespace DB

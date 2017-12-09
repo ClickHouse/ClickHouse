@@ -58,7 +58,7 @@ NullPresense getNullPresense(const Block & block, const ColumnNumbers & args)
         if (!res.has_nullable)
             res.has_nullable = elem.type->isNullable();
         if (!res.has_null_constant)
-            res.has_null_constant = elem.type->isNull();
+            res.has_null_constant = elem.type->onlyNull();
     }
 
     return res;
@@ -73,7 +73,7 @@ NullPresense getNullPresense(const ColumnsWithTypeAndName & args)
         if (!res.has_nullable)
             res.has_nullable = elem.type->isNullable();
         if (!res.has_null_constant)
-            res.has_null_constant = elem.type->isNull();
+            res.has_null_constant = elem.type->onlyNull();
     }
 
     return res;
@@ -88,7 +88,7 @@ NullPresense getNullPresense(const DataTypes & types)
         if (!res.has_nullable)
             res.has_nullable = type->isNullable();
         if (!res.has_null_constant)
-            res.has_null_constant = type->isNull();
+            res.has_null_constant = type->onlyNull();
     }
 
     return res;
