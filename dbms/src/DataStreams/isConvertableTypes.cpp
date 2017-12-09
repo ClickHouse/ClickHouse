@@ -16,9 +16,7 @@ bool isConvertableTypes(const DataTypePtr & from, const DataTypePtr & to)
     if ( dynamic_cast<const IDataTypeEnum *>(to_nn.get()) &&
         !dynamic_cast<const IDataTypeEnum *>(from_nn.get()))
     {
-        if (typeid_cast<const DataTypeString *>(from_nn.get()))
-            return true;
-        if (from_nn->isInteger())
+        if (from_nn->isString() || from_nn->isInteger())
             return true;
     }
 

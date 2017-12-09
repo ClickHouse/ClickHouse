@@ -50,8 +50,8 @@ Block CastTypeBlockInputStream::readImpl()
         if (cast_description.end() != it)
         {
             auto & elem = res.getByPosition(col);
-            elem.type = it->second;
             elem.column = castColumn(elem, it->second, context);
+            elem.type = it->second;
         }
     }
 
@@ -61,7 +61,7 @@ Block CastTypeBlockInputStream::readImpl()
 
 void CastTypeBlockInputStream::initialize(const Block & src_block)
 {
-    for (size_t src_col = 0; src_col < src_block.columns(); ++src_col)
+    for (size_t src_col = 0, num_columns = src_block.columns(); src_col < num_columns; ++src_col)
     {
         const auto & src_column = src_block.getByPosition(src_col);
 
