@@ -1298,7 +1298,7 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (from_type->isNumber())
+        else if (from_type->isNumber() || from_type->isEnum())
         {
             auto function = Function::create(context);
 
