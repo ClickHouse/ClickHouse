@@ -221,7 +221,7 @@ void registerFunctionsCharset(FunctionFactory & factory)
 namespace DB
 {
     class FunctionFactory;
-    void registerFunctionsCharset(FunctionFactory & factory) {}
+    void registerFunctionsCharset(FunctionFactory & factory) { (void)factory; }
 }
 
 
