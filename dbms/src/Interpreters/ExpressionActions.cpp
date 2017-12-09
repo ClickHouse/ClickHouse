@@ -7,7 +7,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+
 #include <set>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -706,22 +708,23 @@ void ExpressionActions::executeOnTotals(Block & block) const
 
 std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
-    NamesAndTypesList::const_iterator it = columns.begin();
-    if (it == columns.end())
-        throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
+    std::optional<size_t> min_size;
+    String res;
 
-    /// @todo resolve evil constant
-    size_t min_size = it->type->isNumeric() ? it->type->getSizeOfField() : 100;
-    String res = it->name;
-    for (; it != columns.end(); ++it)
+    for (const auto & column : columns)
     {
-        size_t current_size = it->type->isNumeric() ? it->type->getSizeOfField() : 100;
-        if (current_size < min_size)
+        /// @todo resolve evil constant
+        size_t size = column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100;
+
+        if (!min_size || size < *min_size)
         {
-            min_size = current_size;
-            res = it->name;
+            min_size = size;
+            res = column.name;
         }
     }
+
+    if (!min_size)
+        throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
 
     return res;
 }

@@ -58,10 +58,10 @@ public:
     {
         type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
 
-        if (!arguments[1]->isNumeric())
+        if (!arguments[1]->isNumber() && !arguments[1]->isDateOrDateTime())
             throw Exception{
                 "Invalid type of second argument to function " + getName() +
-                    ", got " + arguments[1]->getName() + ", expected numeric",
+                    ", got " + arguments[1]->getName() + ", expected numeric or Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
@@ -139,10 +139,10 @@ public:
     {
         type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
 
-        if (!arguments[1]->isNumeric())
+        if (!arguments[1]->isNumber() && !arguments[1]->isDateOrDateTime())
             throw Exception{
                 "Invalid type of second argument to function " + getName() +
-                    ", got " + arguments[1]->getName() + ", expected numeric",
+                    ", got " + arguments[1]->getName() + ", expected numeric or Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 

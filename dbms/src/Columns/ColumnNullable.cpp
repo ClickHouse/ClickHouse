@@ -26,6 +26,9 @@ ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
     if (nested_column->isNullable())
         throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::ILLEGAL_COLUMN};
 
+    if (nested_column->isConst())
+        throw Exception{"A nullable column cannot contain constant nested column", ErrorCodes::ILLEGAL_COLUMN};
+
     /// TODO Also check for Nullable(Array(...)). But they are occasionally used somewhere in tests.
 
     if (typeid_cast<const ColumnTuple *>(nested_column.get()))

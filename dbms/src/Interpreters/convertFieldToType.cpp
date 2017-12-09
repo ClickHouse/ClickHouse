@@ -106,7 +106,7 @@ UInt128 stringToUUID(const String & s)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 {
-    if (type.isNumeric())
+    if (type.isValueRepresentedByNumber())
     {
         if (typeid_cast<const DataTypeUInt8 *>(&type)) return convertNumericType<UInt8>(src, type);
         if (typeid_cast<const DataTypeUInt16 *>(&type)) return convertNumericType<UInt16>(src, type);
@@ -157,8 +157,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
             }
         }
     }
-    else if (typeid_cast<const DataTypeString *>(&type)
-        || typeid_cast<const DataTypeFixedString *>(&type))
+    else if (type.isStringOrFixedString())
     {
         if (src.getType() == Field::Types::String)
             return src;

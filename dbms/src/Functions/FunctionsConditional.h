@@ -830,7 +830,7 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments[0]->isNull())
+        if (arguments[0]->onlyNull())
             return arguments[0];
 
         if (arguments[0]->isNullable())

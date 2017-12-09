@@ -44,9 +44,6 @@ FunctionArray::FunctionArray(const Context & context)
 
 DataTypePtr FunctionArray::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments.empty())
-        throw Exception{"Function array requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
     return std::make_shared<DataTypeArray>(getLeastCommonType(arguments));
 }
 
@@ -65,24 +62,24 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         *  then convert them to full columns.
         */
 
-                Columns columns_holder(num_elements);
-                const IColumn * columns[num_elements];
+    Columns columns_holder(num_elements);
+    const IColumn * columns[num_elements];
 
-                for (size_t i = 0; i < num_elements; ++i)
-                {
-                    const auto & arg = block.getByPosition(arguments[i]);
+    for (size_t i = 0; i < num_elements; ++i)
+    {
+        const auto & arg = block.getByPosition(arguments[i]);
 
-                    ColumnPtr preprocessed_column = arg.column;
+        ColumnPtr preprocessed_column = arg.column;
 
-                    if (!arg.type->equals(*elem_type))
-                        preprocessed_column = castColumn(arg, elem_type, context);
+        if (!arg.type->equals(*elem_type))
+            preprocessed_column = castColumn(arg, elem_type, context);
 
-                    if (auto materialized_column = preprocessed_column->convertToFullColumnIfConst())
-                        preprocessed_column = materialized_column;
+        if (auto materialized_column = preprocessed_column->convertToFullColumnIfConst())
+            preprocessed_column = materialized_column;
 
-                    columns_holder[i] = std::move(preprocessed_column);
-                    columns[i] = columns_holder[i].get();
-                }
+        columns_holder[i] = std::move(preprocessed_column);
+        columns[i] = columns_holder[i].get();
+    }
 
     /** Create and fill the result array.
         */
@@ -754,9 +751,8 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    if (!arguments[1]->isNumeric()
-        || (!startsWith(arguments[1]->getName(), "UInt") && !startsWith(arguments[1]->getName(), "Int")))
-        throw Exception("Second argument for function " + getName() + " must have UInt or Int type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (!arguments[1]->isInteger())
+        throw Exception("Second argument for function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return array_type->getNestedType();
 }
@@ -2601,7 +2597,7 @@ void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & argum
     const DataTypePtr & return_type = block.getByPosition(result).type;
     result_column = return_type->createColumn();
 
-    if (return_type->isNull())
+    if (return_type->onlyNull())
     {
         result_column = return_type->createConstColumn(block.rows(), Null());
         return;
@@ -2667,7 +2663,7 @@ DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) c
                         + toString(number_of_arguments) + ", should be 2 or 3",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (arguments[0]->isNull())
+    if (arguments[0]->onlyNull())
         return arguments[0];
 
     auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
@@ -2677,9 +2673,9 @@ DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) c
 
     for (size_t i = 1; i < number_of_arguments; ++i)
     {
-        if (!arguments[i]->isNumeric() && !arguments[i]->isNull())
+        if (!arguments[i]->isInteger() && !arguments[i]->onlyNull())
             throw Exception(
-                    "Argument " + toString(i) + " for function " + getName() + " must be numeric but it has type "
+                    "Argument " + toString(i) + " for function " + getName() + " must be integer but it has type "
                     + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
@@ -2697,7 +2693,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
     auto offset_column = block.getByPosition(arguments[1]).column;
     auto length_column = arguments.size() > 2 ? block.getByPosition(arguments[2]).column : nullptr;
 
-    if (return_type->isNull())
+    if (return_type->onlyNull())
     {
         result_column = array_column->clone();
         return;
@@ -2769,7 +2765,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
 
 DataTypePtr FunctionArrayPush::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments[0]->isNull())
+    if (arguments[0]->onlyNull())
         return arguments[0];
 
     auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
@@ -2793,7 +2789,7 @@ void FunctionArrayPush::executeImpl(Block & block, const ColumnNumbers & argumen
     auto array_column = block.getByPosition(arguments[0]).column;
     auto appended_column = block.getByPosition(arguments[1]).column;
 
-    if (return_type->isNull())
+    if (return_type->onlyNull())
     {
         result_column = array_column->clone();
         return;
@@ -2864,7 +2860,7 @@ FunctionPtr FunctionArrayPushBack::create(const Context & context)
 
 DataTypePtr FunctionArrayPop::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments[0]->isNull())
+    if (arguments[0]->onlyNull())
         return arguments[0];
 
     auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
@@ -2884,7 +2880,7 @@ void FunctionArrayPop::executeImpl(Block & block, const ColumnNumbers & argument
 
     auto array_column = block.getByPosition(arguments[0]).column;
 
-    if (return_type->isNull())
+    if (return_type->onlyNull())
     {
         result_column = array_column->clone();
         return;

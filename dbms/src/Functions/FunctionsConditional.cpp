@@ -188,7 +188,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
         {
             have_nullable_condition = true;
 
-            if (arg->isNull())
+            if (arg->onlyNull())
                 return;
 
             const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);

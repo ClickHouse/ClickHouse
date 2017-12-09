@@ -28,7 +28,6 @@ namespace ErrorCodes
 DataTypeArray::DataTypeArray(const DataTypePtr & nested_)
     : nested{nested_}
 {
-    offsets = std::make_shared<DataTypeNumber<ColumnArray::Offset_t>>();
 }
 
 
@@ -171,7 +170,7 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
         if (position_independent_encoding)
             serializeArraySizesPositionIndependent(column, *stream, offset, limit);
         else
-            offsets->serializeBinaryBulk(*column_array.getOffsetsColumn(), *stream, offset, limit);
+            DataTypeNumber<ColumnArray::Offset_t>().serializeBinaryBulk(*column_array.getOffsetsColumn(), *stream, offset, limit);
     }
 
     /// Then serialize contents of arrays.
@@ -217,7 +216,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
         if (position_independent_encoding)
             deserializeArraySizesPositionIndependent(column, *stream, limit);
         else
-            offsets->deserializeBinaryBulk(*column_array.getOffsetsColumn(), *stream, limit, 0);
+            DataTypeNumber<ColumnArray::Offset_t>().deserializeBinaryBulk(*column_array.getOffsetsColumn(), *stream, limit, 0);
     }
 
     path.back() = Substream::ArrayElements;

@@ -76,7 +76,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         if (arg_type->isNullable())
         {
             has_nullable_types = true;
-            if (arg_type->isNull())
+            if (arg_type->onlyNull())
             {
                 has_null_types = true;
                 break;

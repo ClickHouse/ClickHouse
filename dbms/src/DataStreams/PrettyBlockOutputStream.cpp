@@ -158,7 +158,7 @@ void PrettyBlockOutputStream::write(const Block & block)
         if (!no_escapes)
             writeCString("\033[1m", ostr);
 
-        if (col.type->isNumeric())
+        if (col.type->shouldAlignRightInPrettyFormats())
         {
             for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
                 writeChar(' ', ostr);
@@ -212,7 +212,7 @@ void PrettyBlockOutputStream::writeValueWithPadding(const ColumnWithTypeAndName 
             writeChar(' ', ostr);
     };
 
-    if (elem.type->isNumeric())
+    if (elem.type->shouldAlignRightInPrettyFormats())
     {
         writePadding();
         elem.type->serializeTextEscaped(*elem.column.get(), row_num, ostr);

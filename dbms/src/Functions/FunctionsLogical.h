@@ -271,7 +271,7 @@ public:
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (!arguments[i]->isNumeric())
+            if (!arguments[i]->isNumber())
                 throw Exception("Illegal type ("
                     + arguments[i]->getName()
                     + ") of " + toString(i + 1) + " argument of function " + getName(),
@@ -407,7 +407,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isNumeric())
+        if (!arguments[0]->isNumber())
             throw Exception("Illegal type ("
                 + arguments[0]->getName()
                 + ") of argument of function " + getName(),

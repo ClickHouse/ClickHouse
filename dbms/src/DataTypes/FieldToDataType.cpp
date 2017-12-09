@@ -55,9 +55,6 @@ DataTypePtr FieldToDataType::operator() (String &) const
 
 DataTypePtr FieldToDataType::operator() (Array & x) const
 {
-    if (x.empty())
-        throw Exception("Cannot infer type of empty array", ErrorCodes::EMPTY_DATA_PASSED);
-
     DataTypes element_types;
     element_types.reserve(x.size());
 

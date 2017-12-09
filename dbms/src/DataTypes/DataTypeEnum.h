@@ -19,7 +19,6 @@ namespace ErrorCodes
 class IDataTypeEnum : public IDataType
 {
 public:
-
     virtual Field castToName(const Field & value_or_name) const = 0;
     virtual Field castToValue(const Field & value_or_name) const = 0;
 };
@@ -54,8 +53,6 @@ public:
     const Values & getValues() const { return values; }
     std::string getName() const override { return name; }
     const char * getFamilyName() const override;
-    bool isNumeric() const override { return true; }
-    bool behavesAsNumber() const override { return true; }
 
     const StringRef & getNameForValue(const FieldType & value) const
     {
@@ -80,7 +77,6 @@ public:
     }
 
     Field castToName(const Field & value_or_name) const override;
-
     Field castToValue(const Field & value_or_name) const override;
 
     DataTypePtr clone() const override;
@@ -103,12 +99,22 @@ public:
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, const size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const override;
 
-    size_t getSizeOfField() const override { return sizeof(FieldType); }
-
     ColumnPtr createColumn() const override { return std::make_shared<ColumnType>(); }
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
+
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return false; }
+    bool textCanContainOnlyValidUTF8() const override;
+    bool isValueRepresentedByNumber() const override { return true; }
+    bool isValueRepresentedByInteger() const override { return true; }
+    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
+    bool haveMaximumSizeOfValue() const override { return true; }
+    size_t getSizeOfValueInMemory() const override { return sizeof(Field); }
+    bool isCategorial() const override { return true; }
+    bool isEnum() const override { return true; }
+    bool canBeInsideNullable() const override { return true; }
 };
 
 

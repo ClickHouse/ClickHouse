@@ -37,7 +37,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
 
         const ColumnWithTypeAndName & col = block.getByPosition(i);
 
-        if (col.type->isNumeric())
+        if (col.type->shouldAlignRightInPrettyFormats())
         {
             for (ssize_t k = 0; k < std::max(static_cast<ssize_t>(0), static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
                 writeChar(' ', ostr);

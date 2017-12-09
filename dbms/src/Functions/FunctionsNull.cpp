@@ -123,7 +123,7 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
     filtered_args.reserve(arguments.size());
     for (const auto & arg : arguments)
     {
-        if (arg->isNull())
+        if (arg->onlyNull())
             continue;
 
         filtered_args.push_back(arg);
@@ -174,7 +174,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
     {
         const auto & type = block.getByPosition(arg).type;
 
-        if (type->isNull())
+        if (type->onlyNull())
             continue;
 
         filtered_args.push_back(arg);
@@ -248,7 +248,7 @@ std::string FunctionIfNull::getName() const
 
 DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments[0]->isNull())
+    if (arguments[0]->onlyNull())
         return arguments[1];
 
     if (!arguments[0]->isNullable())
@@ -260,7 +260,7 @@ DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
 void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     /// Always null.
-    if (block.getByPosition(arguments[0]).type->isNull())
+    if (block.getByPosition(arguments[0]).type->onlyNull())
     {
         block.getByPosition(result).column = block.getByPosition(arguments[1]).column;
         return;

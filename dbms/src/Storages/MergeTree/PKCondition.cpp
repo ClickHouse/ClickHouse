@@ -599,7 +599,7 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
 
         bool cast_not_needed =
             is_set_const /// Set args are already casted inside Set::createFromAST
-            || (key_expr_type->behavesAsNumber() && const_type->behavesAsNumber()); /// Numbers are accurately compared without cast.
+            || (key_expr_type->isNumber() && const_type->isNumber()); /// Numbers are accurately compared without cast.
 
         if (!cast_not_needed)
             castValueToType(key_expr_type, const_value, const_type, node);

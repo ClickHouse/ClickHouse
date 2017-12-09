@@ -2,6 +2,7 @@
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <common/LocalDateTime.h>
 
 
 namespace Poco { class Logger; }
