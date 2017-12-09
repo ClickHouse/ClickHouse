@@ -26,7 +26,7 @@ add_library (clickhouse-extract-from-config-lib ${SPLIT_SHARED} ExtractFromConfi
 target_link_libraries (clickhouse-extract-from-config-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 add_library (clickhouse-client-lib Client.cpp)
-target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
+target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse-client RENAME config.xml)
 
 add_library (clickhouse-benchmark-lib ${SPLIT_SHARED} Benchmark.cpp)
@@ -45,7 +45,37 @@ target_link_libraries (clickhouse-format-lib clickhouse_common_io ${Boost_PROGRA
 
 if (USE_EMBEDDED_COMPILER)
     link_directories (${LLVM_LIBRARY_DIRS})
+    add_subdirectory ("Compiler-${LLVM_VERSION}")
 endif ()
+
+if (CLICKHOUSE_SPLIT_BINARY)
+    add_executable (clickhouse-server clickhouse-server.cpp)
+    target_link_libraries (clickhouse-server clickhouse-server-lib)
+    add_executable (clickhouse-client clickhouse-client.cpp)
+    target_link_libraries (clickhouse-client clickhouse-client-lib)
+    add_executable (clickhouse-local clickhouse-local.cpp)
+    target_link_libraries (clickhouse-local clickhouse-local-lib)
+    add_executable (clickhouse-benchmark clickhouse-benchmark.cpp)
+    target_link_libraries (clickhouse-benchmark clickhouse-benchmark-lib clickhouse_aggregate_functions)
+    add_executable (clickhouse-performance-test clickhouse-performance-test.cpp)
+    target_link_libraries (clickhouse-performance-test clickhouse-performance-test-lib clickhouse-client-lib)
+    add_executable (clickhouse-extract-from-config clickhouse-extract-from-config.cpp)
+    target_link_libraries (clickhouse-extract-from-config clickhouse-extract-from-config-lib)
+    # now in utils
+    #add_executable (clickhouse-compressor clickhouse-compressor.cpp)
+    #target_link_libraries (clickhouse-compressor clickhouse-compressor-lib)
+    add_executable (clickhouse-format clickhouse-format.cpp)
+    target_link_libraries (clickhouse-format clickhouse-format-lib dbms)
+
+    if (USE_EMBEDDED_COMPILER)
+        add_executable (clickhouse-clang clickhouse-clang.cpp)
+        target_link_libraries (clickhouse-clang clickhouse-compiler-lib)
+        add_executable (clickhouse-lld clickhouse-lld.cpp)
+        target_link_libraries (clickhouse-lld clickhouse-compiler-lib)
+    endif ()
+
+    add_custom_target (clickhouse ALL DEPENDS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-extract-from-config clickhouse-compressor clickhouse-format)
+else ()
 
 add_executable (clickhouse main.cpp)
 target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
@@ -62,7 +92,6 @@ target_link_libraries (clickhouse
     )
 
 if (USE_EMBEDDED_COMPILER)
-    add_subdirectory ("Compiler-${LLVM_VERSION}")
     target_link_libraries (clickhouse clickhouse-compiler-lib)
 endif ()
 
@@ -77,6 +106,8 @@ add_custom_target (clickhouse-format ALL COMMAND ${CMAKE_COMMAND} -E create_syml
 # install always because depian package want this files:
 add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)
 add_custom_target (clickhouse-lld ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-lld DEPENDS clickhouse)
+
+endif ()
 
 install (
     FILES config.xml users.xml
