@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Columns/ColumnString.h>
@@ -1388,6 +1389,16 @@ private:
         };
     }
 
+    WrapperType createNothingWrapper(const IDataType * to_type)
+    {
+        DataTypePtr to_type_clone = to_type->clone();
+        return [to_type_clone] (Block & block, const ColumnNumbers &, const size_t result)
+        {
+            /// Column of Nothing type is trivially convertible to any other column
+            block.getByPosition(result).column = to_type_clone->createConstColumn(block.rows(), to_type_clone->getDefault())->convertToFullColumnIfConst();
+        };
+    }
+
     /// Actions to be taken when performing a conversion.
     struct NullableConversion
     {
@@ -1494,6 +1505,8 @@ private:
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
+        else if (checkDataType<DataTypeNothing>(from_type.get()))
+            return createNothingWrapper(to_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type))
             return createWrapper(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type))
