@@ -8,13 +8,6 @@
 namespace DB
 {
 
-static DataTypePtr removeNullable(const DataTypePtr & type)
-{
-    if (type->isNullable())
-        return typeid_cast<DataTypeNullable *>(type.get())->getNestedType();
-    return type;
-}
-
 bool isConvertableTypes(const DataTypePtr & from, const DataTypePtr & to)
 {
     auto from_nn = removeNullable(from);

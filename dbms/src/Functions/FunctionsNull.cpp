@@ -98,14 +98,6 @@ void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & argumen
 
 /// Implementation of coalesce.
 
-static const DataTypePtr getNestedDataType(const DataTypePtr & type)
-{
-    if (type->isNullable())
-        return static_cast<const DataTypeNullable &>(*type).getNestedType();
-
-    return type;
-}
-
 FunctionPtr FunctionCoalesce::create(const Context & context)
 {
     return std::make_shared<FunctionCoalesce>(context);
@@ -144,7 +136,7 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
         else
         {
             new_args.push_back(std::make_shared<DataTypeUInt8>());
-            new_args.push_back(getNestedDataType(filtered_args[i]));
+            new_args.push_back(removeNullable(filtered_args[i]));
         }
     }
 
@@ -157,7 +149,7 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
 
     /// if last argument is not nullable, result should be also not nullable
     if (!new_args.back()->isNullable() && res->isNullable())
-        res = getNestedDataType(res);
+        res = removeNullable(res);
 
     return res;
 }
@@ -202,7 +194,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
         {
             temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
             is_not_null.execute(temp_block, {filtered_args[i]}, res_pos);
-            temp_block.insert({nullptr, getNestedDataType(block.getByPosition(filtered_args[i]).type), ""});
+            temp_block.insert({nullptr, removeNullable(block.getByPosition(filtered_args[i]).type), ""});
             assume_not_null.execute(temp_block, {filtered_args[i]}, res_pos + 1);
 
             multi_if_args.push_back(res_pos);
@@ -254,7 +246,7 @@ DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
     if (!arguments[0]->isNullable())
         return arguments[0];
 
-    return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), getNestedDataType(arguments[0]), arguments[1]});
+    return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), removeNullable(arguments[0]), arguments[1]});
 }
 
 void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -280,7 +272,7 @@ void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments,
     size_t is_not_null_pos = temp_block.columns();
     temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
     size_t assume_not_null_pos = temp_block.columns();
-    temp_block.insert({nullptr, getNestedDataType(block.getByPosition(arguments[0]).type), ""});
+    temp_block.insert({nullptr, removeNullable(block.getByPosition(arguments[0]).type), ""});
 
     FunctionIsNotNull{}.execute(temp_block, {arguments[0]}, is_not_null_pos);
     FunctionAssumeNotNull{}.execute(temp_block, {arguments[0]}, assume_not_null_pos);
@@ -308,7 +300,7 @@ std::string FunctionNullIf::getName() const
 
 DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), makeNullableDataTypeIfNot(arguments[0]), arguments[0]});
+    return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), makeNullable(arguments[0]), arguments[0]});
 }
 
 void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -352,7 +344,7 @@ std::string FunctionAssumeNotNull::getName() const
 
 DataTypePtr FunctionAssumeNotNull::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    return getNestedDataType(arguments[0]);
+    return removeNullable(arguments[0]);
 }
 
 void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)

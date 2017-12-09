@@ -11,7 +11,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeTraits.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -367,8 +367,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         {
             key_columns.push_back(block.safeGetByPosition(i).column.get());
 
-            if (DataTypeTraits::removeNullable(data_types[i])->getName() !=
-                DataTypeTraits::removeNullable(block.safeGetByPosition(i).type)->getName())
+            if (removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
                 throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
                     + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
                     " on the left.", ErrorCodes::TYPE_MISMATCH);

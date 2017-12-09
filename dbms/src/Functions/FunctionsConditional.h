@@ -110,15 +110,6 @@ public:
 };
 
 
-inline const DataTypePtr makeNullableDataTypeIfNot(const DataTypePtr & type)
-{
-    if (type->isNullable())
-        return type;
-
-    return std::make_shared<DataTypeNullable>(type);
-}
-
-
 class FunctionIf : public IFunction
 {
 public:
@@ -636,14 +627,6 @@ private:
         return column;
     }
 
-    static const DataTypePtr getNestedDataType(const DataTypePtr & type)
-    {
-        if (type->isNullable())
-            return static_cast<const DataTypeNullable &>(*type).getNestedType();
-
-        return type;
-    }
-
     bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
@@ -698,17 +681,17 @@ private:
                 arg_cond,
                 {
                     getNestedColumn(arg_then.column),
-                    getNestedDataType(arg_then.type),
+                    removeNullable(arg_then.type),
                     ""
                 },
                 {
                     getNestedColumn(arg_else.column),
-                    getNestedDataType(arg_else.type),
+                    removeNullable(arg_else.type),
                     ""
                 },
                 {
                     nullptr,
-                    getNestedDataType(block.getByPosition(result).type),
+                    removeNullable(block.getByPosition(result).type),
                     ""
                 }
             });
@@ -834,8 +817,8 @@ public:
             return arguments[0];
 
         if (arguments[0]->isNullable())
-            return makeNullableDataTypeIfNot(getReturnTypeImpl({
-                getNestedDataType(arguments[0]), arguments[1], arguments[2]}));
+            return makeNullable(getReturnTypeImpl({
+                removeNullable(arguments[0]), arguments[1], arguments[2]}));
 
         if (!checkDataType<DataTypeUInt8>(arguments[0].get()))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument (condition) of function if. Must be UInt8.",

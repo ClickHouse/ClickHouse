@@ -862,14 +862,8 @@ void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right)
     {
         /// Compare up to Nullability.
 
-        IDataType * left_type = block_left.getByName(key_names_left[i]).type.get();
-        IDataType * right_type = block_right.getByName(key_names_right[i]).type.get();
-
-        if (left_type->isNullable())
-            left_type = static_cast<const DataTypeNullable &>(*left_type).getNestedType().get();
-
-        if (right_type->isNullable())
-            right_type = static_cast<const DataTypeNullable &>(*right_type).getNestedType().get();
+        DataTypePtr left_type = removeNullable(block_left.getByName(key_names_left[i]).type);
+        DataTypePtr right_type = removeNullable(block_right.getByName(key_names_right[i]).type);
 
         if (!left_type->equals(*right_type))
             throw Exception("Type mismatch of columns to JOIN by: "

@@ -15,7 +15,6 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Functions/IFunction.h>
-#include <DataTypes/DataTypeTraits.h>
 #include <Functions/ObjectPool.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/StringUtils.h>
@@ -1024,8 +1023,8 @@ public:
 
         if (!arguments[1]->onlyNull())
         {
-            const IDataType * observed_type0 = DataTypeTraits::removeNullable(array_type->getNestedType()).get();
-            const IDataType * observed_type1 = DataTypeTraits::removeNullable(arguments[1]).get();
+            DataTypePtr observed_type0 = removeNullable(array_type->getNestedType());
+            DataTypePtr observed_type1 = removeNullable(arguments[1]);
 
             if (!(observed_type0->isNumber() && observed_type1->isNumber())
                 && !observed_type0->equals(*observed_type1))
