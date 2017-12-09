@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
 }
@@ -32,6 +33,9 @@ std::string ColumnTuple::getName() const
 
 ColumnTuple::ColumnTuple(const Columns & columns) : columns(columns)
 {
+    for (const auto & column : columns)
+        if (column->isColumnConst())
+            throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
 }
 
 ColumnPtr ColumnTuple::cloneEmpty() const

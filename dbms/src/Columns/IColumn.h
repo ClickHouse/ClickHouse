@@ -250,6 +250,13 @@ public:
     using ColumnCallback = std::function<void(ColumnPtr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
 
+    /** Some columns can contain another columns inside.
+      * So, we have a tree of columns. But not all combinations are possible.
+      * There are the following rules:
+      *
+      * ColumnConst may be only at top. It cannot be inside any column.
+      * ColumnNullable can contain only simple columns.
+      */
 
     /// Various properties on behaviour of column type.
 
