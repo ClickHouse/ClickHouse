@@ -504,25 +504,22 @@ private:
         const ColumnWithTypeAndName & arg1 = block.getByPosition(arguments[1]);
         const ColumnWithTypeAndName & arg2 = block.getByPosition(arguments[2]);
 
-        ColumnPtr col1_holder;
-        ColumnPtr col2_holder;
+        Columns col1_contents;
+        Columns col2_contents;
 
-        if (typeid_cast<const ColumnTuple *>(arg1.column.get()))
-            col1_holder = arg1.column;
+        if (const ColumnTuple * tuple1 = typeid_cast<const ColumnTuple *>(arg1.column.get()))
+            col1_contents = tuple1->getColumns();
         else if (const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
-            col1_holder = convertConstTupleToTupleOfConstants(*const_tuple);
+            col1_contents = convertConstTupleToConstantElements(*const_tuple);
         else
             return false;
 
-        if (typeid_cast<const ColumnTuple *>(arg2.column.get()))
-            col2_holder = arg2.column;
+        if (const ColumnTuple * tuple2 = typeid_cast<const ColumnTuple *>(arg2.column.get()))
+            col2_contents = tuple2->getColumns();
         else if (const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
-            col2_holder = convertConstTupleToTupleOfConstants(*const_tuple);
+            col2_contents = convertConstTupleToConstantElements(*const_tuple);
         else
             return false;
-
-        const ColumnTuple * col1 = static_cast<const ColumnTuple *>(col1_holder.get());
-        const ColumnTuple * col2 = static_cast<const ColumnTuple *>(col2_holder.get());
 
         const DataTypeTuple & type1 = static_cast<const DataTypeTuple &>(*arg1.type);
         const DataTypeTuple & type2 = static_cast<const DataTypeTuple &>(*arg2.type);
@@ -539,8 +536,8 @@ private:
                 getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
                 {}});
 
-            temporary_block.insert({col1->getColumns()[i], type1.getElements()[i], {}});
-            temporary_block.insert({col2->getColumns()[i], type2.getElements()[i], {}});
+            temporary_block.insert({col1_contents[i], type1.getElements()[i], {}});
+            temporary_block.insert({col2_contents[i], type2.getElements()[i], {}});
 
             /// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
             executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1);

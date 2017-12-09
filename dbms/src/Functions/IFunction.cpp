@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
+#include <ext/collection_cast.h>
 
 
 namespace DB
@@ -20,24 +21,51 @@ namespace ErrorCodes
 namespace
 {
 
-/// Suppose a function which has no special support for nullable arguments
-/// has been called with arguments, one or more of them being nullable.
-/// Then the method below endows the result, which is nullable, with a null
-/// byte map that is determined by OR-ing the null byte maps of the nullable
-/// arguments.
-void createNullMap(Block & block, const ColumnNumbers & args, size_t result)
+
+/** Return ColumnNullable of src, with null map as OR-ed null maps of args columns in blocks.
+  * Or ColumnConst(ColumnNullable) if the result is always NULL.
+  */
+ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result)
 {
-    ColumnNullable & res_col = static_cast<ColumnNullable &>(*block.getByPosition(result).column);
+    ColumnPtr result_null_map_column;
 
     for (const auto & arg : args)
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(arg);
-        if (elem.column->isColumnNullable())
+        if (!elem.type->isNullable())
+            continue;
+
+        if (elem.column->isColumnConst())
         {
-            const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
-            res_col.applyNullMap(nullable_col);    /// TODO excessive copy in case of single nullable argument.
+            /// Const Nullable that are NULL.
+            if (static_cast<const ColumnNullable &>(static_cast<const ColumnConst &>(*elem.column).getDataColumn()).isNullAt(0))
+            {
+                return block.getByPosition(result).type->createConstColumn(block.rows(), Null());
+            }
+            else
+                continue;
+        }
+        else if (elem.column->isColumnNullable())
+        {
+            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumn();
+            if (!result_null_map_column)
+                result_null_map_column = null_map_column;
+            else
+            {
+                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+                const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+                for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
+                    if (src_null_map[i])
+                        result_null_map[i] = 1;
+            }
         }
     }
+
+    if (!result_null_map_column)
+        result_null_map_column = std::make_shared<ColumnUInt8>(block.rows(), 0);
+
+    return std::make_shared<ColumnNullable>(src, result_null_map_column);
 }
 
 
@@ -92,30 +120,6 @@ NullPresense getNullPresense(const DataTypes & types)
     }
 
     return res;
-}
-
-/// Turn the specified set of columns into their respective nested columns.
-ColumnsWithTypeAndName toNestedColumns(const ColumnsWithTypeAndName & args)
-{
-    ColumnsWithTypeAndName new_args;
-    new_args.reserve(args.size());
-
-    for (const auto & arg : args)
-    {
-        if (arg.type->isNullable())
-        {
-            auto nullable_col = static_cast<const ColumnNullable *>(arg.column.get());
-            ColumnPtr nested_col = (nullable_col) ? nullable_col->getNestedColumn() : nullptr;
-            auto nullable_type = static_cast<const DataTypeNullable *>(arg.type.get());
-            const DataTypePtr & nested_type = nullable_type->getNestedType();
-
-            new_args.emplace_back(nested_col, nested_type, arg.name);
-        }
-        else
-            new_args.emplace_back(arg.column, arg.type, arg.name);
-    }
-
-    return new_args;
 }
 
 /// Turn the specified set of data types into their respective nested data types.
@@ -200,17 +204,7 @@ bool defaultImplementationForNulls(
     {
         Block temporary_block = createBlockWithNestedColumns(block, args, result);
         func.execute(temporary_block, args, result);
-
-        const ColumnWithTypeAndName & source_col = temporary_block.getByPosition(result);
-        ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-
-        /// Initialize the result column.
-        ColumnPtr null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);
-        dest_col.column = std::make_shared<ColumnNullable>(source_col.column, null_map);
-
-        /// Deduce the null map of the result from the null maps of the nullable columns.
-        createNullMap(block, args, result);
-
+        block.getByPosition(result).column = wrapInNullable(temporary_block.getByPosition(result).column, block, args, result);
         return true;
     }
 
@@ -269,7 +263,8 @@ void IFunction::getReturnTypeAndPrerequisites(
         }
         if (null_presense.has_nullable)
         {
-            getReturnTypeAndPrerequisitesImpl(toNestedColumns(arguments), out_return_type, out_prerequisites);
+            Block nested_block = createBlockWithNestedColumns(Block(arguments), ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
+            getReturnTypeAndPrerequisitesImpl(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()), out_return_type, out_prerequisites);
             out_return_type = std::make_shared<DataTypeNullable>(out_return_type);
             return;
         }
