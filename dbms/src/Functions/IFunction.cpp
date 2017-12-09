@@ -23,7 +23,7 @@ namespace
 
 
 /** Return ColumnNullable of src, with null map as OR-ed null maps of args columns in blocks.
-  * Or ColumnConst(ColumnNullable) if the result is always NULL.
+  * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
   */
 ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result)
 {
@@ -62,10 +62,23 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
         }
     }
 
-    if (!result_null_map_column)
-        result_null_map_column = std::make_shared<ColumnUInt8>(block.rows(), 0);
+    if (src->isColumnConst() && !result_null_map_column)
+    {
+        return std::make_shared<ColumnConst>(std::make_shared<ColumnNullable>(
+                static_cast<const ColumnConst &>(*src).getDataColumnPtr(),
+                std::make_shared<ColumnUInt8>(1, 0)),
+            block.rows());
+    }
+    else
+    {
+        if (!result_null_map_column)
+            result_null_map_column = std::make_shared<ColumnUInt8>(block.rows(), 0);
 
-    return std::make_shared<ColumnNullable>(src, result_null_map_column);
+        if (src->isColumnConst())
+            return std::make_shared<ColumnNullable>(src->convertToFullColumnIfConst(), result_null_map_column);
+        else
+            return std::make_shared<ColumnNullable>(src, result_null_map_column);
+    }
 }
 
 
@@ -236,9 +249,13 @@ DataTypePtr IFunction::getReturnType(const DataTypes & arguments) const
     {
         NullPresense null_presense = getNullPresense(arguments);
         if (null_presense.has_null_constant)
+        {
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+        }
         if (null_presense.has_nullable)
+        {
             return std::make_shared<DataTypeNullable>(getReturnTypeImpl(toNestedDataTypes(arguments)));
+        }
     }
 
     return getReturnTypeImpl(arguments);

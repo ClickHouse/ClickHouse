@@ -46,8 +46,8 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
     std::sort(args.begin(), args.end());
 
     Block res;
-    size_t rows = res.rows();
-    size_t columns = res.columns();
+    size_t rows = block.rows();
+    size_t columns = block.columns();
 
     size_t j = 0;
     for (size_t i = 0; i < columns; ++i)
@@ -61,7 +61,7 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
 
             if (col.type->isNullable())
             {
-                const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(col.type).getNestedType();
+                const DataTypePtr & nested_type = static_cast<const DataTypeNullable &>(*col.type).getNestedType();
 
                 if (!col.column)
                 {
