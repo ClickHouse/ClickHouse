@@ -33,7 +33,7 @@ public:
 
     void setArgument(const DataTypePtr & argument)
     {
-        if (!argument->behavesAsNumber())
+        if (!argument->isSummable())
             throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

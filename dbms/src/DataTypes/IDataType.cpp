@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int MULTIPLE_STREAMS_REQUIRED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -53,6 +54,11 @@ void IDataType::serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size
 void IDataType::deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const
 {
     throw Exception("Data type " + getName() + " must be deserialized with multiple streams", ErrorCodes::MULTIPLE_STREAMS_REQUIRED);
+}
+
+size_t IDataType::getSizeOfValueInMemory() const
+{
+    throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
 }
 
 

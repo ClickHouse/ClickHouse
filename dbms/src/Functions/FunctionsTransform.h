@@ -77,7 +77,7 @@ public:
 
         const IDataType * type_x = arguments[0].get();
 
-        if (!type_x->isNumeric() && !checkDataType<DataTypeString>(type_x))
+        if (!type_x->isValueRepresentedByNumber() && !checkDataType<DataTypeString>(type_x))
             throw Exception{"Unsupported type " + type_x->getName()
                 + " of first argument of function " + getName()
                 + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -90,7 +90,7 @@ public:
 
         const auto type_arr_from_nested = type_arr_from->getNestedType();
 
-        if ((type_x->isNumeric() != type_arr_from_nested->isNumeric())
+        if ((type_x->isValueRepresentedByNumber() != type_arr_from_nested->isValueRepresentedByNumber())
             || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_from_nested.get())))
         {
             throw Exception{"First argument and elements of array of second argument of function " + getName()
@@ -107,7 +107,7 @@ public:
 
         if (args_size == 3)
         {
-            if ((type_x->isNumeric() != type_arr_to_nested->isNumeric())
+            if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
                 || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
@@ -119,18 +119,18 @@ public:
         {
             const DataTypePtr & type_default = arguments[3];
 
-            if (!type_default->isNumeric() && !checkDataType<DataTypeString>(type_default.get()))
+            if (!type_default->isValueRepresentedByNumber() && !checkDataType<DataTypeString>(type_default.get()))
                 throw Exception{"Unsupported type " + type_default->getName()
                     + " of fourth argument (default value) of function " + getName()
                     + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            if ((type_default->isNumeric() != type_arr_to_nested->isNumeric())
+            if ((type_default->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
                 || (!!checkDataType<DataTypeString>(type_default.get()) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            if (type_arr_to_nested->behavesAsNumber() && type_default->behavesAsNumber())
+            if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
             {
                 /// We take the smallest common type for the elements of the array of values `to` and for `default`.
                 return getLeastCommonType({type_arr_to_nested, type_default});

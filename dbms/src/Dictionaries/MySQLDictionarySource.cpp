@@ -1,9 +1,10 @@
+#include <Common/config.h>
+#if USE_MYSQL
+
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Common/config.h>
-
-#if USE_MYSQL
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <common/logger_useful.h>
 
@@ -187,4 +188,3 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
 }
 
 #endif
-

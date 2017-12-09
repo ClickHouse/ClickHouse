@@ -25,7 +25,7 @@ bool isConvertableTypes(const DataTypePtr & from, const DataTypePtr & to)
     {
         if (typeid_cast<const DataTypeString *>(from_nn.get()))
             return true;
-        if (from_nn->isNumeric())
+        if (from_nn->isInteger())
             return true;
     }
 

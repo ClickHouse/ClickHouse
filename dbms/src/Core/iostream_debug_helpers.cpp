@@ -33,8 +33,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::NameAndTypePair & wha
 
 std::ostream & operator<<(std::ostream & stream, const DB::IDataType & what)
 {
-    stream << "IDataType(name = " << what.getName() << ", default = " << what.getDefault() << ", isNullable = " << what.isNullable()
-           << ", isNumeric = " << what.isNumeric() << ", behavesAsNumber = " << what.behavesAsNumber() << ")";
+    stream << "IDataType(name = " << what.getName() << ", default = " << what.getDefault();
     return stream;
 }
 

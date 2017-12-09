@@ -792,13 +792,13 @@ public:
         if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNumeric())
+        if (!arguments[1]->isNumber())
             throw Exception("Illegal type " + arguments[1]->getName()
                     + " of second argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (number_of_arguments == 3 && !arguments[2]->isNumeric())
+        if (number_of_arguments == 3 && !arguments[2]->isNumber())
             throw Exception("Illegal type " + arguments[2]->getName()
                     + " of second argument of function "
                     + getName(),
@@ -928,8 +928,8 @@ public:
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNumeric() || !arguments[2]->isNumeric())
-            throw Exception("Illegal type " + (arguments[1]->isNumeric() ? arguments[2]->getName() : arguments[1]->getName())
+        if (!arguments[1]->isNumber() || !arguments[2]->isNumber())
+            throw Exception("Illegal type " + (arguments[1]->isNumber() ? arguments[2]->getName() : arguments[1]->getName())
                     + " of argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

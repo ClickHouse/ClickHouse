@@ -952,7 +952,7 @@ struct ToIntMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        size_t size_of_type = type.getSizeOfField();
+        size_t size_of_type = type.getSizeOfValueInMemory();
 
         /// If type is expanding, then function is monotonic.
         if (sizeof(T) > size_of_type)
@@ -1315,7 +1315,7 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (from_type->behavesAsNumber())
+        else if (from_type->isNumber())
         {
             auto function = Function::create(context);
 
@@ -1425,7 +1425,7 @@ private:
             throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
                 ErrorCodes::CANNOT_CONVERT_TYPE};
 
-        if (from_type->isNull())
+        if (from_type->onlyNull())
         {
             return [](Block & block, const ColumnNumbers &, const size_t result)
             {
@@ -1590,7 +1590,7 @@ private:
             monotonicity_for_range = monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
             monotonicity_for_range = monotonicityForType(type);
-        else if (from_type->isNumeric())
+        else if (from_type->isEnum())
         {
             if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 monotonicity_for_range = monotonicityForType(type);

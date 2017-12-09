@@ -130,7 +130,7 @@ public:
 
             for (auto j : ext::range(0, elements.size()))
             {
-                if (!elements[j]->isNumeric())
+                if (!elements[j]->isNumber())
                 {
                     throw Exception(getMsgPrefix(i) + " must contains numeric tuple at position " + toString(j + 1),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
