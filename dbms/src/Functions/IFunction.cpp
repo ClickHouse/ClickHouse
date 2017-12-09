@@ -28,6 +28,7 @@ namespace
 ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result)
 {
     ColumnPtr result_null_map_column;
+    bool shared_result_map_column = true;
 
     for (const auto & arg : args)
     {
@@ -52,6 +53,12 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
                 result_null_map_column = null_map_column;
             else
             {
+                if (shared_result_map_column)
+                {
+                    result_null_map_column = result_null_map_column->clone();
+                    shared_result_map_column = false;
+                }
+
                 NullMap & result_null_map = static_cast<ColumnUInt8 &>(*result_null_map_column).getData();
                 const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
