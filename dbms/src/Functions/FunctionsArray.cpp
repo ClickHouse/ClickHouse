@@ -2610,14 +2610,14 @@ DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) c
     if (arguments[0]->onlyNull())
         return arguments[0];
 
-    auto array_type = typeid_cast<DataTypeArray *>(arguments[0].get());
+    auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
                         + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     for (size_t i = 1; i < number_of_arguments; ++i)
     {
-        if (!arguments[i]->isInteger() && !arguments[i]->onlyNull())
+        if (!removeNullable(arguments[i])->isInteger() && !arguments[i]->onlyNull())
             throw Exception(
                     "Argument " + toString(i) + " for function " + getName() + " must be integer but it has type "
                     + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
