@@ -30,18 +30,18 @@ using String = std::string;
 
 /** Note that for types not used in DB, IsNumber is false.
   */
-template <typename T> static bool IsNumber = false;
+template <typename T> constexpr bool IsNumber = false;
 
-template <> static bool IsNumber<UInt8> = true;
-template <> static bool IsNumber<UInt16> = true;
-template <> static bool IsNumber<UInt32> = true;
-template <> static bool IsNumber<UInt64> = true;
-template <> static bool IsNumber<Int8> = true;
-template <> static bool IsNumber<Int16> = true;
-template <> static bool IsNumber<Int32> = true;
-template <> static bool IsNumber<Int64> = true;
-template <> static bool IsNumber<Float32> = true;
-template <> static bool IsNumber<Float64> = true;
+template <> constexpr bool IsNumber<UInt8> = true;
+template <> constexpr bool IsNumber<UInt16> = true;
+template <> constexpr bool IsNumber<UInt32> = true;
+template <> constexpr bool IsNumber<UInt64> = true;
+template <> constexpr bool IsNumber<Int8> = true;
+template <> constexpr bool IsNumber<Int16> = true;
+template <> constexpr bool IsNumber<Int32> = true;
+template <> constexpr bool IsNumber<Int64> = true;
+template <> constexpr bool IsNumber<Float32> = true;
+template <> constexpr bool IsNumber<Float64> = true;
 
 template <typename T> struct TypeName;
 
