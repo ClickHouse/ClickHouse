@@ -49,29 +49,17 @@ void PrettyBlockOutputStream::calculateWidths(const Block & block, WidthsPerColu
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(i);
 
-        if (!elem.column->isConst())
-        {
-            widths[i].resize(rows);
+        widths[i].resize(rows);
 
-            for (size_t j = 0; j < rows; ++j)
-            {
-                {
-                    WriteBufferFromString out(serialized_value);
-                    elem.type->serializeTextEscaped(*elem.column, j, out);
-                }
-
-                widths[i][j] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
-                max_widths[i] = std::max(max_widths[i], widths[i][j]);
-            }
-        }
-        else
+        for (size_t j = 0; j < rows; ++j)
         {
             {
                 WriteBufferFromString out(serialized_value);
-                elem.type->serializeTextEscaped(*elem.column->cut(0, 1)->convertToFullColumnIfConst(), 0, out);
-
-                max_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
+                elem.type->serializeTextEscaped(*elem.column, j, out);
             }
+
+            widths[i][j] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
+            max_widths[i] = std::max(max_widths[i], widths[i][j]);
         }
 
         /// And also calculate widths for names of columns.

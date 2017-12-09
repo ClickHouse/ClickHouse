@@ -153,7 +153,7 @@ public:
 
         const auto in = block.getByPosition(arguments.front()).column.get();
 
-        if (in->isConst())
+        if (in->isColumnConst())
         {
             executeConst(block, arguments, result);
             return;
@@ -232,7 +232,7 @@ private:
 
                 executeImplNumToNum<T>(in->getData(), out->getData());
             }
-            else if (default_untyped->isConst())
+            else if (default_untyped->isColumnConst())
             {
                 if (!executeNumToNumWithConstDefault<T, UInt8>(in, out_untyped)
                     && !executeNumToNumWithConstDefault<T, UInt16>(in, out_untyped)
@@ -290,7 +290,7 @@ private:
                         ErrorCodes::ILLEGAL_COLUMN};
                 }
             }
-            else if (default_untyped->isConst())
+            else if (default_untyped->isColumnConst())
             {
                 if (!executeStringToNumWithConstDefault<UInt8>(in, out_untyped)
                     && !executeStringToNumWithConstDefault<UInt16>(in, out_untyped)

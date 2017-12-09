@@ -129,7 +129,7 @@ public:
 
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
     /// Is used to optimize some computations (in aggregation, for example).
-    /// Parameter length could be ignored if column isFixed().
+    /// Parameter length could be ignored if column values have fixed size.
     virtual void insertData(const char * pos, size_t length) = 0;
 
     /// Like getData, but has special behavior for columns that contain variable-length strings.
@@ -253,26 +253,35 @@ public:
 
     /// Various properties on behaviour of column type.
 
-    /// Column is vector of numbers or numeric constant.
+    /// Is this column a container for Nullable values? It's true only for ColumnNullable.
+    /// Note that ColumnConst(ColumnNullable(...)) is not considered.
+    virtual bool isColumnNullable() const { return false; }
+
+    /// Column stores a constant value. It's true only for ColumnConst wrapper.
+    virtual bool isColumnConst() const { return false; }
+
+    /// It's a special kind of column, that contain single value, but is not a ColumnConst.
+    virtual bool isDummy() const { return false; }
+
+    /// Values in column have fixed size (including the case when values span many memory segments).
+    virtual bool valuesHaveFixedSize() const { return isFixedAndContiguous(); }
+
+    /// Values in column are represented as continuous memory segment of fixed size. Implies valuesHaveFixedSize.
+    virtual bool isFixedAndContiguous() const { return false; }
+
+    /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
+    virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
+
+    /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
+    /// Implies isFixedAndContiguous.
     virtual bool isNumeric() const { return false; }
 
-    /// Is this column numeric and not nullable?
-    virtual bool isNumericNotNullable() const { return isNumeric(); }
+    /// If the only value column can contain is NULL.
+    /// Does not imply type of object, because it can be ColumnNullable(ColumnNothing) or ColumnConst(ColumnNullable(ColumnNothing))
+    virtual bool onlyNull() const { return false; }
 
-    /// Column stores a constant value.
-    virtual bool isConst() const { return false; }
-
-    /// Is this column a container for nullable values?
-    virtual bool isNullable() const { return false; }
-
-    /// Is this a null column?
-    virtual bool isNull() const { return false; }
-
-    /// Values in column have equal size in memory.
-    virtual bool isFixed() const { return false; }
-
-    /// If column isFixed(), returns size of value.
-    virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
+    /// Can be inside ColumnNullable.
+    virtual bool canBeInsideNullable() const { return false; }
 
 
     virtual ~IColumn() {}

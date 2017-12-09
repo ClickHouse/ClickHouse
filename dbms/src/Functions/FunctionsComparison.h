@@ -967,8 +967,8 @@ private:
 
     void executeGeneric(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
-        bool c0_const = c0->isConst();
-        bool c1_const = c1->isConst();
+        bool c0_const = c0->isColumnConst();
+        bool c1_const = c1->isColumnConst();
 
         if (c0_const && c1_const)
         {

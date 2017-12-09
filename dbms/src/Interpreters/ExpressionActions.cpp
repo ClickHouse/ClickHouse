@@ -197,7 +197,7 @@ void ExpressionAction::prepare(Block & sample_block)
             {
                 arguments[i] = sample_block.getPositionByName(argument_names[i]);
                 ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
-                if (!col || !col->isConst())
+                if (!col || !col->isColumnConst())
                     all_const = false;
             }
 
@@ -206,7 +206,7 @@ void ExpressionAction::prepare(Block & sample_block)
             {
                 prerequisites[i] = sample_block.getPositionByName(prerequisite_names[i]);
                 ColumnPtr col = sample_block.safeGetByPosition(prerequisites[i]).column;
-                if (!col || !col->isConst())
+                if (!col || !col->isColumnConst())
                     all_const = false;
             }
 
@@ -226,7 +226,7 @@ void ExpressionAction::prepare(Block & sample_block)
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
-                if (!col.column->isConst())
+                if (!col.column->isColumnConst())
                     col.column = nullptr;
             }
             else
@@ -549,14 +549,14 @@ void ExpressionActions::checkLimits(Block & block) const
     {
         size_t non_const_columns = 0;
         for (size_t i = 0, size = block.columns(); i < size; ++i)
-            if (block.safeGetByPosition(i).column && !block.safeGetByPosition(i).column->isConst())
+            if (block.safeGetByPosition(i).column && !block.safeGetByPosition(i).column->isColumnConst())
                 ++non_const_columns;
 
         if (non_const_columns > limits.max_temporary_non_const_columns)
         {
             std::stringstream list_of_non_const_columns;
             for (size_t i = 0, size = block.columns(); i < size; ++i)
-                if (!block.safeGetByPosition(i).column->isConst())
+                if (!block.safeGetByPosition(i).column->isColumnConst())
                     list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()

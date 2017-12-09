@@ -50,7 +50,7 @@ struct ArrayMapImpl
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        return mapped->isConst()
+        return mapped->isColumnConst()
             ? std::make_shared<ColumnArray>(mapped->convertToFullColumnIfConst(), array.getOffsetsColumn())
             : std::make_shared<ColumnArray>(mapped, array.getOffsetsColumn());
     }

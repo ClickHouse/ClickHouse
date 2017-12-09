@@ -24,11 +24,6 @@ public:
     ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_);
     const char * getFamilyName() const override { return "Nullable"; }
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
-    bool isNumeric() const override { return nested_column->isNumeric(); }
-    bool isNumericNotNullable() const override { return false; }
-    bool isFixed() const override { return nested_column->isFixed(); }
-    size_t sizeOfField() const override;
-    bool isNullable() const override { return true; }
     ColumnPtr cloneResized(size_t size) const override;
     size_t size() const override { return nested_column->size(); }
     bool isNullAt(size_t n) const { return static_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
@@ -74,6 +69,12 @@ public:
         callback(nested_column);
         callback(null_map);
     }
+
+    bool isColumnNullable() const override { return true; }
+    bool isFixedAndContiguous() const override { return false; }
+    bool valuesHaveFixedSize() const override { return nested_column->valuesHaveFixedSize(); }
+    size_t sizeOfValueIfFixed() const override { return null_map->sizeOfValueIfFixed() + nested_column->sizeOfValueIfFixed(); }
+
 
     /// Return the column that represents values.
     ColumnPtr & getNestedColumn() { return nested_column; }

@@ -177,6 +177,17 @@ MergeTreeData::MergeTreeData(
 }
 
 
+static void checkForAllowedKeyColumns(const ColumnWithTypeAndName & element, const std::string & key_name)
+{
+    const ColumnPtr & column = element.column;
+    if (column && (column->isColumnConst() || column->isDummy()))
+        throw Exception{key_name + " key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
+
+    if (element.type->isNullable())
+        throw Exception{key_name + " key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
+}
+
+
 void MergeTreeData::initPrimaryKey()
 {
     if (!primary_expr_ast)
@@ -202,16 +213,7 @@ void MergeTreeData::initPrimaryKey()
     ///  (And also couldn't work because primary key is serialized with method of IDataType that doesn't support constants).
     /// Also a primary key must not contain any nullable column.
     for (size_t i = 0; i < primary_key_size; ++i)
-    {
-        const auto & element = primary_key_sample.getByPosition(i);
-
-        const ColumnPtr & column = element.column;
-        if (column && column->isConst())
-                throw Exception{"Primary key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
-
-        if (element.type->isNullable())
-            throw Exception{"Primary key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
-    }
+        checkForAllowedKeyColumns(primary_key_sample.getByPosition(i), "Primary");
 
     primary_key_data_types.resize(primary_key_size);
     for (size_t i = 0; i < primary_key_size; ++i)
@@ -231,11 +233,7 @@ void MergeTreeData::initPartitionKey()
         partition_expr_columns.emplace_back(col_name);
 
         const ColumnWithTypeAndName & element = partition_expr->getSampleBlock().getByName(col_name);
-
-        if (element.column && element.column->isConst())
-            throw Exception("Partition key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN);
-        if (element.type->isNullable())
-            throw Exception("Partition key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN);
+        checkForAllowedKeyColumns(element, "Partition");
 
         partition_expr_column_types.emplace_back(element.type);
     }
