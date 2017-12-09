@@ -196,7 +196,7 @@ public:
         if (!arguments.front()->isNullable())
             throw Exception("Logical error: not nullable data type is passed to AggregateFunctionNullUnary", ErrorCodes::LOGICAL_ERROR);
 
-        this->nested_function->setArguments({static_cast<const DataTypeNullable &>(*arguments.front()).getNestedType()});
+        this->nested_function->setArguments({removeNullable(arguments.front())});
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -246,15 +246,7 @@ public:
         for (size_t i = 0; i < number_of_arguments; ++i)
         {
             is_nullable[i] = arguments[i]->isNullable();
-
-            if (is_nullable[i])
-            {
-                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arguments[i]);
-                const DataTypePtr & nested_type = nullable_type.getNestedType();
-                nested_args[i] = nested_type;
-            }
-            else
-                nested_args[i] = arguments[i];
+            nested_args[i] = removeNullable(arguments[i]);
         }
 
         this->nested_function->setArguments(nested_args);

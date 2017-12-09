@@ -484,15 +484,6 @@ template <> struct IsIntegral<DataTypeInt16> { static constexpr auto value = tru
 template <> struct IsIntegral<DataTypeInt32> { static constexpr auto value = true; };
 template <> struct IsIntegral<DataTypeInt64> { static constexpr auto value = true; };
 
-template <typename DataType> struct IsFloating { static constexpr auto value = false; };
-template <> struct IsFloating<DataTypeFloat32> { static constexpr auto value = true; };
-template <> struct IsFloating<DataTypeFloat64> { static constexpr auto value = true; };
-
-template <typename DataType> struct IsNumeric
-{
-    static constexpr auto value = IsIntegral<DataType>::value || IsFloating<DataType>::value;
-};
-
 template <typename DataType> struct IsDateOrDateTime { static constexpr auto value = false; };
 template <> struct IsDateOrDateTime<DataTypeDate> { static constexpr auto value = true; };
 template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto value = true; };

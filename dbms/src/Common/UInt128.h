@@ -66,7 +66,7 @@ template <typename T> bool inline operator>  (T a, const UInt128 b) { return UIn
 template <typename T> bool inline operator<= (T a, const UInt128 b) { return UInt128(a) <= b; }
 template <typename T> bool inline operator<  (T a, const UInt128 b) { return UInt128(a) < b; }
 
-template <> struct IsNumber<UInt128> { static constexpr bool value = true; };
+template <> bool IsNumber<UInt128> = true;
 template <> struct TypeName<UInt128> { static const char * get() { return "UInt128"; } };
 
 struct UInt128Hash
