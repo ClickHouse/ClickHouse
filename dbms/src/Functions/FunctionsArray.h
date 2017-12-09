@@ -810,7 +810,7 @@ private:
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
-        if (item_arg->isNull())
+        if (item_arg->onlyNull())
             ArrayIndexNumNullImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
                 col_res->getData(), null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<U>>(item_arg))
@@ -858,7 +858,7 @@ private:
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
-        if (item_arg->isNull())
+        if (item_arg->onlyNull())
             ArrayIndexStringNullImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), col_res->getData(), null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
@@ -885,7 +885,7 @@ private:
         Array arr = col_array->getValue<Array>();
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
-        if (item_arg->isConst())
+        if (item_arg->isColumnConst())
         {
             typename IndexConv::ResultType current = 0;
             const auto & value = (*item_arg)[0];
@@ -979,10 +979,10 @@ private:
                 null_map_item = &static_cast<const ColumnUInt8 &>(*null_map2).getData();
         }
 
-        if (item_arg.isNull())
+        if (item_arg.onlyNull())
             ArrayIndexGenericNullImpl<IndexConv>::vector(col_nested, col_array->getOffsets(),
                 col_res->getData(), null_map_data);
-        else if (item_arg.isConst())
+        else if (item_arg.isColumnConst())
             ArrayIndexGenericImpl<IndexConv, true>::vector(col_nested, col_array->getOffsets(),
                 static_cast<const ColumnConst &>(item_arg).getDataColumn(), col_res->getData(),    /// TODO This is wrong.
                 null_map_data, nullptr);
@@ -1058,12 +1058,12 @@ public:
         const ColumnArray * col_array = nullptr;
         col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
         if (col_array)
-            is_nullable = col_array->getData().isNullable();
+            is_nullable = col_array->getData().isColumnNullable();
         else
             is_nullable = false;
 
         /// Check nullability of the 2nd function argument.
-        bool is_arg_nullable = block.getByPosition(arguments[1]).column->isNullable();
+        bool is_arg_nullable = block.getByPosition(arguments[1]).column->isColumnNullable();
 
         if (!is_nullable && !is_arg_nullable)
         {
@@ -1182,6 +1182,7 @@ public:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1201,6 +1202,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1214,8 +1216,6 @@ private:
     bool executeNumber(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
     bool executeString(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
-
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
 
     bool execute128bit(
         const ColumnArray::Offsets_t & offsets,
@@ -1241,6 +1241,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1254,8 +1255,6 @@ private:
     bool executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
     bool executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
-
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
 
     bool execute128bit(
         const ColumnArray::Offsets_t & offsets,
@@ -1321,6 +1320,7 @@ private:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1340,6 +1340,7 @@ public:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1356,6 +1357,7 @@ public:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 

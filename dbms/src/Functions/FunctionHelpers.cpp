@@ -13,7 +13,7 @@ namespace DB
 
 const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * column)
 {
-    if (!column->isConst())
+    if (!column->isColumnConst())
         return {};
 
     const ColumnConst * res = static_cast<const ColumnConst *>(column);
@@ -57,7 +57,7 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
         {
             ++j;
 
-            if (col.column->isNullable())
+            if (col.column->isColumnNullable())
             {
                 auto nullable_col = static_cast<const ColumnNullable *>(col.column.get());
                 const ColumnPtr & nested_col = nullable_col->getNestedColumn();
@@ -97,10 +97,10 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args, size
 
             if (col.type->isNullable())
             {
-                bool is_const = col.column->isConst();
+                bool is_const = col.column->isColumnConst();
                 auto const_col = typeid_cast<const ColumnConst *>(col.column.get());
 
-                if (is_const && !const_col->getDataColumn().isNullable())
+                if (is_const && !const_col->getDataColumn().isColumnNullable())
                     throw Exception("Column at position " + toString(i + 1) + " with type " + col.type->getName() +
                                     " should be nullable, but got " + const_col->getName(), ErrorCodes::LOGICAL_ERROR);
 

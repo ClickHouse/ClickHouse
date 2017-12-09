@@ -44,7 +44,7 @@ namespace
 
 Field getValueFromConstantColumn(const ColumnPtr & column)
 {
-    if (!column->isConst())
+    if (!column->isColumnConst())
         throw Exception("Logical error: expected that column is constant", ErrorCodes::LOGICAL_ERROR);
     if (column->size() != 1)
         throw Exception("Logical error: expected that column with constant has single element", ErrorCodes::LOGICAL_ERROR);
@@ -249,7 +249,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
         function_ptr->execute(block_with_constants, argument_numbers, result_position);
 
         const auto & result_column = block_with_constants.getByPosition(result_position).column;
-        if (result_column->isConst())
+        if (result_column->isColumnConst())
         {
             expression_info.is_constant_expression = true;
             expression_info.value = (*result_column)[0];

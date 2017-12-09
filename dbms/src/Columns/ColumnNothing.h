@@ -13,6 +13,8 @@ public:
 
     const char * getFamilyName() const override { return "Nothing"; }
     ColumnPtr cloneDummy(size_t s) const override { return std::make_shared<ColumnNothing>(s); };
+
+    bool canBeInsideNullable() const override { return true; }
 };
 
 }

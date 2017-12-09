@@ -1177,7 +1177,7 @@ private:
     {
         const auto & column = *block.getByPosition(arguments[argument_pos]).column;
 
-        if (!column.isConst())
+        if (!column.isColumnConst())
             throw Exception(
                 which_argument + String(" argument for function ") + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
@@ -1678,7 +1678,7 @@ public:
         auto & res = block.getByPosition(result);
 
         /// When column is constant, its difference is zero.
-        if (src.column->isConst())
+        if (src.column->isColumnConst())
         {
             res.column = res.type->createConstColumn(block.rows(), res.type->getDefault());
             return;

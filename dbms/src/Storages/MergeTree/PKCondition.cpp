@@ -289,7 +289,7 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
         out_type = block_with_constants.getByName(column_name).type;
         return true;
     }
-    else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isConst())
+    else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isColumnConst())
     {
         /// An expression which is dependent on constants only
         const auto & expr_info = block_with_constants.getByName(column_name);

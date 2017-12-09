@@ -174,7 +174,7 @@ private:
         bool has_res = false;
         for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
         {
-            if (in[i]->isConst())
+            if (in[i]->isColumnConst())
             {
                 Field val = (*in[i])[0];
                 UInt8 x = !!val.get<UInt64>();

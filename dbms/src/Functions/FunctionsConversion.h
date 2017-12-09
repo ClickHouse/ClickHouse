@@ -261,40 +261,25 @@ struct ConvertImplGenericToString
 
         size_t size = col_from.size();
 
-        if (!col_from.isConst())
+        auto col_to = std::make_shared<ColumnString>();
+        block.getByPosition(result).column = col_to;
+
+        ColumnString::Chars_t & data_to = col_to->getChars();
+        ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+
+        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
+        offsets_to.resize(size);
+
+        WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+        for (size_t i = 0; i < size; ++i)
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
-
-            ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
-
-            data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
-            offsets_to.resize(size);
-
-            WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                type.serializeText(col_from, i, write_buffer);
-                writeChar(0, write_buffer);
-                offsets_to[i] = write_buffer.count();
-            }
-
-            data_to.resize(write_buffer.count());
+            type.serializeText(col_from, i, write_buffer);
+            writeChar(0, write_buffer);
+            offsets_to[i] = write_buffer.count();
         }
-        else
-        {
-            String res;
 
-            if (size)
-            {
-                WriteBufferFromString write_buffer(res);
-                type.serializeText(*col_from.cut(0, 1)->convertToFullColumnIfConst(), 0, write_buffer);
-            }
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(size, res);
-        }
+        data_to.resize(write_buffer.count());
     }
 };
 

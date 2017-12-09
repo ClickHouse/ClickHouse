@@ -979,7 +979,7 @@ public:
         const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
         const ColumnPtr column_replacement = block.getByPosition(arguments[2]).column;
 
-        if (!column_needle->isConst() || !column_replacement->isConst())
+        if (!column_needle->isColumnConst() || !column_replacement->isColumnConst())
             throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
         const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
