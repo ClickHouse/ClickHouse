@@ -810,8 +810,7 @@ public:
     {
         if (!arguments[1].column)
             throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-        if (!checkDataType<DataTypeString>(arguments[0].type.get()) &&
-            !checkDataType<DataTypeFixedString>(arguments[0].type.get()))
+        if (!arguments[0].type->isStringOrFixedString())
             throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
         const size_t n = getSize(arguments[1]);
@@ -1131,8 +1130,7 @@ private:
 
     static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
     {
-        if (!checkDataType<DataTypeString>(from_type.get()) &&
-            !checkDataType<DataTypeFixedString>(from_type.get()))
+        if (!from_type->isStringOrFixedString())
             throw Exception{
                 "CAST AS FixedString is only implemented for types String and FixedString",
                 ErrorCodes::NOT_IMPLEMENTED};

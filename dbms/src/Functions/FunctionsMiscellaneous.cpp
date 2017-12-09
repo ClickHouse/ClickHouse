@@ -1253,17 +1253,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto arg = arguments.front().get();
-        if (!checkDataType<DataTypeUInt8>(arg) && !checkDataType<DataTypeUInt16>(arg)
-            && !checkDataType<DataTypeUInt32>(arg)
-            && !checkDataType<DataTypeUInt64>(arg)
-            && !checkDataType<DataTypeInt8>(arg)
-            && !checkDataType<DataTypeInt16>(arg)
-            && !checkDataType<DataTypeInt32>(arg)
-            && !checkDataType<DataTypeInt64>(arg)
-            && !checkDataType<DataTypeFloat32>(arg)
-            && !checkDataType<DataTypeFloat64>(arg))
-            throw Exception{"Argument for function " + getName() + " must be numeric", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        if (!arguments.front()->isNumber())
+            throw Exception{"Argument for function " + getName() + " must be number", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeUInt8>();
     }

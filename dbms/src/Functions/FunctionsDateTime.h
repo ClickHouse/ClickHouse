@@ -590,8 +590,7 @@ public:
     {
         if (arguments.size() == 1)
         {
-            if (!checkDataType<DataTypeDate>(arguments[0].type.get())
-                && !checkDataType<DataTypeDateTime>(arguments[0].type.get()))
+            if (!arguments[0].type->isDateOrDateTime())
                 throw Exception{
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -908,8 +907,7 @@ public:
 
         if (arguments.size() == 2)
         {
-            if (!checkDataType<DataTypeDate>(arguments[0].type.get())
-                && !checkDataType<DataTypeDateTime>(arguments[0].type.get()))
+            if (!arguments[0].type->isDateOrDateTime())
                 throw Exception{
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
