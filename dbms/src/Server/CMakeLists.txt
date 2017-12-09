@@ -63,7 +63,7 @@ target_link_libraries (clickhouse
 
 if (USE_EMBEDDED_COMPILER)
     add_subdirectory ("Compiler-${LLVM_VERSION}")
-    target_link_libraries (clickhouse libclickhouse-compiler)
+    target_link_libraries (clickhouse clickhouse-compiler-lib)
 endif ()
 
 install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
