@@ -135,6 +135,11 @@ struct NumComparisonImpl
     {
         NumComparisonImpl<B, A, typename Op::SymmetricOp>::vector_constant(b, a, c);
     }
+
+    static void constant_constant(A a, B b, UInt8 & c)
+    {
+        c = Op::apply(a, b);
+    }
 };
 
 
@@ -333,6 +338,18 @@ struct StringComparisonImpl
     {
         StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vector_constant(b_data, b_n, a, c);
     }
+
+    static void constant_constant(
+        const std::string & a,
+        const std::string & b,
+        UInt8 & c)
+    {
+        size_t a_n = a.size();
+        size_t b_n = b.size();
+
+        int res = memcmp(a.data(), b.data(), std::min(a_n, b_n));
+        c = Op::apply(res, 0) || (res == 0 && Op::apply(a_n, b_n));
+    }
 };
 
 
@@ -496,6 +513,14 @@ struct StringEqualsImpl
     {
         fixed_string_vector_constant(b_data, b_n, a, c);
     }
+
+    static void constant_constant(
+        const std::string & a,
+        const std::string & b,
+        UInt8 & c)
+    {
+        c = positive == (a == b);
+    }
 };
 
 
@@ -526,6 +551,11 @@ struct GenericComparisonImpl
     static void constant_vector(const IColumn & a, const IColumn & b, PaddedPODArray<UInt8> & c)
     {
         GenericComparisonImpl<typename Op::SymmetricOp>::vector_constant(b, a, c);
+    }
+
+    static void constant_constant(const IColumn & a, const IColumn & b, UInt8 & c)
+    {
+        c = Op::apply(a.compareAt(0, 0, b, 1), 0);
     }
 };
 
@@ -588,6 +618,16 @@ private:
             ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
+
+            return true;
+        }
+        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
+        {
+            UInt8 res = 0;
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
+
+            auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), toField(res));
+            block.getByPosition(result).column = col_res;
 
             return true;
         }
@@ -659,51 +699,60 @@ private:
         ColumnUInt8::Container_t & vec_res = c_res->getData();
         vec_res.resize(c0->size());
 
-        if (c0_string && c1_string)
-            StringImpl::string_vector_string_vector(
-                c0_string->getChars(), c0_string->getOffsets(),
-                c1_string->getChars(), c1_string->getOffsets(),
-                c_res->getData());
-        else if (c0_string && c1_fixed_string)
-            StringImpl::string_vector_fixed_string_vector(
-                c0_string->getChars(), c0_string->getOffsets(),
-                c1_fixed_string->getChars(), c1_fixed_string->getN(),
-                c_res->getData());
-        else if (c0_string && c1_const)
-            StringImpl::string_vector_constant(
-                c0_string->getChars(), c0_string->getOffsets(),
-                c1_const->getValue<String>(),
-                c_res->getData());
-        else if (c0_fixed_string && c1_string)
-            StringImpl::fixed_string_vector_string_vector(
-                c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                c1_string->getChars(), c1_string->getOffsets(),
-                c_res->getData());
-        else if (c0_fixed_string && c1_fixed_string)
-            StringImpl::fixed_string_vector_fixed_string_vector(
-                c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                c1_fixed_string->getChars(), c1_fixed_string->getN(),
-                c_res->getData());
-        else if (c0_fixed_string && c1_const)
-            StringImpl::fixed_string_vector_constant(
-                c0_fixed_string->getChars(), c0_fixed_string->getN(),
-                c1_const->getValue<String>(),
-                c_res->getData());
-        else if (c0_const && c1_string)
-            StringImpl::constant_string_vector(
-                c0_const->getValue<String>(),
-                c1_string->getChars(), c1_string->getOffsets(),
-                c_res->getData());
-        else if (c0_const && c1_fixed_string)
-            StringImpl::constant_fixed_string_vector(
-                c0_const->getValue<String>(),
-                c1_fixed_string->getChars(), c1_fixed_string->getN(),
-                c_res->getData());
+        if (c0_const && c1_const)
+        {
+            UInt8 res = 0;
+            StringImpl::constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), res);
+            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(c0_const->size(), toField(res));
+        }
         else
-            throw Exception("Illegal columns "
-                + c0->getName() + " and " + c1->getName()
-                + " of arguments of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+        {
+            if (c0_string && c1_string)
+                StringImpl::string_vector_string_vector(
+                    c0_string->getChars(), c0_string->getOffsets(),
+                    c1_string->getChars(), c1_string->getOffsets(),
+                    c_res->getData());
+            else if (c0_string && c1_fixed_string)
+                StringImpl::string_vector_fixed_string_vector(
+                    c0_string->getChars(), c0_string->getOffsets(),
+                    c1_fixed_string->getChars(), c1_fixed_string->getN(),
+                    c_res->getData());
+            else if (c0_string && c1_const)
+                StringImpl::string_vector_constant(
+                    c0_string->getChars(), c0_string->getOffsets(),
+                    c1_const->getValue<String>(),
+                    c_res->getData());
+            else if (c0_fixed_string && c1_string)
+                StringImpl::fixed_string_vector_string_vector(
+                    c0_fixed_string->getChars(), c0_fixed_string->getN(),
+                    c1_string->getChars(), c1_string->getOffsets(),
+                    c_res->getData());
+            else if (c0_fixed_string && c1_fixed_string)
+                StringImpl::fixed_string_vector_fixed_string_vector(
+                    c0_fixed_string->getChars(), c0_fixed_string->getN(),
+                    c1_fixed_string->getChars(), c1_fixed_string->getN(),
+                    c_res->getData());
+            else if (c0_fixed_string && c1_const)
+                StringImpl::fixed_string_vector_constant(
+                    c0_fixed_string->getChars(), c0_fixed_string->getN(),
+                    c1_const->getValue<String>(),
+                    c_res->getData());
+            else if (c0_const && c1_string)
+                StringImpl::constant_string_vector(
+                    c0_const->getValue<String>(),
+                    c1_string->getChars(), c1_string->getOffsets(),
+                    c_res->getData());
+            else if (c0_const && c1_fixed_string)
+                StringImpl::constant_fixed_string_vector(
+                    c0_const->getValue<String>(),
+                    c1_fixed_string->getChars(), c1_fixed_string->getN(),
+                    c_res->getData());
+            else
+                throw Exception("Illegal columns "
+                    + c0->getName() + " and " + c1->getName()
+                    + " of arguments of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
+        }
 
         return true;
     }
@@ -942,12 +991,21 @@ private:
         ColumnUInt8::Container_t & vec_res = c_res->getData();
         vec_res.resize(c0->size());
 
-        if (c0_const)
-            GenericComparisonImpl<Op<int, int>>::constant_vector(*c0, *c1, vec_res);
-        else if (c1_const)
-            GenericComparisonImpl<Op<int, int>>::vector_constant(*c0, *c1, vec_res);
+        if (c0_const && c1_const)
+        {
+            UInt8 res = 0;
+            GenericComparisonImpl<Op<int, int>>::constant_constant(*c0, *c1, res);
+            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(c0->size(), toField(res));
+        }
         else
-            GenericComparisonImpl<Op<int, int>>::vector_vector(*c0, *c1, vec_res);
+        {
+            if (c0_const)
+                GenericComparisonImpl<Op<int, int>>::constant_vector(*c0, *c1, vec_res);
+            else if (c1_const)
+                GenericComparisonImpl<Op<int, int>>::vector_constant(*c0, *c1, vec_res);
+            else
+                GenericComparisonImpl<Op<int, int>>::vector_vector(*c0, *c1, vec_res);
+        }
     }
 
 public:
@@ -955,8 +1013,6 @@ public:
     {
         return name;
     }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -974,13 +1030,13 @@ public:
 
         false
             || (left_is_date         = checkAndGetDataType<DataTypeDate>(arguments[0].get()))
-            || (left_is_date_time     = checkAndGetDataType<DataTypeDateTime>(arguments[0].get()))
-            || (left_is_enum8         = checkAndGetDataType<DataTypeEnum8>(arguments[0].get()))
-            || (left_is_uuid           = checkAndGetDataType<DataTypeUUID>(arguments[0].get()))
-            || (left_is_enum16         = checkAndGetDataType<DataTypeEnum16>(arguments[0].get()))
-            || (left_is_string         = checkAndGetDataType<DataTypeString>(arguments[0].get()))
+            || (left_is_date_time    = checkAndGetDataType<DataTypeDateTime>(arguments[0].get()))
+            || (left_is_enum8        = checkAndGetDataType<DataTypeEnum8>(arguments[0].get()))
+            || (left_is_uuid         = checkAndGetDataType<DataTypeUUID>(arguments[0].get()))
+            || (left_is_enum16       = checkAndGetDataType<DataTypeEnum16>(arguments[0].get()))
+            || (left_is_string       = checkAndGetDataType<DataTypeString>(arguments[0].get()))
             || (left_is_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].get()))
-            || (left_tuple             = checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
+            || (left_tuple           = checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
 
         const bool left_is_enum = left_is_enum8 || left_is_enum16;
 

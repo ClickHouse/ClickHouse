@@ -16,11 +16,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
 class IDataTypeEnum : public IDataType
 {
 public:
     virtual Field castToName(const Field & value_or_name) const = 0;
     virtual Field castToValue(const Field & value_or_name) const = 0;
+
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return false; }
+    bool isValueRepresentedByNumber() const override { return true; }
+    bool isValueRepresentedByInteger() const override { return true; }
+    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
+    bool haveMaximumSizeOfValue() const override { return true; }
+    bool isCategorial() const override { return true; }
+    bool isEnum() const override { return true; }
+    bool canBeInsideNullable() const override { return true; }
 };
 
 
@@ -104,17 +115,8 @@ public:
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
 
-    bool isParametric() const override { return true; }
-    bool haveSubtypes() const override { return false; }
     bool textCanContainOnlyValidUTF8() const override;
-    bool isValueRepresentedByNumber() const override { return true; }
-    bool isValueRepresentedByInteger() const override { return true; }
-    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
-    bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return sizeof(Field); }
-    bool isCategorial() const override { return true; }
-    bool isEnum() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
 };
 
 
