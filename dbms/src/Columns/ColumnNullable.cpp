@@ -23,23 +23,12 @@ namespace ErrorCodes
 ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
     : nested_column{nested_column_}, null_map{null_map_}
 {
-    if (nested_column->isColumnNullable())
-        throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::ILLEGAL_COLUMN};
-
-    if (nested_column->isColumnConst())
-        throw Exception{"A nullable column cannot contain constant nested column", ErrorCodes::ILLEGAL_COLUMN};
-
-    /// TODO Also check for Nullable(Array(...)). But they are occasionally used somewhere in tests.
-
-    if (typeid_cast<const ColumnTuple *>(nested_column.get()))
-        throw Exception{"Nullable(Tuple(...)) is illegal", ErrorCodes::ILLEGAL_COLUMN};
-
-    if (typeid_cast<const ColumnAggregateFunction *>(nested_column.get()))
-        throw Exception{"Nullable(AggregateFunction(...)) is illegal", ErrorCodes::ILLEGAL_COLUMN};
-
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
     if (auto nested_column_materialized = nested_column->convertToFullColumnIfConst())
         nested_column = nested_column_materialized;
+
+    if (!nested_column->canBeInsideNullable())
+        throw Exception{getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};
 
     if (null_map->isColumnConst())
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
