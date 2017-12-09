@@ -83,7 +83,7 @@ inline Field toField(const T & x)
 }
 
 
-ColumnPtr convertConstTupleToTupleOfConstants(const ColumnConst & column);
+Columns convertConstTupleToConstantElements(const ColumnConst & column);
 
 
 /// Returns the copy of a given block in which each column specified in

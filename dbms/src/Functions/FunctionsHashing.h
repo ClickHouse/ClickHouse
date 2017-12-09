@@ -547,10 +547,16 @@ private:
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
-        else if (const ColumnConst * tuple = checkAndGetColumnConst<ColumnTuple>(column))
+        else if (const ColumnTuple * tuple = checkAndGetColumnConstData<ColumnTuple>(column))
         {
-            ColumnPtr tuple_of_constants = convertConstTupleToTupleOfConstants(*tuple);
-            executeForArgument(type, tuple_of_constants.get(), vec_to, is_first);
+            const Columns & tuple_columns = tuple->getColumns();
+            const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
+            size_t tuple_size = tuple_columns.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                ColumnConst tmp(tuple_columns[i], column->size());
+                executeForArgument(tuple_types[i].get(), &tmp, vec_to, is_first);
+            }
         }
         else
         {
