@@ -45,7 +45,7 @@ ColumnArray::ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column)
     }
 
     /** NOTE
-      * Arrays with constant value are possible and used in implementation of higher order functions and in ARRAY JOIN.
+      * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
       * But in most cases, arrays with constant value are unexpected and code will work wrong. Use with caution.
       */
 }
