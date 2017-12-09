@@ -1941,15 +1941,10 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 {
     const auto arg = arguments.front().get();
 
-    if (!checkDataType<DataTypeUInt8>(arg) &&
-        !checkDataType<DataTypeUInt16>(arg) &&
-        !checkDataType<DataTypeUInt32>(arg) &&
-        !checkDataType<DataTypeUInt64>(arg))
-    {
+    if (!arg->canBeUsedAsNonNegativeArrayIndex())
         throw Exception{
             "Illegal type " + arg->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-    }
 
     return std::make_shared<DataTypeArray>(arg->clone());
 }

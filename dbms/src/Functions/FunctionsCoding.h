@@ -264,7 +264,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -575,7 +575,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -836,7 +836,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -997,7 +997,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// String or FixedString(36)
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             const auto ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
             if (!ptr || ptr->getN() != uuid_text_length)
@@ -1138,14 +1138,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]) &&
-            !checkDataType<DataTypeFixedString>(&*arguments[0]) &&
-            !checkDataType<DataTypeDate>(&*arguments[0]) &&
-            !checkDataType<DataTypeDateTime>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt8>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt16>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt32>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt64>(&*arguments[0]))
+        if (!arguments[0]->isString()
+            && !arguments[0]->isFixedString()
+            && !arguments[0]->isDateOrDateTime()
+            && !checkDataType<DataTypeUInt8>(&*arguments[0])
+            && !checkDataType<DataTypeUInt16>(&*arguments[0])
+            && !checkDataType<DataTypeUInt32>(&*arguments[0])
+            && !checkDataType<DataTypeUInt64>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1360,7 +1359,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1449,14 +1448,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeUInt8>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt16>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt32>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt64>(&*arguments[0]) &&
-            !checkDataType<DataTypeInt8>(&*arguments[0]) &&
-            !checkDataType<DataTypeInt16>(&*arguments[0]) &&
-            !checkDataType<DataTypeInt32>(&*arguments[0]) &&
-            !checkDataType<DataTypeInt64>(&*arguments[0]))
+        if (!arguments[0]->isInteger())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1539,8 +1531,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeFixedString>(&*arguments[0]) &&
-            !checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isStringOrFixedString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

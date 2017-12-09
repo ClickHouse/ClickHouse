@@ -169,7 +169,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (size_t i : ext::range(0, 3))
-            if (!checkDataType<DataTypeString>(&*arguments[i]))
+            if (!arguments[i]->isString())
                 throw Exception("Illegal type " + arguments[i]->getName() + " of argument of function " + getName()
                     + ", must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

@@ -840,7 +840,7 @@ public:
             || checkLeftType<DataTypeInt64>(arguments, type_res)
             || checkLeftType<DataTypeFloat32>(arguments, type_res)
             || checkLeftType<DataTypeFloat64>(arguments, type_res)))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type_res;
@@ -1241,14 +1241,7 @@ public:
 
         const auto first_arg = arguments.front().get();
 
-        if (!checkDataType<DataTypeUInt8>(first_arg)
-            && !checkDataType<DataTypeUInt16>(first_arg)
-            && !checkDataType<DataTypeUInt32>(first_arg)
-            && !checkDataType<DataTypeUInt64>(first_arg)
-            && !checkDataType<DataTypeInt8>(first_arg)
-            && !checkDataType<DataTypeInt16>(first_arg)
-            && !checkDataType<DataTypeInt32>(first_arg)
-            && !checkDataType<DataTypeInt64>(first_arg))
+        if (!first_arg->isInteger())
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1258,10 +1251,7 @@ public:
         {
             const auto pos_arg = arguments[i].get();
 
-            if (!checkDataType<DataTypeUInt8>(pos_arg)
-                && !checkDataType<DataTypeUInt16>(pos_arg)
-                && !checkDataType<DataTypeUInt32>(pos_arg)
-                && !checkDataType<DataTypeUInt64>(pos_arg))
+            if (!pos_arg->canBeUsedAsNonNegativeArrayIndex())
                 throw Exception{
                     "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
