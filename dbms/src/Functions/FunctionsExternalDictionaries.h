@@ -78,7 +78,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                     + ", expected a string.",
@@ -238,7 +238,7 @@ private:
                     + toString(arguments.size()) + ", should be 3 or 4.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -246,7 +246,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -507,13 +507,13 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() +
                     ", expected a string.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() +
                     ", expected a string.",
@@ -528,7 +528,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[3].get()))
+        if (!arguments[3]->isString())
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName() +
                     ", must be String.",
@@ -793,7 +793,7 @@ private:
         if (arguments.size() != 3 && arguments.size() != 4)
             throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -801,7 +801,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -1112,7 +1112,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1120,7 +1120,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -1380,7 +1380,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1544,7 +1544,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()

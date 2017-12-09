@@ -77,7 +77,7 @@ public:
 
         const IDataType * type_x = arguments[0].get();
 
-        if (!type_x->isValueRepresentedByNumber() && !checkDataType<DataTypeString>(type_x))
+        if (!type_x->isValueRepresentedByNumber() && !type_x->isString())
             throw Exception{"Unsupported type " + type_x->getName()
                 + " of first argument of function " + getName()
                 + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -91,7 +91,7 @@ public:
         const auto type_arr_from_nested = type_arr_from->getNestedType();
 
         if ((type_x->isValueRepresentedByNumber() != type_arr_from_nested->isValueRepresentedByNumber())
-            || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_from_nested.get())))
+            || (!!type_x->isString() != !!type_arr_from_nested->isString()))
         {
             throw Exception{"First argument and elements of array of second argument of function " + getName()
                 + " must have compatible types: both numeric or both strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -108,7 +108,7 @@ public:
         if (args_size == 3)
         {
             if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
-                || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
+                || (!!type_x->isString() != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -119,7 +119,7 @@ public:
         {
             const DataTypePtr & type_default = arguments[3];
 
-            if (!type_default->isValueRepresentedByNumber() && !checkDataType<DataTypeString>(type_default.get()))
+            if (!type_default->isValueRepresentedByNumber() && !type_default->isString())
                 throw Exception{"Unsupported type " + type_default->getName()
                     + " of fourth argument (default value) of function " + getName()
                     + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
