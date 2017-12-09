@@ -58,7 +58,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
             if (offset_columns.count(offsets_name))
             {
                 ColumnPtr offsets_column = offset_columns[offsets_name];
-                DataTypePtr nested_type = typeid_cast<DataTypeArray &>(*column_to_add.type).getNestedType();
+                DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column_to_add.type).getNestedType();
                 UInt64 nested_rows = rows ? get<UInt64>((*offsets_column)[rows - 1]) : 0;
 
                 ColumnPtr nested_column = nested_type->createConstColumn(nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();

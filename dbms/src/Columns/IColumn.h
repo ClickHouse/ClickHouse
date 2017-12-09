@@ -42,21 +42,6 @@ public:
     /// Name of a Column kind, without parameters (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
-    /// Column is vector of numbers or numeric constant.
-    virtual bool isNumeric() const { return false; }
-
-    /// Is this column numeric and not nullable?
-    virtual bool isNumericNotNullable() const { return isNumeric(); }
-
-    /// Column stores a constant value.
-    virtual bool isConst() const { return false; }
-
-    /// Is this column a container for nullable values?
-    virtual bool isNullable() const { return false; }
-
-    /// Is this a null column?
-    virtual bool isNull() const { return false; }
-
     /** If column isn't constant, returns nullptr (or itself).
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
       * Special case:
@@ -64,12 +49,6 @@ public:
       *  then each constant column is transformed, and final result is returned.
       */
     virtual ColumnPtr convertToFullColumnIfConst() const { return {}; }
-
-    /// Values in column have equal size in memory.
-    virtual bool isFixed() const { return false; }
-
-    /// If column isFixed(), returns size of value.
-    virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
     /// Creates the same column with the same data.
     virtual ColumnPtr clone() const { return cut(0, size()); }
@@ -270,6 +249,31 @@ public:
     /// Shallow: doesn't do recursive calls.
     using ColumnCallback = std::function<void(ColumnPtr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
+
+
+    /// Various properties on behaviour of column type.
+
+    /// Column is vector of numbers or numeric constant.
+    virtual bool isNumeric() const { return false; }
+
+    /// Is this column numeric and not nullable?
+    virtual bool isNumericNotNullable() const { return isNumeric(); }
+
+    /// Column stores a constant value.
+    virtual bool isConst() const { return false; }
+
+    /// Is this column a container for nullable values?
+    virtual bool isNullable() const { return false; }
+
+    /// Is this a null column?
+    virtual bool isNull() const { return false; }
+
+    /// Values in column have equal size in memory.
+    virtual bool isFixed() const { return false; }
+
+    /// If column isFixed(), returns size of value.
+    virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
+
 
     virtual ~IColumn() {}
 

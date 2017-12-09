@@ -86,4 +86,8 @@ private:
     DataTypePtr nested_data_type;
 };
 
+
+DataTypePtr makeNullable(const DataTypePtr & type);
+DataTypePtr removeNullable(const DataTypePtr & type);
+
 }

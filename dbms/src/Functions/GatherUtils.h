@@ -18,8 +18,6 @@
 #include <Core/TypeListNumber.h>
 #include <Common/FieldVisitors.h>
 
-#include <DataTypes/DataTypeTraits.h>
-
 /** These methods are intended for implementation of functions, that
   *  copy ranges from one or more columns to another column.
   *

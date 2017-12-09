@@ -303,4 +303,19 @@ void registerDataTypeNullable(DataTypeFactory & factory)
     factory.registerDataType("Nullable", create);
 }
 
+
+DataTypePtr makeNullable(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return type;
+    return std::make_shared<DataTypeNullable>(type);
+}
+
+DataTypePtr removeNullable(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return static_cast<const DataTypeNullable &>(*type).getNestedType();
+    return type;
+}
+
 }
