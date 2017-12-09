@@ -43,16 +43,6 @@ public:
         return chars.size() / n;
     }
 
-    size_t sizeOfField() const override
-    {
-        return n;
-    }
-
-    bool isFixed() const override
-    {
-        return true;
-    }
-
     size_t byteSize() const override
     {
         return chars.size() + sizeof(n);
@@ -129,6 +119,12 @@ public:
     };
 
     void getExtremes(Field & min, Field & max) const override;
+
+
+    bool canBeInsideNullable() const override { return true; }
+
+    bool isFixedAndContiguous() const override { return true; }
+    size_t sizeOfValueIfFixed() const override { return n; }
 
 
     /// Specialized part of interface, not from IColumn.

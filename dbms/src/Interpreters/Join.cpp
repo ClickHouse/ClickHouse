@@ -54,19 +54,19 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
     key_sizes.resize(keys_size);
     for (size_t j = 0; j < keys_size; ++j)
     {
-        if (!key_columns[j]->isFixed())
+        if (!key_columns[j]->isFixedAndContiguous())
         {
             all_fixed = false;
             break;
         }
-        key_sizes[j] = key_columns[j]->sizeOfField();
+        key_sizes[j] = key_columns[j]->sizeOfValueIfFixed();
         keys_bytes += key_sizes[j];
     }
 
     /// If there is one numeric key that fits in 64 bits
-    if (keys_size == 1 && key_columns[0]->isNumericNotNullable())
+    if (keys_size == 1 && key_columns[0]->isNumeric())
     {
-        size_t size_of_field = key_columns[0]->sizeOfField();
+        size_t size_of_field = key_columns[0]->sizeOfValueIfFixed();
         if (size_of_field == 1)
             return Type::key8;
         if (size_of_field == 2)
@@ -89,7 +89,7 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
     /// If there is single string key, use hash table of it's values.
     if (keys_size == 1
         && (typeid_cast<const ColumnString *>(key_columns[0])
-            || (key_columns[0]->isConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
+            || (key_columns[0]->isColumnConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
@@ -279,7 +279,7 @@ void Join::setSampleBlock(const Block & block)
         key_columns[i] = block.getByName(key_names_right[i]).column.get();
 
         /// We will join only keys, where all components are not NULL.
-        if (key_columns[i]->isNullable())
+        if (key_columns[i]->isColumnNullable())
             key_columns[i] = static_cast<const ColumnNullable &>(*key_columns[i]).getNestedColumn().get();
     }
 

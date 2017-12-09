@@ -605,7 +605,7 @@ public:
         bool all_constants = true;
         for (size_t arg_idx : arguments)
         {
-            if (!block.getByPosition(arg_idx).column->isConst())
+            if (!block.getByPosition(arg_idx).column->isColumnConst())
             {
                 all_constants = false;
                 break;
@@ -781,7 +781,7 @@ private:
     void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto level_col = block.getByPosition(arguments.back()).column.get();
-        if (!level_col->isConst())
+        if (!level_col->isColumnConst())
             throw Exception{
                 "Second argument of function " + getName() + " must be an integral constant",
                 ErrorCodes::ILLEGAL_COLUMN};

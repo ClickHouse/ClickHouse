@@ -23,10 +23,10 @@ namespace ErrorCodes
 ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
     : nested_column{nested_column_}, null_map{null_map_}
 {
-    if (nested_column->isNullable())
+    if (nested_column->isColumnNullable())
         throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::ILLEGAL_COLUMN};
 
-    if (nested_column->isConst())
+    if (nested_column->isColumnConst())
         throw Exception{"A nullable column cannot contain constant nested column", ErrorCodes::ILLEGAL_COLUMN};
 
     /// TODO Also check for Nullable(Array(...)). But they are occasionally used somewhere in tests.
@@ -41,17 +41,8 @@ ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
     if (auto nested_column_materialized = nested_column->convertToFullColumnIfConst())
         nested_column = nested_column_materialized;
 
-    if (null_map->isConst())
+    if (null_map->isColumnConst())
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
-}
-
-
-size_t ColumnNullable::sizeOfField() const
-{
-    if (nested_column->isFixed())
-        return getNullMapConcreteColumn().sizeOfField() + nested_column->sizeOfField();
-
-    throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD);
 }
 
 

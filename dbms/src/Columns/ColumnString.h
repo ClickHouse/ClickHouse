@@ -244,6 +244,10 @@ public:
 
     void getExtremes(Field & min, Field & max) const override;
 
+
+    bool canBeInsideNullable() const override { return true; }
+
+
     Chars_t & getChars() { return chars; }
     const Chars_t & getChars() const { return chars; }
 

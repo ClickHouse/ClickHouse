@@ -226,7 +226,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             const auto pre_bytes = res.bytes();
 
             ColumnPtr observed_column;
-            if (column->isNullable())
+            if (column->isColumnNullable())
             {
                 ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
                 observed_column = nullable_col.getNestedColumn();
@@ -237,7 +237,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             /** If the filter is a constant (for example, it says PREWHERE 1),
               * then either return an empty block, or return the block unchanged.
               */
-            if (observed_column->isConst())
+            if (observed_column->isColumnConst())
             {
                 if (!static_cast<const ColumnConst &>(*observed_column).getValue<UInt8>())
                 {

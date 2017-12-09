@@ -55,11 +55,11 @@ const Block & FilterBlockInputStream::getTotals()
 
 static void analyzeConstantFilter(const IColumn & column, bool & filter_always_false, bool & filter_always_true)
 {
-    if (column.isNull())
+    if (column.onlyNull())
     {
         filter_always_false = true;
     }
-    else if (column.isConst())
+    else if (column.isColumnConst())
     {
         if (static_cast<const ColumnConst &>(column).getValue<UInt8>())
             filter_always_true = true;
@@ -119,7 +119,7 @@ Block FilterBlockInputStream::readImpl()
 
         size_t columns = res.columns();
         ColumnPtr column = res.safeGetByPosition(filter_column).column;
-        bool is_nullable_column = column->isNullable();
+        bool is_nullable_column = column->isColumnNullable();
 
         auto init_observed_column = [&column, &is_nullable_column]()
         {
@@ -188,7 +188,7 @@ Block FilterBlockInputStream::readImpl()
         size_t first_non_constant_column = 0;
         for (size_t i = 0; i < columns; ++i)
         {
-            if (!res.safeGetByPosition(i).column->isConst())
+            if (!res.safeGetByPosition(i).column->isColumnConst())
             {
                 first_non_constant_column = i;
 
@@ -241,7 +241,7 @@ Block FilterBlockInputStream::readImpl()
             if (i == first_non_constant_column)
                 continue;
 
-            if (current_column.column->isConst())
+            if (current_column.column->isColumnConst())
                 current_column.column = current_column.column->cut(0, filtered_rows);
             else
                 current_column.column = current_column.column->filter(filter, -1);

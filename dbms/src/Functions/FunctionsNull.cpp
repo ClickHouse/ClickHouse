@@ -42,7 +42,7 @@ DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes &) const
 void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
-    if (elem.column->isNullable())
+    if (elem.column->isColumnNullable())
     {
         /// Merely return the embedded null map.
         ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*elem.column);
@@ -220,7 +220,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
     auto res = std::move(temp_block.getByPosition(result).column);
 
     /// if last argument is not nullable, result should be also not nullable
-    if (!block.getByPosition(multi_if_args.back()).column->isNullable() && res->isNullable())
+    if (!block.getByPosition(multi_if_args.back()).column->isColumnNullable() && res->isColumnNullable())
         res = static_cast<ColumnNullable &>(*res).getNestedColumn();
 
     block.getByPosition(result).column = res;
@@ -352,7 +352,7 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
     const ColumnPtr & col = block.getByPosition(arguments[0]).column;
     ColumnPtr & res_col = block.getByPosition(result).column;
 
-    if (col->isNullable())
+    if (col->isColumnNullable())
     {
         const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
         res_col = nullable_col.getNestedColumn();
@@ -384,7 +384,7 @@ void FunctionToNullable::executeImpl(Block & block, const ColumnNumbers & argume
 {
     const ColumnPtr & col = block.getByPosition(arguments[0]).column;
 
-    if (col->isNullable())
+    if (col->isColumnNullable())
         block.getByPosition(result).column = col;
     else
         block.getByPosition(result).column = std::make_shared<ColumnNullable>(col,

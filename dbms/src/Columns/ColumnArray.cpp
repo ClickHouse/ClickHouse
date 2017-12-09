@@ -152,10 +152,10 @@ void ColumnArray::insertData(const char * pos, size_t length)
     /** Similarly - only for arrays of fixed length values.
       */
     IColumn * data_ = data.get();
-    if (!data_->isFixed())
+    if (!data_->isFixedAndContiguous())
         throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 
-    size_t field_size = data_->sizeOfField();
+    size_t field_size = data_->sizeOfValueIfFixed();
 
     const char * end = pos + length;
     size_t elems = 0;

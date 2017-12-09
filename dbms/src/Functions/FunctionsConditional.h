@@ -559,8 +559,8 @@ private:
     bool executeForNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
-        bool cond_is_null = arg_cond.column->isNull();
-        bool cond_is_nullable = arg_cond.column->isNullable();
+        bool cond_is_null = arg_cond.column->onlyNull();
+        bool cond_is_nullable = arg_cond.column->isColumnNullable();
 
         if (cond_is_null)
         {
@@ -587,7 +587,7 @@ private:
             {
                 result_nullable->applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
             }
-            else if (result_column->isNull())
+            else if (result_column->onlyNull())
             {
                 result_column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
             }
@@ -612,7 +612,7 @@ private:
 
     static const ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)
     {
-        if (column->isNullable())
+        if (column->isColumnNullable())
             return column;
 
         return std::make_shared<ColumnNullable>(
@@ -621,7 +621,7 @@ private:
 
     static const ColumnPtr getNestedColumn(const ColumnPtr & column)
     {
-        if (column->isNullable())
+        if (column->isColumnNullable())
             return static_cast<const ColumnNullable &>(*column).getNestedColumn();
 
         return column;
@@ -712,8 +712,8 @@ private:
         const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
         const ColumnWithTypeAndName & arg_else = block.getByPosition(arguments[2]);
 
-        bool then_is_null = arg_then.column->isNull();
-        bool else_is_null = arg_else.column->isNull();
+        bool then_is_null = arg_then.column->onlyNull();
+        bool else_is_null = arg_else.column->onlyNull();
 
         if (!then_is_null && !else_is_null)
             return false;
@@ -732,7 +732,7 @@ private:
         {
             if (cond_col)
             {
-                if (arg_else.column->isNullable())
+                if (arg_else.column->isColumnNullable())
                 {
                     auto result_column = arg_else.column->clone();
                     static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
@@ -772,7 +772,7 @@ private:
                 for (size_t i = 0; i < size; ++i)
                     negated_null_map_data[i] = !null_map_data[i];
 
-                if (arg_then.column->isNullable())
+                if (arg_then.column->isColumnNullable())
                 {
                     auto result_column = arg_then.column->clone();
                     static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));

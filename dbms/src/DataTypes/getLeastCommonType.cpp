@@ -186,7 +186,7 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
     /// Non-recursive rules
 
     /// For String and FixedString, or for different FixedStrings, the common type is String.
-    /// No other types are compatible with Strings.
+    /// No other types are compatible with Strings. TODO Enums?
     {
         bool have_string = false;
         bool all_strings = true;

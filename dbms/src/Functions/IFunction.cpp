@@ -32,7 +32,7 @@ void createNullMap(Block & block, const ColumnNumbers & args, size_t result)
     for (const auto & arg : args)
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(arg);
-        if (elem.column->isNullable())
+        if (elem.column->isColumnNullable())
         {
             const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
             res_col.applyNullMap(nullable_col);    /// TODO excessive copy in case of single nullable argument.
