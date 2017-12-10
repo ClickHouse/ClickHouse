@@ -209,7 +209,7 @@ private:
 
         execute(tmp_block, tmp_arguments, tmp_result);
 
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
             block.rows(),
             (*tmp_block.getByPosition(tmp_result).column)[0]);
     }

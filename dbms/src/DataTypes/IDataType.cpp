@@ -38,7 +38,7 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
     }
 }
 
-ColumnPtr IDataType::createConstColumn(size_t size, const Field & field) const
+ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     ColumnPtr column = createColumn();
     column->insert(field);

@@ -561,7 +561,7 @@ private:
 
         if (cond_is_null)
         {
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
             return true;
         }
 
@@ -586,7 +586,7 @@ private:
             }
             else if (result_column->onlyNull())
             {
-                result_column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
+                result_column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
             }
             else
             {
@@ -647,14 +647,14 @@ private:
                 {
                     then_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumn()
-                        : DataTypeUInt8().createConstColumn(block.rows(), UInt64(0)),
+                        : DataTypeUInt8().createColumnConst(block.rows(), UInt64(0)),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
                     else_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumn()
-                        : DataTypeUInt8().createConstColumn(block.rows(), UInt64(0)),
+                        : DataTypeUInt8().createColumnConst(block.rows(), UInt64(0)),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
@@ -717,7 +717,7 @@ private:
 
         if (then_is_null && else_is_null)
         {
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
             return true;
         }
 

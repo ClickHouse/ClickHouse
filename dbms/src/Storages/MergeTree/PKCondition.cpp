@@ -206,7 +206,7 @@ Block PKCondition::getBlockWithConstants(
 {
     Block result
     {
-        { DataTypeUInt8().createConstColumn(1, UInt64(0)), std::make_shared<DataTypeUInt8>(), "_dummy" }
+        { DataTypeUInt8().createColumnConst(1, UInt64(0)), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
     const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}
@@ -308,7 +308,7 @@ static void applyFunction(
     DataTypePtr & res_type, Field & res_value)
 {
     std::vector<ExpressionAction> unused_prerequisites;
-    ColumnsWithTypeAndName arguments{{ arg_type->createConstColumn(1, arg_value), arg_type, "x" }};
+    ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
     func->getReturnTypeAndPrerequisites(arguments, res_type, unused_prerequisites);
 
     Block block

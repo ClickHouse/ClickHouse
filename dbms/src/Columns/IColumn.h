@@ -103,6 +103,8 @@ public:
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual bool isNullAt(size_t /*n*/) const { return false; }
+
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
     virtual ColumnPtr cut(size_t start, size_t length) const

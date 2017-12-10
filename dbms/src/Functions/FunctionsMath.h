@@ -58,7 +58,7 @@ private:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Impl::value);
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Impl::value);
     }
 };
 

@@ -899,7 +899,7 @@ private:
                 }
             }
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
                 item_arg->size(),
                 static_cast<typename NearestFieldType<typename IndexConv::ResultType>::Type>(current));
         }

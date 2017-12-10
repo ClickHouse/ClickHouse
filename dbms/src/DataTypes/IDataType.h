@@ -198,13 +198,13 @@ public:
         serializeText(column, row_num, ostr);
     }
 
-    /** Create empty (non-constant) column for corresponding type.
+    /** Create empty column for corresponding type.
       */
     virtual ColumnPtr createColumn() const = 0;
 
-    /** Create constant column for corresponding type, with specified size and value.
+    /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    ColumnPtr createConstColumn(size_t size, const Field & field) const;
+    ColumnPtr createColumnConst(size_t size, const Field & field) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.

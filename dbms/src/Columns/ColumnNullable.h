@@ -26,7 +26,7 @@ public:
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     ColumnPtr cloneResized(size_t size) const override;
     size_t size() const override { return nested_column->size(); }
-    bool isNullAt(size_t n) const { return static_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
+    bool isNullAt(size_t n) const override { return static_cast<const ColumnUInt8 &>(*null_map).getData()[n] != 0;}
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
@@ -108,5 +108,8 @@ private:
     template <bool negative>
     void applyNullMapImpl(const ColumnUInt8 & map);
 };
+
+
+ColumnPtr makeNullable(const ColumnPtr & column);
 
 }

@@ -90,6 +90,11 @@ public:
         return data->getInt(0);
     }
 
+    bool isNullAt(size_t) const override
+    {
+        return data->isNullAt(0);
+    }
+
     void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
     {
         s += length;
@@ -221,8 +226,7 @@ public:
         callback(data);
     }
 
-    bool onlyNull() const override;
-
+    bool onlyNull() const override { return data->isNullAt(0); }
     bool isColumnConst() const override { return true; }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }

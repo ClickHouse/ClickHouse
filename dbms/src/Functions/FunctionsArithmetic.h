@@ -690,7 +690,7 @@ private:
         {
             ResultType res = 0;
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), toField(res));
+            block.getByPosition(result).column = DataTypeNumber<ResultType>().createColumnConst(col_left->size(), toField(res));
 
             return true;
         }
@@ -1318,7 +1318,7 @@ private:
 
             if (is_const)
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, toField(Impl::apply(val, mask)));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, mask)));
             }
             else
             {

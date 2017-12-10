@@ -412,7 +412,7 @@ public:
             while (generator.get(token_begin, token_end))
                 dst.push_back(String(token_begin, token_end - token_begin));
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_const_str->size(), dst);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_const_str->size(), dst);
         }
         else
             throw Exception("Illegal columns " + block.getByPosition(array_argument_position).column->getName()
@@ -538,7 +538,7 @@ public:
                 dst_str += src_arr[i].get<const String &>();
             }
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_const_arr->size(), dst_str);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_const_arr->size(), dst_str);
         }
         else
         {

@@ -86,7 +86,7 @@ public:
         {
             ResultType res{};
             Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_haystack_const->size(), toField(res));
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
             return;
         }
 
