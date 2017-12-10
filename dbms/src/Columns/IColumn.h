@@ -44,9 +44,6 @@ public:
 
     /** If column isn't constant, returns nullptr (or itself).
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
-      * Special case:
-      * If column is composed from several other columns (tuple for example), and contains both constant and full columns,
-      *  then each constant column is transformed, and final result is returned.
       */
     virtual ColumnPtr convertToFullColumnIfConst() const { return {}; }
 
@@ -245,8 +242,8 @@ public:
     /// Zero, if could be determined.
     virtual size_t allocatedBytes() const = 0;
 
-    /// If the column contains subcolumns (such as Array, Nullable, etc), enumerate them.
-    /// Shallow: doesn't do recursive calls.
+    /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
+    /// Shallow: doesn't do recursive calls; don't do call for itself.
     using ColumnCallback = std::function<void(ColumnPtr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
 
@@ -269,6 +266,23 @@ public:
 
     /// It's a special kind of column, that contain single value, but is not a ColumnConst.
     virtual bool isDummy() const { return false; }
+
+    /** Memory layout properties.
+      *
+      * Each value of a column can be placed in memory contiguously or not.
+      *
+      * Example: simple columns like UInt64 or FixedString store their values contiguously in single memory buffer.
+      *
+      * Example: Tuple store values of each component in separate subcolumn, so the values of Tuples with at least two components are not contiguous.
+      * Another example is Nullable. Each value have null flag, that is stored separately, so the value is not contiguous in memory.
+      *
+      * There are some important cases, when values are not stored contiguously, but for each value, you can get contiguous memory segment,
+      *  that will unambiguously identify the value. In this case, methods getDataAt and insertData are implemented.
+      * Example: String column: bytes of strings are stored concatenated in one memory buffer
+      *  and offsets to that buffer are stored in another buffer. The same is for Array of fixed-size contiguous elements.
+      *
+      * To avoid confusion between these cases, we don't have isContiguous method.
+      */
 
     /// Values in column have fixed size (including the case when values span many memory segments).
     virtual bool valuesHaveFixedSize() const { return isFixedAndContiguous(); }
@@ -293,6 +307,8 @@ public:
 
     virtual ~IColumn() {}
 
+    /** Print column name, size, and recursively print all subcolumns.
+      */
     String dumpStructure() const;
 
 protected:

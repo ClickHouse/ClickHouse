@@ -53,7 +53,6 @@ public:
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
-    ColumnPtr convertToFullColumnIfConst() const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
 

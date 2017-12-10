@@ -35,17 +35,6 @@ ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
 }
 
 
-ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
-{
-    ColumnPtr new_col_holder;
-
-    if (auto full_col = nested_column->convertToFullColumnIfConst())
-        new_col_holder = std::make_shared<ColumnNullable>(full_col, null_map);
-
-    return new_col_holder;
-}
-
-
 void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
 {
     const auto & arr = getNullMap();

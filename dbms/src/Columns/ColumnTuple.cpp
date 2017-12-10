@@ -284,18 +284,6 @@ size_t ColumnTuple::allocatedBytes() const
     return res;
 }
 
-ColumnPtr ColumnTuple::convertToFullColumnIfConst() const
-{
-    const size_t tuple_size = columns.size();
-    Columns new_columns(columns);
-
-    for (size_t i = 0; i < tuple_size; ++i)
-        if (auto converted = columns[i]->convertToFullColumnIfConst())
-            new_columns[i] = converted;
-
-    return std::make_shared<ColumnTuple>(new_columns);
-}
-
 void ColumnTuple::getExtremes(Field & min, Field & max) const
 {
     const size_t tuple_size = columns.size();
