@@ -204,7 +204,7 @@ public:
 
     /** Create constant column for corresponding type, with specified size and value.
       */
-    virtual ColumnPtr createConstColumn(size_t size, const Field & field) const;
+    ColumnPtr createConstColumn(size_t size, const Field & field) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.

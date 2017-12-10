@@ -321,19 +321,13 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 ColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
     ColumnPtr new_data;
-    ColumnPtr new_offsets;
 
     if (auto full_column = getData().convertToFullColumnIfConst())
         new_data = full_column;
     else
         new_data = data;
 
-    if (auto full_column = offsets->convertToFullColumnIfConst())
-        new_offsets = full_column;
-    else
-        new_offsets = offsets;
-
-    return std::make_shared<ColumnArray>(new_data, new_offsets);
+    return std::make_shared<ColumnArray>(new_data, offsets);
 }
 
 
