@@ -85,7 +85,7 @@ public:
     DataTypePtr getReturnType() const override
     {
         return result_is_nullable
-            ? std::make_shared<DataTypeNullable>(nested_function->getReturnType())
+            ? makeNullable(nested_function->getReturnType())
             : nested_function->getReturnType();
     }
 

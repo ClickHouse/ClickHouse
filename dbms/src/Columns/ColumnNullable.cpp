@@ -3,9 +3,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -436,6 +434,18 @@ void ColumnNullable::checkConsistency() const
     if (null_map->size() != nested_column->size())
         throw Exception("Logical error: Sizes of nested column and null map of Nullable column are not equal",
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
+}
+
+
+ColumnPtr makeNullable(const ColumnPtr & column)
+{
+    if (column->isColumnNullable())
+        return column;
+
+    if (column->isColumnConst())
+        return std::make_shared<ColumnConst>(makeNullable(static_cast<ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    return std::make_shared<ColumnNullable>(column, std::make_shared<ColumnUInt8>(column->size(), 0));
 }
 
 }

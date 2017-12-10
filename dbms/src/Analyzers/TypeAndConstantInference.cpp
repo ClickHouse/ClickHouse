@@ -221,7 +221,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
             String child_name = child->getColumnName();
             const TypeAndConstantInference::ExpressionInfo & child_info = info.at(child_name);
             columns_for_analysis.emplace_back(
-                child_info.is_constant_expression ? child_info.data_type->createConstColumn(1, child_info.value) : nullptr,
+                child_info.is_constant_expression ? child_info.data_type->createColumnConst(1, child_info.value) : nullptr,
                 child_info.data_type,
                 child_name);
 

@@ -556,7 +556,7 @@ public:
                 ResultType res = 0;
                 Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);
 
-                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), toField(res));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col->size(), toField(res));
             }
             else
             {

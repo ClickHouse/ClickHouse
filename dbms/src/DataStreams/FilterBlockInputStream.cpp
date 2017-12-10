@@ -198,7 +198,7 @@ Block FilterBlockInputStream::readImpl()
         if (filtered_rows == filter.size())
         {
             /// Replace the column with the filter by a constant.
-            res.safeGetByPosition(filter_column).column = res.safeGetByPosition(filter_column).type->createConstColumn(filtered_rows, UInt64(1));
+            res.safeGetByPosition(filter_column).column = res.safeGetByPosition(filter_column).type->createColumnConst(filtered_rows, UInt64(1));
             /// No need to touch the rest of the columns.
             return res;
         }
@@ -215,7 +215,7 @@ Block FilterBlockInputStream::readImpl()
                 /// Example:
                 ///  SELECT materialize(100) AS x WHERE x
                 /// will work incorrectly.
-                current_column.column = current_column.type->createConstColumn(filtered_rows, UInt64(1));
+                current_column.column = current_column.type->createColumnConst(filtered_rows, UInt64(1));
                 continue;
             }
 

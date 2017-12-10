@@ -1574,7 +1574,7 @@ namespace
                 {
                     auto nested_type = typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
-                    block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+                    block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
                         block.rows(),
                         Array{nested_type->getDefault()});
                 }
@@ -2141,7 +2141,7 @@ bool FunctionArrayReverse::executeConst(Block & block, const ColumnNumbers & arg
         for (size_t i = 0; i < size; ++i)
             res[i] = arr[size - i - 1];
 
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), res);
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), res);
 
         return true;
     }
@@ -2506,7 +2506,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     }
     else
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(rows, res_col[0]);
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(rows, res_col[0]);
     }
 }
 
@@ -2543,7 +2543,7 @@ void FunctionArrayConcat::executeImpl(Block & block, const ColumnNumbers & argum
 
     if (return_type->onlyNull())
     {
-        result_column = return_type->createConstColumn(block.rows(), Null());
+        result_column = return_type->createColumnConst(block.rows(), Null());
         return;
     }
 

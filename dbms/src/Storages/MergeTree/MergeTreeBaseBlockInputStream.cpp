@@ -419,7 +419,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 /// Replace column with condition value from PREWHERE to a constant.
                 if (!task->remove_prewhere_column)
-                    res.getByName(prewhere_column).column = DataTypeUInt8().createConstColumn(rows, UInt64(1));
+                    res.getByName(prewhere_column).column = DataTypeUInt8().createColumnConst(rows, UInt64(1));
 
             }
             else
@@ -492,14 +492,14 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block)
             if (virt_column_name == "_part")
             {
                 block.insert(ColumnWithTypeAndName{
-                    DataTypeString().createConstColumn(rows, task->data_part->name)->convertToFullColumnIfConst(),
+                    DataTypeString().createColumnConst(rows, task->data_part->name)->convertToFullColumnIfConst(),
                     std::make_shared<DataTypeString>(),
                     virt_column_name});
             }
             else if (virt_column_name == "_part_index")
             {
                 block.insert(ColumnWithTypeAndName{
-                    DataTypeUInt64().createConstColumn(rows, static_cast<UInt64>(task->part_index_in_query))->convertToFullColumnIfConst(),
+                    DataTypeUInt64().createColumnConst(rows, static_cast<UInt64>(task->part_index_in_query))->convertToFullColumnIfConst(),
                     std::make_shared<DataTypeUInt64>(),
                     virt_column_name});
             }

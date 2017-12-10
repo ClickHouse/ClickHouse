@@ -626,7 +626,7 @@ private:
             UInt8 res = 0;
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
 
-            auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), toField(res));
+            auto col_res = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
             block.getByPosition(result).column = col_res;
 
             return true;
@@ -703,7 +703,7 @@ private:
         {
             UInt8 res = 0;
             StringImpl::constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(c0_const->size(), toField(res));
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(c0_const->size(), toField(res));
         }
         else
         {
@@ -795,7 +795,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for Date: " + string_value.toString());
 
-            ColumnPtr parsed_const_date_holder = DataTypeDate().createConstColumn(block.rows(), UInt64(date));
+            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(block.rows(), UInt64(date));
             const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date,
@@ -809,7 +809,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for DateTime: " + string_value.toString());
 
-            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createConstColumn(block.rows(), UInt64(date_time));
+            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(block.rows(), UInt64(date_time));
             const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
             executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date_time,
@@ -823,7 +823,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for UUID: " + string_value.toString());
 
-            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createConstColumn(block.rows(), UInt128(uuid));
+            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(block.rows(), UInt128(uuid));
             const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_uuid,
@@ -847,7 +847,7 @@ private:
         const auto type = static_cast<const EnumType *>(type_untyped);
 
         const Field x = nearestFieldType(type->getValue(column_string->getValue<String>()));
-        const auto enum_col = type->createConstColumn(block.rows(), x);
+        const auto enum_col = type->createColumnConst(block.rows(), x);
 
         executeNumLeftType<typename EnumType::FieldType>(block, result,
             left_is_num ? column_number : enum_col.get(),
@@ -995,7 +995,7 @@ private:
         {
             UInt8 res = 0;
             GenericComparisonImpl<Op<int, int>>::constant_constant(*c0, *c1, res);
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(c0->size(), toField(res));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(c0->size(), toField(res));
         }
         else
         {

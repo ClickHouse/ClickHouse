@@ -30,23 +30,26 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
     ColumnPtr result_null_map_column;
     bool shared_result_map_column = true;
 
+    /// If result is already nullable.
+    if (src->onlyNull())
+        return src;
+    else if (src->isColumnNullable())
+        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumn();
+
     for (const auto & arg : args)
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(arg);
         if (!elem.type->isNullable())
             continue;
 
+        /// Const Nullable that are NULL.
+        if (elem.column->onlyNull())
+            return block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+
         if (elem.column->isColumnConst())
-        {
-            /// Const Nullable that are NULL.
-            if (static_cast<const ColumnNullable &>(static_cast<const ColumnConst &>(*elem.column).getDataColumn()).isNullAt(0))
-            {
-                return block.getByPosition(result).type->createConstColumn(block.rows(), Null());
-            }
-            else
-                continue;
-        }
-        else if (elem.column->isColumnNullable())
+            continue;
+
+        if (elem.column->isColumnNullable())
         {
             const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumn();
             if (!result_null_map_column)
@@ -69,23 +72,13 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
         }
     }
 
-    if (src->isColumnConst() && !result_null_map_column)
-    {
-        return std::make_shared<ColumnConst>(std::make_shared<ColumnNullable>(
-                static_cast<const ColumnConst &>(*src).getDataColumnPtr(),
-                std::make_shared<ColumnUInt8>(1, 0)),
-            block.rows());
-    }
-    else
-    {
-        if (!result_null_map_column)
-            result_null_map_column = std::make_shared<ColumnUInt8>(block.rows(), 0);
+    if (!result_null_map_column)
+        return makeNullable(src);
 
-        if (src->isColumnConst())
-            return std::make_shared<ColumnNullable>(src->convertToFullColumnIfConst(), result_null_map_column);
-        else
-            return std::make_shared<ColumnNullable>(src, result_null_map_column);
-    }
+    if (src->isColumnConst())
+        return std::make_shared<ColumnNullable>(src->convertToFullColumnIfConst(), result_null_map_column);
+    else
+        return std::make_shared<ColumnNullable>(src, result_null_map_column);
 }
 
 
@@ -216,7 +209,7 @@ bool defaultImplementationForNulls(
 
     if (null_presense.has_null_constant)
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
         return true;
     }
 
@@ -257,11 +250,11 @@ DataTypePtr IFunction::getReturnType(const DataTypes & arguments) const
         NullPresense null_presense = getNullPresense(arguments);
         if (null_presense.has_null_constant)
         {
-            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+            return makeNullable(std::make_shared<DataTypeNothing>());
         }
         if (null_presense.has_nullable)
         {
-            return std::make_shared<DataTypeNullable>(getReturnTypeImpl(toNestedDataTypes(arguments)));
+            return makeNullable(getReturnTypeImpl(toNestedDataTypes(arguments)));
         }
     }
 
@@ -282,14 +275,14 @@ void IFunction::getReturnTypeAndPrerequisites(
 
         if (null_presense.has_null_constant)
         {
-            out_return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+            out_return_type = makeNullable(std::make_shared<DataTypeNothing>());
             return;
         }
         if (null_presense.has_nullable)
         {
             Block nested_block = createBlockWithNestedColumns(Block(arguments), ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
             getReturnTypeAndPrerequisitesImpl(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()), out_return_type, out_prerequisites);
-            out_return_type = std::make_shared<DataTypeNullable>(out_return_type);
+            out_return_type = makeNullable(out_return_type);
             return;
         }
     }

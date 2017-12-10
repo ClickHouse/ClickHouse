@@ -1395,7 +1395,7 @@ private:
         return [to_type_clone] (Block & block, const ColumnNumbers &, const size_t result)
         {
             /// Column of Nothing type is trivially convertible to any other column
-            block.getByPosition(result).column = to_type_clone->createConstColumn(block.rows(), to_type_clone->getDefault())->convertToFullColumnIfConst();
+            block.getByPosition(result).column = to_type_clone->createColumnConst(block.rows(), to_type_clone->getDefault())->convertToFullColumnIfConst();
         };
     }
 
@@ -1424,7 +1424,7 @@ private:
             return [](Block & block, const ColumnNumbers &, const size_t result)
             {
                 auto & res = block.getByPosition(result);
-                res.column = res.type->createConstColumn(block.rows(), Null())->convertToFullColumnIfConst();
+                res.column = res.type->createColumnConst(block.rows(), Null())->convertToFullColumnIfConst();
             };
         }
 

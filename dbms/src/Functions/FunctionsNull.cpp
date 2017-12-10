@@ -52,7 +52,7 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
     {
         /// Since no element is nullable, return a zero-constant column representing
         /// a zero-filled null map.
-        block.getByPosition(result).column = DataTypeUInt8().createConstColumn(elem.column->size(), UInt64(0));
+        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), UInt64(0));
     }
 }
 
@@ -205,7 +205,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
     /// If all arguments appeared to be NULL.
     if (multi_if_args.empty())
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Null());
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
         return;
     }
 
@@ -320,7 +320,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
     /// Append a NULL column.
     ColumnWithTypeAndName null_elem;
     null_elem.type = block.getByPosition(result).type;
-    null_elem.column = null_elem.type->createConstColumn(temp_block.rows(), Null());
+    null_elem.column = null_elem.type->createColumnConst(temp_block.rows(), Null());
     null_elem.name = "NULL";
 
     temp_block.insert(null_elem);
@@ -375,20 +375,12 @@ std::string FunctionToNullable::getName() const
 
 DataTypePtr FunctionToNullable::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments[0]->isNullable())
-        return arguments[0];
-    return std::make_shared<DataTypeNullable>(arguments[0]);
+    return makeNullable(arguments[0]);
 }
 
 void FunctionToNullable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    const ColumnPtr & col = block.getByPosition(arguments[0]).column;
-
-    if (col->isColumnNullable())
-        block.getByPosition(result).column = col;
-    else
-        block.getByPosition(result).column = std::make_shared<ColumnNullable>(col,
-            std::make_shared<ColumnUInt8>(block.rows(), 0));
+    block.getByPosition(result).column = makeNullable(block.getByPosition(arguments[0]).column);
 }
 
 }

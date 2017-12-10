@@ -619,7 +619,7 @@ public:
         }
 
         if (all_constants && block.rows() > 0)
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(1, (*block.getByPosition(result).column)[0]);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(1, (*block.getByPosition(result).column)[0]);
     }
 };
 
