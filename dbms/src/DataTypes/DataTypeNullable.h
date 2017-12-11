@@ -25,9 +25,23 @@ public:
 
     DataTypePtr clone() const override { return std::make_shared<DataTypeNullable>(nested_data_type->clone()); }
 
-    /// Bulk serialization and deserialization is processing only nested columns. You should process null byte map separately.
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void enumerateStreams(StreamCallback callback, SubstreamPath path) const override;
+
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        OutputStreamGetter getter,
+        size_t offset,
+        size_t limit,
+        bool position_independent_encoding,
+        SubstreamPath path) const override;
+
+    void deserializeBinaryBulkWithMultipleStreams(
+        IColumn & column,
+        InputStreamGetter getter,
+        size_t limit,
+        double avg_value_size_hint,
+        bool position_independent_encoding,
+        SubstreamPath path) const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override { nested_data_type->serializeBinary(field, ostr); }
     void deserializeBinary(Field & field, ReadBuffer & istr) const override { nested_data_type->deserializeBinary(field, istr); }

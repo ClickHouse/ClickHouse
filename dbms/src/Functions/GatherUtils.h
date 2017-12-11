@@ -849,7 +849,7 @@ struct NumericSink
         return pos - begin;
     }
 
-    void reserve(size_t num_elements)
+    void reserve(size_t /*num_elements*/)
     {
     }
 };

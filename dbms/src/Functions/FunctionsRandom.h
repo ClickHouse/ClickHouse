@@ -129,7 +129,7 @@ private:
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandom>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandom>(); }
 
     String getName() const override
     {
@@ -150,7 +150,7 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         auto col_to = std::make_shared<ColumnVector<ToType>>();
         block.getByPosition(result).column = col_to;
@@ -176,7 +176,7 @@ private:
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRandomConstant>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandomConstant>(); }
 
     String getName() const override
     {
@@ -196,7 +196,7 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         if (!is_initialized)
         {

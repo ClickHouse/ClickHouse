@@ -307,7 +307,7 @@ void DatabaseOrdinary::createTable(
 
 
 void DatabaseOrdinary::removeTable(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name)
 {
     StoragePtr res = detachTable(table_name);
@@ -385,7 +385,7 @@ void DatabaseOrdinary::renameTable(
 
 
 time_t DatabaseOrdinary::getTableMetadataModificationTime(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name)
 {
     String table_metadata_path = getTableMetadataPath(path, table_name);
@@ -403,7 +403,7 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(
 
 
 ASTPtr DatabaseOrdinary::getCreateQuery(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name) const
 {
     ASTPtr ast = getCreateQueryImpl(path, table_name);

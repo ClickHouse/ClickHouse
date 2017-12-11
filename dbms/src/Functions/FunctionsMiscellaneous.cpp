@@ -94,12 +94,12 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
     {
         block.getByPosition(result).column = DataTypeString().createConstColumn(block.rows(), db_name);
     }
@@ -111,7 +111,7 @@ class FunctionHostName : public IFunction
 {
 public:
     static constexpr auto name = "hostName";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionHostName>();
     }
@@ -131,7 +131,7 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
     }
@@ -139,7 +139,7 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
             block.rows(), Poco::Net::DNS::hostName())->convertToFullColumnIfConst();
@@ -151,7 +151,7 @@ class FunctionVisibleWidth : public IFunction
 {
 public:
     static constexpr auto name = "visibleWidth";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionVisibleWidth>();
     }
@@ -169,7 +169,7 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
@@ -186,7 +186,7 @@ class FunctionToTypeName : public IFunction
 {
 public:
     static constexpr auto name = "toTypeName";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionToTypeName>();
     }
@@ -203,7 +203,7 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
     }
@@ -222,7 +222,7 @@ class FunctionGetSizeOfEnumType : public IFunction
 {
 public:
     static constexpr auto name = "getSizeOfEnumType";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionGetSizeOfEnumType>();
     }
@@ -267,7 +267,7 @@ class FunctionToColumnTypeName : public IFunction
 {
 public:
     static constexpr auto name = "toColumnTypeName";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionToColumnTypeName>();
     }
@@ -284,7 +284,7 @@ public:
         return 1;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
     }
@@ -302,7 +302,7 @@ class FunctionDefaultValueOfArgumentType : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfArgumentType";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionDefaultValueOfArgumentType>();
     }
@@ -336,7 +336,7 @@ class FunctionBlockSize : public IFunction
 {
 public:
     static constexpr auto name = "blockSize";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionBlockSize>();
     }
@@ -357,12 +357,12 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t size = block.rows();
         block.getByPosition(result).column = std::make_shared<ColumnUInt64>(size, size);
@@ -374,7 +374,7 @@ class FunctionRowNumberInBlock : public IFunction
 {
 public:
     static constexpr auto name = "rowNumberInBlock";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionRowNumberInBlock>();
     }
@@ -395,12 +395,12 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t size = block.rows();
         auto column = std::make_shared<ColumnUInt64>();
@@ -422,7 +422,7 @@ private:
 
 public:
     static constexpr auto name = "blockNumber";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionBlockNumber>();
     }
@@ -443,12 +443,12 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t current_block_number = block_number++;
         block.getByPosition(result).column = std::make_shared<ColumnUInt64>(block.rows(), current_block_number);
@@ -464,7 +464,7 @@ private:
 
 public:
     static constexpr auto name = "rowNumberInAllBlocks";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionRowNumberInAllBlocks>();
     }
@@ -485,12 +485,12 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t rows_in_block = block.rows();
         size_t current_row_number = rows.fetch_add(rows_in_block);
@@ -510,7 +510,7 @@ class FunctionSleep : public IFunction
 {
 public:
     static constexpr auto name = "sleep";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionSleep>();
     }
@@ -586,7 +586,7 @@ class FunctionMaterialize : public IFunction
 {
 public:
     static constexpr auto name = "materialize";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionMaterialize>();
     }
@@ -645,7 +645,7 @@ class FunctionIn : public IFunction
 {
 public:
     static constexpr auto name = FunctionInName<negative, global>::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIn>();
     }
@@ -660,7 +660,7 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -691,7 +691,7 @@ public:
     }
 };
 
-FunctionPtr FunctionTuple::create(const Context & context)
+FunctionPtr FunctionTuple::create(const Context &)
 {
     return std::make_shared<FunctionTuple>();
 }
@@ -754,7 +754,7 @@ class FunctionTupleElement : public IFunction
 {
 public:
     static constexpr auto name = "tupleElement";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionTupleElement>();
     }
@@ -770,7 +770,7 @@ public:
     }
 
     void getReturnTypeAndPrerequisitesImpl(
-        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites) override
+        const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/) override
     {
         auto index_col = checkAndGetColumnConst<ColumnUInt8>(&*arguments[1].column);
         if (!index_col)
@@ -832,7 +832,7 @@ class FunctionIgnore : public IFunction
 {
 public:
     static constexpr auto name = "ignore";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIgnore>();
     }
@@ -853,12 +853,12 @@ public:
         return name;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(0));
     }
@@ -881,7 +881,7 @@ class FunctionIndexHint : public IFunction
 {
 public:
     static constexpr auto name = "indexHint";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIndexHint>();
     }
@@ -901,12 +901,12 @@ public:
     {
         return name;
     }
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(1));
     }
@@ -917,7 +917,7 @@ class FunctionIdentity : public IFunction
 {
 public:
     static constexpr auto name = "identity";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIdentity>();
     }
@@ -948,7 +948,7 @@ class FunctionArrayJoin : public IFunction
 {
 public:
     static constexpr auto name = "arrayJoin";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionArrayJoin>();
     }
@@ -980,7 +980,7 @@ public:
         return arr->getNestedType()->clone();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & /*block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) override
     {
         throw Exception("Function " + getName() + " must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
     }
@@ -993,7 +993,7 @@ public:
 };
 
 
-FunctionPtr FunctionReplicate::create(const Context & context)
+FunctionPtr FunctionReplicate::create(const Context &)
 {
     return std::make_shared<FunctionReplicate>();
 }
@@ -1033,7 +1033,7 @@ class FunctionBar : public IFunction
 {
 public:
     static constexpr auto name = "bar";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionBar>();
     }
@@ -1263,7 +1263,10 @@ struct IsFiniteImpl
                  & 0b0111111111110000000000000000000000000000000000000000000000000000)
                 != 0b0111111111110000000000000000000000000000000000000000000000000000;
         else
+        {
+            (void)t;
             return true;
+        }
     }
 };
 
@@ -1282,7 +1285,10 @@ struct IsInfiniteImpl
                  & 0b0111111111111111111111111111111111111111111111111111111111111111)
                 == 0b0111111111110000000000000000000000000000000000000000000000000000;
         else
+        {
+            (void)t;
             return false;
+        }
     }
 };
 
@@ -1307,7 +1313,7 @@ class FunctionVersion : public IFunction
 {
 public:
     static constexpr auto name = "version";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionVersion>();
     }
@@ -1322,12 +1328,12 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         static const std::string version = getVersion();
         block.getByPosition(result).column = DataTypeString().createConstColumn(block.rows(), version);
@@ -1363,12 +1369,12 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt32>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), static_cast<UInt64>(uptime));
     }
@@ -1384,7 +1390,7 @@ class FunctionTimeZone : public IFunction
 {
 public:
     static constexpr auto name = "timezone";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionTimeZone>();
     }
@@ -1398,12 +1404,12 @@ public:
         return 0;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         block.getByPosition(result).column = DataTypeString().createConstColumn(block.rows(), DateLUT::instance().getTimeZone());
     }
@@ -1420,7 +1426,7 @@ class FunctionRunningAccumulate : public IFunction
 {
 public:
     static constexpr auto name = "runningAccumulate";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionRunningAccumulate>();
     }
@@ -1572,7 +1578,7 @@ private:
 public:
     static constexpr auto name = FunctionRunningDifferenceName<is_first_line_zero>::name;
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
     }
@@ -1634,7 +1640,7 @@ class FunctionFinalizeAggregation : public IFunction
 {
 public:
     static constexpr auto name = "finalizeAggregation";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionFinalizeAggregation>();
     }
@@ -1739,7 +1745,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
 
 
 void FunctionHasColumnInTable::getReturnTypeAndPrerequisitesImpl(
-    const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & out_prerequisites)
+    const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type, ExpressionActions::Actions & /*out_prerequisites*/)
 {
     if (arguments.size() < 3 || arguments.size() > 6)
         throw Exception{"Invalid number of arguments for function " + getName(),

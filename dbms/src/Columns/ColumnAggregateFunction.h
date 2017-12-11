@@ -64,7 +64,8 @@ private:
 public:
     /// Create a new column that has another column as a source.
     ColumnAggregateFunction(const ColumnAggregateFunction & other)
-        : arenas(other.arenas), func(other.func), src(other.shared_from_this())
+        : std::enable_shared_from_this<ColumnAggregateFunction>(other),
+        arenas(other.arenas), func(other.func), src(other.shared_from_this())
     {
     }
 
@@ -153,7 +154,7 @@ public:
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
+    int compareAt(size_t, size_t, const IColumn &, int) const override
     {
         return 0;
     }

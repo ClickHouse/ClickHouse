@@ -40,7 +40,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     create.out_file = nullptr;
 
     std::ostringstream statement_stream;
-    formatAST(create, statement_stream, 0, false);
+    formatAST(create, statement_stream, false);
     statement_stream << '\n';
     return statement_stream.str();
 }

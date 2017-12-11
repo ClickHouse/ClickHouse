@@ -151,7 +151,7 @@ template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name>
 template <typename DataType>
 struct FormatImpl
 {
-    static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType * type, const DateLUTImpl * time_zone)
+    static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
     {
         writeText(x, wb);
     }
@@ -160,7 +160,7 @@ struct FormatImpl
 template <>
 struct FormatImpl<DataTypeDate>
 {
-    static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate * type, const DateLUTImpl * time_zone)
+    static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
     {
         writeDateText(DayNum_t(x), wb);
     }
@@ -169,7 +169,7 @@ struct FormatImpl<DataTypeDate>
 template <>
 struct FormatImpl<DataTypeDateTime>
 {
-    static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime * type, const DateLUTImpl * time_zone)
+    static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
     {
         writeDateTimeText(x, wb, *time_zone);
     }
@@ -178,7 +178,7 @@ struct FormatImpl<DataTypeDateTime>
 template <typename FieldType>
 struct FormatImpl<DataTypeEnum<FieldType>>
 {
-    static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl * time_zone)
+    static void execute(const FieldType x, WriteBuffer & wb, const DataTypeEnum<FieldType> * type, const DateLUTImpl *)
     {
         writeString(type->getNameForValue(x), wb);
     }
@@ -301,12 +301,12 @@ struct ConvertImplGenericToString
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
-template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     readText(x, rb);
 }
 
-template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     DayNum_t tmp(0);
     readDateText(tmp, rb);
@@ -320,7 +320,7 @@ template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType 
     x = tmp;
 }
 
-template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     UUID tmp;
     readText(tmp, rb);
@@ -329,8 +329,7 @@ template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, Rea
 
 /** Throw exception with verbose message when string value is not parsed completely.
   */
-void throwExceptionForIncompletelyParsedValue(
-    ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result);
+void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, Block & block, size_t result);
 
 
 template <typename ToDataType, typename Name>
@@ -369,7 +368,7 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
                 if (!read_buffer.eof()
                     && !(std::is_same<ToDataType, DataTypeDate>::value /// Special exception, that allows to parse string with DateTime as Date.
                         && offsets[i] - current_offset - 1 == strlen("YYYY-MM-DD hh:mm:ss")))
-                    throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
+                    throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
 
                 current_offset = offsets[i];
             }
@@ -383,17 +382,12 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
 
 
 template <typename DataType>
-typename std::enable_if<std::is_integral<typename DataType::FieldType>::value, bool>::type
-tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
+bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
 {
-    return tryReadIntText(x, rb);
-}
-
-template <typename DataType>
-typename std::enable_if<std::is_floating_point<typename DataType::FieldType>::value, bool>::type
-tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
-{
-    return tryReadFloatText(x, rb);
+    if constexpr (std::is_integral<typename DataType::FieldType>::value)
+        return tryReadIntText(x, rb);
+    else if constexpr (std::is_floating_point<typename DataType::FieldType>::value)
+        return tryReadFloatText(x, rb);
 }
 
 
@@ -472,7 +466,7 @@ struct ConvertImplGenericFromString
                 data_type_to.deserializeTextEscaped(column_to, read_buffer);
 
                 if (!read_buffer.eof())
-                    throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
+                    throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
 
                 current_offset = offsets[i];
             }
@@ -543,7 +537,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
                         ++read_buffer.position();
 
                     if (read_buffer.position() < end)
-                        throwExceptionForIncompletelyParsedValue(read_buffer, block, arguments, result);
+                        throwExceptionForIncompletelyParsedValue(read_buffer, block, result);
                 }
             }
         }
@@ -633,7 +627,7 @@ public:
     using Monotonic = MonotonicityImpl;
 
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConvert>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvert>(); }
 
     String getName() const override
     {
@@ -649,49 +643,41 @@ public:
         DataTypePtr & out_return_type,
         std::vector<ExpressionAction> &) override
     {
-        out_return_type = getReturnTypeInternal(arguments);
-    }
-
-    template <typename Type = ToDataType>
-    typename std::enable_if<std::is_same<Type, DataTypeInterval>::value, DataTypePtr>::type
-    getReturnTypeInternal(const ColumnsWithTypeAndName & arguments)
-    {
-        return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
-    }
-
-    template <typename Type = ToDataType>
-    typename std::enable_if<!std::is_same<Type, DataTypeInterval>::value, DataTypePtr>::type
-    getReturnTypeInternal(const ColumnsWithTypeAndName & arguments)
-    {
-        /** Optional second argument with time zone is supported:
-          * - for functions toDateTime, toUnixTimestamp, toDate;
-          * - for function toString of DateTime argument.
-          */
-
-        if (arguments.size() == 2)
+        if constexpr (std::is_same<ToDataType, DataTypeInterval>::value)
         {
-            if (!checkAndGetDataType<DataTypeString>(arguments[1].type.get()))
-                throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            if (!(std::is_same<Name, NameToDateTime>::value
-                || std::is_same<Name, NameToDate>::value
-                || std::is_same<Name, NameToUnixTimestamp>::value
-                || (std::is_same<Name, NameToString>::value
-                    && checkDataType<DataTypeDateTime>(arguments[0].type.get()))))
-            {
-                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                    + toString(arguments.size()) + ", should be 1.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            }
+            out_return_type = std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
         }
-
-        if (std::is_same<ToDataType, DataTypeDateTime>::value)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1));
         else
-            return std::make_shared<ToDataType>();
-    }
+        {
+            /** Optional second argument with time zone is supported:
+              * - for functions toDateTime, toUnixTimestamp, toDate;
+              * - for function toString of DateTime argument.
+              */
 
+            if (arguments.size() == 2)
+            {
+                if (!checkAndGetDataType<DataTypeString>(arguments[1].type.get()))
+                    throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+                if (!(std::is_same<Name, NameToDateTime>::value
+                    || std::is_same<Name, NameToDate>::value
+                    || std::is_same<Name, NameToUnixTimestamp>::value
+                    || (std::is_same<Name, NameToString>::value
+                        && checkDataType<DataTypeDateTime>(arguments[0].type.get()))))
+                {
+                    throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                        + toString(arguments.size()) + ", should be 1.",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                }
+            }
+
+            if (std::is_same<ToDataType, DataTypeDateTime>::value)
+                out_return_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1));
+            else
+                out_return_type = std::make_shared<ToDataType>();
+        }
+    }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -787,7 +773,7 @@ class FunctionConvertOrZero : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionConvertOrZero>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvertOrZero>(); }
 
     String getName() const override
     {
@@ -796,7 +782,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<ToDataType>();
     }
@@ -823,7 +809,7 @@ class FunctionToFixedString : public IFunction
 {
 public:
     static constexpr auto name = "toFixedString";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToFixedString>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToFixedString>(); };
 
     String getName() const override
     {
@@ -835,7 +821,7 @@ public:
 
     void getReturnTypeAndPrerequisitesImpl(const ColumnsWithTypeAndName & arguments,
         DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & out_prerequisites) override
+        std::vector<ExpressionAction> & /*out_prerequisites*/) override
     {
         if (!arguments[1].column)
             throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
@@ -945,7 +931,7 @@ private:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return { true };
     }
@@ -956,11 +942,13 @@ struct ToIntMonotonicity
 {
     static bool has() { return true; }
 
-    template <typename T2 = T>
-    static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) < sizeof(UInt64), UInt64> x) { return x >> (sizeof(T) * 8); };
-
-    template <typename T2 = T>
-    static UInt64 divideByRangeOfType(typename std::enable_if_t<sizeof(T2) >= sizeof(UInt64), UInt64> x) { return 0; };
+    static UInt64 divideByRangeOfType(UInt64 x)
+    {
+        if constexpr (sizeof(T) < sizeof(UInt64))
+            return x >> (sizeof(T) * 8);
+        else
+            return 0;
+    }
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
@@ -1613,7 +1601,7 @@ public:
 
     void getReturnTypeAndPrerequisitesImpl(
         const ColumnsWithTypeAndName & arguments, DataTypePtr & out_return_type,
-        std::vector<ExpressionAction> & out_prerequisites) override
+        std::vector<ExpressionAction> & /*out_prerequisites*/) override
     {
         const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
         if (!type_col)

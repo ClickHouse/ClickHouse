@@ -16,7 +16,7 @@ struct TypeList
     using At = std::nullptr_t;
 
     template <typename Func, size_t index = 0>
-    static void forEach(Func && func)
+    static void forEach(Func && /*func*/)
     {
     }
 };

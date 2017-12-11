@@ -1,9 +1,13 @@
 #pragma once
 
+#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
+
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <common/Types.h>
 
+
+class IRegionsHierarchyDataProvider;
 
 /** A class that lets you know if a region belongs to one RegionID region with another RegionID.
   * Information about the hierarchy of regions is downloaded from a text file.
@@ -12,22 +16,6 @@
 class RegionsHierarchy : private boost::noncopyable
 {
 private:
-    time_t file_modification_time = 0;
-
-    using RegionID = UInt32;
-    using RegionDepth = UInt8;
-    using RegionPopulation = UInt32;
-
-    enum class RegionType : Int8
-    {
-        Hidden = -1,
-        Continent = 1,
-        Country = 3,
-        District = 4,
-        Area = 5,
-        City = 6,
-    };
-
     /// Relationship parent; 0, if there are no parents, the usual lookup table.
     using RegionParents = std::vector<RegionID>;
     /// type of region
@@ -58,11 +46,10 @@ private:
     /// region - depth in the tree
     RegionDepths depths;
 
-    /// path to file with data
-    std::string path;
+    IRegionsHierarchyDataSourcePtr data_source;
 
 public:
-    RegionsHierarchy(const std::string & path_);
+    RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_);
 
     /// Reloads, if necessary, the hierarchy of regions. Not threadsafe.
     void reload();

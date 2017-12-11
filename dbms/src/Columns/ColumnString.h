@@ -208,7 +208,7 @@ public:
         offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
     }
 
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
 

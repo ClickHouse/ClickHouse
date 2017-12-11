@@ -13,7 +13,7 @@ class HashingReadBuffer : public IHashingBuffer<ReadBuffer>
 {
 public:
     HashingReadBuffer(ReadBuffer & in_, size_t block_size = DBMS_DEFAULT_HASHING_BLOCK_SIZE) :
-        in(in_)
+        IHashingBuffer<ReadBuffer>(block_size), in(in_)
     {
         working_buffer = in.buffer();
         pos = in.position();

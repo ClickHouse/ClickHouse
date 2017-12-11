@@ -11,7 +11,7 @@ namespace DB
 {
 
 void RootRequestHandler::handleRequest(
-    Poco::Net::HTTPServerRequest & request,
+    Poco::Net::HTTPServerRequest &,
     Poco::Net::HTTPServerResponse & response)
 {
     try

@@ -11,7 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 try
 {
     using namespace DB;
@@ -38,7 +38,7 @@ try
         WriteBufferFromFile out_buf("test");
 
         stopwatch.restart();
-        data_type.serializeBinaryBulk(*column, out_buf, 0, 0);
+        data_type.serializeBinaryBulkWithMultipleStreams(*column, [&](const IDataType::SubstreamPath &){ return &out_buf; }, 0, 0, true, {});
         stopwatch.stop();
 
         std::cout << "Writing, elapsed: " << stopwatch.elapsedSeconds() << std::endl;
@@ -50,7 +50,7 @@ try
         ReadBufferFromFile in_buf("test");
 
         stopwatch.restart();
-        data_type.deserializeBinaryBulk(*column, in_buf, n, 0);
+        data_type.deserializeBinaryBulkWithMultipleStreams(*column, [&](const IDataType::SubstreamPath &){ return &in_buf; }, n, 0, true, {});
         stopwatch.stop();
 
         std::cout << "Reading, elapsed: " << stopwatch.elapsedSeconds() << std::endl;

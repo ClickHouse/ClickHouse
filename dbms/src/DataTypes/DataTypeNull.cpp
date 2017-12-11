@@ -26,7 +26,7 @@ void DataTypeNull::serializeBinaryBulk(const IColumn & column, WriteBuffer & ost
         writeBinary(x, ostr);
 }
 
-void DataTypeNull::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeNull::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     istr.ignore(sizeof(UInt8) * limit);
 
@@ -45,7 +45,7 @@ size_t DataTypeNull::getSizeOfField() const
     return sizeof(UInt8);
 }
 
-void DataTypeNull::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void DataTypeNull::serializeBinary(const Field & /*field*/, WriteBuffer & ostr) const
 {
     UInt8 x = 1;    /// Value is 1 to be consistent with NULLs serialization in DataTypeNullable.
     writeBinary(x, ostr);
@@ -58,7 +58,7 @@ void DataTypeNull::deserializeBinary(Field & field, ReadBuffer & istr) const
     field = Null();
 }
 
-void DataTypeNull::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNull::serializeBinary(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & ostr) const
 {
     UInt8 x = 1;
     writeBinary(x, ostr);
@@ -71,47 +71,47 @@ void DataTypeNull::deserializeBinary(IColumn & column, ReadBuffer & istr) const
     column.insertDefault();
 }
 
-void DataTypeNull::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNull::serializeTextEscaped(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & ostr) const
 {
     writeCString("\\N", ostr);
 }
 
-void DataTypeNull::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeNull::deserializeTextEscaped(IColumn & /*column*/, ReadBuffer & istr) const
 {
     assertString("\\N", istr);
 }
 
-void DataTypeNull::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNull::serializeTextQuoted(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & ostr) const
 {
     writeCString("NULL", ostr);
 }
 
-void DataTypeNull::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeNull::deserializeTextQuoted(IColumn & /*column*/, ReadBuffer & istr) const
 {
     assertStringCaseInsensitive("NULL", istr);
 }
 
-void DataTypeNull::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNull::serializeTextCSV(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & ostr) const
 {
     writeCString("\\N", ostr);
 }
 
-void DataTypeNull::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeNull::deserializeTextCSV(IColumn & /*column*/, ReadBuffer & istr, const char /*delimiter*/) const
 {
     assertString("\\N", istr);
 }
 
-void DataTypeNull::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNull::serializeText(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & ostr) const
 {
     writeCString("NULL", ostr);
 }
 
-void DataTypeNull::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
+void DataTypeNull::serializeTextJSON(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & ostr, const FormatSettingsJSON &) const
 {
     writeCString("null", ostr);
 }
 
-void DataTypeNull::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeNull::deserializeTextJSON(IColumn & /*column*/, ReadBuffer & istr) const
 {
     assertString("null", istr);
 }

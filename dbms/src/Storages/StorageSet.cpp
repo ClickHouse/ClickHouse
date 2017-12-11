@@ -66,7 +66,7 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 
 
 
-BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     ++increment;
     return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(increment) + ".bin");
@@ -157,7 +157,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 }
 
 
-void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageSetOrJoinBase::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     /// Rename directory with data.
     String new_path = new_path_to_db + escapeForFileName(new_table_name);

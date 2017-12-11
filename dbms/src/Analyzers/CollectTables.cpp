@@ -92,7 +92,7 @@ static CollectTables::TableInfo processSubquery(ASTPtr & ast_subquery, const Con
 }
 
 
-void CollectTables::process(ASTPtr & ast, const Context & context, const CollectAliases & aliases, ExecuteTableFunctions & table_functions)
+void CollectTables::process(ASTPtr & ast, const Context & context, const CollectAliases & /*aliases*/, ExecuteTableFunctions & table_functions)
 {
     const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(ast.get());
     if (!select)
@@ -175,7 +175,7 @@ void CollectTables::dump(WriteBuffer & out) const
         else
         {
             std::stringstream formatted_ast;
-            formatAST(*table.node, formatted_ast, 0, false, true);
+            formatAST(*table.node, formatted_ast, false, true);
             writeString(formatted_ast.str(), out);
         }
 

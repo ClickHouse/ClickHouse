@@ -84,7 +84,7 @@ public:
 
     static const char * name;
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, use_object_pool>>();
     }
