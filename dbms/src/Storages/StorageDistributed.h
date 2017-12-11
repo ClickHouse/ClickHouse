@@ -33,13 +33,12 @@ class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, pu
 public:
     ~StorageDistributed() override;
 
-    static StoragePtr createWithOwnClusters(
+    static StoragePtr createWithOwnCluster(
         const std::string & name_,            /// The name of the table.
         NamesAndTypesListPtr columns_,        /// List of columns.
         const String & remote_database_,      /// database on remote servers.
         const String & remote_table_,         /// The name of the table on the remote servers.
-        ClusterPtr owned_cluster_,
-        ClusterPtr owned_cluster_for_insertion_,
+        ClusterPtr & owned_cluster_,
         const Context & context_);
 
     std::string getName() const override { return "Distributed"; }
@@ -105,7 +104,6 @@ public:
 
     /// Used to implement TableFunctionRemote.
     std::shared_ptr<Cluster> owned_cluster;
-    std::shared_ptr<Cluster> owned_cluster_for_insertion;
 
     /// Is empty if this storage implements TableFunctionRemote.
     const String cluster_name;

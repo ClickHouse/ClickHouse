@@ -73,13 +73,12 @@ StoragePtr TableFunctionShardByHash::execute(const ASTPtr & ast_function, const 
 
     std::shared_ptr<Cluster> shard(cluster->getClusterWithSingleShard(shard_index).release());
 
-    auto res = StorageDistributed::createWithOwnClusters(
+    auto res = StorageDistributed::createWithOwnCluster(
         getName(),
         std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*shard, remote_database, remote_table, context)),
         remote_database,
         remote_table,
         shard,
-        nullptr,
         context);
     res->startup();
     return res;
