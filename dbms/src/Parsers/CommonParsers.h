@@ -33,7 +33,8 @@ public:
     ParserToken(TokenType token_type) : token_type(token_type) {}
 protected:
     const char * getName() const override { return "token"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+
+    bool parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected) override
     {
         if (pos->type != token_type)
         {

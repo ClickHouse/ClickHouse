@@ -371,7 +371,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
                 std::move(replicas), settings.load_balancing, settings.connections_with_failover_max_tries);
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
-        shards_info.push_back({{}, current_shard_num, default_weight, std::move(shard_local_addresses), shard_pool});
+        shards_info.push_back({{}, current_shard_num, default_weight, std::move(shard_local_addresses), shard_pool, false});
         ++current_shard_num;
     }
 

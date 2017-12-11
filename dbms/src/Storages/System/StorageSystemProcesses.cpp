@@ -18,36 +18,36 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 
         { "user",                 std::make_shared<DataTypeString>() },
         { "query_id",             std::make_shared<DataTypeString>() },
-        { "address",             std::make_shared<DataTypeString>() },
+        { "address",              std::make_shared<DataTypeString>() },
         { "port",                 std::make_shared<DataTypeUInt16>() },
 
         { "initial_user",         std::make_shared<DataTypeString>() },
         { "initial_query_id",     std::make_shared<DataTypeString>() },
-        { "initial_address",     std::make_shared<DataTypeString>() },
+        { "initial_address",      std::make_shared<DataTypeString>() },
         { "initial_port",         std::make_shared<DataTypeUInt16>() },
 
         { "interface",            std::make_shared<DataTypeUInt8>() },
 
-        { "os_user",                std::make_shared<DataTypeString>() },
-        { "client_hostname",        std::make_shared<DataTypeString>() },
-        { "client_name",            std::make_shared<DataTypeString>() },
-        { "client_version_major",    std::make_shared<DataTypeUInt64>() },
-        { "client_version_minor",    std::make_shared<DataTypeUInt64>() },
-        { "client_revision",        std::make_shared<DataTypeUInt64>() },
+        { "os_user",              std::make_shared<DataTypeString>() },
+        { "client_hostname",      std::make_shared<DataTypeString>() },
+        { "client_name",          std::make_shared<DataTypeString>() },
+        { "client_version_major", std::make_shared<DataTypeUInt64>() },
+        { "client_version_minor", std::make_shared<DataTypeUInt64>() },
+        { "client_revision",      std::make_shared<DataTypeUInt64>() },
 
-        { "http_method",            std::make_shared<DataTypeUInt8>() },
-        { "http_user_agent",        std::make_shared<DataTypeString>() },
+        { "http_method",          std::make_shared<DataTypeUInt8>() },
+        { "http_user_agent",      std::make_shared<DataTypeString>() },
 
         { "quota_key",            std::make_shared<DataTypeString>() },
 
-        { "elapsed",             std::make_shared<DataTypeFloat64>()    },
-        { "read_rows",            std::make_shared<DataTypeUInt64>()    },
-        { "read_bytes",            std::make_shared<DataTypeUInt64>()    },
-        { "total_rows_approx",    std::make_shared<DataTypeUInt64>()    },
-        { "written_rows",        std::make_shared<DataTypeUInt64>()    },
-        { "written_bytes",        std::make_shared<DataTypeUInt64>()    },
-        { "memory_usage",        std::make_shared<DataTypeInt64>()    },
-        { "query",                 std::make_shared<DataTypeString>()    }
+        { "elapsed",              std::make_shared<DataTypeFloat64>() },
+        { "read_rows",            std::make_shared<DataTypeUInt64>() },
+        { "read_bytes",           std::make_shared<DataTypeUInt64>() },
+        { "total_rows_approx",    std::make_shared<DataTypeUInt64>() },
+        { "written_rows",         std::make_shared<DataTypeUInt64>() },
+        { "written_bytes",        std::make_shared<DataTypeUInt64>() },
+        { "memory_usage",         std::make_shared<DataTypeInt64>() },
+        { "query",                std::make_shared<DataTypeString>() }
     }
 {
 }
@@ -55,11 +55,11 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 
 BlockInputStreams StorageSystemProcesses::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo &,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

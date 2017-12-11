@@ -508,7 +508,7 @@ void InterpreterSelectQuery::executeSingleQuery()
             before_order_and_select = chain.getLastActions();
             chain.addStep();
 
-            query_analyzer->appendProjectResult(chain, !second_stage);
+            query_analyzer->appendProjectResult(chain);
             final_projection = chain.getLastActions();
 
             chain.finalize();

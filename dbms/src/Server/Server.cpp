@@ -9,7 +9,6 @@
 
 #include <ext/scope_guard.h>
 
-#include <common/ApplicationServerExt.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 
@@ -80,7 +79,7 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path")) + "cores";
 }
 
-int Server::main(const std::vector<std::string> & args)
+int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
 
@@ -554,4 +553,17 @@ int Server::main(const std::vector<std::string> & args)
 }
 }
 
-YANDEX_APP_SERVER_MAIN_FUNC(DB::Server, mainEntryClickHouseServer);
+int mainEntryClickHouseServer(int argc, char ** argv)
+{
+    DB::Server app;
+    try
+    {
+        return app.run(argc, argv);
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
+}

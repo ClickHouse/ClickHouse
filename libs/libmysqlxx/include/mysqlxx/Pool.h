@@ -150,19 +150,9 @@ public:
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          const char * parent_config_name_ = nullptr);
 
-    /**
-     * @param db_                    Database name
-     * @param server_                Hostname
-     * @param user_                  User name
-     * @param password_              Password
-     * @param socket_                Socket
-     * @param port_                  Port
-     * @param default_connections_   Number of default connections
-     * @param max_connections_       Maximum number of connections
-     *
-     * Like with mysqlxx::Connection, either port either socket should be specified.
-     * If server is localhost and socket is not empty, than socket is used. Otherwise, server and port is used.
-     */
+    /** Like with mysqlxx::Connection, either port either socket should be specified.
+      * If server is localhost and socket is not empty, than socket is used. Otherwise, server and port is used.
+      */
     Pool(const std::string & db_,
          const std::string & server_,
          const std::string & user_ = "",
@@ -174,7 +164,7 @@ public:
          unsigned default_connections_ = MYSQLXX_POOL_DEFAULT_START_CONNECTIONS,
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS)
     : default_connections(default_connections_), max_connections(max_connections_),
-    db(db_), server(server_), user(user_), password(password_), port(port_),
+    db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
     connect_timeout(connect_timeout_), rw_timeout(rw_timeout_) {}
 
     Pool(const Pool & other)

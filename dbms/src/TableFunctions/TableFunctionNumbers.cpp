@@ -44,7 +44,7 @@ StoragePtr TableFunctionNumbers::execute(const ASTPtr & ast_function, const Cont
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
-    TableFunctionFactory::instance().registerFunction<TableFunctionNumbers>();
+    factory.registerFunction<TableFunctionNumbers>();
 }
 
 }

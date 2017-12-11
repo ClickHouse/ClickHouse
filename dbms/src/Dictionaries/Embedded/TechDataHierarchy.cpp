@@ -10,7 +10,7 @@
 static constexpr auto config_key = "mysql_metrica";
 
 
-void TechDataHierarchy::reload(const Poco::Util::AbstractConfiguration & config)
+void TechDataHierarchy::reload()
 {
     Logger * log = &Logger::get("TechDataHierarchy");
     LOG_DEBUG(log, "Loading tech data hierarchy.");

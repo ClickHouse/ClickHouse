@@ -47,10 +47,10 @@ template <> inline        WriteBuffer & operator<< (WriteBuffer & buf, const cha
 
 inline WriteBuffer & operator<< (WriteBuffer & buf, const char * x)     { writeCString(x, buf); return buf; }
 
-inline EscapeManipWriteBuffer &      operator<< (WriteBuffer & buf, EscapeManip x)      { return static_cast<EscapeManipWriteBuffer &>(buf); }
-inline QuoteManipWriteBuffer &       operator<< (WriteBuffer & buf, QuoteManip x)       { return static_cast<QuoteManipWriteBuffer &>(buf); }
-inline DoubleQuoteManipWriteBuffer & operator<< (WriteBuffer & buf, DoubleQuoteManip x) { return static_cast<DoubleQuoteManipWriteBuffer &>(buf); }
-inline BinaryManipWriteBuffer &      operator<< (WriteBuffer & buf, BinaryManip x)      { return static_cast<BinaryManipWriteBuffer &>(buf); }
+inline EscapeManipWriteBuffer &      operator<< (WriteBuffer & buf, EscapeManip)      { return static_cast<EscapeManipWriteBuffer &>(buf); }
+inline QuoteManipWriteBuffer &       operator<< (WriteBuffer & buf, QuoteManip)       { return static_cast<QuoteManipWriteBuffer &>(buf); }
+inline DoubleQuoteManipWriteBuffer & operator<< (WriteBuffer & buf, DoubleQuoteManip) { return static_cast<DoubleQuoteManipWriteBuffer &>(buf); }
+inline BinaryManipWriteBuffer &      operator<< (WriteBuffer & buf, BinaryManip)      { return static_cast<BinaryManipWriteBuffer &>(buf); }
 
 template <typename T> WriteBuffer & operator<< (EscapeManipWriteBuffer & buf,        const T & x) { writeText(x, buf);         return buf; }
 template <typename T> WriteBuffer & operator<< (QuoteManipWriteBuffer & buf,         const T & x) { writeQuoted(x, buf);       return buf; }
@@ -65,7 +65,7 @@ inline WriteBuffer & operator<< (BinaryManipWriteBuffer & buf,      const char *
 /// The manipulator calls the WriteBuffer method `next` - this makes the buffer reset. For nested buffers, the reset is not recursive.
 enum FlushManip { flush };
 
-inline WriteBuffer & operator<< (WriteBuffer & buf, FlushManip x) { buf.next(); return buf; }
+inline WriteBuffer & operator<< (WriteBuffer & buf, FlushManip) { buf.next(); return buf; }
 
 
 template <typename T> ReadBuffer & operator>> (ReadBuffer & buf, T & x)              { readText(x, buf);     return buf; }
@@ -75,10 +75,10 @@ template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, char & x)      
 /// If you specify a string literal for reading, this will mean - make sure there is a sequence of bytes and skip it.
 inline ReadBuffer & operator>> (ReadBuffer & buf, const char * x)     { assertString(x, buf); return buf; }
 
-inline EscapeManipReadBuffer &       operator>> (ReadBuffer & buf, EscapeManip x)      { return static_cast<EscapeManipReadBuffer &>(buf); }
-inline QuoteManipReadBuffer &        operator>> (ReadBuffer & buf, QuoteManip x)       { return static_cast<QuoteManipReadBuffer &>(buf); }
-inline DoubleQuoteManipReadBuffer &  operator>> (ReadBuffer & buf, DoubleQuoteManip x) { return static_cast<DoubleQuoteManipReadBuffer &>(buf); }
-inline BinaryManipReadBuffer &       operator>> (ReadBuffer & buf, BinaryManip x)      { return static_cast<BinaryManipReadBuffer &>(buf); }
+inline EscapeManipReadBuffer &       operator>> (ReadBuffer & buf, EscapeManip)      { return static_cast<EscapeManipReadBuffer &>(buf); }
+inline QuoteManipReadBuffer &        operator>> (ReadBuffer & buf, QuoteManip)       { return static_cast<QuoteManipReadBuffer &>(buf); }
+inline DoubleQuoteManipReadBuffer &  operator>> (ReadBuffer & buf, DoubleQuoteManip) { return static_cast<DoubleQuoteManipReadBuffer &>(buf); }
+inline BinaryManipReadBuffer &       operator>> (ReadBuffer & buf, BinaryManip)      { return static_cast<BinaryManipReadBuffer &>(buf); }
 
 template <typename T> ReadBuffer & operator>> (EscapeManipReadBuffer & buf,      T & x) { readText(x, buf);         return buf; }
 template <typename T> ReadBuffer & operator>> (QuoteManipReadBuffer & buf,       T & x) { readQuoted(x, buf);       return buf; }

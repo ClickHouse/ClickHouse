@@ -31,35 +31,35 @@ public:
     void popBack(size_t n) override { s -= n; }
     size_t byteSize() const override { return 0; }
     size_t allocatedBytes() const override { return 0; }
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override { return 0; }
+    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 
-    Field operator[](size_t n) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void get(size_t n, Field & res) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
-    void insert(const Field & x) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    StringRef getDataAt(size_t n) const override { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void insertData(const char * pos, size_t length) override { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
+    void insert(const Field &) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    StringRef getDataAt(size_t) const override { throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    void insertData(const char *, size_t) override { throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    StringRef serializeValueIntoArena(size_t /*n*/, Arena & /*arena*/, char const *& /*begin*/) const override
     {
         throw Exception("Method serializeValueIntoArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override
+    const char * deserializeAndInsertFromArena(const char * /*pos*/) override
     {
         throw Exception("Method deserializeAndInsertFromArena is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void updateHashWithValue(size_t n, SipHash & hash) const override
+    void updateHashWithValue(size_t /*n*/, SipHash & /*hash*/) const override
     {
         throw Exception("Method updateHashWithValue is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override
+    void insertRangeFrom(const IColumn & /*src*/, size_t /*start*/, size_t length) override
     {
         s += length;
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
+    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
         return cloneDummy(countBytesInFilter(filt));
     }
@@ -72,7 +72,7 @@ public:
         return cloneDummy(limit ? std::min(s, limit) : s);
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override
+    void getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override
     {
         res.resize(s);
         for (size_t i = 0; i < s; ++i)
@@ -108,7 +108,7 @@ public:
         throw Exception("Method gather is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getExtremes(Field & min, Field & max) const override
+    void getExtremes(Field &, Field &) const override
     {
         throw Exception("Method getExtremes is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

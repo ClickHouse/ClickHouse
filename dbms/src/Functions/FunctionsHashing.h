@@ -180,7 +180,7 @@ class FunctionStringHash64 : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHash64>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash64>(); };
 
     String getName() const override
     {
@@ -231,7 +231,7 @@ class FunctionStringHashFixedString : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHashFixedString>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHashFixedString>(); };
 
     String getName() const override
     {
@@ -283,7 +283,7 @@ class FunctionIntHash : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIntHash>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIntHash>(); };
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -371,7 +371,7 @@ class FunctionNeighbourhoodHash64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbourhoodHash64>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbourhoodHash64>(); };
 
 private:
     template <typename FromType, bool first>
@@ -572,7 +572,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }

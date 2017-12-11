@@ -16,7 +16,7 @@ public:
     String getColumnName() const override { return "*"; }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         settings.ostr << "*";
     }

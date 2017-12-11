@@ -47,7 +47,7 @@ std::ostream & operator<<(std::ostream & stream, const DB::IStorage & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const DB::TableStructureReadLock & what)
+std::ostream & operator<<(std::ostream & stream, const DB::TableStructureReadLock &)
 {
     stream << "TableStructureReadLock()";
     return stream;

@@ -5,6 +5,9 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 
+/// Used in the `reserve` method, when the number of rows is known, but sizes of elements are not.
+#define APPROX_STRING_SIZE 64
+
 
 namespace DB
 {
@@ -178,7 +181,7 @@ struct ColumnString::less
     }
 };
 
-void ColumnString::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);
@@ -257,7 +260,7 @@ void ColumnString::gather(ColumnGathererStream & gatherer)
 void ColumnString::reserve(size_t n)
 {
     offsets.reserve(n);
-    chars.reserve(n * DBMS_APPROX_STRING_SIZE);
+    chars.reserve(n * APPROX_STRING_SIZE);
 }
 
 

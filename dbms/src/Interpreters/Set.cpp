@@ -87,7 +87,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
         method.data.emplace(key, it, inserted);
 
         if (inserted)
-            method.onNewKey(*it, keys_size, i, variants.string_pool);
+            method.onNewKey(*it, keys_size, variants.string_pool);
     }
 }
 

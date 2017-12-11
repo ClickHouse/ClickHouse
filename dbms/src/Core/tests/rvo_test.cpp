@@ -247,7 +247,7 @@ struct Factory3 : IFactory
 };
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     srand(time(0));
 

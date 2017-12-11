@@ -1376,7 +1376,7 @@ public:
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const Block & sample_block) override { return true; }
+    bool isInjective(const Block & /*sample_block*/) override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

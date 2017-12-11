@@ -219,7 +219,7 @@ void DataTypeString::serializeTextEscaped(const IColumn & column, size_t row_num
 
 
 template <typename Reader>
-static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
+static inline void read(IColumn & column, Reader && reader)
 {
     ColumnString & column_string = static_cast<ColumnString &>(column);
     ColumnString::Chars_t & data = column_string.getChars();
@@ -245,7 +245,7 @@ static inline void read(IColumn & column, ReadBuffer & istr, Reader && reader)
 
 void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-    read(column, istr, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
 }
 
 
@@ -257,7 +257,7 @@ void DataTypeString::serializeTextQuoted(const IColumn & column, size_t row_num,
 
 void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-    read(column, istr, [&](ColumnString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
 }
 
 
@@ -269,7 +269,7 @@ void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, W
 
 void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
-    read(column, istr, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
 }
 
 
@@ -285,9 +285,9 @@ void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, Wr
 }
 
 
-void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
 {
-    read(column, istr, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
 }
 
 

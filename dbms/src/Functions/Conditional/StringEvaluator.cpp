@@ -393,8 +393,8 @@ template <typename SinkType>
 class SinkUpdater
 {
 public:
-    static void execute(Block & block, const StringSources & sources, const CondSources & conds,
-        SinkType & sink, size_t row_count, const ColumnNumbers & args, size_t result,
+    static void execute(Block &, const StringSources & sources, const CondSources & conds,
+        SinkType & sink, size_t row_count, const ColumnNumbers & args, size_t,
         NullMapBuilder & builder)
     {
         if (builder)
@@ -448,7 +448,7 @@ public:
 private:
     /// Create the result column.
     static FixedStringSink createSink(Block & block, const StringSources & sources,
-        size_t result, size_t row_count)
+        size_t result, size_t)
     {
         size_t first_size = sources[0]->getSize();
         for (size_t i = 1; i < sources.size(); ++i)
