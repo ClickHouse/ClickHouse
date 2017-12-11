@@ -5,37 +5,39 @@
 namespace DB
 {
 
-PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(String database, String table, const Context & context_,
-                                                                 const ASTPtr & query_ptr_, bool no_destination)
+PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
+        String database, String table, StoragePtr storage,
+        const Context & context_, const ASTPtr & query_ptr_, bool no_destination)
     : context(context_), query_ptr(query_ptr_)
 {
-    storage = context.getTable(database, table);
-
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
     addTableLock(storage->lockStructure(true, __PRETTY_FUNCTION__));
 
-    Dependencies dependencies = context.getDependencies(database, table);
-
-    /// We need special context for materialized views insertions
-    if (!dependencies.empty())
+    if (!table.empty())
     {
-        views_context = std::make_unique<Context>(context);
-        // Do not deduplicate insertions into MV if the main insertion is Ok
-        views_context->getSettingsRef().insert_deduplicate = false;
-    }
+        Dependencies dependencies = context.getDependencies(database, table);
 
-    for (const auto & database_table : dependencies)
-    {
-        auto dependent_table = context.getTable(database_table.first, database_table.second);
-        auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
+        /// We need special context for materialized views insertions
+        if (!dependencies.empty())
+        {
+            views_context = std::make_unique<Context>(context);
+            // Do not deduplicate insertions into MV if the main insertion is Ok
+            views_context->getSettingsRef().insert_deduplicate = false;
+        }
 
-        auto query = materialized_view.getInnerQuery();
-        auto out = std::make_shared<PushingToViewsBlockOutputStream>(database_table.first, database_table.second, *views_context, ASTPtr());
+        for (const auto & database_table : dependencies)
+        {
+            auto dependent_table = context.getTable(database_table.first, database_table.second);
+            auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
-        views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
+            auto query = materialized_view.getInnerQuery();
+            auto out = std::make_shared<PushingToViewsBlockOutputStream>(
+                database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
+            views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
+        }
     }
 
     /* Do not push to destination table if the flag is set */
