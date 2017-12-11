@@ -1,5 +1,4 @@
-Функции для работы с JSON.
-==========================
+# Функции для работы с JSON.
 
 В Яндекс.Метрике пользователями передаётся JSON в качестве параметров визитов. Для работы с таким JSON-ом, реализованы некоторые функции. (Хотя в большинстве случаев, JSON-ы дополнительно обрабатываются заранее, и полученные значения кладутся в отдельные столбцы в уже обработанном виде.) Все эти функции исходят из сильных допущений о том, каким может быть JSON, и при этом стараются почти ничего не делать.
 
@@ -10,22 +9,22 @@
 3.  Поля ищутся на любом уровне вложенности, без разбора. Если есть несколько подходящих полей - берётся первое.
 4.  В JSON-е нет пробельных символов вне строковых литералов.
 
-### visitParamHas(params, name)
+## visitParamHas(params, name)
 Проверить наличие поля с именем name.
 
-### visitParamExtractUInt(params, name)
+## visitParamExtractUInt(params, name)
 Распарсить UInt64 из значения поля с именем name. Если поле строковое - попытаться распарсить число из начала строки. Если такого поля нет, или если оно есть, но содержит не число, то вернуть 0.
 
-### visitParamExtractInt(params, name)
+## visitParamExtractInt(params, name)
 Аналогично для Int64.
 
-### visitParamExtractFloat(params, name)
+## visitParamExtractFloat(params, name)
 Аналогично для Float64.
 
-### visitParamExtractBool(params, name)
+## visitParamExtractBool(params, name)
 Распарсить значение true/false. Результат - UInt8.
 
-### visitParamExtractRaw(params, name)
+## visitParamExtractRaw(params, name)
 Вернуть значение поля, включая разделители.
 
 Примеры:
@@ -35,7 +34,7 @@ visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
 
-### visitParamExtractString(params, name)
+## visitParamExtractString(params, name)
 Распарсить строку в двойных кавычках. У значения убирается экранирование. Если убрать экранированные символы не удалось, то возвращается пустая строка.
 
 Примеры:

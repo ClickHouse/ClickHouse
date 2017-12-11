@@ -1,7 +1,6 @@
 <a name="dicts-external_dicts_dict_layout"></a>
 
-Хранение словарей в памяти
-==========================
+# Хранение словарей в памяти
 
 Словари можно размещать в памяти [множеством способов](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-manner).
 
@@ -39,8 +38,7 @@
 
 <a name="dicts-external_dicts_dict_layout-manner"></a>
 
-Способы размещения словарей в памяти
-====================================
+## Способы размещения словарей в памяти
 
 -   [flat](#dicts-external_dicts_dict_layout-flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
@@ -51,8 +49,7 @@
 
 <a name="dicts-external_dicts_dict_layout-flat"></a>
 
-flat
-----
+### flat
 
 Словарь полностью хранится в оперативной памяти в виде плоских массивов. Объем памяти, занимаемой словарем? пропорционален размеру самого большого (по размеру) ключа.
 
@@ -72,8 +69,7 @@ flat
 
 <a name="dicts-external_dicts_dict_layout-hashed"></a>
 
-hashed
-------
+### hashed
 
 Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике, количество ключей может достигать десятков миллионов элементов.
 
@@ -89,8 +85,7 @@ hashed
 
 <a name="dicts-external_dicts_dict_layout-complex_key_hashed"></a>
 
-complex_key_hashed
-------------------
+### complex_key_hashed
 
 Тип размещения предназначен для использования с составными [ключами](..external_dicts_dict_structure.html/#dicts-external_dicts_dict_structure). Аналогичен hashed.
 
@@ -104,8 +99,7 @@ complex_key_hashed
 
 <a name="dicts-external_dicts_dict_layout-range_hashed"></a>
 
-range_hashed
-------------
+### range_hashed
 
 Словарь хранится в оперативной памяти в виде хэш-таблицы с упорядоченным массивом диапазонов и соответствующих им значений.
 
@@ -190,8 +184,7 @@ range_hashed
 
 <a name="dicts-external_dicts_dict_layout-cache"></a>
 
-cache
------
+### cache
 
 Словарь хранится в кэше, состоящем из фиксированного количества ячеек. Ячейки содержат часто используемые элементы.
 
@@ -231,7 +224,6 @@ cache
 
 <a name="dicts-external_dicts_dict_layout-complex_key_cache"></a>
 
-complex_key_cache
------------------
+### complex_key_cache
 
 Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Аналогичен `cache`.
