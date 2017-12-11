@@ -37,7 +37,7 @@ public:
     }
 
     /// Take an ownership of first version.
-    MultiVersion(T * value)
+    MultiVersion(const T * value)
     {
         set(value);
     }
@@ -47,7 +47,7 @@ public:
         set(std::move(value));
     }
 
-    MultiVersion(std::unique_ptr<T> && value)
+    MultiVersion(std::unique_ptr<const T> && value)
     {
         set(std::move(value));
     }
@@ -61,19 +61,19 @@ public:
     }
 
     /// Update an object with new version.
-    void set(Version value)
+    void set(const Version & value)
     {
         std::lock_guard lock(mutex);
         current_version = value;
     }
 
     /// Update an object with new version and take an ownership of it.
-    void set(T * value)
+    void set(const T * value)
     {
         set(Version(value));
     }
 
-    void set(std::unique_ptr<T> && value)
+    void set(std::unique_ptr<const T> && value)
     {
         set(Version(value.release()));
     }
