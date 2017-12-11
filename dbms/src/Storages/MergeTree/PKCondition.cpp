@@ -206,7 +206,7 @@ Block PKCondition::getBlockWithConstants(
 {
     Block result
     {
-        { DataTypeUInt8().createConstColumn(1, UInt64(0)), std::make_shared<DataTypeUInt8>(), "_dummy" }
+        { DataTypeUInt8().createColumnConst(1, UInt64(0)), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
     const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}
@@ -289,7 +289,7 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
         out_type = block_with_constants.getByName(column_name).type;
         return true;
     }
-    else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isConst())
+    else if (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isColumnConst())
     {
         /// An expression which is dependent on constants only
         const auto & expr_info = block_with_constants.getByName(column_name);
@@ -308,7 +308,7 @@ static void applyFunction(
     DataTypePtr & res_type, Field & res_value)
 {
     std::vector<ExpressionAction> unused_prerequisites;
-    ColumnsWithTypeAndName arguments{{ arg_type->createConstColumn(1, arg_value), arg_type, "x" }};
+    ColumnsWithTypeAndName arguments{{ arg_type->createColumnConst(1, arg_value), arg_type, "x" }};
     func->getReturnTypeAndPrerequisites(arguments, res_type, unused_prerequisites);
 
     Block block
@@ -599,7 +599,7 @@ bool PKCondition::atomFromAST(const ASTPtr & node, const Context & context, Bloc
 
         bool cast_not_needed =
             is_set_const /// Set args are already casted inside Set::createFromAST
-            || (key_expr_type->behavesAsNumber() && const_type->behavesAsNumber()); /// Numbers are accurately compared without cast.
+            || (key_expr_type->isNumber() && const_type->isNumber()); /// Numbers are accurately compared without cast.
 
         if (!cast_not_needed)
             castValueToType(key_expr_type, const_value, const_type, node);

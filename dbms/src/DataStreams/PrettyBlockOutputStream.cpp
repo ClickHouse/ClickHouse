@@ -49,29 +49,17 @@ void PrettyBlockOutputStream::calculateWidths(const Block & block, WidthsPerColu
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(i);
 
-        if (!elem.column->isConst())
-        {
-            widths[i].resize(rows);
+        widths[i].resize(rows);
 
-            for (size_t j = 0; j < rows; ++j)
-            {
-                {
-                    WriteBufferFromString out(serialized_value);
-                    elem.type->serializeTextEscaped(*elem.column, j, out);
-                }
-
-                widths[i][j] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
-                max_widths[i] = std::max(max_widths[i], widths[i][j]);
-            }
-        }
-        else
+        for (size_t j = 0; j < rows; ++j)
         {
             {
                 WriteBufferFromString out(serialized_value);
-                elem.type->serializeTextEscaped(*elem.column->cut(0, 1)->convertToFullColumnIfConst(), 0, out);
-
-                max_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
+                elem.type->serializeTextEscaped(*elem.column, j, out);
             }
+
+            widths[i][j] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
+            max_widths[i] = std::max(max_widths[i], widths[i][j]);
         }
 
         /// And also calculate widths for names of columns.
@@ -158,7 +146,7 @@ void PrettyBlockOutputStream::write(const Block & block)
         if (!no_escapes)
             writeCString("\033[1m", ostr);
 
-        if (col.type->isNumeric())
+        if (col.type->shouldAlignRightInPrettyFormats())
         {
             for (size_t k = 0; k < max_widths[i] - name_widths[i]; ++k)
                 writeChar(' ', ostr);
@@ -212,7 +200,7 @@ void PrettyBlockOutputStream::writeValueWithPadding(const ColumnWithTypeAndName 
             writeChar(' ', ostr);
     };
 
-    if (elem.type->isNumeric())
+    if (elem.type->shouldAlignRightInPrettyFormats())
     {
         writePadding();
         elem.type->serializeTextEscaped(*elem.column.get(), row_num, ostr);

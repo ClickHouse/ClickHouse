@@ -726,10 +726,10 @@ void MergeTreeDataPart::loadRowsCount()
             const auto checksum = tryGetBinChecksum(column.name);
 
             /// Should be fixed non-nullable column
-            if (!checksum || !column_col->isFixed() || column_col->isNullable())
+            if (!checksum || !column_col->isFixedAndContiguous())
                 continue;
 
-            size_t sizeof_field = column_col->sizeOfField();
+            size_t sizeof_field = column_col->sizeOfValueIfFixed();
             rows_count = checksum->uncompressed_size / sizeof_field;
 
             if (checksum->uncompressed_size % sizeof_field != 0)

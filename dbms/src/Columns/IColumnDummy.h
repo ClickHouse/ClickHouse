@@ -130,6 +130,11 @@ public:
         s += delta;
     }
 
+    bool isDummy() const override
+    {
+        return true;
+    }
+
 private:
     size_t s;
 };

@@ -78,7 +78,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                     + ", expected a string.",
@@ -141,7 +141,7 @@ private:
 
             dict->has(ids, out);
 
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(id_col->size(), toField(out.front()));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(id_col->size(), toField(out.front()));
         }
         else
             throw Exception{
@@ -238,7 +238,7 @@ private:
                     + toString(arguments.size()) + ", should be 3 or 4.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -246,7 +246,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -332,7 +332,7 @@ private:
             auto out = std::make_unique<ColumnString>();
             dict->getString(attr_name, ids, out.get());
 
-            block.getByPosition(result).column = DataTypeString().createConstColumn(id_col->size(), out->getDataAt(0).toString());
+            block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
         }
         else
         {
@@ -474,7 +474,7 @@ private:
             auto out = std::make_unique<ColumnString>();
             dictionary->getString(attr_name, ids, dates, out.get());
 
-            block.getByPosition(result).column = DataTypeString().createConstColumn(id_col->size(), out->getDataAt(0).toString());
+            block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
         }
         else
         {
@@ -507,13 +507,13 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() +
                     ", expected a string.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() +
                     ", expected a string.",
@@ -528,7 +528,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[3].get()))
+        if (!arguments[3]->isString())
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName() +
                     ", must be String.",
@@ -649,7 +649,7 @@ private:
 
             dictionary->getString(attr_name, ids, def, out.get());
 
-            block.getByPosition(result).column = DataTypeString().createConstColumn(id_col->size(), out->getDataAt(0).toString());
+            block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
         }
         else
             throw Exception{
@@ -793,7 +793,7 @@ private:
         if (arguments.size() != 3 && arguments.size() != 4)
             throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -801,7 +801,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -891,7 +891,7 @@ private:
             PaddedPODArray<Type> data(1);
             DictGetTraits<DataType>::get(dict, attr_name, ids, data);
 
-            block.getByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), toField(data.front()));
+            block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col->size(), toField(data.front()));
         }
         else
         {
@@ -1048,7 +1048,7 @@ private:
             PaddedPODArray<Type> data(1);
             DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
 
-            block.getByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), toField(data.front()));
+            block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col->size(), toField(data.front()));
         }
         else
         {
@@ -1112,7 +1112,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1120,7 +1120,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -1266,7 +1266,7 @@ private:
 
             DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
 
-            block.getByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), toField(data.front()));
+            block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col->size(), toField(data.front()));
         }
         else
             throw Exception{
@@ -1380,7 +1380,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1509,7 +1509,7 @@ private:
 
             get_hierarchies(in, backend->getData(), array->getOffsets());
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(id_col->size(), (*array)[0].get<Array>());
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(id_col->size(), (*array)[0].get<Array>());
         }
         else
         {
@@ -1544,7 +1544,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1685,7 +1685,7 @@ private:
 
             dictionary->isInConstantConstant(child_id, ancestor_id, res);
 
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(child_id_col->size(), UInt64(res));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(child_id_col->size(), UInt64(res));
         }
         else
         {

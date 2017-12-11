@@ -1,0 +1,9 @@
+1	(NULL,'')	a
+1	(NULL,'')	\N
+1	(NULL,'')	b
+\N	(123,'Hello')	a
+\N	(123,'Hello')	\N
+\N	(123,'Hello')	b
+3	(456,NULL)	a
+3	(456,NULL)	\N
+3	(456,NULL)	b

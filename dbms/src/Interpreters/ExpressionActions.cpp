@@ -7,7 +7,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+
 #include <set>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -195,7 +197,7 @@ void ExpressionAction::prepare(Block & sample_block)
             {
                 arguments[i] = sample_block.getPositionByName(argument_names[i]);
                 ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
-                if (!col || !col->isConst())
+                if (!col || !col->isColumnConst())
                     all_const = false;
             }
 
@@ -204,7 +206,7 @@ void ExpressionAction::prepare(Block & sample_block)
             {
                 prerequisites[i] = sample_block.getPositionByName(prerequisite_names[i]);
                 ColumnPtr col = sample_block.safeGetByPosition(prerequisites[i]).column;
-                if (!col || !col->isConst())
+                if (!col || !col->isColumnConst())
                     all_const = false;
             }
 
@@ -224,7 +226,7 @@ void ExpressionAction::prepare(Block & sample_block)
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
-                if (!col.column->isConst())
+                if (!col.column->isColumnConst())
                     col.column = nullptr;
             }
             else
@@ -547,14 +549,14 @@ void ExpressionActions::checkLimits(Block & block) const
     {
         size_t non_const_columns = 0;
         for (size_t i = 0, size = block.columns(); i < size; ++i)
-            if (block.safeGetByPosition(i).column && !block.safeGetByPosition(i).column->isConst())
+            if (block.safeGetByPosition(i).column && !block.safeGetByPosition(i).column->isColumnConst())
                 ++non_const_columns;
 
         if (non_const_columns > limits.max_temporary_non_const_columns)
         {
             std::stringstream list_of_non_const_columns;
             for (size_t i = 0, size = block.columns(); i < size; ++i)
-                if (!block.safeGetByPosition(i).column->isConst())
+                if (!block.safeGetByPosition(i).column->isColumnConst())
                     list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
@@ -706,22 +708,23 @@ void ExpressionActions::executeOnTotals(Block & block) const
 
 std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & columns)
 {
-    NamesAndTypesList::const_iterator it = columns.begin();
-    if (it == columns.end())
-        throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
+    std::optional<size_t> min_size;
+    String res;
 
-    /// @todo resolve evil constant
-    size_t min_size = it->type->isNumeric() ? it->type->getSizeOfField() : 100;
-    String res = it->name;
-    for (; it != columns.end(); ++it)
+    for (const auto & column : columns)
     {
-        size_t current_size = it->type->isNumeric() ? it->type->getSizeOfField() : 100;
-        if (current_size < min_size)
+        /// @todo resolve evil constant
+        size_t size = column.type->haveMaximumSizeOfValue() ? column.type->getMaximumSizeOfValueInMemory() : 100;
+
+        if (!min_size || size < *min_size)
         {
-            min_size = current_size;
-            res = it->name;
+            min_size = size;
+            res = column.name;
         }
     }
+
+    if (!min_size)
+        throw Exception("No available columns", ErrorCodes::LOGICAL_ERROR);
 
     return res;
 }

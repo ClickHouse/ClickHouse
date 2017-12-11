@@ -45,7 +45,7 @@ ColumnArray::ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column)
     }
 
     /** NOTE
-      * Arrays with constant value are possible and used in implementation of higher order functions and in ARRAY JOIN.
+      * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
       * But in most cases, arrays with constant value are unexpected and code will work wrong. Use with caution.
       */
 }
@@ -152,10 +152,10 @@ void ColumnArray::insertData(const char * pos, size_t length)
     /** Similarly - only for arrays of fixed length values.
       */
     IColumn * data_ = data.get();
-    if (!data_->isFixed())
+    if (!data_->isFixedAndContiguous())
         throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 
-    size_t field_size = data_->sizeOfField();
+    size_t field_size = data_->sizeOfValueIfFixed();
 
     const char * end = pos + length;
     size_t elems = 0;
@@ -321,19 +321,13 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 ColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
     ColumnPtr new_data;
-    ColumnPtr new_offsets;
 
     if (auto full_column = getData().convertToFullColumnIfConst())
         new_data = full_column;
     else
         new_data = data;
 
-    if (auto full_column = offsets->convertToFullColumnIfConst())
-        new_offsets = full_column;
-    else
-        new_offsets = offsets;
-
-    return std::make_shared<ColumnArray>(new_data, new_offsets);
+    return std::make_shared<ColumnArray>(new_data, offsets);
 }
 
 

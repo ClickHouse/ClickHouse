@@ -1,4 +1,5 @@
-#include <sstream>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/getLeastCommonType.h>
@@ -8,8 +9,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -27,7 +26,7 @@ namespace
 {
     String getExceptionMessagePrefix(const DataTypes & types)
     {
-        std::stringstream res;
+        WriteBufferFromOwnString res;
         res << "There is no common type for types ";
 
         bool first = true;
@@ -72,6 +71,19 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
     }
 
     /// Recursive rules
+
+    /// If there are Nothing types, skip them
+    {
+        DataTypes non_nothing_types;
+        non_nothing_types.reserve(types.size());
+
+        for (const auto & type : types)
+            if (!typeid_cast<const DataTypeNothing *>(type.get()))
+                non_nothing_types.emplace_back(type);
+
+        if (non_nothing_types.size() < types.size())
+            return getLeastCommonType(non_nothing_types);
+    }
 
     /// For Arrays
     {
@@ -130,18 +142,18 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
             }
             else
                 all_tuples = false;
+        }
 
-            if (have_tuple)
-            {
-                if (!all_tuples)
-                    throw Exception(getExceptionMessagePrefix(types) + " because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+        if (have_tuple)
+        {
+            if (!all_tuples)
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Tuple and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
-                DataTypes common_tuple_types(tuple_size);
-                for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
-                    common_tuple_types[elem_idx] = getLeastCommonType(nested_types[elem_idx]);
+            DataTypes common_tuple_types(tuple_size);
+            for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
+                common_tuple_types[elem_idx] = getLeastCommonType(nested_types[elem_idx]);
 
-                return std::make_shared<DataTypeTuple>(common_tuple_types);
-            }
+            return std::make_shared<DataTypeTuple>(common_tuple_types);
         }
     }
 
@@ -158,7 +170,7 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
             {
                 have_nullable = true;
 
-                if (!type_nullable->isNull())
+                if (!type_nullable->onlyNull())
                     nested_types.emplace_back(type_nullable->getNestedType());
             }
             else
@@ -174,15 +186,14 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
     /// Non-recursive rules
 
     /// For String and FixedString, or for different FixedStrings, the common type is String.
-    /// No other types are compatible with Strings.
+    /// No other types are compatible with Strings. TODO Enums?
     {
         bool have_string = false;
         bool all_strings = true;
 
         for (const auto & type : types)
         {
-            if (typeid_cast<const DataTypeString *>(type.get())
-                || typeid_cast<const DataTypeFixedString *>(type.get()))
+            if (type->isStringOrFixedString())
                 have_string = true;
             else
                 all_strings = false;
@@ -204,8 +215,7 @@ DataTypePtr getLeastCommonType(const DataTypes & types)
 
         for (const auto & type : types)
         {
-            if (typeid_cast<const DataTypeDate *>(type.get())
-                || typeid_cast<const DataTypeDateTime *>(type.get()))
+            if (type->isDateOrDateTime())
                 have_date_or_datetime = true;
             else
                 all_date_or_datetime = false;

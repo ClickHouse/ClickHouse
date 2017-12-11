@@ -14,16 +14,6 @@ namespace DB
 class IDataTypeDummy : public IDataType
 {
 private:
-    bool notForTables() const override
-    {
-        return true;
-    }
-
-    bool canBeInsideNullable() const override
-    {
-        return false;
-    }
-
     void throwNoSerialization() const
     {
         throw Exception("Serialization is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -60,6 +50,9 @@ public:
     {
         throw Exception("Method insertDefaultInto() is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    bool haveSubtypes() const override { return false; }
+    bool cannotBeStoredInTables() const override { return true; }
 };
 
 }

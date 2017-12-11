@@ -77,7 +77,7 @@ public:
 
         const IDataType * type_x = arguments[0].get();
 
-        if (!type_x->isNumeric() && !checkDataType<DataTypeString>(type_x))
+        if (!type_x->isValueRepresentedByNumber() && !type_x->isString())
             throw Exception{"Unsupported type " + type_x->getName()
                 + " of first argument of function " + getName()
                 + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -90,8 +90,8 @@ public:
 
         const auto type_arr_from_nested = type_arr_from->getNestedType();
 
-        if ((type_x->isNumeric() != type_arr_from_nested->isNumeric())
-            || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_from_nested.get())))
+        if ((type_x->isValueRepresentedByNumber() != type_arr_from_nested->isValueRepresentedByNumber())
+            || (!!type_x->isString() != !!type_arr_from_nested->isString()))
         {
             throw Exception{"First argument and elements of array of second argument of function " + getName()
                 + " must have compatible types: both numeric or both strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -107,8 +107,8 @@ public:
 
         if (args_size == 3)
         {
-            if ((type_x->isNumeric() != type_arr_to_nested->isNumeric())
-                || (!!checkDataType<DataTypeString>(type_x) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
+            if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
+                || (!!type_x->isString() != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -119,18 +119,18 @@ public:
         {
             const DataTypePtr & type_default = arguments[3];
 
-            if (!type_default->isNumeric() && !checkDataType<DataTypeString>(type_default.get()))
+            if (!type_default->isValueRepresentedByNumber() && !type_default->isString())
                 throw Exception{"Unsupported type " + type_default->getName()
                     + " of fourth argument (default value) of function " + getName()
                     + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            if ((type_default->isNumeric() != type_arr_to_nested->isNumeric())
+            if ((type_default->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
                 || (!!checkDataType<DataTypeString>(type_default.get()) != !!checkDataType<DataTypeString>(type_arr_to_nested.get())))
                 throw Exception{"Function " + getName()
                     + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            if (type_arr_to_nested->behavesAsNumber() && type_default->behavesAsNumber())
+            if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
             {
                 /// We take the smallest common type for the elements of the array of values `to` and for `default`.
                 return getLeastCommonType({type_arr_to_nested, type_default});
@@ -153,7 +153,7 @@ public:
 
         const auto in = block.getByPosition(arguments.front()).column.get();
 
-        if (in->isConst())
+        if (in->isColumnConst())
         {
             executeConst(block, arguments, result);
             return;
@@ -209,7 +209,7 @@ private:
 
         execute(tmp_block, tmp_arguments, tmp_result);
 
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
             block.rows(),
             (*tmp_block.getByPosition(tmp_result).column)[0]);
     }
@@ -232,7 +232,7 @@ private:
 
                 executeImplNumToNum<T>(in->getData(), out->getData());
             }
-            else if (default_untyped->isConst())
+            else if (default_untyped->isColumnConst())
             {
                 if (!executeNumToNumWithConstDefault<T, UInt8>(in, out_untyped)
                     && !executeNumToNumWithConstDefault<T, UInt16>(in, out_untyped)
@@ -290,7 +290,7 @@ private:
                         ErrorCodes::ILLEGAL_COLUMN};
                 }
             }
-            else if (default_untyped->isConst())
+            else if (default_untyped->isColumnConst())
             {
                 if (!executeStringToNumWithConstDefault<UInt8>(in, out_untyped)
                     && !executeStringToNumWithConstDefault<UInt16>(in, out_untyped)

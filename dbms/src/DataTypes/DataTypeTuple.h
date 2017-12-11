@@ -68,6 +68,13 @@ public:
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
 
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return !elems.empty(); }
+    bool textCanContainOnlyValidUTF8() const override;
+    bool haveMaximumSizeOfValue() const override;
+    size_t getMaximumSizeOfValueInMemory() const override;
+    size_t getSizeOfValueInMemory() const override;
+
     const DataTypes & getElements() const { return elems; }
 };
 

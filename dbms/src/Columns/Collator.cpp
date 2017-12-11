@@ -77,6 +77,10 @@ int Collator::compare(const char * str1, size_t length1, const char * str2, size
      */
     return compare_result;
 #else
+    (void)str1;
+    (void)length1;
+    (void)str2;
+    (void)length2;
     return 0;
 #endif
 }

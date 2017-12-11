@@ -31,7 +31,7 @@ DataTypeNullable::DataTypeNullable(const DataTypePtr & nested_data_type_)
 }
 
 
-bool DataTypeNullable::isNull() const
+bool DataTypeNullable::onlyNull() const
 {
     return typeid_cast<const DataTypeNothing *>(nested_data_type.get());
 }
@@ -281,6 +281,12 @@ ColumnPtr DataTypeNullable::createColumn() const
 }
 
 
+size_t DataTypeNullable::getSizeOfValueInMemory() const
+{
+    throw Exception("Value of type " + getName() + " in memory is not of fixed size.", ErrorCodes::LOGICAL_ERROR);
+}
+
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (arguments->children.size() != 1)
@@ -295,6 +301,21 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeNullable(DataTypeFactory & factory)
 {
     factory.registerDataType("Nullable", create);
+}
+
+
+DataTypePtr makeNullable(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return type;
+    return std::make_shared<DataTypeNullable>(type);
+}
+
+DataTypePtr removeNullable(const DataTypePtr & type)
+{
+    if (type->isNullable())
+        return static_cast<const DataTypeNullable &>(*type).getNestedType();
+    return type;
 }
 
 }

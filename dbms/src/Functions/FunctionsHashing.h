@@ -192,7 +192,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -243,7 +243,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -321,7 +321,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isNumeric())
+        if (!arguments[0]->isValueRepresentedByNumber())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -547,10 +547,16 @@ private:
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
-        else if (const ColumnConst * tuple = checkAndGetColumnConst<ColumnTuple>(column))
+        else if (const ColumnTuple * tuple = checkAndGetColumnConstData<ColumnTuple>(column))
         {
-            ColumnPtr tuple_of_constants = convertConstTupleToTupleOfConstants(*tuple);
-            executeForArgument(type, tuple_of_constants.get(), vec_to, is_first);
+            const Columns & tuple_columns = tuple->getColumns();
+            const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
+            size_t tuple_size = tuple_columns.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                ColumnConst tmp(tuple_columns[i], column->size());
+                executeForArgument(tuple_types[i].get(), &tmp, vec_to, is_first);
+            }
         }
         else
         {
@@ -605,7 +611,7 @@ public:
         bool all_constants = true;
         for (size_t arg_idx : arguments)
         {
-            if (!block.getByPosition(arg_idx).column->isConst())
+            if (!block.getByPosition(arg_idx).column->isColumnConst())
             {
                 all_constants = false;
                 break;
@@ -613,7 +619,7 @@ public:
         }
 
         if (all_constants && block.rows() > 0)
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(1, (*block.getByPosition(result).column)[0]);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(1, (*block.getByPosition(result).column)[0]);
     }
 };
 
@@ -720,14 +726,7 @@ public:
         if (arg_count == 2)
         {
             const auto second_arg = arguments.back().get();
-            if (!checkDataType<DataTypeUInt8>(second_arg) &&
-                !checkDataType<DataTypeUInt16>(second_arg) &&
-                !checkDataType<DataTypeUInt32>(second_arg) &&
-                !checkDataType<DataTypeUInt64>(second_arg) &&
-                !checkDataType<DataTypeInt8>(second_arg) &&
-                !checkDataType<DataTypeInt16>(second_arg) &&
-                !checkDataType<DataTypeInt32>(second_arg) &&
-                !checkDataType<DataTypeInt64>(second_arg))
+            if (!second_arg->isInteger())
                 throw Exception{
                     "Illegal type " + second_arg->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -781,7 +780,7 @@ private:
     void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto level_col = block.getByPosition(arguments.back()).column.get();
-        if (!level_col->isConst())
+        if (!level_col->isColumnConst())
             throw Exception{
                 "Second argument of function " + getName() + " must be an integral constant",
                 ErrorCodes::ILLEGAL_COLUMN};

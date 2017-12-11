@@ -29,6 +29,8 @@ public:
         return std::make_shared<DataTypeNested>(nested);
     }
 
+    bool isParametric() const override { return true; }
+
     const NamesAndTypesListPtr & getNestedTypesList() const { return nested; }
 
     static std::string concatenateNestedName(const std::string & nested_table_name, const std::string & nested_field_name);

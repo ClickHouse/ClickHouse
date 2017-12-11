@@ -590,8 +590,7 @@ public:
     {
         if (arguments.size() == 1)
         {
-            if (!checkDataType<DataTypeDate>(arguments[0].type.get())
-                && !checkDataType<DataTypeDateTime>(arguments[0].type.get()))
+            if (!arguments[0].type->isDateOrDateTime())
                 throw Exception{
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -902,14 +901,13 @@ public:
                 + toString(arguments.size()) + ", should be 2 or 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[1].type->behavesAsNumber())
+        if (!arguments[1].type->isNumber())
             throw Exception("Second argument for function " + getName() + " (delta) must be number",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2)
         {
-            if (!checkDataType<DataTypeDate>(arguments[0].type.get())
-                && !checkDataType<DataTypeDateTime>(arguments[0].type.get()))
+            if (!arguments[0].type->isDateOrDateTime())
                 throw Exception{
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -982,7 +980,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt32().createConstColumn(
+        block.getByPosition(result).column = DataTypeUInt32().createColumnConst(
             block.rows(),
             static_cast<UInt64>(time(0)));
     }
@@ -1009,7 +1007,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt16().createConstColumn(
+        block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
             block.rows(),
             UInt64(DateLUT::instance().toDayNum(time(0))));
     }
@@ -1036,7 +1034,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt16().createConstColumn(
+        block.getByPosition(result).column = DataTypeUInt16().createColumnConst(
             block.rows(),
             UInt64(DateLUT::instance().toDayNum(time(0)) - 1));
     }
@@ -1268,7 +1266,7 @@ public:
         {
             Array const_res;
             TimeSlotsImpl<UInt32>::constant_constant(const_starts->getValue<UInt32>(), const_durations->getValue<UInt32>(), const_res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), const_res);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), const_res);
         }
         else
             throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()

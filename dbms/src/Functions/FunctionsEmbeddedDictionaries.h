@@ -380,7 +380,7 @@ public:
         }
         else if (col_const1 && col_const2)
         {
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(col_const1->size(),
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_const1->size(),
                 toField(Transform::apply(col_const1->template getValue<T>(), col_const2->template getValue<T>(), dict)));
         }
         else

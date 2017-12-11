@@ -2228,7 +2228,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         DataTypePtr type = applyVisitor(FieldToDataType(), node->value);
 
         ColumnWithTypeAndName column;
-        column.column = type->createConstColumn(1, node->value);
+        column.column = type->createColumnConst(1, node->value);
         column.type = type;
         column.name = node->getColumnName();
 

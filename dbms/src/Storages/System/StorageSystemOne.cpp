@@ -31,7 +31,7 @@ BlockInputStreams StorageSystemOne::read(
     ColumnWithTypeAndName col;
     col.name = "dummy";
     col.type = std::make_shared<DataTypeUInt8>();
-    col.column = DataTypeUInt8().createConstColumn(1, UInt64(0))->convertToFullColumnIfConst();
+    col.column = DataTypeUInt8().createColumnConst(1, UInt64(0))->convertToFullColumnIfConst();
     block.insert(std::move(col));
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block));

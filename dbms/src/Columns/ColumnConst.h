@@ -28,11 +28,6 @@ private:
 public:
     ColumnConst(ColumnPtr data, size_t s);
 
-    bool isConst() const override
-    {
-        return true;
-    }
-
     ColumnPtr convertToFullColumn() const;
 
     ColumnPtr convertToFullColumnIfConst() const override
@@ -48,33 +43,6 @@ public:
     const char * getFamilyName() const override
     {
         return "Const";
-    }
-
-    bool isNumeric() const override
-    {
-        return data->isNumeric();
-    }
-
-    bool isNumericNotNullable() const override
-    {
-        return data->isNumericNotNullable();
-    }
-
-    bool isNullable() const override
-    {
-        return false;
-    }
-
-    bool isNull() const override;
-
-    bool isFixed() const override
-    {
-        return data->isFixed();
-    }
-
-    size_t sizeOfField() const override
-    {
-        return data->sizeOfField();
     }
 
     ColumnPtr cloneResized(size_t new_size) const override
@@ -120,6 +88,11 @@ public:
     Int64 getInt(size_t) const override
     {
         return data->getInt(0);
+    }
+
+    bool isNullAt(size_t) const override
+    {
+        return data->isNullAt(0);
     }
 
     void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
@@ -253,6 +226,12 @@ public:
         callback(data);
     }
 
+    bool onlyNull() const override { return data->isNullAt(0); }
+    bool isColumnConst() const override { return true; }
+    bool isNumeric() const override { return data->isNumeric(); }
+    bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
+    bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
+    size_t sizeOfValueIfFixed() const override { return data->sizeOfValueIfFixed(); }
 
     /// Not part of the common interface.
 
