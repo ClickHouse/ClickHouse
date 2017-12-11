@@ -72,7 +72,10 @@ if (CLICKHOUSE_SPLIT_BINARY)
         target_link_libraries (clickhouse-clang clickhouse-compiler-lib)
         add_executable (clickhouse-lld clickhouse-lld.cpp)
         target_link_libraries (clickhouse-lld clickhouse-compiler-lib)
+        install (TARGETS clickhouse-clang clickhouse-lld RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif ()
+
+    install (TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-format RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
     add_custom_target (clickhouse ALL DEPENDS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-extract-from-config clickhouse-compressor clickhouse-format)
 else ()
@@ -94,7 +97,6 @@ else ()
         target_link_libraries (clickhouse clickhouse-compiler-lib)
     endif ()
 
-    install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
     add_custom_target (clickhouse-server ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-server DEPENDS clickhouse)
     add_custom_target (clickhouse-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-client DEPENDS clickhouse)
@@ -105,6 +107,18 @@ else ()
     # install always because depian package want this files:
     add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)
     add_custom_target (clickhouse-lld ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-lld DEPENDS clickhouse)
+
+    install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    install (FILES
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-server
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-client
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-local
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-benchmark
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-performance-test
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-format
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-clang
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-lld
+       DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()
 
 install (
