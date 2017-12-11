@@ -174,7 +174,7 @@ private:
         bool has_res = false;
         for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
         {
-            if (in[i]->isConst())
+            if (in[i]->isColumnConst())
             {
                 Field val = (*in[i])[0];
                 UInt8 x = !!val.get<UInt64>();
@@ -271,7 +271,7 @@ public:
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (!arguments[i]->isNumeric())
+            if (!arguments[i]->isNumber())
                 throw Exception("Illegal type ("
                     + arguments[i]->getName()
                     + ") of " + toString(i + 1) + " argument of function " + getName(),
@@ -299,7 +299,7 @@ public:
         {
             if (!in.empty())
                 const_val = Impl<UInt8>::apply(const_val, 0);
-            auto col_res = DataTypeUInt8().createConstColumn(n, toField(const_val));
+            auto col_res = DataTypeUInt8().createColumnConst(n, toField(const_val));
             block.getByPosition(result).column = col_res;
             return;
         }
@@ -407,7 +407,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isNumeric())
+        if (!arguments[0]->isNumber())
             throw Exception("Illegal type ("
                 + arguments[0]->getName()
                 + ") of argument of function " + getName(),

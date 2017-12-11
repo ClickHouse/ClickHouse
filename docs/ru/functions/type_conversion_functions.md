@@ -1,19 +1,18 @@
 <a name="type_conversion_functions"></a>
 
-Функции преобразования типов
-============================
+# Функции преобразования типов
 
-### toUInt8, toUInt16, toUInt32, toUInt64
+## toUInt8, toUInt16, toUInt32, toUInt64
 
-### toInt8, toInt16, toInt32, toInt64
+## toInt8, toInt16, toInt32, toInt64
 
-### toFloat32, toFloat64
+## toFloat32, toFloat64
 
-### toUInt8OrZero, toUInt16OrZero, toUInt32OrZero, toUInt64OrZero, toInt8OrZero, toInt16OrZero, toInt32OrZero, toInt64OrZero, toFloat32OrZero, toFloat64OrZero
+## toUInt8OrZero, toUInt16OrZero, toUInt32OrZero, toUInt64OrZero, toInt8OrZero, toInt16OrZero, toInt32OrZero, toInt64OrZero, toFloat32OrZero, toFloat64OrZero
 
-### toDate, toDateTime
+## toDate, toDateTime
 
-### toString
+## toString
 Функции преобразования между числами, строками (но не фиксированными строками), датами и датами-с-временем.
 Все эти функции принимают один аргумент.
 
@@ -51,11 +50,11 @@ SELECT
 
 Также смотрите функцию `toUnixTimestamp`.
 
-### toFixedString(s, N)
+## toFixedString(s, N)
 Преобразует аргумент типа String в тип FixedString(N) (строку фиксированной длины N). N должно быть константой.
 Если строка имеет меньше байт, чем N, то она дополняется нулевыми байтами справа. Если строка имеет больше байт, чем N - кидается исключение.
 
-### toStringCutToZero(s)
+## toStringCutToZero(s)
 Принимает аргумент типа String или FixedString. Возвращает String, вырезая содержимое строки до первого найденного нулевого байта.
 
 Пример:
@@ -80,19 +79,19 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 └────────────┴───────┘
 ```
 
-### reinterpretAsUInt8, reinterpretAsUInt16, reinterpretAsUInt32, reinterpretAsUInt64
+## reinterpretAsUInt8, reinterpretAsUInt16, reinterpretAsUInt32, reinterpretAsUInt64
 
-### reinterpretAsInt8, reinterpretAsInt16, reinterpretAsInt32, reinterpretAsInt64
+## reinterpretAsInt8, reinterpretAsInt16, reinterpretAsInt32, reinterpretAsInt64
 
-### reinterpretAsFloat32, reinterpretAsFloat64
+## reinterpretAsFloat32, reinterpretAsFloat64
 
-### reinterpretAsDate, reinterpretAsDateTime
+## reinterpretAsDate, reinterpretAsDateTime
 Функции принимают строку и интерпретируют байты, расположенные в начале строки, как число в host order (little endian). Если строка имеет недостаточную длину, то функции работают так, как будто строка дополнена необходимым количеством нулевых байт. Если строка длиннее, чем нужно, то лишние байты игнорируются. Дата интерпретируется, как число дней с начала unix-эпохи, а дата-с-временем - как число секунд с начала unix-эпохи.
 
-### reinterpretAsString
+## reinterpretAsString
 Функция принимает число или дату или дату-с-временем и возвращает строку, содержащую байты, представляющие соответствующее значение в host order (little endian). При этом, отбрасываются нулевые байты с конца. Например, значение 255 типа UInt32 будет строкой длины 1 байт.
 
-### CAST(x, t)
+## CAST(x, t)
 Преобразует x в тип данных t.
 Поддерживается также синтаксис CAST(x AS t).
 

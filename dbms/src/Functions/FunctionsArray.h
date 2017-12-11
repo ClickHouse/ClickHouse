@@ -15,7 +15,6 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Functions/IFunction.h>
-#include <DataTypes/DataTypeTraits.h>
 #include <Functions/ObjectPool.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/StringUtils.h>
@@ -811,7 +810,7 @@ private:
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
-        if (item_arg->isNull())
+        if (item_arg->onlyNull())
             ArrayIndexNumNullImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
                 col_res->getData(), null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<U>>(item_arg))
@@ -859,7 +858,7 @@ private:
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
-        if (item_arg->isNull())
+        if (item_arg->onlyNull())
             ArrayIndexStringNullImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), col_res->getData(), null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
@@ -886,7 +885,7 @@ private:
         Array arr = col_array->getValue<Array>();
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
-        if (item_arg->isConst())
+        if (item_arg->isColumnConst())
         {
             typename IndexConv::ResultType current = 0;
             const auto & value = (*item_arg)[0];
@@ -900,7 +899,7 @@ private:
                 }
             }
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
                 item_arg->size(),
                 static_cast<typename NearestFieldType<typename IndexConv::ResultType>::Type>(current));
         }
@@ -980,10 +979,10 @@ private:
                 null_map_item = &static_cast<const ColumnUInt8 &>(*null_map2).getData();
         }
 
-        if (item_arg.isNull())
+        if (item_arg.onlyNull())
             ArrayIndexGenericNullImpl<IndexConv>::vector(col_nested, col_array->getOffsets(),
                 col_res->getData(), null_map_data);
-        else if (item_arg.isConst())
+        else if (item_arg.isColumnConst())
             ArrayIndexGenericImpl<IndexConv, true>::vector(col_nested, col_array->getOffsets(),
                 static_cast<const ColumnConst &>(item_arg).getDataColumn(), col_res->getData(),    /// TODO This is wrong.
                 null_map_data, nullptr);
@@ -1022,12 +1021,12 @@ public:
             throw Exception("First argument for function " + getName() + " must be an array.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNull())
+        if (!arguments[1]->onlyNull())
         {
-            const IDataType * observed_type0 = DataTypeTraits::removeNullable(array_type->getNestedType()).get();
-            const IDataType * observed_type1 = DataTypeTraits::removeNullable(arguments[1]).get();
+            DataTypePtr observed_type0 = removeNullable(array_type->getNestedType());
+            DataTypePtr observed_type1 = removeNullable(arguments[1]);
 
-            if (!(observed_type0->behavesAsNumber() && observed_type1->behavesAsNumber())
+            if (!(observed_type0->isNumber() && observed_type1->isNumber())
                 && !observed_type0->equals(*observed_type1))
                 throw Exception("Types of array and 2nd argument of function "
                     + getName() + " must be identical up to nullability. Passed: "
@@ -1059,12 +1058,12 @@ public:
         const ColumnArray * col_array = nullptr;
         col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
         if (col_array)
-            is_nullable = col_array->getData().isNullable();
+            is_nullable = col_array->getData().isColumnNullable();
         else
             is_nullable = false;
 
         /// Check nullability of the 2nd function argument.
-        bool is_arg_nullable = block.getByPosition(arguments[1]).column->isNullable();
+        bool is_arg_nullable = block.getByPosition(arguments[1]).column->isColumnNullable();
 
         if (!is_nullable && !is_arg_nullable)
         {
@@ -1183,6 +1182,7 @@ public:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1202,6 +1202,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1215,8 +1216,6 @@ private:
     bool executeNumber(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
     bool executeString(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
-
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
 
     bool execute128bit(
         const ColumnArray::Offsets_t & offsets,
@@ -1242,6 +1241,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1255,8 +1255,6 @@ private:
     bool executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
     bool executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
-
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
 
     bool execute128bit(
         const ColumnArray::Offsets_t & offsets,
@@ -1322,6 +1320,7 @@ private:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1341,6 +1340,7 @@ public:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1357,6 +1357,7 @@ public:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 

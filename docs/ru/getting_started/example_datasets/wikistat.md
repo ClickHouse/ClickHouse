@@ -1,5 +1,4 @@
-WikiStat
-========
+# WikiStat
 
 См: <http://dumps.wikimedia.org/other/pagecounts-raw/>
 

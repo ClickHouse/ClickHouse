@@ -52,8 +52,9 @@ public:
 
     void setArgument(const DataTypePtr & argument)
     {
-        if (!argument->behavesAsNumber())
-            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
+        if (!argument->canBeUsedInBitOperations())
+            throw Exception("The type " + argument->getName() + " of argument for aggregate function " + getName()
+                + " is illegal, because it cannot be used in bitwise operations",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

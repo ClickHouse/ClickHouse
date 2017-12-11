@@ -1,5 +1,4 @@
-system.dictionaries
-===================
+# system.dictionaries
 
 Содержит информацию о внешних словарях.
 

@@ -72,6 +72,10 @@ public:
             throw Exception("Too large parameter for aggregate function " + getName() + ". Maximum: " + toString(TOP_K_MAX_SIZE),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
+        if (k == 0)
+            throw Exception("Parameter 0 is illegal for aggregate function " + getName(),
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
         threshold = k;
         reserved = TOP_K_LOAD_FACTOR * k;
     }

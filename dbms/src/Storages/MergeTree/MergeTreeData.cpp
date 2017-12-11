@@ -177,6 +177,17 @@ MergeTreeData::MergeTreeData(
 }
 
 
+static void checkForAllowedKeyColumns(const ColumnWithTypeAndName & element, const std::string & key_name)
+{
+    const ColumnPtr & column = element.column;
+    if (column && (column->isColumnConst() || column->isDummy()))
+        throw Exception{key_name + " key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
+
+    if (element.type->isNullable())
+        throw Exception{key_name + " key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
+}
+
+
 void MergeTreeData::initPrimaryKey()
 {
     if (!primary_expr_ast)
@@ -202,16 +213,7 @@ void MergeTreeData::initPrimaryKey()
     ///  (And also couldn't work because primary key is serialized with method of IDataType that doesn't support constants).
     /// Also a primary key must not contain any nullable column.
     for (size_t i = 0; i < primary_key_size; ++i)
-    {
-        const auto & element = primary_key_sample.getByPosition(i);
-
-        const ColumnPtr & column = element.column;
-        if (column && column->isConst())
-                throw Exception{"Primary key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
-
-        if (element.type->isNullable())
-            throw Exception{"Primary key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
-    }
+        checkForAllowedKeyColumns(primary_key_sample.getByPosition(i), "Primary");
 
     primary_key_data_types.resize(primary_key_size);
     for (size_t i = 0; i < primary_key_size; ++i)
@@ -231,11 +233,7 @@ void MergeTreeData::initPartitionKey()
         partition_expr_columns.emplace_back(col_name);
 
         const ColumnWithTypeAndName & element = partition_expr->getSampleBlock().getByName(col_name);
-
-        if (element.column && element.column->isConst())
-            throw Exception("Partition key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN);
-        if (element.type->isNullable())
-            throw Exception("Partition key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN);
+        checkForAllowedKeyColumns(element, "Partition");
 
         partition_expr_column_types.emplace_back(element.type);
     }
@@ -918,7 +916,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 /// This is temporary name for expression. TODO Invent the name more safely.
                 const String new_type_name_column = '#' + new_type_name + "_column";
                 out_expression->add(ExpressionAction::addColumn(
-                    { DataTypeString().createConstColumn(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
+                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
                 const FunctionPtr & function = FunctionFactory::instance().get("CAST", context);
                 out_expression->add(ExpressionAction::applyFunction(
@@ -1083,7 +1081,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             else
             {
                 const IDataType & type = *new_primary_key_sample.safeGetByPosition(i).type;
-                new_index[i] = type.createConstColumn(part->marks_count, type.getDefault())->convertToFullColumnIfConst();
+                new_index[i] = type.createColumnConst(part->marks_count, type.getDefault())->convertToFullColumnIfConst();
             }
         }
 

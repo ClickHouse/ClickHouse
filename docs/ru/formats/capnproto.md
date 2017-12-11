@@ -1,7 +1,6 @@
 <a name="format_capnproto"></a>
 
-CapnProto
-=========
+# CapnProto
 
 Cap'n Proto - формат бинарных сообщений, похож на Protocol Buffers и Thrift, но не похож на JSON или MessagePack.
 

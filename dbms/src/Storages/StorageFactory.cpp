@@ -242,7 +242,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
 static void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 {
     for (const auto & elem : names_and_types)
-        if (elem.type->notForTables())
+        if (elem.type->cannotBeStoredInTables())
             throw Exception("Data type " + elem.type->getName() + " cannot be used in tables", ErrorCodes::DATA_TYPE_CANNOT_BE_USED_IN_TABLES);
 }
 
@@ -656,7 +656,7 @@ StoragePtr StorageFactory::get(
 
             auto type = block.getByPosition(0).type;
 
-            if (!type->isNumeric())
+            if (!type->isValueRepresentedByInteger())
                 throw Exception("Sharding expression has type " + type->getName() +
                     ", but should be one of integer type", ErrorCodes::TYPE_MISMATCH);
         }

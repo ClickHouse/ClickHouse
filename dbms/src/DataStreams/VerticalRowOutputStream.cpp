@@ -1,7 +1,5 @@
 #include <cmath>
 
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataStreams/VerticalRowOutputStream.h>
