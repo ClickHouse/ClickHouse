@@ -1,5 +1,4 @@
-AMPLab Big Data Benchmark
-=========================
+# AMPLab Big Data Benchmark
 
 См. <https://amplab.cs.berkeley.edu/benchmark/>
 
