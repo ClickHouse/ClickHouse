@@ -141,10 +141,10 @@ struct SEHierarchyImpl
   */
 struct RegionsHierarchyGetter
 {
-    using Src = RegionsHierarchies;
-    using Dst = RegionsHierarchy;
+    using Src = const RegionsHierarchies;
+    using Dst = const RegionsHierarchy;
 
-    static const Dst & get(const Src & src, const std::string & key)
+    static Dst & get(Src & src, const std::string & key)
     {
         return src.get(key);
     }
@@ -155,10 +155,10 @@ struct RegionsHierarchyGetter
 template <typename Dict>
 struct IdentityDictionaryGetter
 {
-    using Src = Dict;
-    using Dst = Dict;
+    using Src = const Dict;
+    using Dst = const Dict;
 
-    static const Dst & get(const Src & src, const std::string & key)
+    static Dst & get(Src & src, const std::string & key)
     {
         if (key.empty())
             return src;
@@ -670,10 +670,10 @@ public:
     }
 
 private:
-    const std::shared_ptr<RegionsNames> owned_dict;
+    const MultiVersion<RegionsNames>::Version owned_dict;
 
 public:
-    FunctionRegionToName(const std::shared_ptr<RegionsNames> & owned_dict_)
+    FunctionRegionToName(const MultiVersion<RegionsNames>::Version & owned_dict_)
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
