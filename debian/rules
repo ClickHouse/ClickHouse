@@ -8,7 +8,7 @@
 export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie
 
 # because copy_headers.sh have hardcoded path to build/include_directories.txt
-BUILDDIR = build
+BUILDDIR = build_debian
 DESTDIR = debian/tmp
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
