@@ -108,7 +108,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
     {
-        block.getByPosition(result).column = DataTypeString().createConstColumn(block.rows(), db_name);
+        block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), db_name);
     }
 };
 
@@ -148,7 +148,7 @@ public:
       */
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
             block.rows(), Poco::Net::DNS::hostName())->convertToFullColumnIfConst();
     }
 };
@@ -219,7 +219,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         block.getByPosition(result).column
-            = DataTypeString().createConstColumn(block.rows(), block.getByPosition(arguments[0]).type->getName());
+            = DataTypeString().createColumnConst(block.rows(), block.getByPosition(arguments[0]).type->getName());
     }
 };
 
@@ -259,9 +259,9 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         if (auto type = checkAndGetDataType<DataTypeEnum8>(block.getByPosition(arguments[0]).type.get()))
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(type->getValues().size()));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(type->getValues().size()));
         else if (auto type = checkAndGetDataType<DataTypeEnum16>(block.getByPosition(arguments[0]).type.get()))
-            block.getByPosition(result).column = DataTypeUInt16().createConstColumn(block.rows(), UInt64(type->getValues().size()));
+            block.getByPosition(result).column = DataTypeUInt16().createColumnConst(block.rows(), UInt64(type->getValues().size()));
         else
             throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -299,7 +299,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         block.getByPosition(result).column
-            = DataTypeString().createConstColumn(block.rows(), block.getByPosition(arguments[0]).column->getName());
+            = DataTypeString().createColumnConst(block.rows(), block.getByPosition(arguments[0]).column->getName());
     }
 };
 
@@ -337,7 +337,7 @@ public:
         const auto & elem = block.getByPosition(arguments[0]);
 
         block.getByPosition(result).column
-            = DataTypeString().createConstColumn(block.rows(),
+            = DataTypeString().createColumnConst(block.rows(),
                 elem.type->getName() + ", " + elem.column->dumpStructure());
     }
 };
@@ -373,7 +373,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         IDataType & type = *block.getByPosition(arguments[0]).type;
-        block.getByPosition(result).column = type.createConstColumn(block.rows(), type.getDefault());
+        block.getByPosition(result).column = type.createColumnConst(block.rows(), type.getDefault());
     }
 };
 
@@ -623,7 +623,7 @@ public:
             usleep(static_cast<unsigned>(seconds * 1e6));
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, UInt64(0))->convertToFullColumnIfConst();
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, UInt64(0))->convertToFullColumnIfConst();
     }
 };
 
@@ -886,7 +886,7 @@ public:
         {
             TupleBackend data = const_tuple_col->getValue<Tuple>();
             block.getByPosition(result).column = static_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type)
-                .getElements()[index - 1]->createConstColumn(block.rows(), data[index - 1]);
+                .getElements()[index - 1]->createColumnConst(block.rows(), data[index - 1]);
         }
     }
 };
@@ -924,7 +924,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(0));
+        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(0));
     }
 };
 
@@ -972,7 +972,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(1));
+        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(1));
     }
 };
 
@@ -1125,8 +1125,8 @@ public:
                     + ".",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[0]->isNumeric() || !arguments[1]->isNumeric() || !arguments[2]->isNumeric()
-            || (arguments.size() == 4 && !arguments[3]->isNumeric()))
+        if (!arguments[0]->isNumber() || !arguments[1]->isNumber() || !arguments[2]->isNumber()
+            || (arguments.size() == 4 && !arguments[3]->isNumber()))
             throw Exception("All arguments for function " + getName() + " must be numeric.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -1177,7 +1177,7 @@ private:
     {
         const auto & column = *block.getByPosition(arguments[argument_pos]).column;
 
-        if (!column.isConst())
+        if (!column.isColumnConst())
             throw Exception(
                 which_argument + String(" argument for function ") + getName() + " must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
@@ -1253,17 +1253,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto arg = arguments.front().get();
-        if (!checkDataType<DataTypeUInt8>(arg) && !checkDataType<DataTypeUInt16>(arg)
-            && !checkDataType<DataTypeUInt32>(arg)
-            && !checkDataType<DataTypeUInt64>(arg)
-            && !checkDataType<DataTypeInt8>(arg)
-            && !checkDataType<DataTypeInt16>(arg)
-            && !checkDataType<DataTypeInt32>(arg)
-            && !checkDataType<DataTypeInt64>(arg)
-            && !checkDataType<DataTypeFloat32>(arg)
-            && !checkDataType<DataTypeFloat64>(arg))
-            throw Exception{"Argument for function " + getName() + " must be numeric", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        if (!arguments.front()->isNumber())
+            throw Exception{"Argument for function " + getName() + " must be number", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -1400,7 +1391,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         static const std::string version = getVersion();
-        block.getByPosition(result).column = DataTypeString().createConstColumn(block.rows(), version);
+        block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), version);
     }
 
 private:
@@ -1440,7 +1431,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeUInt32().createConstColumn(block.rows(), static_cast<UInt64>(uptime));
+        block.getByPosition(result).column = DataTypeUInt32().createColumnConst(block.rows(), static_cast<UInt64>(uptime));
     }
 
 private:
@@ -1475,7 +1466,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        block.getByPosition(result).column = DataTypeString().createConstColumn(block.rows(), DateLUT::instance().getTimeZone());
+        block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), DateLUT::instance().getTimeZone());
     }
 };
 
@@ -1678,9 +1669,9 @@ public:
         auto & res = block.getByPosition(result);
 
         /// When column is constant, its difference is zero.
-        if (src.column->isConst())
+        if (src.column->isColumnConst())
         {
-            res.column = res.type->createConstColumn(block.rows(), res.type->getDefault());
+            res.column = res.type->createColumnConst(block.rows(), res.type->getDefault());
             return;
         }
 
@@ -1873,7 +1864,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
         has_column = std::find(names.begin(), names.end(), column_name) != names.end();
     }
 
-    block.getByPosition(result).column = DataTypeUInt8().createConstColumn(block.rows(), UInt64(has_column));
+    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(has_column));
 }
 
 

@@ -13,7 +13,7 @@ ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type
     {
         arg,
         {
-            DataTypeString().createConstColumn(arg.column->size(), type->getName()),
+            DataTypeString().createColumnConst(arg.column->size(), type->getName()),
             std::make_shared<DataTypeString>(),
             ""
         },

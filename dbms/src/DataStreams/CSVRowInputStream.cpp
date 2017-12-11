@@ -3,7 +3,6 @@
 
 #include <DataStreams/verbosePrintString.h>
 #include <DataStreams/CSVRowInputStream.h>
-#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -226,9 +225,9 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
         if (curr_position < prev_position)
             throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
-        if (data_types[i]->isNumeric())
+        if (data_types[i]->isNumber() || data_types[i]->isDateOrDateTime())
         {
-            /// An empty string instead of a number.
+            /// An empty string instead of a value.
             if (curr_position == prev_position)
             {
                 out << "ERROR: text ";
@@ -254,7 +253,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
 
         out << "\n";
 
-        if (data_types[i]->isNumeric())
+        if (data_types[i]->haveMaximumSizeOfValue())
         {
             if (*curr_position != '\n' && *curr_position != '\r' && *curr_position != delimiter)
             {

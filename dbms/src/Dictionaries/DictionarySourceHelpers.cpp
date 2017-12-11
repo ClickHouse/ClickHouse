@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTraits.h>
 
 #include <Core/AccurateComparison.h>
 #include <Common/FieldVisitors.h>
@@ -106,7 +105,7 @@ UInt128 stringToUUID(const String & s)
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 {
-    if (type.isNumeric())
+    if (type.isValueRepresentedByNumber())
     {
         if (typeid_cast<const DataTypeUInt8 *>(&type)) return convertNumericType<UInt8>(src, type);
         if (typeid_cast<const DataTypeUInt16 *>(&type)) return convertNumericType<UInt16>(src, type);
@@ -157,8 +156,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
             }
         }
     }
-    else if (typeid_cast<const DataTypeString *>(&type)
-        || typeid_cast<const DataTypeFixedString *>(&type))
+    else if (type.isStringOrFixedString())
     {
         if (src.getType() == Field::Types::String)
             return src;
@@ -167,14 +165,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
     {
         if (src.getType() == Field::Types::Array)
         {
-            const IDataType & nested_type = *DataTypeTraits::removeNullable(type_array->getNestedType());
+            const DataTypePtr nested_type = removeNullable(type_array->getNestedType());
 
             const Array & src_arr = src.get<Array>();
             size_t src_arr_size = src_arr.size();
 
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
-                res[i] = convertFieldToType(src_arr[i], nested_type);
+                res[i] = convertFieldToType(src_arr[i], *nested_type);
 
             return res;
         }

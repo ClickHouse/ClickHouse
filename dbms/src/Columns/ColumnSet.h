@@ -19,9 +19,6 @@ class ColumnSet final : public IColumnDummy
 public:
     ColumnSet(size_t s_, const ConstSetPtr & data_) : IColumnDummy(s_), data(data_) {}
 
-    /// The column is not a constant. Otherwise, the column will be used in calculations in ExpressionActions::prepare, when a set from subquery is not ready yet.
-    bool isConst() const override { return false; }
-
     const char * getFamilyName() const override { return "Set"; }
     ColumnPtr cloneDummy(size_t s_) const override { return std::make_shared<ColumnSet>(s_, data); }
 

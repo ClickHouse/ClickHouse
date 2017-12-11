@@ -567,7 +567,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -652,7 +652,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -729,7 +729,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -824,7 +824,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

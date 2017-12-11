@@ -1,5 +1,4 @@
 #include <DataStreams/materializeBlock.h>
-#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB

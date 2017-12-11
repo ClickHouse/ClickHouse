@@ -2,7 +2,6 @@
 # prepare old (trusty or earlier) host system:
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/artful
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/bionic
-# echo "3.0 (native)" > debian/source/format
 # build ubuntu:
 # sudo DIST=trusty pbuilder create --configfile debian/.pbuilderrc && DIST=trusty pdebuild --configfile debian/.pbuilderrc
 # sudo DIST=xenial pbuilder create --configfile debian/.pbuilderrc && DIST=xenial pdebuild --configfile debian/.pbuilderrc
@@ -26,6 +25,8 @@
 # sudo DIST=experimental ARCH=i386 pbuilder create --configfile debian/.pbuilderrc && DIST=experimental ARCH=i386 pdebuild --configfile debian/.pbuilderrc
 # with embedded compiler (only artful have clang-5.0):
 # env EXTRAPACKAGES="liblld-5.0-dev libclang-5.0-dev liblld-5.0" CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1" DIST=artful pdebuild --configfile debian/.pbuilderrc
+# use only clang:
+# env DEB_CC=clang-5.0 DEB_CXX=clang++-5.0 env EXTRAPACKAGES="liblld-5.0 liblld-5.0-dev libclang-5.0-dev clang-5.0" CMAKE_FLAGS="-DNO_WERROR=1 -DUSE_EMBEDDED_COMPILER=1" DIST=artful pdebuild --configfile debian/.pbuilderrc
 
 # Your packages built here: /var/cache/pbuilder/*-*/result
 
@@ -144,3 +145,10 @@ sudo mkdir -p /var/cache/pbuilder/ccache
 sudo chmod -R a+rwx /var/cache/pbuilder/ccache
 
 # echo "DEBOOTSTRAPOPTS = ${DEBOOTSTRAPOPTS[@]}"
+
+# Use current dir to make package (by default should have src archive)
+# echo "3.0 (native)" > debian/source/format
+# OR
+# pdebuild --debbuildopts "--source-option=--format=\"3.0 (native)\""
+# OR
+DEBBUILDOPTS="--source-option=--format=\"3.0 (native)\""

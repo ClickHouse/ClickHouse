@@ -44,16 +44,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const IDataType * type = &*arguments[0];
+        const IDataType * type = arguments[0].get();
 
-        if (!checkDataType<DataTypeUInt8>(type) &&
-            !checkDataType<DataTypeUInt16>(type) &&
-            !checkDataType<DataTypeUInt32>(type) &&
-            !checkDataType<DataTypeUInt64>(type) &&
-            !checkDataType<DataTypeInt8>(type) &&
-            !checkDataType<DataTypeInt16>(type) &&
-            !checkDataType<DataTypeInt32>(type) &&
-            !checkDataType<DataTypeInt64>(type))
+        if (!type->isInteger())
             throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -145,7 +138,7 @@ public:
     {
         const IDataType & type = *arguments[0];
 
-        if (!type.behavesAsNumber())
+        if (!type.isNumber())
             throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();

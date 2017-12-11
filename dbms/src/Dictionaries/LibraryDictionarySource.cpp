@@ -1,10 +1,12 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Dictionaries/LibraryDictionarySource.h>
+#include <Dictionaries/LibraryDictionarySourceExternal.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
-#include "LibraryDictionarySourceExternal.h"
 #include <common/logger_useful.h>
 #include <ext/bit_cast.h>
+#include <ext/range.h>
+
 
 namespace DB
 {

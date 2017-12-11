@@ -76,10 +76,10 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
             /// We skip branches that are always false.
             /// If we encounter a branch that is always true, we can finish.
 
-            if (cond_col.column->isNull())
+            if (cond_col.column->onlyNull())
                 continue;
 
-            if (cond_col.column->isConst())
+            if (cond_col.column->isColumnConst())
             {
                 Field value = typeid_cast<const ColumnConst &>(*cond_col.column).getField();
                 if (value.isNull())
@@ -90,7 +90,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
             }
             else
             {
-                if (cond_col.column->isNullable())
+                if (cond_col.column->isColumnNullable())
                     instruction.condition_is_nullable = true;
 
                 instruction.condition = cond_col.column.get();
@@ -109,7 +109,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
             instruction.source = converted_columns_holder.back().get();
         }
 
-        if (instruction.source && instruction.source->isConst())
+        if (instruction.source && instruction.source->isColumnConst())
             instruction.source_is_constant = true;
 
         instructions.emplace_back(std::move(instruction));
@@ -188,7 +188,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
         {
             have_nullable_condition = true;
 
-            if (arg->isNull())
+            if (arg->onlyNull())
                 return;
 
             const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
@@ -216,7 +216,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
     DataTypePtr common_type_of_branches = getLeastCommonType(types_of_branches);
 
     return have_nullable_condition
-        ? makeNullableDataTypeIfNot(common_type_of_branches)
+        ? makeNullable(common_type_of_branches)
         : common_type_of_branches;
 }
 

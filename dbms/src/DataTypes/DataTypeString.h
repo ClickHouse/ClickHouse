@@ -54,6 +54,14 @@ public:
     {
         return String();
     }
+
+    bool isParametric() const override { return false; }
+    bool haveSubtypes() const override { return false; }
+    bool canBeComparedWithCollation() const override { return true; }
+    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
+    bool isString() const override { return true; };
+    bool isCategorial() const override { return true; }
+    bool canBeInsideNullable() const override { return true; }
 };
 
 }
