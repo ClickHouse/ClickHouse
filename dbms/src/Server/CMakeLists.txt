@@ -109,7 +109,7 @@ else ()
     add_custom_target (clickhouse-lld ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-lld DEPENDS clickhouse)
 
     install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-    install (FILES 
+    install (FILES
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-server
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-client
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-local
