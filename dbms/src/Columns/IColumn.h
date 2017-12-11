@@ -42,34 +42,10 @@ public:
     /// Name of a Column kind, without parameters (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
-    /// Column is vector of numbers or numeric constant.
-    virtual bool isNumeric() const { return false; }
-
-    /// Is this column numeric and not nullable?
-    virtual bool isNumericNotNullable() const { return isNumeric(); }
-
-    /// Column stores a constant value.
-    virtual bool isConst() const { return false; }
-
-    /// Is this column a container for nullable values?
-    virtual bool isNullable() const { return false; }
-
-    /// Is this a null column?
-    virtual bool isNull() const { return false; }
-
     /** If column isn't constant, returns nullptr (or itself).
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
-      * Special case:
-      * If column is composed from several other columns (tuple for example), and contains both constant and full columns,
-      *  then each constant column is transformed, and final result is returned.
       */
     virtual ColumnPtr convertToFullColumnIfConst() const { return {}; }
-
-    /// Values in column have equal size in memory.
-    virtual bool isFixed() const { return false; }
-
-    /// If column isFixed(), returns size of value.
-    virtual size_t sizeOfField() const { throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
 
     /// Creates the same column with the same data.
     virtual ColumnPtr clone() const { return cut(0, size()); }
@@ -127,6 +103,8 @@ public:
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual bool isNullAt(size_t /*n*/) const { return false; }
+
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
     virtual ColumnPtr cut(size_t start, size_t length) const
@@ -150,7 +128,7 @@ public:
 
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
     /// Is used to optimize some computations (in aggregation, for example).
-    /// Parameter length could be ignored if column isFixed().
+    /// Parameter length could be ignored if column values have fixed size.
     virtual void insertData(const char * pos, size_t length) = 0;
 
     /// Like getData, but has special behavior for columns that contain variable-length strings.
@@ -266,13 +244,73 @@ public:
     /// Zero, if could be determined.
     virtual size_t allocatedBytes() const = 0;
 
-    /// If the column contains subcolumns (such as Array, Nullable, etc), enumerate them.
-    /// Shallow: doesn't do recursive calls.
+    /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
+    /// Shallow: doesn't do recursive calls; don't do call for itself.
     using ColumnCallback = std::function<void(ColumnPtr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
 
+    /** Some columns can contain another columns inside.
+      * So, we have a tree of columns. But not all combinations are possible.
+      * There are the following rules:
+      *
+      * ColumnConst may be only at top. It cannot be inside any column.
+      * ColumnNullable can contain only simple columns.
+      */
+
+    /// Various properties on behaviour of column type.
+
+    /// Is this column a container for Nullable values? It's true only for ColumnNullable.
+    /// Note that ColumnConst(ColumnNullable(...)) is not considered.
+    virtual bool isColumnNullable() const { return false; }
+
+    /// Column stores a constant value. It's true only for ColumnConst wrapper.
+    virtual bool isColumnConst() const { return false; }
+
+    /// It's a special kind of column, that contain single value, but is not a ColumnConst.
+    virtual bool isDummy() const { return false; }
+
+    /** Memory layout properties.
+      *
+      * Each value of a column can be placed in memory contiguously or not.
+      *
+      * Example: simple columns like UInt64 or FixedString store their values contiguously in single memory buffer.
+      *
+      * Example: Tuple store values of each component in separate subcolumn, so the values of Tuples with at least two components are not contiguous.
+      * Another example is Nullable. Each value have null flag, that is stored separately, so the value is not contiguous in memory.
+      *
+      * There are some important cases, when values are not stored contiguously, but for each value, you can get contiguous memory segment,
+      *  that will unambiguously identify the value. In this case, methods getDataAt and insertData are implemented.
+      * Example: String column: bytes of strings are stored concatenated in one memory buffer
+      *  and offsets to that buffer are stored in another buffer. The same is for Array of fixed-size contiguous elements.
+      *
+      * To avoid confusion between these cases, we don't have isContiguous method.
+      */
+
+    /// Values in column have fixed size (including the case when values span many memory segments).
+    virtual bool valuesHaveFixedSize() const { return isFixedAndContiguous(); }
+
+    /// Values in column are represented as continuous memory segment of fixed size. Implies valuesHaveFixedSize.
+    virtual bool isFixedAndContiguous() const { return false; }
+
+    /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
+    virtual size_t sizeOfValueIfFixed() const { throw Exception("Values of column " + getName() + " are not fixed size.", ErrorCodes::CANNOT_GET_SIZE_OF_FIELD); }
+
+    /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
+    /// Implies isFixedAndContiguous.
+    virtual bool isNumeric() const { return false; }
+
+    /// If the only value column can contain is NULL.
+    /// Does not imply type of object, because it can be ColumnNullable(ColumnNothing) or ColumnConst(ColumnNullable(ColumnNothing))
+    virtual bool onlyNull() const { return false; }
+
+    /// Can be inside ColumnNullable.
+    virtual bool canBeInsideNullable() const { return false; }
+
+
     virtual ~IColumn() {}
 
+    /** Print column name, size, and recursively print all subcolumns.
+      */
     String dumpStructure() const;
 
 protected:

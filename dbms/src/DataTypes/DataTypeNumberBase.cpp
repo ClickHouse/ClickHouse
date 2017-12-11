@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
@@ -236,6 +237,12 @@ template <typename T>
 ColumnPtr DataTypeNumberBase<T>::createColumn() const
 {
     return std::make_shared<ColumnVector<T>>();
+}
+
+template <typename T>
+bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
+{
+    return std::is_integral_v<T>;
 }
 
 

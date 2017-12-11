@@ -136,10 +136,7 @@ public:
     ColumnVector(const size_t n) : data{n} {}
     ColumnVector(const size_t n, const value_type x) : data{n, x} {}
 
-    bool isNumeric() const override { return IsNumber<T>::value; }
-    bool isFixed() const override { return IsNumber<T>::value; }
-
-    size_t sizeOfField() const override { return sizeof(T); }
+    bool isNumeric() const override { return IsNumber<T>; }
 
     size_t size() const override
     {
@@ -252,6 +249,13 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+
+    bool canBeInsideNullable() const override { return true; }
+
+    bool isFixedAndContiguous() const override { return true; }
+    size_t sizeOfValueIfFixed() const override { return sizeof(T); }
+
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container_t & getData()

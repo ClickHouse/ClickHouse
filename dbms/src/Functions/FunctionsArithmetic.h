@@ -484,15 +484,6 @@ template <> struct IsIntegral<DataTypeInt16> { static constexpr auto value = tru
 template <> struct IsIntegral<DataTypeInt32> { static constexpr auto value = true; };
 template <> struct IsIntegral<DataTypeInt64> { static constexpr auto value = true; };
 
-template <typename DataType> struct IsFloating { static constexpr auto value = false; };
-template <> struct IsFloating<DataTypeFloat32> { static constexpr auto value = true; };
-template <> struct IsFloating<DataTypeFloat64> { static constexpr auto value = true; };
-
-template <typename DataType> struct IsNumeric
-{
-    static constexpr auto value = IsIntegral<DataType>::value || IsFloating<DataType>::value;
-};
-
 template <typename DataType> struct IsDateOrDateTime { static constexpr auto value = false; };
 template <> struct IsDateOrDateTime<DataTypeDate> { static constexpr auto value = true; };
 template <> struct IsDateOrDateTime<DataTypeDateTime> { static constexpr auto value = true; };
@@ -699,7 +690,7 @@ private:
         {
             ResultType res = 0;
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), toField(res));
+            block.getByPosition(result).column = DataTypeNumber<ResultType>().createColumnConst(col_left->size(), toField(res));
 
             return true;
         }
@@ -849,7 +840,7 @@ public:
             || checkLeftType<DataTypeInt64>(arguments, type_res)
             || checkLeftType<DataTypeFloat32>(arguments, type_res)
             || checkLeftType<DataTypeFloat64>(arguments, type_res)))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type_res;
@@ -1250,14 +1241,7 @@ public:
 
         const auto first_arg = arguments.front().get();
 
-        if (!checkDataType<DataTypeUInt8>(first_arg)
-            && !checkDataType<DataTypeUInt16>(first_arg)
-            && !checkDataType<DataTypeUInt32>(first_arg)
-            && !checkDataType<DataTypeUInt64>(first_arg)
-            && !checkDataType<DataTypeInt8>(first_arg)
-            && !checkDataType<DataTypeInt16>(first_arg)
-            && !checkDataType<DataTypeInt32>(first_arg)
-            && !checkDataType<DataTypeInt64>(first_arg))
+        if (!first_arg->isInteger())
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1267,10 +1251,7 @@ public:
         {
             const auto pos_arg = arguments[i].get();
 
-            if (!checkDataType<DataTypeUInt8>(pos_arg)
-                && !checkDataType<DataTypeUInt16>(pos_arg)
-                && !checkDataType<DataTypeUInt32>(pos_arg)
-                && !checkDataType<DataTypeUInt64>(pos_arg))
+            if (!pos_arg->canBeUsedAsNonNegativeArrayIndex())
                 throw Exception{
                     "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1337,7 +1318,7 @@ private:
 
             if (is_const)
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, toField(Impl::apply(val, mask)));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, mask)));
             }
             else
             {

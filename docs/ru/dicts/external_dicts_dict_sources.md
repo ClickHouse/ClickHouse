@@ -1,7 +1,6 @@
 <a name="dicts-external_dicts_dict_sources"></a>
 
-Источники внешних словарей
-==========================
+# Источники внешних словарей
 
 Внешний словарь можно подключить из множества источников.
 
@@ -37,8 +36,7 @@
 
 <a name="dicts-external_dicts_dict_sources-local_file"></a>
 
-Локальный файл
---------------
+## Локальный файл
 
 Пример настройки:
 
@@ -58,8 +56,7 @@
 
 <a name="dicts-external_dicts_dict_sources-executable"></a>
 
-Исполняемый файл
-----------------
+## Исполняемый файл
 
 Работа с исполняемым файлом зависит от [размещения словаря в памяти](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). Если тип размещения словаря `cache` и `complex_key_cache`, то ClickHouse запрашивает необходимые ключи, отправляя запрос в `STDIN` исполняемого файла.
 
@@ -81,8 +78,7 @@
 
 <a name="dicts-external_dicts_dict_sources-http"></a>
 
-HTTP(s)
--------
+## HTTP(s)
 
 Работа с HTTP(s) сервером зависит от [размещения словаря в памяти](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). Если тип размещения словаря `cache` и `complex_key_cache`, то ClickHouse запрашивает необходимые ключи, отправляя запрос методом `POST`.
 
@@ -106,8 +102,7 @@ HTTP(s)
 
 <a name="dicts-external_dicts_dict_sources-odbc"></a>
 
-ODBC
-----
+## ODBC
 
 Этим способом можно подключить любую базу данных, имеющую ODBC драйвер.
 
@@ -129,8 +124,7 @@ ODBC
 -   `connection_string` - строка соединения.
 -   `invalidate_query` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
-Пример подключения PostgreSQL
------------------------------
+## Пример подключения PostgreSQL
 
 ОС Ubuntu.
 
@@ -273,8 +267,7 @@ ODBC
 </yandex>
 ```
 
-СУБД
-----
+## СУБД
 
 <a name="dicts-external_dicts_dict_sources-mysql"></a>
 

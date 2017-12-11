@@ -155,7 +155,7 @@ protected:
 
         for (const auto & col : key_columns)
         {
-            if (col->isNullable())
+            if (col->isColumnNullable())
             {
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
                 actual_columns.push_back(nullable_col.getNestedColumn().get());

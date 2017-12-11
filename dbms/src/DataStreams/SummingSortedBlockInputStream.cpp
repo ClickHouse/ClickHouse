@@ -151,8 +151,7 @@ Block SummingSortedBlockInputStream::readImpl()
             }
             else
             {
-                /// Leave only numeric types. Note that dates and datetime here are not considered such.
-                if (!column.type->behavesAsNumber())
+                if (!column.type->isSummable())
                 {
                     column_numbers_not_to_aggregate.push_back(i);
                     continue;
@@ -222,16 +221,14 @@ Block SummingSortedBlockInputStream::readImpl()
                     || endsWith(name, "Key")
                     || endsWith(name, "Type"))
                 {
-                    if (!nested_type.isNumeric()
-                        || nested_type.getName() == "Float32"
-                        || nested_type.getName() == "Float64")
+                    if (!nested_type.isValueRepresentedByInteger())
                         break;
 
                     map_desc.key_col_nums.push_back(*column_num_it);
                 }
                 else
                 {
-                    if (!nested_type.behavesAsNumber())
+                    if (!nested_type.isSummable())
                         break;
 
                     map_desc.val_col_nums.push_back(*column_num_it);

@@ -22,12 +22,6 @@ ColumnConst::ColumnConst(ColumnPtr data_, size_t s)
             ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 }
 
-bool ColumnConst::isNull() const
-{
-    const ColumnNullable * column_nullable = typeid_cast<const ColumnNullable *>(data.get());
-    return column_nullable && column_nullable->isNullAt(0);
-}
-
 ColumnPtr ColumnConst::convertToFullColumn() const
 {
     return data->replicate(Offsets_t(1, s));

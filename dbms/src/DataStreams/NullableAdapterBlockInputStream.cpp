@@ -2,7 +2,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataStreams/isConvertableTypes.h>
 
 
 namespace DB
@@ -107,33 +106,23 @@ void NullableAdapterBlockInputStream::buildActions(
         const auto & in_elem  = in_sample.getByPosition(i);
         const auto & out_elem = out_sample.getByPosition(i);
 
-        if (isConvertableTypes(in_elem.type, out_elem.type))
-        {
-            bool is_in_nullable = in_elem.type->isNullable();
-            bool is_out_nullable = out_elem.type->isNullable();
+        bool is_in_nullable = in_elem.type->isNullable();
+        bool is_out_nullable = out_elem.type->isNullable();
 
-            if (is_in_nullable && !is_out_nullable)
-                actions.push_back(TO_ORDINARY);
-            else if (!is_in_nullable && is_out_nullable)
-                actions.push_back(TO_NULLABLE);
-            else
-                actions.push_back(NONE);
-
-            if (in_elem.name != out_elem.name)
-                rename.emplace_back(std::make_optional(out_elem.name));
-            else
-                rename.emplace_back();
-
-            if (actions.back() != NONE || rename.back())
-                must_transform = true;
-        }
+        if (is_in_nullable && !is_out_nullable)
+            actions.push_back(TO_ORDINARY);
+        else if (!is_in_nullable && is_out_nullable)
+            actions.push_back(TO_NULLABLE);
         else
-        {
-            throw Exception{String("Types must be the same for columns at same position. ")
-                + "Column " + in_elem.name + " has type " + in_elem.type->getName()
-                + ", but column " + out_elem.name + " has type " + out_elem.type->getName(),
-                ErrorCodes::TYPE_MISMATCH};
-        }
+            actions.push_back(NONE);
+
+        if (in_elem.name != out_elem.name)
+            rename.emplace_back(std::make_optional(out_elem.name));
+        else
+            rename.emplace_back();
+
+        if (actions.back() != NONE || rename.back())
+            must_transform = true;
     }
 }
 

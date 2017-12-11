@@ -3,6 +3,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -117,13 +118,25 @@ Block TotalsHavingBlockInputStream::readImpl()
             if (auto converted = filter_column_ptr->convertToFullColumnIfConst())
                 filter_column_ptr = converted;
 
-            ColumnUInt8 * filter_column = typeid_cast<ColumnUInt8 *>(&*filter_column_ptr);
+            bool filter_is_nullable = filter_column_ptr->isColumnNullable();
+            ColumnUInt8 * filter_column = filter_is_nullable
+                ? typeid_cast<ColumnUInt8 *>(static_cast<ColumnNullable *>(filter_column_ptr.get())->getNestedColumn().get())
+                : typeid_cast<ColumnUInt8 *>(&*filter_column_ptr);
+
             if (!filter_column)
                 throw Exception("Filter column must have type UInt8, found " +
                     finalized.safeGetByPosition(filter_column_pos).type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
 
             IColumn::Filter & filter = filter_column->getData();
+
+            if (filter_column_ptr->isColumnNullable())
+            {
+                const NullMap & null_map = static_cast<ColumnNullable *>(filter_column_ptr.get())->getNullMap();
+                for (size_t i = 0, size = null_map.size(); i < size; ++i)
+                    if (null_map[i])
+                        filter[i] = 0;
+            }
 
             /// Add values to `totals` (if it was not already done).
             if (totals_mode == TotalsMode::BEFORE_HAVING)

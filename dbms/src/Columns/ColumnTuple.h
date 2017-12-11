@@ -57,7 +57,6 @@ public:
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
-    ColumnPtr convertToFullColumnIfConst() const override;
     void forEachSubcolumn(ColumnCallback callback) override;
 
     const Columns & getColumns() const { return columns; }

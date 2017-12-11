@@ -1,7 +1,6 @@
 <a name="table_functions-remote"></a>
 
-remote
-======
+# remote
 
 Позволяет обратиться к удалённым серверам без создания таблицы типа `Distributed`.
 

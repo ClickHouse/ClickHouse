@@ -9,7 +9,7 @@ void extractNestedColumnsAndNullMap(ConstColumnPlainPtrs & key_columns, ColumnPt
     if (key_columns.size() == 1)
     {
         auto & column = key_columns[0];
-        if (!column->isNullable())
+        if (!column->isColumnNullable())
             return;
 
         const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(*column);
@@ -22,7 +22,7 @@ void extractNestedColumnsAndNullMap(ConstColumnPlainPtrs & key_columns, ColumnPt
 
         for (auto & column : key_columns)
         {
-            if (column->isNullable())
+            if (column->isColumnNullable())
             {
                 const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(*column);
                 column = column_nullable.getNestedColumn().get();

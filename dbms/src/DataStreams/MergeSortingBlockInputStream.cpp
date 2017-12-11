@@ -24,7 +24,7 @@ static void removeConstantsFromBlock(Block & block)
     size_t i = 0;
     while (i < columns)
     {
-        if (block.getByPosition(i).column->isConst())
+        if (block.getByPosition(i).column->isColumnConst())
         {
             block.erase(i);
             --columns;
@@ -40,9 +40,9 @@ static void removeConstantsFromSortDescription(const Block & sample_block, SortD
         [&](const SortColumnDescription & elem)
         {
             if (!elem.column_name.empty())
-                return sample_block.getByName(elem.column_name).column->isConst();
+                return sample_block.getByName(elem.column_name).column->isColumnConst();
             else
-                return sample_block.safeGetByPosition(elem.column_number).column->isConst();
+                return sample_block.safeGetByPosition(elem.column_number).column->isColumnConst();
         }), description.end());
 }
 
@@ -57,7 +57,7 @@ static void enrichBlockWithConstants(Block & block, const Block & sample_block)
     for (size_t i = 0; i < columns; ++i)
     {
         const auto & col_type_name = sample_block.getByPosition(i);
-        if (col_type_name.column->isConst())
+        if (col_type_name.column->isColumnConst())
             block.insert(i, {col_type_name.column->cloneResized(rows), col_type_name.type, col_type_name.name});
     }
 }

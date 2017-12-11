@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Columns/ColumnString.h>
@@ -262,40 +263,25 @@ struct ConvertImplGenericToString
 
         size_t size = col_from.size();
 
-        if (!col_from.isConst())
+        auto col_to = std::make_shared<ColumnString>();
+        block.getByPosition(result).column = col_to;
+
+        ColumnString::Chars_t & data_to = col_to->getChars();
+        ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+
+        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
+        offsets_to.resize(size);
+
+        WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+
+        for (size_t i = 0; i < size; ++i)
         {
-            auto col_to = std::make_shared<ColumnString>();
-            block.getByPosition(result).column = col_to;
-
-            ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
-
-            data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
-            offsets_to.resize(size);
-
-            WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                type.serializeText(col_from, i, write_buffer);
-                writeChar(0, write_buffer);
-                offsets_to[i] = write_buffer.count();
-            }
-
-            data_to.resize(write_buffer.count());
+            type.serializeText(col_from, i, write_buffer);
+            writeChar(0, write_buffer);
+            offsets_to[i] = write_buffer.count();
         }
-        else
-        {
-            String res;
 
-            if (size)
-            {
-                WriteBufferFromString write_buffer(res);
-                type.serializeText(*col_from.cut(0, 1)->convertToFullColumnIfConst(), 0, write_buffer);
-            }
-
-            block.getByPosition(result).column = DataTypeString().createConstColumn(size, res);
-        }
+        data_to.resize(write_buffer.count());
     }
 };
 
@@ -830,8 +816,7 @@ public:
     {
         if (!arguments[1].column)
             throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-        if (!checkDataType<DataTypeString>(arguments[0].type.get()) &&
-            !checkDataType<DataTypeFixedString>(arguments[0].type.get()))
+        if (!arguments[0].type->isStringOrFixedString())
             throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
         const size_t n = getSize(arguments[1]);
@@ -957,7 +942,7 @@ struct ToIntMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        size_t size_of_type = type.getSizeOfField();
+        size_t size_of_type = type.getSizeOfValueInMemory();
 
         /// If type is expanding, then function is monotonic.
         if (sizeof(T) > size_of_type)
@@ -1151,8 +1136,7 @@ private:
 
     static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
     {
-        if (!checkDataType<DataTypeString>(from_type.get()) &&
-            !checkDataType<DataTypeFixedString>(from_type.get()))
+        if (!from_type->isStringOrFixedString())
             throw Exception{
                 "CAST AS FixedString is only implemented for types String and FixedString",
                 ErrorCodes::NOT_IMPLEMENTED};
@@ -1320,7 +1304,7 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (from_type->behavesAsNumber())
+        else if (from_type->isNumber() || from_type->isEnum())
         {
             auto function = Function::create(context);
 
@@ -1410,6 +1394,16 @@ private:
         };
     }
 
+    WrapperType createNothingWrapper(const IDataType * to_type)
+    {
+        DataTypePtr to_type_clone = to_type->clone();
+        return [to_type_clone] (Block & block, const ColumnNumbers &, const size_t result)
+        {
+            /// Column of Nothing type is trivially convertible to any other column
+            block.getByPosition(result).column = to_type_clone->createColumnConst(block.rows(), to_type_clone->getDefault())->convertToFullColumnIfConst();
+        };
+    }
+
     /// Actions to be taken when performing a conversion.
     struct NullableConversion
     {
@@ -1430,12 +1424,12 @@ private:
             throw Exception{"Cannot convert data from a nullable type to a non-nullable type",
                 ErrorCodes::CANNOT_CONVERT_TYPE};
 
-        if (from_type->isNull())
+        if (from_type->onlyNull())
         {
             return [](Block & block, const ColumnNumbers &, const size_t result)
             {
                 auto & res = block.getByPosition(result);
-                res.column = res.type->createConstColumn(block.rows(), Null())->convertToFullColumnIfConst();
+                res.column = res.type->createColumnConst(block.rows(), Null())->convertToFullColumnIfConst();
             };
         }
 
@@ -1516,6 +1510,8 @@ private:
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
+        else if (checkDataType<DataTypeNothing>(from_type.get()))
+            return createNothingWrapper(to_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type))
             return createWrapper(from_type, to_actual_type);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type))
@@ -1595,7 +1591,7 @@ private:
             monotonicity_for_range = monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
             monotonicity_for_range = monotonicityForType(type);
-        else if (from_type->isNumeric())
+        else if (from_type->isEnum())
         {
             if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 monotonicity_for_range = monotonicityForType(type);

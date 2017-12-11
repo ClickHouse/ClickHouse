@@ -206,7 +206,7 @@ public:
             value = vec_to[0];
         }
 
-        block.getByPosition(result).column = DataTypeNumber<ToType>().createConstColumn(block.rows(), toField(value));
+        block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(block.rows(), toField(value));
     }
 };
 
