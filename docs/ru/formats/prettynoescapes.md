@@ -1,5 +1,4 @@
-PrettyNoEscapes
-===============
+# PrettyNoEscapes
 
 Отличается от Pretty тем, что не используются ANSI-escape последовательности. Это нужно для отображения этого формата в браузере, а также при использовании утилиты командной строки watch.
 
@@ -11,12 +10,10 @@ watch -n1 "clickhouse-client --query='SELECT * FROM system.events FORMAT PrettyC
 
 Для отображения в браузере, вы можете использовать HTTP интерфейс.
 
-PrettyCompactNoEscapes
-======================
+## PrettyCompactNoEscapes
 
 Аналогично.
 
-PrettySpaceNoEscapes
-====================
+## PrettySpaceNoEscapes
 
 Аналогично.
