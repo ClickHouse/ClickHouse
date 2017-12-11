@@ -1,5 +1,4 @@
-Что такое ClickHouse
-====================
+# Что такое ClickHouse
 
 ClickHouse - столбцовая СУБД для OLAP (Columnar DBMS).
 
