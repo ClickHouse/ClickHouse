@@ -33,7 +33,11 @@ START_HEADERS=$(echo \
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 # The latter options are the same that are added while building packages.
 
+GCC_ROOT=`$CLANG -v 2>&1 | grep "Selected GCC installation"| sed -n -e 's/^.*: //p'`
+
 for src_file in $(echo | $CLANG -M -xc++ -std=c++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC -fstack-protector -D_FORTIFY_SOURCE=2 \
+    -I $GCC_ROOT/include \
+    -I $GCC_ROOT/include-fixed \
     $(cat "$BUILD_PATH/include_directories.txt") \
     $(echo $START_HEADERS | sed -r -e 's/[^ ]+/-include \0/g') \
     - |
