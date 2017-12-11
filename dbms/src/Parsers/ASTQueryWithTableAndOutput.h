@@ -49,7 +49,7 @@ public:
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        formatHelper(settings, state, frame, AstIDAndQueryNames::Query);
+        formatHelper(settings, AstIDAndQueryNames::Query);
     }
 };
 
