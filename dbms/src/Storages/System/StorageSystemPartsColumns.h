@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
+#include <Storages/System/StorageSystemPartsBase.h>
 
 
 namespace DB
@@ -10,34 +11,18 @@ namespace DB
 class Context;
 
 
-/** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
-  */
-class StorageSystemPartsColumns : public ext::shared_ptr_helper<StorageSystemPartsColumns>, public IStorage
+/** Implements system table 'parts_columns' which allows to get information about
+ * columns in data parts for tables of MergeTree family.
+ */
+class StorageSystemPartsColumns
+        : public ext::shared_ptr_helper<StorageSystemPartsColumns>, public StorageSystemPartsBase
 {
 public:
     std::string getName() const override { return "SystemPartsColumns"; }
-    std::string getTableName() const override { return name; }
-
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
-    NameAndTypePair getColumn(const String & column_name) const override;
-
-    bool hasColumn(const String & column_name) const override;
-
-    BlockInputStreams read(
-            const Names & column_names,
-            const SelectQueryInfo & query_info,
-            const Context & context,
-            QueryProcessingStage::Enum & processed_stage,
-            size_t max_block_size,
-            unsigned num_streams) override;
-
-private:
-    const std::string name;
-    NamesAndTypesList columns;
 
 protected:
     StorageSystemPartsColumns(const std::string & name_);
+    void processNextStorage(Block & block, const StoragesInfo & info, bool has_state_column) override;
 };
 
 }
