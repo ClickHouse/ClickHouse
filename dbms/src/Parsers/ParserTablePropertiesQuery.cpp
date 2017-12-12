@@ -32,10 +32,6 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     {
         query = std::make_shared<ASTExistsQuery>();
     }
-    else if (s_describe.ignore(pos, expected) || s_desc.ignore(pos, expected))
-    {
-        query = std::make_shared<ASTDescribeQuery>();
-    }
     else if (s_show.ignore(pos, expected))
     {
         if (!s_create.ignore(pos, expected))
