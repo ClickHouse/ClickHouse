@@ -169,7 +169,7 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyArityLogical>(); };
 
 private:
-    bool extractConstColumns(ColumnPlainPtrs & in, UInt8 & res)
+    bool extractConstColumns(MutableColumnRawPtrs & in, UInt8 & res)
     {
         bool has_res = false;
         for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
@@ -283,7 +283,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
-        ColumnPlainPtrs in(arguments.size());
+        MutableColumnRawPtrs in(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             in[i] = block.getByPosition(arguments[i]).column.get();
@@ -325,7 +325,7 @@ public:
         /// Divide the input columns into UInt8 and the rest. The first will be processed more efficiently.
         /// col_res at each moment will either be at the end of uint8_in, or not contained in uint8_in.
         UInt8ColumnPtrs uint8_in;
-        ColumnPlainPtrs other_in;
+        MutableColumnRawPtrs other_in;
         for (IColumn * column : in)
         {
             if (auto uint8_column = typeid_cast<const ColumnUInt8 *>(column))

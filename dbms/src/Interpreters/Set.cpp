@@ -50,7 +50,7 @@ bool Set::checkSetSizeLimits() const
 template <typename Method>
 void NO_INLINE Set::insertFromBlockImpl(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
+    const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
     ConstNullMapPtr null_map)
@@ -65,7 +65,7 @@ void NO_INLINE Set::insertFromBlockImpl(
 template <typename Method, bool has_null_map>
 void NO_INLINE Set::insertFromBlockImplCase(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
+    const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
     ConstNullMapPtr null_map)
@@ -98,7 +98,7 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
     size_t keys_size = block.columns();
-    ConstColumnPlainPtrs key_columns;
+    ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
 
     if (empty())
@@ -357,7 +357,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         }
 
         /// Remember the columns we will work with. Also check that the data types are correct.
-        ConstColumnPlainPtrs key_columns;
+        ColumnRawPtrs key_columns;
         key_columns.reserve(num_key_columns);
 
         /// The constant columns to the left of IN are not supported directly. For this, they first materialize.
@@ -394,7 +394,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 template <typename Method>
 void NO_INLINE Set::executeImpl(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
+    const ColumnRawPtrs & key_columns,
     ColumnUInt8::Container_t & vec_res,
     bool negative,
     size_t rows,
@@ -410,7 +410,7 @@ void NO_INLINE Set::executeImpl(
 template <typename Method, bool has_null_map>
 void NO_INLINE Set::executeImplCase(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
+    const ColumnRawPtrs & key_columns,
     ColumnUInt8::Container_t & vec_res,
     bool negative,
     size_t rows,
@@ -439,7 +439,7 @@ void NO_INLINE Set::executeImplCase(
 template <typename Method>
 void NO_INLINE Set::executeArrayImpl(
     Method & method,
-    const ConstColumnPlainPtrs & key_columns,
+    const ColumnRawPtrs & key_columns,
     const ColumnArray::Offsets_t & offsets,
     ColumnUInt8::Container_t & vec_res,
     bool negative,
@@ -470,7 +470,7 @@ void NO_INLINE Set::executeArrayImpl(
 
 
 void Set::executeOrdinary(
-    const ConstColumnPlainPtrs & key_columns,
+    const ColumnRawPtrs & key_columns,
     ColumnUInt8::Container_t & vec_res,
     bool negative,
     ConstNullMapPtr null_map) const
@@ -502,7 +502,7 @@ void Set::executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t 
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            executeArrayImpl(*data.NAME, ConstColumnPlainPtrs{&nested_column}, offsets, vec_res, negative, rows); \
+            executeArrayImpl(*data.NAME, ColumnRawPtrs{&nested_column}, offsets, vec_res, negative, rows); \
             break;
     APPLY_FOR_SET_VARIANTS(M)
 #undef M

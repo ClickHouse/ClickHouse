@@ -91,10 +91,10 @@ private:
      *  Templates are used instead of polymorphic SortCursors and calls to virtual functions.
      */
     template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     /// Output to result rows for the current primary key.
-    void insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows, bool last_in_stream = false);
+    void insertRows(MutableColumnRawPtrs & merged_columns, size_t & merged_rows, bool last_in_stream = false);
 
     void reportIncorrectData();
 };

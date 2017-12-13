@@ -81,7 +81,7 @@ private:
         size_t src_bytes = 0;
 
         StringRefs key;
-        ConstColumnPlainPtrs key_columns;
+        ColumnRawPtrs key_columns;
         Aggregator::AggregateColumns aggregate_columns;
         Sizes key_sizes;
 

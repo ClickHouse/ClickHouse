@@ -139,11 +139,11 @@ private:
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
     template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     /// Insert the summed row for the current group into the result and updates some of per-block flags if the row is not "zero".
     /// If force_insertion=true, then the row will be inserted even if it is "zero"
-    void insertCurrentRowIfNeeded(ColumnPlainPtrs & merged_columns, bool force_insertion);
+    void insertCurrentRowIfNeeded(MutableColumnRawPtrs & merged_columns, bool force_insertion);
 
     /// Returns true if merge result is not empty
     template <typename TSortCursor>

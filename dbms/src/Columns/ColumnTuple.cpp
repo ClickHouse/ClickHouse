@@ -207,7 +207,7 @@ int ColumnTuple::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_dire
 template <bool positive>
 struct ColumnTuple::Less
 {
-    ConstColumnPlainPtrs plain_columns;
+    ColumnRawPtrs plain_columns;
     int nan_direction_hint;
 
     Less(const Columns & columns, int nan_direction_hint_)
@@ -219,7 +219,7 @@ struct ColumnTuple::Less
 
     bool operator() (size_t a, size_t b) const
     {
-        for (ConstColumnPlainPtrs::const_iterator it = plain_columns.begin(); it != plain_columns.end(); ++it)
+        for (ColumnRawPtrs::const_iterator it = plain_columns.begin(); it != plain_columns.end(); ++it)
         {
             int res = (*it)->compareAt(a, b, **it, nan_direction_hint);
             if (res < 0)

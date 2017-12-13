@@ -979,9 +979,9 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 {
     Columns array_columns(arguments.size());
     const ColumnArray::Offsets_t * offsets = nullptr;
-    ConstColumnPlainPtrs data_columns(arguments.size());
-    ConstColumnPlainPtrs original_data_columns(arguments.size());
-    ConstColumnPlainPtrs null_maps(arguments.size());
+    ColumnRawPtrs data_columns(arguments.size());
+    ColumnRawPtrs original_data_columns(arguments.size());
+    ColumnRawPtrs null_maps(arguments.size());
 
     bool has_nullable_columns = false;
 
@@ -1153,8 +1153,8 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
 
 bool FunctionArrayUniq::execute128bit(
     const ColumnArray::Offsets_t & offsets,
-    const ConstColumnPlainPtrs & columns,
-    const ConstColumnPlainPtrs & null_maps,
+    const ColumnRawPtrs & columns,
+    const ColumnRawPtrs & null_maps,
     ColumnUInt32::Container_t & res_values,
     bool has_nullable_columns)
 {
@@ -1231,7 +1231,7 @@ bool FunctionArrayUniq::execute128bit(
 
 void FunctionArrayUniq::executeHashed(
     const ColumnArray::Offsets_t & offsets,
-    const ConstColumnPlainPtrs & columns,
+    const ColumnRawPtrs & columns,
     ColumnUInt32::Container_t & res_values)
 {
     size_t count = columns.size();
@@ -1287,9 +1287,9 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 {
     Columns array_columns(arguments.size());
     const ColumnArray::Offsets_t * offsets = nullptr;
-    ConstColumnPlainPtrs data_columns(arguments.size());
-    ConstColumnPlainPtrs original_data_columns(arguments.size());
-    ConstColumnPlainPtrs null_maps(arguments.size());
+    ColumnRawPtrs data_columns(arguments.size());
+    ColumnRawPtrs original_data_columns(arguments.size());
+    ColumnRawPtrs null_maps(arguments.size());
 
     bool has_nullable_columns = false;
 
@@ -1457,8 +1457,8 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
 
 bool FunctionArrayEnumerateUniq::execute128bit(
     const ColumnArray::Offsets_t & offsets,
-    const ConstColumnPlainPtrs & columns,
-    const ConstColumnPlainPtrs & null_maps,
+    const ColumnRawPtrs & columns,
+    const ColumnRawPtrs & null_maps,
     ColumnUInt32::Container_t & res_values,
     bool has_nullable_columns)
 {
@@ -1520,7 +1520,7 @@ bool FunctionArrayEnumerateUniq::execute128bit(
 
 void FunctionArrayEnumerateUniq::executeHashed(
     const ColumnArray::Offsets_t & offsets,
-    const ConstColumnPlainPtrs & columns,
+    const ColumnRawPtrs & columns,
     ColumnUInt32::Container_t & res_values)
 {
     size_t count = columns.size();

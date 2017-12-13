@@ -113,14 +113,14 @@ struct AggregationMethodOneNumber
         /** Called at the start of each block processing.
           * Sets the variables needed for the other methods called in internal loops.
           */
-        void init(ConstColumnPlainPtrs & key_columns)
+        void init(ColumnRawPtrs & key_columns)
         {
             vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
         }
 
         /// Get the key from the key columns for insertion into the hash table.
         Key getKey(
-            const ConstColumnPlainPtrs & /*key_columns*/,
+            const ColumnRawPtrs & /*key_columns*/,
             size_t /*keys_size*/,         /// Number of key columns.
             size_t i,                     /// From which row of the block, get the key.
             const Sizes & /*key_sizes*/,  /// If the keys of a fixed length - their lengths. It is not used in aggregation methods for variable length keys.
@@ -151,7 +151,7 @@ struct AggregationMethodOneNumber
 
     /** Insert the key from the hash table into columns.
       */
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t /*keys_size*/, const Sizes & /*key_sizes*/)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumnRawPtrs & key_columns, size_t /*keys_size*/, const Sizes & /*key_sizes*/)
     {
         static_cast<ColumnVector<FieldType> *>(key_columns[0])->insertData(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
@@ -180,7 +180,7 @@ struct AggregationMethodString
         const ColumnString::Offsets_t * offsets;
         const ColumnString::Chars_t * chars;
 
-        void init(ConstColumnPlainPtrs & key_columns)
+        void init(ColumnRawPtrs & key_columns)
         {
             const IColumn & column = *key_columns[0];
             const ColumnString & column_string = static_cast<const ColumnString &>(column);
@@ -189,7 +189,7 @@ struct AggregationMethodString
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & /*key_columns*/,
+            const ColumnRawPtrs & /*key_columns*/,
             size_t /*keys_size*/,
             size_t i,
             const Sizes & /*key_sizes*/,
@@ -214,7 +214,7 @@ struct AggregationMethodString
 
     static const bool no_consecutive_keys_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t, const Sizes &)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumnRawPtrs & key_columns, size_t, const Sizes &)
     {
         key_columns[0]->insertData(value.first.data, value.first.size);
     }
@@ -243,7 +243,7 @@ struct AggregationMethodFixedString
         size_t n;
         const ColumnFixedString::Chars_t * chars;
 
-        void init(ConstColumnPlainPtrs & key_columns)
+        void init(ColumnRawPtrs & key_columns)
         {
             const IColumn & column = *key_columns[0];
             const ColumnFixedString & column_string = static_cast<const ColumnFixedString &>(column);
@@ -252,7 +252,7 @@ struct AggregationMethodFixedString
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs &,
+            const ColumnRawPtrs &,
             size_t,
             size_t i,
             const Sizes &,
@@ -275,7 +275,7 @@ struct AggregationMethodFixedString
 
     static const bool no_consecutive_keys_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t, const Sizes &)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumnRawPtrs & key_columns, size_t, const Sizes &)
     {
         key_columns[0]->insertData(value.first.data, value.first.size);
     }
@@ -295,7 +295,7 @@ template <typename Key>
 class BaseStateKeysFixed<Key, true>
 {
 protected:
-    void init(const ConstColumnPlainPtrs & key_columns)
+    void init(const ColumnRawPtrs & key_columns)
     {
         null_maps.reserve(key_columns.size());
         actual_columns.reserve(key_columns.size());
@@ -319,7 +319,7 @@ protected:
     /// Return the columns which actually contain the values of the keys.
     /// For a given key column, if it is nullable, we return its nested
     /// column. Otherwise we return the key column itself.
-    inline const ConstColumnPlainPtrs & getActualColumns() const
+    inline const ColumnRawPtrs & getActualColumns() const
     {
         return actual_columns;
     }
@@ -348,8 +348,8 @@ protected:
     }
 
 private:
-    ConstColumnPlainPtrs actual_columns;
-    ConstColumnPlainPtrs null_maps;
+    ColumnRawPtrs actual_columns;
+    ColumnRawPtrs null_maps;
 };
 
 /// Case where nullable keys are not supported.
@@ -357,13 +357,13 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    void init(const ConstColumnPlainPtrs &)
+    void init(const ColumnRawPtrs &)
     {
         throw Exception{"Internal error: calling init() for non-nullable"
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
     }
 
-    const ConstColumnPlainPtrs & getActualColumns() const
+    const ColumnRawPtrs & getActualColumns() const
     {
         throw Exception{"Internal error: calling getActualColumns() for non-nullable"
             " keys is forbidden", ErrorCodes::LOGICAL_ERROR};
@@ -401,14 +401,14 @@ struct AggregationMethodKeysFixed
     public:
         using Base = aggregator_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
 
-        void init(ConstColumnPlainPtrs & key_columns)
+        void init(ColumnRawPtrs & key_columns)
         {
             if (has_nullable_keys)
                 Base::init(key_columns);
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
+            const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
             const Sizes & key_sizes,
@@ -436,7 +436,7 @@ struct AggregationMethodKeysFixed
 
     static const bool no_consecutive_keys_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumnRawPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
     {
         static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size<KeysNullMap<Key>>::value : 0;
         /// In any hash key value, column values to be read start just after the bitmap, if it exists.
@@ -506,12 +506,12 @@ struct AggregationMethodConcat
 
     struct State
     {
-        void init(ConstColumnPlainPtrs &)
+        void init(ColumnRawPtrs &)
         {
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
+            const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
             const Sizes &,
@@ -537,14 +537,14 @@ struct AggregationMethodConcat
     /// If the key already was, then it is removed from the pool (overwritten), and the next key can not be compared with it.
     static const bool no_consecutive_keys_optimization = true;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumnRawPtrs & key_columns, size_t keys_size, const Sizes & key_sizes)
     {
         insertKeyIntoColumnsImpl(value, key_columns, keys_size, key_sizes);
     }
 
 private:
     /// Insert the values of the specified keys into the corresponding columns.
-    static void insertKeyIntoColumnsImpl(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes &)
+    static void insertKeyIntoColumnsImpl(const typename Data::value_type & value, MutableColumnRawPtrs & key_columns, size_t keys_size, const Sizes &)
     {
         /// See function extractKeysAndPlaceInPoolContiguous.
         const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
@@ -591,12 +591,12 @@ struct AggregationMethodSerialized
 
     struct State
     {
-        void init(ConstColumnPlainPtrs &)
+        void init(ColumnRawPtrs &)
         {
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
+            const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
             const Sizes &,
@@ -622,7 +622,7 @@ struct AggregationMethodSerialized
     /// If the key already was, it is removed from the pool (overwritten), and the next key can not be compared with it.
     static const bool no_consecutive_keys_optimization = true;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes &)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumnRawPtrs & key_columns, size_t keys_size, const Sizes &)
     {
         auto pos = value.first.data;
         for (size_t i = 0; i < keys_size; ++i)
@@ -650,12 +650,12 @@ struct AggregationMethodHashed
 
     struct State
     {
-        void init(ConstColumnPlainPtrs &)
+        void init(ColumnRawPtrs &)
         {
         }
 
         Key getKey(
-            const ConstColumnPlainPtrs & key_columns,
+            const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
             const Sizes &,
@@ -678,7 +678,7 @@ struct AggregationMethodHashed
 
     static const bool no_consecutive_keys_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, ColumnPlainPtrs & key_columns, size_t keys_size, const Sizes &)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumnRawPtrs & key_columns, size_t keys_size, const Sizes &)
     {
         for (size_t i = 0; i < keys_size; ++i)
             key_columns[i]->insertDataWithTerminatingZero(value.second.first[i].data, value.second.first[i].size);
@@ -1041,13 +1041,13 @@ public:
     /// Aggregate the source. Get the result in the form of one of the data structures.
     void execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result);
 
-    using AggregateColumns = std::vector<ConstColumnPlainPtrs>;
+    using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container_t *>;
     using AggregateFunctionsPlainPtrs = std::vector<IAggregateFunction *>;
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(Block & block, AggregatedDataVariants & result,
-        ConstColumnPlainPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
+        ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns,    /// Passed to not create them anew for each block
         Sizes & key_sizes, StringRefs & keys,                                        /// - pass the corresponding objects that are initially empty.
         bool & no_more_keys);
 
@@ -1189,7 +1189,7 @@ protected:
     void setSampleBlock(const Block & block);
 
     /** Select the aggregation method based on the number and types of keys. */
-    AggregatedDataVariants::Type chooseAggregationMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes) const;
+    AggregatedDataVariants::Type chooseAggregationMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes) const;
 
     /** Create states of aggregate functions for one key.
       */
@@ -1207,7 +1207,7 @@ protected:
         Method & method,
         Arena * aggregates_pool,
         size_t rows,
-        ConstColumnPlainPtrs & key_columns,
+        ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         const Sizes & key_sizes,
         StringRefs & keys,
@@ -1221,7 +1221,7 @@ protected:
         typename Method::State & state,
         Arena * aggregates_pool,
         size_t rows,
-        ConstColumnPlainPtrs & key_columns,
+        ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         const Sizes & key_sizes,
         StringRefs & keys,
@@ -1248,7 +1248,7 @@ public:
         Method & method,
         Arena * aggregates_pool,
         size_t rows,
-        ConstColumnPlainPtrs & key_columns,
+        ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns,
         const Sizes & key_sizes,
         StringRefs & keys,
@@ -1261,7 +1261,7 @@ public:
         typename Method::State & state,
         Arena * aggregates_pool,
         size_t rows,
-        ConstColumnPlainPtrs & key_columns,
+        ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns,
         const Sizes & key_sizes,
         StringRefs & keys,
@@ -1308,9 +1308,9 @@ protected:
     void convertToBlockImpl(
         Method & method,
         Table & data,
-        ColumnPlainPtrs & key_columns,
+        MutableColumnRawPtrs & key_columns,
         AggregateColumnsData & aggregate_columns,
-        ColumnPlainPtrs & final_aggregate_columns,
+        MutableColumnRawPtrs & final_aggregate_columns,
         const Sizes & key_sizes,
         bool final) const;
 
@@ -1318,15 +1318,15 @@ protected:
     void convertToBlockImplFinal(
         Method & method,
         Table & data,
-        ColumnPlainPtrs & key_columns,
-        ColumnPlainPtrs & final_aggregate_columns,
+        MutableColumnRawPtrs & key_columns,
+        MutableColumnRawPtrs & final_aggregate_columns,
         const Sizes & key_sizes) const;
 
     template <typename Method, typename Table>
     void convertToBlockImplNotFinal(
         Method & method,
         Table & data,
-        ColumnPlainPtrs & key_columns,
+        MutableColumnRawPtrs & key_columns,
         AggregateColumnsData & aggregate_columns,
         const Sizes & key_sizes) const;
 
@@ -1386,7 +1386,7 @@ protected:
     void convertBlockToTwoLevelImpl(
         Method & method,
         Arena * pool,
-        ConstColumnPlainPtrs & key_columns,
+        ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
         StringRefs & keys,
         const Block & source,

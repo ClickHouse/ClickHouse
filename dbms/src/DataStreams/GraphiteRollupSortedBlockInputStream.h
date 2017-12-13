@@ -196,14 +196,14 @@ private:
 
 
     template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     /// Insert the values into the resulting columns, which will not be changed in the future.
     template <typename TSortCursor>
-    void startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern);
+    void startNextRow(MutableColumnRawPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern);
 
     /// Insert the calculated `time`, `value`, `version` values into the resulting columns by the last group of rows.
-    void finishCurrentRow(ColumnPlainPtrs & merged_columns);
+    void finishCurrentRow(MutableColumnRawPtrs & merged_columns);
 
     /// Update the state of the aggregate function with the new `value`.
     void accumulateRow(RowRef & row);

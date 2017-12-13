@@ -39,7 +39,7 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 }
 
 
-void CollapsingSortedBlockInputStream::insertRows(ColumnPlainPtrs & merged_columns, size_t & merged_rows, bool last_in_stream)
+void CollapsingSortedBlockInputStream::insertRows(MutableColumnRawPtrs & merged_columns, size_t & merged_rows, bool last_in_stream)
 {
     if (count_positive == 0 && count_negative == 0)
         return;
@@ -111,7 +111,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
         return children[0]->read();
 
     Block merged_block;
-    ColumnPlainPtrs merged_columns;
+    MutableColumnRawPtrs merged_columns;
 
     init(merged_block, merged_columns);
     if (merged_columns.empty())
@@ -137,7 +137,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
 
 
 template <typename TSortCursor>
-void CollapsingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void CollapsingSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
 

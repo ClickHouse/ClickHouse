@@ -42,7 +42,7 @@ namespace DB
   *  specifying which individual values should be destroyed and which ones should not.
   * Clearly, this method would have a substantially non-zero price.
   */
-class ColumnAggregateFunction final : public IColumn, public std::enable_shared_from_this<ColumnAggregateFunction>
+class ColumnAggregateFunction final : public COWPtrHelper<IColumn, ColumnAggregateFunction>
 {
 public:
     using Container_t = PaddedPODArray<AggregateDataPtr>;
@@ -56,7 +56,7 @@ private:
 
     /// Source column. Used (holds source from destruction),
     ///  if this column has been constructed from another and uses all or part of its values.
-    std::shared_ptr<const ColumnAggregateFunction> src;
+    ColumnPtr src;
 
     /// Array of pointers to aggregation states, that are placed in arenas.
     Container_t data;
@@ -64,8 +64,7 @@ private:
 public:
     /// Create a new column that has another column as a source.
     ColumnAggregateFunction(const ColumnAggregateFunction & other)
-        : std::enable_shared_from_this<ColumnAggregateFunction>(other),
-        arenas(other.arenas), func(other.func), src(other.shared_from_this())
+        arenas(other.arenas), func(other.func), src(other.getPtr())
     {
     }
 
@@ -94,7 +93,7 @@ public:
 
     /** Transform column with states of aggregate functions to column with final result values.
       */
-    ColumnPtr convertToValues() const;
+    MutableColumnPtr convertToValues() const;
 
     std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }
@@ -104,7 +103,7 @@ public:
         return getData().size();
     }
 
-    ColumnPtr cloneEmpty() const override;;
+    MutableColumnPtr cloneEmpty() const override;
 
     Field operator[](size_t n) const override;
 
@@ -143,11 +142,11 @@ public:
 
     void popBack(size_t n) override;
 
-    ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
+    MutableColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-    ColumnPtr replicate(const Offsets_t & offsets) const override;
+    MutableColumnPtr replicate(const Offsets_t & offsets) const override;
 
     Columns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 

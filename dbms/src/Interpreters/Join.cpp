@@ -42,7 +42,7 @@ Join::Join(const Names & key_names_left_, const Names & key_names_right_, bool u
 }
 
 
-Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
+Join::Type Join::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {
     size_t keys_size = key_columns.size();
 
@@ -266,7 +266,7 @@ void Join::setSampleBlock(const Block & block)
         return;
 
     size_t keys_size = key_names_right.size();
-    ConstColumnPlainPtrs key_columns(keys_size);
+    ColumnRawPtrs key_columns(keys_size);
 
     for (size_t i = 0; i < keys_size; ++i)
     {
@@ -371,7 +371,7 @@ namespace
 
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
     void NO_INLINE insertFromBlockImplTypeCase(
-        Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns,
+        Map & map, size_t rows, const ColumnRawPtrs & key_columns,
         size_t keys_size, const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         KeyGetter key_getter(key_columns);
@@ -389,7 +389,7 @@ namespace
 
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
     void insertFromBlockImplType(
-        Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns,
+        Map & map, size_t rows, const ColumnRawPtrs & key_columns,
         size_t keys_size, const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         if (null_map)
@@ -401,7 +401,7 @@ namespace
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void insertFromBlockImpl(
-        Join::Type type, Maps & maps, size_t rows, const ConstColumnPlainPtrs & key_columns,
+        Join::Type type, Maps & maps, size_t rows, const ColumnRawPtrs & key_columns,
         size_t keys_size, const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         switch (type)
@@ -432,7 +432,7 @@ bool Join::insertFromBlock(const Block & block)
         throw Exception("Logical error: Join was not initialized", ErrorCodes::LOGICAL_ERROR);
 
     size_t keys_size = key_names_right.size();
-    ConstColumnPlainPtrs key_columns(keys_size);
+    ColumnRawPtrs key_columns(keys_size);
 
     /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
     Columns materialized_columns;
@@ -551,7 +551,7 @@ namespace
     template <typename Map>
     struct Adder<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any, Map>
     {
-        static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
+        static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumnRawPtrs & added_columns,
             size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/,
             size_t num_columns_to_skip)
         {
@@ -559,7 +559,7 @@ namespace
                 added_columns[j]->insertFrom(*it->second.block->getByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
         }
 
-        static void addNotFound(size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
+        static void addNotFound(size_t num_columns_to_add, MutableColumnRawPtrs & added_columns,
             size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/)
         {
             for (size_t j = 0; j < num_columns_to_add; ++j)
@@ -570,7 +570,7 @@ namespace
     template <typename Map>
     struct Adder<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any, Map>
     {
-        static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
+        static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumnRawPtrs & added_columns,
             size_t i, IColumn::Filter * filter, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/,
             size_t num_columns_to_skip)
         {
@@ -580,7 +580,7 @@ namespace
                 added_columns[j]->insertFrom(*it->second.block->getByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
         }
 
-        static void addNotFound(size_t /*num_columns_to_add*/, ColumnPlainPtrs & /*added_columns*/,
+        static void addNotFound(size_t /*num_columns_to_add*/, MutableColumnRawPtrs & /*added_columns*/,
             size_t i, IColumn::Filter * filter, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/)
         {
             (*filter)[i] = 0;
@@ -590,7 +590,7 @@ namespace
     template <ASTTableJoin::Kind KIND, typename Map>
     struct Adder<KIND, ASTTableJoin::Strictness::All, Map>
     {
-        static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
+        static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumnRawPtrs & added_columns,
             size_t i, IColumn::Filter * /*filter*/, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
             size_t num_columns_to_skip)
         {
@@ -607,7 +607,7 @@ namespace
             (*offsets)[i] = current_offset;
         }
 
-        static void addNotFound(size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
+        static void addNotFound(size_t num_columns_to_add, MutableColumnRawPtrs & added_columns,
             size_t i, IColumn::Filter * /*filter*/, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
         {
             if (KIND == ASTTableJoin::Kind::Inner)
@@ -627,8 +627,8 @@ namespace
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
     void NO_INLINE joinBlockImplTypeCase(
-        const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
-        size_t num_columns_to_add, size_t num_columns_to_skip, ColumnPlainPtrs & added_columns, ConstNullMapPtr null_map,
+        const Map & map, size_t rows, const ColumnRawPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
+        size_t num_columns_to_add, size_t num_columns_to_skip, MutableColumnRawPtrs & added_columns, ConstNullMapPtr null_map,
         std::unique_ptr<IColumn::Filter> & filter,
         IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate)
     {
@@ -661,8 +661,8 @@ namespace
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
     void joinBlockImplType(
-        const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
-        size_t num_columns_to_add, size_t num_columns_to_skip, ColumnPlainPtrs & added_columns, ConstNullMapPtr null_map,
+        const Map & map, size_t rows, const ColumnRawPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
+        size_t num_columns_to_add, size_t num_columns_to_skip, MutableColumnRawPtrs & added_columns, ConstNullMapPtr null_map,
         std::unique_ptr<IColumn::Filter> & filter,
         IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate)
     {
@@ -682,7 +682,7 @@ template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename
 void Join::joinBlockImpl(Block & block, const Maps & maps) const
 {
     size_t keys_size = key_names_left.size();
-    ConstColumnPlainPtrs key_columns(keys_size);
+    ColumnRawPtrs key_columns(keys_size);
 
     /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
     Columns materialized_columns;
@@ -730,7 +730,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 
     /// Add new columns to the block.
     size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
-    ColumnPlainPtrs added_columns(num_columns_to_add);
+    MutableColumnRawPtrs added_columns(num_columns_to_add);
 
     for (size_t i = 0; i < num_columns_to_add; ++i)
     {
@@ -802,9 +802,9 @@ void Join::joinBlockImplCross(Block & block) const
     size_t num_existing_columns = res.columns();
     size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 
-    ColumnPlainPtrs src_left_columns(num_existing_columns);
-    ColumnPlainPtrs dst_left_columns(num_existing_columns);
-    ColumnPlainPtrs dst_right_columns(num_columns_to_add);
+    MutableColumnRawPtrs src_left_columns(num_existing_columns);
+    MutableColumnRawPtrs dst_left_columns(num_existing_columns);
+    MutableColumnRawPtrs dst_right_columns(num_columns_to_add);
 
     for (size_t i = 0; i < num_existing_columns; ++i)
     {
@@ -932,8 +932,8 @@ template <typename Mapped>
 struct AdderNonJoined<ASTTableJoin::Strictness::Any, Mapped>
 {
     static void add(const Mapped & mapped,
-        size_t num_columns_left, ColumnPlainPtrs & columns_left,
-        size_t num_columns_right, ColumnPlainPtrs & columns_right)
+        size_t num_columns_left, MutableColumnRawPtrs & columns_left,
+        size_t num_columns_right, MutableColumnRawPtrs & columns_right)
     {
         for (size_t j = 0; j < num_columns_left; ++j)
             columns_left[j]->insertDefault();
@@ -947,8 +947,8 @@ template <typename Mapped>
 struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 {
     static void add(const Mapped & mapped,
-        size_t num_columns_left, ColumnPlainPtrs & columns_left,
-        size_t num_columns_right, ColumnPlainPtrs & columns_right)
+        size_t num_columns_left, MutableColumnRawPtrs & columns_left,
+        size_t num_columns_right, MutableColumnRawPtrs & columns_right)
     {
         for (auto current = &static_cast<const typename Mapped::Base_t &>(mapped); current != nullptr; current = current->next)
         {
@@ -1058,9 +1058,9 @@ private:
     /// Order is significant: it is the same as the order of columns in the blocks of the right-side table that are saved in parent.blocks.
     ColumnNumbers column_indices_keys_and_right;
     /// Columns of the current output block corresponding to column_indices_left.
-    ColumnPlainPtrs columns_left;
+    MutableColumnRawPtrs columns_left;
     /// Columns of the current output block corresponding to column_indices_keys_and_right.
-    ColumnPlainPtrs columns_keys_and_right;
+    MutableColumnRawPtrs columns_keys_and_right;
 
     std::unique_ptr<void, std::function<void(void *)>> position;    /// type erasure
 
@@ -1119,8 +1119,8 @@ private:
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Map>
     size_t fillColumns(const Map & map,
-        size_t num_columns_left, ColumnPlainPtrs & columns_left,
-        size_t num_columns_right, ColumnPlainPtrs & columns_right)
+        size_t num_columns_left, MutableColumnRawPtrs & columns_left,
+        size_t num_columns_right, MutableColumnRawPtrs & columns_right)
     {
         size_t rows_added = 0;
 

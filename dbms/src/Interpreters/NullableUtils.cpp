@@ -4,7 +4,7 @@
 namespace DB
 {
 
-void extractNestedColumnsAndNullMap(ConstColumnPlainPtrs & key_columns, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map)
+void extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map)
 {
     if (key_columns.size() == 1)
     {

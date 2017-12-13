@@ -23,7 +23,7 @@ namespace
 {
 
 void buildScatterSelector(
-        const ConstColumnPlainPtrs & columns,
+        const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
         IColumn::Selector & selector)
 {
@@ -80,7 +80,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     Block block_copy = block;
     data.partition_expr->execute(block_copy);
 
-    ConstColumnPlainPtrs partition_columns;
+    ColumnRawPtrs partition_columns;
     partition_columns.reserve(data.partition_expr_columns.size());
     for (const String & name : data.partition_expr_columns)
         partition_columns.emplace_back(block_copy.getByName(name).column.get());
