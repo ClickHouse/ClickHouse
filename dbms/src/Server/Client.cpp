@@ -552,15 +552,18 @@ private:
             {
                 const char * pos = begin;
                 ASTPtr ast = nullptr;
+
                 try
                 {
                     ast = parseQuery(pos, end, true);
                 }
-                catch (...)
+                catch (const Exception & e)
                 {
                     if (!ignore_error)
                         throw;
+                    std::cerr << "Parse query failed. " << " Code: " << e.code() << ". " << e.displayText() << std::endl;
                 }
+
                 if (!ast)
                 {
                     if (ignore_error)
