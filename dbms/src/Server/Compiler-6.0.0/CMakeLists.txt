@@ -12,6 +12,10 @@ llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
 
 # We link statically with zlib, and LLVM (sometimes) tries to bring its own dependency.
 list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-lz")
+# Wrong library in freebsd:
+list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-l/usr/lib/libexecinfo.so")
+
+message(STATUS "Using libraries for LLVM: ${REQUIRED_LLVM_LIBRARIES}")
 
 target_include_directories(clickhouse-compiler-lib PRIVATE ${LLVM_INCLUDE_DIRS})
 
@@ -19,7 +23,9 @@ target_include_directories(clickhouse-compiler-lib PRIVATE ${LLVM_INCLUDE_DIRS})
 
 target_link_libraries(clickhouse-compiler-lib
 
-clangBasic clangCodeGen clangDriver clangFrontend clangFrontendTool
+clangBasic clangCodeGen clangDriver
+clangFrontend 
+clangFrontendTool
 clangRewriteFrontend clangARCMigrate clangStaticAnalyzerFrontend
 clangParse clangSerialization clangSema clangEdit clangStaticAnalyzerCheckers
 clangASTMatchers clangStaticAnalyzerCore clangAnalysis clangAST clangRewrite clangLex clangBasic
