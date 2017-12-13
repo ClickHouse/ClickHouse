@@ -141,9 +141,9 @@ public:
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
-    NamesAndTypesList* getColumns()
+    NamesAndTypesList & getUsedColumns()
     {
-        return &columns;
+        return columns;
     }
 
 private:

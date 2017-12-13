@@ -1,3 +1,4 @@
+#include <sparsehash/dense_hash_map>
 #include <unistd.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>

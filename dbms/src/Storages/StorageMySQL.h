@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <sparsehash/dense_hash_map>
 
 #include <Poco/Net/SocketAddress.h>
 
 #include <mysqlxx/Pool.h>
+
+#include <sparsehash/dense_hash_map>
 
 namespace DB
 {

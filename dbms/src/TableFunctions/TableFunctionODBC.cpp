@@ -50,7 +50,7 @@ StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function 'numbers' requires exactly one argument: database name and table name.",
+        throw Exception("Table function 'odbc' requires exactly one argument: database name and table name.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
@@ -99,8 +99,8 @@ StoragePtr TableFunctionODBC::execute(const ASTPtr & ast_function, const Context
             columns->push_back(NameAndTypePair((char*)column_name, getDataType(type)));
 //            fprintf(stderr, "Column name: %s type: %i\n", column_name, type);
         }
-        SQLFreeStmt(hstmt, SQL_DROP);
         auto result = StorageODBC::create(table_name, database_name, table_name, columns, materialized_columns, alias_columns, column_defaults, context);
+        SQLFreeStmt(hstmt, SQL_DROP);
         result->startup();
         return result;
     }

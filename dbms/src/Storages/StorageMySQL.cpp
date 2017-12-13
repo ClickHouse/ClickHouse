@@ -8,7 +8,49 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
+
+static bool isCompatible(const DB::IAST & where)
+{
+    const DB::ASTFunction * where_expression = typeid_cast<const DB::ASTFunction *>(&where);
+    if (where_expression)
+    {
+        DB::String name = where_expression->name;
+        if ((name == "and") || (name == "or"))
+        {
+            for (const auto & expr: where_expression->arguments->children)
+            {
+                if (!isCompatible(*expr.get()))
+                    return false;
+            }
+        }
+        else if (name == "equals" || (name == "notEquals") || (name == "greater") || (name == "less")
+        || (name == "lessOrEquals") || (name == "greaterOrEquals"))
+        {
+            const auto & children = where_expression->arguments->children;
+            if ((children.size() != 2) || !isCompatible(*children[0].get()) || !isCompatible(*children[1].get()))
+                return false;
+        }
+        else if (name == "not")
+        {
+            const auto & children = where_expression->arguments->children;
+            if ((children.size() != 1) || !isCompatible(*children[0].get()))
+                return false;
+        }
+        else
+            return false;
+        return true;
+    }
+    const DB::ASTLiteral * literal = typeid_cast<const DB::ASTLiteral *>(&where);
+    if (literal)
+        return true;
+    const DB::ASTIdentifier * identifier = typeid_cast<const DB::ASTIdentifier *>(&where);
+    if (identifier)
+        return true;
+    return false;
+}
 
 namespace DB
 {
@@ -47,46 +89,10 @@ StorageMySQL::StorageMySQL(
     }
 }
 
-bool isCompatible(const IAST & where)
-{
-    String name = where.getID();
-    if ((name == "Function_and") || (name == "Function_or"))
-    {
-        const ASTFunction * and_expression = typeid_cast<const ASTFunction *>(&where);
-        for (const auto & expr: and_expression->arguments->children)
-        {
-            if (!isCompatible(*expr.get()))
-                return false;
-        }
-    }
-    else if (name == "Function_equals" || (name == "Function_notEquals") || (name == "Function_greater") || (name == "Function_less")
-        || (name == "Function_lessOrEquals") || (name == "Function_greaterOrEquals"))
-    {
-        const ASTFunction * function = typeid_cast<const ASTFunction *>(&where);
-        const auto & children = function->arguments->children;
-        if ((children.size() != 2) || !isCompatible(*children[0].get()) || !isCompatible(*children[1].get()))
-            return false;
-    }
-    else if (name == "Function_not")
-    {
-        const ASTFunction * function = typeid_cast<const ASTFunction *>(&where);
-        const auto & children = function->arguments->children;
-        if ((children.size() != 1) || !isCompatible(*children[0].get()))
-            return false;
-    }
-    else if ((strncmp(name.c_str(), "Identifier_", 11) == 0) || (strncmp(name.c_str(), "Literal_", 8) == 0))
-        return true;
-    else
-        return false;
-    return true;
-}
-
 void dumpWhere(const IAST & where, std::stringstream & stream)
 {
     IAST::FormatSettings s(stream, false, true);
-    IAST::FormatState state;
-    IAST::FormatStateStacked frame;
-    where.formatImpl(s, state, frame);
+    where.format(s);
 }
 
 /** Function puts to stream compatible expressions of where statement.
@@ -120,20 +126,20 @@ void filterWhere(const IAST & where, std::stringstream & stream)
     }
 }
 
-/** Function analyze query builds select query of all used columns in query_info from table set by table_name parameter with where expression from filtered query_info.
+/** Function transformQueryForODBC builds select query of all used columns in query_info from table set by table_name parameter with where expression from filtered query_info.
   * Also it is builds sample_block with all columns, where types are found in column_map
   */
 
-std::string analyzeQuery(const SelectQueryInfo & query_info, const Context & context, std::string table_name, NamesAndTypesListPtr columns, google::dense_hash_map<std::string, DataTypePtr> & column_map, Block & sample_block)
+std::string transformQueryForODBC(const SelectQueryInfo & query_info, const Context & context, std::string table_name, NamesAndTypesListPtr columns, google::dense_hash_map<std::string, DataTypePtr> & column_map, Block & sample_block)
 {
     BlockInputStreams res;
-    StoragePtr storage(NULL);
+    StoragePtr storage(nullptr);
     ExpressionAnalyzer analyzer(query_info.query, context, storage, *columns);
-    NamesAndTypesList* usedColumns = analyzer.getColumns();
+    NamesAndTypesList & usedColumns = analyzer.getUsedColumns();
     std::stringstream iss;
     iss << "SELECT ";
     bool first = true;
-    for (const auto & column: *usedColumns)
+    for (const auto & column: usedColumns)
     {
         if (!first)
             iss << ",";
@@ -176,9 +182,11 @@ BlockInputStreams StorageMySQL::read(
     size_t max_block_size,
     unsigned num_streams)
 {
+    check(column_names);
+    processed_stage = QueryProcessingStage::FetchColumns;
     BlockInputStreams res;
     sample_block.clear();
-    std::string query = analyzeQuery(query_info, context, mysql_table_name, columns, column_map, sample_block);
+    std::string query = transformQueryForODBC(query_info, context, mysql_table_name, columns, column_map, sample_block);
 //    fprintf(stderr, "Query: %s\n", query.c_str());
     res.push_back(std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size));
     return res;
