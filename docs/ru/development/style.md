@@ -79,12 +79,12 @@
 14. В классах и структурах, public, private, protected пишется на том же уровне, что и class/struct, а все остальные внутренности - глубже.
 
     ```cpp
-    template <typename T, typename Ptr = std::shared_ptr<T>>
+    template <typename T>
     class MultiVersion
     {
     public:
-        /// Конкретная версия объекта для использования. shared_ptr определяет время жизни версии.
-        using Version = Ptr;
+        /// Version of object for usage. shared_ptr manage lifetime of version.
+        using Version = std::shared_ptr<const T>;
         ...
     }
     ```
@@ -92,12 +92,9 @@
 16. Если блок для выражения if, for, while... состоит из одного statement-а, то фигурные скобки писать не обязательно. Вместо этого поместите statement на отдельную строку. Этим statement-ом также может быть вложенный if, for, while... Но если внутренний statement содержит фигурные скобки или else, то у внешнего блок следует писать в фигурных скобках.
 
     ```cpp
-    /// Если файлы не открыты, то открываем их.
-    if (streams.empty())
-        for (const auto & name : column_names)
-            streams.emplace(name, std::make_unique<Stream>(
-                 storage.files[name].data_file.path(),
-                storage.files[name].marks[mark_number].offset));
+    /// Finish write.
+    for (auto & stream : streams)
+        stream.second->finalize();
     ```
 
 17. Не должно быть пробелов на концах строк.
