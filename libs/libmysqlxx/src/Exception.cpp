@@ -8,7 +8,9 @@ namespace mysqlxx
 std::string errorMessage(MYSQL * driver)
 {
     std::stringstream res;
-    res << mysql_error(driver) << " (" << driver->host << ":" << driver->port << ")";
+    res << mysql_error(driver)
+        << " (" << (driver->host ? driver->host : "(nullptr)")
+        << ":" << driver->port << ")";
     return res.str();
 }
 
