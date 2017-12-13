@@ -67,17 +67,19 @@ if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-format clickhouse-format.cpp)
     target_link_libraries (clickhouse-format clickhouse-format-lib dbms)
 
+    set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-format)
+
     if (USE_EMBEDDED_COMPILER)
         add_executable (clickhouse-clang clickhouse-clang.cpp)
         target_link_libraries (clickhouse-clang clickhouse-compiler-lib)
         add_executable (clickhouse-lld clickhouse-lld.cpp)
         target_link_libraries (clickhouse-lld clickhouse-compiler-lib)
         install (TARGETS clickhouse-clang clickhouse-lld RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-clang clickhouse-lld)
     endif ()
 
-    install (TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-format RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-
-    add_custom_target (clickhouse ALL DEPENDS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-extract-from-config clickhouse-compressor clickhouse-format)
+    install (TARGETS clickhouse-server ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})
 else ()
     add_executable (clickhouse main.cpp)
     target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
@@ -96,7 +98,6 @@ else ()
     if (USE_EMBEDDED_COMPILER)
         target_link_libraries (clickhouse clickhouse-compiler-lib)
     endif ()
-
 
     add_custom_target (clickhouse-server ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-server DEPENDS clickhouse)
     add_custom_target (clickhouse-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-client DEPENDS clickhouse)
@@ -119,6 +120,8 @@ else ()
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-clang
        ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-lld
        DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+
+    add_custom_target (clickhouse-bundle ALL DEPENDS clickhouse)
 endif ()
 
 install (

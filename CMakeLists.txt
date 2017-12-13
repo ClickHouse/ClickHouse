@@ -54,8 +54,9 @@ endif ()
 
 set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
 set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wnon-virtual-dtor")
-if (CCACHE_FOUND AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # clang-6.0: warning: argument unused during compilation: '-stdlib=libc++'
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # clang: warning: argument unused during compilation: '-stdlib=libc++'
+    # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
     set (CXX_WARNING_FLAGS "${CXX_WARNING_FLAGS} -Wno-unused-command-line-argument")
 endif ()
 
@@ -258,6 +259,7 @@ include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
 include (cmake/find_sparsehash.cmake)
 include (cmake/find_rt.cmake)
+include (cmake/find_execinfo.cmake)
 include (cmake/find_readline_edit.cmake)
 include (cmake/find_zookeeper.cmake)
 include (cmake/find_re2.cmake)
