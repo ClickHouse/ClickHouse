@@ -545,7 +545,6 @@ private:
 
     bool process(const String & line)
     {
-        const auto ignore_error = config().getBool("ignore-error", false);
         if (config().has("multiquery"))
         {
             /// Several queries separated by ';'.
@@ -559,36 +558,9 @@ private:
             while (begin < end)
             {
                 const char * pos = begin;
-                ASTPtr ast = nullptr;
-
-                try
-                {
-                    ast = parseQuery(pos, end, true);
-                }
-                catch (const Exception & e)
-                {
-                    if (!ignore_error)
-                        throw;
-                    std::cerr << "Parse query failed. " << " Code: " << e.code() << ". " << e.displayText() << std::endl;
-                }
-
+                ASTPtr ast = parseQuery(pos, end, true);
                 if (!ast)
-                {
-                    if (ignore_error)
-                    {
-                        // skip rest of bad query
-                        while (begin < end && *begin != ';')
-                        {
-                            ++begin;
-                        }
-                        // skip ';'
-                        if (begin < end)
-                          ++begin;
-
-                        continue;
-                    }
                     return true;
-                }
 
                 ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
 
@@ -609,7 +581,7 @@ private:
                 if (!processSingleQuery(query, ast))
                     return false;
 
-                if (got_exception && !ignore_error)
+                if (got_exception)
                 {
                     if (is_interactive)
                         break;
@@ -1295,7 +1267,6 @@ public:
             ("pager", boost::program_options::value<std::string>(), "pager")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
-            ("ignore-error", "Do not stop processing in multiquery mode")
             ("format,f", boost::program_options::value<std::string>(), "default output format")
             ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
             ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -1401,8 +1372,6 @@ public:
             config().setBool("multiline", true);
         if (options.count("multiquery"))
             config().setBool("multiquery", true);
-        if (options.count("ignore-error"))
-            config().setBool("ignore-error", true);
         if (options.count("format"))
             config().setString("format", options["format"].as<std::string>());
         if (options.count("vertical"))
