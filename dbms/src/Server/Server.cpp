@@ -253,16 +253,16 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (uncompressed_cache_size)
         global_context->setUncompressedCache(uncompressed_cache_size);
 
-    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
-    size_t mark_cache_size = config().getUInt64("mark_cache_size");
-    if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size);
-
     /// Load global settings from default profile.
     Settings & settings = global_context->getSettingsRef();
     String default_profile_name = config().getString("default_profile", "default");
     global_context->setDefaultProfileName(default_profile_name);
     global_context->setSetting("profile", default_profile_name);
+
+    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
+    size_t mark_cache_size = config().getUInt64("mark_cache_size");
+    if (mark_cache_size)
+        global_context->setMarkCache(mark_cache_size);
 
     /// Set path for format schema files
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
