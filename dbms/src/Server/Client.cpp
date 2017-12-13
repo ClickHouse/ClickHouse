@@ -23,6 +23,7 @@
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
 #include <common/readline_use.h>
+#include <Common/Throttler.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -113,6 +114,7 @@ private:
     size_t format_max_block_size = 0;    /// Max block size for console output.
     String insert_format;                /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
+    size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
@@ -407,6 +409,12 @@ private:
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
         UInt64 server_revision = 0;
+
+        if (max_client_network_bandwidth)
+        {
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0,  "");
+            connection->setThrottler(throttler);
+        }
 
         connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
 
@@ -1266,6 +1274,7 @@ public:
             ("progress", "print progress even in non-interactive mode")
             ("version,V", "print version information and exit")
             ("echo", "in batch mode, print query before execution")
+            ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", boost::program_options::value<bool>(), "enable or disable compression")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
             APPLY_FOR_LIMITS(DECLARE_LIMIT)
@@ -1375,6 +1384,8 @@ public:
             config().setBool("echo", true);
         if (options.count("time"))
             print_time_to_stderr = true;
+        if (options.count("max_client_network_bandwidth"))
+            network_bandwidth = options["max_client_network_bandwidth"].as<int>();
         if (options.count("compression"))
             config().setBool("compression", options["compression"].as<bool>());
     }
