@@ -159,14 +159,16 @@ private:
         if (!dict)
             return false;
 
-        const auto key_col_with_type = block.getByPosition(arguments[1]);
-        if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
-            || checkColumnConst<ColumnTuple>(key_col_with_type.column.get()))
-        {
-            /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-            const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[1]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
+
+        if (checkColumn<ColumnTuple>(key_col.get()))
+        {
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             const auto out = std::make_shared<ColumnUInt8>(key_col_with_type.column->size());
@@ -366,13 +368,16 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto key_col_with_type = block.getByPosition(arguments[2]);
-        if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
-            || checkColumnConst<ColumnTuple>(key_col_with_type.column.get()))
-        {
-            const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
+
+        if (checkColumn<ColumnTuple>(key_col.get()))
+        {
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             const auto out = std::make_shared<ColumnString>();
@@ -673,12 +678,14 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto key_col_with_type = block.getByPosition(arguments[2]);
-        const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-        const ColumnPtr key_col_materialized = key_col.convertToFullColumnIfConst();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
 
-        const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
         const auto out = std::make_shared<ColumnString>();
@@ -925,13 +932,16 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto key_col_with_type = block.getByPosition(arguments[2]);
-        if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
-            || checkColumnConst<ColumnTuple>(key_col_with_type.column.get()))
-        {
-            const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
+
+        if (checkColumn<ColumnTuple>(key_col.get()))
+        {
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             const auto out = std::make_shared<ColumnVector<Type>>(key_columns.front()->size());
@@ -1290,16 +1300,18 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto key_col_with_type = block.getByPosition(arguments[2]);
-        const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-        const ColumnPtr key_col_materialized = key_col.convertToFullColumnIfConst();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
 
-        const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
         /// @todo detect when all key columns are constant
-        const auto rows = key_col.size();
+        const auto rows = key_col->size();
         const auto out = std::make_shared<ColumnVector<Type>>(rows);
         block.getByPosition(result).column = out;
         auto & data = out->getData();
