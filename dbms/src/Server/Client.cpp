@@ -1385,7 +1385,7 @@ public:
         if (options.count("time"))
             print_time_to_stderr = true;
         if (options.count("max_client_network_bandwidth"))
-            network_bandwidth = options["max_client_network_bandwidth"].as<int>();
+            max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
         if (options.count("compression"))
             config().setBool("compression", options["compression"].as<bool>());
     }
