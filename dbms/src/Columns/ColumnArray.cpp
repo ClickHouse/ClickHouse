@@ -31,18 +31,11 @@ namespace ErrorCodes
 }
 
 
-ColumnArray::ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column)
+ColumnArray::ColumnArray(const MutableColumnPtr & nested_column, const MutableColumnPtr & offsets_column)
     : data(nested_column), offsets(offsets_column)
 {
-    if (!offsets_column)
-    {
-        offsets = std::make_shared<ColumnOffsets_t>();
-    }
-    else
-    {
-        if (!typeid_cast<ColumnOffsets_t *>(&*offsets_column))
-            throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
-    }
+    if (!typeid_cast<ColumnOffsets_t *>(offsets_column.get()))
+        throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::ILLEGAL_COLUMN);
 
     /** NOTE
       * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).

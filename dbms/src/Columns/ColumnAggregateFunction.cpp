@@ -26,10 +26,10 @@ void ColumnAggregateFunction::addArena(ArenaPtr arena_)
     arenas.push_back(arena_);
 }
 
-ColumnPtr ColumnAggregateFunction::convertToValues() const
+MutableColumnPtr ColumnAggregateFunction::convertToValues() const
 {
     const IAggregateFunction * function = func.get();
-    ColumnPtr res = function->getReturnType()->createColumn();
+    MutableColumnPtr res = function->getReturnType()->createColumn();
 
     /** If the aggregate function returns an unfinalized/unfinished state,
         * then you just need to copy pointers to it and also shared ownership of data.
@@ -63,7 +63,7 @@ ColumnPtr ColumnAggregateFunction::convertToValues() const
         */
     if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(function))
     {
-        std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+        auto res = createView();
         res->set(function_state->getNestedFunction());
         res->getData().assign(getData().begin(), getData().end());
         return res;
@@ -114,13 +114,13 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 }
 
 
-ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_size_hint) const
+MutableColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_size_hint) const
 {
     size_t size = getData().size();
     if (size != filter.size())
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+    auto res = createView();
 
     if (size == 0)
         return res;
@@ -142,7 +142,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 }
 
 
-ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
+MutableColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = getData().size();
 
@@ -154,7 +154,7 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
     if (perm.size() < limit)
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+    auto res = createView();
 
     res->getData().resize(limit);
     for (size_t i = 0; i < limit; ++i)
@@ -194,9 +194,9 @@ size_t ColumnAggregateFunction::allocatedBytes() const
     return res;
 }
 
-ColumnPtr ColumnAggregateFunction::cloneEmpty() const
+MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
-    return std::make_shared<ColumnAggregateFunction>(func, Arenas(1, std::make_shared<Arena>()));
+    return create(func, Arenas(1, std::make_shared<Arena>()));
 }
 
 Field ColumnAggregateFunction::operator[](size_t n) const
@@ -327,13 +327,13 @@ void ColumnAggregateFunction::popBack(size_t n)
     data.resize_assume_reserved(new_size);
 }
 
-ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & offsets) const
+MutableColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnAggregateFunction> res = std::make_shared<ColumnAggregateFunction>(*this);
+    auto res = createView();
 
     if (size == 0)
         return res;
@@ -354,12 +354,12 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & offsets)
     return res;
 }
 
-Columns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
+MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
-    Columns columns(num_columns);
+    MutableColumns columns(num_columns);
     for (auto & column : columns)
-        column = std::make_shared<ColumnAggregateFunction>(*this);
+        column = createView();
 
     size_t num_rows = size();
 

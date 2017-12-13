@@ -30,7 +30,7 @@ private:
     friend class COWPtr<IColumn>;
 
     /// Creates the same column with the same data.
-    virtual IColumn * clone() const { return cut(0, size()); }
+    virtual IColumn * clone() const = 0;
 
 public:
     /// Name of a Column. It is used in info messages.
@@ -43,7 +43,6 @@ public:
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
       */
     virtual MutablePtr convertToFullColumnIfConst() const { return {}; }
-
 
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }

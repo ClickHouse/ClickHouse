@@ -200,7 +200,7 @@ public:
 
     /** Create empty column for corresponding type.
       */
-    virtual ColumnPtr createColumn() const = 0;
+    virtual MutableColumnPtr createColumn() const = 0;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
