@@ -64,14 +64,14 @@ Connection::~Connection()
 }
 
 void Connection::connect(const char* db,
-    const char* server,
-    const char* user,
-    const char* password,
+    const char * server,
+    const char * user,
+    const char * password,
     unsigned port,
     const char * socket,
-    const char* ssl_ca,
-    const char* ssl_cert,
-    const char* ssl_key,
+    const char * ssl_ca,
+    const char * ssl_cert,
+    const char * ssl_key,
     unsigned timeout,
     unsigned rw_timeout)
 {
