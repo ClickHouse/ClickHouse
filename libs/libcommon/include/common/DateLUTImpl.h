@@ -333,7 +333,7 @@ public:
         return lut[index].year * 12 + lut[index].month;
     }
 
-    /// We calculate all hour-length intervals, unrelated to offset changes.
+    /// We count all hour-length intervals, unrelated to offset changes.
     inline time_t toRelativeHourNum(time_t t) const
     {
         if (offset_is_whole_number_of_hours_everytime)
