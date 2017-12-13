@@ -77,7 +77,7 @@ public:
 protected:
     struct RowRef
     {
-        ConstColumnPlainPtrs columns;
+        ColumnRawPtrs columns;
         size_t row_num;
         SharedBlockPtr shared_block;
 
@@ -113,7 +113,7 @@ protected:
     void readSuffixImpl() override;
 
     /// Initializes the queue and the next result block.
-    void init(Block & merged_block, ColumnPlainPtrs & merged_columns);
+    void init(Block & merged_block, MutableColumnRawPtrs & merged_columns);
 
     /// Gets the next block from the source corresponding to the `current`.
     template <typename TSortCursor>
@@ -214,7 +214,7 @@ private:
     void initQueue(std::priority_queue<TSortCursor> & queue);
 
     template <typename TSortCursor>
-    void merge(Block & merged_block, ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(Block & merged_block, MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     Logger * log = &Logger::get("MergingSortedBlockInputStream");
 

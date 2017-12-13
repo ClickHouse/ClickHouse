@@ -66,13 +66,13 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
 }
 
 template <typename Variant>
-typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & key_sizes)
+typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes)
 {
     /// Check if at least one of the specified keys is nullable.
     /// Create a set of nested key columns from the corresponding key columns.
     /// Here "nested" means that, if a key column is nullable, we take its nested
     /// column; otherwise we take the key column as is.
-    ConstColumnPlainPtrs nested_key_columns;
+    ColumnRawPtrs nested_key_columns;
     nested_key_columns.reserve(key_columns.size());
     bool has_nullable_key = false;
 

@@ -68,7 +68,7 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
         return Block();
 
     Block merged_block;
-    ColumnPlainPtrs merged_columns;
+    MutableColumnRawPtrs merged_columns;
 
     init(merged_block, merged_columns);
     if (merged_columns.empty())
@@ -108,7 +108,7 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
 
 
 template <typename TSortCursor>
-void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void GraphiteRollupSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     const DateLUTImpl & date_lut = DateLUT::instance();
 
@@ -219,7 +219,7 @@ void GraphiteRollupSortedBlockInputStream::merge(ColumnPlainPtrs & merged_column
 
 
 template <typename TSortCursor>
-void GraphiteRollupSortedBlockInputStream::startNextRow(ColumnPlainPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern)
+void GraphiteRollupSortedBlockInputStream::startNextRow(MutableColumnRawPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern)
 {
     /// Copy unmodified column values.
     for (size_t i = 0, size = unmodified_column_numbers.size(); i < size; ++i)
@@ -238,7 +238,7 @@ void GraphiteRollupSortedBlockInputStream::startNextRow(ColumnPlainPtrs & merged
 }
 
 
-void GraphiteRollupSortedBlockInputStream::finishCurrentRow(ColumnPlainPtrs & merged_columns)
+void GraphiteRollupSortedBlockInputStream::finishCurrentRow(MutableColumnRawPtrs & merged_columns)
 {
     /// Insert calculated values of the columns `time`, `value`, `version`.
     merged_columns[time_column_num]->insert(UInt64(current_time_rounded));

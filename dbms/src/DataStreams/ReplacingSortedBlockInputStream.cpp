@@ -7,7 +7,7 @@ namespace DB
 {
 
 
-void ReplacingSortedBlockInputStream::insertRow(ColumnPlainPtrs & merged_columns, size_t & merged_rows)
+void ReplacingSortedBlockInputStream::insertRow(MutableColumnRawPtrs & merged_columns, size_t & merged_rows)
 {
     if (out_row_sources_buf)
     {
@@ -34,7 +34,7 @@ Block ReplacingSortedBlockInputStream::readImpl()
         return children[0]->read();
 
     Block merged_block;
-    ColumnPlainPtrs merged_columns;
+    MutableColumnRawPtrs merged_columns;
 
     init(merged_block, merged_columns);
     if (merged_columns.empty())
@@ -59,7 +59,7 @@ Block ReplacingSortedBlockInputStream::readImpl()
 
 
 template <typename TSortCursor>
-void ReplacingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void ReplacingSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
 

@@ -36,7 +36,7 @@ String SummingSortedBlockInputStream::getID() const
 }
 
 
-void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(ColumnPlainPtrs & merged_columns, bool force_insertion)
+void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumnRawPtrs & merged_columns, bool force_insertion)
 {
     for (auto & desc : columns_to_aggregate)
     {
@@ -112,7 +112,7 @@ Block SummingSortedBlockInputStream::readImpl()
         return children[0]->read();
 
     Block merged_block;
-    ColumnPlainPtrs merged_columns;
+    MutableColumnRawPtrs merged_columns;
 
     init(merged_block, merged_columns);
     if (merged_columns.empty())
@@ -289,7 +289,7 @@ Block SummingSortedBlockInputStream::readImpl()
 
 
 template <typename TSortCursor>
-void SummingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void SummingSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     merged_rows = 0;
 
@@ -465,7 +465,7 @@ void SummingSortedBlockInputStream::addRow(TSortCursor & cursor)
         else
         {
             // Gather all source columns into a vector
-            ConstColumnPlainPtrs columns(desc.column_numbers.size());
+            ColumnRawPtrs columns(desc.column_numbers.size());
             for (size_t i = 0; i < desc.column_numbers.size(); ++i)
                 columns[i] = cursor->all_columns[desc.column_numbers[i]];
 

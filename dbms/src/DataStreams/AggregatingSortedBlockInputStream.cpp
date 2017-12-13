@@ -16,7 +16,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
         return children[0]->read();
 
     Block merged_block;
-    ColumnPlainPtrs merged_columns;
+    MutableColumnRawPtrs merged_columns;
 
     init(merged_block, merged_columns);
     if (merged_columns.empty())
@@ -69,7 +69,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
 
 
 template <typename TSortCursor>
-void AggregatingSortedBlockInputStream::merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void AggregatingSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
 

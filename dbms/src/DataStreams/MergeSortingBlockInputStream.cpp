@@ -207,7 +207,7 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
     Block merged = blocks[0].cloneEmpty();
     size_t num_columns = blocks[0].columns();
 
-    ColumnPlainPtrs merged_columns;
+    MutableColumnRawPtrs merged_columns;
     for (size_t i = 0; i < num_columns; ++i)    /// TODO: reserve
         merged_columns.push_back(merged.safeGetByPosition(i).column.get());
 

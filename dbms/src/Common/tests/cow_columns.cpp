@@ -2,26 +2,40 @@
 #include <iostream>
 
 
-class Column : public COWPtr<Column>
+class IColumn : public COWPtr<IColumn>
 {
 private:
-    friend class COWPtr<Column>;
-
-    int data;
-    Column(int data) : data(data) {}
+    friend class COWPtr<IColumn>;
+    virtual IColumn * clone() const = 0;
 
 public:
-    int get() const { return data; }
-    void set(int value) { data = value; }
+    virtual ~IColumn() {}
+
+    virtual int get() const = 0;
+    virtual void set(int value) = 0;
 };
 
-using ColumnPtr = Column::Ptr;
-using MutableColumnPtr = Column::MutablePtr;
+class ConcreteColumn : public COWPtrHelper<IColumn, ConcreteColumn>
+{
+private:
+    friend class COWPtrHelper<IColumn, ConcreteColumn>;
+
+    int data;
+    ConcreteColumn(int data) : data(data) {}
+    ConcreteColumn(const ConcreteColumn &) = default;
+
+public:
+    int get() const override { return data; }
+    void set(int value) override { data = value; }
+};
+
+using ColumnPtr = IColumn::Ptr;
+using MutableColumnPtr = IColumn::MutablePtr;
 
 
 int main(int, char **)
 {
-    ColumnPtr x = Column::create(1);
+    ColumnPtr x = ConcreteColumn::create(1);
     ColumnPtr y = x;
 
     std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
@@ -41,7 +55,7 @@ int main(int, char **)
     std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
     std::cerr << "addresses: " << &*x << ", " << &*y << "\n";
 
-    x = Column::create(0);
+    x = ConcreteColumn::create(0);
 
     std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
     std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";

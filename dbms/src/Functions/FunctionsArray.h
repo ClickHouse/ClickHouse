@@ -1219,14 +1219,14 @@ private:
 
     bool execute128bit(
         const ColumnArray::Offsets_t & offsets,
-        const ConstColumnPlainPtrs & columns,
-        const ConstColumnPlainPtrs & null_maps,
+        const ColumnRawPtrs & columns,
+        const ColumnRawPtrs & null_maps,
         ColumnUInt32::Container_t & res_values,
         bool has_nullable_columns);
 
     void executeHashed(
         const ColumnArray::Offsets_t & offsets,
-        const ConstColumnPlainPtrs & columns,
+        const ColumnRawPtrs & columns,
         ColumnUInt32::Container_t & res_values);
 };
 
@@ -1258,14 +1258,14 @@ private:
 
     bool execute128bit(
         const ColumnArray::Offsets_t & offsets,
-        const ConstColumnPlainPtrs & columns,
-        const ConstColumnPlainPtrs & null_maps,
+        const ColumnRawPtrs & columns,
+        const ColumnRawPtrs & null_maps,
         ColumnUInt32::Container_t & res_values,
         bool has_nullable_columns);
 
     void executeHashed(
         const ColumnArray::Offsets_t & offsets,
-        const ConstColumnPlainPtrs & columns,
+        const ColumnRawPtrs & columns,
         ColumnUInt32::Container_t & res_values);
 };
 

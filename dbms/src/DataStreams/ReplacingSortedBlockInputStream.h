@@ -64,10 +64,10 @@ private:
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
     template <typename TSortCursor>
-    void merge(ColumnPlainPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
+    void merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue);
 
     /// Output into result the rows for current primary key.
-    void insertRow(ColumnPlainPtrs & merged_columns, size_t & merged_rows);
+    void insertRow(MutableColumnRawPtrs & merged_columns, size_t & merged_rows);
 };
 
 }
