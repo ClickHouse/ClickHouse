@@ -8,6 +8,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserInsertQuery.h>
+#include <Parsers/ASTFunction.h>
 
 #include <Common/typeid_cast.h>
 
@@ -26,6 +27,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Pos begin = pos;
 
     ParserKeyword s_insert_into("INSERT INTO");
+    ParserKeyword s_table("TABLE");
+    ParserKeyword s_function("FUNCTION");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_values("VALUES");
     ParserKeyword s_format("FORMAT");
@@ -34,26 +37,39 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+    ParserFunction table_function_p;
 
     ASTPtr database;
     ASTPtr table;
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
+    ASTPtr table_function;
     /// Insertion data
     const char * data = nullptr;
 
     if (!s_insert_into.ignore(pos, expected))
         return false;
 
-    if (!name_p.parse(pos, table, expected))
-        return false;
+    s_table.ignore(pos, expected);
 
-    if (s_dot.ignore(pos, expected))
+    if (s_function.ignore(pos, expected))
     {
-        database = table;
+        if (!table_function_p.parse(pos, table_function, expected))
+            return false;
+        static_cast<ASTFunction &>(*table_function).kind = ASTFunction::TABLE_FUNCTION;
+    }
+    else
+    {
         if (!name_p.parse(pos, table, expected))
             return false;
+
+        if (s_dot.ignore(pos, expected))
+        {
+            database = table;
+            if (!name_p.parse(pos, table, expected))
+                return false;
+        }
     }
 
     /// Is there a list of columns
@@ -117,10 +133,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto query = std::make_shared<ASTInsertQuery>(StringRange(begin, pos));
     node = query;
 
-    if (database)
-        query->database = typeid_cast<ASTIdentifier &>(*database).name;
+    if (table_function)
+    {
+        query->table_function = table_function;
+    }
+    else
+    {
+        if (database)
+            query->database = typeid_cast<ASTIdentifier &>(*database).name;
 
-    query->table = typeid_cast<ASTIdentifier &>(*table).name;
+        query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    }
 
     if (format)
         query->format = typeid_cast<ASTIdentifier &>(*format).name;
