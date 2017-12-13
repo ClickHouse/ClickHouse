@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>

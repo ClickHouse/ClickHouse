@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeTraits.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB { namespace DataTypeTraits {
 

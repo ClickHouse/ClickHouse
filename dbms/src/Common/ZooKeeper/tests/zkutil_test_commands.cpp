@@ -4,9 +4,6 @@
 
 using namespace zkutil;
 
-void watcher(zhandle_t *zh, int type, int state, const char *path,void *watcherCtx)
-{
-}
 int main()
 {
     try

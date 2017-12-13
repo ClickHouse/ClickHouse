@@ -35,8 +35,8 @@ public:
 
     bool behavesAsNumber() const override { return false; }
 
-    std::string getName() const override;
     const char * getFamilyName() const override { return "DateTime"; }
+    std::string getName() const override;
     DataTypePtr clone() const override { return std::make_shared<DataTypeDateTime>(); }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;

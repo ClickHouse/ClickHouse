@@ -59,7 +59,7 @@ struct Grower : public HashTableGrower<2>
     }
 };
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     using Map = HashMapWithDump<
         StringRef,

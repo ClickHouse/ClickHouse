@@ -42,10 +42,10 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 
 BlockInputStreams StorageSystemDictionaries::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo &,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
+    const size_t,
     const unsigned)
 {
     check(column_names);
@@ -93,12 +93,8 @@ BlockInputStreams StorageSystemDictionaries::read(
             const auto & dict_struct = dict_ptr->getStructure();
             col_key.column->insert(dict_struct.getKeyDescription());
 
-            col_attribute_names.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
-                return attr.name;
-            }));
-            col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
-                return attr.type->getName();
-            }));
+            col_attribute_names.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.name; }));
+            col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.type->getName(); }));
             col_bytes_allocated.column->insert(static_cast<UInt64>(dict_ptr->getBytesAllocated()));
             col_query_count.column->insert(static_cast<UInt64>(dict_ptr->getQueryCount()));
             col_hit_rate.column->insert(dict_ptr->getHitRate());

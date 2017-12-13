@@ -22,10 +22,10 @@ class ColumnNullable final : public IColumn
 {
 public:
     ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_);
-    std::string getName() const override {     return "ColumnNullable(" + nested_column->getName() + ")"; }
+    const char * getFamilyName() const override { return "Nullable"; }
+    std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     bool isNumeric() const override { return nested_column->isNumeric(); }
     bool isNumericNotNullable() const override { return false; }
-    bool isConst() const override { return nested_column->isConst(); }
     bool isFixed() const override { return nested_column->isFixed(); }
     size_t sizeOfField() const override;
     bool isNullable() const override { return true; }
@@ -68,6 +68,12 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    void forEachSubcolumn(ColumnCallback callback) override
+    {
+        callback(nested_column);
+        callback(null_map);
+    }
 
     /// Return the column that represents values.
     ColumnPtr & getNestedColumn() { return nested_column; }

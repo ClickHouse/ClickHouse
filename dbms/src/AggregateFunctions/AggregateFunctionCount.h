@@ -4,7 +4,6 @@
 
 #include <array>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/INullaryAggregateFunction.h>
 #include <AggregateFunctions/IUnaryAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
@@ -30,7 +29,7 @@ class AggregateFunctionCount final : public INullaryAggregateFunction<AggregateF
 public:
     String getName() const override { return "count"; }
 
-    void setArguments(const DataTypes & arguments) override
+    void setArguments(const DataTypes & /*arguments*/) override
     {
         /// You may pass some arguments. All of them are ignored.
     }
@@ -45,7 +44,7 @@ public:
         ++data(place).count;
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }
@@ -86,18 +85,18 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena * arena) const
+    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
     {
         data(place).count += !static_cast<const ColumnNullable &>(column).isNullAt(row_num);
     }
 
     void setArgument(const DataTypePtr & argument)
     {
-        if (!argument->isNullable() && !argument->isNull())
+        if (!argument->isNullable())
             throw Exception("Not Nullable argument passed to aggregate function count", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }
@@ -144,10 +143,10 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
-            is_nullable[i] = arguments[i]->isNullable() || arguments[i]->isNull();
+            is_nullable[i] = arguments[i]->isNullable();
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         for (size_t i = 0; i < number_of_arguments; ++i)
             if (is_nullable[i] && static_cast<const ColumnNullable &>(*columns[i]).isNullAt(row_num))
@@ -167,7 +166,7 @@ public:
         return &addFree;
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }

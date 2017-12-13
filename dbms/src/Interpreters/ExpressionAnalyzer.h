@@ -111,7 +111,7 @@ public:
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    void appendProjectResult(ExpressionActionsChain & chain, bool only_types) const;
+    void appendProjectResult(ExpressionActionsChain & chain) const;
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
     /// If project_result, only the calculated values in the desired order, renamed to aliases, remain in the output block.

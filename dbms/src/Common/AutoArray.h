@@ -36,8 +36,6 @@ namespace DB
 
 const size_t empty_auto_array_helper = 0;
 
-struct DontInitElemsTag {};
-
 template <typename T>
 class AutoArray
 {
@@ -51,15 +49,6 @@ public:
     explicit AutoArray(size_t size_)
     {
         init(size_, false);
-    }
-
-    /** The default constructors for elements will not be called.
-      * In this case, you must insert all elements using the `place` and `placement new` functions,
-      *  since destructors are then called for them.
-      */
-    AutoArray(size_t size_, const DontInitElemsTag & tag)
-    {
-        init(size_, true);
     }
 
     /** Initializes all elements with a copy constructor with the `value` parameter.

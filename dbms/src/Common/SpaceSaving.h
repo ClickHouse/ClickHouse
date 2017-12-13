@@ -35,7 +35,7 @@ struct SpaceSavingArena
 {
     SpaceSavingArena() {}
     const TKey emplace(const TKey & key) { return key; }
-    void free(const TKey & key) {}
+    void free(const TKey & /*key*/) {}
 };
 
 /*
@@ -76,7 +76,7 @@ class SpaceSaving
 private:
     // Suggested constants in the paper "Finding top-k elements in data streams", chap 6. equation (24)
     // Round to nearest power of 2 for cheaper binning without modulo
-    constexpr uint64_t nextAlphaSize (uint64_t x)
+    constexpr uint64_t nextAlphaSize(uint64_t x)
     {
         constexpr uint64_t ALPHA_MAP_ELEMENTS_PER_COUNTER = 6;
         return 1ULL<<(sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));

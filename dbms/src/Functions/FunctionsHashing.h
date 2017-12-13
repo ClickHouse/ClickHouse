@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -180,7 +181,7 @@ class FunctionStringHash64 : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHash64>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash64>(); };
 
     String getName() const override
     {
@@ -231,7 +232,7 @@ class FunctionStringHashFixedString : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHashFixedString>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHashFixedString>(); };
 
     String getName() const override
     {
@@ -283,7 +284,7 @@ class FunctionIntHash : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIntHash>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIntHash>(); };
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -371,7 +372,7 @@ class FunctionNeighbourhoodHash64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbourhoodHash64>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbourhoodHash64>(); };
 
 private:
     template <typename FromType, bool first>
@@ -540,12 +541,11 @@ private:
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
         {
-            const Block & tuple_data = tuple->getData();
-            for (size_t i = 0, size = tuple_data.columns(); i < size; ++i)
-            {
-                const ColumnWithTypeAndName & col = tuple_data.getByPosition(i);
-                executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
-            }
+            const Columns & tuple_columns = tuple->getColumns();
+            const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
+            size_t tuple_size = tuple_columns.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+                executeForArgument(tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
         else if (const ColumnConst * tuple = checkAndGetColumnConst<ColumnTuple>(column))
         {
@@ -572,7 +572,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }

@@ -37,7 +37,10 @@ class IColumn : private boost::noncopyable
 {
 public:
     /// Name of a Column. It is used in info messages.
-    virtual std::string getName() const = 0;
+    virtual std::string getName() const { return getFamilyName(); };
+
+    /// Name of a Column kind, without parameters (example: FixedString, Array).
+    virtual const char * getFamilyName() const = 0;
 
     /// Column is vector of numbers or numeric constant.
     virtual bool isNumeric() const { return false; }
@@ -77,7 +80,7 @@ public:
     /// Creates column with the same type and specified size.
     /// If size is less current size, then data is cut.
     /// If size is greater, than default values are appended.
-    virtual ColumnPtr cloneResized(size_t size) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
+    virtual ColumnPtr cloneResized(size_t /*size*/) const { throw Exception("Cannot cloneResized() column " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
     /// Returns number of values in column.
     virtual size_t size() const = 0;
@@ -106,7 +109,7 @@ public:
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floting point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
-    virtual UInt64 get64(size_t n) const
+    virtual UInt64 get64(size_t /*n*/) const
     {
         throw Exception("Method get64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -114,12 +117,12 @@ public:
     /** If column is numeric, return value of n-th element, casted to UInt64.
       * Otherwise throw an exception.
       */
-    virtual UInt64 getUInt(size_t n) const
+    virtual UInt64 getUInt(size_t /*n*/) const
     {
         throw Exception("Method getUInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual Int64 getInt(size_t n) const
+    virtual Int64 getInt(size_t /*n*/) const
     {
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -253,7 +256,7 @@ public:
 
     /// Reserves memory for specified amount of elements. If reservation isn't possible, does nothing.
     /// It affects performance only (not correctness).
-    virtual void reserve(size_t n) {};
+    virtual void reserve(size_t /*n*/) {};
 
     /// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
     virtual size_t byteSize() const = 0;
@@ -263,7 +266,14 @@ public:
     /// Zero, if could be determined.
     virtual size_t allocatedBytes() const = 0;
 
+    /// If the column contains subcolumns (such as Array, Nullable, etc), enumerate them.
+    /// Shallow: doesn't do recursive calls.
+    using ColumnCallback = std::function<void(ColumnPtr&)>;
+    virtual void forEachSubcolumn(ColumnCallback) {}
+
     virtual ~IColumn() {}
+
+    String dumpStructure() const;
 
 protected:
 

@@ -134,7 +134,7 @@ public:
         this->data(place).update(column, row_num);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).mergeWith(this->data(rhs));
     }
@@ -220,10 +220,10 @@ template <bool compute_marginal_moments>
 class BaseCovarianceData
 {
 protected:
-    void incrementMarginalMoments(Float64 left_incr, Float64 right_incr) {}
-    void mergeWith(const BaseCovarianceData & source) {}
-    void serialize(WriteBuffer & buf) const {}
-    void deserialize(const ReadBuffer & buf) {}
+    void incrementMarginalMoments(Float64, Float64) {}
+    void mergeWith(const BaseCovarianceData &) {}
+    void serialize(WriteBuffer &) const {}
+    void deserialize(const ReadBuffer &) {}
 };
 
 template <>
@@ -350,16 +350,12 @@ public:
         Base::deserialize(buf);
     }
 
-    template <bool compute = compute_marginal_moments>
-    void publish(IColumn & to, typename std::enable_if<compute>::type * = nullptr) const
+    void publish(IColumn & to) const
     {
-        static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, Base::left_m2, Base::right_m2, count));
-    }
-
-    template <bool compute = compute_marginal_moments>
-    void publish(IColumn & to, typename std::enable_if<!compute>::type * = nullptr) const
-    {
-        static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, count));
+        if constexpr (compute_marginal_moments)
+            static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, Base::left_m2, Base::right_m2, count));
+        else
+            static_cast<ColumnFloat64 &>(to).getData().push_back(Op::apply(co_moment, count));
     }
 
 private:
@@ -399,7 +395,7 @@ public:
         this->data(place).update(column_left, column_right, row_num);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).mergeWith(this->data(rhs));
     }

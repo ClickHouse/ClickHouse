@@ -89,7 +89,7 @@ void ComplexKeyHashedDictionary::getString(
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return null_value; });
 }
 
@@ -136,7 +136,7 @@ void ComplexKeyHashedDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t row) { return def->getDataAt(row); });
 }
 
@@ -183,7 +183,7 @@ void ComplexKeyHashedDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return StringRef{def}; });
 }
 
@@ -333,7 +333,7 @@ void ComplexKeyHashedDictionary::createAttributeImpl(Attribute & attribute, cons
 
 ComplexKeyHashedDictionary::Attribute ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type};
+    Attribute attr{type, {}, {}, {}};
 
     switch (type)
     {
