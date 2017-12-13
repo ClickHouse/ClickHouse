@@ -61,11 +61,14 @@ private:
     /// Array of pointers to aggregation states, that are placed in arenas.
     Container_t data;
 
-public:
+    ColumnAggregateFunction() {}
+
     /// Create a new column that has another column as a source.
-    ColumnAggregateFunction(const ColumnAggregateFunction & other)
-        arenas(other.arenas), func(other.func), src(other.getPtr())
+    MutablePtr createView()
     {
+        MutablePtr res = create(func, arenas);
+        res->src = getPtr();
+        return res;
     }
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_)
@@ -78,6 +81,7 @@ public:
     {
     }
 
+public:
     ~ColumnAggregateFunction();
 
     void set(const AggregateFunctionPtr & func_)
@@ -148,7 +152,7 @@ public:
 
     MutableColumnPtr replicate(const Offsets_t & offsets) const override;
 
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream & gatherer_stream) override;
 
