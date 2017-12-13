@@ -9,7 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <AggregateFunctions/IBinaryAggregateFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <map>
@@ -98,7 +98,7 @@ public:
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena * arena) const override final
+    void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override final
     {
         // Column 0 contains array of keys of known type
         const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[0]);
@@ -144,7 +144,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;

@@ -56,7 +56,7 @@ private:
     BufferWithOwnMemory<WriteBuffer> flush_buffer;
 
     /// Description of the asynchronous write request.
-    iocb request = { 0 };
+    iocb request = {};
     std::vector<iocb *> request_ptrs{&request};
     std::vector<io_event> events{1};
 

@@ -11,11 +11,12 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/NumberTraits.h>
 #include <Core/AccurateComparison.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
+#include <boost/math/common_factor.hpp>
 
 
 namespace DB
@@ -209,9 +210,9 @@ struct ModuloImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
         return typename NumberTraits::ToInteger<A>::Type(a)
-            % typename NumberTraits::ToInteger<A>::Type(b);
+            % typename NumberTraits::ToInteger<B>::Type(b);
     }
 };
 
@@ -409,24 +410,46 @@ struct AbsImpl
 {
     using ResultType = typename NumberTraits::ResultOfAbs<A>::Type;
 
-    template <typename T = A>
-    static inline ResultType apply(T a,
-        typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, void>::type * = nullptr)
+    static inline ResultType apply(A a)
     {
-        return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
+        if constexpr (std::is_integral<A>::value && std::is_signed<A>::value)
+            return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
+        else if constexpr (std::is_integral<A>::value && std::is_unsigned<A>::value)
+            return static_cast<ResultType>(a);
+        else if constexpr (std::is_floating_point<A>::value)
+            return static_cast<ResultType>(std::abs(a));
     }
+};
 
-    template <typename T = A>
-    static inline ResultType apply(T a,
-        typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value, void>::type * = nullptr)
+template <typename A, typename B>
+struct GCDImpl
+{
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
     {
-        return static_cast<ResultType>(a);
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        return boost::math::gcd(
+            typename NumberTraits::ToInteger<Result>::Type(a),
+            typename NumberTraits::ToInteger<Result>::Type(b));
     }
+};
 
-    template <typename T = A>
-    static inline ResultType apply(T a, typename std::enable_if<std::is_floating_point<T>::value, void>::type * = nullptr)
+template <typename A, typename B>
+struct LCMImpl
+{
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
     {
-        return static_cast<ResultType>(std::abs(a));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        return boost::math::lcm(
+            typename NumberTraits::ToInteger<Result>::Type(a),
+            typename NumberTraits::ToInteger<Result>::Type(b));
     }
 };
 
@@ -549,21 +572,17 @@ public:
 private:
     const Context & context;
 
-    /// Overload for InvalidType
-    template <typename ResultDataType,
-              typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
+    template <typename ResultDataType>
     bool checkRightTypeImpl(DataTypePtr & type_res) const
     {
-        return false;
-    }
-
-    /// Overload for well-defined operations
-    template <typename ResultDataType,
-              typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool checkRightTypeImpl(DataTypePtr & type_res) const
-    {
-        type_res = std::make_shared<ResultDataType>();
-        return true;
+        /// Overload for InvalidType
+        if constexpr (std::is_same<ResultDataType, InvalidType>::value)
+            return false;
+        else
+        {
+            type_res = std::make_shared<ResultDataType>();
+            return true;
+        }
     }
 
     template <typename LeftDataType, typename RightDataType>
@@ -613,27 +632,22 @@ private:
     }
 
     /// Overload for InvalidType
-    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
-              typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                                  const ColumnType * col_left)
+    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType>
+    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments,
+        [[maybe_unused]] const size_t result, [[maybe_unused]] const ColumnType * col_left)
     {
-        throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
-            + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
-            + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+        if constexpr (std::is_same<ResultDataType, InvalidType>::value)
+            throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
+                + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
+                + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        else
+        {
+            using T0 = typename LeftDataType::FieldType;
+            using T1 = typename RightDataType::FieldType;
+            using ResultType = typename ResultDataType::FieldType;
 
-    /// Overload for well-defined operations
-    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
-              typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                                  const ColumnType * col_left)
-    {
-        using T0 = typename LeftDataType::FieldType;
-        using T1 = typename RightDataType::FieldType;
-        using ResultType = typename ResultDataType::FieldType;
-
-        return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
+            return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
+        }
     }
 
     /// ColumnVector overload
@@ -890,7 +904,7 @@ class FunctionUnaryArithmetic : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnaryArithmetic>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryArithmetic>(); }
 
 private:
     template <typename T0>
@@ -977,7 +991,7 @@ public:
         return FunctionUnaryArithmeticMonotonicity<Name>::has();
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
     {
         return FunctionUnaryArithmeticMonotonicity<Name>::get(left, right);
     }
@@ -1006,6 +1020,8 @@ struct NameBitTestAny           { static constexpr auto name = "bitTestAny"; };
 struct NameBitTestAll           { static constexpr auto name = "bitTestAll"; };
 struct NameLeast                { static constexpr auto name = "least"; };
 struct NameGreatest             { static constexpr auto name = "greatest"; };
+struct NameGCD                  { static constexpr auto name = "gcd"; };
+struct NameLCM                  { static constexpr auto name = "lcm"; };
 
 using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
 using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
@@ -1027,13 +1043,15 @@ using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, Name
 using FunctionBitTest = FunctionBinaryArithmetic<BitTestImpl, NameBitTest>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
+using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD>;
+using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM>;
 
 /// Monotonicity properties for some functions.
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return { true, false };
     }
@@ -1057,7 +1075,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return {};
     }
@@ -1288,7 +1306,7 @@ private:
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto & val = value_col->getData();
 
             const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
@@ -1314,7 +1332,7 @@ private:
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto val = value_col->template getValue<T>();
 
             if (is_const)
@@ -1341,7 +1359,7 @@ private:
     }
 
     template <typename ValueType>
-    ValueType createConstMask(const size_t size, const Block & block, const ColumnNumbers & arguments, bool & is_const)
+    ValueType createConstMask(const Block & block, const ColumnNumbers & arguments, bool & is_const)
     {
         is_const = true;
         ValueType mask = 0;

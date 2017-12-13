@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Parsers/ASTWithAlias.h>
 
 
@@ -24,10 +24,11 @@ public:
     ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         settings.ostr << applyVisitor(FieldVisitorToString(), value);
     }
+
     String getColumnNameImpl() const override;
 };
 

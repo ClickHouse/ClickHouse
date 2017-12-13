@@ -11,7 +11,7 @@
   * clickhouse-client --query="SELECT 100 + round(10 * rand() / 0xFFFFFFFF) FROM system.numbers LIMIT 105" | tr '\n' ' ' | ./merge_selector
   */
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     using namespace DB;
 

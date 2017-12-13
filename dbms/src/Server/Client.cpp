@@ -181,13 +181,13 @@ private:
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context.getSettingsRef().limits.NAME.changed) \
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_LIMITS(EXTRACT_LIMIT)
@@ -195,11 +195,11 @@ private:
     }
 
 
-    int main(const std::vector<std::string> & args)
+    int main(const std::vector<std::string> & /*args*/)
     {
         try
         {
-            return mainImpl(args);
+            return mainImpl();
         }
         catch (const Exception & e)
         {
@@ -262,7 +262,7 @@ private:
     }
 
 
-    int mainImpl(const std::vector<std::string> & args)
+    int mainImpl()
     {
         registerFunctions();
         registerAggregateFunctions();
@@ -1241,8 +1241,8 @@ public:
             }
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
-#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
+#define DECLARE_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 
         /// Main commandline options related to client functionality and all parameters from Settings.
         boost::program_options::options_description main_description("Main options");
@@ -1331,7 +1331,7 @@ public:
         }
 
         /// Extract settings and limits from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (options.count(#NAME)) \
             context.setSetting(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)

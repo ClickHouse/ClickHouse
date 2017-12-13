@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Progress.h>
+#include <IO/Progress.h>
 
 #include <Interpreters/Limits.h>
 

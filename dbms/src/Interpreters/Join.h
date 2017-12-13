@@ -12,7 +12,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 
 #include <DataStreams/IBlockInputStream.h>
 
@@ -39,16 +38,16 @@ struct JoinKeyGetterOneNumber
     }
 
     Key getKey(
-        const ConstColumnPlainPtrs & key_columns,
-        size_t keys_size,                /// number of key columns.
-        size_t i,                        /// row number to get key from.
-        const Sizes & key_sizes) const    /// If keys are of fixed size - their sizes. Not used for methods with variable-length keys.
+        const ConstColumnPlainPtrs & /*key_columns*/,
+        size_t /*keys_size*/,                 /// number of key columns.
+        size_t i,                             /// row number to get key from.
+        const Sizes & /*key_sizes*/) const    /// If keys are of fixed size - their sizes. Not used for methods with variable-length keys.
     {
         return unionCastToUInt64(vec[i]);
     }
 
     /// Place additional data into memory pool, if needed, when new key was inserted into hash table.
-    static void onNewKey(Key & key, Arena & pool) {}
+    static void onNewKey(Key & /*key*/, Arena & /*pool*/) {}
 };
 
 /// For single String key.
@@ -68,10 +67,10 @@ struct JoinKeyGetterString
     }
 
     Key getKey(
-        const ConstColumnPlainPtrs & key_columns,
-        size_t keys_size,
+        const ConstColumnPlainPtrs &,
+        size_t,
         size_t i,
-        const Sizes & key_sizes) const
+        const Sizes &) const
     {
         return StringRef(
             &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
@@ -101,10 +100,10 @@ struct JoinKeyGetterFixedString
     }
 
     Key getKey(
-        const ConstColumnPlainPtrs & key_columns,
-        size_t keys_size,
+        const ConstColumnPlainPtrs &,
+        size_t,
         size_t i,
-        const Sizes & key_sizes) const
+        const Sizes &) const
     {
         return StringRef(&(*chars)[i * n], n);
     }
@@ -121,7 +120,7 @@ struct JoinKeyGetterFixed
 {
     using Key = TKey;
 
-    JoinKeyGetterFixed(const ConstColumnPlainPtrs & key_columns)
+    JoinKeyGetterFixed(const ConstColumnPlainPtrs &)
     {
     }
 
@@ -134,7 +133,7 @@ struct JoinKeyGetterFixed
         return packFixed<Key>(i, keys_size, key_columns, key_sizes);
     }
 
-    static void onNewKey(Key & key, Arena & pool) {}
+    static void onNewKey(Key &, Arena &) {}
 };
 
 /// Generic method, use crypto hash function.
@@ -142,7 +141,7 @@ struct JoinKeyGetterHashed
 {
     using Key = UInt128;
 
-    JoinKeyGetterHashed(const ConstColumnPlainPtrs & key_columns)
+    JoinKeyGetterHashed(const ConstColumnPlainPtrs &)
     {
     }
 
@@ -150,12 +149,12 @@ struct JoinKeyGetterHashed
         const ConstColumnPlainPtrs & key_columns,
         size_t keys_size,
         size_t i,
-        const Sizes & key_sizes) const
+        const Sizes &) const
     {
         return hash128(i, keys_size, key_columns);
     }
 
-    static void onNewKey(Key & key, Arena & pool) {}
+    static void onNewKey(Key &, Arena &) {}
 };
 
 

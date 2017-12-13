@@ -19,14 +19,12 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNested.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 
 #include <Common/typeid_cast.h>
 
@@ -36,7 +34,6 @@
 #include <Poco/DirectoryIterator.h>
 
 #define DBMS_STORAGE_LOG_DATA_FILE_EXTENSION ".bin"
-#define DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION ".null.bin"
 
 
 namespace DB
@@ -88,8 +85,7 @@ private:
     using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
     FileStreams streams;
 
-    void addStream(const String & name, const IDataType & type, size_t level = 0);
-    void readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level = 0, bool read_offsets = true);
+    void readData(const String & name, const IDataType & type, IColumn & column, size_t limit, bool read_offsets = true);
 };
 
 
@@ -99,8 +95,6 @@ public:
     explicit TinyLogBlockOutputStream(StorageTinyLog & storage_)
         : storage(storage_)
     {
-        for (const auto & col : storage.getColumnsList())
-            addStream(col.name, *col.type);
     }
 
     ~TinyLogBlockOutputStream() override
@@ -143,10 +137,9 @@ private:
     using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
     FileStreams streams;
 
-    using OffsetColumns = std::set<std::string>;
+    using WrittenStreams = std::set<std::string>;
 
-    void addStream(const String & name, const IDataType & type, size_t level = 0);
-    void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, size_t level = 0);
+    void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams);
 };
 
 
@@ -191,11 +184,10 @@ Block TinyLogBlockInputStream::readImpl()
         {
             const auto & name = column_names[i];
             column_types[i] = storage.getDataTypeByName(name);
-            addStream(name, *column_types[i]);
         }
     }
 
-    /// Pointers to offset columns, mutual for columns from nested data structures
+    /// Pointers to offset columns, shared for columns from nested data structures
     using OffsetColumns = std::map<std::string, ColumnPtr>;
     OffsetColumns offset_columns;
 
@@ -209,23 +201,8 @@ Block TinyLogBlockInputStream::readImpl()
 
         bool read_offsets = true;
 
-        const IDataType * observed_type;
-        bool is_nullable;
-
-        if (column.type->isNullable())
-        {
-            const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*column.type);
-            observed_type = nullable_type.getNestedType().get();
-            is_nullable = true;
-        }
-        else
-        {
-            observed_type = column.type.get();
-            is_nullable = false;
-        }
-
         /// For nested structures, remember pointers to columns with offsets
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(observed_type))
+        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(column.type.get()))
         {
             String nested_name = DataTypeNested::extractNestedTableName(column.name);
 
@@ -235,15 +212,13 @@ Block TinyLogBlockInputStream::readImpl()
                 read_offsets = false; /// on previous iterations, the offsets were already calculated by `readData`
 
             column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
-            if (is_nullable)
-                column.column = std::make_shared<ColumnNullable>(column.column, std::make_shared<ColumnUInt8>());
         }
         else
             column.column = column.type->createColumn();
 
         try
         {
-            readData(name, *column.type, *column.column, block_size, 0, read_offsets);
+            readData(name, *column.type, *column.column, block_size, read_offsets);
         }
         catch (Exception & e)
         {
@@ -265,139 +240,40 @@ Block TinyLogBlockInputStream::readImpl()
 }
 
 
-void TinyLogBlockInputStream::addStream(const String & name, const IDataType & type, size_t level)
+void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t limit, bool with_offsets)
 {
-    if (type.isNullable())
+    IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
-        /// First create the stream that handles the null map of the given column.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
-        std::string filename = name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
-        streams.emplace(filename, std::make_unique<Stream>(storage.files[filename].data_file.path(), max_read_buffer_size));
+        if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
+            return nullptr;
 
-        /// Then create the stream that handles the data of the given column.
-        addStream(name, nested_type, level);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /// For arrays separate files are used for sizes.
-        String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-        if (!streams.count(size_name))
-            streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), max_read_buffer_size)));
+        String stream_name = IDataType::getFileNameForStream(name, path);
 
-        addStream(name, *type_arr->getNestedType(), level + 1);
-    }
-    else
-        streams[name] = std::make_unique<Stream>(storage.files[name].data_file.path(), max_read_buffer_size);
-}
+        if (!streams.count(stream_name))
+            streams[stream_name] = std::make_unique<Stream>(storage.files[stream_name].data_file.path(), max_read_buffer_size);
 
-void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t limit, size_t level, bool read_offsets)
-{
-    if (type.isNullable())
-    {
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
+        return &streams[stream_name]->compressed;
+    };
 
-        if (!column.isNullable())
-            throw Exception{"Internal error: the column " + name + " is not nullable", ErrorCodes::LOGICAL_ERROR};
-
-        ColumnNullable & nullable_col = static_cast<ColumnNullable &>(column);
-        IColumn & nested_col = *nullable_col.getNestedColumn();
-
-        /// First read from the null map.
-        DataTypeUInt8{}.deserializeBinaryBulk(nullable_col.getNullMapConcreteColumn(),
-            streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, limit, 0);
-
-        /// Then read data.
-        readData(name, nested_type, nested_col, limit, level, read_offsets);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /// For arrays you first need to deserialize dimensions, and then the values.
-        if (read_offsets)
-        {
-            type_arr->deserializeOffsets(
-                column,
-                streams[DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level)]->compressed,
-                limit);
-        }
-
-        if (column.size())
-        {
-            IColumn & nested_column = typeid_cast<ColumnArray &>(column).getData();
-            size_t nested_limit = typeid_cast<ColumnArray &>(column).getOffsets()[column.size() - 1];
-            readData(name, *type_arr->getNestedType(), nested_column, nested_limit, level + 1);
-
-            if (nested_column.size() != nested_limit)
-                throw Exception("Cannot read array data for all offsets", ErrorCodes::CANNOT_READ_ALL_DATA);
-        }
-    }
-    else
-        type.deserializeBinaryBulk(column, streams[name]->compressed, limit, 0);    /// TODO Use avg_value_size_hint.
+    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, limit, 0, true, {}); /// TODO Use avg_value_size_hint.
 }
 
 
-void TinyLogBlockOutputStream::addStream(const String & name, const IDataType & type, size_t level)
+void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams)
 {
-    if (type.isNullable())
+    IDataType::OutputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
     {
-        /// First create the stream that handles the null map of the given column.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
+        String stream_name = IDataType::getFileNameForStream(name, path);
 
-        std::string filename = name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
-        streams.emplace(filename, std::make_unique<Stream>(storage.files[filename].data_file.path(), storage.max_compress_block_size));
+        if (!streams.count(stream_name))
+            streams[stream_name] = std::make_unique<Stream>(storage.files[stream_name].data_file.path(), storage.max_compress_block_size);
+        else if (!written_streams.insert(stream_name).second)
+            return nullptr;
 
-        /// Then create the stream that handles the data of the given column.
-        addStream(name, nested_type, level);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /// For arrays separate files are used for sizes.
-        String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-        if (!streams.count(size_name))
-            streams.emplace(size_name, std::unique_ptr<Stream>(new Stream(storage.files[size_name].data_file.path(), storage.max_compress_block_size)));
+        return &streams[stream_name]->compressed;
+    };
 
-        addStream(name, *type_arr->getNestedType(), level + 1);
-    }
-    else
-        streams[name] = std::make_unique<Stream>(storage.files[name].data_file.path(), storage.max_compress_block_size);
-}
-
-
-void TinyLogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
-    OffsetColumns & offset_columns, size_t level)
-{
-    if (type.isNullable())
-    {
-        /// First write to the null map.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & nested_type = *nullable_type.getNestedType();
-
-        const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(column);
-        const IColumn & nested_col = *nullable_col.getNestedColumn();
-
-        DataTypeUInt8{}.serializeBinaryBulk(nullable_col.getNullMapConcreteColumn(),
-            streams[name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION]->compressed, 0, 0);
-
-        /// Then write data.
-        writeData(name, nested_type, nested_col, offset_columns, level);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        /// For arrays, you first need to serialize the dimensions, and then the values.
-        String size_name = DataTypeNested::extractNestedTableName(name) + ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-
-        if (offset_columns.count(size_name) == 0)
-        {
-            offset_columns.insert(size_name);
-            type_arr->serializeOffsets(column, streams[size_name]->compressed, 0, 0);
-        }
-
-        writeData(name, *type_arr->getNestedType(), typeid_cast<const ColumnArray &>(column).getData(), offset_columns, level + 1);
-    }
-    else
-        type.serializeBinaryBulk(column, streams[name]->compressed, 0, 0);
+    type.serializeBinaryBulkWithMultipleStreams(column, stream_getter, 0, 0, true, {});
 }
 
 
@@ -425,13 +301,13 @@ void TinyLogBlockOutputStream::write(const Block & block)
 {
     storage.check(block, true);
 
-    /// The set of written offset columns so that you do not write mutual columns for nested structures multiple times
-    OffsetColumns offset_columns;
+    /// The set of written offset columns so that you do not write shared columns for nested structures multiple times
+    WrittenStreams written_streams;
 
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
-        writeData(column.name, *column.type, *column.column, offset_columns);
+        writeData(column.name, *column.type, *column.column, written_streams);
     }
 }
 
@@ -463,56 +339,33 @@ StorageTinyLog::StorageTinyLog(
     }
 
     for (const auto & col : getColumnsList())
-        addFile(col.name, *col.type);
+        addFiles(col.name, *col.type);
 }
 
 
-void StorageTinyLog::addFile(const String & column_name, const IDataType & type, size_t level)
+void StorageTinyLog::addFiles(const String & column_name, const IDataType & type)
 {
     if (files.end() != files.find(column_name))
         throw Exception("Duplicate column with name " + column_name + " in constructor of StorageTinyLog.",
             ErrorCodes::DUPLICATE_COLUMN);
 
-    if (type.isNullable())
+    IDataType::StreamCallback stream_callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        /// First add the file describing the null map of the column.
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(type);
-        const IDataType & actual_type = *nullable_type.getNestedType();
-
-        std::string filename = column_name + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION;
-        ColumnData & column_data = files.emplace(filename, ColumnData{}).first->second;
-        column_data.data_file = Poco::File{
-            path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + DBMS_STORAGE_LOG_DATA_BINARY_NULL_MAP_EXTENSION};
-
-        /// Then add the file describing the column data.
-        addFile(column_name, actual_type, level);
-    }
-    else if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(&type))
-    {
-        String size_column_suffix = ARRAY_SIZES_COLUMN_NAME_SUFFIX + toString(level);
-        String size_name = DataTypeNested::extractNestedTableName(column_name) + size_column_suffix;
-
-        if (files.end() == files.find(size_name))
+        String stream_name = IDataType::getFileNameForStream(column_name, substream_path);
+        if (!files.count(stream_name))
         {
             ColumnData column_data;
-            files.insert(std::make_pair(size_name, column_data));
-            files[size_name].data_file = Poco::File(
-                path + escapeForFileName(name) + '/' + escapeForFileName(DataTypeNested::extractNestedTableName(column_name)) + size_column_suffix + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
+            files.insert(std::make_pair(stream_name, column_data));
+            files[stream_name].data_file = Poco::File(
+                path + escapeForFileName(name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
         }
+    };
 
-        addFile(column_name, *type_arr->getNestedType(), level + 1);
-    }
-    else
-    {
-        ColumnData column_data;
-        files.insert(std::make_pair(column_name, column_data));
-        files[column_name].data_file = Poco::File(
-            path + escapeForFileName(name) + '/' + escapeForFileName(column_name) + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION);
-    }
+    type.enumerateStreams(stream_callback, {});
 }
 
 
-void StorageTinyLog::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageTinyLog::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     /// Rename directory with data.
     Poco::File(path + escapeForFileName(name)).renameTo(new_path_to_db + escapeForFileName(new_table_name));
@@ -528,11 +381,11 @@ void StorageTinyLog::rename(const String & new_path_to_db, const String & new_da
 
 BlockInputStreams StorageTinyLog::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams)
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -542,20 +395,11 @@ BlockInputStreams StorageTinyLog::read(
 
 
 BlockOutputStreamPtr StorageTinyLog::write(
-    const ASTPtr & query, const Settings & settings)
+    const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<TinyLogBlockOutputStream>(*this);
 }
 
-
-void StorageTinyLog::drop()
-{
-    for (Files_t::iterator it = files.begin(); it != files.end(); ++it)
-    {
-        if (it->second.data_file.exists())
-            it->second.data_file.remove();
-    }
-}
 
 bool StorageTinyLog::checkData() const
 {

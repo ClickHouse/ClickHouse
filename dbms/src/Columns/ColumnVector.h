@@ -16,8 +16,8 @@ namespace DB
 template <typename T>
 struct CompareHelper
 {
-    static bool less(T a, T b, int nan_direction_hint) { return a < b; }
-    static bool greater(T a, T b, int nan_direction_hint) { return a > b; }
+    static bool less(T a, T b, int /*nan_direction_hint*/) { return a < b; }
+    static bool greater(T a, T b, int /*nan_direction_hint*/) { return a > b; }
 
     /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
       * If one of the values is NaN, then
@@ -25,7 +25,7 @@ struct CompareHelper
       * - if nan_direction_hint == 1 - NaN are considered to be larger than all numbers;
       * Essentially: nan_direction_hint == -1 says that the comparison is for sorting in descending order.
       */
-    static int compare(T a, T b, int nan_direction_hint)
+    static int compare(T a, T b, int /*nan_direction_hint*/)
     {
         return a > b ? 1 : (a < b ? -1 : 0);
     }
@@ -156,7 +156,7 @@ public:
         data.push_back(static_cast<const Self &>(src).getData()[n]);
     }
 
-    void insertData(const char * pos, size_t length) override
+    void insertData(const char * pos, size_t /*length*/) override
     {
         data.push_back(*reinterpret_cast<const T *>(pos));
     }
@@ -205,7 +205,7 @@ public:
         data.reserve(n);
     }
 
-    std::string getName() const override;
+    const char * getFamilyName() const override;
 
     ColumnPtr cloneResized(size_t size) const override;
 

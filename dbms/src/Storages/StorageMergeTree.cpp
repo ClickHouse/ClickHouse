@@ -1,5 +1,5 @@
 #include <optional>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
@@ -68,7 +68,7 @@ StorageMergeTree::StorageMergeTree(
     }
     else
     {
-        data.clearOldParts();
+        data.clearOldPartsFromFilesystem();
     }
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
@@ -112,7 +112,7 @@ BlockInputStreams StorageMergeTree::read(
     return reader.read(column_names, query_info, context, processed_stage, max_block_size, num_streams, nullptr, 0);
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }
@@ -130,11 +130,11 @@ void StorageMergeTree::drop()
     data.dropAllData();
 }
 
-void StorageMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
+void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
 
-    data.setPath(new_full_path, true);
+    data.setPath(new_full_path);
 
     path = new_path_to_db;
     table_name = new_table_name;
@@ -188,7 +188,7 @@ void StorageMergeTree::alter(
     if (primary_key_is_modified && supportsSampling())
         throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
 
-    MergeTreeData::DataParts parts = data.getAllDataParts();
+    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
         if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
@@ -291,7 +291,7 @@ bool StorageMergeTree::merge(
     /// Clear old parts. It does not matter to do it more frequently than each second.
     if (auto lock = time_after_previous_cleanup.lockTestAndRestartAfter(1))
     {
-        data.clearOldParts();
+        data.clearOldPartsFromFilesystem();
         data.clearOldTemporaryDirectories();
     }
 
@@ -449,7 +449,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
 
 
 bool StorageMergeTree::optimize(
-    const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+    const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
     String partition_id;
     if (partition)
@@ -458,7 +458,7 @@ bool StorageMergeTree::optimize(
 }
 
 
-void StorageMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
+void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & partition, bool detach, const Context & context)
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.

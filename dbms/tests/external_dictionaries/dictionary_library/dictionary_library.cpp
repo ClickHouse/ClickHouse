@@ -72,7 +72,7 @@ void * ClickHouseDictionary_v1_loadIds(
     return nullptr;
 }
 
-void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * columns)
+void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * /*columns*/)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     std::cerr << "loadAll lib call ptr=" << data_ptr << " => " << ptr << "\n";

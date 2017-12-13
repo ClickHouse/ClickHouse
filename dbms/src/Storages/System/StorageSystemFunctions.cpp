@@ -16,8 +16,8 @@ namespace DB
 StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
     : name(name_)
     , columns{
-        { "name",           std::make_shared<DataTypeString>() },
-        { "is_aggregate",   std::make_shared<DataTypeUInt8>()  }
+        { "name",         std::make_shared<DataTypeString>() },
+        { "is_aggregate", std::make_shared<DataTypeUInt8>()  }
     }
 {
 }
@@ -25,11 +25,11 @@ StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
 
 BlockInputStreams StorageSystemFunctions::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
+    const SelectQueryInfo &,
+    const Context &,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

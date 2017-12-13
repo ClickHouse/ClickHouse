@@ -44,7 +44,7 @@ class FunctionsStringSearch : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionsStringSearch>();
     }
@@ -124,7 +124,7 @@ class FunctionsStringSearchToString : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionsStringSearchToString>();
     }

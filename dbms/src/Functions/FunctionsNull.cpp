@@ -4,8 +4,8 @@
 #include <Functions/FunctionsConditional.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNull.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <Columns/ColumnNullable.h>
 
 namespace DB
@@ -24,7 +24,7 @@ void registerFunctionsNull(FunctionFactory & factory)
 
 /// Implementation of isNull.
 
-FunctionPtr FunctionIsNull::create(const Context & context)
+FunctionPtr FunctionIsNull::create(const Context &)
 {
     return std::make_shared<FunctionIsNull>();
 }
@@ -34,7 +34,7 @@ std::string FunctionIsNull::getName() const
     return name;
 }
 
-DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes & arguments) const
+DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes &) const
 {
     return std::make_shared<DataTypeUInt8>();
 }
@@ -42,12 +42,7 @@ DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes & arguments) const
 void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
-    if (elem.column->isNull())
-    {
-        /// Trivial case.
-        block.getByPosition(result).column = DataTypeUInt8().createConstColumn(elem.column->size(), UInt64(1));
-    }
-    else if (elem.column->isNullable())
+    if (elem.column->isNullable())
     {
         /// Merely return the embedded null map.
         ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*elem.column);
@@ -63,7 +58,7 @@ void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 
 /// Implementation of isNotNull.
 
-FunctionPtr FunctionIsNotNull::create(const Context & context)
+FunctionPtr FunctionIsNotNull::create(const Context &)
 {
     return std::make_shared<FunctionIsNotNull>();
 }
@@ -73,7 +68,7 @@ std::string FunctionIsNotNull::getName() const
     return name;
 }
 
-DataTypePtr FunctionIsNotNull::getReturnTypeImpl(const DataTypes & arguments) const
+DataTypePtr FunctionIsNotNull::getReturnTypeImpl(const DataTypes &) const
 {
     return std::make_shared<DataTypeUInt8>();
 }
@@ -95,7 +90,7 @@ void FunctionIsNotNull::executeImpl(Block & block, const ColumnNumbers & argumen
         }
     };
 
-    FunctionIsNull{}.executeImpl(temp_block, {0}, 1);
+    FunctionIsNull{}.execute(temp_block, {0}, 1);
     FunctionNot{}.execute(temp_block, {1}, 2);
 
     block.getByPosition(result).column = std::move(temp_block.getByPosition(2).column);
@@ -113,7 +108,7 @@ static const DataTypePtr getNestedDataType(const DataTypePtr & type)
 
 FunctionPtr FunctionCoalesce::create(const Context & context)
 {
-    return std::make_shared<FunctionCoalesce>();
+    return std::make_shared<FunctionCoalesce>(context);
 }
 
 std::string FunctionCoalesce::getName() const
@@ -154,11 +149,11 @@ DataTypePtr FunctionCoalesce::getReturnTypeImpl(const DataTypes & arguments) con
     }
 
     if (new_args.empty())
-        return std::make_shared<DataTypeNull>();
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     if (new_args.size() == 1)
         return new_args.front();
 
-    auto res = FunctionMultiIf{}.getReturnTypeImpl(new_args);
+    auto res = FunctionMultiIf{context}.getReturnTypeImpl(new_args);
 
     /// if last argument is not nullable, result should be also not nullable
     if (!new_args.back()->isNullable() && res->isNullable())
@@ -177,14 +172,14 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
     filtered_args.reserve(arguments.size());
     for (const auto & arg : arguments)
     {
-        const auto & column = block.getByPosition(arg).column;
+        const auto & type = block.getByPosition(arg).type;
 
-        if (column->isNull())
+        if (type->isNull())
             continue;
 
         filtered_args.push_back(arg);
 
-        if (!column->isNullable())
+        if (!type->isNullable())
             break;
     }
 
@@ -206,9 +201,9 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
         else
         {
             temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
-            is_not_null.executeImpl(temp_block, {filtered_args[i]}, res_pos);
+            is_not_null.execute(temp_block, {filtered_args[i]}, res_pos);
             temp_block.insert({nullptr, getNestedDataType(block.getByPosition(filtered_args[i]).type), ""});
-            assume_not_null.executeImpl(temp_block, {filtered_args[i]}, res_pos + 1);
+            assume_not_null.execute(temp_block, {filtered_args[i]}, res_pos + 1);
 
             multi_if_args.push_back(res_pos);
             multi_if_args.push_back(res_pos + 1);
@@ -228,7 +223,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
         return;
     }
 
-    FunctionMultiIf{}.executeImpl(temp_block, multi_if_args, result);
+    FunctionMultiIf{context}.execute(temp_block, multi_if_args, result);
 
     auto res = std::move(temp_block.getByPosition(result).column);
 
@@ -241,7 +236,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
 /// Implementation of ifNull.
 
-FunctionPtr FunctionIfNull::create(const Context & context)
+FunctionPtr FunctionIfNull::create(const Context &)
 {
     return std::make_shared<FunctionIfNull>();
 }
@@ -265,14 +260,14 @@ DataTypePtr FunctionIfNull::getReturnTypeImpl(const DataTypes & arguments) const
 void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     /// Always null.
-    if (block.getByPosition(arguments[0]).column->isNull())
+    if (block.getByPosition(arguments[0]).type->isNull())
     {
         block.getByPosition(result).column = block.getByPosition(arguments[1]).column;
         return;
     }
 
     /// Could not contain nulls, so nullIf makes no sense.
-    if (!block.getByPosition(arguments[0]).column->isNullable())
+    if (!block.getByPosition(arguments[0]).type->isNullable())
     {
         block.getByPosition(result).column = block.getByPosition(arguments[0]).column;
         return;
@@ -287,16 +282,21 @@ void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments,
     size_t assume_not_null_pos = temp_block.columns();
     temp_block.insert({nullptr, getNestedDataType(block.getByPosition(arguments[0]).type), ""});
 
-    FunctionIsNotNull{}.executeImpl(temp_block, {arguments[0]}, is_not_null_pos);
-    FunctionAssumeNotNull{}.executeImpl(temp_block, {arguments[0]}, assume_not_null_pos);
-    FunctionIf{}.executeImpl(temp_block, {is_not_null_pos, assume_not_null_pos, arguments[1]}, result);
+    FunctionIsNotNull{}.execute(temp_block, {arguments[0]}, is_not_null_pos);
+    FunctionAssumeNotNull{}.execute(temp_block, {arguments[0]}, assume_not_null_pos);
+
+    std::cerr << temp_block.dumpStructure() << "\n";
+
+    FunctionIf{}.execute(temp_block, {is_not_null_pos, assume_not_null_pos, arguments[1]}, result);
+
+    std::cerr << temp_block.dumpStructure() << "\n";
 
     block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
 }
 
 /// Implementation of nullIf.
 
-FunctionPtr FunctionNullIf::create(const Context & context)
+FunctionPtr FunctionNullIf::create(const Context & )
 {
     return std::make_shared<FunctionNullIf>();
 }
@@ -308,7 +308,7 @@ std::string FunctionNullIf::getName() const
 
 DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeNull>(), arguments[0]});
+    return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), makeNullableDataTypeIfNot(arguments[0]), arguments[0]});
 }
 
 void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
@@ -327,20 +327,20 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
 
     /// Append a NULL column.
     ColumnWithTypeAndName null_elem;
-    null_elem.column = DataTypeNull().createConstColumn(temp_block.rows(), Null());
-    null_elem.type = std::make_shared<DataTypeNull>();
+    null_elem.type = block.getByPosition(result).type;
+    null_elem.column = null_elem.type->createConstColumn(temp_block.rows(), Null());
     null_elem.name = "NULL";
 
     temp_block.insert(null_elem);
 
-    FunctionIf{}.executeImpl(temp_block, {res_pos, null_pos, arguments[0]}, result);
+    FunctionIf{}.execute(temp_block, {res_pos, null_pos, arguments[0]}, result);
 
     block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
 }
 
 /// Implementation of assumeNotNull.
 
-FunctionPtr FunctionAssumeNotNull::create(const Context & context)
+FunctionPtr FunctionAssumeNotNull::create(const Context &)
 {
     return std::make_shared<FunctionAssumeNotNull>();
 }
@@ -371,7 +371,7 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
 
 /// Implementation of toNullable.
 
-FunctionPtr FunctionToNullable::create(const Context & context)
+FunctionPtr FunctionToNullable::create(const Context &)
 {
     return std::make_shared<FunctionToNullable>();
 }
@@ -383,7 +383,7 @@ std::string FunctionToNullable::getName() const
 
 DataTypePtr FunctionToNullable::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments[0]->isNull() || arguments[0]->isNullable())
+    if (arguments[0]->isNullable())
         return arguments[0];
     return std::make_shared<DataTypeNullable>(arguments[0]);
 }
@@ -392,7 +392,7 @@ void FunctionToNullable::executeImpl(Block & block, const ColumnNumbers & argume
 {
     const ColumnPtr & col = block.getByPosition(arguments[0]).column;
 
-    if (col->isNull() || col->isNullable())
+    if (col->isNullable())
         block.getByPosition(result).column = col;
     else
         block.getByPosition(result).column = std::make_shared<ColumnNullable>(col,

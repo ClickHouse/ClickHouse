@@ -291,12 +291,11 @@ IColumn::Selector DistributedBlockOutputStream::createSelector(Block block)
 {
     storage.getShardingKeyExpr()->execute(block);
     const auto & key_column = block.getByName(storage.getShardingKeyColumnName());
-    size_t num_shards = cluster->getShardsInfo().size();
     const auto & slot_to_shard = cluster->getSlotToShard();
 
 #define CREATE_FOR_TYPE(TYPE) \
     if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
-        return createBlockSelector<TYPE>(*key_column.column, num_shards, slot_to_shard);
+        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard);
 
     CREATE_FOR_TYPE(UInt8)
     CREATE_FOR_TYPE(UInt16)

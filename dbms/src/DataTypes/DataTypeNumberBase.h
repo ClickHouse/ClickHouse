@@ -15,7 +15,6 @@ public:
     static constexpr bool is_parametric = false;
     using FieldType = T;
 
-    std::string getName() const override { return TypeName<T>::get(); }
     const char * getFamilyName() const override { return TypeName<T>::get(); }
 
     bool isNumeric() const override { return true; }

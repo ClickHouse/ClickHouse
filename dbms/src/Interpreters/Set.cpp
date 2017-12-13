@@ -1,5 +1,5 @@
 #include <Core/Field.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Core/Row.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -10,6 +10,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeTraits.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -87,7 +88,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
         method.data.emplace(key, it, inserted);
 
         if (inserted)
-            method.onNewKey(*it, keys_size, i, variants.string_pool);
+            method.onNewKey(*it, keys_size, variants.string_pool);
     }
 }
 
@@ -134,19 +135,20 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
       */
     if (keys_size == 1)
     {
-        if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(key_columns.back()))
+        const auto & col = block.getByPosition(0);
+        if (const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(col.type.get()))
         {
+            const ColumnTuple & column = typeid_cast<const ColumnTuple &>(*key_columns[0]);
+
             key_columns.pop_back();
-            const Columns & tuple_elements = tuple->getColumns();
+            const Columns & tuple_elements = column.getColumns();
             for (const auto & elem : tuple_elements)
                 key_columns.push_back(elem.get());
 
             if (empty())
             {
                 data_types.pop_back();
-                const Block & tuple_block = tuple->getData();
-                for (size_t i = 0, size = tuple_block.columns(); i < size; ++i)
-                    data_types.push_back(tuple_block.getByPosition(i).type);
+                data_types.insert(data_types.end(), tuple->getElements().begin(), tuple->getElements().end());
             }
         }
     }

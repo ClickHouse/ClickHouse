@@ -6,6 +6,7 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_sources
     AggregateFunctionState.cpp
     AggregateFunctionArray.cpp
     AggregateFunctionNull.cpp
+    AggregateFunctionNothing.cpp
     AggregateFunctionForEach.cpp
     AggregateFunctionIf.cpp
     AggregateFunctionMerge.cpp
@@ -19,6 +20,7 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_headers
     AggregateFunctionState.h
     AggregateFunctionArray.h
     AggregateFunctionNull.h
+    AggregateFunctionNothing.h
     AggregateFunctionForEach.h
     AggregateFunctionIf.h
     AggregateFunctionMerge.h
@@ -26,6 +28,6 @@ list(REMOVE_ITEM clickhouse_aggregate_functions_headers
     parseAggregateFunctionParameters.h
 )
 
-add_library(clickhouse_aggregate_functions ${SPLIT_SHARED} ${clickhouse_aggregate_functions_sources})
+add_library(clickhouse_aggregate_functions ${clickhouse_aggregate_functions_sources})
 target_link_libraries(clickhouse_aggregate_functions dbms)
 target_include_directories (clickhouse_aggregate_functions BEFORE PRIVATE ${COMMON_INCLUDE_DIR})

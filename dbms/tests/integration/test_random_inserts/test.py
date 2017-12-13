@@ -26,6 +26,7 @@ def started_cluster():
         pass
         cluster.shutdown()
 
+
 def test_random_inserts(started_cluster):
     # Duration of the test, reduce it if don't want to wait
     DURATION_SECONDS = 10# * 60
@@ -55,7 +56,9 @@ def test_random_inserts(started_cluster):
             inserter.get_answer()
 
     answer="{}\t{}\t{}\t{}\n".format(num_timestamps, num_timestamps, min_timestamp, max_timestamp)
+
     for node in nodes:
-        assert TSV(node.query("SELECT count(), uniqExact(i), min(i), max(i) FROM simple")) == TSV(answer), node.name + " : " + node.query("SELECT groupArray(_part), i, count() AS c FROM simple GROUP BY i ORDER BY c DESC LIMIT 1")
+        res = node.query("SELECT count(), uniqExact(i), min(i), max(i) FROM simple")
+        assert TSV(res) == TSV(answer), node.name + " : " + node.query("SELECT groupArray(_part), i, count() AS c FROM simple GROUP BY i ORDER BY c DESC LIMIT 1")
 
     node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")

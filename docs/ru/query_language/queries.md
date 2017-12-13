@@ -1192,6 +1192,8 @@ LIMIT 100
 WHERE и HAVING отличаются тем, что WHERE выполняется до агрегации (GROUP BY), а HAVING - после.
 Если агрегации не производится, то HAVING использовать нельзя.
 
+<a name="query_language-queries-order_by"></a>
+
 Секция ORDER BY
 ---------------
 

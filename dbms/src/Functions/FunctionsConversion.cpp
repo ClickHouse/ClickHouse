@@ -5,7 +5,7 @@ namespace DB
 {
 
 void throwExceptionForIncompletelyParsedValue(
-    ReadBuffer & read_buffer, Block & block, const ColumnNumbers & arguments, size_t result)
+    ReadBuffer & read_buffer, Block & block, size_t result)
 {
     const IDataType & to_type = *block.getByPosition(result).type;
 
