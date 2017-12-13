@@ -20,17 +20,24 @@ class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUni
 };
 
 
-static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type)
+static IAggregateFunction * createWithExtraTypes(const DataTypes & argument_types)
 {
+    const IDataType& argument_type = *argument_types[0];
+
          if (typeid_cast<const DataTypeDate *>(&argument_type)) return new AggregateFunctionGroupUniqArrayDate;
     else if (typeid_cast<const DataTypeDateTime *>(&argument_type)) return new AggregateFunctionGroupUniqArrayDateTime;
     else
     {
+        IAggregateFunction* fun;
+
         /// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric
         if (argument_type.isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            return new AggreagteFunctionGroupUniqArrayGeneric<true>;
+            fun = new AggreagteFunctionGroupUniqArrayGeneric<true>;
         else
-            return new AggreagteFunctionGroupUniqArrayGeneric<false>;
+            fun = new AggreagteFunctionGroupUniqArrayGeneric<false>;
+
+        fun->setArguments(argument_types);
+        return fun;
     }
 }
 
@@ -43,7 +50,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & n
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]));
 
     if (!res)
-        res = AggregateFunctionPtr(createWithExtraTypes(*argument_types[0]));
+        res = AggregateFunctionPtr(createWithExtraTypes(argument_types));
 
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() +

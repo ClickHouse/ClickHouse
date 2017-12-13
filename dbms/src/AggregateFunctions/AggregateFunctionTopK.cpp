@@ -20,17 +20,24 @@ class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateT
 };
 
 
-static IAggregateFunction * createWithExtraTypes(const IDataType & argument_type)
+static IAggregateFunction * createWithExtraTypes(const DataTypes & argument_types)
 {
+    const IDataType& argument_type = *argument_types[0];
+
          if (typeid_cast<const DataTypeDate *>(&argument_type))     return new AggregateFunctionTopKDate;
     else if (typeid_cast<const DataTypeDateTime *>(&argument_type))    return new AggregateFunctionTopKDateTime;
     else
     {
+        IAggregateFunction* fun;
+
         /// Check that we can use plain version of AggregateFunctionTopKGeneric
         if (argument_type.isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            return new AggregateFunctionTopKGeneric<true>;
+            fun = new AggregateFunctionTopKGeneric<true>;
         else
-            return new AggregateFunctionTopKGeneric<false>;
+            fun = new AggregateFunctionTopKGeneric<false>;
+
+        fun->setArguments(argument_types);
+        return fun;
     }
 }
 
@@ -43,7 +50,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK>(*argument_types[0]));
 
     if (!res)
-        res = AggregateFunctionPtr(createWithExtraTypes(*argument_types[0]));
+        res = AggregateFunctionPtr(createWithExtraTypes(argument_types));
 
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() +
