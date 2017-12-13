@@ -65,7 +65,7 @@ StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Contex
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
     if (args_func.size() != 1)
-        throw Exception("Table function 'numbers' requires exactly one argument: amount of numbers.",
+        throw Exception("Table function 'mysql' requires exactly one argument: amount of numbers.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
@@ -96,12 +96,12 @@ StoragePtr TableFunctionMySQL::execute(const ASTPtr & ast_function, const Contex
     Block resultBlock = result.read();
     const IColumn & names = *resultBlock.getByPosition(0).column.get();
     const IColumn & types = *resultBlock.getByPosition(1).column.get();
-    int field_count = names.size();
+    size_t field_count = names.size();
     NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>();
     NamesAndTypesList materialized_columns;
     NamesAndTypesList alias_columns;
     ColumnDefaults column_defaults;
-    for (int i = 0; i < field_count; ++i)
+    for (size_t i = 0; i < field_count; ++i)
     {
         columns->push_back(NameAndTypePair(names.getDataAt(i).data, getDataType(types.getDataAt(i).data)));
     }
