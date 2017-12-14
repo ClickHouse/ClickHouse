@@ -39,7 +39,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     formatAST(*context.getCreateQuery(ast.database, ast.table), stream, false, true);
     String res = stream.str();
 
-    ColumnPtr column = std::make_shared<ColumnString>();
+    ColumnPtr column = ColumnString::create();
     column->insert(res);
 
     return std::make_shared<OneBlockInputStream>(Block{{

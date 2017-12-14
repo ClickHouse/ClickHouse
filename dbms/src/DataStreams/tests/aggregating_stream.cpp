@@ -55,7 +55,7 @@ int main(int argc, char ** argv)
         ColumnWithTypeAndName column_x;
         column_x.name = "x";
         column_x.type = std::make_shared<DataTypeUInt32>();
-        auto x = std::make_shared<ColumnUInt32>();
+        auto x = ColumnUInt32::create();
         column_x.column = x;
         auto & vec_x = x->getData();
 
@@ -70,7 +70,7 @@ int main(int argc, char ** argv)
         ColumnWithTypeAndName column_s1;
         column_s1.name = "s1";
         column_s1.type = std::make_shared<DataTypeString>();
-        column_s1.column = std::make_shared<ColumnString>();
+        column_s1.column = ColumnString::create();
 
         size_t chunk = n / 4;
         for (size_t i = 0; i < n; ++i)
@@ -81,7 +81,7 @@ int main(int argc, char ** argv)
         ColumnWithTypeAndName column_s2;
         column_s2.name = "s2";
         column_s2.type = std::make_shared<DataTypeString>();
-        column_s2.column = std::make_shared<ColumnString>();
+        column_s2.column = ColumnString::create();
 
         for (size_t i = 0; i < n; ++i)
             column_s2.column->insert(std::string(strings[i % 3]));
@@ -96,7 +96,7 @@ int main(int argc, char ** argv)
             ColumnWithTypeAndName column_k;
             column_k.name = "testMap.k";
             column_k.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt16>());
-            column_k.column = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt16>());
+            column_k.column = ColumnArray::create(ColumnUInt16::create());
 
             for (UInt64 i = 0; i < n; ++i)
             {
@@ -110,7 +110,7 @@ int main(int argc, char ** argv)
             ColumnWithTypeAndName column_v;
             column_v.name = "testMap.v";
             column_v.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-            column_v.column = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt64>());
+            column_v.column = ColumnArray::create(ColumnUInt64::create());
 
             for (UInt64 i = 0; i < n; ++i)
             {
@@ -126,7 +126,7 @@ int main(int argc, char ** argv)
                 ColumnWithTypeAndName column_v2;
                 column_v2.name = "testMap.v2";
                 column_v2.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-                column_v2.column = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt64>());
+                column_v2.column = ColumnArray::create(ColumnUInt64::create());
 
                 for (UInt64 i = 0; i < n; ++i)
                 {
@@ -143,7 +143,7 @@ int main(int argc, char ** argv)
                 ColumnWithTypeAndName column_kid;
                 column_kid.name = "testMap.kID";
                 column_kid.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
-                column_kid.column = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt8>());
+                column_kid.column = ColumnArray::create(ColumnUInt8::create());
 
                 for (UInt64 i = 0; i < n; ++i)
                 {

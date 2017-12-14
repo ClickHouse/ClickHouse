@@ -245,7 +245,7 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
 
 ColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-    return std::make_shared<ColumnAggregateFunction>(function);
+    return ColumnAggregateFunction::create(function);
 }
 
 

@@ -76,9 +76,9 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
         return makeNullable(src);
 
     if (src->isColumnConst())
-        return std::make_shared<ColumnNullable>(src->convertToFullColumnIfConst(), result_null_map_column);
+        return ColumnNullable::create(src->convertToFullColumnIfConst(), result_null_map_column);
     else
-        return std::make_shared<ColumnNullable>(src, result_null_map_column);
+        return ColumnNullable::create(src, result_null_map_column);
 }
 
 
@@ -194,7 +194,7 @@ bool defaultImplementationForConstantArguments(
 
     func.execute(temporary_block, temporary_argument_numbers, arguments_size);
 
-    block.getByPosition(result).column = std::make_shared<ColumnConst>(temporary_block.getByPosition(arguments_size).column, block.rows());
+    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, block.rows());
     return true;
 }
 

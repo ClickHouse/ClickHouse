@@ -27,7 +27,7 @@ protected:
 
         column_with_type_and_name.name = "number";
         column_with_type_and_name.type = std::make_shared<DataTypeUInt64>();
-        auto column = std::make_shared<ColumnUInt64>(block_size);
+        auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container_t & vec = column->getData();
         column_with_type_and_name.column = column;
 

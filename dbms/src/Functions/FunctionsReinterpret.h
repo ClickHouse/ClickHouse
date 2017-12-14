@@ -55,7 +55,7 @@ public:
     {
         if (auto col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
+            auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
@@ -141,7 +141,7 @@ public:
     {
         if (ColumnString * col_from = typeid_cast<ColumnString *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
+            auto col_res = ColumnVector<ToFieldType>::create();
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & data_from = col_from->getChars();
@@ -161,7 +161,7 @@ public:
         }
         else if (ColumnFixedString * col_from = typeid_cast<ColumnFixedString *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ToFieldType>>();
+            auto col_res = ColumnVector<ToFieldType>::create();
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & data_from = col_from->getChars();

@@ -170,13 +170,13 @@ public:
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            std::shared_ptr<ColumnString> col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
             Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnFixedString>(col->getN());
+            auto col_res = ColumnFixedString::create(col->getN());
             block.getByPosition(result).column = col_res;
             Impl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
         }

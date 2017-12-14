@@ -51,7 +51,7 @@ BlockInputStreams StorageSystemColumns::read(
         Databases databases = context.getDatabases();
 
         /// Add `database` column.
-        ColumnPtr database_column = std::make_shared<ColumnString>();
+        ColumnPtr database_column = ColumnString::create();
         for (const auto & database : databases)
             database_column->insert(database.first);
         block.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
@@ -66,7 +66,7 @@ BlockInputStreams StorageSystemColumns::read(
         size_t rows = database_column->size();
 
         /// Add `table` column.
-        ColumnPtr table_column = std::make_shared<ColumnString>();
+        ColumnPtr table_column = ColumnString::create();
         IColumn::Offsets_t offsets(rows);
         for (size_t i = 0; i < rows; ++i)
         {
@@ -104,15 +104,15 @@ BlockInputStreams StorageSystemColumns::read(
     ColumnPtr filtered_table_column = block.getByName("table").column;
 
     /// We compose the result.
-    ColumnPtr database_column = std::make_shared<ColumnString>();
-    ColumnPtr table_column = std::make_shared<ColumnString>();
-    ColumnPtr name_column = std::make_shared<ColumnString>();
-    ColumnPtr type_column = std::make_shared<ColumnString>();
-    ColumnPtr default_kind_column = std::make_shared<ColumnString>();
-    ColumnPtr default_expression_column = std::make_shared<ColumnString>();
-    ColumnPtr data_compressed_bytes_column = std::make_shared<ColumnUInt64>();
-    ColumnPtr data_uncompressed_bytes_column = std::make_shared<ColumnUInt64>();
-    ColumnPtr marks_bytes_column = std::make_shared<ColumnUInt64>();
+    ColumnPtr database_column = ColumnString::create();
+    ColumnPtr table_column = ColumnString::create();
+    ColumnPtr name_column = ColumnString::create();
+    ColumnPtr type_column = ColumnString::create();
+    ColumnPtr default_kind_column = ColumnString::create();
+    ColumnPtr default_expression_column = ColumnString::create();
+    ColumnPtr data_compressed_bytes_column = ColumnUInt64::create();
+    ColumnPtr data_uncompressed_bytes_column = ColumnUInt64::create();
+    ColumnPtr marks_bytes_column = ColumnUInt64::create();
 
     size_t rows = filtered_database_column->size();
     for (size_t i = 0; i < rows; ++i)

@@ -140,10 +140,10 @@ void test2()
         const auto & col = block.safeGetByPosition(0);
         auto extra_info = union_stream.getBlockExtraInfo();
 
-        ColumnPtr host_name_column = std::make_shared<ColumnString>();
-        ColumnPtr host_address_column = std::make_shared<ColumnString>();
-        ColumnPtr port_column = std::make_shared<ColumnUInt16>();
-        ColumnPtr user_column = std::make_shared<ColumnString>();
+        ColumnPtr host_name_column = ColumnString::create();
+        ColumnPtr host_address_column = ColumnString::create();
+        ColumnPtr port_column = ColumnUInt16::create();
+        ColumnPtr user_column = ColumnString::create();
 
         size_t row_count = block.rows();
         for (size_t i = 0; i < row_count; ++i)

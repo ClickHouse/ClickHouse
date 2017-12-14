@@ -36,7 +36,7 @@ struct NumIfImpl
 private:
     static PaddedPODArray<ResultType> & result_vector(Block & block, size_t result, size_t size)
     {
-        auto col_res = std::make_shared<ColumnVector<ResultType>>();
+        auto col_res = ColumnVector<ResultType>::create();
         block.getByPosition(result).column = col_res;
 
         typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -422,7 +422,7 @@ private:
             && (col_else || col_else_const || col_else_fixed || col_else_const_fixed))
         {
             /// The result is String.
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            std::shared_ptr<ColumnString> col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
             auto sink = StringSink(*col_res, rows);
 
@@ -549,7 +549,7 @@ private:
 
         /// temporary_block is: cond, res_0, res_1, res_2...
 
-        block.getByPosition(result).column = std::make_shared<ColumnTuple>(tuple_columns);
+        block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
         return true;
     }
 
@@ -590,7 +590,7 @@ private:
             }
             else
             {
-                result_column = std::make_shared<ColumnNullable>(
+                result_column = ColumnNullable::create(
                     materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumn());
             }
 
@@ -612,8 +612,8 @@ private:
         if (column->isColumnNullable())
             return column;
 
-        return std::make_shared<ColumnNullable>(
-            materializeColumnIfConst(column), std::make_shared<ColumnUInt8>(column->size(), 0));
+        return ColumnNullable::create(
+            materializeColumnIfConst(column), ColumnUInt8::create(column->size(), 0));
     }
 
     static const ColumnPtr getNestedColumn(const ColumnPtr & column)
@@ -698,7 +698,7 @@ private:
             result_nested_column = temporary_block.getByPosition(3).column;
         }
 
-        block.getByPosition(result).column = std::make_shared<ColumnNullable>(
+        block.getByPosition(result).column = ColumnNullable::create(
             materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));
         return true;
     }
@@ -737,7 +737,7 @@ private:
                 }
                 else
                 {
-                    block.getByPosition(result).column = std::make_shared<ColumnNullable>(
+                    block.getByPosition(result).column = ColumnNullable::create(
                         materializeColumnIfConst(arg_else.column), arg_cond.column->clone());
                 }
             }
@@ -762,7 +762,7 @@ private:
                 size_t size = block.rows();
                 auto & null_map_data = cond_col->getData();
 
-                auto negated_null_map = std::make_shared<ColumnUInt8>();
+                auto negated_null_map = ColumnUInt8::create();
                 auto & negated_null_map_data = negated_null_map->getData();
                 negated_null_map_data.resize(size);
 
@@ -777,7 +777,7 @@ private:
                 }
                 else
                 {
-                    block.getByPosition(result).column = std::make_shared<ColumnNullable>(
+                    block.getByPosition(result).column = ColumnNullable::create(
                         materializeColumnIfConst(arg_then.column), negated_null_map);
                 }
             }

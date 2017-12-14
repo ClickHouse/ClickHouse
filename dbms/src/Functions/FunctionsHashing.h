@@ -205,7 +205,7 @@ public:
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnUInt64>();
+            auto col_to = ColumnUInt64::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
@@ -256,7 +256,7 @@ public:
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnFixedString>(Impl::length);
+            auto col_to = ColumnFixedString::create(Impl::length);
             block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
@@ -294,7 +294,7 @@ private:
     {
         if (auto col_from = checkAndGetColumn<ColumnVector<FromType>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
+            auto col_to = ColumnVector<ToType>::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
@@ -586,7 +586,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
         size_t rows = block.rows();
-        auto col_to = std::make_shared<ColumnUInt64>(rows);
+        auto col_to = ColumnUInt64::create(rows);
         block.getByPosition(result).column = col_to;
 
         ColumnUInt64::Container_t & vec_to = col_to->getData();
@@ -758,7 +758,7 @@ private:
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
-            const auto col_to = std::make_shared<ColumnUInt64>(size);
+            const auto col_to = ColumnUInt64::create(size);
             block.getByPosition(result).column = col_to;
 
             const auto & chars = col_from->getChars();
@@ -791,7 +791,7 @@ private:
         if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
             const auto size = col_from->size();
-            const auto col_to = std::make_shared<ColumnUInt64>(size);
+            const auto col_to = ColumnUInt64::create(size);
             block.getByPosition(result).column = col_to;
 
             const auto & chars = col_from->getChars();

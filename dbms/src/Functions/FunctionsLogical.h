@@ -308,7 +308,7 @@ public:
         if (has_consts && Impl<UInt8>::apply(const_val, 0) == 0 && Impl<UInt8>::apply(const_val, 1) == 1)
             has_consts = false;
 
-        auto col_res = std::make_shared<ColumnUInt8>();
+        auto col_res = ColumnUInt8::create();
         block.getByPosition(result).column = col_res;
         UInt8Container & vec_res = col_res->getData();
 
@@ -384,7 +384,7 @@ private:
     {
         if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnUInt8>();
+            auto col_res = ColumnUInt8::create();
             block.getByPosition(result).column = col_res;
 
             typename ColumnUInt8::Container_t & vec_res = col_res->getData();

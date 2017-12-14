@@ -35,7 +35,7 @@ Columns convertConstTupleToConstantElements(const ColumnConst & column)
 
     Columns res(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        res[i] = std::make_shared<ColumnConst>(src_tuple_columns[i], rows);
+        res[i] = ColumnConst::create(src_tuple_columns[i], rows);
 
     return res;
 }
@@ -80,7 +80,7 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
                     const auto & nested_col = static_cast<const ColumnNullable &>(
                         static_cast<const ColumnConst &>(*col.column).getDataColumn()).getNestedColumn();
 
-                    res.insert(i, { std::make_shared<ColumnConst>(nested_col, rows), nested_type, col.name});
+                    res.insert(i, { ColumnConst::create(nested_col, rows), nested_type, col.name});
                     is_inserted = true;
                 }
             }

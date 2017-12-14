@@ -197,7 +197,7 @@ void TotalsHavingBlockInputStream::addToTotals(Block & totals, Block & block, co
         if (init)
         {
             function = column->getAggregateFunction().get();
-            auto target = std::make_shared<ColumnAggregateFunction>(column->getAggregateFunction(), Arenas(1, arena));
+            auto target = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
             totals.insert(ColumnWithTypeAndName(target, current.type, current.name));
 
             data = arena->alloc(function->sizeOfData());

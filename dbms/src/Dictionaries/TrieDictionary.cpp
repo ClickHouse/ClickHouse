@@ -604,8 +604,8 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
 
 Columns TrieDictionary::getKeyColumns() const
 {
-    auto ip_column = std::make_shared<ColumnFixedString>(IPV6_BINARY_LENGTH);
-    auto mask_column = std::make_shared<ColumnVector<UInt8>>();
+    auto ip_column = ColumnFixedString::create(IPV6_BINARY_LENGTH);
+    auto mask_column = ColumnVector<UInt8>::create();
 
 #if defined(__SIZEOF_INT128__)
     auto getter = [& ip_column, & mask_column](__uint128_t ip, size_t mask) {
@@ -636,7 +636,7 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
     };
     auto getView = [](const Columns& columns, const std::vector<DictionaryAttribute>& attributes)
     {
-        auto column = std::make_shared<ColumnString>();
+        auto column = ColumnString::create();
         auto ip_column = std::static_pointer_cast<ColumnFixedString>(columns.front());
         auto mask_column = std::static_pointer_cast<ColumnVector<UInt8>>(columns.back());
         char buffer[48];

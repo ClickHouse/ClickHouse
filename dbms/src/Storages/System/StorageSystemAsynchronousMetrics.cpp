@@ -40,13 +40,13 @@ BlockInputStreams StorageSystemAsynchronousMetrics::read(
     ColumnWithTypeAndName col_metric;
     col_metric.name = "metric";
     col_metric.type = std::make_shared<DataTypeString>();
-    col_metric.column = std::make_shared<ColumnString>();
+    col_metric.column = ColumnString::create();
     block.insert(col_metric);
 
     ColumnWithTypeAndName col_value;
     col_value.name = "value";
     col_value.type = std::make_shared<DataTypeFloat64>();
-    col_value.column = std::make_shared<ColumnFloat64>();
+    col_value.column = ColumnFloat64::create();
     block.insert(col_value);
 
     auto async_metrics_values = async_metrics.getValues();

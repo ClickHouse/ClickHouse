@@ -30,7 +30,7 @@ static ColumnWithTypeAndName getFilteredDatabases(const ASTPtr & query, const Co
     ColumnWithTypeAndName column;
     column.name = "database";
     column.type = std::make_shared<DataTypeString>();
-    column.column = std::make_shared<ColumnString>();
+    column.column = ColumnString::create();
 
     for (const auto & db : context.getDatabases())
         column.column->insert(db.first);
@@ -60,25 +60,25 @@ BlockInputStreams StorageSystemTables::read(
     ColumnWithTypeAndName col_db;
     col_db.name = "database";
     col_db.type = std::make_shared<DataTypeString>();
-    col_db.column = std::make_shared<ColumnString>();
+    col_db.column = ColumnString::create();
     block.insert(col_db);
 
     ColumnWithTypeAndName col_name;
     col_name.name = "name";
     col_name.type = std::make_shared<DataTypeString>();
-    col_name.column = std::make_shared<ColumnString>();
+    col_name.column = ColumnString::create();
     block.insert(col_name);
 
     ColumnWithTypeAndName col_engine;
     col_engine.name = "engine";
     col_engine.type = std::make_shared<DataTypeString>();
-    col_engine.column = std::make_shared<ColumnString>();
+    col_engine.column = ColumnString::create();
     block.insert(col_engine);
 
     ColumnWithTypeAndName col_meta_mod_time;
     col_meta_mod_time.name = "metadata_modification_time";
     col_meta_mod_time.type = std::make_shared<DataTypeDateTime>();
-    col_meta_mod_time.column = std::make_shared<ColumnUInt32>();
+    col_meta_mod_time.column = ColumnUInt32::create();
     block.insert(col_meta_mod_time);
 
     ColumnWithTypeAndName filtered_databases_column = getFilteredDatabases(query_info.query, context);

@@ -19,7 +19,7 @@ ColumnExpression::ColumnExpression(
 
 ColumnPtr ColumnExpression::cloneDummy(size_t s_) const
 {
-    return std::make_shared<ColumnExpression>(s_, expression, arguments, return_type, return_name);
+    return ColumnExpression::create(s_, expression, arguments, return_type, return_name);
 }
 
 const ExpressionActionsPtr & ColumnExpression::getExpression() const { return expression; }

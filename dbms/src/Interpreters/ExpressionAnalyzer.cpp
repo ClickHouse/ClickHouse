@@ -2066,7 +2066,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
             if (node->name == "indexHint")
             {
                 actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
-                    std::make_shared<ColumnConst>(std::make_shared<ColumnUInt8>(1, 1), 1), std::make_shared<DataTypeUInt8>(), node->getColumnName())));
+                    ColumnConst::create(ColumnUInt8::create(1, 1), 1), std::make_shared<DataTypeUInt8>(), node->getColumnName())));
                 return;
             }
 
@@ -2114,7 +2114,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
 
                     if (!actions_stack.getSampleBlock().has(column.name))
                     {
-                        column.column = std::make_shared<ColumnSet>(1, set);
+                        column.column = ColumnSet::create(1, set);
 
                         actions_stack.addAction(ExpressionAction::addColumn(column));
                     }
@@ -2198,7 +2198,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                         argument_names[i] = getUniqueName(actions_stack.getSampleBlock(), "__lambda");
 
                         ColumnWithTypeAndName lambda_column;
-                        lambda_column.column = std::make_shared<ColumnExpression>(1, lambda_actions, lambda_arguments, result_type, result_name);
+                        lambda_column.column = ColumnExpression::create(1, lambda_actions, lambda_arguments, result_type, result_name);
                         lambda_column.type = argument_types[i];
                         lambda_column.name = argument_names[i];
                         actions_stack.addAction(ExpressionAction::addColumn(lambda_column));

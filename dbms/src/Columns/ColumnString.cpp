@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 ColumnPtr ColumnString::cloneResized(size_t to_size) const
 {
-    auto res = std::make_shared<ColumnString>();
+    auto res = ColumnString::create();
 
     if (to_size == 0)
         return res;
@@ -100,9 +100,9 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
 ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (offsets.size() == 0)
-        return std::make_shared<ColumnString>();
+        return ColumnString::create();
 
-    auto res = std::make_shared<ColumnString>();
+    auto res = ColumnString::create();
 
     Chars_t & res_chars = res->chars;
     Offsets_t & res_offsets = res->offsets;
@@ -125,9 +125,9 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (limit == 0)
-        return std::make_shared<ColumnString>();
+        return ColumnString::create();
 
-    std::shared_ptr<ColumnString> res = std::make_shared<ColumnString>();
+    std::shared_ptr<ColumnString> res = ColumnString::create();
 
     Chars_t & res_chars = res->chars;
     Offsets_t & res_offsets = res->offsets;
@@ -214,7 +214,7 @@ ColumnPtr ColumnString::replicate(const Offsets_t & replicate_offsets) const
     if (col_size != replicate_offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnString> res = std::make_shared<ColumnString>();
+    std::shared_ptr<ColumnString> res = ColumnString::create();
 
     if (0 == col_size)
         return res;

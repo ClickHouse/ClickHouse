@@ -22,7 +22,9 @@ class ColumnArray final : public COWPtrHelper<IColumn, ColumnArray>
 {
 private:
     /** Create an empty column of arrays with the type of values as in the column `nested_column` */
-    ColumnArray(const MutableColumnPtr & nested_column, const MutableColumnPtr & offsets_column);
+    ColumnArray(const ColumnPtr & nested_column, const ColumnPtr & offsets_column);
+
+    ColumnArray(const ColumnArray & src);
 
 public:
     /** On the index i there is an offset to the beginning of the i + 1 -th element. */
@@ -58,23 +60,23 @@ public:
     bool hasEqualOffsets(const ColumnArray & other) const;
 
     /** More efficient methods of manipulation */
-    IColumn & getData() { return *data.get(); }
-    const IColumn & getData() const { return *data.get(); }
+    IColumn & getData() { return *data->assumeMutable(); }
+    const IColumn & getData() const { return *data; }
 
-    MutableColumnPtr & getDataPtr() { return data; }
+    //MutableColumnPtr & getDataPtr() { return data->assumeMutable(); }
     const ColumnPtr & getDataPtr() const { return data; }
 
     Offsets_t & ALWAYS_INLINE getOffsets()
     {
-        return static_cast<ColumnOffsets_t &>(*offsets.get()).getData();
+        return static_cast<ColumnOffsets_t &>(*offsets->assumeMutable()).getData();
     }
 
     const Offsets_t & ALWAYS_INLINE getOffsets() const
     {
-        return static_cast<const ColumnOffsets_t &>(*offsets.get()).getData();
+        return static_cast<const ColumnOffsets_t &>(*offsets).getData();
     }
 
-    MutableColumnPtr & getOffsetsColumn() { return offsets; }
+    //MutableColumnPtr & getOffsetsColumn() { return offsets->assumeMutable(); }
     const ColumnPtr & getOffsetsColumn() const { return offsets; }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
@@ -91,8 +93,8 @@ public:
     }
 
 private:
-    MutableColumnPtr data;
-    MutableColumnPtr offsets;
+    ColumnPtr data;
+    ColumnPtr offsets;
 
     size_t ALWAYS_INLINE offsetAt(size_t i) const { return i == 0 ? 0 : getOffsets()[i - 1]; }
     size_t ALWAYS_INLINE sizeAt(size_t i) const { return i == 0 ? getOffsets()[0] : (getOffsets()[i] - getOffsets()[i - 1]); }

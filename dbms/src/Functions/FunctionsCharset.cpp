@@ -198,7 +198,7 @@ public:
 
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arg_from.column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
+            auto col_to = ColumnString::create();
             convert(charset_from, charset_to, col_from->getChars(), col_from->getOffsets(), col_to->getChars(), col_to->getOffsets());
             res.column = col_to;
         }

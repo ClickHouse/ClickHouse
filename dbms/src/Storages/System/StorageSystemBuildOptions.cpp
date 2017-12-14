@@ -32,8 +32,8 @@ BlockInputStreams StorageSystemBuildOptions::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
-    ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "value"};
+    ColumnWithTypeAndName col_name{ColumnString::create(), std::make_shared<DataTypeString>(), "name"};
+    ColumnWithTypeAndName col_value{ColumnString::create(), std::make_shared<DataTypeString>(), "value"};
 
     for (auto it = auto_config_build; *it; it += 2)
     {

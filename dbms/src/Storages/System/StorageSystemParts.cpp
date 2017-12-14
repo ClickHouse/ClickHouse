@@ -81,7 +81,7 @@ BlockInputStreams StorageSystemParts::read(
         Databases databases = context.getDatabases();
 
         /// Add column 'database'.
-        ColumnPtr database_column = std::make_shared<ColumnString>();
+        ColumnPtr database_column = ColumnString::create();
         for (const auto & database : databases)
             database_column->insert(database.first);
         block_to_filter.insert(ColumnWithTypeAndName(database_column, std::make_shared<DataTypeString>(), "database"));
@@ -97,9 +97,9 @@ BlockInputStreams StorageSystemParts::read(
         size_t rows = database_column->size();
 
         IColumn::Offsets_t offsets(rows);
-        ColumnPtr table_column = std::make_shared<ColumnString>();
-        ColumnPtr engine_column = std::make_shared<ColumnString>();
-        ColumnPtr active_column = std::make_shared<ColumnUInt8>();
+        ColumnPtr table_column = ColumnString::create();
+        ColumnPtr engine_column = ColumnString::create();
+        ColumnPtr active_column = ColumnUInt8::create();
 
         for (size_t i = 0; i < rows; ++i)
         {

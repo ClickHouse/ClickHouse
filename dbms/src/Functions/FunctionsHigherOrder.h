@@ -51,8 +51,8 @@ struct ArrayMapImpl
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
         return mapped->isColumnConst()
-            ? std::make_shared<ColumnArray>(mapped->convertToFullColumnIfConst(), array.getOffsetsColumn())
-            : std::make_shared<ColumnArray>(mapped, array.getOffsetsColumn());
+            ? ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsColumn())
+            : ColumnArray::create(mapped, array.getOffsetsColumn());
     }
 };
 
@@ -82,7 +82,7 @@ struct ArrayFilterImpl
             if (column_filter_const->getValue<UInt8>())
                 return array.clone();
             else
-                return std::make_shared<ColumnArray>(
+                return ColumnArray::create(
                     array.getDataPtr()->cloneEmpty(),
                     std::make_shared<ColumnArray::ColumnOffsets_t>(array.size(), 0));
         }
@@ -107,7 +107,7 @@ struct ArrayFilterImpl
             out_offsets[i] = out_pos;
         }
 
-        return std::make_shared<ColumnArray>(filtered, column_offsets_ptr);
+        return ColumnArray::create(filtered, column_offsets_ptr);
     }
 };
 
@@ -136,7 +136,7 @@ struct ArrayCountImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
-                auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
+                auto out_column = ColumnUInt32::create(offsets.size());
                 ColumnUInt32::Container_t & out_counts = out_column->getData();
 
                 size_t pos = 0;
@@ -154,7 +154,7 @@ struct ArrayCountImpl
 
         const IColumn::Filter & filter = column_filter->getData();
         const IColumn::Offsets_t & offsets = array.getOffsets();
-        auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
+        auto out_column = ColumnUInt32::create(offsets.size());
         ColumnUInt32::Container_t & out_counts = out_column->getData();
 
         size_t pos = 0;
@@ -198,7 +198,7 @@ struct ArrayExistsImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
-                auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
+                auto out_column = ColumnUInt8::create(offsets.size());
                 ColumnUInt8::Container_t & out_exists = out_column->getData();
 
                 size_t pos = 0;
@@ -216,7 +216,7 @@ struct ArrayExistsImpl
 
         const IColumn::Filter & filter = column_filter->getData();
         const IColumn::Offsets_t & offsets = array.getOffsets();
-        auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
+        auto out_column = ColumnUInt8::create(offsets.size());
         ColumnUInt8::Container_t & out_exists = out_column->getData();
 
         size_t pos = 0;
@@ -266,7 +266,7 @@ struct ArrayAllImpl
             else
             {
                 const IColumn::Offsets_t & offsets = array.getOffsets();
-                auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
+                auto out_column = ColumnUInt8::create(offsets.size());
                 ColumnUInt8::Container_t & out_all = out_column->getData();
 
                 size_t pos = 0;
@@ -282,7 +282,7 @@ struct ArrayAllImpl
 
         const IColumn::Filter & filter = column_filter->getData();
         const IColumn::Offsets_t & offsets = array.getOffsets();
-        auto out_column = std::make_shared<ColumnUInt8>(offsets.size());
+        auto out_column = ColumnUInt8::create(offsets.size());
         ColumnUInt8::Container_t & out_all = out_column->getData();
 
         size_t pos = 0;
@@ -346,7 +346,7 @@ struct ArraySumImpl
 
             const Element x = column_const->template getValue<Element>();
 
-            auto res_column = std::make_shared<ColumnVector<Result>>(offsets.size());
+            auto res_column = ColumnVector<Result>::create(offsets.size());
             res_ptr = res_column;
             typename ColumnVector<Result>::Container_t & res = res_column->getData();
 
@@ -361,7 +361,7 @@ struct ArraySumImpl
         }
 
         const typename ColumnVector<Element>::Container_t & data = column->getData();
-        auto res_column = std::make_shared<ColumnVector<Result>>(offsets.size());
+        auto res_column = ColumnVector<Result>::create(offsets.size());
         res_ptr = res_column;
         typename ColumnVector<Result>::Container_t & res = res_column->getData();
 
@@ -502,7 +502,7 @@ struct ArrayFirstIndexImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const auto & offsets = array.getOffsets();
-                auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
+                auto out_column = ColumnUInt32::create(offsets.size());
                 auto & out_index = out_column->getData();
 
                 size_t pos{};
@@ -520,7 +520,7 @@ struct ArrayFirstIndexImpl
 
         const auto & filter = column_filter->getData();
         const auto & offsets = array.getOffsets();
-        auto out_column = std::make_shared<ColumnUInt32>(offsets.size());
+        auto out_column = ColumnUInt32::create(offsets.size());
         auto & out_index = out_column->getData();
 
         size_t pos{};
@@ -593,7 +593,7 @@ struct ArraySortImpl
             current_offset = next_offset;
         }
 
-        return std::make_shared<ColumnArray>(array.getData().permute(permutation, 0), array.getOffsetsColumn());
+        return ColumnArray::create(array.getData().permute(permutation, 0), array.getOffsetsColumn());
     }
 };
 

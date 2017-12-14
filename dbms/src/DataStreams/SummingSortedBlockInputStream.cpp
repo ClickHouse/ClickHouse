@@ -273,7 +273,7 @@ Block SummingSortedBlockInputStream::readImpl()
             for (size_t i = 0; i < tuple_size; ++i)
                 tuple_columns[i] = merged_block.safeGetByPosition(desc.column_numbers[i]).column;
 
-            desc.merged_column = std::make_shared<ColumnTuple>(tuple_columns);
+            desc.merged_column = ColumnTuple::create(tuple_columns);
         }
         else
             desc.merged_column = merged_block.safeGetByPosition(desc.column_numbers[0]).column;

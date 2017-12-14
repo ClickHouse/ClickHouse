@@ -14,7 +14,7 @@ namespace DB
 /// For simple key
 void formatIDs(BlockOutputStreamPtr & out, const std::vector<UInt64> & ids)
 {
-    auto column = std::make_shared<ColumnUInt64>(ids.size());
+    auto column = ColumnUInt64::create(ids.size());
     memcpy(column->getData().data(), ids.data(), ids.size() * sizeof(ids.front()));
 
     Block block{{ std::move(column), std::make_shared<DataTypeUInt64>(), "id" }};

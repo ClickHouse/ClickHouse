@@ -583,7 +583,7 @@ private:
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
-            std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
+            std::shared_ptr<ColumnUInt8> col_res = ColumnUInt8::create();
             block.getByPosition(result).column = col_res;
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
@@ -594,7 +594,7 @@ private:
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
-            std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
+            std::shared_ptr<ColumnUInt8> col_res = ColumnUInt8::create();
             block.getByPosition(result).column = col_res;
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
@@ -612,7 +612,7 @@ private:
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
-            std::shared_ptr<ColumnUInt8> col_res = std::make_shared<ColumnUInt8>();
+            std::shared_ptr<ColumnUInt8> col_res = ColumnUInt8::create();
             block.getByPosition(result).column = col_res;
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
@@ -694,7 +694,7 @@ private:
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
 
-        auto c_res = std::make_shared<ColumnUInt8>();
+        auto c_res = ColumnUInt8::create();
         block.getByPosition(result).column = c_res;
         ColumnUInt8::Container_t & vec_res = c_res->getData();
         vec_res.resize(c0->size());
@@ -986,7 +986,7 @@ private:
         bool c0_const = c0->isColumnConst();
         bool c1_const = c1->isColumnConst();
 
-        auto c_res = std::make_shared<ColumnUInt8>();
+        auto c_res = ColumnUInt8::create();
         block.getByPosition(result).column = c_res;
         ColumnUInt8::Container_t & vec_res = c_res->getData();
         vec_res.resize(c0->size());

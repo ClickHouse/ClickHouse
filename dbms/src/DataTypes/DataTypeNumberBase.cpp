@@ -236,7 +236,7 @@ void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer &
 template <typename T>
 ColumnPtr DataTypeNumberBase<T>::createColumn() const
 {
-    return std::make_shared<ColumnVector<T>>();
+    return ColumnVector<T>::create();
 }
 
 template <typename T>

@@ -279,7 +279,7 @@ ColumnPtr DataTypeTuple::createColumn() const
     Columns tuple_columns(size);
     for (size_t i = 0; i < size; ++i)
         tuple_columns[i] = elems[i]->createColumn();
-    return std::make_shared<ColumnTuple>(tuple_columns);
+    return ColumnTuple::create(tuple_columns);
 }
 
 Field DataTypeTuple::getDefault() const

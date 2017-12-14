@@ -299,7 +299,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     if (0 == num_key_columns)
         throw Exception("Logical error: no columns passed to Set::execute method.", ErrorCodes::LOGICAL_ERROR);
 
-    auto res = std::make_shared<ColumnUInt8>();
+    auto res = ColumnUInt8::create();
     ColumnUInt8::Container_t & vec_res = res->getData();
     vec_res.resize(block.safeGetByPosition(0).column->size());
 

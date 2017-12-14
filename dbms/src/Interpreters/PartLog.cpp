@@ -18,18 +18,18 @@ Block PartLogElement::createBlock()
 {
     return
     {
-        {std::make_shared<ColumnUInt8>(),   std::make_shared<DataTypeUInt8>(),      "event_type"},
+        {ColumnUInt8::create(),   std::make_shared<DataTypeUInt8>(),      "event_type"},
 
-        {std::make_shared<ColumnUInt16>(),  std::make_shared<DataTypeDate>(),       "event_date"},
-        {std::make_shared<ColumnUInt32>(),  std::make_shared<DataTypeDateTime>(),   "event_time"},
+        {ColumnUInt16::create(),  std::make_shared<DataTypeDate>(),       "event_date"},
+        {ColumnUInt32::create(),  std::make_shared<DataTypeDateTime>(),   "event_time"},
 
-        {std::make_shared<ColumnUInt64>(),  std::make_shared<DataTypeUInt64>(),     "size_in_bytes"},
-        {std::make_shared<ColumnUInt64>(),  std::make_shared<DataTypeUInt64>(),     "duration_ms"},
+        {ColumnUInt64::create(),  std::make_shared<DataTypeUInt64>(),     "size_in_bytes"},
+        {ColumnUInt64::create(),  std::make_shared<DataTypeUInt64>(),     "duration_ms"},
 
-        {std::make_shared<ColumnString>(),  std::make_shared<DataTypeString>(),     "database"},
-        {std::make_shared<ColumnString>(),  std::make_shared<DataTypeString>(),     "table"},
-        {std::make_shared<ColumnString>(),  std::make_shared<DataTypeString>(),     "part_name"},
-        {std::make_shared<ColumnArray>(std::make_shared<ColumnString>()),
+        {ColumnString::create(),  std::make_shared<DataTypeString>(),     "database"},
+        {ColumnString::create(),  std::make_shared<DataTypeString>(),     "table"},
+        {ColumnString::create(),  std::make_shared<DataTypeString>(),     "part_name"},
+        {ColumnArray::create(ColumnString::create()),
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),    "merged_from"},
   };
 }

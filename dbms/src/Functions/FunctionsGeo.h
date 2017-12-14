@@ -135,7 +135,7 @@ private:
         }
         else
         {
-            const auto dst = std::make_shared<ColumnVector<Float64>>();
+            const auto dst = ColumnVector<Float64>::create();
             block.getByPosition(result).column = dst;
             auto & dst_data = dst->getData();
             dst_data.resize(size);
@@ -273,7 +273,7 @@ private:
                 const auto col_vec_x = static_cast<const ColumnVector<Float64> *> (col_x);
                 const auto col_vec_y = static_cast<const ColumnVector<Float64> *> (col_y);
 
-                const auto dst = std::make_shared<ColumnVector<UInt8>>();
+                const auto dst = ColumnVector<UInt8>::create();
                 block.getByPosition(result).column = dst;
                 auto & dst_data = dst->getData();
                 dst_data.resize(size);

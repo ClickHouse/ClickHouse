@@ -152,7 +152,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        auto col_to = std::make_shared<ColumnVector<ToType>>();
+        auto col_to = ColumnVector<ToType>::create();
         block.getByPosition(result).column = col_to;
 
         typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();

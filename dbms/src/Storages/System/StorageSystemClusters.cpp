@@ -40,16 +40,16 @@ BlockInputStreams StorageSystemClusters::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    ColumnPtr cluster_column = std::make_shared<ColumnString>();
-    ColumnPtr shard_num_column = std::make_shared<ColumnUInt32>();
-    ColumnPtr shard_weight_column = std::make_shared<ColumnUInt32>();
-    ColumnPtr replica_num_column = std::make_shared<ColumnUInt32>();
-    ColumnPtr host_name_column = std::make_shared<ColumnString>();
-    ColumnPtr host_address_column = std::make_shared<ColumnString>();
-    ColumnPtr port_column = std::make_shared<ColumnUInt16>();
-    ColumnPtr is_local_column = std::make_shared<ColumnUInt8>();
-    ColumnPtr user_column = std::make_shared<ColumnString>();
-    ColumnPtr default_database_column = std::make_shared<ColumnString>();
+    ColumnPtr cluster_column = ColumnString::create();
+    ColumnPtr shard_num_column = ColumnUInt32::create();
+    ColumnPtr shard_weight_column = ColumnUInt32::create();
+    ColumnPtr replica_num_column = ColumnUInt32::create();
+    ColumnPtr host_name_column = ColumnString::create();
+    ColumnPtr host_address_column = ColumnString::create();
+    ColumnPtr port_column = ColumnUInt16::create();
+    ColumnPtr is_local_column = ColumnUInt8::create();
+    ColumnPtr user_column = ColumnString::create();
+    ColumnPtr default_database_column = ColumnString::create();
 
     auto updateColumns = [&](const std::string & cluster_name, const Cluster::ShardInfo & shard_info,
                              const Cluster::Address & address)

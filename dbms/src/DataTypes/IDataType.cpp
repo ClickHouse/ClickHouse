@@ -42,7 +42,7 @@ ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     ColumnPtr column = createColumn();
     column->insert(field);
-    return std::make_shared<ColumnConst>(column, size);
+    return ColumnConst::create(column, size);
 }
 
 

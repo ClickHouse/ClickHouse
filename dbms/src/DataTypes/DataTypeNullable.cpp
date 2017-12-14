@@ -277,7 +277,7 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
 
 ColumnPtr DataTypeNullable::createColumn() const
 {
-    return std::make_shared<ColumnNullable>(nested_data_type->createColumn(), std::make_shared<ColumnUInt8>());
+    return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());
 }
 
 

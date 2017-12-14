@@ -64,8 +64,8 @@ BlockInputStreams StorageSystemReplicationQueue::read(
             if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replicated_tables[db.first][iterator->name()] = iterator->table();
 
-    ColumnWithTypeAndName col_database_to_filter { std::make_shared<ColumnString>(),    std::make_shared<DataTypeString>(),    "database" };
-    ColumnWithTypeAndName col_table_to_filter { std::make_shared<ColumnString>(),    std::make_shared<DataTypeString>(),    "table" };
+    ColumnWithTypeAndName col_database_to_filter { ColumnString::create(),    std::make_shared<DataTypeString>(),    "database" };
+    ColumnWithTypeAndName col_table_to_filter { ColumnString::create(),    std::make_shared<DataTypeString>(),    "table" };
 
     for (auto & db : replicated_tables)
     {
@@ -89,26 +89,26 @@ BlockInputStreams StorageSystemReplicationQueue::read(
         col_table_to_filter     = filtered_block.getByName("table");
     }
 
-    ColumnWithTypeAndName col_database               { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "database" };
-    ColumnWithTypeAndName col_table                  { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "table" };
-    ColumnWithTypeAndName col_replica_name           { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "replica_name" };
-    ColumnWithTypeAndName col_position               { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeUInt32>(), "position" };
-    ColumnWithTypeAndName col_node_name              { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "node_name" };
-    ColumnWithTypeAndName col_type                   { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "type" };
-    ColumnWithTypeAndName col_create_time            { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeDateTime>(), "create_time" };
-    ColumnWithTypeAndName col_required_quorum        { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeUInt32>(), "required_quorum" };
-    ColumnWithTypeAndName col_source_replica         { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "source_replica" };
-    ColumnWithTypeAndName col_new_part_name          { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "new_part_name" };
-    ColumnWithTypeAndName col_parts_to_merge         { std::make_shared<ColumnArray>(std::make_shared<ColumnString>()),
+    ColumnWithTypeAndName col_database               { ColumnString::create(), std::make_shared<DataTypeString>(), "database" };
+    ColumnWithTypeAndName col_table                  { ColumnString::create(), std::make_shared<DataTypeString>(), "table" };
+    ColumnWithTypeAndName col_replica_name           { ColumnString::create(), std::make_shared<DataTypeString>(), "replica_name" };
+    ColumnWithTypeAndName col_position               { ColumnUInt32::create(), std::make_shared<DataTypeUInt32>(), "position" };
+    ColumnWithTypeAndName col_node_name              { ColumnString::create(), std::make_shared<DataTypeString>(), "node_name" };
+    ColumnWithTypeAndName col_type                   { ColumnString::create(), std::make_shared<DataTypeString>(), "type" };
+    ColumnWithTypeAndName col_create_time            { ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "create_time" };
+    ColumnWithTypeAndName col_required_quorum        { ColumnUInt32::create(), std::make_shared<DataTypeUInt32>(), "required_quorum" };
+    ColumnWithTypeAndName col_source_replica         { ColumnString::create(), std::make_shared<DataTypeString>(), "source_replica" };
+    ColumnWithTypeAndName col_new_part_name          { ColumnString::create(), std::make_shared<DataTypeString>(), "new_part_name" };
+    ColumnWithTypeAndName col_parts_to_merge         { ColumnArray::create(ColumnString::create()),
         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "parts_to_merge" };
-    ColumnWithTypeAndName col_is_detach              { std::make_shared<ColumnUInt8>(),  std::make_shared<DataTypeUInt8>(), "is_detach" };
-    ColumnWithTypeAndName col_is_currently_executing { std::make_shared<ColumnUInt8>(),  std::make_shared<DataTypeUInt8>(), "is_currently_executing" };
-    ColumnWithTypeAndName col_num_tries              { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeUInt32>(), "num_tries" };
-    ColumnWithTypeAndName col_last_exception         { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "last_exception" };
-    ColumnWithTypeAndName col_last_attempt_time      { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeDateTime>(), "last_attempt_time" };
-    ColumnWithTypeAndName col_num_postponed          { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeUInt32>(), "num_postponed" };
-    ColumnWithTypeAndName col_postpone_reason        { std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "postpone_reason" };
-    ColumnWithTypeAndName col_last_postpone_time     { std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeDateTime>(), "last_postpone_time" };
+    ColumnWithTypeAndName col_is_detach              { ColumnUInt8::create(),  std::make_shared<DataTypeUInt8>(), "is_detach" };
+    ColumnWithTypeAndName col_is_currently_executing { ColumnUInt8::create(),  std::make_shared<DataTypeUInt8>(), "is_currently_executing" };
+    ColumnWithTypeAndName col_num_tries              { ColumnUInt32::create(), std::make_shared<DataTypeUInt32>(), "num_tries" };
+    ColumnWithTypeAndName col_last_exception         { ColumnString::create(), std::make_shared<DataTypeString>(), "last_exception" };
+    ColumnWithTypeAndName col_last_attempt_time      { ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "last_attempt_time" };
+    ColumnWithTypeAndName col_num_postponed          { ColumnUInt32::create(), std::make_shared<DataTypeUInt32>(), "num_postponed" };
+    ColumnWithTypeAndName col_postpone_reason        { ColumnString::create(), std::make_shared<DataTypeString>(), "postpone_reason" };
+    ColumnWithTypeAndName col_last_postpone_time     { ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "last_postpone_time" };
 
     StorageReplicatedMergeTree::LogEntriesData queue;
     String replica_name;

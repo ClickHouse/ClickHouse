@@ -541,7 +541,7 @@ public:
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
+            auto col_res = ColumnVector<ResultType>::create();
             block.getByPosition(result).column = col_res;
 
             typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -560,7 +560,7 @@ public:
             }
             else
             {
-                auto col_res = std::make_shared<ColumnVector<ResultType>>();
+                auto col_res = ColumnVector<ResultType>::create();
                 block.getByPosition(result).column = col_res;
 
                 typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -570,7 +570,7 @@ public:
         }
         else if (const ColumnArray * col = checkAndGetColumn<ColumnArray>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
+            auto col_res = ColumnVector<ResultType>::create();
             block.getByPosition(result).column = col_res;
 
             typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -627,13 +627,13 @@ public:
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            std::shared_ptr<ColumnString> col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
             ReverseImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnFixedString>(col->getN());
+            auto col_res = ColumnFixedString::create(col->getN());
             block.getByPosition(result).column = col_res;
             ReverseImpl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
         }
@@ -728,7 +728,7 @@ private:
         const ColumnConst * c0_const_string = checkAndGetColumnConst<ColumnString>(c0);
         const ColumnConst * c1_const_string = checkAndGetColumnConst<ColumnString>(c1);
 
-        auto c_res = std::make_shared<ColumnString>();
+        auto c_res = ColumnString::create();
 
         if (c0_string && c1_string)
             concat(StringSource(*c0_string), StringSource(*c1_string), StringSink(*c_res, c0->size()));
@@ -754,7 +754,7 @@ private:
         for (size_t i = 0; i < num_sources; ++i)
             sources[i] = createDynamicStringSource(*block.getByPosition(arguments[i]).column);
 
-        auto c_res = std::make_shared<ColumnString>();
+        auto c_res = ColumnString::create();
         concat(sources, StringSink(*c_res, block.rows()));
         block.getByPosition(result).column = c_res;
     }
@@ -815,7 +815,7 @@ public:
         Block & block, size_t result,
         Source && source)
     {
-        std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+        std::shared_ptr<ColumnString> col_res = ColumnString::create();
 
         if (!column_length)
         {
@@ -964,7 +964,7 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            std::shared_ptr<ColumnString> col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
             SubstringUTF8Impl::vector(col->getChars(), col->getOffsets(), start, length, col_res->getChars(), col_res->getOffsets());
         }
@@ -1028,7 +1028,7 @@ private:
 
         if (const auto col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnString>();
+            auto col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
 
             const auto & src_data = col->getChars();
