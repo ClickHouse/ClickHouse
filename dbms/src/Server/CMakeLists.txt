@@ -80,6 +80,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
 
     install (TARGETS clickhouse-server ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})
+    add_custom_target (clickhouse ALL DEPENDS clickhouse-bundle)
 else ()
     add_executable (clickhouse main.cpp)
     target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
