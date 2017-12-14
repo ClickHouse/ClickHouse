@@ -1,7 +1,6 @@
 <a name="dicts-external_dicts_dict_structure"></a>
 
-Ключ и поля словаря
-===================
+# Ключ и поля словаря
 
 Секция `<structure>` описывает ключ словаря и поля, доступные для запросов.
 
@@ -31,8 +30,7 @@
 
 <a name="dicts-external_dicts_dict_structure-key"></a>
 
-Ключ
-----
+## Ключ
 
 ClickHouse поддерживает следующие виды ключей:
 
@@ -95,8 +93,7 @@ Cоставной ключ может состоять и из одного эл
 
 <a name="dicts-external_dicts_dict_structure-attributes"></a>
 
-Атрибуты
---------
+## Атрибуты
 
 Пример конфигурации:
 

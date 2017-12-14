@@ -1,5 +1,4 @@
-ClickHouse Development
-======================
+# ClickHouse Development
 
 ```eval_rst
 .. toctree::

@@ -284,8 +284,8 @@ void TinyLogBlockOutputStream::writeSuffix()
     done = true;
 
     /// Finish write.
-    for (FileStreams::iterator it = streams.begin(); it != streams.end(); ++it)
-        it->second->finalize();
+    for (auto & stream : streams)
+        stream.second->finalize();
 
     std::vector<Poco::File> column_files;
     for (auto & pair : streams)

@@ -58,7 +58,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-benchmark clickhouse-benchmark.cpp)
     target_link_libraries (clickhouse-benchmark clickhouse-benchmark-lib clickhouse_aggregate_functions)
     add_executable (clickhouse-performance-test clickhouse-performance-test.cpp)
-    target_link_libraries (clickhouse-performance-test clickhouse-performance-test-lib clickhouse-client-lib)
+    target_link_libraries (clickhouse-performance-test clickhouse-performance-test-lib dbms)
     add_executable (clickhouse-extract-from-config clickhouse-extract-from-config.cpp)
     target_link_libraries (clickhouse-extract-from-config clickhouse-extract-from-config-lib)
     # now in utils
@@ -67,46 +67,61 @@ if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-format clickhouse-format.cpp)
     target_link_libraries (clickhouse-format clickhouse-format-lib dbms)
 
+    set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-format)
+
     if (USE_EMBEDDED_COMPILER)
         add_executable (clickhouse-clang clickhouse-clang.cpp)
         target_link_libraries (clickhouse-clang clickhouse-compiler-lib)
         add_executable (clickhouse-lld clickhouse-lld.cpp)
         target_link_libraries (clickhouse-lld clickhouse-compiler-lib)
+        install (TARGETS clickhouse-clang clickhouse-lld RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-clang clickhouse-lld)
     endif ()
 
-    add_custom_target (clickhouse ALL DEPENDS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test clickhouse-extract-from-config clickhouse-compressor clickhouse-format)
+    install (TARGETS clickhouse-server ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})
 else ()
-
-add_executable (clickhouse main.cpp)
-target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
-target_link_libraries (clickhouse
-    clickhouse-server-lib
-    clickhouse-client-lib
-    clickhouse-local-lib
-    clickhouse-benchmark-lib
-    clickhouse-performance-test-lib
-    clickhouse-extract-from-config-lib
-    clickhouse-compressor-lib
-    clickhouse-format-lib
-    dbms
+    add_executable (clickhouse main.cpp)
+    target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
+    target_link_libraries (clickhouse
+        clickhouse-server-lib
+        clickhouse-client-lib
+        clickhouse-local-lib
+        clickhouse-benchmark-lib
+        clickhouse-performance-test-lib
+        clickhouse-extract-from-config-lib
+        clickhouse-compressor-lib
+        clickhouse-format-lib
+        dbms
     )
 
-if (USE_EMBEDDED_COMPILER)
-    target_link_libraries (clickhouse clickhouse-compiler-lib)
-endif ()
+    if (USE_EMBEDDED_COMPILER)
+        target_link_libraries (clickhouse clickhouse-compiler-lib)
+    endif ()
 
-install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    add_custom_target (clickhouse-server ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-server DEPENDS clickhouse)
+    add_custom_target (clickhouse-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-client DEPENDS clickhouse)
+    add_custom_target (clickhouse-local ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-local DEPENDS clickhouse)
+    add_custom_target (clickhouse-benchmark ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-benchmark DEPENDS clickhouse)
+    add_custom_target (clickhouse-performance-test ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-performance-test DEPENDS clickhouse)
+    add_custom_target (clickhouse-format ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-format DEPENDS clickhouse)
+    # install always because depian package want this files:
+    add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)
+    add_custom_target (clickhouse-lld ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-lld DEPENDS clickhouse)
 
-add_custom_target (clickhouse-server ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-server DEPENDS clickhouse)
-add_custom_target (clickhouse-client ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-client DEPENDS clickhouse)
-add_custom_target (clickhouse-local ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-local DEPENDS clickhouse)
-add_custom_target (clickhouse-benchmark ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-benchmark DEPENDS clickhouse)
-add_custom_target (clickhouse-performance-test ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-performance-test DEPENDS clickhouse)
-add_custom_target (clickhouse-format ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-format DEPENDS clickhouse)
-# install always because depian package want this files:
-add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)
-add_custom_target (clickhouse-lld ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-lld DEPENDS clickhouse)
+    install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    install (FILES
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-server
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-client
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-local
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-benchmark
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-performance-test
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-format
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-clang
+       ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-lld
+       DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
+    add_custom_target (clickhouse-bundle ALL DEPENDS clickhouse)
 endif ()
 
 install (

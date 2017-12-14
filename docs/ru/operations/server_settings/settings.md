@@ -1,7 +1,8 @@
+# Серверные настройки
+
 <a name="server_settings-builtin_dictionaries_reload_interval"></a>
 
-builtin_dictionaries_reload_interval
-=======================================
+## builtin_dictionaries_reload_interval
 
 Интервал (в секундах) перезагрузки встроенных словарей.
 
@@ -17,8 +18,7 @@ ClickHouse перезагружает встроенные словари с з�
 
 <a name="server_settings-compression"></a>
 
-compression
-===========
+## compression
 
 Настройки компрессии данных.
 
@@ -63,8 +63,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 <a name="server_settings-default_database"></a>
 
-default_database
-=================
+## default_database
 
 База данных по умолчанию.
 
@@ -78,8 +77,7 @@ default_database
 
 <a name="server_settings-default_profile"></a>
 
-default_profile
-================
+## default_profile
 
 Профиль настроек по умолчанию.
 
@@ -93,8 +91,7 @@ default_profile
 
 <a name="server_settings-dictionaries_config"></a>
 
-dictionaries_config
-====================
+## dictionaries_config
 
 Путь к конфигурации внешних словарей.
 
@@ -113,8 +110,7 @@ dictionaries_config
 
 <a name="server_settings-dictionaries_lazy_load"></a>
 
-dictionaries_lazy_load
-========================
+## dictionaries_lazy_load
 
 Отложенная загрузка словарей.
 
@@ -132,8 +128,7 @@ dictionaries_lazy_load
 
 <a name="server_settings-format_schema_path"></a>
 
-format_schema_path
-==================
+## format_schema_path
 
 Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../formats/capnproto.md#format_capnproto).
 
@@ -147,8 +142,7 @@ format_schema_path
 
 <a name="server_settings-graphite"></a>
 
-graphite
-========
+## graphite
 
 Отправка даных в [Graphite](https://github.com/graphite-project).
 
@@ -182,8 +176,7 @@ graphite
 
 <a name="server_settings-graphite_rollup"></a>
 
-graphite_rollup
-================
+## graphite_rollup
 
 Настройка прореживания данных для Graphite.
 
@@ -213,8 +206,7 @@ graphite_rollup
 
 <a name="server_settings-http_port"></a>
 
-http_port/https_port
-======================
+## http_port/https_port
 
 Порт для обращений к серверу по протоколу HTTP(s).
 
@@ -230,8 +222,7 @@ http_port/https_port
 
 <a name="server_settings-http_server_default_response"></a>
 
-http_server_default_response
-===============================
+## http_server_default_response
 
 Страница, показываемая по умолчанию, при обращении к HTTP(s) серверу ClickHouse.
 
@@ -247,8 +238,7 @@ http_server_default_response
 
 <a name="server_settings-include_from"></a>
 
-include_from
-=============
+## include_from
 
 Путь к файлу с подстановками.
 
@@ -262,8 +252,7 @@ include_from
 
 <a name="server_settings-interserver_http_port"></a>
 
-interserver_http_port
-=======================
+## interserver_http_port
 
 Порт для обмена между серверами ClickHouse.
 
@@ -275,8 +264,7 @@ interserver_http_port
 
 <a name="server_settings-interserver_http_host"></a>
 
-interserver_http_host
-=======================
+## interserver_http_host
 
 Имя хоста, которое могут использовать другие серверы для обращения к этому.
 
@@ -292,8 +280,7 @@ interserver_http_host
 
 <a name="server_settings-keep_alive_timeout"></a>
 
-keep_alive_timeout
-====================
+## keep_alive_timeout
 
 Время в миллисекундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем закрыть соединение.
 
@@ -305,8 +292,7 @@ keep_alive_timeout
 
 <a name="server_settings-listen_host"></a>
 
-listen_host
-============
+## listen_host
 
 Ограничение по хостам, с которых может прийти запрос. Если необходимо, чтобы сервер отвечал всем, то надо указать `::`.
 
@@ -319,8 +305,7 @@ listen_host
 
 <a name="server_settings-logger"></a>
 
-logger
-======
+## logger
 
 Настройки логгирования.
 
@@ -346,8 +331,7 @@ logger
 
 <a name="server_settings-macros"></a>
 
-macros
-======
+## macros
 
 Подстановки параметров реплицируемых таблиц.
 
@@ -363,8 +347,7 @@ macros
 
 <a name="server_settings-mark_cache_size"></a>
 
-mark_cache_size
-=================
+## mark_cache_size
 
 Приблизительный размер (в байтах) кеша "засечек", используемых движками таблиц семейства [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree).
 
@@ -378,8 +361,7 @@ mark_cache_size
 
 <a name="server_settings-max_concurrent_queries"></a>
 
-max_concurrent_queries
-========================
+## max_concurrent_queries
 
 Максимальное количество одновременно обрабатываемых запросов.
 
@@ -391,8 +373,7 @@ max_concurrent_queries
 
 <a name="server_settings-max_connections"></a>
 
-max_connections
-================
+## max_connections
 
 Максимальное количество входящих соединений.
 
@@ -404,8 +385,7 @@ max_connections
 
 <a name="server_settings-max_open_files"></a>
 
-max_open_files
-================
+## max_open_files
 
 Максимальное количество открытых файлов.
 
@@ -421,8 +401,7 @@ max_open_files
 
 <a name="server_settings-max_table_size_to_drop"></a>
 
-max_table_size_to_drop
-==========================
+## max_table_size_to_drop
 
 Ограничение на удаление таблиц.
 
@@ -442,8 +421,7 @@ max_table_size_to_drop
 
 <a name="server_settings-merge_tree"></a>
 
-merge_tree
-===========
+## merge_tree
 
 Тонкая настройка таблиц семейства [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree).
 
@@ -459,8 +437,7 @@ merge_tree
 
 <a name="server_settings-openSSL"></a>
 
-openSSL
-=======
+## openSSL
 
 Настройки клиента/сервера SSL.
 
@@ -521,8 +498,7 @@ openSSL
 
 <a name="server_settings-part_log"></a>
 
-part_log
-=========
+## part_log
 
 Логгирование событий, связанных с данными типа [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
@@ -559,8 +535,7 @@ part_log
 
 <a name="server_settings-path"></a>
 
-path
-====
+## path
 
 Путь к каталогу с данными.
 
@@ -578,8 +553,7 @@ path
 
 <a name="server_settings-query_log"></a>
 
-query_log
-==========
+## query_log
 
 Настройка логгирования запросов, принятых с настройкой [log_queries=1](#settings-log_queries).
 
@@ -605,8 +579,7 @@ query_log
 
 <a name="server_settings-remote_servers"></a>
 
-remote_servers
-===============
+## remote_servers
 
 Конфигурация кластеров, которые использует движок таблиц Distributed.
 
@@ -622,8 +595,7 @@ remote_servers
 
 <a name="server_settings-resharding"></a>
 
-resharding
-==========
+## resharding
 
 Путь в ZooKeeper к очереди задач.
 
@@ -639,8 +611,7 @@ resharding
 
 <a name="server_settings-timezone"></a>
 
-timezone
-========
+## timezone
 
 Временная зона сервера.
 
@@ -656,8 +627,7 @@ timezone
 
 <a name="server_settings-tcp_port"></a>
 
-tcp_port
-=========
+## tcp_port
 
 Порт для взаимодействия с клиентами по протоколу TCP.
 
@@ -669,8 +639,7 @@ tcp_port
 
 <a name="server_settings-tmp_path"></a>
 
-tmp_path
-=========
+## tmp_path
 
 Путь ко временным данным для обработки больших запросов.
 
@@ -688,8 +657,7 @@ tmp_path
 
 <a name="server_settings-uncompressed_cache_size"></a>
 
-uncompressed_cache_size
-=========================
+## uncompressed_cache_size
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree).
 
@@ -705,8 +673,7 @@ uncompressed_cache_size
 
 <a name="server_settings-users_config"></a>
 
-users_config
-=============
+## users_config
 
 Путь к файлу, который содержит:
 
@@ -723,8 +690,7 @@ users_config
 
 <a name="server_settings-zookeeper"></a>
 
-zookeeper
-=========
+## zookeeper
 
 Конфигурация серверов ZooKeeper.
 

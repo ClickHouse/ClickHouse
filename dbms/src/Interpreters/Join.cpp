@@ -254,7 +254,8 @@ bool Join::checkSizeLimits() const
 static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
     column.type = makeNullable(column.type);
-    column.column = makeNullable(column.column);
+    if (column.column)
+        column.column = makeNullable(column.column);
 }
 
 
