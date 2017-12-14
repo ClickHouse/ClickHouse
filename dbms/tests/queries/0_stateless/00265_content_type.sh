@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 curl -vsS http://localhost:8123/?default_format=JSONCompact --data-binary @- <<< "SELECT 1" 2>&1 | grep '< Content-Type';
 curl -vsS http://localhost:8123/ --data-binary @- <<< "SELECT 1 FORMAT JSON"         2>&1 | grep '< Content-Type';
 curl -vsS http://localhost:8123/ --data-binary @- <<< "SELECT 1"                     2>&1 | grep '< Content-Type';

@@ -1,5 +1,8 @@
 #!/bin/sh
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 clickhouse-client --query="SELECT number FROM system.numbers LIMIT 10 FORMAT JSON" | grep 'rows_read';
 clickhouse-client --query="SELECT number FROM system.numbers LIMIT 10 FORMAT JSONCompact" | grep 'rows_read';
 clickhouse-client --query="SELECT number FROM system.numbers LIMIT 10 FORMAT XML" | grep 'rows_read';

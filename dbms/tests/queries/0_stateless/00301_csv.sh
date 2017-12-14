@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 clickhouse-client --query="DROP TABLE IF EXISTS test.csv";
 clickhouse-client --query="CREATE TABLE test.csv (s String, n UInt64, d Date) ENGINE = Memory";
 

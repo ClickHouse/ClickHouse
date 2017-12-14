@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
+
 set -e
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
 
 clickhouse-client -q "DROP TABLE IF EXISTS test.preferred_block_size_bytes"
 clickhouse-client -q "CREATE TABLE test.preferred_block_size_bytes (p Date, s String) ENGINE = MergeTree(p, p, 1)"

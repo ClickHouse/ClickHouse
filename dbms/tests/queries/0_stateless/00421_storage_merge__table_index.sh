@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
+
 set -e
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
 
 for i in `seq -w 0 2 20`; do
     clickhouse-client -q "DROP TABLE IF EXISTS test.merge_item_$i"

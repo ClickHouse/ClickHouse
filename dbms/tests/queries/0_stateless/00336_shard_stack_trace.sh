@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 curl -sS 'http://localhost:8123/' -d 'SELECT a' | wc -l
 curl -sS 'http://localhost:8123/?stacktrace=0' -d 'SELECT a' | wc -l
 [[ $(curl -sS 'http://localhost:8123/?stacktrace=1' -d 'SELECT a' | wc -l) -gt 3 ]] && echo 'Ok' || echo 'Fail'

@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
+
 set -e
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 # Not found column date in block. There are only columns: x.
 
 # Test 1. Complex test checking columns.txt

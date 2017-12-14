@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 curl -sS 'http://localhost:8123/?query=DROP+TABLE' -d 'IF EXISTS test.insert'
 curl -sS 'http://localhost:8123/?query=CREATE' -d 'TABLE test.insert (x UInt8) ENGINE = Memory'
 curl -sS 'http://localhost:8123/' -d 'INSERT INTO test.insert VALUES (1),(2)'

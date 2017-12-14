@@ -1,5 +1,8 @@
 #!/bin/sh
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 echo 'DROP TABLE IF EXISTS test.long_insert' | curl -sSg 'http://localhost:8123' -d @-
 echo 'CREATE TABLE test.long_insert (a String) ENGINE = Memory' | curl -sSg 'http://localhost:8123' -d @-
 for string_size in 1 10 100 1000 10000 100000 1000000; do

@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 # https://github.com/yandex/ClickHouse/issues/1300
 
 clickhouse-client -q "DROP TABLE IF EXISTS test.advertiser";
