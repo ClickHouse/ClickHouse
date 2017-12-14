@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
 max_block_size=100
-URL='http://localhost:8123/'
+URL="${CLICKHOUSE_URL}"
 
 function query {
     # bash isn't able to store \0 bytes, so use [1; 255] random range
