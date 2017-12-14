@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 request() {
     local url="$1"
     local select="$2"
-    curl --silent $url --data "$select"
+    ${CLICKHOUSE_CURL} --silent $url --data "$select"
 }
 
 
