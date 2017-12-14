@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Test 1. Complex test checking columns.txt
 
-chl="clickhouse-client -q"
+chl="$CLICKHOUSE_CLIENT -q"
 ch_dir=`clickhouse extract-from-config -c /etc/clickhouse-server/config.xml -k path`
 
 $chl "DROP TABLE IF EXISTS test.partition_428"
