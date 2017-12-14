@@ -27,6 +27,9 @@ std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndNam
     }
     else
     {
+        if (!arguments.size())
+            return {};
+
         /// If time zone is attached to an argument of type DateTime.
         if (const DataTypeDateTime * type = checkAndGetDataType<DataTypeDateTime>(arguments[0].type.get()))
             return type->getTimeZone().getTimeZone();
@@ -41,6 +44,9 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(Block & block, const Co
         return DateLUT::instance(extractTimeZoneNameFromColumn(*block.getByPosition(arguments[time_zone_arg_num]).column));
     else
     {
+        if (!arguments.size())
+            return DateLUT::instance();
+
         /// If time zone is attached to an argument of type DateTime.
         if (const DataTypeDateTime * type = checkAndGetDataType<DataTypeDateTime>(block.getByPosition(arguments[0]).type.get()))
             return type->getTimeZone();

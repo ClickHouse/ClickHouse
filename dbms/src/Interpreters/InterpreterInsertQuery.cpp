@@ -20,6 +20,8 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
+#include <TableFunctions/TableFunctionFactory.h>
+#include <Parsers/ASTFunction.h>
 
 namespace ProfileEvents
 {
@@ -42,12 +44,27 @@ InterpreterInsertQuery::InterpreterInsertQuery(const ASTPtr & query_ptr_, const 
 }
 
 
-StoragePtr InterpreterInsertQuery::getTable()
+StoragePtr InterpreterInsertQuery::loadTable()
 {
     ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
 
+    if (query.table_function)
+    {
+        auto table_function = typeid_cast<const ASTFunction *>(query.table_function.get());
+        const auto & factory = TableFunctionFactory::instance();
+        return factory.get(table_function->name, context)->execute(query.table_function, context);
+    }
+
     /// In what table to write.
     return context.getTable(query.database, query.table);
+}
+
+StoragePtr InterpreterInsertQuery::getTable()
+{
+    if (!cached_table)
+        cached_table = loadTable();
+
+    return cached_table;
 }
 
 Block InterpreterInsertQuery::getSampleBlock()
@@ -93,7 +110,7 @@ BlockIO InterpreterInsertQuery::execute()
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
 
-    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, context, query_ptr, query.no_destination);
+    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
     out = std::make_shared<MaterializingBlockOutputStream>(out);
 

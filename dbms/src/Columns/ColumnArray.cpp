@@ -903,23 +903,6 @@ MutableColumnPtr ColumnArray::replicateTuple(const Offsets_t & replicate_offsets
 }
 
 
-ColumnPtr ColumnArray::getLengthsColumn() const
-{
-    const auto & offsets_data = getOffsets();
-    size_t size = offsets_data.size();
-    auto column = ColumnVector<ColumnArray::Offset_t>::create(offsets->size());
-    auto & data = column->getData();
-
-    if (size)
-        data[0] = offsets_data[0];
-
-    for (size_t i = 1; i < size; ++i)
-        data[i] = offsets_data[i] - offsets_data[i - 1];
-
-    return column;
-}
-
-
 void ColumnArray::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);

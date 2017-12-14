@@ -91,6 +91,9 @@ public:
 
     static Files getConfigMergeFiles(const std::string & config_path);
 
+    /// Is the file named as result of config preprocessing, not as original files.
+    static bool isPreprocessedFile(const std::string & config_path);
+
 private:
     const std::string path;
     const std::string preprocessed_path;

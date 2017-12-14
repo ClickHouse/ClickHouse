@@ -149,12 +149,6 @@ if (NOT ARCH_ARM)
     set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
 endif()
 
-if (CMAKE_SYSTEM MATCHES "FreeBSD")
-    set(PLATFORM_LIBS "execinfo")
-else()
-    set(PLATFORM_LIBS "")
-endif()
-
 target_link_libraries (clickhouse_common_io
     common
     string_utils
@@ -164,7 +158,7 @@ target_link_libraries (clickhouse_common_io
     ${ZOOKEEPER_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
-    ${PLATFORM_LIBS}
+    ${EXECINFO_LIBRARY}
 )
 
 target_link_libraries (dbms
