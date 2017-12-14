@@ -9,6 +9,8 @@ namespace DB
 class ColumnNothing final : public COWPtrHelper<IColumnDummy, ColumnNothing>
 {
 private:
+    friend class COWPtrHelper<IColumnDummy, ColumnNothing>;
+
     using IColumnDummy::IColumnDummy;
 
 public:

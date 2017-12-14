@@ -15,6 +15,8 @@ class ExpressionActions;
 class ColumnExpression final : public COWPtrHelper<IColumnDummy, ColumnExpression>
 {
 private:
+    friend class COWPtrHelper<IColumnDummy, ColumnExpression>;
+
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
     ColumnExpression(size_t s_, ExpressionActionsPtr expression_, const NamesAndTypes & arguments_, DataTypePtr return_type_, String return_name_);

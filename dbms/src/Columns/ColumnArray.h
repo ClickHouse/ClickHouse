@@ -21,6 +21,8 @@ namespace ErrorCodes
 class ColumnArray final : public COWPtrHelper<IColumn, ColumnArray>
 {
 private:
+    friend class COWPtrHelper<IColumn, ColumnArray>;
+
     /** Create an empty column of arrays with the type of values as in the column `nested_column` */
     ColumnArray(const ColumnPtr & nested_column, const ColumnPtr & offsets_column);
 

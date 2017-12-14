@@ -18,10 +18,15 @@ using ConstNullMapPtr = const NullMap *;
 /// over a bitmap because columns are usually stored on disk as compressed
 /// files. In this regard, using a bitmap instead of a byte map would
 /// greatly complicate the implementation with little to no benefits.
-class ColumnNullable final : public IColumn
+class ColumnNullable final : public COWPtrHelper<IColumn, ColumnNullable>
 {
-public:
+private:
+    friend class COWPtrHelper<IColumn, ColumnNullable>;
+
     ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_);
+    ColumnNullable(ColumnNullable &) = default;
+
+public:
     const char * getFamilyName() const override { return "Nullable"; }
     std::string getName() const override { return "Nullable(" + nested_column->getName() + ")"; }
     MutableColumnPtr cloneResized(size_t size) const override;

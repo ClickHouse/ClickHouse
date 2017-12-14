@@ -17,8 +17,7 @@ namespace DB
 {
 
 
-
-/** State column of aggregate functions.
+/** Column of states of aggregate functions.
   * Presented as an array of pointers to the states of aggregate functions (data).
   * The states themselves are stored in one of the pools (arenas).
   *
@@ -48,6 +47,8 @@ public:
     using Container_t = PaddedPODArray<AggregateDataPtr>;
 
 private:
+    friend class COWPtrHelper<IColumn, ColumnAggregateFunction>;
+
     /// Memory pools. Aggregate states are allocated from them.
     Arenas arenas;
 
@@ -82,7 +83,7 @@ private:
     }
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_)
-        : arenas(arenas_), func(func_), src(src_.getPtr())
+        : arenas(src_.arenas), func(src_.func), src(src_.getPtr())
     {
     }
 

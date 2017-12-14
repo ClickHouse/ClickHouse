@@ -350,9 +350,9 @@ protected:
 };
 
 using ColumnPtr = IColumn::Ptr;
-using MutablePtr  = IColumn::MutablePtr;
+using MutableColumnPtr  = IColumn::MutablePtr;
 using Columns = std::vector<ColumnPtr>;
-using MutableColumns = std::vector<MutablePtr>;
+using MutableColumns = std::vector<MutableColumnPtr>;
 
 using ColumnRawPtrs = std::vector<const IColumn *>;
 using MutableColumnRawPtrs = std::vector<IColumn *>;

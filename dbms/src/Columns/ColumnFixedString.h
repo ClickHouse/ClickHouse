@@ -15,6 +15,8 @@ namespace DB
 class ColumnFixedString final : public COWPtrHelper<IColumn, ColumnFixedString>
 {
 public:
+    friend class COWPtrHelper<IColumn, ColumnFixedString>;
+
     using Chars_t = PaddedPODArray<UInt8>;
 
 private:
@@ -32,7 +34,7 @@ private:
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
 
-    ColumnFixedString(const ColumnFixedString &) = default;
+    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {};
 
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }

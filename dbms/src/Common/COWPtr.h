@@ -91,7 +91,6 @@ protected:
         mutable_ptr(boost::intrusive_ptr<U> && other) : boost::intrusive_ptr<T>(std::move(other)) {}
 
         mutable_ptr() = default;
-
         mutable_ptr(T * ptr) : boost::intrusive_ptr<T>(ptr) {}
     };
 
@@ -116,8 +115,7 @@ protected:
         immutable_ptr(const boost::intrusive_ptr<U> &) = delete;
 
         immutable_ptr() = default;
-
-        immutable_ptr(std::nullptr_t) : boost::intrusive_ptr<const T>(nullptr) {};
+        immutable_ptr(const T * ptr) : boost::intrusive_ptr<const T>(ptr) {}
     };
 
 public:

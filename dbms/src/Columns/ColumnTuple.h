@@ -15,6 +15,8 @@ namespace DB
 class ColumnTuple final : public COWPtrHelper<IColumn, ColumnTuple>
 {
 private:
+    friend class COWPtrHelper<IColumn, ColumnTuple>;
+
     Columns columns;
 
     template <bool positive>

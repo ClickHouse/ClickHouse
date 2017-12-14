@@ -123,6 +123,8 @@ template <typename T>
 class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
 {
 private:
+    friend class COWPtrHelper<IColumn, ColumnVector<T>>;
+
     using Self = ColumnVector<T>;
 
     struct less;
@@ -136,7 +138,7 @@ private:
     ColumnVector() {}
     ColumnVector(const size_t n) : data{n} {}
     ColumnVector(const size_t n, const value_type x) : data{n, x} {}
-    ColumnVector(const ColumnVector &) = default;
+    ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {};
 
 public:
     bool isNumeric() const override { return IsNumber<T>; }
@@ -198,7 +200,7 @@ public:
         return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     void reserve(size_t n) override
     {
@@ -246,9 +248,9 @@ public:
 
     void getExtremes(Field & min, Field & max) const override;
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override
     {
-        return this->scatterImpl<Self>(num_columns, selector);
+        return this->template scatterImpl<Self>(num_columns, selector);
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
