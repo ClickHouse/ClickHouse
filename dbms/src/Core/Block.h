@@ -105,6 +105,13 @@ public:
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
 
+    /** Get empty columns with the same types as in block. */
+    MutableColumns cloneEmptyColumns() const;
+
+    /** Replace columns in a block */
+    void setColumns(MutableColumns && columns);
+    Block cloneWithColumns(MutableColumns && columns) const;
+
     /** Get a block with columns that have been rearranged in the order of their names. */
     Block sortColumns() const;
 

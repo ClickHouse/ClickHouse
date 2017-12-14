@@ -15,13 +15,13 @@ namespace ErrorCodes
 }
 
 
-CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & sample_, const char delimiter_, bool with_names_, bool with_types_)
-    : istr(istr_), sample(sample_), delimiter(delimiter_), with_names(with_names_), with_types(with_types_)
+CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, const char delimiter_, bool with_names_, bool with_types_)
+    : istr(istr_), header(header_), delimiter(delimiter_), with_names(with_names_), with_types(with_types_)
 {
-    size_t columns = sample.columns();
-    data_types.resize(columns);
-    for (size_t i = 0; i < columns; ++i)
-        data_types[i] = sample.safeGetByPosition(i).type;
+    size_t num_columns = header.columns();
+    data_types.resize(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        data_types[i] = header.safeGetByPosition(i).type;
 }
 
 
@@ -81,16 +81,16 @@ static inline void skipWhitespacesAndTabs(ReadBuffer & buf)
 }
 
 
-static void skipRow(ReadBuffer & istr, const char delimiter, size_t columns)
+static void skipRow(ReadBuffer & istr, const char delimiter, size_t num_columns)
 {
     String tmp;
-    for (size_t i = 0; i < columns; ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
         skipWhitespacesAndTabs(istr);
         readCSVString(tmp, istr);
         skipWhitespacesAndTabs(istr);
 
-        skipDelimiter(istr, delimiter, i + 1 == columns);
+        skipDelimiter(istr, delimiter, i + 1 == num_columns);
     }
 }
 
@@ -101,18 +101,18 @@ void CSVRowInputStream::readPrefix()
     ///  so BOM at beginning of stream cannot be confused with BOM in first string value, and it is safe to skip it.
     skipBOMIfExists(istr);
 
-    size_t columns = sample.columns();
+    size_t num_columns = data_types.size();
     String tmp;
 
     if (with_names)
-        skipRow(istr, delimiter, columns);
+        skipRow(istr, delimiter, num_columns);
 
     if (with_types)
-        skipRow(istr, delimiter, columns);
+        skipRow(istr, delimiter, num_columns);
 }
 
 
-bool CSVRowInputStream::read(Block & block)
+bool CSVRowInputStream::read(MutableColumns & columns)
 {
     if (istr.eof())
         return false;
@@ -124,7 +124,7 @@ bool CSVRowInputStream::read(Block & block)
     for (size_t i = 0; i < size; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        data_types[i]->deserializeTextCSV(*block.getByPosition(i).column.get(), istr, delimiter);
+        data_types[i]->deserializeTextCSV(columns[i], istr, delimiter);
         skipWhitespacesAndTabs(istr);
 
         skipDelimiter(istr, delimiter, i + 1 == size);
@@ -140,7 +140,8 @@ String CSVRowInputStream::getDiagnosticInfo()
         return {};
 
     WriteBufferFromOwnString out;
-    Block block = sample.cloneEmpty();
+
+    MutableColumns columns = header.cloneEmptyColumns();
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
     size_t bytes_read_at_start_of_buffer = istr.count() - istr.offset();
@@ -151,14 +152,14 @@ String CSVRowInputStream::getDiagnosticInfo()
     }
 
     size_t max_length_of_column_name = 0;
-    for (size_t i = 0; i < sample.columns(); ++i)
-        if (sample.safeGetByPosition(i).name.size() > max_length_of_column_name)
-            max_length_of_column_name = sample.safeGetByPosition(i).name.size();
+    for (size_t i = 0; i < header.columns(); ++i)
+        if (header.safeGetByPosition(i).name.size() > max_length_of_column_name)
+            max_length_of_column_name = header.safeGetByPosition(i).name.size();
 
     size_t max_length_of_data_type_name = 0;
-    for (size_t i = 0; i < sample.columns(); ++i)
-        if (sample.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
-            max_length_of_data_type_name = sample.safeGetByPosition(i).type->getName().size();
+    for (size_t i = 0; i < header.columns(); ++i)
+        if (header.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
+            max_length_of_data_type_name = header.safeGetByPosition(i).type->getName().size();
 
     /// Roll back the cursor to the beginning of the previous or current row and parse all over again. But now we derive detailed information.
 
@@ -167,7 +168,7 @@ String CSVRowInputStream::getDiagnosticInfo()
         istr.position() = pos_of_prev_row;
 
         out << "\nRow " << (row_num - 1) << ":\n";
-        if (!parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name))
+        if (!parseRowAndPrintDiagnosticInfo(columns, out, max_length_of_column_name, max_length_of_data_type_name))
             return out.str();
     }
     else
@@ -182,14 +183,14 @@ String CSVRowInputStream::getDiagnosticInfo()
     }
 
     out << "\nRow " << row_num << ":\n";
-    parseRowAndPrintDiagnosticInfo(block, out, max_length_of_column_name, max_length_of_data_type_name);
+    parseRowAndPrintDiagnosticInfo(columns, out, max_length_of_column_name, max_length_of_data_type_name);
     out << "\n";
 
     return out.str();
 }
 
 
-bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
+bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
     WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
 {
     size_t size = data_types.size();
@@ -202,7 +203,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
         }
 
         out << "Column " << i << ", " << std::string((i < 10 ? 2 : i < 100 ? 1 : 0), ' ')
-            << "name: " << sample.safeGetByPosition(i).name << ", " << std::string(max_length_of_column_name - sample.safeGetByPosition(i).name.size(), ' ')
+            << "name: " << header.safeGetByPosition(i).name << ", " << std::string(max_length_of_column_name - header.safeGetByPosition(i).name.size(), ' ')
             << "type: " << data_types[i]->getName() << ", " << std::string(max_length_of_data_type_name - data_types[i]->getName().size(), ' ');
 
         BufferBase::Position prev_position = istr.position();
@@ -213,7 +214,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(Block & block,
         {
             skipWhitespacesAndTabs(istr);
             prev_position = istr.position();
-            data_types[i]->deserializeTextCSV(*block.safeGetByPosition(i).column, istr, delimiter);
+            data_types[i]->deserializeTextCSV(columns[i], istr, delimiter);
             curr_position = istr.position();
             skipWhitespacesAndTabs(istr);
         }
