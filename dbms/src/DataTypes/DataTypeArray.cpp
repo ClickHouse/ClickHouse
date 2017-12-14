@@ -421,7 +421,7 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 ColumnPtr DataTypeArray::createColumn() const
 {
-    return std::make_shared<ColumnArray>(nested->createColumn());
+    return ColumnArray::create(nested->createColumn());
 }
 
 

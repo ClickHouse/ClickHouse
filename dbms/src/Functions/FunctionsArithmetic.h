@@ -647,7 +647,7 @@ private:
     {
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
+            auto col_res = ColumnVector<ResultType>::create();
             block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
@@ -658,7 +658,7 @@ private:
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
+            auto col_res = ColumnVector<ResultType>::create();
             block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
@@ -677,7 +677,7 @@ private:
     {
         if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
         {
-            auto col_res = std::make_shared<ColumnVector<ResultType>>();
+            auto col_res = ColumnVector<ResultType>::create();
             block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getData();
@@ -916,7 +916,7 @@ private:
         {
             using ResultType = typename Op<T0>::ResultType;
 
-            std::shared_ptr<ColumnVector<ResultType>> col_res = std::make_shared<ColumnVector<ResultType>>();
+            std::shared_ptr<ColumnVector<ResultType>> col_res = ColumnVector<ResultType>::create();
             block.getByPosition(result).column = col_res;
 
             typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -1290,7 +1290,7 @@ private:
             const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto & val = value_col->getData();
 
-            const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+            const auto out_col = ColumnVector<UInt8>::create(size);
             auto & out = out_col->getData();
 
             if (is_const)
@@ -1323,7 +1323,7 @@ private:
             else
             {
                 const auto mask = createMask<T>(size, block, arguments);
-                const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
+                const auto out_col = ColumnVector<UInt8>::create(size);
 
                 auto & out = out_col->getData();
 

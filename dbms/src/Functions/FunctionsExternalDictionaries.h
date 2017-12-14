@@ -129,7 +129,7 @@ private:
         {
             const auto & ids = id_col->getData();
 
-            const auto out = std::make_shared<ColumnUInt8>(ext::size(ids));
+            const auto out = ColumnUInt8::create(ext::size(ids));
             block.getByPosition(result).column = out;
 
             dict->has(ids, out->getData());
@@ -169,7 +169,7 @@ private:
             const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-            const auto out = std::make_shared<ColumnUInt8>(key_col_with_type.column->size());
+            const auto out = ColumnUInt8::create(key_col_with_type.column->size());
             block.getByPosition(result).column = out;
 
             dict->has(key_columns, key_types, out->getData());
@@ -322,7 +322,7 @@ private:
         const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
         if (const auto id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
         {
-            const auto out = std::make_shared<ColumnString>();
+            const auto out = ColumnString::create();
             block.getByPosition(result).column = out;
             dict->getString(attr_name, id_col->getData(), out.get());
         }
@@ -375,7 +375,7 @@ private:
             const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-            const auto out = std::make_shared<ColumnString>();
+            const auto out = ColumnString::create();
             block.getByPosition(result).column = out;
 
             dict->getString(attr_name, key_columns, key_types, out.get());
@@ -433,13 +433,13 @@ private:
     {
         if (const auto date_col = checkAndGetColumn<ColumnUInt16>(date_col_untyped))
         {
-            const auto out = std::make_shared<ColumnString>();
+            const auto out = ColumnString::create();
             block.getByPosition(result).column = out;
             dictionary->getString(attr_name, id_col->getData(), date_col->getData(), out.get());
         }
         else if (const auto date_col = checkAndGetColumnConst<ColumnVector<UInt16>>(date_col_untyped))
         {
-            auto out = std::make_shared<ColumnString>();
+            auto out = ColumnString::create();
             block.getByPosition(result).column = out;
 
             const PaddedPODArray<UInt16> dates(id_col->size(), date_col->getValue<UInt64>());
@@ -460,7 +460,7 @@ private:
     {
         if (const auto date_col = checkAndGetColumn<ColumnUInt16>(date_col_untyped))
         {
-            const auto out = std::make_shared<ColumnString>();
+            const auto out = ColumnString::create();
             block.getByPosition(result).column = out;
 
             const PaddedPODArray<UInt64> ids(date_col->size(), id_col->getValue<UInt64>());
@@ -598,7 +598,7 @@ private:
         if (const auto default_col = checkAndGetColumn<ColumnString>(default_col_untyped))
         {
             /// vector ids, vector defaults
-            const auto out = std::make_shared<ColumnString>();
+            const auto out = ColumnString::create();
             block.getByPosition(result).column = out;
 
             const auto & ids = id_col->getData();
@@ -608,7 +608,7 @@ private:
         else if (const auto default_col = checkAndGetColumnConstStringOrFixedString(default_col_untyped))
         {
             /// vector ids, const defaults
-            const auto out = std::make_shared<ColumnString>();
+            const auto out = ColumnString::create();
             block.getByPosition(result).column = out;
 
             const auto & ids = id_col->getData();
@@ -634,7 +634,7 @@ private:
             /// const ids, vector defaults
             /// @todo avoid materialization
             const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getValue<UInt64>());
-            const auto out = std::make_shared<ColumnString>();
+            const auto out = ColumnString::create();
             block.getByPosition(result).column = out;
 
             dictionary->getString(attr_name, ids, default_col, out.get());
@@ -681,7 +681,7 @@ private:
         const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-        const auto out = std::make_shared<ColumnString>();
+        const auto out = ColumnString::create();
         block.getByPosition(result).column = out;
 
         const auto default_col_untyped = block.getByPosition(arguments[3]).column.get();
@@ -877,7 +877,7 @@ private:
         const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
         if (const auto id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
         {
-            const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
+            const auto out = ColumnVector<Type>::create(id_col->size());
             block.getByPosition(result).column = out;
 
             const auto & ids = id_col->getData();
@@ -934,7 +934,7 @@ private:
             const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
-            const auto out = std::make_shared<ColumnVector<Type>>(key_columns.front()->size());
+            const auto out = ColumnVector<Type>::create(key_columns.front()->size());
             block.getByPosition(result).column = out;
 
             auto & data = out->getData();
@@ -998,7 +998,7 @@ private:
             const auto & ids = id_col->getData();
             const auto & dates = date_col->getData();
 
-            const auto out = std::make_shared<ColumnVector<Type>>(size);
+            const auto out = ColumnVector<Type>::create(size);
             block.getByPosition(result).column = out;
 
             auto & data = out->getData();
@@ -1010,7 +1010,7 @@ private:
             const auto & ids = id_col->getData();
             const PaddedPODArray<UInt16> dates(size, date_col->getValue<UInt16>());
 
-            const auto out = std::make_shared<ColumnVector<Type>>(size);
+            const auto out = ColumnVector<Type>::create(size);
             block.getByPosition(result).column = out;
 
             auto & data = out->getData();
@@ -1035,7 +1035,7 @@ private:
             const PaddedPODArray<UInt64> ids(size, id_col->getValue<UInt64>());
             const auto & dates = date_col->getData();
 
-            const auto out = std::make_shared<ColumnVector<Type>>(size);
+            const auto out = ColumnVector<Type>::create(size);
             block.getByPosition(result).column = out;
 
             auto & data = out->getData();
@@ -1209,7 +1209,7 @@ private:
         if (const auto default_col = checkAndGetColumn<ColumnVector<Type>>(default_col_untyped))
         {
             /// vector ids, vector defaults
-            const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
+            const auto out = ColumnVector<Type>::create(id_col->size());
             block.getByPosition(result).column = out;
 
             const auto & ids = id_col->getData();
@@ -1221,7 +1221,7 @@ private:
         else if (const auto default_col = checkAndGetColumnConst<ColumnVector<Type>>(default_col_untyped))
         {
             /// vector ids, const defaults
-            const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
+            const auto out = ColumnVector<Type>::create(id_col->size());
             block.getByPosition(result).column = out;
 
             const auto & ids = id_col->getData();
@@ -1249,7 +1249,7 @@ private:
             /// @todo avoid materialization
             const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getValue<UInt64>());
 
-            const auto out = std::make_shared<ColumnVector<Type>>(id_col->size());
+            const auto out = ColumnVector<Type>::create(id_col->size());
             block.getByPosition(result).column = out;
 
             auto & data = out->getData();
@@ -1300,7 +1300,7 @@ private:
 
         /// @todo detect when all key columns are constant
         const auto rows = key_col.size();
-        const auto out = std::make_shared<ColumnVector<Type>>(rows);
+        const auto out = ColumnVector<Type>::create(rows);
         block.getByPosition(result).column = out;
         auto & data = out->getData();
 
@@ -1495,8 +1495,8 @@ private:
         if (const auto id_col = checkAndGetColumn<ColumnUInt64>(id_col_untyped))
         {
             const auto & in = id_col->getData();
-            const auto backend = std::make_shared<ColumnUInt64>();
-            const auto array = std::make_shared<ColumnArray>(backend);
+            const auto backend = ColumnUInt64::create();
+            const auto array = ColumnArray::create(backend);
             block.getByPosition(result).column = array;
 
             get_hierarchies(in, backend->getData(), array->getOffsets());
@@ -1504,8 +1504,8 @@ private:
         else if (const auto id_col = checkAndGetColumnConst<ColumnVector<UInt64>>(id_col_untyped))
         {
             const PaddedPODArray<UInt64> in(1, id_col->getValue<UInt64>());
-            const auto backend = std::make_shared<ColumnUInt64>();
-            const auto array = std::make_shared<ColumnArray>(backend);
+            const auto backend = ColumnUInt64::create();
+            const auto array = ColumnArray::create(backend);
 
             get_hierarchies(in, backend->getData(), array->getOffsets());
 
@@ -1625,7 +1625,7 @@ private:
     {
         if (const auto ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
         {
-            const auto out = std::make_shared<ColumnUInt8>();
+            const auto out = ColumnUInt8::create();
             block.getByPosition(result).column = out;
 
             const auto & child_ids = child_id_col->getData();
@@ -1638,7 +1638,7 @@ private:
         }
         else if (const auto ancestor_id_col = checkAndGetColumnConst<ColumnVector<UInt64>>(ancestor_id_col_untyped))
         {
-            const auto out = std::make_shared<ColumnUInt8>();
+            const auto out = ColumnUInt8::create();
             block.getByPosition(result).column = out;
 
             const auto & child_ids = child_id_col->getData();
@@ -1666,7 +1666,7 @@ private:
     {
         if (const auto ancestor_id_col = checkAndGetColumn<ColumnUInt64>(ancestor_id_col_untyped))
         {
-            const auto out = std::make_shared<ColumnUInt8>();
+            const auto out = ColumnUInt8::create();
             block.getByPosition(result).column = out;
 
             const auto child_id = child_id_col->getValue<UInt64>();

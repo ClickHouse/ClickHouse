@@ -47,7 +47,7 @@ public:
 
     ColumnPtr cloneResized(size_t new_size) const override
     {
-        return std::make_shared<ColumnConst>(data, new_size);
+        return ColumnConst::create(data, new_size);
     }
 
     size_t size() const override
@@ -148,7 +148,7 @@ public:
         if (s != filt.size())
             throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-        return std::make_shared<ColumnConst>(data, countBytesInFilter(filt));
+        return ColumnConst::create(data, countBytesInFilter(filt));
     }
 
     ColumnPtr replicate(const Offsets_t & offsets) const override
@@ -157,7 +157,7 @@ public:
             throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
         size_t replicated_size = 0 == s ? 0 : offsets.back();
-        return std::make_shared<ColumnConst>(data, replicated_size);
+        return ColumnConst::create(data, replicated_size);
     }
 
     size_t byteSize() const override
@@ -180,7 +180,7 @@ public:
         if (perm.size() < limit)
             throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-        return std::make_shared<ColumnConst>(data, limit);
+        return ColumnConst::create(data, limit);
     }
 
     int compareAt(size_t, size_t, const IColumn & rhs, int nan_direction_hint) const override

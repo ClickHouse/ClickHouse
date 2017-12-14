@@ -106,7 +106,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
                     read_offsets = false; /// offsets have already been read on the previous iteration
 
                 if (!append)
-                    column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+                    column.column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[name]);
             }
             else if (!append)
                 column.column = column.type->createColumn();
@@ -480,7 +480,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                     ColumnPtr nested_column = nested_type->createColumnConst(
                         nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
 
-                    column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
+                    column_to_add.column = ColumnArray::create(nested_column, offsets_column);
                 }
                 else
                 {

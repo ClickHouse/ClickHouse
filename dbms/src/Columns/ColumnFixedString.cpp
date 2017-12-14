@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 ColumnPtr ColumnFixedString::cloneResized(size_t size) const
 {
-    ColumnPtr new_col_holder = std::make_shared<ColumnFixedString>(n);
+    ColumnPtr new_col_holder = ColumnFixedString::create(n);
 
     if (size > 0)
     {
@@ -159,7 +159,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     if (col_size != filt.size())
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnFixedString> res = std::make_shared<ColumnFixedString>(n);
+    std::shared_ptr<ColumnFixedString> res = ColumnFixedString::create(n);
 
     if (result_size_hint)
         res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
@@ -243,9 +243,9 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (limit == 0)
-        return std::make_shared<ColumnFixedString>(n);
+        return ColumnFixedString::create(n);
 
-    std::shared_ptr<ColumnFixedString> res = std::make_shared<ColumnFixedString>(n);
+    std::shared_ptr<ColumnFixedString> res = ColumnFixedString::create(n);
 
     Chars_t & res_chars = res->chars;
 
@@ -264,7 +264,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets_t & offsets) const
     if (col_size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnFixedString> res = std::make_shared<ColumnFixedString>(n);
+    std::shared_ptr<ColumnFixedString> res = ColumnFixedString::create(n);
 
     if (0 == col_size)
         return res;

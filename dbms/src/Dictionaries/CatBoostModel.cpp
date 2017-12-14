@@ -219,7 +219,7 @@ private:
         if (size == 0)
             return nullptr;
         size_t column_size = columns[offset]->size();
-        auto data_column = std::make_shared<ColumnVector<T>>(size * column_size);
+        auto data_column = ColumnVector<T>::create(size * column_size);
         T* data = data_column->getData().data();
         for (size_t i = 0; i < size; ++i)
         {
@@ -328,7 +328,7 @@ private:
         std::string error_msg = "Error occurred while applying CatBoost model: ";
         size_t column_size = columns.front()->size();
 
-        auto result= std::make_shared<ColumnFloat64>(column_size);
+        auto result= ColumnFloat64::create(column_size);
         auto result_buf = result->getData().data();
 
         /// Prepare float features.

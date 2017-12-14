@@ -293,7 +293,7 @@ void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, con
 
 ColumnPtr DataTypeString::createColumn() const
 {
-    return std::make_shared<ColumnString>();
+    return ColumnString::create();
 }
 
 

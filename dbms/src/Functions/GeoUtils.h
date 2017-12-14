@@ -514,10 +514,10 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
 
     if (impl.hasEmptyBound())
     {
-        return std::make_shared<ColumnVector<UInt8>>(size, 0);
+        return ColumnVector<UInt8>::create(size, 0);
     }
 
-    auto result = std::make_shared<ColumnVector<UInt8>>(size);
+    auto result = ColumnVector<UInt8>::create(size);
     auto & data = result->getData();
 
     const auto & x_data = x.getData();

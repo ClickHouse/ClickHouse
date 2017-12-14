@@ -66,10 +66,10 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         column_defaults = table->column_defaults;
     }
 
-    ColumnWithTypeAndName name_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
-    ColumnWithTypeAndName type_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "type" };
-    ColumnWithTypeAndName default_type_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "default_type" };
-    ColumnWithTypeAndName default_expression_column{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "default_expression" };;
+    ColumnWithTypeAndName name_column{ColumnString::create(), std::make_shared<DataTypeString>(), "name"};
+    ColumnWithTypeAndName type_column{ColumnString::create(), std::make_shared<DataTypeString>(), "type" };
+    ColumnWithTypeAndName default_type_column{ColumnString::create(), std::make_shared<DataTypeString>(), "default_type" };
+    ColumnWithTypeAndName default_expression_column{ColumnString::create(), std::make_shared<DataTypeString>(), "default_expression" };;
 
     for (const auto column : columns)
     {

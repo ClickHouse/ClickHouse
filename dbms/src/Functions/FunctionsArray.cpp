@@ -84,7 +84,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
     /** Create and fill the result array.
         */
 
-    auto out = std::make_shared<ColumnArray>(elem_type->createColumn());
+    auto out = ColumnArray::create(elem_type->createColumn());
     IColumn & out_data = out->getData();
     IColumn::Offsets_t & out_offsets = out->getOffsets();
 
@@ -123,7 +123,7 @@ public:
 
     void initSink(size_t size)
     {
-        auto sink = std::make_shared<ColumnUInt8>(size);
+        auto sink = ColumnUInt8::create(size);
         sink_null_map = sink->getData().data();
         sink_null_map_holder = sink;
     }
@@ -457,7 +457,7 @@ bool FunctionArrayElement::executeNumberConst(Block & block, const ColumnNumbers
     if (!col_nested)
         return false;
 
-    auto col_res = std::make_shared<ColumnVector<DataType>>();
+    auto col_res = ColumnVector<DataType>::create();
     block.getByPosition(result).column = col_res;
 
     if (index.getType() == Field::Types::UInt64)
@@ -486,7 +486,7 @@ bool FunctionArrayElement::executeNumber(Block & block, const ColumnNumbers & ar
     if (!col_nested)
         return false;
 
-    auto col_res = std::make_shared<ColumnVector<DataType>>();
+    auto col_res = ColumnVector<DataType>::create();
     block.getByPosition(result).column = col_res;
 
     ArrayElementNumImpl<DataType>::template vector<IndexType>(
@@ -508,7 +508,7 @@ bool FunctionArrayElement::executeStringConst(Block & block, const ColumnNumbers
     if (!col_nested)
         return false;
 
-    std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+    std::shared_ptr<ColumnString> col_res = ColumnString::create();
     block.getByPosition(result).column = col_res;
 
     if (index.getType() == Field::Types::UInt64)
@@ -549,7 +549,7 @@ bool FunctionArrayElement::executeString(Block & block, const ColumnNumbers & ar
     if (!col_nested)
         return false;
 
-    std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+    std::shared_ptr<ColumnString> col_res = ColumnString::create();
     block.getByPosition(result).column = col_res;
 
     ArrayElementStringImpl::vector<IndexType>(
@@ -721,7 +721,7 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
     for (size_t i = 0; i < tuple_size; ++i)
     {
         ColumnWithTypeAndName array_of_tuple_section;
-        array_of_tuple_section.column = std::make_shared<ColumnArray>(tuple_columns[i], col_array->getOffsetsColumn());
+        array_of_tuple_section.column = ColumnArray::create(tuple_columns[i], col_array->getOffsetsColumn());
         array_of_tuple_section.type = std::make_shared<DataTypeArray>(tuple_types[i]);
         block_of_temporary_results.insert(array_of_tuple_section);
 
@@ -735,7 +735,7 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
         result_tuple_columns.emplace_back(std::move(block_of_temporary_results.getByPosition(i * 2 + 2).column));
     }
 
-    block.getByPosition(result).column = std::make_shared<ColumnTuple>(result_tuple_columns);
+    block.getByPosition(result).column = ColumnTuple::create(result_tuple_columns);
 
     return true;
 }
@@ -801,7 +801,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
             source_block =
             {
                 {
-                    std::make_shared<ColumnArray>(nested_col, col_array->getOffsetsColumn()),
+                    ColumnArray::create(nested_col, col_array->getOffsetsColumn()),
                     std::make_shared<DataTypeArray>(input_type),
                     ""
                 },
@@ -824,7 +824,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
             source_block =
             {
                 {
-                    std::make_shared<ColumnConst>(std::make_shared<ColumnArray>(nested_col, col_const_array->getOffsetsColumn()), block.rows()),
+                    ColumnConst::create(ColumnArray::create(nested_col, col_const_array->getOffsetsColumn()), block.rows()),
                     std::make_shared<DataTypeArray>(input_type),
                     ""
                 },
@@ -844,7 +844,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         /// Store the result.
         const ColumnWithTypeAndName & source_col = source_block.getByPosition(2);
         ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-        dest_col.column = std::make_shared<ColumnNullable>(source_col.column, builder.getNullMap());
+        dest_col.column = ColumnNullable::create(source_col.column, builder.getNullMap());
     }
 }
 
@@ -923,8 +923,8 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
     {
         const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
-        auto res_nested = std::make_shared<ColumnUInt32>();
-        auto res_array = std::make_shared<ColumnArray>(res_nested, array->getOffsetsColumn());
+        auto res_nested = ColumnUInt32::create();
+        auto res_array = ColumnArray::create(res_nested, array->getOffsetsColumn());
         block.getByPosition(result).column = res_array;
 
         ColumnUInt32::Container_t & res_values = res_nested->getData();
@@ -1026,7 +1026,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 
     const ColumnArray * first_array = static_cast<const ColumnArray *>(array_columns[0].get());
     const IColumn * first_null_map = null_maps[0];
-    auto res = std::make_shared<ColumnUInt32>();
+    auto res = ColumnUInt32::create();
     block.getByPosition(result).column = res;
 
     ColumnUInt32::Container_t & res_values = res->getData();
@@ -1332,8 +1332,8 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 
     const ColumnArray * first_array = checkAndGetColumn<ColumnArray>(array_columns[0].get());
     const IColumn * first_null_map = null_maps[0];
-    auto res_nested = std::make_shared<ColumnUInt32>();
-    auto res_array = std::make_shared<ColumnArray>(res_nested, first_array->getOffsetsColumn());
+    auto res_nested = ColumnUInt32::create();
+    auto res_array = ColumnArray::create(res_nested, first_array->getOffsetsColumn());
     block.getByPosition(result).column = res_array;
 
     ColumnUInt32::Container_t & res_values = res_nested->getData();
@@ -1975,8 +1975,8 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
                     " array elements, which is greater than the allowed maximum of " + std::to_string(max_elements),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
-        const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
-        const auto out = std::make_shared<ColumnArray>(
+        const auto data_col = ColumnVector<T>::create(total_values);
+        const auto out = ColumnArray::create(
             data_col,
             std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
         block.getByPosition(result).column = out;
@@ -2011,8 +2011,8 @@ bool FunctionRange::executeInternal(Block & block, const IColumn * arg, const si
                     " array elements, which is greater than the allowed maximum of " + toString(max_elements),
                 ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
-        const auto data_col = std::make_shared<ColumnVector<T>>(total_values);
-        const auto out = std::make_shared<ColumnArray>(
+        const auto data_col = ColumnVector<T>::create(total_values);
+        const auto out = ColumnArray::create(
             data_col,
             std::make_shared<ColumnArray::ColumnOffsets_t>(in->size()));
         block.getByPosition(result).column = out;
@@ -2669,7 +2669,7 @@ void FunctionArraySlice::executeImpl(Block & block, const ColumnNumbers & argume
             sliceFromLeftConstantOffsetBounded(*source, *sink, 0, length_column->getInt(0));
         else
         {
-            auto const_offset_column = std::make_shared<ColumnConst>(std::make_shared<ColumnInt8>(1, 1), size);
+            auto const_offset_column = ColumnConst::create(ColumnInt8::create(1, 1), size);
             sliceDynamicOffsetBounded(*source, *sink, *const_offset_column, *length_column);
         }
     }

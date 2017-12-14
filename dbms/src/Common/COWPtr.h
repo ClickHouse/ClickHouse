@@ -110,7 +110,12 @@ public:
         if (this->use_count() > 1)
             return derived()->clone();
         else
-            return const_cast<COWPtr*>(this)->getPtr();
+            return assumeMutable();
+    }
+
+    MutablePtr assumeMutable() const
+    {
+        return const_cast<COWPtr*>(this)->getPtr();
     }
 };
 
@@ -154,3 +159,24 @@ public:
 
     Base * clone() const override { return new Derived(*derived()); }
 };
+
+
+/** Compositions.
+  *
+  * Sometimes your objects contain another objects, and you have tree-like structure.
+  * And you want non-const methods of your object to also modify your subobjects.
+  *
+  * There are the following possible solutions:
+  *
+  * 1. Store subobjects as immutable ptrs. Call mutate method of subobjects inside non-const methods of your objects; modify them and assign back.
+  * Drawback: additional checks inside methods: CPU overhead on atomic ops.
+  *
+  * 2. Store subobjects as mutable ptrs. Subobjects cannot be shared in another objects.
+  * Drawback: it's not possible to share subobjects.
+  *
+  * 3. Store subobjects as immutable ptrs. Implement copy-constructor to do shallow copy.
+  * But reimplement 'mutate' method, so it will call 'mutate' of all subobjects (do deep mutate).
+  * It will guarantee, that mutable object have all subobjects unshared.
+  * From non-const method, you can modify subobjects with 'assumeMutable' method.
+  * Drawback: it's more complex than other solutions.
+  */

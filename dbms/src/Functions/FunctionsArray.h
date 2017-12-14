@@ -1106,7 +1106,7 @@ public:
                 const auto & nested_col = nullable_col.getNestedColumn();
 
                 auto & data = source_block.getByPosition(0);
-                data.column = std::make_shared<ColumnArray>(nested_col, col_array->getOffsetsColumn());
+                data.column = ColumnArray::create(nested_col, col_array->getOffsetsColumn());
                 data.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
                 auto & null_map = source_block.getByPosition(2);
@@ -1301,7 +1301,7 @@ private:
     {
         using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
-        block.getByPosition(result).column = std::make_shared<ColumnArray>(
+        block.getByPosition(result).column = ColumnArray::create(
             std::make_shared<UnderlyingColumnType>(),
             std::make_shared<ColumnArray::ColumnOffsets_t>(block.rows(), 0));
     }

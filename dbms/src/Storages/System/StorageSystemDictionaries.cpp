@@ -51,29 +51,29 @@ BlockInputStreams StorageSystemDictionaries::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
-    ColumnWithTypeAndName col_origin{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "origin"};
-    ColumnWithTypeAndName col_type{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "type"};
-    ColumnWithTypeAndName col_key{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "key"};
+    ColumnWithTypeAndName col_name{ColumnString::create(), std::make_shared<DataTypeString>(), "name"};
+    ColumnWithTypeAndName col_origin{ColumnString::create(), std::make_shared<DataTypeString>(), "origin"};
+    ColumnWithTypeAndName col_type{ColumnString::create(), std::make_shared<DataTypeString>(), "type"};
+    ColumnWithTypeAndName col_key{ColumnString::create(), std::make_shared<DataTypeString>(), "key"};
     ColumnWithTypeAndName col_attribute_names{
-        std::make_shared<ColumnArray>(std::make_shared<ColumnString>()),
+        ColumnArray::create(ColumnString::create()),
         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
         "attribute.names"
     };
     ColumnWithTypeAndName col_attribute_types{
-        std::make_shared<ColumnArray>(std::make_shared<ColumnString>()),
+        ColumnArray::create(ColumnString::create()),
         std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
         "attribute.types"
     };
-    ColumnWithTypeAndName col_has_hierarchy{std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "has_hierarchy"};
-    ColumnWithTypeAndName col_bytes_allocated{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "bytes_allocated"};
-    ColumnWithTypeAndName col_query_count{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "query_count"};
-    ColumnWithTypeAndName col_hit_rate{std::make_shared<ColumnFloat64>(), std::make_shared<DataTypeFloat64>(), "hit_rate"};
-    ColumnWithTypeAndName col_element_count{std::make_shared<ColumnUInt64>(), std::make_shared<DataTypeUInt64>(), "element_count"};
-    ColumnWithTypeAndName col_load_factor{std::make_shared<ColumnFloat64>(), std::make_shared<DataTypeFloat64>(), "load_factor"};
-    ColumnWithTypeAndName col_creation_time{std::make_shared<ColumnUInt32>(), std::make_shared<DataTypeDateTime>(), "creation_time"};
-    ColumnWithTypeAndName col_last_exception{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "last_exception"};
-    ColumnWithTypeAndName col_source{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "source"};
+    ColumnWithTypeAndName col_has_hierarchy{ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "has_hierarchy"};
+    ColumnWithTypeAndName col_bytes_allocated{ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "bytes_allocated"};
+    ColumnWithTypeAndName col_query_count{ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "query_count"};
+    ColumnWithTypeAndName col_hit_rate{ColumnFloat64::create(), std::make_shared<DataTypeFloat64>(), "hit_rate"};
+    ColumnWithTypeAndName col_element_count{ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "element_count"};
+    ColumnWithTypeAndName col_load_factor{ColumnFloat64::create(), std::make_shared<DataTypeFloat64>(), "load_factor"};
+    ColumnWithTypeAndName col_creation_time{ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "creation_time"};
+    ColumnWithTypeAndName col_last_exception{ColumnString::create(), std::make_shared<DataTypeString>(), "last_exception"};
+    ColumnWithTypeAndName col_source{ColumnString::create(), std::make_shared<DataTypeString>(), "source"};
 
     const auto & external_dictionaries = context.getExternalDictionaries();
     auto objects_map = external_dictionaries.getObjectsMap();

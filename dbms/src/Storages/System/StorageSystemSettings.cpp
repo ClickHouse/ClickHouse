@@ -36,10 +36,10 @@ BlockInputStreams StorageSystemSettings::read(
 
     const Settings & settings = context.getSettingsRef();
 
-    ColumnWithTypeAndName col_name{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name"};
-    ColumnWithTypeAndName col_value{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "value"};
-    ColumnWithTypeAndName col_changed{std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "changed"};
-    ColumnWithTypeAndName col_description{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "description"};
+    ColumnWithTypeAndName col_name{ColumnString::create(), std::make_shared<DataTypeString>(), "name"};
+    ColumnWithTypeAndName col_value{ColumnString::create(), std::make_shared<DataTypeString>(), "value"};
+    ColumnWithTypeAndName col_changed{ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "changed"};
+    ColumnWithTypeAndName col_description{ColumnString::create(), std::make_shared<DataTypeString>(), "description"};
 
 #define ADD_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
     col_name.column->insert(String(#NAME)); \

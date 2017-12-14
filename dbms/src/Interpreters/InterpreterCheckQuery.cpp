@@ -210,13 +210,13 @@ BlockIO InterpreterCheckQuery::execute()
 
         /// Construct the result.
 
-        ColumnPtr status_column = std::make_shared<ColumnUInt8>();
-        ColumnPtr host_name_column = std::make_shared<ColumnString>();
-        ColumnPtr host_address_column = std::make_shared<ColumnString>();
-        ColumnPtr port_column = std::make_shared<ColumnUInt16>();
-        ColumnPtr user_column = std::make_shared<ColumnString>();
-        ColumnPtr structure_class_column = std::make_shared<ColumnUInt32>();
-        ColumnPtr structure_column = std::make_shared<ColumnString>();
+        ColumnPtr status_column = ColumnUInt8::create();
+        ColumnPtr host_name_column = ColumnString::create();
+        ColumnPtr host_address_column = ColumnString::create();
+        ColumnPtr port_column = ColumnUInt16::create();
+        ColumnPtr user_column = ColumnString::create();
+        ColumnPtr structure_class_column = ColumnUInt32::create();
+        ColumnPtr structure_column = ColumnString::create();
 
         /// This value is 1 if the structure is not disposed of anywhere, but 0 otherwise.
         UInt8 status_value = (structure_class == 0) ? 1 : 0;
@@ -250,7 +250,7 @@ BlockIO InterpreterCheckQuery::execute()
     }
     else
     {
-        result = Block{{ std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "result" }};
+        result = Block{{ ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "result" }};
         result.safeGetByPosition(0).column->insert(Field(UInt64(table->checkData())));
 
         BlockIO res;

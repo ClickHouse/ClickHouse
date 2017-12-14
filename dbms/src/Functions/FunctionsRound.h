@@ -490,7 +490,7 @@ struct Dispatcher
             scale_arg = scale_field.get<Int64>();
         }
 
-        auto col_res = std::make_shared<ColumnVector<T>>();
+        auto col_res = ColumnVector<T>::create();
         block.getByPosition(result).column = col_res;
 
         typename ColumnVector<T>::Container_t & vec_res = col_res->getData();

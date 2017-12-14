@@ -62,7 +62,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
                 UInt64 nested_rows = rows ? get<UInt64>((*offsets_column)[rows - 1]) : 0;
 
                 ColumnPtr nested_column = nested_type->createColumnConst(nested_rows, nested_type->getDefault())->convertToFullColumnIfConst();
-                column_to_add.column = std::make_shared<ColumnArray>(nested_column, offsets_column);
+                column_to_add.column = ColumnArray::create(nested_column, offsets_column);
             }
             else
             {

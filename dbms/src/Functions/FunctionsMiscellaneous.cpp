@@ -411,7 +411,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t size = block.rows();
-        block.getByPosition(result).column = std::make_shared<ColumnUInt64>(size, size);
+        block.getByPosition(result).column = ColumnUInt64::create(size, size);
     }
 };
 
@@ -449,7 +449,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t size = block.rows();
-        auto column = std::make_shared<ColumnUInt64>();
+        auto column = ColumnUInt64::create();
         auto & data = column->getData();
         data.resize(size);
         for (size_t i = 0; i < size; ++i)
@@ -497,7 +497,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         size_t current_block_number = block_number++;
-        block.getByPosition(result).column = std::make_shared<ColumnUInt64>(block.rows(), current_block_number);
+        block.getByPosition(result).column = ColumnUInt64::create(block.rows(), current_block_number);
     }
 };
 
@@ -541,7 +541,7 @@ public:
         size_t rows_in_block = block.rows();
         size_t current_row_number = rows.fetch_add(rows_in_block);
 
-        auto column = std::make_shared<ColumnUInt64>();
+        auto column = ColumnUInt64::create();
         auto & data = column->getData();
         data.resize(rows_in_block);
         for (size_t i = 0; i < rows_in_block; ++i)
@@ -807,7 +807,7 @@ public:
             if (auto converted = tuple_columns[i]->convertToFullColumnIfConst())
                 tuple_columns[i] = converted;
         }
-        block.getByPosition(result).column = std::make_shared<ColumnTuple>(tuple_columns);
+        block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
     }
 };
 
@@ -1088,7 +1088,7 @@ void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & argumen
     }
 
     block.getByPosition(result).column
-        = std::make_shared<ColumnArray>(first_column->replicate(array_column->getOffsets()), array_column->getOffsetsColumn());
+        = ColumnArray::create(first_column->replicate(array_column->getOffsets()), array_column->getOffsetsColumn());
 }
 
 /** Returns a string with nice Unicode-art bar with resolution of 1/8 part of symbol.
@@ -1151,7 +1151,7 @@ public:
 
         const auto & src = *block.getByPosition(arguments[0]).column;
 
-        auto res_column = std::make_shared<ColumnString>();
+        auto res_column = ColumnString::create();
         block.getByPosition(result).column = res_column;
 
         if (executeNumber<UInt8>(src, *res_column, min, max, max_width) || executeNumber<UInt16>(src, *res_column, min, max, max_width)
@@ -1283,7 +1283,7 @@ public:
         {
             const auto size = in->size();
 
-            const auto out = std::make_shared<ColumnUInt8>(size);
+            const auto out = ColumnUInt8::create(size);
             block.getByPosition(result).column = out;
 
             const auto & in_data = in->getData();
@@ -1780,7 +1780,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
     auto & src = block.getByPosition(arguments[0]);
     size_t size = block.rows();
 
-    auto res_col = std::make_shared<ColumnUInt64>(size);
+    auto res_col = ColumnUInt64::create(size);
     auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
     block.getByPosition(result).column = res_col;
 

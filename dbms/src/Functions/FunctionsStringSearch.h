@@ -90,7 +90,7 @@ public:
             return;
         }
 
-        auto col_res = std::make_shared<ColumnVector<ResultType>>();
+        auto col_res = ColumnVector<ResultType>::create();
         block.getByPosition(result).column = col_res;
 
         typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
@@ -166,7 +166,7 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            std::shared_ptr<ColumnString> col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();

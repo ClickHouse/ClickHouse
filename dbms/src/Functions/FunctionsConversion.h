@@ -73,7 +73,7 @@ struct ConvertImpl
         if (const ColumnVector<FromFieldType> * col_from
             = checkAndGetColumn<ColumnVector<FromFieldType>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
+            auto col_to = ColumnVector<ToFieldType>::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
@@ -215,7 +215,7 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
 
         if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
+            auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
@@ -262,7 +262,7 @@ struct ConvertImplGenericToString
 
         size_t size = col_from.size();
 
-        auto col_to = std::make_shared<ColumnString>();
+        auto col_to = ColumnString::create();
         block.getByPosition(result).column = col_to;
 
         ColumnString::Chars_t & data_to = col_to->getChars();
@@ -333,7 +333,7 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
 
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
+            auto col_to = ColumnVector<ToFieldType>::create();
             block.getByPosition(result).column = col_to;
 
             typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
@@ -388,7 +388,7 @@ struct ConvertOrZeroImpl
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
+            auto col_to = ColumnVector<ToFieldType>::create();
             block.getByPosition(result).column = col_to;
 
             typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
@@ -502,7 +502,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
             if (std::is_same<ToDataType, DataTypeDateTime>::value)
                 time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1);
 
-            auto col_to = std::make_shared<ColumnVector<ToFieldType>>();
+            auto col_to = ColumnVector<ToFieldType>::create();
             block.getByPosition(result).column = col_to;
 
             const ColumnFixedString::Chars_t & data_from = col_from->getChars();
@@ -545,7 +545,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
     {
         if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
+            auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
             const ColumnFixedString::Chars_t & data_from = col_from->getChars();
@@ -834,7 +834,7 @@ public:
 
         if (const auto column_string = checkAndGetColumn<ColumnString>(column.get()))
         {
-            const auto column_fixed = std::make_shared<ColumnFixedString>(n);
+            const auto column_fixed = ColumnFixedString::create(n);
             ColumnPtr result_ptr = column_fixed;
 
             auto & out_chars = column_fixed->getChars();
@@ -863,7 +863,7 @@ public:
                     "String too long for type FixedString(" + toString(n) + ")",
                     ErrorCodes::TOO_LARGE_STRING_SIZE};
 
-            const auto column_fixed = std::make_shared<ColumnFixedString>(n);
+            const auto column_fixed = ColumnFixedString::create(n);
             block.getByPosition(result).column = column_fixed;
 
             auto & out_chars = column_fixed->getChars();
@@ -1189,7 +1189,7 @@ private:
                 while (const auto nested_col_array = checkAndGetColumn<ColumnArray>(col_array->getDataPtr().get()))
                 {
                     /// create new level of array, copy offsets
-                    res->getDataPtr() = std::make_shared<ColumnArray>(nullptr, nested_col_array->getOffsetsColumn());
+                    res->getDataPtr() = ColumnArray::create(nullptr, nested_col_array->getOffsetsColumn());
 
                     res = static_cast<ColumnArray *>(res->getDataPtr().get());
                     col_array = nested_col_array;
@@ -1280,7 +1280,7 @@ private:
             for (size_t i = 0; i < tuple_size; ++i)
                 converted_columns[i] = element_block.getByPosition(tuple_size + i).column;
 
-            block.getByPosition(result).column = std::make_shared<ColumnTuple>(converted_columns);
+            block.getByPosition(result).column = ColumnTuple::create(converted_columns);
         };
     }
 
@@ -1490,11 +1490,11 @@ private:
                 {
                     /// This is a conversion from an ordinary type to a nullable type.
                     /// So we create a trivial null map.
-                    null_map = std::make_shared<ColumnUInt8>(block.rows(), 0);
+                    null_map = ColumnUInt8::create(block.rows(), 0);
                 }
 
                 const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
-                res.column = std::make_shared<ColumnNullable>(tmp_res.column, null_map);
+                res.column = ColumnNullable::create(tmp_res.column, null_map);
             };
         }
         else

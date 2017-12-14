@@ -211,7 +211,7 @@ Block TinyLogBlockInputStream::readImpl()
             else
                 read_offsets = false; /// on previous iterations, the offsets were already calculated by `readData`
 
-            column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
+            column.column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[nested_name]);
         }
         else
             column.column = column.type->createColumn();

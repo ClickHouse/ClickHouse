@@ -91,7 +91,7 @@ private:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
+            auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
@@ -169,7 +169,7 @@ private:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
+            auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();

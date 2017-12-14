@@ -240,7 +240,7 @@ public:
 
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<T>>();
+            auto col_to = ColumnVector<T>::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
@@ -338,7 +338,7 @@ public:
 
         if (col_vec1 && col_vec2)
         {
-            auto col_to = std::make_shared<ColumnUInt8>();
+            auto col_to = ColumnUInt8::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
@@ -352,7 +352,7 @@ public:
         }
         else if (col_vec1 && col_const2)
         {
-            auto col_to = std::make_shared<ColumnUInt8>();
+            auto col_to = ColumnUInt8::create();
             block.getByPosition(result).column = col_to;
 
             const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
@@ -366,7 +366,7 @@ public:
         }
         else if (col_const1 && col_vec2)
         {
-            auto col_to = std::make_shared<ColumnUInt8>();
+            auto col_to = ColumnUInt8::create();
             block.getByPosition(result).column = col_to;
 
             const T const_from1 = col_const1->template getValue<T>();
@@ -464,8 +464,8 @@ public:
 
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_values = std::make_shared<ColumnVector<T>>();
-            auto col_array = std::make_shared<ColumnArray>(col_values);
+            auto col_values = ColumnVector<T>::create();
+            auto col_array = ColumnArray::create(col_values);
             block.getByPosition(result).column = col_array;
 
             ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
@@ -734,7 +734,7 @@ public:
 
         if (const ColumnUInt32 * col_from = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto col_to = std::make_shared<ColumnString>();
+            auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
             const ColumnUInt32::Container_t & region_ids = col_from->getData();

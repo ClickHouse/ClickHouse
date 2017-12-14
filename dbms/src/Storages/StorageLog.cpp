@@ -226,7 +226,7 @@ Block LogBlockInputStream::readImpl()
             else
                 read_offsets = false; /// on previous iterations the offsets were already read by `readData`
 
-            column.column = std::make_shared<ColumnArray>(type_arr->getNestedType()->createColumn(), offset_columns[name]);
+            column.column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[name]);
         }
         else
             column.column = column.type->createColumn();

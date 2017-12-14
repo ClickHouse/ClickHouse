@@ -34,8 +34,8 @@ BlockInputStreams StorageSystemFunctions::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    ColumnWithTypeAndName column_name{ std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "name" };
-    ColumnWithTypeAndName column_is_aggregate{ std::make_shared<ColumnUInt8>(), std::make_shared<DataTypeUInt8>(), "is_aggregate" };
+    ColumnWithTypeAndName column_name{ ColumnString::create(), std::make_shared<DataTypeString>(), "name" };
+    ColumnWithTypeAndName column_is_aggregate{ ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "is_aggregate" };
 
     const auto & functions = FunctionFactory::instance().functions;
     for (const auto & it : functions)

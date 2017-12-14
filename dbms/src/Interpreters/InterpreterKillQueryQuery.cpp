@@ -189,7 +189,7 @@ BlockIO InterpreterKillQueryQuery::execute()
     QueryDescriptors queries_to_stop = extractQueriesExceptMeAndCheckAccess(processes_block, context);
 
     res_io.in_sample = processes_block.cloneEmpty();
-    res_io.in_sample.insert(0, {std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "kill_status"});
+    res_io.in_sample.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
 
     if (!query.sync || query.test)
     {

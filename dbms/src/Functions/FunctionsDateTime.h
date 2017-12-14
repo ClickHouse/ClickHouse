@@ -554,7 +554,7 @@ struct DateTimeTransformImpl
         const ColumnPtr source_col = block.getByPosition(arguments[0]).column;
         if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
+            auto col_to = ColumnVector<ToType>::create();
             block.getByPosition(result).column = col_to;
             Op::vector(sources->getData(), col_to->getData(), time_zone);
         }
@@ -850,7 +850,7 @@ struct DateTimeAddIntervalImpl
 
         if (const auto * sources = checkAndGetColumn<ColumnVector<FromType>>(source_col.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
+            auto col_to = ColumnVector<ToType>::create();
             block.getByPosition(result).column = col_to;
 
             const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
@@ -862,7 +862,7 @@ struct DateTimeAddIntervalImpl
         }
         else if (const auto * sources = checkAndGetColumnConst<ColumnVector<FromType>>(source_col.get()))
         {
-            auto col_to = std::make_shared<ColumnVector<ToType>>();
+            auto col_to = ColumnVector<ToType>::create();
             block.getByPosition(result).column = col_to;
             Op::constant_vector(sources->template getValue<FromType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
         }
@@ -1109,7 +1109,7 @@ public:
     {
         if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
         {
-            auto res = std::make_shared<ColumnUInt32>();
+            auto res = ColumnUInt32::create();
             ColumnPtr res_holder = res;
             ColumnUInt32::Container_t & res_vec = res->getData();
             const ColumnUInt32::Container_t & vec = times->getData();
@@ -1243,7 +1243,7 @@ public:
         auto durations = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
         auto const_durations = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
 
-        auto res = std::make_shared<ColumnArray>(std::make_shared<ColumnUInt32>());
+        auto res = ColumnArray::create(ColumnUInt32::create());
         ColumnPtr res_holder = res;
         ColumnUInt32::Container_t & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 

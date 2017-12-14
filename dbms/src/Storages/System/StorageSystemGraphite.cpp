@@ -152,43 +152,43 @@ BlockInputStreams StorageSystemGraphite::read(
     ColumnWithTypeAndName col_conf_name;
     col_conf_name.name = "config_name";
     col_conf_name.type = std::make_shared<DataTypeString>();
-    col_conf_name.column = std::make_shared<ColumnString>();
+    col_conf_name.column = ColumnString::create();
     block.insert(col_conf_name);
 
     ColumnWithTypeAndName col_regexp;
     col_regexp.name = "regexp";
     col_regexp.type = std::make_shared<DataTypeString>();
-    col_regexp.column = std::make_shared<ColumnString>();
+    col_regexp.column = ColumnString::create();
     block.insert(col_regexp);
 
     ColumnWithTypeAndName col_function;
     col_function.name = "function";
     col_function.type = std::make_shared<DataTypeString>();
-    col_function.column = std::make_shared<ColumnString>();
+    col_function.column = ColumnString::create();
     block.insert(col_function);
 
     ColumnWithTypeAndName col_age;
     col_age.name = "age";
     col_age.type = std::make_shared<DataTypeUInt64>();
-    col_age.column = std::make_shared<ColumnUInt64>();
+    col_age.column = ColumnUInt64::create();
     block.insert(col_age);
 
     ColumnWithTypeAndName col_precision;
     col_precision.name = "precision";
     col_precision.type = std::make_shared<DataTypeUInt64>();
-    col_precision.column = std::make_shared<ColumnUInt64>();
+    col_precision.column = ColumnUInt64::create();
     block.insert(col_precision);
 
     ColumnWithTypeAndName col_priority;
     col_priority.name = "priority";
     col_priority.type = std::make_shared<DataTypeUInt16>();
-    col_priority.column = std::make_shared<ColumnUInt16>();
+    col_priority.column = ColumnUInt16::create();
     block.insert(col_priority);
 
     ColumnWithTypeAndName col_is_default;
     col_is_default.name = "is_default";
     col_is_default.type = std::make_shared<DataTypeUInt8>();
-    col_is_default.column = std::make_shared<ColumnUInt8>();
+    col_is_default.column = ColumnUInt8::create();
     block.insert(col_is_default);
 
     const auto & config = context.getConfigRef();

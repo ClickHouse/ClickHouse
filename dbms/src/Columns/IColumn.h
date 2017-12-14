@@ -243,6 +243,15 @@ public:
     using ColumnCallback = std::function<void(Ptr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
 
+
+    MutablePtr mutate() const
+    {
+        MutablePtr res = IColumn::mutate();
+        res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = subcolumn->mutate(); });
+        return res;
+    }
+
+
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.
       * There are the following rules:

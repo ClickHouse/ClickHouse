@@ -45,7 +45,7 @@ ColumnPtr ColumnTuple::cloneEmpty() const
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->cloneEmpty();
 
-    return std::make_shared<ColumnTuple>(new_columns);
+    return ColumnTuple::create(new_columns);
 }
 
 Field ColumnTuple::operator[](size_t n) const
@@ -148,7 +148,7 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->filter(filt, result_size_hint);
 
-    return std::make_shared<ColumnTuple>(new_columns);
+    return ColumnTuple::create(new_columns);
 }
 
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
@@ -159,7 +159,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->permute(perm, limit);
 
-    return std::make_shared<ColumnTuple>(new_columns);
+    return ColumnTuple::create(new_columns);
 }
 
 ColumnPtr ColumnTuple::replicate(const Offsets_t & offsets) const
@@ -170,7 +170,7 @@ ColumnPtr ColumnTuple::replicate(const Offsets_t & offsets) const
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->replicate(offsets);
 
-    return std::make_shared<ColumnTuple>(new_columns);
+    return ColumnTuple::create(new_columns);
 }
 
 Columns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
@@ -188,7 +188,7 @@ Columns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector)
         Columns new_columns(tuple_size);
         for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
             new_columns[tuple_element_idx] = scattered_tuple_elements[tuple_element_idx][scattered_idx];
-        res[scattered_idx] = std::make_shared<ColumnTuple>(new_columns);
+        res[scattered_idx] = ColumnTuple::create(new_columns);
     }
 
     return res;

@@ -349,7 +349,7 @@ public:
         const ColumnConst * col_const_str =
                 checkAndGetColumnConstStringOrFixedString(block.getByPosition(array_argument_position).column.get());
 
-        auto col_res = std::make_shared<ColumnArray>(std::make_shared<ColumnString>());
+        auto col_res = ColumnArray::create(ColumnString::create());
         ColumnPtr col_res_holder = col_res;
         ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
         ColumnArray::Offsets_t & res_offsets = col_res->getOffsets();
@@ -545,7 +545,7 @@ public:
             const ColumnArray & col_arr = static_cast<const ColumnArray &>(*block.getByPosition(arguments[0]).column);
             const ColumnString & col_string = static_cast<const ColumnString &>(col_arr.getData());
 
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            std::shared_ptr<ColumnString> col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
 
             executeInternal(

@@ -303,7 +303,7 @@ BlockInputStreams StorageMerge::read(
 Block StorageMerge::getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const
 {
     Block res;
-    ColumnWithTypeAndName _table(std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "_table");
+    ColumnWithTypeAndName _table(ColumnString::create(), std::make_shared<DataTypeString>(), "_table");
 
     for (const auto & elem : selected_tables)
         _table.column->insert(elem.first->getTableName());

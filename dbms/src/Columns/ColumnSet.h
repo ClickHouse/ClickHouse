@@ -20,7 +20,7 @@ public:
     ColumnSet(size_t s_, const ConstSetPtr & data_) : IColumnDummy(s_), data(data_) {}
 
     const char * getFamilyName() const override { return "Set"; }
-    ColumnPtr cloneDummy(size_t s_) const override { return std::make_shared<ColumnSet>(s_, data); }
+    ColumnPtr cloneDummy(size_t s_) const override { return ColumnSet::create(s_, data); }
 
     ConstSetPtr getData() const { return data; }
 

@@ -342,7 +342,7 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromStringAt
     const Columns & keys, const DataTypes & data_types,
     const DictionaryAttribute& attribute, const DictionaryType& dictionary) const
 {
-    auto column_string = std::make_shared<ColumnString>();
+    auto column_string = ColumnString::create();
     auto ptr = column_string.get();
     callGetter(getter, ids, keys, data_types, ptr, attribute, dictionary);
     return column_string;
@@ -351,7 +351,7 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromStringAt
 template <typename DictionaryType, typename Key>
 ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(const PaddedPODArray<Key>& ids) const
 {
-    auto column_vector = std::make_shared<ColumnVector<UInt64>>();
+    auto column_vector = ColumnVector<UInt64>::create();
     column_vector->getData().reserve(ids.size());
     for (UInt64 id : ids)
     {
@@ -368,7 +368,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::fillKeyColumns(
     for (const DictionaryAttribute & attribute : *dictionary_structure.key)
     {
 #define ADD_COLUMN(TYPE) columns.push_back( \
-            ColumnWithTypeAndName(std::make_shared<ColumnVector<TYPE>>(), attribute.type, attribute.name))
+            ColumnWithTypeAndName(ColumnVector<TYPE>::create(), attribute.type, attribute.name))
         switch (attribute.underlying_type)
         {
         case AttributeUnderlyingType::UInt8:
@@ -406,7 +406,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::fillKeyColumns(
             break;
         case AttributeUnderlyingType::String:
         {
-            columns.push_back(ColumnWithTypeAndName(std::make_shared<ColumnString>(), attribute.type, attribute.name));
+            columns.push_back(ColumnWithTypeAndName(ColumnString::create(), attribute.type, attribute.name));
             break;
         }
         }

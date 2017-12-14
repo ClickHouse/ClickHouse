@@ -91,7 +91,7 @@ private:
     {
         if (const auto col = checkAndGetColumn<ColumnVector<FieldType>>(arg))
         {
-            const auto dst = std::make_shared<ColumnVector<Float64>>();
+            const auto dst = ColumnVector<Float64>::create();
             block.getByPosition(result).column = dst;
 
             const auto & src_data = col->getData();
@@ -221,7 +221,7 @@ private:
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
-            const auto dst = std::make_shared<ColumnVector<Float64>>();
+            const auto dst = ColumnVector<Float64>::create();
             block.getByPosition(result).column = dst;
 
             LeftType left_src_data[Impl::rows_per_iteration];
@@ -261,7 +261,7 @@ private:
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
-            const auto dst = std::make_shared<ColumnVector<Float64>>();
+            const auto dst = ColumnVector<Float64>::create();
             block.getByPosition(result).column = dst;
 
             const auto & left_src_data = left_arg->getData();
@@ -295,7 +295,7 @@ private:
         }
         else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
-            const auto dst = std::make_shared<ColumnVector<Float64>>();
+            const auto dst = ColumnVector<Float64>::create();
             block.getByPosition(result).column = dst;
 
             const auto & left_src_data = left_arg->getData();

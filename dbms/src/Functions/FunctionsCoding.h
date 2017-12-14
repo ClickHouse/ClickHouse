@@ -103,7 +103,7 @@ public:
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
 
-            auto col_res = std::make_shared<ColumnString>();
+            auto col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -211,7 +211,7 @@ public:
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
 
-            auto col_res = std::make_shared<ColumnString>();
+            auto col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -418,7 +418,7 @@ public:
 
         if (const auto col_in = checkAndGetColumn<ColumnString>(column.get()))
         {
-            const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
+            const auto col_res = ColumnFixedString::create(ipv6_bytes_length);
             block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getChars();
@@ -533,7 +533,7 @@ public:
         {
             const ColumnUInt32::Container_t & vec_in = col->getData();
 
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            std::shared_ptr<ColumnString> col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -613,7 +613,7 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnUInt32>();
+            auto col_res = ColumnUInt32::create();
             block.getByPosition(result).column = col_res;
 
             ColumnUInt32::Container_t & vec_res = col_res->getData();
@@ -666,7 +666,7 @@ public:
 
         if (const auto col_in = typeid_cast<const ColumnUInt32 *>(column.get()))
         {
-            const auto col_res = std::make_shared<ColumnFixedString>(ipv6_bytes_length);
+            const auto col_res = ColumnFixedString::create(ipv6_bytes_length);
             block.getByPosition(result).column = col_res;
 
             auto & vec_res = col_res->getChars();
@@ -744,7 +744,7 @@ public:
         {
             const ColumnUInt64::Container_t & vec_in = col->getData();
 
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            std::shared_ptr<ColumnString> col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -851,7 +851,7 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            auto col_res = std::make_shared<ColumnUInt64>();
+            auto col_res = ColumnUInt64::create();
             block.getByPosition(result).column = col_res;
 
             ColumnUInt64::Container_t & vec_res = col_res->getData();
@@ -928,7 +928,7 @@ public:
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
 
-            auto col_res = std::make_shared<ColumnString>();
+            auto col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -1023,7 +1023,7 @@ public:
             const auto & offsets_in = col_in->getOffsets();
             const size_t size = offsets_in.size();
 
-            auto col_res = std::make_shared<ColumnFixedString>(uuid_bytes_length);
+            auto col_res = ColumnFixedString::create(uuid_bytes_length);
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -1059,7 +1059,7 @@ public:
             const auto size = col_in->size();
             const auto & vec_in = col_in->getChars();
 
-            auto col_res = std::make_shared<ColumnFixedString>(uuid_bytes_length);
+            auto col_res = ColumnFixedString::create(uuid_bytes_length);
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
@@ -1102,7 +1102,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
-        auto col_to = std::make_shared<ColumnVector<UInt128>>();
+        auto col_to = ColumnVector<UInt128>::create();
         block.safeGetByPosition(result).column = col_to;
 
         typename ColumnVector<UInt128>::Container_t & vec_to = col_to->getData();
@@ -1181,7 +1181,7 @@ public:
 
         if (col_vec)
         {
-            auto col_str = std::make_shared<ColumnString>();
+            auto col_str = ColumnString::create();
             col_res = col_str;
             ColumnString::Chars_t & out_vec = col_str->getChars();
             ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
@@ -1235,7 +1235,7 @@ public:
 
         if (col_str_in)
         {
-            auto col_str = std::make_shared<ColumnString>();
+            auto col_str = ColumnString::create();
             col_res = col_str;
             ColumnString::Chars_t & out_vec = col_str->getChars();
             ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
@@ -1279,7 +1279,7 @@ public:
 
         if (col_fstr_in)
         {
-            auto col_str = std::make_shared<ColumnString>();
+            auto col_str = ColumnString::create();
 
             col_res = col_str;
 
@@ -1392,7 +1392,7 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = std::make_shared<ColumnString>();
+            std::shared_ptr<ColumnString> col_res = ColumnString::create();
             block.getByPosition(result).column = col_res;
 
             ColumnString::Chars_t & out_vec = col_res->getChars();
@@ -1462,8 +1462,8 @@ public:
     {
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column))
         {
-            auto col_values = std::make_shared<ColumnVector<T>>();
-            auto col_array = std::make_shared<ColumnArray>(col_values);
+            auto col_values = ColumnVector<T>::create();
+            auto col_array = ColumnArray::create(col_values);
             out_column = col_array;
 
             ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
@@ -1546,7 +1546,7 @@ public:
 
         if (col_str_in)
         {
-            auto col_str = std::make_shared<ColumnString>();
+            auto col_str = ColumnString::create();
             col_res = col_str;
             ColumnString::Chars_t & out_vec = col_str->getChars();
             ColumnString::Offsets_t & out_offsets = col_str->getOffsets();
@@ -1593,7 +1593,7 @@ public:
 
         if (col_fstr_in)
         {
-            auto col_str = std::make_shared<ColumnString>();
+            auto col_str = ColumnString::create();
             col_res = col_str;
 
             ColumnString::Chars_t & out_vec = col_str->getChars();
