@@ -95,32 +95,44 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
 
     if (!extremes)
     {
-        extremes = block.cloneEmpty();
+        MutableColumns extremes_columns;
 
         for (size_t i = 0; i < columns; ++i)
         {
-            Field min_value;
-            Field max_value;
+            const ColumnPtr & src = block.safeGetByPosition(i).column;
 
-            block.safeGetByPosition(i).column->getExtremes(min_value, max_value);
+            if (src->isColumnConst())
+            {
+                /// Equal min and max.
+                extremes_columns[i] = src->cloneResized(2);
+            }
+            else
+            {
+                Field min_value;
+                Field max_value;
 
-            ColumnPtr & column = extremes.safeGetByPosition(i).column;
+                src->getExtremes(min_value, max_value);
 
-            if (auto converted = column->convertToFullColumnIfConst())
-                column = converted;
+                extremes_columns[i] = src->cloneEmpty();
 
-            column->insert(min_value);
-            column->insert(max_value);
+                extremes_columns[i]->insert(min_value);
+                extremes_columns[i]->insert(max_value);
+            }
         }
+
+        extremes = block.cloneWithColumns(extremes_columns);
     }
     else
     {
         for (size_t i = 0; i < columns; ++i)
         {
-            ColumnPtr & column = extremes.safeGetByPosition(i).column;
+            ColumnPtr & old_extremes = extremes.safeGetByPosition(i).column;
 
-            Field min_value = (*column)[0];
-            Field max_value = (*column)[1];
+            if (old_extremes->isColumnConst())
+                continue;
+
+            Field min_value = (*old_extremes)[0];
+            Field max_value = (*old_extremes)[1];
 
             Field cur_min_value;
             Field cur_max_value;
@@ -132,9 +144,12 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
             if (cur_max_value > max_value)
                 max_value = cur_max_value;
 
-            column = column->cloneEmpty();
-            column->insert(min_value);
-            column->insert(max_value);
+            MutableColumn new_extremes = old_extremes->cloneEmpty();
+
+            new_extremes->insert(min_value);
+            new_extremes->insert(max_value);
+
+            old_extremes = std::move(new_extremes);
         }
     }
 }

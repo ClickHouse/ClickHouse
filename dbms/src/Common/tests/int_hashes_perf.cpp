@@ -8,6 +8,7 @@
 #include <Poco/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Stopwatch.h>
+#include <Core/Defines.h>
 
 #include "AvalancheTest.h"  /// Taken from SMHasher.
 

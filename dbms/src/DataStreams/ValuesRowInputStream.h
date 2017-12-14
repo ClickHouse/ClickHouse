@@ -26,7 +26,7 @@ public:
 
 private:
     ReadBuffer & istr;
-    cosnt Block & header;
+    const Block & header;
     const Context & context;
     bool interpret_expressions;
 };
