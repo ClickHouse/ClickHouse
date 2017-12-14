@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 function perform()
 {
     local query=$1
-    TZ=UTC clickhouse-client \
+    TZ=UTC $CLICKHOUSE_CLIENT \
         --use_client_time_zone=1 \
         --input_format_values_interpret_expressions=0 \
         --query "$query" 2>/dev/null

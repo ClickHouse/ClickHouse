@@ -63,10 +63,10 @@ max_block_size=500000
 corner_sizes="1048576 `seq 500000 1000000 3500000`"
 
 
-# Check HTTP results with clickhouse-client in normal case
+# Check HTTP results with $CLICKHOUSE_CLIENT in normal case
 
 function cmp_cli_and_http() {
-    clickhouse-client -q "`query $1`" > res1
+    $CLICKHOUSE_CLIENT -q "`query $1`" > res1
     ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > res2
     ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > res3
     cmp res1 res2 && cmp res1 res3 || echo FAIL
@@ -88,7 +88,7 @@ check_cli_and_http
 # Check HTTP internal compression in normal case
 
 function cmp_http_compression() {
-    clickhouse-client -q "`query $1`" > res0
+    $CLICKHOUSE_CLIENT -q "`query $1`" > res0
     ch_url 'compress=1' $1 | clickhouse compressor --decompress > res1
     ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" $1 | clickhouse compressor --decompress > res2
     ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" $1 | clickhouse compressor --decompress > res3
