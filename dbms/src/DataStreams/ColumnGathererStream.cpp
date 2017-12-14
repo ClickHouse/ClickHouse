@@ -90,7 +90,7 @@ Block ColumnGathererStream::readImpl()
 
     MutableColumnPtr output_column = column.column->cloneEmpty();
     output_column->gather(*this);
-    return output_block.cloneWithColumns({std::move(output_column)});
+    return output_block.cloneWithColumns(MutableColumns{std::move(output_column)});
 }
 
 
