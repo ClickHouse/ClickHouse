@@ -25,17 +25,17 @@ namespace ErrorCodes
 }
 
 
-ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Context & context_, bool interpret_expressions_)
-    : istr(istr_), context(context_), interpret_expressions(interpret_expressions_)
+ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_, bool interpret_expressions_)
+    : istr(istr_), header(header_), context(context_), interpret_expressions(interpret_expressions_)
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(istr);
 }
 
 
-bool ValuesRowInputStream::read(Block & block)
+bool ValuesRowInputStream::read(MutableColumns & columns)
 {
-    size_t size = block.columns();
+    size_t num_columns = columns.size();
 
     skipWhitespaceIfAny(istr);
 
@@ -50,23 +50,21 @@ bool ValuesRowInputStream::read(Block & block)
 
     assertChar('(', istr);
 
-    for (size_t i = 0; i < size; ++i)
+    for (size_t i = 0; i < num_columns; ++i)
     {
         skipWhitespaceIfAny(istr);
 
         char * prev_istr_position = istr.position();
         size_t prev_istr_bytes = istr.count() - istr.offset();
 
-        auto & col = block.getByPosition(i);
-
         bool rollback_on_exception = false;
         try
         {
-            col.type->deserializeTextQuoted(*col.column, istr);
+            header.getByPosition(i).type->deserializeTextQuoted(*columns[i], istr);
             rollback_on_exception = true;
             skipWhitespaceIfAny(istr);
 
-            if (i != size - 1)
+            if (i != num_columns - 1)
                 assertChar(',', istr);
             else
                 assertChar(')', istr);
@@ -93,9 +91,9 @@ bool ValuesRowInputStream::read(Block & block)
                     throw;
 
                 if (rollback_on_exception)
-                    col.column->popBack(1);
+                    columns[i]->popBack(1);
 
-                IDataType & type = *block.safeGetByPosition(i).type;
+                IDataType & type = *header.getByPosition(i).type;
 
                 Expected expected;
 
@@ -123,11 +121,11 @@ bool ValuesRowInputStream::read(Block & block)
                             ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
                 }
 
-                col.column->insert(value);
+                columns[i]->insert(value);
 
                 skipWhitespaceIfAny(istr);
 
-                if (i != size - 1)
+                if (i != num_columns - 1)
                     assertChar(',', istr);
                 else
                     assertChar(')', istr);

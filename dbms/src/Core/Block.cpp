@@ -300,6 +300,36 @@ Block Block::cloneEmpty() const
 }
 
 
+MutableColumns Block::cloneEmptyColumns() const
+{
+    size_t num_columns = data.size();
+    MutableColumns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column->cloneEmpty();
+    return columns;
+}
+
+
+void Block::setColumns(MutableColumns && columns)
+{
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        data[i].column = std::move(columns[i]);
+}
+
+
+Block Block::cloneWithColumns(MutableColumns && columns) const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ std::move(columns[i]), data[i].type ? data[i].type->clone() : nullptr, data[i].name });
+
+    return res;
+}
+
+
 Block Block::sortColumns() const
 {
     Block sorted_block;
