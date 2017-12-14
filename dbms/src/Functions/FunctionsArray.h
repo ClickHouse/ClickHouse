@@ -1103,14 +1103,14 @@ public:
             if (is_nullable)
             {
                 const auto & nullable_col = static_cast<const ColumnNullable &>(col_array->getData());
-                const auto & nested_col = nullable_col.getNestedColumn();
+                const auto & nested_col = nullable_col.getNestedColumnPtr();
 
                 auto & data = source_block.getByPosition(0);
                 data.column = ColumnArray::create(nested_col, col_array->getOffsetsColumn());
                 data.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
                 auto & null_map = source_block.getByPosition(2);
-                null_map.column = nullable_col.getNullMapColumn();
+                null_map.column = nullable_col.getNullMapColumnPtr();
                 null_map.type = std::make_shared<DataTypeUInt8>();
             }
             else
@@ -1125,11 +1125,11 @@ public:
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
 
                 auto & arg = source_block.getByPosition(1);
-                arg.column = nullable_col.getNestedColumn();
+                arg.column = nullable_col.getNestedColumnPtr();
                 arg.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[1]).type).getNestedType();
 
                 auto & null_map = source_block.getByPosition(3);
-                null_map.column = nullable_col.getNullMapColumn();
+                null_map.column = nullable_col.getNullMapColumnPtr();
                 null_map.type = std::make_shared<DataTypeUInt8>();
             }
             else

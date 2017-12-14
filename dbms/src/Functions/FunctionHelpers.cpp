@@ -70,7 +70,7 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
                 }
                 else if (col.column->isColumnNullable())
                 {
-                    const auto & nested_col = static_cast<const ColumnNullable &>(*col.column).getNestedColumn();
+                    const auto & nested_col = static_cast<const ColumnNullable &>(*col.column).getNestedColumnPtr();
 
                     res.insert(i, {nested_col, nested_type, col.name});
                     is_inserted = true;
@@ -78,7 +78,7 @@ Block createBlockWithNestedColumns(const Block & block, ColumnNumbers args)
                 else if (col.column->isColumnConst())
                 {
                     const auto & nested_col = static_cast<const ColumnNullable &>(
-                        static_cast<const ColumnConst &>(*col.column).getDataColumn()).getNestedColumn();
+                        static_cast<const ColumnConst &>(*col.column).getDataColumn()).getNestedColumnPtr();
 
                     res.insert(i, { ColumnConst::create(nested_col, rows), nested_type, col.name});
                     is_inserted = true;

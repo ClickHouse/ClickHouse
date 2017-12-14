@@ -64,7 +64,7 @@ private:
     ColumnAggregateFunction() {}
 
     /// Create a new column that has another column as a source.
-    MutablePtr createView()
+    MutablePtr createView() const
     {
         MutablePtr res = create(func, arenas);
         res->src = getPtr();
@@ -78,6 +78,11 @@ private:
 
     ColumnAggregateFunction(const AggregateFunctionPtr & func_, const Arenas & arenas_)
         : arenas(arenas_), func(func_)
+    {
+    }
+
+    ColumnAggregateFunction(const ColumnAggregateFunction & src_)
+        : arenas(arenas_), func(func_), src(src_.getPtr())
     {
     }
 

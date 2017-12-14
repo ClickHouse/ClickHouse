@@ -120,7 +120,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 
             bool filter_is_nullable = filter_column_ptr->isColumnNullable();
             ColumnUInt8 * filter_column = filter_is_nullable
-                ? typeid_cast<ColumnUInt8 *>(static_cast<ColumnNullable *>(filter_column_ptr.get())->getNestedColumn().get())
+                ? typeid_cast<ColumnUInt8 *>(&static_cast<ColumnNullable *>(filter_column_ptr.get())->getNestedColumn())
                 : typeid_cast<ColumnUInt8 *>(&*filter_column_ptr);
 
             if (!filter_column)
@@ -132,7 +132,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 
             if (filter_column_ptr->isColumnNullable())
             {
-                const NullMap & null_map = static_cast<ColumnNullable *>(filter_column_ptr.get())->getNullMap();
+                const NullMap & null_map = static_cast<ColumnNullable *>(filter_column_ptr.get())->getNullMapData();
                 for (size_t i = 0, size = null_map.size(); i < size; ++i)
                     if (null_map[i])
                         filter[i] = 0;

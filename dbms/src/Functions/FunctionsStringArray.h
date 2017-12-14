@@ -545,13 +545,14 @@ public:
             const ColumnArray & col_arr = static_cast<const ColumnArray &>(*block.getByPosition(arguments[0]).column);
             const ColumnString & col_string = static_cast<const ColumnString &>(col_arr.getData());
 
-            std::shared_ptr<ColumnString> col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             executeInternal(
                 col_string.getChars(), col_string.getOffsets(), col_arr.getOffsets(),
                 delimiter.data(), delimiter.size(),
                 col_res->getChars(), col_res->getOffsets());
+
+            block.getByPosition(result).column = std::move(col_res);
         }
     }
 };

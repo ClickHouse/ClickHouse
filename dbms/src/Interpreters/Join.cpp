@@ -275,7 +275,7 @@ void Join::setSampleBlock(const Block & block)
 
         /// We will join only keys, where all components are not NULL.
         if (key_columns[i]->isColumnNullable())
-            key_columns[i] = static_cast<const ColumnNullable &>(*key_columns[i]).getNestedColumn().get();
+            key_columns[i] = &static_cast<const ColumnNullable &>(*key_columns[i]).getNestedColumn();
     }
 
     /// Choose data structure to use for JOIN.

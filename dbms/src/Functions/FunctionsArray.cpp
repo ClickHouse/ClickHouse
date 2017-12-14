@@ -140,7 +140,7 @@ public:
         ++index;
     }
 
-    ColumnPtr getNullMap() const { return sink_null_map_holder; }
+    ColumnPtr getNullMapData() const { return sink_null_map_holder; }
 
 private:
     const UInt8 * src_null_map = nullptr;
@@ -508,8 +508,7 @@ bool FunctionArrayElement::executeStringConst(Block & block, const ColumnNumbers
     if (!col_nested)
         return false;
 
-    std::shared_ptr<ColumnString> col_res = ColumnString::create();
-    block.getByPosition(result).column = col_res;
+    auto col_res = ColumnString::create();
 
     if (index.getType() == Field::Types::UInt64)
         ArrayElementStringImpl::vectorConst<false>(
@@ -532,6 +531,7 @@ bool FunctionArrayElement::executeStringConst(Block & block, const ColumnNumbers
     else
         throw Exception("Illegal type of array index", ErrorCodes::LOGICAL_ERROR);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -549,8 +549,7 @@ bool FunctionArrayElement::executeString(Block & block, const ColumnNumbers & ar
     if (!col_nested)
         return false;
 
-    std::shared_ptr<ColumnString> col_res = ColumnString::create();
-    block.getByPosition(result).column = col_res;
+    auto col_res = ColumnString::create();
 
     ArrayElementStringImpl::vector<IndexType>(
         col_nested->getChars(),
@@ -561,6 +560,7 @@ bool FunctionArrayElement::executeString(Block & block, const ColumnNumbers & ar
         col_res->getOffsets(),
         builder);
 
+    block.getByPosition(result).column = std::move(col_res);
     return true;
 }
 
@@ -795,7 +795,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         if (col_array)
         {
             const auto & nullable_col = typeid_cast<const ColumnNullable &>(col_array->getData());
-            const auto & nested_col = nullable_col.getNestedColumn();
+            const auto & nested_col = nullable_col.getNestedColumnPtr();
 
             /// Put nested_col inside a ColumnArray.
             source_block =
@@ -813,13 +813,13 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
                 }
             };
 
-            builder.initSource(nullable_col.getNullMap().data());
+            builder.initSource(nullable_col.getNullMapData().data());
         }
         else
         {
             /// ColumnConst(ColumnArray(ColumnNullable(...)))
             const auto & nullable_col = static_cast<const ColumnNullable &>(col_const_array->getData());
-            const auto & nested_col = nullable_col.getNestedColumn();
+            const auto & nested_col = nullable_col.getNestedColumnPtr();
 
             source_block =
             {
@@ -836,7 +836,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
                 }
             };
 
-            builder.initSource(nullable_col.getNullMap().data());
+            builder.initSource(nullable_col.getNullMapData().data());
         }
 
         perform(source_block, {0, 1}, 2, builder);
@@ -844,7 +844,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
         /// Store the result.
         const ColumnWithTypeAndName & source_col = source_block.getByPosition(2);
         ColumnWithTypeAndName & dest_col = block.getByPosition(result);
-        dest_col.column = ColumnNullable::create(source_col.column, builder.getNullMap());
+        dest_col.column = ColumnNullable::create(source_col.column, builder.getNullMapData());
     }
 }
 
@@ -1017,8 +1017,8 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
         {
             has_nullable_columns = true;
             const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
-            data_columns[i] = nullable_col.getNestedColumn().get();
-            null_maps[i] = nullable_col.getNullMapColumn().get();
+            data_columns[i] = &nullable_col.getNestedColumn();
+            null_maps[i] = &nullable_col.getNullMapColumn();
         }
         else
             null_maps[i] = nullptr;
@@ -1065,7 +1065,7 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
     if (array_data.isColumnNullable())
     {
         const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = nullable_col.getNestedColumn().get();
+        inner_col = &nullable_col.getNestedColumn();
     }
     else
         inner_col = &array_data;
@@ -1112,7 +1112,7 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
     if (array_data.isColumnNullable())
     {
         const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = nullable_col.getNestedColumn().get();
+        inner_col = &nullable_col.getNestedColumn();
     }
     else
         inner_col = &array_data;
@@ -1323,8 +1323,8 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
         {
             has_nullable_columns = true;
             const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
-            data_columns[i] = nullable_col.getNestedColumn().get();
-            null_maps[i] = nullable_col.getNullMapColumn().get();
+            data_columns[i] = &nullable_col.getNestedColumn();
+            null_maps[i] = &nullable_col.getNullMapColumn();
         }
         else
             null_maps[i] = nullptr;
@@ -1374,7 +1374,7 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
     if (array_data.isColumnNullable())
     {
         const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = nullable_col.getNestedColumn().get();
+        inner_col = &nullable_col.getNestedColumn();
     }
     else
         inner_col = &array_data;
@@ -1419,7 +1419,7 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
     if (array_data.isColumnNullable())
     {
         const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = nullable_col.getNestedColumn().get();
+        inner_col = &nullable_col.getNestedColumn();
     }
     else
         inner_col = &array_data;
@@ -1910,12 +1910,12 @@ void FunctionEmptyArrayToSingle::executeImpl(Block & block, const ColumnNumbers 
     if (nullable)
     {
         auto nullable_col = static_cast<const ColumnNullable *>(&src_data);
-        inner_col = nullable_col->getNestedColumn().get();
-        src_null_map = &nullable_col->getNullMap();
+        inner_col = &nullable_col->getNestedColumn();
+        src_null_map = &nullable_col->getNullMapData();
 
         auto nullable_res_col = static_cast<ColumnNullable *>(&res_data);
-        inner_res_col = nullable_res_col->getNestedColumn().get();
-        res_null_map = &nullable_res_col->getNullMap();
+        inner_res_col = &nullable_res_col->getNestedColumn();
+        res_null_map = &nullable_res_col->getNullMapData();
     }
     else
     {
@@ -2101,10 +2101,10 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
     if (src_data.isColumnNullable())
     {
         nullable_col = static_cast<const ColumnNullable *>(&src_data);
-        inner_col = nullable_col->getNestedColumn().get();
+        inner_col = &nullable_col->getNestedColumn();
 
         nullable_res_col = static_cast<ColumnNullable *>(&res_data);
-        inner_res_col = nullable_res_col->getNestedColumn().get();
+        inner_res_col = &nullable_res_col->getNestedColumn();
     }
     else
     {
@@ -2192,8 +2192,8 @@ bool FunctionArrayReverse::executeNumber(
         if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
-            const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
-            auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullMapColumn()).getData();
+            const auto & src_null_map = static_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData();
+            auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
             res_null_map.resize(src_data.size());
             do_reverse(src_null_map, src_offsets, res_null_map);
         }
@@ -2244,8 +2244,8 @@ bool FunctionArrayReverse::executeFixedString(
         if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
-            const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
-            auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullMapColumn()).getData();
+            const auto & src_null_map = static_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData();
+            auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
             res_null_map.resize(src_null_map.size());
 
             ColumnArray::Offset_t src_prev_offset = 0;
@@ -2324,8 +2324,8 @@ bool FunctionArrayReverse::executeString(
         if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
-            const auto & src_null_map = static_cast<const ColumnUInt8 &>(*nullable_col->getNullMapColumn()).getData();
-            auto & res_null_map = static_cast<ColumnUInt8 &>(*nullable_res_col->getNullMapColumn()).getData();
+            const auto & src_null_map = static_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData();
+            auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
             res_null_map.resize(src_string_offsets.size());
 
             size_t size = src_string_offsets.size();
@@ -2445,13 +2445,13 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         const IColumn * col = block.getByPosition(arguments[i + 1]).column.get();
         if (const ColumnArray * arr = checkAndGetColumn<ColumnArray>(col))
         {
-            aggregate_arguments_vec[i] = arr->getDataPtr().get();
+            aggregate_arguments_vec[i] = &arr->getData();
             is_const = false;
         }
         else if (const ColumnConst * arr = checkAndGetColumnConst<ColumnArray>(col))
         {
             materialized_columns.emplace_back(arr->convertToFullColumn());
-            aggregate_arguments_vec[i] = typeid_cast<const ColumnArray &>(*materialized_columns.back().get()).getDataPtr().get();
+            aggregate_arguments_vec[i] = &typeid_cast<const ColumnArray &>(*materialized_columns.back().get()).getData();
         }
         else
             throw Exception("Illegal column " + col->getName() + " as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);

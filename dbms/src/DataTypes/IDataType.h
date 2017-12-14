@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-
+#include <Common/COWPtr.h>
 #include <Core/Field.h>
 
 
@@ -15,7 +15,8 @@ class IDataType;
 struct FormatSettingsJSON;
 
 class IColumn;
-using ColumnPtr = std::shared_ptr<IColumn>;
+using ColumnPtr = COWPtr<IColumn>::Ptr;
+using MutableColumnPtr = COWPtr<IColumn>::MutablePtr;
 
 using DataTypePtr = std::shared_ptr<IDataType>;
 using DataTypes = std::vector<DataTypePtr>;

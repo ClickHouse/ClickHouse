@@ -246,7 +246,7 @@ public:
 
     MutablePtr mutate() const
     {
-        MutablePtr res = IColumn::mutate();
+        MutablePtr res = COWPtr<IColumn>::mutate();
         res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = subcolumn->mutate(); });
         return res;
     }

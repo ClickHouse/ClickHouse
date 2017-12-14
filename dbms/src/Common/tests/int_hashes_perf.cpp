@@ -33,7 +33,7 @@ void setAffinity()
 }
 
 
-static inline __attribute__((__always_inline__)) UInt64 rdtsc()
+static inline ALWAYS_INLINE UInt64 rdtsc()
 {
 #if __x86_64__
     UInt32 a, d;

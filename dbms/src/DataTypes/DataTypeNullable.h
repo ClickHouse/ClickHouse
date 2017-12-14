@@ -61,7 +61,7 @@ public:
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
-    ColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override { return Null(); }
 

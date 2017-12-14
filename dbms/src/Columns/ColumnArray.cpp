@@ -44,12 +44,6 @@ ColumnArray::ColumnArray(const ColumnPtr & nested_column, const ColumnPtr & offs
 }
 
 
-ColumnArray::ColumnArray(const ColumnArray & src)
-    : data(src.data), offsets(src.offsets)
-{
-}
-
-
 std::string ColumnArray::getName() const { return "Array(" + getData().getName() + ")"; }
 
 
@@ -510,7 +504,7 @@ MutableColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_
             memset(&nested_filt[offsetAt(i)], 0, sizeAt(i));
     }
 
-    std::shared_ptr<ColumnArray> res = ColumnArray::create(data, ColumnOffsets_t::create());
+    auto res = ColumnArray::create(data, ColumnOffsets_t::create());
 
     ssize_t nested_result_size_hint = 0;
     if (result_size_hint < 0)
@@ -544,7 +538,7 @@ MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result
 
     const ColumnNullable & nullable_elems = static_cast<const ColumnNullable &>(*data);
 
-    auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumn(), offsets);
+    auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumnPtr(), offsets);
     auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint);
     auto & filtered_array_of_nested = static_cast<ColumnArray &>(*filtered_array_of_nested_owner);
     auto & filtered_offsets = filtered_array_of_nested.getOffsetsColumn();
@@ -556,7 +550,7 @@ MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result
             res_null_map),
         filtered_offsets);
 
-    filterArraysImplOnlyData(nullable_elems.getNullMap(), getOffsets(), res_null_map->getData(), filt, result_size_hint);
+    filterArraysImplOnlyData(nullable_elems.getNullMapData(), getOffsets(), res_null_map->getData(), filt, result_size_hint);
     return res;
 }
 
@@ -605,7 +599,7 @@ MutableColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) co
 
     Permutation nested_perm(getOffsets().back());
 
-    std::shared_ptr<ColumnArray> res = ColumnArray::create(data->cloneEmpty(), ColumnOffsets_t::create());
+    auto res = ColumnArray::create(data->cloneEmpty(), ColumnOffsets_t::create());
 
     Offsets_t & res_offsets = res->getOffsets();
     res_offsets.resize(limit);
@@ -867,8 +861,8 @@ MutableColumnPtr ColumnArray::replicateNullable(const Offsets_t & replicate_offs
     /// Make temporary arrays for each components of Nullable. Then replicate them independently and collect back to result.
     /// NOTE Offsets are calculated twice and it is redundant.
 
-    auto array_of_nested = ColumnArray(nullable.getNestedColumn(), getOffsetsColumn()).replicate(replicate_offsets);
-    auto array_of_null_map = ColumnArray(nullable.getNullMapColumn(), getOffsetsColumn()).replicate(replicate_offsets);
+    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr(), getOffsetsColumn()).replicate(replicate_offsets);
+    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr(), getOffsetsColumn()).replicate(replicate_offsets);
 
     return ColumnArray::create(
         ColumnNullable::create(

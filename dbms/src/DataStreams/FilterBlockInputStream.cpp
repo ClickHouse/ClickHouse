@@ -123,7 +123,7 @@ Block FilterBlockInputStream::readImpl()
         IColumn * observed_column = column.get();
         bool is_nullable_column = observed_column->isColumnNullable();
         if (is_nullable_column)
-            observed_column = static_cast<const ColumnNullable &>(*column.get()).getNestedColumn().get();
+            observed_column = &static_cast<const ColumnNullable &>(*column.get()).getNestedColumn();
 
         ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(observed_column);
         if (!column_vec)
@@ -154,7 +154,7 @@ Block FilterBlockInputStream::readImpl()
         {
             /// Exclude the entries of the filter column that actually are NULL values.
 
-            const NullMap & null_map = static_cast<ColumnNullable &>(*column).getNullMap();
+            const NullMap & null_map = static_cast<ColumnNullable &>(*column).getNullMapData();
 
             IColumn::Filter & filter = column_vec->getData();
             for (size_t i = 0, size = null_map.size(); i < size; ++i)

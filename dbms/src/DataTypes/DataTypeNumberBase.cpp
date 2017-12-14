@@ -234,7 +234,7 @@ void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer &
 }
 
 template <typename T>
-ColumnPtr DataTypeNumberBase<T>::createColumn() const
+MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 {
     return ColumnVector<T>::create();
 }

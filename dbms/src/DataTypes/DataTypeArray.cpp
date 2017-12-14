@@ -419,7 +419,7 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 }
 
 
-ColumnPtr DataTypeArray::createColumn() const
+MutableColumnPtr DataTypeArray::createColumn() const
 {
     return ColumnArray::create(nested->createColumn());
 }

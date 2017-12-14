@@ -103,13 +103,13 @@ const char * ColumnVector<T>::getFamilyName() const
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::cloneResized(size_t size) const
+MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 {
-    ColumnPtr new_col_holder = std::make_shared<Self>();
+    auto res = create();
 
     if (size > 0)
     {
-        auto & new_col = static_cast<Self &>(*new_col_holder);
+        auto & new_col = static_cast<Self &>(*res);
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
@@ -119,7 +119,7 @@ ColumnPtr ColumnVector<T>::cloneResized(size_t size) const
             memset(&new_col.data[count], static_cast<int>(value_type()), size - count);
     }
 
-    return new_col_holder;
+    return res;
 }
 
 template <typename T>
@@ -146,14 +146,14 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
+MutableColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();
     if (size != filt.size())
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<Self> res = std::make_shared<Self>();
-    typename Self::Container_t & res_data = res->getData();
+    auto res = create();
+    Container_t & res_data = res->getData();
 
     if (result_size_hint)
         res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
@@ -210,7 +210,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
+MutableColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     size_t size = data.size();
 
@@ -222,7 +222,7 @@ ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t lim
     if (perm.size() < limit)
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<Self> res = std::make_shared<Self>(limit);
+    auto res = create(limit);
     typename Self::Container_t & res_data = res->getData();
     for (size_t i = 0; i < limit; ++i)
         res_data[i] = data[perm[i]];
@@ -231,16 +231,16 @@ ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t lim
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets_t & offsets) const
+MutableColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets_t & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (0 == size)
-        return std::make_shared<Self>();
+        return create();
 
-    std::shared_ptr<Self> res = std::make_shared<Self>();
+    auto res = create();
     typename Self::Container_t & res_data = res->getData();
     res_data.reserve(offsets.back());
 

@@ -41,12 +41,11 @@ DataTypePtr FunctionIsNull::getReturnTypeImpl(const DataTypes &) const
 
 void FunctionIsNull::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
 {
-    ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
+    const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
     if (elem.column->isColumnNullable())
     {
         /// Merely return the embedded null map.
-        ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*elem.column);
-        block.getByPosition(result).column = nullable_col.getNullMapColumn();
+        block.getByPosition(result).column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
     }
     else
     {
@@ -221,7 +220,7 @@ void FunctionCoalesce::executeImpl(Block & block, const ColumnNumbers & argument
 
     /// if last argument is not nullable, result should be also not nullable
     if (!block.getByPosition(multi_if_args.back()).column->isColumnNullable() && res->isColumnNullable())
-        res = static_cast<ColumnNullable &>(*res).getNestedColumn();
+        res = static_cast<ColumnNullable &>(*res).getNestedColumnPtr();
 
     block.getByPosition(result).column = res;
 }
@@ -355,7 +354,7 @@ void FunctionAssumeNotNull::executeImpl(Block & block, const ColumnNumbers & arg
     if (col->isColumnNullable())
     {
         const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-        res_col = nullable_col.getNestedColumn();
+        res_col = nullable_col.getNestedColumnPtr();
     }
     else
         res_col = col;

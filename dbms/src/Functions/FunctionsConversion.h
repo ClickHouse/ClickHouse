@@ -1196,7 +1196,7 @@ private:
                     /// create new level of array, copy offsets
                     res->getDataPtr() = ColumnArray::create(nullptr, nested_col_array->getOffsetsColumn());
 
-                    res = static_cast<ColumnArray *>(res->getDataPtr().get());
+                    res = static_cast<ColumnArray *>(&res->getData());
                     col_array = nested_col_array;
                 }
 
@@ -1489,7 +1489,7 @@ private:
                     /// So we just keep the null map of the input argument.
                     const auto & col = block.getByPosition(arguments[0]).column;
                     const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                    null_map = nullable_col.getNullMapColumn();
+                    null_map = nullable_col.getNullMapColumnPtr();
                 }
                 else
                 {

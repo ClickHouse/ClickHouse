@@ -84,7 +84,7 @@ public:
         bool position_independent_encoding,
         SubstreamPath path) const override;
 
-    ColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;
 

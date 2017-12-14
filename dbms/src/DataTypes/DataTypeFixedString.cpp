@@ -200,7 +200,7 @@ void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
 }
 
 
-ColumnPtr DataTypeFixedString::createColumn() const
+MutableColumnPtr DataTypeFixedString::createColumn() const
 {
     return ColumnFixedString::create(n);
 }

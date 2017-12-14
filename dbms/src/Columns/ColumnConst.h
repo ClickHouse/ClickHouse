@@ -19,18 +19,19 @@ namespace ErrorCodes
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitary amount of same elements.
   */
-class ColumnConst final : public IColumn
+class ColumnConst final : public COWPtrHelper<IColumn, ColumnConst>
 {
 private:
     ColumnPtr data;
     size_t s;
 
-public:
     ColumnConst(ColumnPtr data, size_t s);
+    ColumnConst(const ColumnConst & src) = default;
 
-    ColumnPtr convertToFullColumn() const;
+public:
+    MutableColumnPtr convertToFullColumn() const;
 
-    ColumnPtr convertToFullColumnIfConst() const override
+    MutableColumnPtr convertToFullColumnIfConst() const override
     {
         return convertToFullColumn();
     }
@@ -45,7 +46,7 @@ public:
         return "Const";
     }
 
-    ColumnPtr cloneResized(size_t new_size) const override
+    MutableColumnPtr cloneResized(size_t new_size) const override
     {
         return ColumnConst::create(data, new_size);
     }
@@ -132,8 +133,9 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        auto res = data->deserializeAndInsertFromArena(pos);
-        data->popBack(1);
+        MutablePtr mutable_data = data->assumeMutable();
+        auto res = mutable_data->deserializeAndInsertFromArena(pos);
+        mutable_data->popBack(1);
         ++s;
         return res;
     }
@@ -143,7 +145,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
+    MutableColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
         if (s != filt.size())
             throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -151,7 +153,7 @@ public:
         return ColumnConst::create(data, countBytesInFilter(filt));
     }
 
-    ColumnPtr replicate(const Offsets_t & offsets) const override
+    MutableColumnPtr replicate(const Offsets_t & offsets) const override
     {
         if (s != offsets.size())
             throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -170,7 +172,7 @@ public:
         return data->allocatedBytes() + sizeof(s);
     }
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         if (limit == 0)
             limit = s;
@@ -235,9 +237,9 @@ public:
 
     /// Not part of the common interface.
 
-    IColumn & getDataColumn() { return *data; }
+    IColumn & getDataColumn() { return *data->assumeMutable(); }
     const IColumn & getDataColumn() const { return *data; }
-    ColumnPtr & getDataColumnPtr() { return data; }
+    //MutableColumnPtr getDataColumnPtr() { return data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
 
     Field getField() const { return getDataColumn()[0]; }

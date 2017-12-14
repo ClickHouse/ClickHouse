@@ -81,7 +81,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
         if (col->isColumnNullable())
         {
             const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
-            nested_key_columns.push_back(nullable_col.getNestedColumn().get());
+            nested_key_columns.push_back(&nullable_col.getNestedColumn());
             has_nullable_key = true;
         }
         else

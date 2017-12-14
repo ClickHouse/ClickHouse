@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/UInt128.h>
 #include <Core/Types.h>
+#include <Core/Defines.h>
 #include <common/strong_typedef.h>
 
 
@@ -197,14 +198,14 @@ public:
     template <typename T> T & get()
     {
         using TWithoutRef = typename std::remove_reference<T>::type;
-        TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<TWithoutRef*>(storage);
+        TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<TWithoutRef*>(&storage);
         return *ptr;
     };
 
     template <typename T> const T & get() const
     {
         using TWithoutRef = typename std::remove_reference<T>::type;
-        const TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<const TWithoutRef*>(storage);
+        const TWithoutRef * __attribute__((__may_alias__)) ptr = reinterpret_cast<const TWithoutRef*>(&storage);
         return *ptr;
     };
 
@@ -327,11 +328,10 @@ public:
     }
 
 private:
-    static const size_t storage_size = std::max({
-        DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        sizeof(Null), sizeof(UInt64), sizeof(UInt128), sizeof(Int64), sizeof(Float64), sizeof(String), sizeof(Array), sizeof(Tuple)});
+    std::aligned_union<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
+        Null, UInt64, UInt128, Int64, Float64, String, Array, Tuple
+        >::type storage;
 
-    char storage[storage_size] __attribute__((aligned(8)));
     Types::Which which;
 
 
@@ -340,7 +340,7 @@ private:
     void createConcrete(T && x)
     {
         using JustT = typename std::decay<T>::type;
-        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(storage);
+        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(&storage);
         new (ptr) JustT(std::forward<T>(x));
         which = TypeToEnum<JustT>::value;
     }
@@ -350,7 +350,7 @@ private:
     void assignConcrete(T && x)
     {
         using JustT = typename std::decay<T>::type;
-        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(storage);
+        JustT * __attribute__((__may_alias__)) ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
 
@@ -398,7 +398,7 @@ private:
 
     void create(const char * data, size_t size)
     {
-        String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(storage);
+        String * __attribute__((__may_alias__)) ptr = reinterpret_cast<String*>(&storage);
         new (ptr) String(data, size);
         which = Types::String;
     }
@@ -408,7 +408,7 @@ private:
         create(reinterpret_cast<const char *>(data), size);
     }
 
-    __attribute__((__always_inline__)) void destroy()
+    ALWAYS_INLINE void destroy()
     {
         if (which < Types::MIN_NON_POD)
             return;
@@ -434,7 +434,7 @@ private:
     template <typename T>
     void destroy()
     {
-        T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(storage);
+        T * __attribute__((__may_alias__)) ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();
     }
 };

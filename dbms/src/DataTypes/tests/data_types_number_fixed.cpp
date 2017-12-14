@@ -12,7 +12,7 @@ int main(int, char **)
 {
     using namespace DB;
 
-    std::shared_ptr<ColumnUInt64> column = ColumnUInt64::create();
+    auto column = ColumnUInt64::create();
     ColumnUInt64::Container_t & vec = column->getData();
     DataTypeUInt64 data_type;
 

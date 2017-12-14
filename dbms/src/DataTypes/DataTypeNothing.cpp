@@ -9,7 +9,7 @@
 namespace DB
 {
 
-ColumnPtr DataTypeNothing::createColumn() const
+MutableColumnPtr DataTypeNothing::createColumn() const
 {
     return ColumnNothing::create(0);
 }

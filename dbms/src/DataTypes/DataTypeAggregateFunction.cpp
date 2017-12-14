@@ -243,7 +243,7 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
 }
 
 
-ColumnPtr DataTypeAggregateFunction::createColumn() const
+MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
     return ColumnAggregateFunction::create(function);
 }

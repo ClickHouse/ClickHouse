@@ -17,7 +17,7 @@ namespace DB
 
 /** Column for String values.
   */
-class ColumnString final : public IColumn
+class ColumnString final : public COWPtrHelper<IColumn, ColumnString>
 {
 public:
     using Chars_t = PaddedPODArray<UInt8>;
@@ -30,16 +30,18 @@ private:
     /// For convenience, every string ends with terminating zero byte. Note that strings could contain zero bytes in the middle.
     Chars_t chars;
 
-    size_t __attribute__((__always_inline__)) offsetAt(size_t i) const    { return i == 0 ? 0 : offsets[i - 1]; }
+    size_t ALWAYS_INLINE offsetAt(size_t i) const { return i == 0 ? 0 : offsets[i - 1]; }
 
     /// Size of i-th element, including terminating zero.
-    size_t __attribute__((__always_inline__)) sizeAt(size_t i) const    { return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
+    size_t ALWAYS_INLINE sizeAt(size_t i) const { return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
 
     template <bool positive>
     struct less;
 
     template <bool positive>
     struct lessWithCollation;
+
+    ColumnString(const ColumnString &) = default;
 
 public:
     const char * getFamilyName() const override { return "String"; }
@@ -59,7 +61,7 @@ public:
         return chars.allocated_bytes() + offsets.allocated_bytes();
     }
 
-    ColumnPtr cloneResized(size_t to_size) const override;
+    MutableColumnPtr cloneResized(size_t to_size) const override;
 
     Field operator[](size_t n) const override
     {
@@ -198,9 +200,9 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
     void insertDefault() override
     {
@@ -231,9 +233,9 @@ public:
     /// Sorting with respect of collation.
     void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
 
-    ColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
+    MutableColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
 
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         return scatterImpl<ColumnString>(num_columns, selector);
     }

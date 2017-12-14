@@ -627,15 +627,15 @@ public:
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
             ReverseImpl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = ColumnFixedString::create(col->getN());
-            block.getByPosition(result).column = col_res;
             ReverseImpl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
+            block.getByPosition(result).column = std::move(col_res);
         }
         else if (checkColumn<ColumnArray>(column.get()))
         {
@@ -815,7 +815,7 @@ public:
         Block & block, size_t result,
         Source && source)
     {
-        std::shared_ptr<ColumnString> col_res = ColumnString::create();
+       auto col_res = ColumnString::create();
 
         if (!column_length)
         {
@@ -846,7 +846,7 @@ public:
                 sliceDynamicOffsetBounded(source, StringSink(*col_res, block.rows()), *column_start, *column_length);
         }
 
-        block.getByPosition(result).column = col_res;
+        block.getByPosition(result).column = std::move(col_res);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
@@ -964,9 +964,9 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
         {
-            std::shared_ptr<ColumnString> col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
             SubstringUTF8Impl::vector(col->getChars(), col->getOffsets(), start, length, col_res->getChars(), col_res->getOffsets());
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(

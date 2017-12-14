@@ -6,11 +6,12 @@
 namespace DB
 {
 
-class ColumnNothing final : public IColumnDummy
+class ColumnNothing final : public COWPtrHelper<IColumnDummy, ColumnNothing>
 {
-public:
+private:
     using IColumnDummy::IColumnDummy;
 
+public:
     const char * getFamilyName() const override { return "Nothing"; }
     ColumnPtr cloneDummy(size_t s) const override { return ColumnNothing::create(s); };
 
