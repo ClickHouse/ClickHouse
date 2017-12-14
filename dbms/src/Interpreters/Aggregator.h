@@ -452,7 +452,7 @@ struct AggregationMethodKeysFixed
             {
                 ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
                 observed_column = &nullable_col.getNestedColumn();
-                null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullMapColumn());
+                null_map = static_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
             }
             else
             {

@@ -23,6 +23,8 @@ public:
     using Chars_t = PaddedPODArray<UInt8>;
 
 private:
+    friend class COWPtrHelper<IColumn, ColumnString>;
+
     /// Maps i'th position to offset to i+1'th element. Last offset maps to the end of all chars (is the size of all chars).
     Offsets_t offsets;
 
@@ -41,7 +43,9 @@ private:
     template <bool positive>
     struct lessWithCollation;
 
-    ColumnString(const ColumnString &) = default;
+    ColumnString(const ColumnString & src)
+        : offsets(src.offsets.begin(), src.offsets.end()),
+        chars(src.chars.begin(), src.chars.end()) {};
 
 public:
     const char * getFamilyName() const override { return "String"; }

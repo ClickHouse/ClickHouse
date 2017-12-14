@@ -428,24 +428,6 @@ void Block::swap(Block & other) noexcept
 }
 
 
-void Block::unshareColumns()
-{
-    std::unordered_set<void*> pointers;
-
-    IColumn::ColumnCallback callback = [&](ColumnPtr & subcolumn)
-    {
-        if (!pointers.insert(subcolumn.get()).second)
-            subcolumn = subcolumn->clone();
-        subcolumn->forEachSubcolumn(callback);
-    };
-
-    for (auto & elem : data)
-    {
-        callback(elem.column);
-        elem.column->forEachSubcolumn(callback);
-    }
-}
-
 void Block::updateHash(SipHash & hash) const
 {
     for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)

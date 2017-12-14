@@ -22,6 +22,8 @@ namespace ErrorCodes
 class ColumnConst final : public COWPtrHelper<IColumn, ColumnConst>
 {
 private:
+    friend class COWPtrHelper<IColumn, ColumnConst>;
+
     ColumnPtr data;
     size_t s;
 
@@ -133,7 +135,7 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        MutablePtr mutable_data = data->assumeMutable();
+        MutableColumnPtr mutable_data = data->assumeMutable();
         auto res = mutable_data->deserializeAndInsertFromArena(pos);
         mutable_data->popBack(1);
         ++s;
@@ -197,7 +199,7 @@ public:
             res[i] = i;
     }
 
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         if (size() != selector.size())
             throw Exception("Size of selector doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -206,7 +208,7 @@ public:
         for (auto idx : selector)
             ++counts[idx];
 
-        Columns res(num_columns);
+        MutableColumns res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
             res[i] = cloneResized(counts[i]);
 
