@@ -1,7 +1,7 @@
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/typeid_cast.h>
 
@@ -50,22 +50,6 @@ const Block & FilterBlockInputStream::getTotals()
     }
 
     return totals;
-}
-
-
-static void analyzeConstantFilter(const IColumn & column, bool & filter_always_false, bool & filter_always_true)
-{
-    if (column.onlyNull())
-    {
-        filter_always_false = true;
-    }
-    else if (column.isColumnConst())
-    {
-        if (static_cast<const ColumnConst &>(column).getValue<UInt8>())
-            filter_always_true = true;
-        else
-            filter_always_false = true;
-    }
 }
 
 
@@ -119,6 +103,8 @@ Block FilterBlockInputStream::readImpl()
 
         size_t columns = res.columns();
         ColumnPtr column = res.safeGetByPosition(filter_column).column;
+
+        auto filter_and_holder = getFilterFromColumn(*column);
 
         IColumn * observed_column = column.get();
         bool is_nullable_column = observed_column->isColumnNullable();
