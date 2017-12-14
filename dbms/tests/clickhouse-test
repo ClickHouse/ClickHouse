@@ -116,8 +116,14 @@ def main(args):
             def key_func(item):
                 if args.random:
                     return random()
+                if -1 == item.find('_'):
+                    return 99998
                 prefix, suffix = item.split('_', 1)
-                return -int(prefix), suffix
+                try:
+                    return -int(prefix), suffix
+                except ValueError:
+                    return 99997
+
             for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir)), key=key_func):
                 if SERVER_DIED:
                     break
