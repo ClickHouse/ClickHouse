@@ -123,7 +123,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
     if (columns.empty() || columns[0]->empty())
         return {};
 
-    return sample.cloneWithColumns(columns);
+    return sample.cloneWithColumns(std::move(columns));
 }
 
 }

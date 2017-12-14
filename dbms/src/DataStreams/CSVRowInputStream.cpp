@@ -124,7 +124,7 @@ bool CSVRowInputStream::read(MutableColumns & columns)
     for (size_t i = 0; i < size; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        data_types[i]->deserializeTextCSV(columns[i], istr, delimiter);
+        data_types[i]->deserializeTextCSV(*columns[i], istr, delimiter);
         skipWhitespacesAndTabs(istr);
 
         skipDelimiter(istr, delimiter, i + 1 == size);
@@ -214,7 +214,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         {
             skipWhitespacesAndTabs(istr);
             prev_position = istr.position();
-            data_types[i]->deserializeTextCSV(columns[i], istr, delimiter);
+            data_types[i]->deserializeTextCSV(*columns[i], istr, delimiter);
             curr_position = istr.position();
             skipWhitespacesAndTabs(istr);
         }
