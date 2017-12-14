@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Test 1. Complex test checking columns.txt
 
 chl="$CLICKHOUSE_CLIENT -q"
-ch_dir=`clickhouse-extract-from-config -c /etc/clickhouse-server/config.xml -k path`
+ch_dir=`${CLICKHOUSE_EXTRACT_CONFIG} -k path`
 
 $chl "DROP TABLE IF EXISTS test.partition_428"
 $chl "CREATE TABLE test.partition_428 (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) ENGINE = MergeTree(p, k, 1)"
