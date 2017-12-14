@@ -19,7 +19,11 @@ bool BinaryRowInputStream::read(Block & block)
 
     size_t columns = block.columns();
     for (size_t i = 0; i < columns; ++i)
-        block.getByPosition(i).type->deserializeBinary(*block.getByPosition(i).column.get(), istr);
+    {
+        MutableColumnPtr column = block.getByPosition(i).column->mutate();
+        block.getByPosition(i).type->deserializeBinary(*column, istr);
+        block.getByPosition(i).column = std::move(column);
+    }
 
     return true;
 }
