@@ -25,9 +25,9 @@ namespace ErrorCodes
 }
 
 
-ColumnPtr ColumnFixedString::cloneResized(size_t size) const
+MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
 {
-    ColumnPtr new_col_holder = ColumnFixedString::create(n);
+    MutableColumnPtr new_col_holder = ColumnFixedString::create(n);
 
     if (size > 0)
     {
@@ -153,13 +153,13 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
     memcpy(&chars[old_size], &src_concrete.chars[start * n], length * n);
 }
 
-ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
+MutableColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t col_size = size();
     if (col_size != filt.size())
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnFixedString> res = ColumnFixedString::create(n);
+    auto res = ColumnFixedString::create(n);
 
     if (result_size_hint)
         res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
@@ -230,7 +230,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
-ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
+MutableColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
 {
     size_t col_size = size();
 
@@ -245,7 +245,7 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
     if (limit == 0)
         return ColumnFixedString::create(n);
 
-    std::shared_ptr<ColumnFixedString> res = ColumnFixedString::create(n);
+    auto res = ColumnFixedString::create(n);
 
     Chars_t & res_chars = res->chars;
 
@@ -258,13 +258,13 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
     return res;
 }
 
-ColumnPtr ColumnFixedString::replicate(const Offsets_t & offsets) const
+MutableColumnPtr ColumnFixedString::replicate(const Offsets_t & offsets) const
 {
     size_t col_size = size();
     if (col_size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    std::shared_ptr<ColumnFixedString> res = ColumnFixedString::create(n);
+    auto res = ColumnFixedString::create(n);
 
     if (0 == col_size)
         return res;

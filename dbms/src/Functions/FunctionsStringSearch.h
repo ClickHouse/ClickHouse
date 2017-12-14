@@ -166,12 +166,13 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
             Impl::vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception(

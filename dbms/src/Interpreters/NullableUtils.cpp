@@ -13,8 +13,8 @@ void extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ColumnPtr & nul
             return;
 
         const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(*column);
-        null_map = &column_nullable.getNullMap();
-        column = column_nullable.getNestedColumn().get();
+        null_map = &column_nullable.getNullMapData();
+        column = &column_nullable.getNestedColumn();
     }
     else
     {
@@ -25,17 +25,17 @@ void extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ColumnPtr & nul
             if (column->isColumnNullable())
             {
                 const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(*column);
-                column = column_nullable.getNestedColumn().get();
+                column = &column_nullable.getNestedColumn();
 
                 if (!null_map_holder)
                 {
-                    null_map_holder = column_nullable.getNullMapColumn()->clone();
+                    null_map_holder = column_nullable.getNullMapColumnPtr()->clone();
                     mutable_null_map = &static_cast<ColumnUInt8 &>(*null_map_holder).getData();
                 }
                 else
                 {
                     mutable_null_map = &static_cast<ColumnUInt8 &>(*null_map_holder).getData();
-                    const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMap();
+                    const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMapData();
                     for (size_t i = 0, size = mutable_null_map->size(); i < size; ++i)
                         (*mutable_null_map)[i] |= other_null_map[i];
                 }

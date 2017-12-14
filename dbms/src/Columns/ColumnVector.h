@@ -120,7 +120,7 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 /** A template for columns that use a simple array to store.
   */
 template <typename T>
-class ColumnVector final : public IColumn
+class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
 {
 private:
     using Self = ColumnVector<T>;
@@ -132,10 +132,13 @@ public:
     using value_type = T;
     using Container_t = PaddedPODArray<value_type>;
 
+private:
     ColumnVector() {}
     ColumnVector(const size_t n) : data{n} {}
     ColumnVector(const size_t n, const value_type x) : data{n, x} {}
+    ColumnVector(const ColumnVector &) = default;
 
+public:
     bool isNumeric() const override { return IsNumber<T>; }
 
     size_t size() const override
@@ -204,7 +207,7 @@ public:
 
     const char * getFamilyName() const override;
 
-    ColumnPtr cloneResized(size_t size) const override;
+    MutableColumnPtr cloneResized(size_t size) const override;
 
     Field operator[](size_t n) const override
     {
@@ -235,15 +238,15 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    MutableColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
+    MutableColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
-    ColumnPtr replicate(const IColumn::Offsets_t & offsets) const override;
+    MutableColumnPtr replicate(const IColumn::Offsets_t & offsets) const override;
 
     void getExtremes(Field & min, Field & max) const override;
 
-    Columns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
         return this->scatterImpl<Self>(num_columns, selector);
     }

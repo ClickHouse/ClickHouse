@@ -24,7 +24,7 @@ private:
     /** Create an empty column of arrays with the type of values as in the column `nested_column` */
     ColumnArray(const ColumnPtr & nested_column, const ColumnPtr & offsets_column);
 
-    ColumnArray(const ColumnArray & src);
+    ColumnArray(const ColumnArray & src) = default;
 
 public:
     /** On the index i there is an offset to the beginning of the i + 1 -th element. */
@@ -63,7 +63,7 @@ public:
     IColumn & getData() { return *data->assumeMutable(); }
     const IColumn & getData() const { return *data; }
 
-    //MutableColumnPtr & getDataPtr() { return data->assumeMutable(); }
+    //MutableColumnPtr getDataPtr() { return data->assumeMutable(); }
     const ColumnPtr & getDataPtr() const { return data; }
 
     Offsets_t & ALWAYS_INLINE getOffsets()
@@ -76,7 +76,7 @@ public:
         return static_cast<const ColumnOffsets_t &>(*offsets).getData();
     }
 
-    //MutableColumnPtr & getOffsetsColumn() { return offsets->assumeMutable(); }
+    //MutableColumnPtr getOffsetsColumn() { return offsets->assumeMutable(); }
     const ColumnPtr & getOffsetsColumn() const { return offsets; }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override

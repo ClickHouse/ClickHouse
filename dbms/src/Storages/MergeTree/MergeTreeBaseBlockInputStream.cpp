@@ -229,7 +229,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             if (column->isColumnNullable())
             {
                 ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
-                observed_column = nullable_col.getNestedColumn();
+                observed_column = &nullable_col.getNestedColumn();
             }
             else
                 observed_column = column;

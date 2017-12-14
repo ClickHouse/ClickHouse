@@ -273,7 +273,7 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
-ColumnPtr DataTypeTuple::createColumn() const
+MutableColumnPtr DataTypeTuple::createColumn() const
 {
     size_t size = elems.size();
     Columns tuple_columns(size);

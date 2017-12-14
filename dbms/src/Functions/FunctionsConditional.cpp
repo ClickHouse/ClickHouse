@@ -139,8 +139,8 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
             else
             {
                 const ColumnNullable & condition_nullable = static_cast<const ColumnNullable &>(*instruction.condition);
-                const ColumnUInt8 & condition_nested = static_cast<const ColumnUInt8 &>(*condition_nullable.getNestedColumn());
-                const NullMap & condition_null_map = condition_nullable.getNullMap();
+                const ColumnUInt8 & condition_nested = static_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
+                const NullMap & condition_null_map = condition_nullable.getNullMapData();
 
                 insert = !condition_null_map[i] && condition_nested.getData()[i];
             }

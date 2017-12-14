@@ -34,7 +34,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
     if (src->onlyNull())
         return src;
     else if (src->isColumnNullable())
-        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumn();
+        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
 
     for (const auto & arg : args)
     {
@@ -51,7 +51,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
 
         if (elem.column->isColumnNullable())
         {
-            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumn();
+            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
             if (!result_null_map_column)
                 result_null_map_column = null_map_column;
             else

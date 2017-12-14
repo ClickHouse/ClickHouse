@@ -50,7 +50,7 @@ Block NullableAdapterBlockInputStream::readImpl()
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*elem.column);
                 const auto & nullable_type = static_cast<const DataTypeNullable &>(*elem.type);
 
-                const auto & null_map = nullable_col.getNullMap();
+                const auto & null_map = nullable_col.getNullMapData();
                 bool has_nulls = !memoryIsZero(null_map.data(), null_map.size());
 
                 if (has_nulls)
@@ -58,7 +58,7 @@ Block NullableAdapterBlockInputStream::readImpl()
                         ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
                 else
                     res.insert({
-                        nullable_col.getNestedColumn(),
+                        nullable_col.getNestedColumnPtr(),
                         nullable_type.getNestedType(),
                         rename[i].value_or(elem.name)
                     });

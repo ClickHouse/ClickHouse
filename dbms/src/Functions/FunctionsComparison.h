@@ -583,24 +583,24 @@ private:
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
-            std::shared_ptr<ColumnUInt8> col_res = ColumnUInt8::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnUInt8::create();
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
-            std::shared_ptr<ColumnUInt8> col_res = ColumnUInt8::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnUInt8::create();
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 
@@ -612,13 +612,13 @@ private:
     {
         if (const ColumnVector<T1> * col_right = checkAndGetColumn<ColumnVector<T1>>(col_right_untyped))
         {
-            std::shared_ptr<ColumnUInt8> col_res = ColumnUInt8::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnUInt8::create();
 
             ColumnUInt8::Container_t & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
         else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
@@ -626,9 +626,7 @@ private:
             UInt8 res = 0;
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
 
-            auto col_res = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
-            block.getByPosition(result).column = col_res;
-
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
             return true;
         }
 

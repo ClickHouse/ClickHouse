@@ -291,7 +291,7 @@ void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, con
 }
 
 
-ColumnPtr DataTypeString::createColumn() const
+MutableColumnPtr DataTypeString::createColumn() const
 {
     return ColumnString::create();
 }

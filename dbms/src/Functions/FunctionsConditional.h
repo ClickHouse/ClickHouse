@@ -422,8 +422,7 @@ private:
             && (col_else || col_else_const || col_else_fixed || col_else_const_fixed))
         {
             /// The result is String.
-            std::shared_ptr<ColumnString> col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
             auto sink = StringSink(*col_res, rows);
 
             if (col_then && col_else)
@@ -451,6 +450,7 @@ private:
             else if (col_then_const_fixed && col_else_const)
                 conditional(ConstSource<FixedStringSource>(*col_then_const_fixed), ConstSource<StringSource>(*col_else_const), sink, cond_data);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 
@@ -569,7 +569,7 @@ private:
         {
             Block temporary_block
             {
-                { static_cast<const ColumnNullable &>(*arg_cond.column).getNestedColumn(), arg_cond.type, arg_cond.name },
+                { static_cast<const ColumnNullable &>(*arg_cond.column).getNestedColumnPtr(), arg_cond.type, arg_cond.name },
                 block.getByPosition(arguments[1]),
                 block.getByPosition(arguments[2]),
                 block.getByPosition(result)
@@ -591,7 +591,7 @@ private:
             else
             {
                 result_column = ColumnNullable::create(
-                    materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumn());
+                    materializeColumnIfConst(result_column), static_cast<const ColumnNullable &>(*arg_cond.column).getNullMapColumnPtr());
             }
 
             return true;
@@ -619,7 +619,7 @@ private:
     static const ColumnPtr getNestedColumn(const ColumnPtr & column)
     {
         if (column->isColumnNullable())
-            return static_cast<const ColumnNullable &>(*column).getNestedColumn();
+            return static_cast<const ColumnNullable &>(*column).getNestedColumnPtr();
 
         return column;
     }
@@ -646,14 +646,14 @@ private:
                 arg_cond,
                 {
                     then_is_nullable
-                        ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumn()
+                        ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumnPtr()
                         : DataTypeUInt8().createColumnConst(block.rows(), UInt64(0)),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
                     else_is_nullable
-                        ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumn()
+                        ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumnPtr()
                         : DataTypeUInt8().createColumnConst(block.rows(), UInt64(0)),
                     std::make_shared<DataTypeUInt8>(),
                     ""

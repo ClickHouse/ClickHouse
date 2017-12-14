@@ -305,8 +305,8 @@ protected:
             if (col->isColumnNullable())
             {
                 const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                actual_columns.push_back(nullable_col.getNestedColumn().get());
-                null_maps.push_back(nullable_col.getNullMapColumn().get());
+                actual_columns.push_back(&nullable_col.getNestedColumn());
+                null_maps.push_back(&nullable_col.getNullMapColumn());
             }
             else
             {
@@ -451,8 +451,8 @@ struct AggregationMethodKeysFixed
             if (has_nullable_keys && key_columns[i]->isColumnNullable())
             {
                 ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*key_columns[i]);
-                observed_column = nullable_col.getNestedColumn().get();
-                null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullMapColumn().get());
+                observed_column = &nullable_col.getNestedColumn();
+                null_map = static_cast<ColumnUInt8 *>(nullable_col.getNullMapColumn());
             }
             else
             {

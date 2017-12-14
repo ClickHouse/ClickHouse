@@ -22,7 +22,7 @@ ColumnConst::ColumnConst(ColumnPtr data_, size_t s)
             ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 }
 
-ColumnPtr ColumnConst::convertToFullColumn() const
+MutableColumnPtr ColumnConst::convertToFullColumn() const
 {
     return data->replicate(Offsets_t(1, s));
 }

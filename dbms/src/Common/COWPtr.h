@@ -1,6 +1,5 @@
 #pragma once
 
-#include <boost/noncopyable.hpp>
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include <boost/smart_ptr/intrusive_ref_counter.hpp>
 #include <iostream>
@@ -76,23 +75,49 @@ private:
     const Derived * derived() const { return static_cast<const Derived *>(this); }
 
 protected:
-    template <typename T> class noncopyable : public T, private boost::noncopyable { using T::T; };
-
-public:
-    using MutablePtr = noncopyable<boost::intrusive_ptr<Derived>>;
-
-protected:
-    template <typename T> class immutable_ptr : public boost::intrusive_ptr<const T>
+    template <typename T>
+    class mutable_ptr : public boost::intrusive_ptr<T>
     {
     public:
+        /// Copy: not possible.
+        mutable_ptr(const mutable_ptr &) = delete;
+
+        /// Move: ok.
+        mutable_ptr(mutable_ptr &&) = default;
+        mutable_ptr & operator=(mutable_ptr &&) = default;
+
+        /// Initializing from temporary of compatible type.
+        template <typename U>
+        mutable_ptr(boost::intrusive_ptr<U> && other) : boost::intrusive_ptr<T>(std::move(other)) {}
+
+        mutable_ptr() = default;
+
+        mutable_ptr(T * ptr) : boost::intrusive_ptr<T>(ptr) {}
+    };
+
+public:
+    using MutablePtr = mutable_ptr<Derived>;
+
+protected:
+    template <typename T>
+    class immutable_ptr : public boost::intrusive_ptr<const T>
+    {
+    public:
+        /// Copy from immutable ptr: ok.
         template <typename U>
         immutable_ptr(const boost::intrusive_ptr<const U> & other) : boost::intrusive_ptr<const T>(other) {}
 
+        /// Move from mutable ptr: ok.
         template <typename U>
-        immutable_ptr(const boost::intrusive_ptr<U> && other) : boost::intrusive_ptr<const T>(std::move(other)) {}
+        immutable_ptr(boost::intrusive_ptr<U> && other) : boost::intrusive_ptr<const T>(std::move(other)) {}
 
+        /// Copy from mutable ptr: not possible.
         template <typename U>
         immutable_ptr(const boost::intrusive_ptr<U> &) = delete;
+
+        immutable_ptr() = default;
+
+        immutable_ptr(std::nullptr_t) : boost::intrusive_ptr<const T>(nullptr) {};
     };
 
 public:
@@ -152,7 +177,7 @@ private:
 
 public:
     using Ptr = typename Base::template immutable_ptr<Derived>;
-    using MutablePtr = typename Base::template noncopyable<boost::intrusive_ptr<Derived>>;
+    using MutablePtr = typename Base::template mutable_ptr<Derived>;
 
     template <typename... Args>
     static MutablePtr create(Args &&... args) { return new Derived(std::forward<Args>(args)...); }

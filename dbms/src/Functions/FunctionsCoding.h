@@ -533,8 +533,7 @@ public:
         {
             const ColumnUInt32::Container_t & vec_in = col->getData();
 
-            std::shared_ptr<ColumnString> col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
@@ -551,6 +550,8 @@ public:
             }
 
             vec_res.resize(pos - begin);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -744,8 +745,7 @@ public:
         {
             const ColumnUInt64::Container_t & vec_in = col->getData();
 
-            std::shared_ptr<ColumnString> col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & vec_res = col_res->getChars();
             ColumnString::Offsets_t & offsets_res = col_res->getOffsets();
@@ -760,6 +760,8 @@ public:
                 current_offset += 18;
                 offsets_res[i] = current_offset;
             }
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
@@ -1392,8 +1394,7 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
         {
-            std::shared_ptr<ColumnString> col_res = ColumnString::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnString::create();
 
             ColumnString::Chars_t & out_vec = col_res->getChars();
             ColumnString::Offsets_t & out_offsets = col_res->getOffsets();
@@ -1421,6 +1422,8 @@ public:
             }
 
             out_vec.resize(pos - begin);
+
+            block.getByPosition(result).column = std::move(col_res);
         }
         else
         {

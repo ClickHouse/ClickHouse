@@ -916,13 +916,13 @@ private:
         {
             using ResultType = typename Op<T0>::ResultType;
 
-            std::shared_ptr<ColumnVector<ResultType>> col_res = ColumnVector<ResultType>::create();
-            block.getByPosition(result).column = col_res;
+            auto col_res = ColumnVector<ResultType>::create();
 
             typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
             vec_res.resize(col->getData().size());
             UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
 
+            block.getByPosition(result).column = std::move(col_res);
             return true;
         }
 

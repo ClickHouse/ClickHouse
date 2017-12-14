@@ -1051,8 +1051,8 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, IColumn 
 {
     const bool is_null = offset_column.onlyNull();
     auto * nullable = typeid_cast<ColumnNullable *>(&offset_column);
-    ColumnUInt8::Container_t * null_map = nullable ? &nullable->getNullMapConcreteColumn().getData() : nullptr;
-    IColumn * nested_column = nullable ? nullable->getNestedColumn().get() : &offset_column;
+    ColumnUInt8::Container_t * null_map = nullable ? &nullable->getNullMapColumn().getData() : nullptr;
+    IColumn * nested_column = nullable ? nullable->getNestedColumn() : &offset_column;
 
     while (!src.isEnd())
     {
@@ -1082,13 +1082,13 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, IColumn & 
 {
     const bool is_offset_null = offset_column.onlyNull();
     auto * offset_nullable = typeid_cast<ColumnNullable *>(&offset_column);
-    ColumnUInt8::Container_t * offset_null_map = offset_nullable ? &offset_nullable->getNullMapConcreteColumn().getData() : nullptr;
-    IColumn * offset_nested_column = offset_nullable ? offset_nullable->getNestedColumn().get() : &offset_column;
+    ColumnUInt8::Container_t * offset_null_map = offset_nullable ? &offset_nullable->getNullMapColumn().getData() : nullptr;
+    IColumn * offset_nested_column = offset_nullable ? offset_nullable->getNestedColumn() : &offset_column;
 
     const bool is_length_null = length_column.onlyNull();
     auto * length_nullable = typeid_cast<ColumnNullable *>(&length_column);
-    ColumnUInt8::Container_t * length_null_map = length_nullable ? &length_nullable->getNullMapConcreteColumn().getData() : nullptr;
-    IColumn * length_nested_column = length_nullable ? length_nullable->getNestedColumn().get() : &length_column;
+    ColumnUInt8::Container_t * length_null_map = length_nullable ? &length_nullable->getNullMapColumn().getData() : nullptr;
+    IColumn * length_nested_column = length_nullable ? length_nullable->getNestedColumn() : &length_column;
 
     while (!src.isEnd())
     {
