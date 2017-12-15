@@ -30,13 +30,13 @@ try
         ColumnWithTypeAndName column1;
         column1.name = "Sign";
         column1.type = std::make_shared<DataTypeInt8>();
-        column1.column = ColumnInt8::create(std::initializer_list{1, -1});
+        column1.column = ColumnInt8::create({1, -1});
         block1.insert(column1);
 
         ColumnWithTypeAndName column2;
         column2.name = "CounterID";
         column2.type = std::make_shared<DataTypeUInt32>();
-        column2.column = ColumnUInt32::create(std::initializer_list{123, 123});
+        column2.column = ColumnUInt32::create({123, 123});
         block1.insert(column2);
     }
 
@@ -46,13 +46,13 @@ try
         ColumnWithTypeAndName column1;
         column1.name = "Sign";
         column1.type = std::make_shared<DataTypeInt8>();
-        column1.column = ColumnInt8::create(std::initializer_list{1, 1});
+        column1.column = ColumnInt8::create({1, 1});
         block2.insert(column1);
 
         ColumnWithTypeAndName column2;
         column2.name = "CounterID";
         column2.type = std::make_shared<DataTypeUInt32>();
-        column2.column = ColumnUInt32::create(std::initializer_list{123, 456});
+        column2.column = ColumnUInt32::create({123, 456});
         block2.insert(column2);
     }
 
