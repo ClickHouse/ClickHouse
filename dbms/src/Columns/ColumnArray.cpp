@@ -52,7 +52,7 @@ MutableColumnPtr ColumnArray::cloneResized(size_t to_size) const
     auto res = ColumnArray::create(getData().cloneEmpty(), ColumnOffsets_t::create());
 
     if (to_size == 0)
-        return res;
+        return std::move(res);
 
     size_t from_size = size();
 
@@ -71,19 +71,16 @@ MutableColumnPtr ColumnArray::cloneResized(size_t to_size) const
         if (from_size > 0)
         {
             res->getOffsets().assign(getOffsets().begin(), getOffsets().end());
-            res->data = getData().clone();
+            res->getData().insertRangeFrom(getData(), 0, getData().size());
             offset = getOffsets().back();
         }
 
         res->getOffsets().resize(to_size);
         for (size_t i = from_size; i < to_size; ++i)
-        {
-            ++offset;
             res->getOffsets()[i] = offset;
-        }
     }
 
-    return res;
+    return std::move(res);
 }
 
 
@@ -144,7 +141,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
 {
     /** Similarly - only for arrays of fixed length values.
       */
-    IColumn * data_ = data.get();
+    IColumn * data_ = getData().get();
     if (!data_->isFixedAndContiguous())
         throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 

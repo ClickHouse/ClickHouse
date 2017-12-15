@@ -14,7 +14,7 @@ ColumnConst::ColumnConst(ColumnPtr data_, size_t s)
     : data(data_), s(s)
 {
     /// Squash Const of Const.
-    while (ColumnConst * const_data = typeid_cast<ColumnConst *>(data.get()))
+    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(data.get()))
         data = const_data->getDataColumnPtr();
 
     if (data->size() != 1)

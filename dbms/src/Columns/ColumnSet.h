@@ -19,7 +19,7 @@ class ColumnSet final : public COWPtrHelper<IColumnDummy, ColumnSet>
 private:
     friend class COWPtrHelper<IColumnDummy, ColumnSet>;
 
-    ColumnSet(size_t s_, const ConstSetPtr & data_) : IColumnDummy(s_), data(data_) {}
+    ColumnSet(size_t s_, const ConstSetPtr & data_) : data(data_) { s = s_; }
     ColumnSet(const ColumnSet &) = default;
 
 public:

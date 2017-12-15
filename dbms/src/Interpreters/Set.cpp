@@ -95,7 +95,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 
 bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
 {
-    std::unique_lock<std::shared_mutex> lock(rwlock);
+    std::unique_lock lock(rwlock);
 
     size_t keys_size = block.columns();
     ColumnRawPtrs key_columns;
@@ -222,58 +222,51 @@ static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const C
 
 void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool create_ordered_set)
 {
-    data_types = types;
-
     /// Will form a block with values from the set.
-    Block block;
-    for (size_t i = 0, size = data_types.size(); i < size; ++i)
-    {
-        ColumnWithTypeAndName col;
-        col.type = data_types[i];
-        col.column = data_types[i]->createColumn();
-        col.name = "_" + toString(i);
 
-        block.insert(std::move(col));
-    }
+    size_t size = types.size();
+    MutableColumns columns(types.size());
+    for (size_t i = 0; i < size; ++i)
+        columns[i] = types[i]->createColumn();
 
     Row tuple_values;
     ASTExpressionList & list = typeid_cast<ASTExpressionList &>(*node);
-    for (ASTs::iterator it = list.children.begin(); it != list.children.end(); ++it)
+    for (auto & elem : list.children)
     {
-        if (data_types.size() == 1)
+        if (types.size() == 1)
         {
-            Field value = extractValueFromNode(*it, *data_types[0], context);
+            Field value = extractValueFromNode(elem, *types[0], context);
 
             if (!value.isNull())
-                block.safeGetByPosition(0).column->insert(value);
+                columns[0]->insert(value);
         }
-        else if (ASTFunction * func = typeid_cast<ASTFunction *>(it->get()))
+        else if (ASTFunction * func = typeid_cast<ASTFunction *>(elem.get()))
         {
             if (func->name != "tuple")
                 throw Exception("Incorrect element of set. Must be tuple.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
             size_t tuple_size = func->arguments->children.size();
-            if (tuple_size != data_types.size())
+            if (tuple_size != types.size())
                 throw Exception("Incorrect size of tuple in set.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
             if (tuple_values.empty())
                 tuple_values.resize(tuple_size);
 
-            size_t j = 0;
-            for (; j < tuple_size; ++j)
+            size_t i = 0;
+            for (; i < tuple_size; ++i)
             {
-                Field value = extractValueFromNode(func->arguments->children[j], *data_types[j], context);
+                Field value = extractValueFromNode(func->arguments->children[i], *types[i], context);
 
                 /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
                 if (value.isNull())
                     break;
 
-                tuple_values[j] = value;
+                tuple_values[i] = value;
             }
 
-            if (j == tuple_size)
-                for (j = 0; j < tuple_size; ++j)
-                    block.safeGetByPosition(j).column->insert(tuple_values[j]);
+            if (i == tuple_size)
+                for (i = 0; i < tuple_size; ++i)
+                    columns[i]->insert(tuple_values[i]);
         }
         else
             throw Exception("Incorrect element of set", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -281,6 +274,10 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
     if (create_ordered_set)
         ordered_set_elements = OrderedSetElementsPtr(new OrderedSetElements());
+
+    Block block;
+    for (size_t i = 0, size = types.size(); i < size; ++i)
+        block.insert(ColumnWithTypeAndName(std::move(columns[i]), types[i], "_" + toString(i)));
 
     insertFromBlock(block, create_ordered_set);
 
@@ -303,7 +300,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     ColumnUInt8::Container_t & vec_res = res->getData();
     vec_res.resize(block.safeGetByPosition(0).column->size());
 
-    std::shared_lock<std::shared_mutex> lock(rwlock);
+    std::shared_lock lock(rwlock);
 
     /// If the set is empty.
     if (data_types.empty())
@@ -312,7 +309,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
             memset(&vec_res[0], 1, vec_res.size());
         else
             memset(&vec_res[0], 0, vec_res.size());
-        return res;
+        return std::move(res);
     }
 
     const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(block.safeGetByPosition(0).type.get());
@@ -387,7 +384,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         executeOrdinary(key_columns, vec_res, negative, null_map);
     }
 
-    return res;
+    return std::move(res);
 }
 
 
