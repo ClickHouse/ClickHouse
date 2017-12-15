@@ -676,7 +676,7 @@ void ExpressionActions::execute(Block & block) const
 
 void ExpressionActions::executeOnTotals(Block & block) const
 {
-    /// If there is `totals` in the subquery for JOIN, but we do not, then take the block with the default values instead of `totals`.
+    /// If there is `totals` in the subquery for JOIN, but we do not have totals, then take the block with the default values instead of `totals`.
     if (!block)
     {
         bool has_totals_in_join = false;
@@ -693,9 +693,9 @@ void ExpressionActions::executeOnTotals(Block & block) const
         {
             for (const auto & name_and_type : input_columns)
             {
-                ColumnWithTypeAndName elem(name_and_type.type->createColumn(), name_and_type.type, name_and_type.name);
-                elem.column->insertDefault();
-                block.insert(std::move(elem));
+                auto column = name_and_type.type->createColumn();
+                column->insertDefault();
+                block.insert(ColumnWithTypeAndName(std::move(column), name_and_type.type, name_and_type.name));
             }
         }
         else

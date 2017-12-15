@@ -108,6 +108,9 @@ public:
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
 
+    /** Get columns from block for mutation. */
+    MutableColumns mutateColumns() const;
+
     /** Replace columns in a block */
     void setColumns(MutableColumns && columns);
     Block cloneWithColumns(MutableColumns && columns) const;

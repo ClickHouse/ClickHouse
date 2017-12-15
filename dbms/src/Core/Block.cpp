@@ -310,6 +310,16 @@ MutableColumns Block::cloneEmptyColumns() const
 }
 
 
+MutableColumns Block::mutateColumns() const
+{
+    size_t num_columns = data.size();
+    MutableColumns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column->mutate();
+    return columns;
+}
+
+
 void Block::setColumns(MutableColumns && columns)
 {
     size_t num_columns = data.size();

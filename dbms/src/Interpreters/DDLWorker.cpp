@@ -1005,7 +1005,7 @@ public:
 
             Strings cur_active_hosts = getChildrenAllowNoNode(zookeeper, node_path + "/active");
 
-            res = sample.cloneEmpty();
+            MutableColumns columns = sample.cloneEmptyColumns();
             for (const String & host_id : new_hosts)
             {
                 ExecutionStatus status(-1, "Cannot obtain error message");
@@ -1019,13 +1019,14 @@ public:
                 UInt16 port;
                 Cluster::Address::fromString(host_id, host, port);
 
-                res.getByName("host").column->insert(host);
-                res.getByName("port").column->insert(static_cast<UInt64>(port));
-                res.getByName("status").column->insert(static_cast<Int64>(status.code));
-                res.getByName("error").column->insert(status.message);
-                res.getByName("num_hosts_remaining").column->insert(static_cast<UInt64>(waiting_hosts.size() - (++num_hosts_finished)));
-                res.getByName("num_hosts_active").column->insert(static_cast<UInt64>(cur_active_hosts.size()));
+                columns[0]->insert(host);
+                columns[1]->insert(static_cast<UInt64>(port));
+                columns[2]->insert(static_cast<Int64>(status.code));
+                columns[3]->insert(status.message);
+                columns[4]->insert(static_cast<UInt64>(waiting_hosts.size() - (++num_hosts_finished)));
+                columns[5]->insert(static_cast<UInt64>(cur_active_hosts.size()));
             }
+            res = sample.cloneWithColumns(std::move(columns));
         }
 
         return res;

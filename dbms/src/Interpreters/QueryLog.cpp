@@ -95,54 +95,58 @@ static std::array<char, 16> IPv6ToBinary(const Poco::Net::IPAddress & address)
 
 void QueryLogElement::appendToBlock(Block & block) const
 {
+    MutableColumns columns = block.mutateColumns();
+
     size_t i = 0;
 
-    block.getByPosition(i++).column->insert(UInt64(type));
-    block.getByPosition(i++).column->insert(UInt64(DateLUT::instance().toDayNum(event_time)));
-    block.getByPosition(i++).column->insert(UInt64(event_time));
-    block.getByPosition(i++).column->insert(UInt64(query_start_time));
-    block.getByPosition(i++).column->insert(UInt64(query_duration_ms));
+    columns[i++]->insert(UInt64(type));
+    columns[i++]->insert(UInt64(DateLUT::instance().toDayNum(event_time)));
+    columns[i++]->insert(UInt64(event_time));
+    columns[i++]->insert(UInt64(query_start_time));
+    columns[i++]->insert(UInt64(query_duration_ms));
 
-    block.getByPosition(i++).column->insert(UInt64(read_rows));
-    block.getByPosition(i++).column->insert(UInt64(read_bytes));
+    columns[i++]->insert(UInt64(read_rows));
+    columns[i++]->insert(UInt64(read_bytes));
 
-    block.getByPosition(i++).column->insert(UInt64(written_rows));
-    block.getByPosition(i++).column->insert(UInt64(written_bytes));
+    columns[i++]->insert(UInt64(written_rows));
+    columns[i++]->insert(UInt64(written_bytes));
 
-    block.getByPosition(i++).column->insert(UInt64(result_rows));
-    block.getByPosition(i++).column->insert(UInt64(result_bytes));
+    columns[i++]->insert(UInt64(result_rows));
+    columns[i++]->insert(UInt64(result_bytes));
 
-    block.getByPosition(i++).column->insert(UInt64(memory_usage));
+    columns[i++]->insert(UInt64(memory_usage));
 
-    block.getByPosition(i++).column->insertData(query.data(), query.size());
-    block.getByPosition(i++).column->insertData(exception.data(), exception.size());
-    block.getByPosition(i++).column->insertData(stack_trace.data(), stack_trace.size());
+    columns[i++]->insertData(query.data(), query.size());
+    columns[i++]->insertData(exception.data(), exception.size());
+    columns[i++]->insertData(stack_trace.data(), stack_trace.size());
 
-    block.getByPosition(i++).column->insert(UInt64(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY));
+    columns[i++]->insert(UInt64(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY));
 
-    block.getByPosition(i++).column->insert(client_info.current_user);
-    block.getByPosition(i++).column->insert(client_info.current_query_id);
-    block.getByPosition(i++).column->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
-    block.getByPosition(i++).column->insert(UInt64(client_info.current_address.port()));
+    columns[i++]->insert(client_info.current_user);
+    columns[i++]->insert(client_info.current_query_id);
+    columns[i++]->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
+    columns[i++]->insert(UInt64(client_info.current_address.port()));
 
-    block.getByPosition(i++).column->insert(client_info.initial_user);
-    block.getByPosition(i++).column->insert(client_info.initial_query_id);
-    block.getByPosition(i++).column->insertData(IPv6ToBinary(client_info.initial_address.host()).data(), 16);
-    block.getByPosition(i++).column->insert(UInt64(client_info.initial_address.port()));
+    columns[i++]->insert(client_info.initial_user);
+    columns[i++]->insert(client_info.initial_query_id);
+    columns[i++]->insertData(IPv6ToBinary(client_info.initial_address.host()).data(), 16);
+    columns[i++]->insert(UInt64(client_info.initial_address.port()));
 
-    block.getByPosition(i++).column->insert(UInt64(client_info.interface));
+    columns[i++]->insert(UInt64(client_info.interface));
 
-    block.getByPosition(i++).column->insert(client_info.os_user);
-    block.getByPosition(i++).column->insert(client_info.client_hostname);
-    block.getByPosition(i++).column->insert(client_info.client_name);
-    block.getByPosition(i++).column->insert(UInt64(client_info.client_revision));
+    columns[i++]->insert(client_info.os_user);
+    columns[i++]->insert(client_info.client_hostname);
+    columns[i++]->insert(client_info.client_name);
+    columns[i++]->insert(UInt64(client_info.client_revision));
 
-    block.getByPosition(i++).column->insert(UInt64(client_info.http_method));
-    block.getByPosition(i++).column->insert(client_info.http_user_agent);
+    columns[i++]->insert(UInt64(client_info.http_method));
+    columns[i++]->insert(client_info.http_user_agent);
 
-    block.getByPosition(i++).column->insert(client_info.quota_key);
+    columns[i++]->insert(client_info.quota_key);
 
-    block.getByPosition(i++).column->insert(UInt64(ClickHouseRevision::get()));
+    columns[i++]->insert(UInt64(ClickHouseRevision::get()));
+
+    block.setColumns(std::move(columns));
 }
 
 }
