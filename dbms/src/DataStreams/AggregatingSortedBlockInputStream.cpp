@@ -21,7 +21,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
         return children[0]->read();
 
     Block header;
-    MutableColumnRawPtrs merged_columns;
+    MutableColumns merged_columns;
 
     init(header, merged_columns);
 
@@ -66,10 +66,10 @@ Block AggregatingSortedBlockInputStream::readImpl()
 
     columns_to_aggregate.resize(column_numbers_to_aggregate.size());
     for (size_t i = 0, size = columns_to_aggregate.size(); i < size; ++i)
-        columns_to_aggregate[i] = typeid_cast<ColumnAggregateFunction *>(merged_columns[column_numbers_to_aggregate[i]]);
+        columns_to_aggregate[i] = typeid_cast<ColumnAggregateFunction *>(merged_columns[column_numbers_to_aggregate[i]].get());
 
     merge(merged_columns, queue);
-    return header.cloneWithColumns(merged_columns);
+    return header.cloneWithColumns(std::move(merged_columns));
 }
 
 
