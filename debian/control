@@ -32,7 +32,7 @@ Description: Client binary for clickhouse
 Package: clickhouse-server-base
 Section: libdevel
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, adduser
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
 Description: Server binary for clickhouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
