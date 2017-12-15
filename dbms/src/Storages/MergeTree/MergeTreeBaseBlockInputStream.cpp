@@ -1,9 +1,7 @@
-#include "MergeTreeBaseBlockInputStream.h"
+#include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
+#include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
@@ -21,7 +19,7 @@ namespace ErrorCodes
 MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
     MergeTreeData & storage,
     const ExpressionActionsPtr & prewhere_actions,
-    const String & prewhere_column,
+    const String & prewhere_column_name,
     size_t max_block_size_rows,
     size_t preferred_block_size_bytes,
     size_t preferred_max_column_in_block_size_bytes,
@@ -33,7 +31,7 @@ MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
 :
     storage(storage),
     prewhere_actions(prewhere_actions),
-    prewhere_column(prewhere_column),
+    prewhere_column_name(prewhere_column_name),
     max_block_size_rows(max_block_size_rows),
     preferred_block_size_bytes(preferred_block_size_bytes),
     preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes),
@@ -133,21 +131,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             {
                 auto & col = block.getByPosition(i);
                 if (task.column_name_set.count(col.name))
-                {
-                    if (ColumnArray * column_array = typeid_cast<ColumnArray *>(col.column.get()))
-                    {
-                        /// ColumnArray columns in block could have common offset column, which is used while reading.
-                        /// This is in case of nested data structures.
-
-                        /// Have to call resize(0) instead of cloneEmpty to save structure.
-                        /// (To keep offsets possibly shared between different arrays.)
-                        column_array->getOffsets().resize(0);
-                        /// It's ok until multidimensional arrays are not stored in MergeTree.
-                        column_array->getDataPtr() = column_array->getDataPtr()->cloneEmpty();
-                    }
-                    else
-                        col.column = col.column->cloneEmpty();
-                }
+                    col.column = col.column->cloneEmpty();
             }
         }
     };
@@ -219,46 +203,38 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             /// Compute the expression in PREWHERE.
             prewhere_actions->execute(res);
 
-            ColumnPtr column = res.getByName(prewhere_column).column;
+            ColumnPtr prewhere_column = res.getByName(prewhere_column_name).column;
             if (task->remove_prewhere_column)
-                res.erase(prewhere_column);
+                res.erase(prewhere_column_name);
 
             const auto pre_bytes = res.bytes();
 
-            ColumnPtr observed_column;
-            if (column->isColumnNullable())
-            {
-                ColumnNullable & nullable_col = static_cast<ColumnNullable &>(*column);
-                observed_column = &nullable_col.getNestedColumn();
-            }
-            else
-                observed_column = column;
+            ConstantFilterDescription constant_filter_description(*prewhere_column);
 
-            /** If the filter is a constant (for example, it says PREWHERE 1),
+            /** If the filter is a constant (for example, it says PREWHERE 0),
               * then either return an empty block, or return the block unchanged.
               */
-            if (observed_column->isColumnConst())
+            if (constant_filter_description.always_false)
             {
-                if (!static_cast<const ColumnConst &>(*observed_column).getValue<UInt8>())
+                if (pre_range_reader)
                 {
-                    if (pre_range_reader)
+                    /// Have to read rows from last partly read granula.
+                    if (!ranges_to_read.empty())
                     {
-                        /// Have to read rows from last partly read granula.
-                        if (!ranges_to_read.empty())
-                        {
-                            auto & range = ranges_to_read.back();
-                            task->current_range_reader = reader->readRange(range.begin, range.end);
-                        }
-                        /// But can just skip them.
-                        task->number_of_rows_to_skip = rows_was_read_in_last_range;
+                        auto & range = ranges_to_read.back();
+                        task->current_range_reader = reader->readRange(range.begin, range.end);
                     }
-                    else
-                        task->current_range_reader.reset();
-
-                    res.clear();
-                    return res;
+                    /// But can just skip them.
+                    task->number_of_rows_to_skip = rows_was_read_in_last_range;
                 }
+                else
+                    task->current_range_reader.reset();
 
+                res.clear();
+                return res;
+            }
+            else if (constant_filter_description.always_true)
+            {
                 if (task->current_range_reader)
                 {
                     if (task->number_of_rows_to_skip)
@@ -283,9 +259,11 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 progressImpl({ 0, res.bytes() - pre_bytes });
             }
-            else if (const auto column_vec = typeid_cast<const ColumnUInt8 *>(observed_column.get()))
+            else
             {
-                const auto & pre_filter = column_vec->getData();
+                FilterDescription filter_and_holder(*prewhere_column);
+
+                const auto & pre_filter = *filter_and_holder.data;
                 auto & number_of_rows_to_skip = task->number_of_rows_to_skip;
                 if (!task->current_range_reader)
                     number_of_rows_to_skip = 0;
@@ -408,7 +386,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                 for (const auto i : ext::range(0, res.columns()))
                 {
                     auto & col = res.safeGetByPosition(i);
-                    if (col.name == prewhere_column && res.columns() > 1)
+                    if (col.name == prewhere_column_name && res.columns() > 1)
                         continue;
                     col.column =
                         col.column->filter(task->column_name_set.count(col.name) ? post_filter : pre_filter, -1);
@@ -419,13 +397,9 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 /// Replace column with condition value from PREWHERE to a constant.
                 if (!task->remove_prewhere_column)
-                    res.getByName(prewhere_column).column = DataTypeUInt8().createColumnConst(rows, UInt64(1));
+                    res.getByName(prewhere_column_name).column = DataTypeUInt8().createColumnConst(rows, UInt64(1));
 
             }
-            else
-                throw Exception{
-                    "Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER};
 
             if (res)
             {

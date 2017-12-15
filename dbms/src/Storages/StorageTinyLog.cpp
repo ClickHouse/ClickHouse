@@ -205,7 +205,7 @@ Block TinyLogBlockInputStream::readImpl()
             String nested_name = DataTypeNested::extractNestedTableName(name);
 
             if (offset_columns.count(nested_name) == 0)
-                offset_columns[nested_name] = ColumnArray::ColumnOffsets_t::create());
+                offset_columns[nested_name] = ColumnArray::ColumnOffsets_t::create();
             else
                 read_offsets = false; /// on previous iterations, the offsets were already calculated by `readData`
 
