@@ -120,7 +120,7 @@ static void safeDeserialize(
         }
         catch (...)
         {
-            col.getNestedColumnPtr()->popBack(1);
+            col.getNestedColumn().popBack(1);
             throw;
         }
     }

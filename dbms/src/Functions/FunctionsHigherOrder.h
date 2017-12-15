@@ -51,8 +51,8 @@ struct ArrayMapImpl
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
         return mapped->isColumnConst()
-            ? ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsColumn())
-            : ColumnArray::create(mapped, array.getOffsetsColumn());
+            ? ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsPtr())
+            : ColumnArray::create(mapped, array.getOffsetsPtr());
     }
 };
 
@@ -593,7 +593,7 @@ struct ArraySortImpl
             current_offset = next_offset;
         }
 
-        return ColumnArray::create(array.getData().permute(permutation, 0), array.getOffsetsColumn());
+        return ColumnArray::create(array.getData().permute(permutation, 0), array.getOffsetsPtr());
     }
 };
 
@@ -832,12 +832,12 @@ public:
 
                 if (!offsets_column)
                 {
-                    offsets_column = column_array->getOffsetsColumn();
+                    offsets_column = column_array->getOffsetsPtr();
                 }
                 else
                 {
                     /// The first condition is optimization: do not compare data if the pointers are equal.
-                    if (column_array->getOffsetsColumn() != offsets_column
+                    if (column_array->getOffsetsPtr() != offsets_column
                         && column_array->getOffsets() != typeid_cast<const ColumnArray::ColumnOffsets_t &>(*offsets_column).getData())
                         throw Exception("Arrays passed to " + getName() + " must have equal size", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
                 }

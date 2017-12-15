@@ -34,12 +34,12 @@ std::string DataTypeTuple::getName() const
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
-    return *static_cast<ColumnTuple &>(column).getColumns()[idx];
+    return *static_cast<ColumnTuple &>(column).getColumnPtr(idx);
 }
 
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
-    return *static_cast<const ColumnTuple &>(column).getColumns()[idx];
+    return *static_cast<const ColumnTuple &>(column).getColumnPtr(idx);
 }
 
 

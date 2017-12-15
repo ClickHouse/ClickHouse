@@ -1088,7 +1088,7 @@ void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & argumen
     }
 
     block.getByPosition(result).column
-        = ColumnArray::create(first_column->replicate(array_column->getOffsets()), array_column->getOffsetsColumn());
+        = ColumnArray::create(first_column->replicate(array_column->getOffsets()), array_column->getOffsetsPtr());
 }
 
 /** Returns a string with nice Unicode-art bar with resolution of 1/8 part of symbol.

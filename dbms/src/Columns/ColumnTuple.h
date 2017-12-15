@@ -63,7 +63,9 @@ public:
     void forEachSubcolumn(ColumnCallback callback) override;
 
     const Columns & getColumns() const { return columns; }
-    //MutableColumns getColumns() { return columns; }
+
+    const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
+    MutableColumnPtr getColumnPtr(size_t idx) { return columns[idx]->assumeMutable(); }
 };
 
 

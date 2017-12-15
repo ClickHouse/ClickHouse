@@ -78,8 +78,8 @@ public:
         return static_cast<const ColumnOffsets_t &>(*offsets).getData();
     }
 
-    //MutableColumnPtr getOffsetsColumn() { return offsets->assumeMutable(); }
-    const ColumnPtr & getOffsetsColumn() const { return offsets; }
+    MutableColumnPtr getOffsetsPtr() { return offsets->assumeMutable(); }
+    const ColumnPtr & getOffsetsPtr() const { return offsets; }
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {

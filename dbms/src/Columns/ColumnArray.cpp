@@ -541,7 +541,7 @@ MutableColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result
     auto array_of_nested = ColumnArray::create(nullable_elems.getNestedColumnPtr(), offsets);
     auto filtered_array_of_nested_owner = array_of_nested->filter(filt, result_size_hint);
     auto & filtered_array_of_nested = static_cast<ColumnArray &>(*filtered_array_of_nested_owner);
-    auto & filtered_offsets = filtered_array_of_nested.getOffsetsColumn();
+    auto & filtered_offsets = filtered_array_of_nested.getOffsetsPtr();
 
     auto res_null_map = ColumnUInt8::create();
     auto res = ColumnArray::create(
@@ -570,7 +570,7 @@ MutableColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_si
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsColumn()).filter(filt, result_size_hint);
+        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsPtr()).filter(filt, result_size_hint);
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -578,7 +578,7 @@ MutableColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_si
 
     return ColumnArray::create(
         ColumnTuple::create(tuple_columns),
-        static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
+        static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
 
 
@@ -861,14 +861,14 @@ MutableColumnPtr ColumnArray::replicateNullable(const Offsets_t & replicate_offs
     /// Make temporary arrays for each components of Nullable. Then replicate them independently and collect back to result.
     /// NOTE Offsets are calculated twice and it is redundant.
 
-    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr(), getOffsetsColumn()).replicate(replicate_offsets);
-    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr(), getOffsetsColumn()).replicate(replicate_offsets);
+    auto array_of_nested = ColumnArray(nullable.getNestedColumnPtr(), getOffsetsPtr()).replicate(replicate_offsets);
+    auto array_of_null_map = ColumnArray(nullable.getNullMapColumnPtr(), getOffsetsPtr()).replicate(replicate_offsets);
 
     return ColumnArray::create(
         ColumnNullable::create(
             static_cast<ColumnArray &>(*array_of_nested).getDataPtr(),
             static_cast<ColumnArray &>(*array_of_null_map).getDataPtr()),
-        static_cast<ColumnArray &>(*array_of_nested).getOffsetsColumn());
+        static_cast<ColumnArray &>(*array_of_nested).getOffsetsPtr());
 }
 
 
@@ -885,7 +885,7 @@ MutableColumnPtr ColumnArray::replicateTuple(const Offsets_t & replicate_offsets
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsColumn()).replicate(replicate_offsets);
+        temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsPtr()).replicate(replicate_offsets);
 
     Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -893,7 +893,7 @@ MutableColumnPtr ColumnArray::replicateTuple(const Offsets_t & replicate_offsets
 
     return ColumnArray::create(
         ColumnTuple::create(tuple_columns),
-        static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
+        static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsPtr());
 }
 
 

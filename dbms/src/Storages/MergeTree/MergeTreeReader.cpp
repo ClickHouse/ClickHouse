@@ -433,7 +433,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                 /// If for some reason multiple offsets columns are present for the same nested data structure,
                 /// choose the one that is not empty.
                 if (!offsets_column || offsets_column->empty())
-                    offsets_column = array->getOffsetsColumn();
+                    offsets_column = array->getOffsetsPtr();
             }
         }
 
