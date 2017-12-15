@@ -8,6 +8,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -67,10 +68,14 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
     if (finished)
         return Block();
 
-    Block merged_block;
-    MutableColumnRawPtrs merged_columns;
+    Block header;
+    MutableColumns merged_columns;
 
-    init(merged_block, merged_columns);
+    init(header, merged_columns);
+
+    if (has_collation)
+        throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
+
     if (merged_columns.empty())
         return Block();
 
@@ -85,10 +90,10 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
         place_for_aggregate_state.resize(max_size_of_aggregate_state);
 
         /// Memoize column numbers in block.
-        path_column_num = merged_block.getPositionByName(params.path_column_name);
-        time_column_num = merged_block.getPositionByName(params.time_column_name);
-        value_column_num = merged_block.getPositionByName(params.value_column_name);
-        version_column_num = merged_block.getPositionByName(params.version_column_name);
+        path_column_num = header.getPositionByName(params.path_column_name);
+        time_column_num = header.getPositionByName(params.time_column_name);
+        value_column_num = header.getPositionByName(params.value_column_name);
+        version_column_num = header.getPositionByName(params.version_column_name);
 
         for (size_t i = 0; i < num_columns; ++i)
             if (i != time_column_num && i != value_column_num && i != version_column_num)
@@ -98,23 +103,18 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
             current_selected_row.columns.resize(num_columns);
     }
 
-    if (has_collation)
-        merge(merged_columns, queue_with_collation);
-    else
-        merge(merged_columns, queue);
-
-    return merged_block;
+    merge(merged_columns, queue);
+    return header.cloneWithColumns(merged_columns);
 }
 
 
-template <typename TSortCursor>
-void GraphiteRollupSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
     const DateLUTImpl & date_lut = DateLUT::instance();
 
     size_t started_rows = 0; /// Number of times startNextRow() has been called.
 
-    /// Take rows in needed order and put them into `merged_block` until we get `max_block_size` rows.
+    /// Take rows in needed order and put them into `merged_columns` until we get `max_block_size` rows.
     ///
     /// Variables starting with current_* refer to the rows previously popped from the queue that will
     /// contribute towards current output row.
@@ -122,7 +122,7 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_c
 
     while (!queue.empty())
     {
-        TSortCursor next_cursor = queue.top();
+        SortCursor next_cursor = queue.top();
 
         StringRef next_path = next_cursor->all_columns[path_column_num]->getDataAt(next_cursor->pos);
         bool path_differs = is_first || next_path != current_path;
@@ -218,8 +218,7 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_c
 }
 
 
-template <typename TSortCursor>
-void GraphiteRollupSortedBlockInputStream::startNextRow(MutableColumnRawPtrs & merged_columns, TSortCursor & cursor, const Graphite::Pattern * next_pattern)
+void GraphiteRollupSortedBlockInputStream::startNextRow(MutableColumns & merged_columns, SortCursor & cursor, const Graphite::Pattern * next_pattern)
 {
     /// Copy unmodified column values.
     for (size_t i = 0, size = unmodified_column_numbers.size(); i < size; ++i)
@@ -238,7 +237,7 @@ void GraphiteRollupSortedBlockInputStream::startNextRow(MutableColumnRawPtrs & m
 }
 
 
-void GraphiteRollupSortedBlockInputStream::finishCurrentRow(MutableColumnRawPtrs & merged_columns)
+void GraphiteRollupSortedBlockInputStream::finishCurrentRow(MutableColumns & merged_columns)
 {
     /// Insert calculated values of the columns `time`, `value`, `version`.
     merged_columns[time_column_num]->insert(UInt64(current_time_rounded));
@@ -252,7 +251,7 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentRow(MutableColumnRawPtrs
     }
     else
         merged_columns[value_column_num]->insertFrom(
-                *current_selected_row.columns[value_column_num], current_selected_row.row_num);
+            *current_selected_row.columns[value_column_num], current_selected_row.row_num);
 }
 
 

@@ -88,9 +88,10 @@ Block ColumnGathererStream::readImpl()
     if (!source_to_fully_copy && row_sources_buf.eof())
         return Block();
 
-    MutableColumnPtr output_column = column.column->cloneEmpty();
-    output_column->gather(*this);
-    return output_block.cloneWithColumns(MutableColumns{std::move(output_column)});
+    MutableColumns output_columns(1);
+    output_columns[0] = column.column->cloneEmpty();
+    output_columns[0]->gather(*this);
+    return output_block.cloneWithColumns(std::move(output_columns));
 }
 
 

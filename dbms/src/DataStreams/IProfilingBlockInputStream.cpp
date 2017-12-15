@@ -91,13 +91,13 @@ void IProfilingBlockInputStream::readSuffix()
 
 void IProfilingBlockInputStream::updateExtremes(Block & block)
 {
-    size_t columns = block.columns();
+    size_t num_columns = block.columns();
 
     if (!extremes)
     {
-        MutableColumns extremes_columns;
+        MutableColumns extremes_columns(num_columns);
 
-        for (size_t i = 0; i < columns; ++i)
+        for (size_t i = 0; i < num_columns; ++i)
         {
             const ColumnPtr & src = block.safeGetByPosition(i).column;
 
@@ -120,11 +120,11 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
             }
         }
 
-        extremes = block.cloneWithColumns(extremes_columns);
+        extremes = block.cloneWithColumns(std::move(extremes_columns));
     }
     else
     {
-        for (size_t i = 0; i < columns; ++i)
+        for (size_t i = 0; i < num_columns; ++i)
         {
             ColumnPtr & old_extremes = extremes.safeGetByPosition(i).column;
 
@@ -144,7 +144,7 @@ void IProfilingBlockInputStream::updateExtremes(Block & block)
             if (cur_max_value > max_value)
                 max_value = cur_max_value;
 
-            MutableColumn new_extremes = old_extremes->cloneEmpty();
+            MutableColumnPtr new_extremes = old_extremes->cloneEmpty();
 
             new_extremes->insert(min_value);
             new_extremes->insert(max_value);

@@ -6,8 +6,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
-void ReplacingSortedBlockInputStream::insertRow(MutableColumnRawPtrs & merged_columns, size_t & merged_rows)
+
+void ReplacingSortedBlockInputStream::insertRow(MutableColumns & merged_columns, size_t & merged_rows)
 {
     if (out_row_sources_buf)
     {
@@ -33,10 +38,14 @@ Block ReplacingSortedBlockInputStream::readImpl()
     if (children.size() == 1)
         return children[0]->read();
 
-    Block merged_block;
-    MutableColumnRawPtrs merged_columns;
+    Block header;
+    MutableColumns merged_columns;
 
-    init(merged_block, merged_columns);
+    init(header, merged_columns);
+
+    if (has_collation)
+        throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
+
     if (merged_columns.empty())
         return Block();
 
@@ -46,27 +55,22 @@ Block ReplacingSortedBlockInputStream::readImpl()
         selected_row.columns.resize(num_columns);
 
         if (!version_column.empty())
-            version_column_number = merged_block.getPositionByName(version_column);
+            version_column_number = header.getPositionByName(version_column);
     }
 
-    if (has_collation)
-        merge(merged_columns, queue_with_collation);
-    else
-        merge(merged_columns, queue);
-
-    return merged_block;
+    merge(merged_columns, queue);
+    return header.cloneWithColumns(merged_columns);
 }
 
 
-template <typename TSortCursor>
-void ReplacingSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
     size_t merged_rows = 0;
 
-    /// Take the rows in needed order and put them into `merged_block` until rows no more than `max_block_size`
+    /// Take the rows in needed order and put them into `merged_columns` until rows no more than `max_block_size`
     while (!queue.empty())
     {
-        TSortCursor current = queue.top();
+        SortCursor current = queue.top();
 
         if (current_key.empty())
         {
