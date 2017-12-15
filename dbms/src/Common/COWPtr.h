@@ -2,7 +2,7 @@
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include <boost/smart_ptr/intrusive_ref_counter.hpp>
-#include <iostream>
+#include <initializer_list>
 
 
 /** Copy-on-write shared ptr.
@@ -124,6 +124,9 @@ public:
     template <typename... Args>
     static MutablePtr create(Args &&... args) { return new Derived(std::forward<Args>(args)...); }
 
+    template <typename T>
+    static MutablePtr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
+
 public:
     Ptr getPtr() const { return static_cast<Ptr>(derived()); }
     MutablePtr getPtr() { return static_cast<MutablePtr>(derived()); }
@@ -179,6 +182,9 @@ public:
 
     template <typename... Args>
     static MutablePtr create(Args &&... args) { return new Derived(std::forward<Args>(args)...); }
+
+    template <typename T>
+    static MutablePtr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
 
     Base * clone() const override { return new Derived(*derived()); }
 };
