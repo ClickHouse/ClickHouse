@@ -46,7 +46,7 @@ String MergingSortedBlockInputStream::getID() const
     return res.str();
 }
 
-void MergingSortedBlockInputStream::init(Block & header, MutableColumnRawPtrs & merged_columns)
+void MergingSortedBlockInputStream::init(Block & header, MutableColumns & merged_columns)
 {
     /// Read the first blocks, initialize the queue.
     if (first)
@@ -155,7 +155,7 @@ Block MergingSortedBlockInputStream::readImpl()
         return children[0]->read();
 
     Block header;
-    MutableColumnRawPtrs merged_columns;
+    MutableColumns merged_columns;
 
     init(header, merged_columns);
     if (merged_columns.empty())
@@ -166,7 +166,7 @@ Block MergingSortedBlockInputStream::readImpl()
     else
         merge(merged_columns, queue);
 
-    return header.cloneWithColumns(merged_columns);
+    return header.cloneWithColumns(std::move(merged_columns));
 }
 
 
@@ -202,7 +202,7 @@ void MergingSortedBlockInputStream::fetchNextBlock<SortCursorWithCollation>(cons
 
 
 template <typename TSortCursor>
-void MergingSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<TSortCursor> & queue)
 {
     size_t merged_rows = 0;
 

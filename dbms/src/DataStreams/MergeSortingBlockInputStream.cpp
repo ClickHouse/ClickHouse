@@ -206,7 +206,7 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
 {
     size_t num_columns = blocks[0].columns();
 
-    MutableColumnPtrs merged_columns = blocks[0].cloneEmptyColumns();
+    MutableColumns merged_columns = blocks[0].cloneEmptyColumns();
     /// TODO: reserve (in each column)
 
     /// Take rows from queue in right order and push to 'merged'.
@@ -229,18 +229,18 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
         if (limit && total_merged_rows == limit)
         {
             blocks.clear();
-            return blocks[0].cloneWithColumns(merged_columns);
+            return blocks[0].cloneWithColumns(std::move(merged_columns));
         }
 
         ++merged_rows;
         if (merged_rows == max_merged_block_size)
-            return blocks[0].cloneWithColumns(merged_columns);
+            return blocks[0].cloneWithColumns(std::move(merged_columns));
     }
 
     if (merged_rows == 0)
         return {};
 
-    return blocks[0].cloneWithColumns(merged_columns);
+    return blocks[0].cloneWithColumns(std::move(merged_columns));
 }
 
 
