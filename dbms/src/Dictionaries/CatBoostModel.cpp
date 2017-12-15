@@ -220,7 +220,7 @@ private:
             return nullptr;
         size_t column_size = columns[offset]->size();
         auto data_column = ColumnVector<T>::create(size * column_size);
-        T* data = data_column->getData().data();
+        T * data = data_column->getData().data();
         for (size_t i = 0; i < size; ++i)
         {
             auto column = columns[offset + i];
@@ -235,7 +235,7 @@ private:
             data += size;
         }
 
-        return data_column;
+        return std::move(data_column);
     }
 
     /// Place columns into buffer, returns data which was used for fixed string columns.
@@ -328,7 +328,7 @@ private:
         std::string error_msg = "Error occurred while applying CatBoost model: ";
         size_t column_size = columns.front()->size();
 
-        auto result= ColumnFloat64::create(column_size);
+        auto result = ColumnFloat64::create(column_size);
         auto result_buf = result->getData().data();
 
         /// Prepare float features.
@@ -346,7 +346,7 @@ private:
 
                 throw Exception(error_msg + api->GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
             }
-            return result;
+            return std::move(result);
         }
 
         /// Prepare cat features.
@@ -387,7 +387,7 @@ private:
             }
         }
 
-        return result;
+        return std::move(result);
     }
 };
 

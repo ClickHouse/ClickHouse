@@ -99,7 +99,7 @@ private:
     ColumnPtr getColumnFromIds(const PaddedPODArray<Key>& ids) const;
 
     void fillKeyColumns(const std::vector<StringRef> & keys, size_t start, size_t size,
-                        const DictionaryStructure& dictionary_structure, ColumnsWithTypeAndName & columns) const;
+                        const DictionaryStructure & dictionary_structure, ColumnsWithTypeAndName & columns) const;
 
     DictionatyPtr dictionary;
     Names column_names;
@@ -136,7 +136,7 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
       logger(&Poco::Logger::get("DictionaryBlockInputStream")),
       fillBlockFunction(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, StringGetterByKey>)
 {
-    const DictionaryStructure& dictionaty_structure = dictionary->getStructure();
+    const DictionaryStructure & dictionaty_structure = dictionary->getStructure();
     fillKeyColumns(keys, 0, keys.size(), dictionaty_structure, key_columns);
 }
 
@@ -165,7 +165,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, si
         columns.reserve(key_columns.size());
         for (const auto & key_column : key_columns)
         {
-            auto column = key_column.column->cut(start, length);
+            ColumnPtr column = key_column.column->cut(start, length);
             columns.emplace_back(column);
             view_columns.emplace_back(column, key_column.type, key_column.name);
         }
@@ -182,7 +182,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, si
         columns.reserve(data_columns.size());
         for (const auto & data_column : data_columns)
             columns.push_back(data_column->cut(start, length));
-        const DictionaryStructure& dictionaty_structure = dictionary->getStructure();
+        const DictionaryStructure & dictionaty_structure = dictionary->getStructure();
         const auto & attributes = *dictionaty_structure.key;
         ColumnsWithTypeAndName keys_with_type_and_name = get_key_columns_function(columns, attributes);
         ColumnsWithTypeAndName view_with_type_and_name = get_view_columns_function(columns, attributes);
@@ -248,7 +248,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     ColumnsWithTypeAndName block_columns;
 
     data_types.reserve(keys.size());
-    const DictionaryStructure& dictionaty_structure = dictionary->getStructure();
+    const DictionaryStructure & dictionaty_structure = dictionary->getStructure();
     if (data_types.empty() && dictionaty_structure.key)
         for (const auto & key : *dictionaty_structure.key)
             data_types.push_back(key.type);
@@ -257,7 +257,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
         if (names.find(column.name) != names.end())
             block_columns.push_back(column);
 
-    const DictionaryStructure& structure = dictionary->getStructure();
+    const DictionaryStructure & structure = dictionary->getStructure();
 
     if (structure.id && names.find(structure.id->name) != names.end())
         block_columns.emplace_back(getColumnFromIds(ids), std::make_shared<DataTypeUInt64>(), structure.id->name);
@@ -309,7 +309,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
             case AttributeUnderlyingType::String:
             {
                 column = getColumnFromStringAttribute<StringGetter>(
-                             &DictionaryType::getString, ids, keys, data_types, attribute, *dictionary);
+                    &DictionaryType::getString, ids, keys, data_types, attribute, *dictionary);
                 break;
             }
             }
@@ -330,9 +330,9 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttribut
     auto size = ids.size();
     if (!keys.empty())
         size = keys.front()->size();
-    auto column_vector = std::make_unique<ColumnVector<AttributeType>>(size);
+    auto column_vector = ColumnVector<AttributeType>::create(size);
     callGetter(getter, ids, keys, data_types, column_vector->getData(), attribute, dictionary);
-    return ColumnPtr(std::move(column_vector));
+    return std::move(column_vector);
 }
 
 template <typename DictionaryType, typename Key>
@@ -345,7 +345,7 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromStringAt
     auto column_string = ColumnString::create();
     auto ptr = column_string.get();
     callGetter(getter, ids, keys, data_types, ptr, attribute, dictionary);
-    return column_string;
+    return std::move(column_string);
 }
 
 template <typename DictionaryType, typename Key>
@@ -354,70 +354,31 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(cons
     auto column_vector = ColumnVector<UInt64>::create();
     column_vector->getData().reserve(ids.size());
     for (UInt64 id : ids)
-    {
         column_vector->insert(id);
-    }
-    return column_vector;
+    return std::move(column_vector);
 }
 
 template <typename DictionaryType, typename Key>
 void DictionaryBlockInputStream<DictionaryType, Key>::fillKeyColumns(
     const std::vector<StringRef> & keys, size_t start, size_t size,
-    const DictionaryStructure& dictionary_structure, ColumnsWithTypeAndName & columns) const
+    const DictionaryStructure & dictionary_structure, ColumnsWithTypeAndName & res) const
 {
+    MutableColumns columns;
+    columns.reserve(dictionary_structure.key->size());
+
     for (const DictionaryAttribute & attribute : *dictionary_structure.key)
-    {
-#define ADD_COLUMN(TYPE) columns.push_back( \
-            ColumnWithTypeAndName(ColumnVector<TYPE>::create(), attribute.type, attribute.name))
-        switch (attribute.underlying_type)
-        {
-        case AttributeUnderlyingType::UInt8:
-            ADD_COLUMN(UInt8);
-            break;
-        case AttributeUnderlyingType::UInt16:
-            ADD_COLUMN(UInt16);
-            break;
-        case AttributeUnderlyingType::UInt32:
-            ADD_COLUMN(UInt32);
-            break;
-        case AttributeUnderlyingType::UInt64:
-            ADD_COLUMN(UInt64);
-            break;
-        case AttributeUnderlyingType::UInt128:
-            ADD_COLUMN(UInt128);
-            break;
-        case AttributeUnderlyingType::Int8:
-            ADD_COLUMN(Int8);
-            break;
-        case AttributeUnderlyingType::Int16:
-            ADD_COLUMN(Int16);
-            break;
-        case AttributeUnderlyingType::Int32:
-            ADD_COLUMN(Int32);
-            break;
-        case AttributeUnderlyingType::Int64:
-            ADD_COLUMN(Int64);
-            break;
-        case AttributeUnderlyingType::Float32:
-            ADD_COLUMN(Float32);
-            break;
-        case AttributeUnderlyingType::Float64:
-            ADD_COLUMN(Float64);
-            break;
-        case AttributeUnderlyingType::String:
-        {
-            columns.push_back(ColumnWithTypeAndName(ColumnString::create(), attribute.type, attribute.name));
-            break;
-        }
-        }
-    }
+        columns.emplace_back(attribute.type->createColumn());
+
     for (auto idx : ext::range(start, size))
     {
         const auto & key = keys[idx];
         auto ptr = key.data;
-        for (const auto & column : columns)
-            ptr = column.column->deserializeAndInsertFromArena(ptr);
+        for (auto & column : columns)
+            ptr = column->deserializeAndInsertFromArena(ptr);
     }
+
+    for (size_t i = 0, size = columns.size(); i < size; ++i)
+        res.emplace_back(ColumnWithTypeAndName{ std::move(columns[i]), (*dictionary_structure.key)[i].type, (*dictionary_structure.key)[i].name });
 }
 
 }
