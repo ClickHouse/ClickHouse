@@ -173,7 +173,7 @@ MutableColumnPtr ColumnTuple::replicate(const Offsets_t & offsets) const
     return ColumnTuple::create(new_columns);
 }
 
-MutableColumnPtr ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     const size_t tuple_size = columns.size();
     std::vector<Columns> scattered_tuple_elements(tuple_size);
@@ -181,7 +181,7 @@ MutableColumnPtr ColumnTuple::scatter(ColumnIndex num_columns, const Selector & 
     for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
         scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatter(num_columns, selector);
 
-    Columns res(num_columns);
+    MutableColumns res(num_columns);
 
     for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
     {

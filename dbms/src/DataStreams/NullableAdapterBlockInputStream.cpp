@@ -66,13 +66,12 @@ Block NullableAdapterBlockInputStream::readImpl()
             }
             case TO_NULLABLE:
             {
-                auto null_map = ColumnUInt8::create(elem.column->size(), 0);
+                ColumnPtr null_map = ColumnUInt8::create(elem.column->size(), 0);
 
                 res.insert({
                     ColumnNullable::create(elem.column, null_map),
                     std::make_shared<DataTypeNullable>(elem.type),
-                    rename[i].value_or(elem.name)
-                });
+                    rename[i].value_or(elem.name)});
                 break;
             }
             case NONE:

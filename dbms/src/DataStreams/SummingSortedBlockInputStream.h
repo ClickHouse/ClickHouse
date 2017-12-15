@@ -148,8 +148,7 @@ private:
     bool mergeMap(const MapDescription & map, Row & row, SortCursor & cursor);
 
     // Add the row under the cursor to the `row`.
-    template <typename TSortCursor>
-    void addRow(TSortCursor & cursor);
+    void addRow(SortCursor & cursor);
 };
 
 }
