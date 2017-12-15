@@ -3,8 +3,9 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
+#include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -115,34 +116,16 @@ Block TotalsHavingBlockInputStream::readImpl()
             size_t filter_column_pos = finalized.getPositionByName(filter_column_name);
             ColumnPtr filter_column_ptr = finalized.safeGetByPosition(filter_column_pos).column;
 
-            if (auto converted = filter_column_ptr->convertToFullColumnIfConst())
-                filter_column_ptr = converted;
+            if (ColumnPtr materialized = filter_column_ptr->convertToFullColumnIfConst())
+                filter_column_ptr = materialized;
 
-            bool filter_is_nullable = filter_column_ptr->isColumnNullable();
-            ColumnUInt8 * filter_column = filter_is_nullable
-                ? typeid_cast<ColumnUInt8 *>(&static_cast<ColumnNullable *>(filter_column_ptr.get())->getNestedColumn())
-                : typeid_cast<ColumnUInt8 *>(&*filter_column_ptr);
-
-            if (!filter_column)
-                throw Exception("Filter column must have type UInt8, found " +
-                    finalized.safeGetByPosition(filter_column_pos).type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
-
-            IColumn::Filter & filter = filter_column->getData();
-
-            if (filter_column_ptr->isColumnNullable())
-            {
-                const NullMap & null_map = static_cast<ColumnNullable *>(filter_column_ptr.get())->getNullMapData();
-                for (size_t i = 0, size = null_map.size(); i < size; ++i)
-                    if (null_map[i])
-                        filter[i] = 0;
-            }
+            FilterDescription filter_description(filter_column_ptr);
 
             /// Add values to `totals` (if it was not already done).
             if (totals_mode == TotalsMode::BEFORE_HAVING)
                 addToTotals(current_totals, block, nullptr);
             else
-                addToTotals(current_totals, block, &filter);
+                addToTotals(current_totals, block, filter_description.data);
 
             /// Filter the block by expression in HAVING.
             size_t columns = finalized.columns();
@@ -150,7 +133,7 @@ Block TotalsHavingBlockInputStream::readImpl()
             for (size_t i = 0; i < columns; ++i)
             {
                 ColumnWithTypeAndName & current_column = finalized.safeGetByPosition(i);
-                current_column.column = current_column.column->filter(filter, -1);
+                current_column.column = current_column.column->filter(*filter_description.data, -1);
                 if (current_column.column->empty())
                 {
                     finalized.clear();

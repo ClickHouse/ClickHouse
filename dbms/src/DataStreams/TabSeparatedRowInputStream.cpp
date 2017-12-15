@@ -159,7 +159,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
 }
 
 
-bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumnPtr & columns,
+bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
     WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
 {
     size_t size = data_types.size();
