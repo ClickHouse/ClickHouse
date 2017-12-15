@@ -29,7 +29,6 @@ void ColumnAggregateFunction::addArena(ArenaPtr arena_)
 MutableColumnPtr ColumnAggregateFunction::convertToValues() const
 {
     const IAggregateFunction * function = func.get();
-    MutableColumnPtr res = function->getReturnType()->createColumn();
 
     /** If the aggregate function returns an unfinalized/unfinished state,
         * then you just need to copy pointers to it and also shared ownership of data.
@@ -66,16 +65,17 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         auto res = createView();
         res->set(function_state->getNestedFunction());
         res->getData().assign(getData().begin(), getData().end());
-        return res;
+        return std::move(res);
     }
 
-    IColumn & column = *res;
+
+    MutableColumnPtr res = function->getReturnType()->createColumn();
     res->reserve(getData().size());
 
     for (auto val : getData())
-        function->insertResultInto(val, column);
+        function->insertResultInto(val, *res);
 
-    return res;
+    return std::move(res);
 }
 
 
@@ -104,7 +104,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
     else
     {
         /// Keep shared ownership of aggregation states.
-        src = from_concrete.shared_from_this();
+        src = from_concrete.getPtr();
 
         auto & data = getData();
         size_t old_size = data.size();
@@ -120,11 +120,10 @@ MutableColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t 
     if (size != filter.size())
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    auto res = createView();
-
     if (size == 0)
-        return res;
+        return cloneEmpty();
 
+    auto res = createView();
     auto & res_data = res->getData();
 
     if (result_size_hint)
@@ -138,7 +137,7 @@ MutableColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t 
     if (res_data.size() * 2 < res_data.capacity())
         res_data = Container_t(res_data.cbegin(), res_data.cend());
 
-    return res;
+    return std::move(res);
 }
 
 
@@ -160,7 +159,7 @@ MutableColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size
     for (size_t i = 0; i < limit; ++i)
         res->getData()[i] = getData()[perm[i]];
 
-    return res;
+    return std::move(res);
 }
 
 /// Is required to support operations with Set
@@ -333,11 +332,10 @@ MutableColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & o
     if (size != offsets.size())
         throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    auto res = createView();
-
     if (size == 0)
-        return res;
+        return cloneEmpty();
 
+    auto res = createView();
     auto & res_data = res->getData();
     res_data.reserve(offsets.back());
 
@@ -351,7 +349,7 @@ MutableColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & o
             res_data.push_back(data[i]);
     }
 
-    return res;
+    return std::move(res);
 }
 
 MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
@@ -374,7 +372,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     for (size_t i = 0; i < num_rows; ++i)
         static_cast<ColumnAggregateFunction &>(*columns[selector[i]]).data.push_back(data[i]);
 
-    return columns;
+    return std::move(columns);
 }
 
 void ColumnAggregateFunction::getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, IColumn::Permutation & res) const

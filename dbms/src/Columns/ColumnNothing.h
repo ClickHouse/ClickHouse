@@ -16,6 +16,8 @@ private:
         s = s_;
     }
 
+    ColumnNothing(const ColumnNothing &) = default;
+
 public:
     const char * getFamilyName() const override { return "Nothing"; }
     MutableColumnPtr cloneDummy(size_t s) const override { return ColumnNothing::create(s); };
