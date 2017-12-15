@@ -59,12 +59,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 
 bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
 {
-    std::lock_guard lock(mutex);
-
-    if (deactivated || scheduled)
-        return false;
-
-    pool.scheduleDelayedTask(shared_from_this(), ms, lock);
+    pool.scheduleDelayedTask(shared_from_this(), ms);
     return true;
 }
 
@@ -160,7 +155,7 @@ void BackgroundSchedulePool::removeTask(const TaskHandle & task)
 }
 
 
-void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t ms, std::lock_guard<std::recursive_mutex> &)
+void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t ms)
 {
     Poco::Timestamp current_time;
 
