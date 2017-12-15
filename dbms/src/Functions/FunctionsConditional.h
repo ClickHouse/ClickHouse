@@ -602,7 +602,7 @@ private:
 
     static const ColumnPtr materializeColumnIfConst(const ColumnPtr & column)
     {
-        if (auto res = column->convertToFullColumnIfConst())
+        if (ColumnPtr res = column->convertToFullColumnIfConst())
             return res;
         return column;
     }

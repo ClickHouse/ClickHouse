@@ -74,7 +74,7 @@ void FunctionArray::executeImpl(Block & block, const ColumnNumbers & arguments, 
         if (!arg.type->equals(*elem_type))
             preprocessed_column = castColumn(arg, elem_type, context);
 
-        if (auto materialized_column = preprocessed_column->convertToFullColumnIfConst())
+        if (ColumnPtr materialized_column = preprocessed_column->convertToFullColumnIfConst())
             preprocessed_column = materialized_column;
 
         columns_holder[i] = std::move(preprocessed_column);

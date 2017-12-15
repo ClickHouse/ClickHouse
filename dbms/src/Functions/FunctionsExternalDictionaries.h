@@ -163,7 +163,7 @@ private:
         ColumnPtr key_col = key_col_with_type.column;
 
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
             key_col = key_col_materialized;
 
         if (checkColumn<ColumnTuple>(key_col.get()))
@@ -372,7 +372,7 @@ private:
         ColumnPtr key_col = key_col_with_type.column;
 
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
             key_col = key_col_materialized;
 
         if (checkColumn<ColumnTuple>(key_col.get()))
@@ -682,7 +682,7 @@ private:
         ColumnPtr key_col = key_col_with_type.column;
 
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
             key_col = key_col_materialized;
 
         const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
@@ -936,7 +936,7 @@ private:
         ColumnPtr key_col = key_col_with_type.column;
 
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
             key_col = key_col_materialized;
 
         if (checkColumn<ColumnTuple>(key_col.get()))
@@ -1304,7 +1304,7 @@ private:
         ColumnPtr key_col = key_col_with_type.column;
 
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
             key_col = key_col_materialized;
 
         const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
