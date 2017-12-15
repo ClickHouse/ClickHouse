@@ -40,9 +40,9 @@ void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_valu
 
 ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
-    ColumnPtr column = createColumn();
+    auto column = createColumn();
     column->insert(field);
-    return ColumnConst::create(column, size);
+    return ColumnConst::create(std::move(column), size);
 }
 
 

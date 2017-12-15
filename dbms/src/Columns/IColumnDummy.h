@@ -18,9 +18,10 @@ namespace ErrorCodes
 /** Base class for columns-constants that contain a value that is not in the `Field`.
   * Not a full-fledged column and is used in a special way.
   */
-class IColumnDummy : public COWPtrHelper<IColumn, IColumnDummy>
+class IColumnDummy : public IColumn
 {
-private:
+public:
+    IColumnDummy() : s(0) {}
     IColumnDummy(size_t s_) : s(s_) {}
 
 public:
@@ -136,7 +137,7 @@ public:
         return true;
     }
 
-private:
+protected:
     size_t s;
 };
 

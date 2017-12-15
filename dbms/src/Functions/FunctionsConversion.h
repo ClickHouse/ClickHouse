@@ -1187,14 +1187,14 @@ private:
 
             if (auto col_array = checkAndGetColumn<ColumnArray>(array_arg.column.get()))
             {
-                auto res = new ColumnArray(nullptr, col_array->getOffsetsColumn());
+                auto res = new ColumnArray(nullptr, col_array->getOffsetsPtr());
                 block.getByPosition(result).column.reset(res);
 
                 /// get the most nested column
                 while (const auto nested_col_array = checkAndGetColumn<ColumnArray>(col_array->getDataPtr().get()))
                 {
                     /// create new level of array, copy offsets
-                    res->getDataPtr() = ColumnArray::create(nullptr, nested_col_array->getOffsetsColumn());
+                    res->getDataPtr() = ColumnArray::create(nullptr, nested_col_array->getOffsetsPtr());
 
                     res = static_cast<ColumnArray *>(&res->getData());
                     col_array = nested_col_array;

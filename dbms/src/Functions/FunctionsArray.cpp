@@ -721,7 +721,7 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
     for (size_t i = 0; i < tuple_size; ++i)
     {
         ColumnWithTypeAndName array_of_tuple_section;
-        array_of_tuple_section.column = ColumnArray::create(tuple_columns[i], col_array->getOffsetsColumn());
+        array_of_tuple_section.column = ColumnArray::create(tuple_columns[i], col_array->getOffsetsPtr());
         array_of_tuple_section.type = std::make_shared<DataTypeArray>(tuple_types[i]);
         block_of_temporary_results.insert(array_of_tuple_section);
 
@@ -801,7 +801,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
             source_block =
             {
                 {
-                    ColumnArray::create(nested_col, col_array->getOffsetsColumn()),
+                    ColumnArray::create(nested_col, col_array->getOffsetsPtr()),
                     std::make_shared<DataTypeArray>(input_type),
                     ""
                 },
@@ -824,7 +824,7 @@ void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & argu
             source_block =
             {
                 {
-                    ColumnConst::create(ColumnArray::create(nested_col, col_const_array->getOffsetsColumn()), block.rows()),
+                    ColumnConst::create(ColumnArray::create(nested_col, col_const_array->getOffsetsPtr()), block.rows()),
                     std::make_shared<DataTypeArray>(input_type),
                     ""
                 },
@@ -924,7 +924,7 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
         const ColumnArray::Offsets_t & offsets = array->getOffsets();
 
         auto res_nested = ColumnUInt32::create();
-        auto res_array = ColumnArray::create(res_nested, array->getOffsetsColumn());
+        auto res_array = ColumnArray::create(res_nested, array->getOffsetsPtr());
         block.getByPosition(result).column = res_array;
 
         ColumnUInt32::Container_t & res_values = res_nested->getData();
@@ -1333,7 +1333,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
     const ColumnArray * first_array = checkAndGetColumn<ColumnArray>(array_columns[0].get());
     const IColumn * first_null_map = null_maps[0];
     auto res_nested = ColumnUInt32::create();
-    auto res_array = ColumnArray::create(res_nested, first_array->getOffsetsColumn());
+    auto res_array = ColumnArray::create(res_nested, first_array->getOffsetsPtr());
     block.getByPosition(result).column = res_array;
 
     ColumnUInt32::Container_t & res_values = res_nested->getData();
@@ -2090,7 +2090,7 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
     const IColumn & src_data = array->getData();
     const ColumnArray::Offsets_t & offsets = array->getOffsets();
     IColumn & res_data = res.getData();
-    res.getOffsetsColumn() = array->getOffsetsColumn();
+    res.getOffsetsPtr() = array->getOffsetsPtr();
 
     const ColumnNullable * nullable_col = nullptr;
     ColumnNullable * nullable_res_col = nullptr;

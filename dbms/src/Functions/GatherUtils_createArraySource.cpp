@@ -51,7 +51,7 @@ std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is
     using Creator = typename ApplyTypeListForClass<ArraySourceCreator, TypeListNumbers>::Type;
     if (auto column_nullable = typeid_cast<const ColumnNullable *>(&col.getData()))
     {
-        ColumnArray column(column_nullable->getNestedColumnPtr(), col.getOffsetsColumn());
+        ColumnArray column(column_nullable->getNestedColumnPtr(), col.getOffsetsPtr());
         return Creator::create(column, &column_nullable->getNullMapColumn(), is_const, total_rows);
     }
     return Creator::create(col, nullptr, is_const, total_rows);

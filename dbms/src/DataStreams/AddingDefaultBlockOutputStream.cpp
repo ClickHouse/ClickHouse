@@ -41,7 +41,7 @@ void AddingDefaultBlockOutputStream::write(const DB::Block & block)
 
                 /// If for some reason there are different offset columns for one nested structure, then we take nonempty.
                 if (!offsets_column || offsets_column->empty())
-                    offsets_column = array->getOffsetsColumn();
+                    offsets_column = array->getOffsetsPtr();
             }
         }
 

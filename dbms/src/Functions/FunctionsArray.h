@@ -1106,7 +1106,7 @@ public:
                 const auto & nested_col = nullable_col.getNestedColumnPtr();
 
                 auto & data = source_block.getByPosition(0);
-                data.column = ColumnArray::create(nested_col, col_array->getOffsetsColumn());
+                data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
                 data.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
 
                 auto & null_map = source_block.getByPosition(2);

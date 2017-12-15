@@ -170,7 +170,7 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
         if (position_independent_encoding)
             serializeArraySizesPositionIndependent(column, *stream, offset, limit);
         else
-            DataTypeNumber<ColumnArray::Offset_t>().serializeBinaryBulk(*column_array.getOffsetsColumn(), *stream, offset, limit);
+            DataTypeNumber<ColumnArray::Offset_t>().serializeBinaryBulk(*column_array.getOffsetsPtr(), *stream, offset, limit);
     }
 
     /// Then serialize contents of arrays.
@@ -216,7 +216,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
         if (position_independent_encoding)
             deserializeArraySizesPositionIndependent(column, *stream, limit);
         else
-            DataTypeNumber<ColumnArray::Offset_t>().deserializeBinaryBulk(*column_array.getOffsetsColumn(), *stream, limit, 0);
+            DataTypeNumber<ColumnArray::Offset_t>().deserializeBinaryBulk(*column_array.getOffsetsPtr(), *stream, limit, 0);
     }
 
     path.back() = Substream::ArrayElements;
@@ -421,7 +421,7 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 
 MutableColumnPtr DataTypeArray::createColumn() const
 {
-    return ColumnArray::create(nested->createColumn());
+    return ColumnArray::create(nested->createColumn(), ColumnArray::ColumnOffsets_t::create());
 }
 
 
