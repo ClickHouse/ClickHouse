@@ -45,13 +45,13 @@ ColumnArray::ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column)
     }
 
     /** NOTE
-      * Arrays with constant value are possible and used in implementation of higher order functions and in ARRAY JOIN.
+      * Arrays with constant value are possible and used in implementation of higher order functions (see FunctionReplicate).
       * But in most cases, arrays with constant value are unexpected and code will work wrong. Use with caution.
       */
 }
 
 
-std::string ColumnArray::getName() const { return "ColumnArray(" + getData().getName() + ")"; }
+std::string ColumnArray::getName() const { return "Array(" + getData().getName() + ")"; }
 
 
 ColumnPtr ColumnArray::cloneResized(size_t to_size) const
@@ -152,10 +152,10 @@ void ColumnArray::insertData(const char * pos, size_t length)
     /** Similarly - only for arrays of fixed length values.
       */
     IColumn * data_ = data.get();
-    if (!data_->isFixed())
+    if (!data_->isFixedAndContiguous())
         throw Exception("Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 
-    size_t field_size = data_->sizeOfField();
+    size_t field_size = data_->sizeOfValueIfFixed();
 
     const char * end = pos + length;
     size_t elems = 0;
@@ -321,19 +321,13 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 ColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
     ColumnPtr new_data;
-    ColumnPtr new_offsets;
 
     if (auto full_column = getData().convertToFullColumnIfConst())
         new_data = full_column;
     else
         new_data = data;
 
-    if (auto full_column = offsets->convertToFullColumnIfConst())
-        new_offsets = full_column;
-    else
-        new_offsets = offsets;
-
-    return std::make_shared<ColumnArray>(new_data, new_offsets);
+    return std::make_shared<ColumnArray>(new_data, offsets);
 }
 
 
@@ -585,12 +579,12 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
     for (size_t i = 0; i < tuple_size; ++i)
         temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsColumn()).filter(filt, result_size_hint);
 
-    Block tuple_block = tuple.getData().cloneEmpty();
+    Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        tuple_block.getByPosition(i).column = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+        tuple_columns[i] = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
 
     return std::make_shared<ColumnArray>(
-        std::make_shared<ColumnTuple>(tuple_block),
+        std::make_shared<ColumnTuple>(tuple_columns),
         static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
 }
 
@@ -900,30 +894,13 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets_t & replicate_offsets) const
     for (size_t i = 0; i < tuple_size; ++i)
         temporary_arrays[i] = ColumnArray(tuple.getColumns()[i], getOffsetsColumn()).replicate(replicate_offsets);
 
-    Block tuple_block = tuple.getData().cloneEmpty();
+    Columns tuple_columns(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
-        tuple_block.getByPosition(i).column = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
+        tuple_columns[i] = static_cast<ColumnArray &>(*temporary_arrays[i]).getDataPtr();
 
     return std::make_shared<ColumnArray>(
-        std::make_shared<ColumnTuple>(tuple_block),
+        std::make_shared<ColumnTuple>(tuple_columns),
         static_cast<ColumnArray &>(*temporary_arrays.front()).getOffsetsColumn());
-}
-
-
-ColumnPtr ColumnArray::getLengthsColumn() const
-{
-    const auto & offsets_data = getOffsets();
-    size_t size = offsets_data.size();
-    auto column = std::make_shared<ColumnVector<ColumnArray::Offset_t>>(offsets->size());
-    auto & data = column->getData();
-
-    if (size)
-        data[0] = offsets_data[0];
-
-    for (size_t i = 1; i < size; ++i)
-        data[i] = offsets_data[i] - offsets_data[i - 1];
-
-    return column;
 }
 
 

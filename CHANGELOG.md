@@ -1,10 +1,73 @@
-# ClickHouse release 1.1.54292
+# ClickHouse release 1.1.54318, 2017-11-30
+
+This release contains bug fixes for the previous release 1.1.54310:
+  * Fixed incorrect row deletions during merges in the SummingMergeTree engine
+  * Fixed a memory leak in unreplicated MergeTree engines
+  * Fixed performance degradation with frequent inserts in MergeTree engines
+  * Fixed an issue that was causing the replication queue to stop running
+  * Fixed rotation and archiving of server logs
+
+# ClickHouse release 1.1.54310, 2017-11-01
+
+## New features:
+* Custom partitioning key for the MergeTree family of table engines.
+* [Kafka](https://clickhouse.yandex/docs/en/single/index.html#document-table_engines/kafka) table engine.
+* Added support for loading [CatBoost](https://catboost.yandex/) models and applying them to data stored in ClickHouse.
+* Added support for time zones with non-integer offsets from UTC.
+* Added support for arithmetic operations with time intervals.
+* The range of values for the Date and DateTime types is extended to the year 2105.
+* Added the `CREATE MATERIALIZED VIEW x TO y` query (specifies an existing table for storing the data of a materialized view).
+* Added the `ATTACH TABLE` query without arguments.
+* The processing logic for Nested columns with names ending in -Map in a SummingMergeTree table was extracted to the sumMap aggregate function. You can now specify such columns explicitly.
+* Max size of the IP trie dictionary is increased to 128M entries.
+* Added the `getSizeOfEnumType` function.
+* Added the `sumWithOverflow` aggregate function.
+* Added support for the Cap'n Proto input format.
+* You can now customize compression level when using the zstd algorithm.
+
+## Backwards incompatible changes:
+* Creation of temporary tables with an engine other than Memory is forbidden.
+* Explicit creation of tables with the View or MaterializedView engine is forbidden.
+* During table creation, a new check verifies that the sampling key expression is included in the primary key.
+
+## Bug fixes:
+* Fixed hangups when synchronously inserting into a Distributed table.
+* Fixed nonatomic adding and removing of parts in Replicated tables.
+* Data inserted into a materialized view is not subjected to unnecessary deduplication.
+* Executing a query to a Distributed table for which the local replica is lagging and remote replicas are unavailable does not result in an error anymore.
+* Users don't need access permissions to the `default` database to create temporary tables anymore.
+* Fixed crashing when specifying the Array type without arguments.
+* Fixed hangups when the disk volume containing server logs is full.
+* Fixed an overflow in the `toRelativeWeekNum` function for the first week of the Unix epoch.
+
+## Build improvements:
+* Several third-party libraries (notably Poco) were updated and converted to git submodules.
+
+# ClickHouse release 1.1.54304, 2017-10-19
+
+## New features:
+* TLS support in the native protocol (to enable, set `tcp_ssl_port` in `config.xml`)
+
+## Bug fixes:
+* `ALTER` for replicated tables now tries to start running as soon as possible
+* Fixed crashing when reading data with the setting `preferred_block_size_bytes=0`
+* Fixed crashes of `clickhouse-client` when `Page Down` is pressed
+* Correct interpretation of certain complex queries with `GLOBAL IN` and `UNION ALL`
+* `FREEZE PARTITION` always works atomically now
+* Empty POST requests now return a response with code 411
+* Fixed interpretation errors for expressions like `CAST(1 AS Nullable(UInt8))`
+* Fixed an error when reading columns like `Array(Nullable(String))` from `MergeTree` tables
+* Fixed crashing when parsing queries like `SELECT dummy AS dummy, dummy AS b`
+* Users are updated correctly when `users.xml` is invalid
+* Correct handling when an executable dictionary returns a non-zero response code
+
+# ClickHouse release 1.1.54292, 2017-09-20
 
 ## New features:
 * Added the `pointInPolygon` function for working with coordinates on a coordinate plane.
 * Added the `sumMap` aggregate function for calculating the sum of arrays, similar to `SummingMergeTree`.
 * Added the `trunc` function. Improved performance of the rounding functions (`round`, `floor`, `ceil`, `roundToExp2`) and corrected the logic of how they work. Changed the logic of the `roundToExp2` function for fractions and negative numbers.
-* The ClickHouse executable file is now less dependent on the libc version. The same ClickHouse executable file can run on a wide variety of Linux systems. Note: There is still a dependency when using compiled queries (with the setting `compile = 1`, which is not used by default). 
+* The ClickHouse executable file is now less dependent on the libc version. The same ClickHouse executable file can run on a wide variety of Linux systems. Note: There is still a dependency when using compiled queries (with the setting `compile = 1`, which is not used by default).
 * Reduced the time needed for dynamic compilation of queries.
 
 ## Bug fixes:
@@ -15,7 +78,7 @@
 * Fixed an error in the concat function that occurred if the first column in a block has the Array type.
 * Progress is now displayed correctly in the system.merges table.
 
-# ClickHouse release 1.1.54289
+# ClickHouse release 1.1.54289, 2017-09-13
 
 ## New features:
 * `SYSTEM` queries for server administration: `SYSTEM RELOAD DICTIONARY`, `SYSTEM RELOAD DICTIONARIES`, `SYSTEM DROP DNS CACHE`, `SYSTEM SHUTDOWN`, `SYSTEM KILL`.
@@ -37,7 +100,7 @@
 * Fixed randomization when choosing hosts for the connection to ZooKeeper.
 * Fixed the exclusion of lagging replicas in distributed queries if the replica is localhost.
 * Fixed an error where a data part in a `ReplicatedMergeTree` table could be broken after running `ALTER MODIFY` on an element in a `Nested` structure.
-* Fixed an error that could cause SELECT queries to "hang". 
+* Fixed an error that could cause SELECT queries to "hang".
 * Improvements to distributed DDL queries.
 * Fixed the query `CREATE TABLE ... AS <materialized view>`.
 * Resolved the deadlock in the `ALTER ... CLEAR COLUMN IN PARTITION` query for `Buffer` tables.
@@ -53,18 +116,18 @@
 ## Please note when upgrading:
 * There is now a higher default value for the MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (the maximum total size of data parts to merge, in bytes): it has increased from 100 GiB to 150 GiB. This might result in large merges running after the server upgrade, which could cause an increased load on the disk subsystem. If the free space available on the server is less than twice the total amount of the merges that are running, this will cause all other merges to stop running, including merges of small data parts. As a result, INSERT requests will fail with the message "Merges are processing significantly slower than inserts." Use the `SELECT * FROM system.merges` request to monitor the situation. You can also check the `DiskSpaceReservedForMerge` metric in the `system.metrics` table, or in Graphite. You don't need to do anything to fix this, since the issue will resolve itself once the large merges finish. If you find this unacceptable, you can restore the previous value for the `max_bytes_to_merge_at_max_space_in_pool` setting (to do this, go to the `<merge_tree>` section in config.xml, set `<max_bytes_to_merge_at_max_space_in_pool>107374182400</max_bytes_to_merge_at_max_space_in_pool>` and restart the server).
 
-# ClickHouse release 1.1.54284
+# ClickHouse release 1.1.54284, 2017-08-29
 
 * This is bugfix release for previous 1.1.54282 release. It fixes ZooKeeper nodes leak in `parts/` directory.
 
-# ClickHouse release 1.1.54282
+# ClickHouse release 1.1.54282, 2017-08-23
 
 This is a bugfix release. The following bugs were fixed:
 * `DB::Exception: Assertion violation: !_path.empty()` error when inserting into a Distributed table.
 * Error when parsing inserted data in RowBinary format if the data begins with ';' character.
 * Errors during runtime compilation of certain aggregate functions (e.g. `groupArray()`).
 
-# ClickHouse release 1.1.54276
+# ClickHouse release 1.1.54276, 2017-08-16
 
 ## New features:
 
@@ -79,7 +142,7 @@ This is a bugfix release. The following bugs were fixed:
 
 ## Major changes:
 
-* Improved security: all server files are created with 0640 permissions (can be changed via <umask> config parameter). 
+* Improved security: all server files are created with 0640 permissions (can be changed via <umask> config parameter).
 * Improved error messages for queries with invalid syntax.
 * Significantly reduced memory consumption and improved performance when merging large sections of MergeTree data.
 * Significantly increased the performance of data merges for the ReplacingMergeTree engine.
@@ -138,7 +201,7 @@ This is a bugfix release. The following bugs were fixed:
 * You can use gcc 7 to compile ClickHouse.
 * Parallel builds using ccache+distcc are faster now.
 
-# ClickHouse release 1.1.54245
+# ClickHouse release 1.1.54245, 2017-07-04
 
 ## New features:
 

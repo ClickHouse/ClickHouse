@@ -51,14 +51,14 @@ private:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(block.rows(), Impl::value);
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Impl::value);
     }
 };
 
@@ -78,25 +78,10 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto check_argument_type = [this] (const IDataType * arg) {
-            if (!checkDataType<DataTypeUInt8>(arg) &&
-                !checkDataType<DataTypeUInt16>(arg) &&
-                !checkDataType<DataTypeUInt32>(arg) &&
-                !checkDataType<DataTypeUInt64>(arg) &&
-                !checkDataType<DataTypeInt8>(arg) &&
-                !checkDataType<DataTypeInt16>(arg) &&
-                !checkDataType<DataTypeInt32>(arg) &&
-                !checkDataType<DataTypeInt64>(arg) &&
-                !checkDataType<DataTypeFloat32>(arg) &&
-                !checkDataType<DataTypeFloat64>(arg))
-            {
-                throw Exception{
-                    "Illegal type " + arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-            }
-        };
-
-        check_argument_type(arguments.front().get());
+        if (!arguments.front()->isNumber())
+            throw Exception{
+                "Illegal type " + arguments.front()->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeFloat64>();
     }
@@ -216,22 +201,12 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const auto check_argument_type = [this] (const IDataType * arg) {
-            if (!checkDataType<DataTypeUInt8>(arg) &&
-                !checkDataType<DataTypeUInt16>(arg) &&
-                !checkDataType<DataTypeUInt32>(arg) &&
-                !checkDataType<DataTypeUInt64>(arg) &&
-                !checkDataType<DataTypeInt8>(arg) &&
-                !checkDataType<DataTypeInt16>(arg) &&
-                !checkDataType<DataTypeInt32>(arg) &&
-                !checkDataType<DataTypeInt64>(arg) &&
-                !checkDataType<DataTypeFloat32>(arg) &&
-                !checkDataType<DataTypeFloat64>(arg))
-            {
+        const auto check_argument_type = [this] (const IDataType * arg)
+        {
+            if (!arg->isNumber())
                 throw Exception{
                     "Illegal type " + arg->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-            }
         };
 
         check_argument_type(arguments.front().get());

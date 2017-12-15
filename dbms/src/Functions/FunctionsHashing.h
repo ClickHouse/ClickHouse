@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -42,21 +43,20 @@ namespace ErrorCodes
 
 /** Hashing functions.
   *
-  * Half MD5:
-  * halfMD5:     String -> UInt64
+  * halfMD5: String -> UInt64
   *
   * A faster cryptographic hash function:
-  * sipHash64:  String -> UInt64
+  * sipHash64: String -> UInt64
   *
   * Fast non-cryptographic hash function for strings:
   * cityHash64: String -> UInt64
   *
   * A non-cryptographic hash from a tuple of values of any types (uses cityHash64 for strings and intHash64 for numbers):
-  * cityHash64:  any* -> UInt64
+  * cityHash64: any* -> UInt64
   *
   * Fast non-cryptographic hash function from any integer:
-  * intHash32:    number -> UInt32
-  * intHash64:  number -> UInt64
+  * intHash32: number -> UInt32
+  * intHash64: number -> UInt64
   *
   */
 
@@ -181,7 +181,7 @@ class FunctionStringHash64 : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHash64>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash64>(); };
 
     String getName() const override
     {
@@ -192,7 +192,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -232,7 +232,7 @@ class FunctionStringHashFixedString : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionStringHashFixedString>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHashFixedString>(); };
 
     String getName() const override
     {
@@ -243,7 +243,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -284,7 +284,7 @@ class FunctionIntHash : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIntHash>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIntHash>(); };
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -321,7 +321,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isNumeric())
+        if (!arguments[0]->isValueRepresentedByNumber())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -372,7 +372,7 @@ class FunctionNeighbourhoodHash64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbourhoodHash64>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbourhoodHash64>(); };
 
 private:
     template <typename FromType, bool first>
@@ -541,17 +541,22 @@ private:
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
         {
-            const Block & tuple_data = tuple->getData();
-            for (size_t i = 0, size = tuple_data.columns(); i < size; ++i)
-            {
-                const ColumnWithTypeAndName & col = tuple_data.getByPosition(i);
-                executeForArgument(col.type.get(), col.column.get(), vec_to, is_first);
-            }
+            const Columns & tuple_columns = tuple->getColumns();
+            const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
+            size_t tuple_size = tuple_columns.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+                executeForArgument(tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
-        else if (const ColumnConst * tuple = checkAndGetColumnConst<ColumnTuple>(column))
+        else if (const ColumnTuple * tuple = checkAndGetColumnConstData<ColumnTuple>(column))
         {
-            ColumnPtr tuple_of_constants = convertConstTupleToTupleOfConstants(*tuple);
-            executeForArgument(type, tuple_of_constants.get(), vec_to, is_first);
+            const Columns & tuple_columns = tuple->getColumns();
+            const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
+            size_t tuple_size = tuple_columns.size();
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                ColumnConst tmp(tuple_columns[i], column->size());
+                executeForArgument(tuple_types[i].get(), &tmp, vec_to, is_first);
+            }
         }
         else
         {
@@ -573,7 +578,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeUInt64>();
     }
@@ -589,7 +594,7 @@ public:
         if (arguments.empty())
         {
             /// Constant random number from /dev/urandom is used as a hash value of empty list of arguments.
-            vec_to.assign(rows, 0xe28dbde7fe22e41c);
+            vec_to.assign(rows, static_cast<UInt64>(0xe28dbde7fe22e41c));
         }
 
         /// The function supports arbitary number of arguments of arbitary types.
@@ -606,7 +611,7 @@ public:
         bool all_constants = true;
         for (size_t arg_idx : arguments)
         {
-            if (!block.getByPosition(arg_idx).column->isConst())
+            if (!block.getByPosition(arg_idx).column->isColumnConst())
             {
                 all_constants = false;
                 break;
@@ -614,7 +619,7 @@ public:
         }
 
         if (all_constants && block.rows() > 0)
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(1, (*block.getByPosition(result).column)[0]);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(1, (*block.getByPosition(result).column)[0]);
     }
 };
 
@@ -721,14 +726,7 @@ public:
         if (arg_count == 2)
         {
             const auto second_arg = arguments.back().get();
-            if (!checkDataType<DataTypeUInt8>(second_arg) &&
-                !checkDataType<DataTypeUInt16>(second_arg) &&
-                !checkDataType<DataTypeUInt32>(second_arg) &&
-                !checkDataType<DataTypeUInt64>(second_arg) &&
-                !checkDataType<DataTypeInt8>(second_arg) &&
-                !checkDataType<DataTypeInt16>(second_arg) &&
-                !checkDataType<DataTypeInt32>(second_arg) &&
-                !checkDataType<DataTypeInt64>(second_arg))
+            if (!second_arg->isInteger())
                 throw Exception{
                     "Illegal type " + second_arg->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -782,7 +780,7 @@ private:
     void executeTwoArgs(Block & block, const ColumnNumbers & arguments, const size_t result) const
     {
         const auto level_col = block.getByPosition(arguments.back()).column.get();
-        if (!level_col->isConst())
+        if (!level_col->isColumnConst())
             throw Exception{
                 "Second argument of function " + getName() + " must be an integral constant",
                 ErrorCodes::ILLEGAL_COLUMN};

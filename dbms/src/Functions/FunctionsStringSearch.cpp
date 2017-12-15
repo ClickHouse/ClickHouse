@@ -57,7 +57,7 @@ struct PositionCaseSensitiveASCII
 
     /// Convert string to lowercase. Only for case-insensitive search.
     /// Implementation is permitted to be inefficient because it is called for single string.
-    static void toLowerIfNeed(std::string & s)
+    static void toLowerIfNeed(std::string &)
     {
     }
 };
@@ -68,7 +68,7 @@ struct PositionCaseInsensitiveASCII
     using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
     using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
 
-    static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
+    static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t /*haystack_size_hint*/)
     {
         return SearcherInBigHaystack(needle_data, needle_size);
     }
@@ -113,7 +113,7 @@ struct PositionCaseSensitiveUTF8
         return res;
     }
 
-    static void toLowerIfNeed(std::string & s)
+    static void toLowerIfNeed(std::string &)
     {
     }
 };
@@ -496,20 +496,13 @@ struct MatchImpl
         res = revert ^ regexp->match(data);
     }
 
-    static void vector_vector(const ColumnString::Chars_t & haystack_data,
-        const ColumnString::Offsets_t & haystack_offsets,
-        const ColumnString::Chars_t & needle_data,
-        const ColumnString::Offsets_t & needle_offsets,
-        PaddedPODArray<UInt8> & res)
+    template <typename... Args> static void vector_vector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
-    static void constant_vector(const String & haystack,
-        const ColumnString::Chars_t & needle_data,
-        const ColumnString::Offsets_t & needle_offsets,
-        PaddedPODArray<UInt8> & res)
+    template <typename... Args> static void constant_vector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -945,7 +938,7 @@ class FunctionStringReplace : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionStringReplace>();
     }
@@ -965,15 +958,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
+        if (!arguments[0]->isStringOrFixedString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!checkDataType<DataTypeString>(&*arguments[1]) && !checkDataType<DataTypeFixedString>(&*arguments[1]))
+        if (!arguments[1]->isStringOrFixedString())
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!checkDataType<DataTypeString>(&*arguments[2]) && !checkDataType<DataTypeFixedString>(&*arguments[2]))
+        if (!arguments[2]->isStringOrFixedString())
             throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -986,7 +979,7 @@ public:
         const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;
         const ColumnPtr column_replacement = block.getByPosition(arguments[2]).column;
 
-        if (!column_needle->isConst() || !column_replacement->isConst())
+        if (!column_needle->isColumnConst() || !column_replacement->isColumnConst())
             throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
         const IColumn * c1 = block.getByPosition(arguments[1]).column.get();

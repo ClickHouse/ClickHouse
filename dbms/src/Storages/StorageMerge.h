@@ -14,8 +14,6 @@ namespace DB
   */
 class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageMerge>;
-
 public:
     std::string getName() const override { return "Merge"; }
     std::string getTableName() const override { return name; }
@@ -41,7 +39,7 @@ public:
         unsigned num_streams) override;
 
     void drop() override {}
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
+    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { name = new_table_name; }
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
@@ -54,13 +52,13 @@ private:
     OptimizedRegularExpression table_name_regexp;
     const Context & context;
 
-    StorageMerge(
-        const std::string & name_,            /// The name of the table.
-        NamesAndTypesListPtr columns_,        /// List of columns.
-        const String & source_database_,      /// In which database to look for source tables.
-        const String & table_name_regexp_,    /// Regex names of source tables.
-        const Context & context_);            /// Known tables.
+    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockPtr>>;
 
+    StorageListWithLocks getSelectedTables() const;
+
+    Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
+
+protected:
     StorageMerge(
         const std::string & name_,
         NamesAndTypesListPtr columns_,
@@ -70,12 +68,6 @@ private:
         const String & source_database_,
         const String & table_name_regexp_,
         const Context & context_);
-
-    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockPtr>>;
-
-    StorageListWithLocks getSelectedTables() const;
-
-    Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
 };
 
 }

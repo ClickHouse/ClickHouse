@@ -1,16 +1,14 @@
 #pragma once
 
-#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
+#include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <ext/range.h>
-#include <numeric>
+
 #include <vector>
 #include <string>
 #include <map>
-#include <experimental/optional>
+#include <optional>
 
 
 namespace DB
@@ -22,6 +20,7 @@ enum class AttributeUnderlyingType
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
@@ -42,13 +41,7 @@ std::string toString(const AttributeUnderlyingType type);
 
 
 /// Min and max lifetimes for a dictionary or it's entry
-struct DictionaryLifetime final
-{
-    UInt64 min_sec;
-    UInt64 max_sec;
-
-    DictionaryLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
-};
+using DictionaryLifetime = ExternalLoadableLifetime;
 
 
 /** Holds the description of a single dictionary attribute:
@@ -83,11 +76,11 @@ struct DictionarySpecialAttribute final
 /// Name of identifier plus list of attributes
 struct DictionaryStructure final
 {
-    std::experimental::optional<DictionarySpecialAttribute> id;
-    std::experimental::optional<std::vector<DictionaryAttribute>> key;
+    std::optional<DictionarySpecialAttribute> id;
+    std::optional<std::vector<DictionaryAttribute>> key;
     std::vector<DictionaryAttribute> attributes;
-    std::experimental::optional<DictionarySpecialAttribute> range_min;
-    std::experimental::optional<DictionarySpecialAttribute> range_max;
+    std::optional<DictionarySpecialAttribute> range_min;
+    std::optional<DictionarySpecialAttribute> range_max;
     bool has_expressions = false;
 
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);

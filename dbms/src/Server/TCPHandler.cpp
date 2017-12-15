@@ -6,7 +6,7 @@
 
 #include <Common/Stopwatch.h>
 
-#include <Core/Progress.h>
+#include <IO/Progress.h>
 
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
@@ -626,7 +626,7 @@ bool TCPHandler::receiveData()
             if (!(storage = query_context.tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(block.getColumnsList());
-                storage = StorageMemory::create(external_table_name, columns);
+                storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }

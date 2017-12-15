@@ -796,7 +796,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
     Block sample = interpreter->getSampleBlock();
     NamesAndTypesListPtr columns = std::make_shared<NamesAndTypesList>(sample.getColumnsList());
 
-    StoragePtr external_storage = StorageMemory::create(external_table_name, columns);
+    StoragePtr external_storage = StorageMemory::create(external_table_name, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
     external_storage->startup();
 
     /** There are two ways to perform distributed GLOBAL subqueries.
@@ -1584,7 +1584,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
 
             if (table)
             {
-                StorageSet * storage_set = typeid_cast<StorageSet *>(table.get());
+                StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
 
                 if (storage_set)
                 {
@@ -2228,7 +2228,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         DataTypePtr type = applyVisitor(FieldToDataType(), node->value);
 
         ColumnWithTypeAndName column;
-        column.column = type->createConstColumn(1, node->value);
+        column.column = type->createColumnConst(1, node->value);
         column.type = type;
         column.name = node->getColumnName();
 
@@ -2416,7 +2416,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
         if (table)
         {
-            StorageJoin * storage_join = typeid_cast<StorageJoin *>(table.get());
+            StorageJoin * storage_join = dynamic_cast<StorageJoin *>(table.get());
 
             if (storage_join)
             {
@@ -2586,7 +2586,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
     return true;
 }
 
-void ExpressionAnalyzer::appendProjectResult(DB::ExpressionActionsChain & chain, bool only_types) const
+void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
     assertSelect();
 
@@ -2845,7 +2845,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
 }
 
 
-Names ExpressionAnalyzer::getRequiredColumns()
+Names ExpressionAnalyzer::getRequiredColumns() const
 {
     if (!unknown_required_columns.empty())
         throw Exception("Unknown identifier: " + *unknown_required_columns.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);

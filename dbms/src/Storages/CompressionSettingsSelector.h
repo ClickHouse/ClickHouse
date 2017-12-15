@@ -1,9 +1,9 @@
 #include <IO/CompressedStream.h>
+#include <IO/CompressionSettings.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 
 namespace DB
 {

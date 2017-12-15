@@ -35,7 +35,7 @@ public:
 
     void setArgument(const DataTypePtr & argument)
     {
-        if (!argument->isNumeric())
+        if (!argument->isNumber())
             throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -47,7 +47,7 @@ public:
         ++this->data(place).count;
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).sum += this->data(rhs).sum;
         this->data(place).count += this->data(rhs).count;

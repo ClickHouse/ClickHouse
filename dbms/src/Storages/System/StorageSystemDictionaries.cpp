@@ -42,10 +42,10 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
 
 BlockInputStreams StorageSystemDictionaries::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo &,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
+    const size_t,
     const unsigned)
 {
     check(column_names);
@@ -76,28 +76,25 @@ BlockInputStreams StorageSystemDictionaries::read(
     ColumnWithTypeAndName col_source{std::make_shared<ColumnString>(), std::make_shared<DataTypeString>(), "source"};
 
     const auto & external_dictionaries = context.getExternalDictionaries();
-    const std::lock_guard<std::mutex> lock{external_dictionaries.dictionaries_mutex};
+    auto objects_map = external_dictionaries.getObjectsMap();
+    const auto & dictionaries = objects_map.get();
 
-    for (const auto & dict_info : external_dictionaries.dictionaries)
+    for (const auto & dict_info : dictionaries)
     {
         col_name.column->insert(dict_info.first);
         col_origin.column->insert(dict_info.second.origin);
 
-        if (dict_info.second.dict)
+        if (dict_info.second.loadable)
         {
-            const auto dict_ptr = dict_info.second.dict->get();
+            const auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(dict_info.second.loadable);
 
             col_type.column->insert(dict_ptr->getTypeName());
 
             const auto & dict_struct = dict_ptr->getStructure();
             col_key.column->insert(dict_struct.getKeyDescription());
 
-            col_attribute_names.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
-                return attr.name;
-            }));
-            col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) -> decltype(auto) {
-                return attr.type->getName();
-            }));
+            col_attribute_names.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.name; }));
+            col_attribute_types.column->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.type->getName(); }));
             col_bytes_allocated.column->insert(static_cast<UInt64>(dict_ptr->getBytesAllocated()));
             col_query_count.column->insert(static_cast<UInt64>(dict_ptr->getQueryCount()));
             col_hit_rate.column->insert(dict_ptr->getHitRate());

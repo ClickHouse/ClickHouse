@@ -28,7 +28,7 @@ namespace ErrorCodes
 template <bool negative = false>
 struct EmptyImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt8> & res)
+    static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt8> & res)
     {
         size_t size = offsets.size();
         ColumnString::Offset_t prev_offset = 1;
@@ -39,12 +39,12 @@ struct EmptyImpl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt8 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t n, UInt8 & res)
     {
         res = negative ^ (n == 0);
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt8> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & /*data*/, size_t /*n*/, PaddedPODArray<UInt8> & /*res*/)
     {
     }
 
@@ -65,19 +65,19 @@ struct EmptyImpl
   */
 struct LengthImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
+    static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
         for (size_t i = 0; i < size; ++i)
             res[i] = i == 0 ? (offsets[i] - 1) : (offsets[i] - 1 - offsets[i - 1]);
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt64 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t n, UInt64 & res)
     {
         res = n;
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt64> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars_t & /*data*/, size_t /*n*/, PaddedPODArray<UInt64> & /*res*/)
     {
     }
 
@@ -109,7 +109,7 @@ struct LengthUTF8Impl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & data, size_t n, UInt64 & res)
+    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t /*n*/, UInt64 & /*res*/)
     {
     }
 
@@ -123,7 +123,7 @@ struct LengthUTF8Impl
         }
     }
 
-    static void array(const ColumnString::Offsets_t & offsets, PaddedPODArray<UInt64> & res)
+    static void array(const ColumnString::Offsets_t &, PaddedPODArray<UInt64> &)
     {
         throw Exception("Cannot apply function lengthUTF8 to Array argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -143,7 +143,7 @@ struct LowerUpperImpl
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars_t & data, size_t /*n*/, ColumnString::Chars_t & res_data)
     {
         res_data.resize(data.size());
         array(data.data(), data.data() + data.size(), res_data.data());
@@ -273,7 +273,7 @@ struct ReverseUTF8Impl
         }
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
     {
         throw Exception("Cannot apply function reverseUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -283,7 +283,7 @@ struct ReverseUTF8Impl
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::vector(const ColumnString::Chars_t & data,
     const IColumn::Offsets_t & offsets,
     ColumnString::Chars_t & res_data,
@@ -297,9 +297,9 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::vector_fixed(
-    const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    const ColumnString::Chars_t & data, size_t /*n*/, ColumnString::Chars_t & res_data)
 {
     res_data.resize(data.size());
     array(data.data(), data.data() + data.size(), res_data.data());
@@ -308,7 +308,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::constant(
     const std::string & data, std::string & res_data)
 {
@@ -321,7 +321,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::toCase(
     const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
 {
@@ -335,7 +335,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
     else if (src + 1 < src_end
         && ((src[0] == 0xD0u && (src[1] >= 0x80u && src[1] <= 0xBFu)) || (src[0] == 0xD1u && (src[1] >= 0x80u && src[1] <= 0x9Fu))))
     {
-        cyrillic_to_case(src, src_end, dst);
+        cyrillic_to_case(src, dst);
     }
     else if (src + 1 < src_end && src[0] == 0xC2u)
     {
@@ -364,7 +364,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
 template <char not_case_lower_bound,
     char not_case_upper_bound,
     int to_case(int),
-    void cyrillic_to_case(const UInt8 *&, const UInt8 *, UInt8 *&)>
+    void cyrillic_to_case(const UInt8 *&, UInt8 *&)>
 void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyrillic_to_case>::array(
     const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
 {
@@ -509,7 +509,7 @@ class FunctionStringOrArrayToT : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionStringOrArrayToT>();
     }
@@ -526,7 +526,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0])
+        if (!arguments[0]->isStringOrFixedString()
             && !checkDataType<DataTypeArray>(&*arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -556,7 +556,7 @@ public:
                 ResultType res = 0;
                 Impl::vector_fixed_to_constant(col->getChars(), col->getN(), res);
 
-                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col->size(), toField(res));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col->size(), toField(res));
             }
             else
             {
@@ -590,7 +590,7 @@ class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionReverse>();
     }
@@ -612,7 +612,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0])
+        if (!arguments[0]->isStringOrFixedString()
             && !checkDataType<DataTypeArray>(&*arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -654,9 +654,10 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
+    ConcatImpl(const Context & context) : context(context) {}
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<ConcatImpl>();
+        return std::make_shared<ConcatImpl>(context);
     }
 
     String getName() const override
@@ -684,7 +685,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(arguments[0].get()))
-            return FunctionArrayConcat().getReturnTypeImpl(arguments);
+            return FunctionArrayConcat(context).getReturnTypeImpl(arguments);
 
         if (arguments.size() < 2)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
@@ -694,7 +695,7 @@ public:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!checkDataType<DataTypeString>(arg) && !checkDataType<DataTypeFixedString>(arg))
+            if (!arg->isStringOrFixedString())
                 throw Exception{
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -706,7 +707,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
     {
         if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(block.getByPosition(arguments[0]).type.get()))
-            return FunctionArrayConcat().executeImpl(block, arguments, result);
+            return FunctionArrayConcat(context).executeImpl(block, arguments, result);
 
         if (arguments.size() == 2)
             executeBinary(block, arguments, result);
@@ -715,6 +716,8 @@ public:
     }
 
 private:
+    const Context & context;
+
     void executeBinary(Block & block, const ColumnNumbers & arguments, const size_t result)
     {
         const IColumn * c0 = block.getByPosition(arguments[0]).column.get();
@@ -762,7 +765,7 @@ class FunctionSubstring : public IFunction
 {
 public:
     static constexpr auto name = "substring";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionSubstring>();
     }
@@ -786,16 +789,16 @@ public:
                 + toString(number_of_arguments) + ", should be 2 or 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!checkDataType<DataTypeString>(&*arguments[0]) && !checkDataType<DataTypeFixedString>(&*arguments[0]))
+        if (!arguments[0]->isStringOrFixedString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNumeric())
+        if (!arguments[1]->isNumber())
             throw Exception("Illegal type " + arguments[1]->getName()
                     + " of second argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (number_of_arguments == 3 && !arguments[2]->isNumeric())
+        if (number_of_arguments == 3 && !arguments[2]->isNumber())
             throw Exception("Illegal type " + arguments[2]->getName()
                     + " of second argument of function "
                     + getName(),
@@ -901,7 +904,7 @@ class FunctionSubstringUTF8 : public IFunction
 {
 public:
     static constexpr auto name = "substringUTF8";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionSubstringUTF8>();
     }
@@ -921,12 +924,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNumeric() || !arguments[2]->isNumeric())
-            throw Exception("Illegal type " + (arguments[1]->isNumeric() ? arguments[2]->getName() : arguments[1]->getName())
+        if (!arguments[1]->isNumber() || !arguments[2]->isNumber())
+            throw Exception("Illegal type " + (arguments[1]->isNumber() ? arguments[2]->getName() : arguments[1]->getName())
                     + " of argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -940,7 +943,7 @@ public:
         const ColumnPtr column_start = block.getByPosition(arguments[1]).column;
         const ColumnPtr column_length = block.getByPosition(arguments[2]).column;
 
-        if (!column_start->isConst() || !column_length->isConst())
+        if (!column_start->isColumnConst() || !column_length->isColumnConst())
             throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
 
         Field start_field = (*block.getByPosition(arguments[1]).column)[0];
@@ -977,7 +980,7 @@ class FunctionAppendTrailingCharIfAbsent : public IFunction
 {
 public:
     static constexpr auto name = "appendTrailingCharIfAbsent";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionAppendTrailingCharIfAbsent>();
     }
@@ -996,11 +999,11 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 

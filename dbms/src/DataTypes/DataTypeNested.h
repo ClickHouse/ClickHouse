@@ -17,6 +17,8 @@ private:
     NamesAndTypesListPtr nested;
 
 public:
+    static constexpr bool is_parametric = true;
+
     DataTypeNested(const NamesAndTypesListPtr & nested_);
 
     std::string getName() const override;
@@ -26,6 +28,8 @@ public:
     {
         return std::make_shared<DataTypeNested>(nested);
     }
+
+    bool isParametric() const override { return true; }
 
     const NamesAndTypesListPtr & getNestedTypesList() const { return nested; }
 

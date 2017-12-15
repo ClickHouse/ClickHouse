@@ -33,7 +33,7 @@ struct RadixSortMallocAllocator
         return malloc(size);
     }
 
-    void deallocate(void * ptr, size_t size)
+    void deallocate(void * ptr, size_t /*size*/)
     {
         return free(ptr);
     }

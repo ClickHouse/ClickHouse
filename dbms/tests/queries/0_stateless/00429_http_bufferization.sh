@@ -1,15 +1,20 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 set -e
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 max_block_size=100
-URL='http://localhost:8123/'
+URL="${CLICKHOUSE_URL}"
 
 function query {
-    echo "SELECT toUInt8(intHash64(number)) FROM system.numbers LIMIT $1 FORMAT RowBinary"
+    # bash isn't able to store \0 bytes, so use [1; 255] random range
+    echo "SELECT greatest(toUInt8(1), toUInt8(intHash64(number))) FROM system.numbers LIMIT $1 FORMAT RowBinary"
 }
 
 function ch_url() {
-    curl -sS "$URL?max_block_size=$max_block_size&$1" -d "`query $2`"
+    ${CLICKHOUSE_CURL} -sS "$URL?max_block_size=$max_block_size&$1" -d "`query $2`"
 }
 
 
@@ -47,7 +52,7 @@ function check_exception_handling() {
 
     check_only_exception         "max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=1" 5000000
     check_only_exception         "max_result_bytes=4000000&wait_end_of_query=1" 5000000
-    check_last_line_exception     "max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=0" 5000000
+    check_last_line_exception    "max_result_bytes=4000000&buffer_size=2000000&wait_end_of_query=0" 5000000
 }
 
 check_exception_handling
@@ -58,10 +63,10 @@ max_block_size=500000
 corner_sizes="1048576 `seq 500000 1000000 3500000`"
 
 
-# Check HTTP results with clickhouse-client in normal case
+# Check HTTP results with $CLICKHOUSE_CLIENT in normal case
 
 function cmp_cli_and_http() {
-    clickhouse-client -q "`query $1`" > res1
+    $CLICKHOUSE_CLIENT -q "`query $1`" > res1
     ch_url "buffer_size=$2&wait_end_of_query=0" "$1" > res2
     ch_url "buffer_size=$2&wait_end_of_query=1" "$1" > res3
     cmp res1 res2 && cmp res1 res3 || echo FAIL
@@ -81,10 +86,9 @@ check_cli_and_http
 
 
 # Check HTTP internal compression in normal case
-# Skip if clickhouse-compressor not installed
 
 function cmp_http_compression() {
-    clickhouse-client -q "`query $1`" > res0
+    $CLICKHOUSE_CLIENT -q "`query $1`" > res0
     ch_url 'compress=1' $1 | clickhouse-compressor --decompress > res1
     ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" $1 | clickhouse-compressor --decompress > res2
     ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" $1 | clickhouse-compressor --decompress > res3
@@ -103,8 +107,4 @@ function check_http_compression() {
     done
 }
 
-has_compressor=$(command -v clickhouse-compressor &>/dev/null && echo 1 || echo 0)
-
-if [[ $has_compressor -eq 1 ]]; then
-    check_http_compression
-fi
+check_http_compression

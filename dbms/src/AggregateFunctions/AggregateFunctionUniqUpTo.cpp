@@ -8,7 +8,7 @@ namespace DB
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() == 1)
     {
@@ -26,6 +26,8 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
             return std::make_shared<AggregateFunctionUniqUpTo<String>>();
         else if (typeid_cast<const DataTypeTuple *>(&argument_type))
             return std::make_shared<AggregateFunctionUniqUpToVariadic<true>>();
+        else if (typeid_cast<const DataTypeUUID *>(&argument_type))
+            return std::make_shared<AggregateFunctionUniqUpTo<DataTypeUUID::FieldType>>();
         else
             throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

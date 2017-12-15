@@ -24,7 +24,7 @@ if (READLINE_LIB AND TERMCAP_LIB)
         set (LINE_EDITING_LIBS ${READLINE_LIB} ${TERMCAP_LIB})
         message (STATUS "Using line editing libraries (readline): ${READLINE_INCLUDE_DIR} : ${LINE_EDITING_LIBS}")
     endif ()
-elseif (EDIT_LIB)
+elseif (EDIT_LIB AND TERMCAP_LIB)
     find_library (CURSES_LIB NAMES curses)
     find_path (READLINE_INCLUDE_DIR NAMES editline/readline.h PATHS ${READLINE_INCLUDE_PATHS})
     if (CURSES_LIB AND READLINE_INCLUDE_DIR)
@@ -40,6 +40,7 @@ if (LINE_EDITING_LIBS AND READLINE_INCLUDE_DIR)
     include (CheckCXXSourceRuns)
 
     set (CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${LINE_EDITING_LIBS})
+    set (CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES} ${READLINE_INCLUDE_DIR})
     check_cxx_source_runs ("
         #include <stdio.h>
         #include <readline/readline.h>

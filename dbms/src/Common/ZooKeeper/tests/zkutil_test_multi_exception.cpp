@@ -2,7 +2,11 @@
 #include <Common/Exception.h>
 #include <iostream>
 #include <chrono>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-compare"
 #include <gtest/gtest.h>
+#pragma GCC diagnostic pop
 
 using namespace DB;
 

@@ -54,19 +54,19 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
     key_sizes.resize(keys_size);
     for (size_t j = 0; j < keys_size; ++j)
     {
-        if (!key_columns[j]->isFixed())
+        if (!key_columns[j]->isFixedAndContiguous())
         {
             all_fixed = false;
             break;
         }
-        key_sizes[j] = key_columns[j]->sizeOfField();
+        key_sizes[j] = key_columns[j]->sizeOfValueIfFixed();
         keys_bytes += key_sizes[j];
     }
 
     /// If there is one numeric key that fits in 64 bits
-    if (keys_size == 1 && key_columns[0]->isNumericNotNullable())
+    if (keys_size == 1 && key_columns[0]->isNumeric())
     {
-        size_t size_of_field = key_columns[0]->sizeOfField();
+        size_t size_of_field = key_columns[0]->sizeOfValueIfFixed();
         if (size_of_field == 1)
             return Type::key8;
         if (size_of_field == 2)
@@ -75,7 +75,9 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
             return Type::key32;
         if (size_of_field == 8)
             return Type::key64;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
+        if (size_of_field == 16)
+            return Type::keys128;
+        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.", ErrorCodes::LOGICAL_ERROR);
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
@@ -87,7 +89,7 @@ Join::Type Join::chooseMethod(const ConstColumnPlainPtrs & key_columns, Sizes & 
     /// If there is single string key, use hash table of it's values.
     if (keys_size == 1
         && (typeid_cast<const ColumnString *>(key_columns[0])
-            || (key_columns[0]->isConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
+            || (key_columns[0]->isColumnConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(key_columns[0]))
@@ -251,14 +253,9 @@ bool Join::checkSizeLimits() const
 
 static void convertColumnToNullable(ColumnWithTypeAndName & column)
 {
-    if (column.type->isNullable() || column.type->isNull())
-        return;
-
-    column.type = std::make_shared<DataTypeNullable>(column.type);
-
+    column.type = makeNullable(column.type);
     if (column.column)
-        column.column = std::make_shared<ColumnNullable>(column.column,
-            std::make_shared<ColumnUInt8>(column.column->size(), 0));
+        column.column = makeNullable(column.column);
 }
 
 
@@ -277,7 +274,7 @@ void Join::setSampleBlock(const Block & block)
         key_columns[i] = block.getByName(key_names_right[i]).column.get();
 
         /// We will join only keys, where all components are not NULL.
-        if (key_columns[i]->isNullable())
+        if (key_columns[i]->isColumnNullable())
             key_columns[i] = static_cast<const ColumnNullable &>(*key_columns[i]).getNestedColumn().get();
     }
 
@@ -556,7 +553,7 @@ namespace
     struct Adder<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/,
             size_t num_columns_to_skip)
         {
             for (size_t j = 0; j < num_columns_to_add; ++j)
@@ -564,7 +561,7 @@ namespace
         }
 
         static void addNotFound(size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/)
         {
             for (size_t j = 0; j < num_columns_to_add; ++j)
                 added_columns[j]->insertDefault();
@@ -575,7 +572,7 @@ namespace
     struct Adder<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+            size_t i, IColumn::Filter * filter, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/,
             size_t num_columns_to_skip)
         {
             (*filter)[i] = 1;
@@ -584,8 +581,8 @@ namespace
                 added_columns[j]->insertFrom(*it->second.block->getByPosition(num_columns_to_skip + j).column.get(), it->second.row_num);
         }
 
-        static void addNotFound(size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+        static void addNotFound(size_t /*num_columns_to_add*/, ColumnPlainPtrs & /*added_columns*/,
+            size_t i, IColumn::Filter * filter, IColumn::Offset_t & /*current_offset*/, IColumn::Offsets_t * /*offsets*/)
         {
             (*filter)[i] = 0;
         }
@@ -595,7 +592,7 @@ namespace
     struct Adder<KIND, ASTTableJoin::Strictness::All, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
+            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets,
             size_t num_columns_to_skip)
         {
             size_t rows_joined = 0;
@@ -612,7 +609,7 @@ namespace
         }
 
         static void addNotFound(size_t num_columns_to_add, ColumnPlainPtrs & added_columns,
-            size_t i, IColumn::Filter * filter, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
+            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset_t & current_offset, IColumn::Offsets_t * offsets)
         {
             if (KIND == ASTTableJoin::Kind::Inner)
             {
@@ -631,7 +628,7 @@ namespace
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
     void NO_INLINE joinBlockImplTypeCase(
-        Block & block, const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
+        const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
         size_t num_columns_to_add, size_t num_columns_to_skip, ColumnPlainPtrs & added_columns, ConstNullMapPtr null_map,
         std::unique_ptr<IColumn::Filter> & filter,
         IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate)
@@ -665,18 +662,18 @@ namespace
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
     void joinBlockImplType(
-        Block & block, const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
+        const Map & map, size_t rows, const ConstColumnPlainPtrs & key_columns, size_t keys_size, const Sizes & key_sizes,
         size_t num_columns_to_add, size_t num_columns_to_skip, ColumnPlainPtrs & added_columns, ConstNullMapPtr null_map,
         std::unique_ptr<IColumn::Filter> & filter,
         IColumn::Offset_t & current_offset, std::unique_ptr<IColumn::Offsets_t> & offsets_to_replicate)
     {
         if (null_map)
             joinBlockImplTypeCase<KIND, STRICTNESS, KeyGetter, Map, true>(
-                block, map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
+                map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
                 added_columns, null_map, filter, current_offset, offsets_to_replicate);
         else
             joinBlockImplTypeCase<KIND, STRICTNESS, KeyGetter, Map, false>(
-                block, map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
+                map, rows, key_columns, keys_size, key_sizes, num_columns_to_add, num_columns_to_skip,
                 added_columns, null_map, filter, current_offset, offsets_to_replicate);
     }
 }
@@ -775,7 +772,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     #define M(TYPE) \
         case Join::Type::TYPE: \
             joinBlockImplType<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE>::Type>(\
-                block, *maps.TYPE, rows, key_columns, keys_size, key_sizes, \
+                *maps.TYPE, rows, key_columns, keys_size, key_sizes, \
                 num_columns_to_add, num_columns_to_skip, added_columns, null_map, \
                 filter, current_offset, offsets_to_replicate); \
             break;
@@ -860,14 +857,8 @@ void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right)
     {
         /// Compare up to Nullability.
 
-        IDataType * left_type = block_left.getByName(key_names_left[i]).type.get();
-        IDataType * right_type = block_right.getByName(key_names_right[i]).type.get();
-
-        if (left_type->isNullable())
-            left_type = static_cast<const DataTypeNullable &>(*left_type).getNestedType().get();
-
-        if (right_type->isNullable())
-            right_type = static_cast<const DataTypeNullable &>(*right_type).getNestedType().get();
+        DataTypePtr left_type = removeNullable(block_left.getByName(key_names_left[i]).type);
+        DataTypePtr right_type = removeNullable(block_right.getByName(key_names_right[i]).type);
 
         if (!left_type->equals(*right_type))
             throw Exception("Type mismatch of columns to JOIN by: "

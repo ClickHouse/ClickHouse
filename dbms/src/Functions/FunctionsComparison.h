@@ -490,14 +490,6 @@ struct StringEqualsImpl
         }
     }
 
-    static void constant_constant(
-        const std::string & a,
-        const std::string & b,
-        UInt8 & c)
-    {
-        c = positive == (a == b);
-    }
-
     static void fixed_string_vector_string_vector(
         const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
         const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
@@ -520,6 +512,14 @@ struct StringEqualsImpl
         PaddedPODArray<UInt8> & c)
     {
         fixed_string_vector_constant(b_data, b_n, a, c);
+    }
+
+    static void constant_constant(
+        const std::string & a,
+        const std::string & b,
+        UInt8 & c)
+    {
+        c = positive == (a == b);
     }
 };
 
@@ -575,7 +575,7 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionComparison>(); };
 
 private:
     template <typename T0, typename T1>
@@ -626,7 +626,7 @@ private:
             UInt8 res = 0;
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
 
-            auto col_res = DataTypeUInt8().createConstColumn(col_left->size(), toField(res));
+            auto col_res = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
             block.getByPosition(result).column = col_res;
 
             return true;
@@ -694,19 +694,19 @@ private:
 
         using StringImpl = StringComparisonImpl<Op<int, int>>;
 
+        auto c_res = std::make_shared<ColumnUInt8>();
+        block.getByPosition(result).column = c_res;
+        ColumnUInt8::Container_t & vec_res = c_res->getData();
+        vec_res.resize(c0->size());
+
         if (c0_const && c1_const)
         {
             UInt8 res = 0;
             StringImpl::constant_constant(c0_const->getValue<String>(), c1_const->getValue<String>(), res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(c0_const->size(), toField(res));
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(c0_const->size(), toField(res));
         }
         else
         {
-            auto c_res = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = c_res;
-            ColumnUInt8::Container_t & vec_res = c_res->getData();
-            vec_res.resize(c0->size());
-
             if (c0_string && c1_string)
                 StringImpl::string_vector_string_vector(
                     c0_string->getChars(), c0_string->getOffsets(),
@@ -759,7 +759,7 @@ private:
 
     void executeDateOrDateTimeOrEnumWithConstString(
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-        const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num, bool right_is_num)
+        const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num)
     {
         /// This is no longer very special case - comparing dates, datetimes, and enumerations with a string constant.
         const IColumn * column_string_untyped = !left_is_num ? col_left_untyped : col_right_untyped;
@@ -795,7 +795,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for Date: " + string_value.toString());
 
-            ColumnPtr parsed_const_date_holder = DataTypeDate().createConstColumn(block.rows(), UInt64(date));
+            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(block.rows(), UInt64(date));
             const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date,
@@ -809,7 +809,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for DateTime: " + string_value.toString());
 
-            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createConstColumn(block.rows(), UInt64(date_time));
+            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(block.rows(), UInt64(date_time));
             const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
             executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date_time,
@@ -823,7 +823,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for UUID: " + string_value.toString());
 
-            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createConstColumn(block.rows(), UInt128(uuid));
+            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(block.rows(), UInt128(uuid));
             const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_uuid,
@@ -847,14 +847,14 @@ private:
         const auto type = static_cast<const EnumType *>(type_untyped);
 
         const Field x = nearestFieldType(type->getValue(column_string->getValue<String>()));
-        const auto enum_col = type->createConstColumn(block.rows(), x);
+        const auto enum_col = type->createColumnConst(block.rows(), x);
 
         executeNumLeftType<typename EnumType::FieldType>(block, result,
             left_is_num ? column_number : enum_col.get(),
             left_is_num ? enum_col.get() : column_number);
     }
 
-    void executeTuple(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
+    void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1)
     {
         /** We will lexicographically compare the tuples. This is done as follows:
           * x == y : x1 == y1 && x2 == y2 ...
@@ -864,45 +864,52 @@ private:
           * x > y:   x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn > yn))
           * x <= y:  x1 < y1 || (x1 == y1 && (x2 < y2 || (x2 == y2 ... && xn <= yn))
           *
-          * Recursive record:
+          * Recursive form:
           * x <= y:  x1 < y1 || (x1 == y1 && x_tail <= y_tail)
           *
           * x >= y:  x1 > y1 || (x1 == y1 && (x2 > y2 || (x2 == y2 ... && xn >= yn))
           */
 
-        auto x_const = checkAndGetColumnConst<ColumnTuple>(c0);
-        auto y_const = checkAndGetColumnConst<ColumnTuple>(c1);
-
-        ColumnPtr x_tuple_of_consts;
-        ColumnPtr y_tuple_of_consts;
-
-        auto x = static_cast<const ColumnTuple *>(c0);
-        auto y = static_cast<const ColumnTuple *>(c1);
-
-        if (x_const)
-        {
-            x_tuple_of_consts = convertConstTupleToTupleOfConstants(*x_const);
-            x = static_cast<const ColumnTuple *>(x_tuple_of_consts.get());
-        }
-
-        if (y_const)
-        {
-            y_tuple_of_consts = convertConstTupleToTupleOfConstants(*y_const);
-            y = static_cast<const ColumnTuple *>(y_tuple_of_consts.get());
-        }
-
-        const size_t tuple_size = x->getData().columns();
+        const size_t tuple_size = typeid_cast<const DataTypeTuple &>(*c0.type).getElements().size();
 
         if (0 == tuple_size)
             throw Exception("Comparison of zero-sized tuples is not implemented.", ErrorCodes::NOT_IMPLEMENTED);
 
+        ColumnsWithTypeAndName x(tuple_size);
+        ColumnsWithTypeAndName y(tuple_size);
+
+        auto x_const = checkAndGetColumnConst<ColumnTuple>(c0.column.get());
+        auto y_const = checkAndGetColumnConst<ColumnTuple>(c1.column.get());
+
+        Columns x_columns;
+        Columns y_columns;
+
+        if (x_const)
+            x_columns = convertConstTupleToConstantElements(*x_const);
+        else
+            x_columns = static_cast<const ColumnTuple &>(*c0.column).getColumns();
+
+        if (y_const)
+            y_columns = convertConstTupleToConstantElements(*y_const);
+        else
+            y_columns = static_cast<const ColumnTuple &>(*c1.column).getColumns();
+
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            x[i].type = static_cast<const DataTypeTuple &>(*c0.type).getElements()[i];
+            y[i].type = static_cast<const DataTypeTuple &>(*c1.type).getElements()[i];
+
+            x[i].column = x_columns[i];
+            y[i].column = y_columns[i];
+        }
+
         executeTupleImpl(block, result, x, y, tuple_size);
     }
 
-    void executeTupleImpl(Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size);
+    void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size);
 
     template <typename ComparisonFunction, typename ConvolutionFunction>
-    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
+    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
     {
         ComparisonFunction func_compare;
         ConvolutionFunction func_convolution;
@@ -910,8 +917,8 @@ private:
         Block tmp_block;
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert(x->getData().getByPosition(i));
-            tmp_block.insert(y->getData().getByPosition(i));
+            tmp_block.insert(x[i]);
+            tmp_block.insert(y[i]);
 
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
@@ -930,7 +937,7 @@ private:
     }
 
     template <typename HeadComparisonFunction, typename TailComparisonFunction>
-    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnTuple * x, const ColumnTuple * y, size_t tuple_size)
+    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
     {
         HeadComparisonFunction func_compare_head;
         TailComparisonFunction func_compare_tail;
@@ -943,8 +950,8 @@ private:
         /// Pairwise comparison of the inequality of all elements; on the equality of all elements except the last.
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tmp_block.insert(x->getData().getByPosition(i));
-            tmp_block.insert(y->getData().getByPosition(i));
+            tmp_block.insert(x[i]);
+            tmp_block.insert(y[i]);
 
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
 
@@ -976,22 +983,22 @@ private:
 
     void executeGeneric(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
-        bool c0_const = c0->isConst();
-        bool c1_const = c1->isConst();
+        bool c0_const = c0->isColumnConst();
+        bool c1_const = c1->isColumnConst();
+
+        auto c_res = std::make_shared<ColumnUInt8>();
+        block.getByPosition(result).column = c_res;
+        ColumnUInt8::Container_t & vec_res = c_res->getData();
+        vec_res.resize(c0->size());
 
         if (c0_const && c1_const)
         {
             UInt8 res = 0;
             GenericComparisonImpl<Op<int, int>>::constant_constant(*c0, *c1, res);
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(c0->size(), toField(res));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(c0->size(), toField(res));
         }
         else
         {
-            auto c_res = std::make_shared<ColumnUInt8>();
-            block.getByPosition(result).column = c_res;
-            ColumnUInt8::Container_t & vec_res = c_res->getData();
-            vec_res.resize(c0->size());
-
             if (c0_const)
                 GenericComparisonImpl<Op<int, int>>::constant_vector(*c0, *c1, vec_res);
             else if (c1_const)
@@ -1023,13 +1030,13 @@ public:
 
         false
             || (left_is_date         = checkAndGetDataType<DataTypeDate>(arguments[0].get()))
-            || (left_is_date_time     = checkAndGetDataType<DataTypeDateTime>(arguments[0].get()))
-            || (left_is_enum8         = checkAndGetDataType<DataTypeEnum8>(arguments[0].get()))
-            || (left_is_uuid           = checkAndGetDataType<DataTypeUUID>(arguments[0].get()))
-            || (left_is_enum16         = checkAndGetDataType<DataTypeEnum16>(arguments[0].get()))
-            || (left_is_string         = checkAndGetDataType<DataTypeString>(arguments[0].get()))
+            || (left_is_date_time    = checkAndGetDataType<DataTypeDateTime>(arguments[0].get()))
+            || (left_is_enum8        = checkAndGetDataType<DataTypeEnum8>(arguments[0].get()))
+            || (left_is_uuid         = checkAndGetDataType<DataTypeUUID>(arguments[0].get()))
+            || (left_is_enum16       = checkAndGetDataType<DataTypeEnum16>(arguments[0].get()))
+            || (left_is_string       = checkAndGetDataType<DataTypeString>(arguments[0].get()))
             || (left_is_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].get()))
-            || (left_tuple             = checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
+            || (left_tuple           = checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
 
         const bool left_is_enum = left_is_enum8 || left_is_enum16;
 
@@ -1054,7 +1061,7 @@ public:
 
         const bool right_is_enum = right_is_enum8 || right_is_enum16;
 
-        if (!((arguments[0]->behavesAsNumber() && arguments[1]->behavesAsNumber() && !(left_is_enum ^ right_is_enum))
+        if (!((arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber())
             || ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
             || (left_is_date && right_is_date)
             || (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.
@@ -1111,7 +1118,7 @@ public:
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (checkAndGetDataType<DataTypeTuple>(col_with_type_and_name_left.type.get()))
-            executeTuple(block, result, col_left_untyped, col_right_untyped);
+            executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right);
         else if (!left_is_num && !right_is_num && executeString(block, result, col_left_untyped, col_right_untyped))
             ;
         else if (col_with_type_and_name_left.type->equals(*col_with_type_and_name_right.type))
@@ -1120,7 +1127,7 @@ public:
             executeDateOrDateTimeOrEnumWithConstString(
                 block, result, col_left_untyped, col_right_untyped,
                 col_with_type_and_name_left.type, col_with_type_and_name_right.type,
-                left_is_num, right_is_num);
+                left_is_num);
     }
 };
 

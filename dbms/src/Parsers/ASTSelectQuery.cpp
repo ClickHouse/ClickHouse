@@ -1,4 +1,4 @@
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
@@ -315,15 +315,7 @@ void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & sta
     if (settings)
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
-
-        const ASTSetQuery & ast_set = typeid_cast<const ASTSetQuery &>(*settings);
-        for (ASTSetQuery::Changes::const_iterator it = ast_set.changes.begin(); it != ast_set.changes.end(); ++it)
-        {
-            if (it != ast_set.changes.begin())
-                s.ostr << ", ";
-
-            s.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
-        }
+        settings->formatImpl(s, state, frame);
     }
 
     if (next_union_all)

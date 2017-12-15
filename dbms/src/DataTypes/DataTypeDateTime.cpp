@@ -1,24 +1,40 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <common/DateLUT.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
+
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
+
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
 {
 
-void DataTypeDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+DataTypeDateTime::DataTypeDateTime(const std::string & time_zone_name)
+    : has_explicit_time_zone(!time_zone_name.empty()),
+    time_zone(DateLUT::instance(time_zone_name))
 {
-    writeDateTimeText(static_cast<const ColumnUInt32 &>(column).getData()[row_num], ostr);
 }
 
-static void deserializeText(IColumn & column, ReadBuffer & istr)
+std::string DataTypeDateTime::getName() const
 {
-    time_t x;
-    readDateTimeText(x, istr);
-    static_cast<ColumnUInt32 &>(column).getData().push_back(x);
+    if (!has_explicit_time_zone)
+        return "DateTime";
+
+    WriteBufferFromOwnString out;
+    out << "DateTime(" << quote << time_zone.getTimeZone() << ")";
+    return out.str();
+}
+
+void DataTypeDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    writeDateTimeText(static_cast<const ColumnUInt32 &>(column).getData()[row_num], ostr, time_zone);
 }
 
 void DataTypeDateTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -28,7 +44,9 @@ void DataTypeDateTime::serializeTextEscaped(const IColumn & column, size_t row_n
 
 void DataTypeDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
 {
-    deserializeText(column, istr);
+    time_t x;
+    readDateTimeText(x, istr, time_zone);
+    static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
 void DataTypeDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -42,7 +60,7 @@ void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 {
     time_t x;
     assertChar('\'', istr);
-    readDateTimeText(x, istr);
+    readDateTimeText(x, istr, time_zone);
     assertChar('\'', istr);
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
@@ -59,7 +77,7 @@ void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr) 
     time_t x;
     if (checkChar('"', istr)) /// Cases: "2017-08-31 18:36:48" or "1504193808"
     {
-        readDateTimeText(x, istr);
+        readDateTimeText(x, istr, time_zone);
         assertChar('"', istr);
     }
     else /// Just 1504193808 or 01504193808
@@ -76,16 +94,38 @@ void DataTypeDateTime::serializeTextCSV(const IColumn & column, size_t row_num, 
     writeChar('"', ostr);
 }
 
-void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
 {
     time_t x;
-    readCSVSimple(x, istr, readDateTimeText);
+    readDateTimeCSV(x, istr, time_zone);
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);
+}
+
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (!arguments)
+        return std::make_shared<DataTypeDateTime>();
+
+    if (arguments->children.size() != 1)
+        throw Exception("DateTime data type can optionally have only one argument - time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    const ASTLiteral * arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    if (!arg || arg->value.getType() != Field::Types::String)
+        throw Exception("Parameter for DateTime data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    return std::make_shared<DataTypeDateTime>(arg->value.get<String>());
 }
 
 void registerDataTypeDateTime(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("DateTime", [] { return DataTypePtr(std::make_shared<DataTypeDateTime>()); }, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("DateTime", create, DataTypeFactory::CaseInsensitive);
 }
 
 

@@ -1,3 +1,6 @@
 usr/bin/clickhouse-server
+usr/bin/clickhouse-clang
+usr/bin/clickhouse-lld
 etc/clickhouse-server/config.xml
 etc/clickhouse-server/users.xml
+etc/systemd/system/clickhouse-server.service

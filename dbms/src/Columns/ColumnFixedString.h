@@ -33,23 +33,14 @@ public:
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
 
-    std::string getName() const override { return "ColumnFixedString"; }
+    std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
+    const char * getFamilyName() const override { return "FixedString"; }
 
     ColumnPtr cloneResized(size_t size) const override;
 
     size_t size() const override
     {
         return chars.size() / n;
-    }
-
-    size_t sizeOfField() const override
-    {
-        return n;
-    }
-
-    bool isFixed() const override
-    {
-        return true;
     }
 
     size_t byteSize() const override
@@ -99,7 +90,7 @@ public:
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
-    int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int nan_direction_hint) const override
+    int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
         return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);
@@ -128,6 +119,12 @@ public:
     };
 
     void getExtremes(Field & min, Field & max) const override;
+
+
+    bool canBeInsideNullable() const override { return true; }
+
+    bool isFixedAndContiguous() const override { return true; }
+    size_t sizeOfValueIfFixed() const override { return n; }
 
 
     /// Specialized part of interface, not from IColumn.

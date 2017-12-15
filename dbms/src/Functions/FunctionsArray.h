@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,7 +15,6 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Functions/IFunction.h>
-#include <DataTypes/DataTypeTraits.h>
 #include <Functions/ObjectPool.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/StringUtils.h>
@@ -89,6 +88,7 @@ public:
     FunctionArray(const Context & context);
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -101,8 +101,6 @@ private:
     String getName() const override;
 
     bool addField(DataTypePtr type_res, const Field & f, Array & arr) const;
-    static const DataTypePtr & getScalarType(const DataTypePtr & type);
-    DataTypeTraits::EnrichedDataTypePtr getLeastCommonType(const DataTypes & arguments) const;
 
 private:
     const Context & context;
@@ -121,6 +119,7 @@ public:
 
     String getName() const override;
 
+    bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
@@ -152,9 +151,6 @@ private:
     bool executeGeneric(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
         ArrayImpl::NullMapBuilder & builder);
 
-    bool executeConstConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
-        ArrayImpl::NullMapBuilder & builder);
-
     template <typename IndexType>
     bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
         ArrayImpl::NullMapBuilder & builder);
@@ -172,7 +168,7 @@ private:
 struct IndexToOne
 {
     using ResultType = UInt8;
-    static bool apply(size_t j, ResultType & current) { current = 1; return false; }
+    static bool apply(size_t, ResultType & current) { current = 1; return false; }
 };
 
 /// For indexOf.
@@ -187,7 +183,7 @@ struct IndexIdentity
 struct IndexCount
 {
     using ResultType = UInt32;
-    static bool apply(size_t j, ResultType & current) { ++current; return true; }
+    static bool apply(size_t, ResultType & current) { ++current; return true; }
 };
 
 
@@ -206,14 +202,9 @@ private:
 
 #pragma GCC diagnostic pop
 
-    static bool hasNull(const PaddedPODArray<U> & value, const PaddedPODArray<UInt8> & null_map, size_t i)
+    static bool hasNull(const PaddedPODArray<UInt8> & null_map, size_t i)
     {
         return null_map[i] == 1;
-    }
-
-    static bool hasNull(const U & value, const PaddedPODArray<UInt8> & null_map, size_t i)
-    {
-        throw Exception{"Logical error: constant column cannot have null map.", ErrorCodes::LOGICAL_ERROR};
     }
 
     /// Both function arguments are ordinary.
@@ -265,7 +256,7 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (!hasNull(value, null_map_item, i) && compare(data[current_offset + j], value, i))
+                if (!hasNull(null_map_item, i) && compare(data[current_offset + j], value, i))
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -335,7 +326,7 @@ private:
                 bool hit = false;
                 if (null_map_data[current_offset + j] == 1)
                 {
-                    if (hasNull(value, null_map_item, i))
+                    if (hasNull(null_map_item, i))
                         hit = true;
                 }
                 else if (compare(data[current_offset + j], value, i))
@@ -380,11 +371,11 @@ struct ArrayIndexNumImpl<T, Null, IndexConv>
 {
     template <typename ScalarOrVector>
     static void vector(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
-        const ScalarOrVector & value,
-        PaddedPODArray<typename IndexConv::ResultType> & result,
-        const PaddedPODArray<UInt8> * null_map_data,
-        const PaddedPODArray<UInt8> * null_map_item)
+        const PaddedPODArray<T> &, const ColumnArray::Offsets_t &,
+        const ScalarOrVector &,
+        PaddedPODArray<typename IndexConv::ResultType> &,
+        const PaddedPODArray<UInt8> *,
+        const PaddedPODArray<UInt8> *)
     {
         throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
     }
@@ -396,7 +387,7 @@ template <typename T, typename IndexConv>
 struct ArrayIndexNumNullImpl
 {
     static void vector(
-        const PaddedPODArray<T> & data, const ColumnArray::Offsets_t & offsets,
+        const PaddedPODArray<T> & /*data*/, const ColumnArray::Offsets_t & offsets,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
     {
@@ -435,7 +426,7 @@ template <typename IndexConv>
 struct ArrayIndexStringNullImpl
 {
     static void vector_const(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & string_offsets,
+        const ColumnString::Chars_t & /*data*/, const ColumnArray::Offsets_t & offsets, const ColumnString::Offsets_t & /*string_offsets*/,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
     {
@@ -726,7 +717,7 @@ template <typename IndexConv>
 struct ArrayIndexGenericNullImpl
 {
     static void vector(
-        const IColumn & data, const ColumnArray::Offsets_t & offsets,
+        const IColumn & /*data*/, const ColumnArray::Offsets_t & offsets,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
     {
@@ -764,7 +755,7 @@ class FunctionArrayIndex : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayIndex>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayIndex>(); }
 
 private:
     using ResultColumnType = ColumnVector<typename IndexConv::ResultType>;
@@ -819,7 +810,7 @@ private:
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
-        if (item_arg->isNull())
+        if (item_arg->onlyNull())
             ArrayIndexNumNullImpl<T, IndexConv>::vector(col_nested->getData(), col_array->getOffsets(),
                 col_res->getData(), null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConst<ColumnVector<U>>(item_arg))
@@ -867,7 +858,7 @@ private:
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
-        if (item_arg->isNull())
+        if (item_arg->onlyNull())
             ArrayIndexStringNullImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), col_res->getData(), null_map_data);
         else if (const auto item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
@@ -894,7 +885,7 @@ private:
         Array arr = col_array->getValue<Array>();
 
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
-        if (item_arg->isConst())
+        if (item_arg->isColumnConst())
         {
             typename IndexConv::ResultType current = 0;
             const auto & value = (*item_arg)[0];
@@ -908,7 +899,7 @@ private:
                 }
             }
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
                 item_arg->size(),
                 static_cast<typename NearestFieldType<typename IndexConv::ResultType>::Type>(current));
         }
@@ -988,10 +979,10 @@ private:
                 null_map_item = &static_cast<const ColumnUInt8 &>(*null_map2).getData();
         }
 
-        if (item_arg.isNull())
+        if (item_arg.onlyNull())
             ArrayIndexGenericNullImpl<IndexConv>::vector(col_nested, col_array->getOffsets(),
                 col_res->getData(), null_map_data);
-        else if (item_arg.isConst())
+        else if (item_arg.isColumnConst())
             ArrayIndexGenericImpl<IndexConv, true>::vector(col_nested, col_array->getOffsets(),
                 static_cast<const ColumnConst &>(item_arg).getDataColumn(), col_res->getData(),    /// TODO This is wrong.
                 null_map_data, nullptr);
@@ -1030,12 +1021,12 @@ public:
             throw Exception("First argument for function " + getName() + " must be an array.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNull())
+        if (!arguments[1]->onlyNull())
         {
-            const IDataType * observed_type0 = DataTypeTraits::removeNullable(array_type->getNestedType()).get();
-            const IDataType * observed_type1 = DataTypeTraits::removeNullable(arguments[1]).get();
+            DataTypePtr observed_type0 = removeNullable(array_type->getNestedType());
+            DataTypePtr observed_type1 = removeNullable(arguments[1]);
 
-            if (!(observed_type0->behavesAsNumber() && observed_type1->behavesAsNumber())
+            if (!(observed_type0->isNumber() && observed_type1->isNumber())
                 && !observed_type0->equals(*observed_type1))
                 throw Exception("Types of array and 2nd argument of function "
                     + getName() + " must be identical up to nullability. Passed: "
@@ -1067,12 +1058,12 @@ public:
         const ColumnArray * col_array = nullptr;
         col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
         if (col_array)
-            is_nullable = col_array->getData().isNullable();
+            is_nullable = col_array->getData().isColumnNullable();
         else
             is_nullable = false;
 
         /// Check nullability of the 2nd function argument.
-        bool is_arg_nullable = block.getByPosition(arguments[1]).column->isNullable();
+        bool is_arg_nullable = block.getByPosition(arguments[1]).column->isColumnNullable();
 
         if (!is_nullable && !is_arg_nullable)
         {
@@ -1191,6 +1182,7 @@ public:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1210,6 +1202,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1223,8 +1216,6 @@ private:
     bool executeNumber(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
     bool executeString(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container_t & res_values);
-
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
 
     bool execute128bit(
         const ColumnArray::Offsets_t & offsets,
@@ -1250,6 +1241,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1263,8 +1255,6 @@ private:
     bool executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
 
     bool executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container_t & res_values);
-
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
 
     bool execute128bit(
         const ColumnArray::Offsets_t & offsets,
@@ -1292,7 +1282,7 @@ struct FunctionEmptyArray : public IFunction
 {
     static constexpr auto base_name = "emptyArray";
     static const String name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionEmptyArray>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionEmptyArray>(); }
 
 private:
     String getName() const override
@@ -1302,12 +1292,12 @@ private:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataType>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
@@ -1330,6 +1320,7 @@ private:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1349,6 +1340,7 @@ public:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1365,6 +1357,7 @@ public:
     String getName() const override;
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
@@ -1427,6 +1420,7 @@ class FunctionArrayConcat : public IFunction
 public:
     static constexpr auto name = "arrayConcat";
     static FunctionPtr create(const Context & context);
+    FunctionArrayConcat(const Context & context) : context(context) {};
 
     String getName() const override;
 
@@ -1438,6 +1432,9 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+private:
+    const Context & context;
 };
 
 
@@ -1464,7 +1461,8 @@ public:
 class FunctionArrayPush : public IFunction
 {
 public:
-    FunctionArrayPush(bool push_front, const char * name) : push_front(push_front), name(name) {}
+    FunctionArrayPush(const Context & context, bool push_front, const char * name)
+        : context(context), push_front(push_front), name(name) {}
 
     String getName() const override { return name; }
 
@@ -1479,6 +1477,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
 
 private:
+    const Context & context;
     bool push_front;
     const char * name;
 };
@@ -1489,8 +1488,7 @@ public:
     static constexpr auto name = "arrayPushFront";
 
     static FunctionPtr create(const Context & context);
-
-    FunctionArrayPushFront() : FunctionArrayPush(true, name) {}
+    FunctionArrayPushFront(const Context & context) : FunctionArrayPush(context, true, name) {}
 };
 
 class FunctionArrayPushBack : public FunctionArrayPush
@@ -1499,8 +1497,7 @@ public:
     static constexpr auto name = "arrayPushBack";
 
     static FunctionPtr create(const Context & context);
-
-    FunctionArrayPushBack() : FunctionArrayPush(false, name) {}
+    FunctionArrayPushBack(const Context & context) : FunctionArrayPush(context, false, name) {}
 };
 
 class FunctionArrayPop : public IFunction

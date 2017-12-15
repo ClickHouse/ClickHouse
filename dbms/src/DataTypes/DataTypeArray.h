@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/EnrichedDataTypePtr.h>
 
 
 namespace DB
@@ -11,16 +10,13 @@ namespace DB
 class DataTypeArray final : public IDataType
 {
 private:
-    /// Extended type of array elements.
-    DataTypeTraits::EnrichedDataTypePtr enriched_nested;
     /// The type of array elements.
     DataTypePtr nested;
-    /// Type of offsets.
-    DataTypePtr offsets;
 
 public:
+    static constexpr bool is_parametric = true;
+
     DataTypeArray(const DataTypePtr & nested_);
-    DataTypeArray(const DataTypeTraits::EnrichedDataTypePtr & enriched_nested_);
 
     std::string getName() const override
     {
@@ -39,7 +35,7 @@ public:
 
     DataTypePtr clone() const override
     {
-        return std::make_shared<DataTypeArray>(enriched_nested);
+        return std::make_shared<DataTypeArray>(nested);
     }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
@@ -66,32 +62,44 @@ public:
 
     /** Streaming serialization of arrays is arranged in a special way:
       * - elements placed in a row are written/read without array sizes;
-      * - the sizes are written/read in a separate column,
-      *   and the caller must take care of writing/reading the sizes.
+      * - the sizes are written/read in a separate stream,
       * This is necessary, because when implementing nested structures, several arrays can have common sizes.
       */
 
-    /** Write only values, without dimensions. The caller also needs to record the offsets somewhere. */
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
+    void enumerateStreams(StreamCallback callback, SubstreamPath path) const override;
 
-    /** Read only values, without dimensions.
-      * In this case, all the sizes must already be read in the column beforehand.
-      */
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void serializeBinaryBulkWithMultipleStreams(
+        const IColumn & column,
+        OutputStreamGetter getter,
+        size_t offset,
+        size_t limit,
+        bool position_independent_encoding,
+        SubstreamPath path) const override;
 
-    /** Write the dimensions. */
-    void serializeOffsets(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
-
-    /** Read the dimensions. Call this method before reading the values. */
-    void deserializeOffsets(IColumn & column, ReadBuffer & istr, size_t limit) const;
+    void deserializeBinaryBulkWithMultipleStreams(
+        IColumn & column,
+        InputStreamGetter getter,
+        size_t limit,
+        double avg_value_size_hint,
+        bool position_independent_encoding,
+        SubstreamPath path) const override;
 
     ColumnPtr createColumn() const override;
 
     Field getDefault() const override;
 
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return true; }
+    bool cannotBeStoredInTables() const override { return nested->cannotBeStoredInTables(); }
+    bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
+    bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
+
+    bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override
+    {
+        return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
+    }
+
     const DataTypePtr & getNestedType() const { return nested; }
-    const DataTypeTraits::EnrichedDataTypePtr & getEnrichedNestedType() const { return enriched_nested; }
-    const DataTypePtr & getOffsetsType() const { return offsets; }
 };
 
 }

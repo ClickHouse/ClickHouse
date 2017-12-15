@@ -8,7 +8,7 @@
 #include <iomanip>
 #include <unordered_set>
 #include <algorithm>
-#include <experimental/optional>
+#include <optional>
 #include <boost/program_options.hpp>
 
 #include <Poco/File.h>
@@ -23,6 +23,7 @@
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
 #include <common/readline_use.h>
+#include <Common/Throttler.h>
 #include <Common/typeid_cast.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
@@ -113,6 +114,7 @@ private:
     size_t format_max_block_size = 0;    /// Max block size for console output.
     String insert_format;                /// Format of INSERT data that is read from stdin in batch mode.
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
+    size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
@@ -125,7 +127,7 @@ private:
     WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
     std::unique_ptr<ShellCommand> pager_cmd;
     /// The user can specify to redirect query output to a file.
-    std::experimental::optional<WriteBufferFromFile> out_file_buf;
+    std::optional<WriteBufferFromFile> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
 
     String home_path;
@@ -146,6 +148,7 @@ private:
 
     /// If the last query resulted in exception.
     bool got_exception = false;
+    String server_version;
 
     Stopwatch watch;
 
@@ -180,13 +183,13 @@ private:
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
-#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT) \
+#define EXTRACT_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (config().has(#NAME) && !context.getSettingsRef().limits.NAME.changed) \
             context.setSetting(#NAME, config().getString(#NAME));
         APPLY_FOR_LIMITS(EXTRACT_LIMIT)
@@ -194,11 +197,11 @@ private:
     }
 
 
-    int main(const std::vector<std::string> & args)
+    int main(const std::vector<std::string> & /*args*/)
     {
         try
         {
-            return mainImpl(args);
+            return mainImpl();
         }
         catch (const Exception & e)
         {
@@ -261,7 +264,7 @@ private:
     }
 
 
-    int mainImpl(const std::vector<std::string> & args)
+    int mainImpl()
     {
         registerFunctions();
         registerAggregateFunctions();
@@ -402,20 +405,25 @@ private:
             Poco::Timespan(config().getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
             Poco::Timespan(config().getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
 
+        String server_name;
+        UInt64 server_version_major = 0;
+        UInt64 server_version_minor = 0;
+        UInt64 server_revision = 0;
+
+        if (max_client_network_bandwidth)
+        {
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0,  "");
+            connection->setThrottler(throttler);
+        }
+
+        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+
+        server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
         if (is_interactive)
         {
-            String server_name;
-            UInt64 server_version_major = 0;
-            UInt64 server_version_minor = 0;
-            UInt64 server_revision = 0;
-
-            connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
-
             std::cout << "Connected to " << server_name
-                << " server version " << server_version_major
-                << "." << server_version_minor
-                << "." << server_revision
-                << "." << std::endl << std::endl;
+                      << " server version " << server_version
+                      << "." << std::endl << std::endl;
         }
     }
 
@@ -832,7 +840,7 @@ private:
         if (out_file_buf)
         {
             out_file_buf->next();
-            out_file_buf = std::experimental::nullopt;
+            out_file_buf.reset();
         }
         std_out.next();
     }
@@ -967,7 +975,7 @@ private:
                     const auto & out_file_node = typeid_cast<const ASTLiteral &>(*query_with_output->out_file);
                     const auto & out_file = out_file_node.value.safeGet<std::string>();
                     out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
-                    out_buf = &out_file_buf.value();
+                    out_buf = &*out_file_buf;
 
                     // We are writing to file, so default format is the same as in non-interactive mode.
                     if (is_interactive && is_default_format)
@@ -1148,7 +1156,7 @@ private:
         if (std::string::npos != embedded_stack_trace_pos && !config().getBool("stacktrace", false))
             text.resize(embedded_stack_trace_pos);
 
-        std::cerr << "Received exception from server:" << std::endl
+        std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
             << "Code: " << e.code() << ". " << text << std::endl;
     }
 
@@ -1241,8 +1249,8 @@ public:
             }
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
-#define DECLARE_LIMIT(TYPE, NAME, DEFAULT) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Settings.h")
+#define DECLARE_LIMIT(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), "Limits.h")
 
         /// Main commandline options related to client functionality and all parameters from Settings.
         boost::program_options::options_description main_description("Main options");
@@ -1266,6 +1274,7 @@ public:
             ("progress", "print progress even in non-interactive mode")
             ("version,V", "print version information and exit")
             ("echo", "in batch mode, print query before execution")
+            ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", boost::program_options::value<bool>(), "enable or disable compression")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
             APPLY_FOR_LIMITS(DECLARE_LIMIT)
@@ -1331,7 +1340,7 @@ public:
         }
 
         /// Extract settings and limits from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT) \
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (options.count(#NAME)) \
             context.setSetting(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
@@ -1375,6 +1384,8 @@ public:
             config().setBool("echo", true);
         if (options.count("time"))
             print_time_to_stderr = true;
+        if (options.count("max_client_network_bandwidth"))
+            max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
         if (options.count("compression"))
             config().setBool("compression", options["compression"].as<bool>());
     }

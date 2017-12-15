@@ -2,8 +2,6 @@
 #include <thread>
 #include <future>
 
-#include <cxxabi.h>
-
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 
@@ -22,6 +20,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
+#include <Common/demangle.h>
 #include <Interpreters/config_compile.h>
 
 
@@ -229,9 +228,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
         IAggregateFunction & func = *aggregate_functions[i];
 
         int status = 0;
-        char * type_name_ptr = abi::__cxa_demangle(typeid(func).name(), 0, 0, &status);
-        std::string type_name = type_name_ptr;
-        free(type_name_ptr);
+        std::string type_name = demangle(typeid(func).name(), status);
 
         if (status)
             throw Exception("Cannot compile code: cannot demangle name " + String(typeid(func).name())
@@ -277,31 +274,31 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
         {
             code <<
                 "template void Aggregator::executeSpecialized<\n"
-                    "\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-                    "\t" << method_typename << " &, Arena *, size_t, ConstColumnPlainPtrs &,\n"
-                    "\tAggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
+                    "    " << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+                    "    " << method_typename << " &, Arena *, size_t, ConstColumnPlainPtrs &,\n"
+                    "    AggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
                 "\n"
                 "static void wrapper" << suffix << "(\n"
-                    "\tconst Aggregator & aggregator,\n"
-                    "\t" << method_typename << " & method,\n"
-                    "\tArena * arena,\n"
-                    "\tsize_t rows,\n"
-                    "\tConstColumnPlainPtrs & key_columns,\n"
-                    "\tAggregator::AggregateColumns & aggregate_columns,\n"
-                    "\tconst Sizes & key_sizes,\n"
-                    "\tStringRefs & keys,\n"
-                    "\tbool no_more_keys,\n"
-                    "\tAggregateDataPtr overflow_row)\n"
+                    "    const Aggregator & aggregator,\n"
+                    "    " << method_typename << " & method,\n"
+                    "    Arena * arena,\n"
+                    "    size_t rows,\n"
+                    "    ConstColumnPlainPtrs & key_columns,\n"
+                    "    Aggregator::AggregateColumns & aggregate_columns,\n"
+                    "    const Sizes & key_sizes,\n"
+                    "    StringRefs & keys,\n"
+                    "    bool no_more_keys,\n"
+                    "    AggregateDataPtr overflow_row)\n"
                 "{\n"
-                    "\taggregator.executeSpecialized<\n"
-                        "\t\t" << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-                        "\t\tmethod, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
+                    "    aggregator.executeSpecialized<\n"
+                        "        " << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
+                        "        method, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
                 "}\n"
                 "\n"
                 "void * getPtr" << suffix << "() __attribute__((__visibility__(\"default\")));\n"
                 "void * getPtr" << suffix << "()\n" /// Without this wrapper, it's not clear how to get the desired symbol from the compiled library.
                 "{\n"
-                    "\treturn reinterpret_cast<void *>(&wrapper" << suffix << ");\n"
+                    "    return reinterpret_cast<void *>(&wrapper" << suffix << ");\n"
                 "}\n";
         };
 
@@ -312,25 +309,25 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
             /// For `without_key` method.
             code <<
                 "template void Aggregator::executeSpecializedWithoutKey<\n"
-                    "\t" << "TypeList<" << aggregate_functions_typenames << ">>(\n"
-                    "\tAggregatedDataWithoutKey &, size_t, AggregateColumns &, Arena *) const;\n"
+                    "    " << "TypeList<" << aggregate_functions_typenames << ">>(\n"
+                    "    AggregatedDataWithoutKey &, size_t, AggregateColumns &, Arena *) const;\n"
                 "\n"
                 "static void wrapper(\n"
-                    "\tconst Aggregator & aggregator,\n"
-                    "\tAggregatedDataWithoutKey & method,\n"
-                    "\tsize_t rows,\n"
-                    "\tAggregator::AggregateColumns & aggregate_columns,\n"
-                    "\tArena * arena)\n"
+                    "    const Aggregator & aggregator,\n"
+                    "    AggregatedDataWithoutKey & method,\n"
+                    "    size_t rows,\n"
+                    "    Aggregator::AggregateColumns & aggregate_columns,\n"
+                    "    Arena * arena)\n"
                 "{\n"
-                    "\taggregator.executeSpecializedWithoutKey<\n"
-                        "\t\tTypeList<" << aggregate_functions_typenames << ">>(\n"
-                        "\t\tmethod, rows, aggregate_columns, arena);\n"
+                    "    aggregator.executeSpecializedWithoutKey<\n"
+                        "        TypeList<" << aggregate_functions_typenames << ">>(\n"
+                        "        method, rows, aggregate_columns, arena);\n"
                 "}\n"
                 "\n"
                 "void * getPtr() __attribute__((__visibility__(\"default\")));\n"
                 "void * getPtr()\n"
                 "{\n"
-                    "\treturn reinterpret_cast<void *>(&wrapper);\n"
+                    "    return reinterpret_cast<void *>(&wrapper);\n"
                 "}\n";
         }
 
@@ -343,7 +340,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
                 "void * getPtrTwoLevel() __attribute__((__visibility__(\"default\")));\n"
                 "void * getPtrTwoLevel()\n"
                 "{\n"
-                    "\treturn nullptr;\n"
+                    "    return nullptr;\n"
                 "}\n";
         }
 
@@ -392,7 +389,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
 
     for (const auto & col : key_columns)
     {
-        if (col->isNullable())
+        if (col->isColumnNullable())
         {
             const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
             nested_key_columns.push_back(nullable_col.getNestedColumn().get());
@@ -418,9 +415,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
     key_sizes.resize(params.keys_size);
     for (size_t j = 0; j < params.keys_size; ++j)
     {
-        if (nested_key_columns[j]->isFixed())
+        if (nested_key_columns[j]->isFixedAndContiguous())
         {
-            key_sizes[j] = nested_key_columns[j]->sizeOfField();
+            key_sizes[j] = nested_key_columns[j]->sizeOfValueIfFixed();
             keys_bytes += key_sizes[j];
         }
         else
@@ -431,10 +428,10 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
             {
                 ++num_array_keys;
 
-                if (arr->getData().isNullable())
+                if (arr->getData().isColumnNullable())
                     has_arrays_of_nullable = true;
 
-                if (!arr->getData().isFixed())
+                if (!arr->getData().isFixedAndContiguous())
                     has_arrays_of_non_fixed_elems = true;
             }
             else
@@ -459,7 +456,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
         {
             /// We have exactly one key and it is nullable. We shall add it a tag
             /// which specifies whether its value is null or not.
-            size_t size_of_field = nested_key_columns[0]->sizeOfField();
+            size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
             if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8) || (size_of_field == 16))
                 return AggregatedDataVariants::Type::nullable_keys128;
             else
@@ -486,9 +483,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod(const ConstColu
     /// No key has been found to be nullable.
 
     /// Single numeric key.
-    if ((params.keys_size == 1) && nested_key_columns[0]->isNumericNotNullable())
+    if ((params.keys_size == 1) && nested_key_columns[0]->isNumeric())
     {
-        size_t size_of_field = nested_key_columns[0]->sizeOfField();
+        size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
         if (size_of_field == 1)
             return AggregatedDataVariants::Type::key8;
         if (size_of_field == 2)
@@ -663,7 +660,7 @@ void NO_INLINE Aggregator::executeImplCase(
             /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
             aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
+            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
             createAggregateStates(place);
@@ -693,7 +690,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     /// Optimization in the case of a single aggregate function `count`.
     AggregateFunctionCount * agg_count = params.aggregates_size == 1
         ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-        : NULL;
+        : nullptr;
 
     if (agg_count)
         agg_count->addDelta(res, rows);
@@ -913,7 +910,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
 
 #define M(NAME) \
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
-        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out, path);
+        writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out);
 
     if (false) {}
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -987,8 +984,7 @@ template <typename Method>
 void Aggregator::writeToTemporaryFileImpl(
     AggregatedDataVariants & data_variants,
     Method & method,
-    IBlockOutputStream & out,
-    const String & path)
+    IBlockOutputStream & out)
 {
     size_t max_temporary_block_size_rows = 0;
     size_t max_temporary_block_size_bytes = 0;
@@ -1141,7 +1137,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
                 *final_aggregate_columns[i]);
     }
 
-    destroyImpl(method, data);      /// NOTE You can do better.
+    destroyImpl<Method>(data);      /// NOTE You can do better.
 }
 
 template <typename Method, typename Table>
@@ -1224,7 +1220,7 @@ Block Aggregator::prepareBlockAndFill(
     /// Change the size of the columns-constants in the block.
     size_t columns = res.columns();
     for (size_t i = 0; i < columns; ++i)
-        if (res.safeGetByPosition(i).column->isConst())
+        if (res.safeGetByPosition(i).column->isColumnConst())
             res.safeGetByPosition(i).column = res.safeGetByPosition(i).column->cut(0, rows);
 
     return res;
@@ -1239,7 +1235,7 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
         ColumnPlainPtrs & key_columns,
         AggregateColumnsData & aggregate_columns,
         ColumnPlainPtrs & final_aggregate_columns,
-        const Sizes & key_sizes,
+        const Sizes & /*key_sizes*/,
         bool final)
     {
         if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
@@ -1282,7 +1278,7 @@ Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_v
         ColumnPlainPtrs & key_columns,
         AggregateColumnsData & aggregate_columns,
         ColumnPlainPtrs & final_aggregate_columns,
-        const Sizes & key_sizes,
+        const Sizes & /*key_sizes*/,
         bool final)
     {
     #define M(NAME) \
@@ -1944,7 +1940,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
             AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
             aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
+            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
             createAggregateStates(place);
@@ -2430,9 +2426,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 
 
 template <typename Method, typename Table>
-void NO_INLINE Aggregator::destroyImpl(
-    Method & method,
-    Table & table) const
+void NO_INLINE Aggregator::destroyImpl(Table & table) const
 {
     for (auto elem : table)
     {
@@ -2482,7 +2476,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        destroyImpl(*result.NAME, result.NAME->data);
+        destroyImpl<decltype(result.NAME)::element_type>(result.NAME->data);
 
     if (false) {}
     APPLY_FOR_AGGREGATED_VARIANTS(M)

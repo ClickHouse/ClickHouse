@@ -24,20 +24,23 @@ static void setupLogging(const std::string & log_level)
 }
 
 static std::string extractFromConfig(
-        const std::string & config_path, const std::string & key, bool process_zk_includes)
+        const std::string & config_path, const std::string & key, bool process_zk_includes, bool try_get = false)
 {
-    ConfigProcessor processor(/* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    ConfigProcessor processor(config_path, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
     bool has_zk_includes;
-    XMLDocumentPtr config_xml = processor.processConfig(config_path, &has_zk_includes);
+    XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
     if (has_zk_includes && process_zk_includes)
     {
         ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
         zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(
                 *bootstrap_configuration, "zookeeper");
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
-        config_xml = processor.processConfig(config_path, &has_zk_includes, &zk_node_cache);
+        config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
     }
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+    // do not throw exception if not found
+    if (try_get)
+        return configuration->getString(key, "");
     return configuration->getString(key);
 }
 
@@ -45,6 +48,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
 {
     bool print_stacktrace = false;
     bool process_zk_includes = false;
+    bool try_get = false;
     std::string log_level;
     std::string config_path;
     std::string key;
@@ -57,6 +61,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         ("stacktrace", po::bool_switch(&print_stacktrace), "print stack traces of exceptions")
         ("process-zk-includes", po::bool_switch(&process_zk_includes),
          "if there are from_zk elements in config, connect to ZooKeeper and process them")
+        ("try", po::bool_switch(&try_get), "Do not warn about missing keys")
         ("log-level", po::value<std::string>(&log_level)->default_value("error"), "log level")
         ("config-file,c", po::value<std::string>(&config_path)->required(), "path to config file")
         ("key,k", po::value<std::string>(&key)->required(), "key to get value for");
@@ -83,7 +88,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         po::notify(options);
 
         setupLogging(log_level);
-        std::cout << extractFromConfig(config_path, key, process_zk_includes) << std::endl;
+        std::cout << extractFromConfig(config_path, key, process_zk_includes, try_get) << std::endl;
     }
     catch (...)
     {

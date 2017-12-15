@@ -4,7 +4,7 @@
 #include <Poco/Ext/ThreadNumber.h>
 
 
-static __thread unsigned thread_number = 0;
+static thread_local unsigned thread_number = 0;
 static unsigned threads = 0;
 
 unsigned Poco::ThreadNumber::get()

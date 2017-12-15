@@ -193,6 +193,11 @@ static inline size_t tabulation(UInt64 x)
     return res;
 }
 
+static inline size_t _intHash64(UInt64 x)
+{
+    return static_cast<size_t>(intHash64(x));
+}
+
 
 const size_t BUF_SIZE = 1024;
 
@@ -256,7 +261,7 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 
     /// quality. Methods are taken from SMHasher.
     {
-        auto wrapper = [](const void * blob, const int len, const uint32_t seed, void * out)
+        auto wrapper = [](const void * blob, const int, const uint32_t, void * out)
         {
             *reinterpret_cast<UInt32*>(out) = Func(*reinterpret_cast<const UInt64 *>(blob));
         };
@@ -308,7 +313,7 @@ int main(int argc, char ** argv)
 
     if (!method || method == 1) test<identity>  (n, &data[0], "0: identity");
     if (!method || method == 2) test<intHash32> (n, &data[0], "1: intHash32");
-    if (!method || method == 3) test<intHash64> (n, &data[0], "2: intHash64");
+    if (!method || method == 3) test<_intHash64>(n, &data[0], "2: intHash64");
     if (!method || method == 4) test<hash3>     (n, &data[0], "3: two rounds");
     if (!method || method == 5) test<hash4>     (n, &data[0], "4: two rounds and two variables");
     if (!method || method == 6) test<hash5>     (n, &data[0], "5: two rounds with less ops");

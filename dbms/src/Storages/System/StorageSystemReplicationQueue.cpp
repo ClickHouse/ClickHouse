@@ -8,7 +8,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 
@@ -21,27 +21,27 @@ StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string &
     : name(name_)
     , columns{
         /// Table properties.
-        { "database",                std::make_shared<DataTypeString>()    },
-        { "table",                   std::make_shared<DataTypeString>()    },
-        { "replica_name",            std::make_shared<DataTypeString>()    },
+        { "database",                std::make_shared<DataTypeString>() },
+        { "table",                   std::make_shared<DataTypeString>() },
+        { "replica_name",            std::make_shared<DataTypeString>() },
         /// Constant element properties.
-        { "position",                std::make_shared<DataTypeUInt32>()    },
-        { "node_name",               std::make_shared<DataTypeString>()    },
-        { "type",                    std::make_shared<DataTypeString>()    },
-        { "create_time",             std::make_shared<DataTypeDateTime>()  },
-        { "required_quorum",         std::make_shared<DataTypeUInt32>()    },
-        { "source_replica",          std::make_shared<DataTypeString>()    },
-        { "new_part_name",           std::make_shared<DataTypeString>()    },
+        { "position",                std::make_shared<DataTypeUInt32>() },
+        { "node_name",               std::make_shared<DataTypeString>() },
+        { "type",                    std::make_shared<DataTypeString>() },
+        { "create_time",             std::make_shared<DataTypeDateTime>() },
+        { "required_quorum",         std::make_shared<DataTypeUInt32>() },
+        { "source_replica",          std::make_shared<DataTypeString>() },
+        { "new_part_name",           std::make_shared<DataTypeString>() },
         { "parts_to_merge",          std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
-        { "is_detach",               std::make_shared<DataTypeUInt8>()     },
+        { "is_detach",               std::make_shared<DataTypeUInt8>() },
         /// Processing status of item.
-        { "is_currently_executing",  std::make_shared<DataTypeUInt8>()     },
-        { "num_tries",               std::make_shared<DataTypeUInt32>()    },
-        { "last_exception",          std::make_shared<DataTypeString>()    },
-        { "last_attempt_time",       std::make_shared<DataTypeDateTime>()  },
-        { "num_postponed",           std::make_shared<DataTypeUInt32>()    },
-        { "postpone_reason",         std::make_shared<DataTypeString>()    },
-        { "last_postpone_time",      std::make_shared<DataTypeDateTime>()  },
+        { "is_currently_executing",  std::make_shared<DataTypeUInt8>() },
+        { "num_tries",               std::make_shared<DataTypeUInt32>() },
+        { "last_exception",          std::make_shared<DataTypeString>() },
+        { "last_attempt_time",       std::make_shared<DataTypeDateTime>() },
+        { "num_postponed",           std::make_shared<DataTypeUInt32>() },
+        { "postpone_reason",         std::make_shared<DataTypeString>() },
+        { "last_postpone_time",      std::make_shared<DataTypeDateTime>() },
     }
 {
 }
@@ -52,8 +52,8 @@ BlockInputStreams StorageSystemReplicationQueue::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
@@ -61,7 +61,7 @@ BlockInputStreams StorageSystemReplicationQueue::read(
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
         for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
-            if (typeid_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replicated_tables[db.first][iterator->name()] = iterator->table();
 
     ColumnWithTypeAndName col_database_to_filter { std::make_shared<ColumnString>(),    std::make_shared<DataTypeString>(),    "database" };
@@ -118,7 +118,7 @@ BlockInputStreams StorageSystemReplicationQueue::read(
         String database = (*col_database_to_filter.column)[i].safeGet<const String &>();
         String table = (*col_table_to_filter.column)[i].safeGet<const String &>();
 
-        typeid_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getQueue(queue, replica_name);
+        dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getQueue(queue, replica_name);
 
         for (size_t j = 0, queue_size = queue.size(); j < queue_size; ++j)
         {

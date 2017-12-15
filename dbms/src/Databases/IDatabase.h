@@ -86,8 +86,7 @@ public:
         const Context & context,
         const String & name,
         const StoragePtr & table,
-        const ASTPtr & query,
-        const String & engine) = 0;
+        const ASTPtr & query) = 0;
 
     /// Delete the table from the database and return it. Delete the metadata.
     virtual void removeTable(
@@ -107,7 +106,7 @@ public:
         IDatabase & to_database,
         const String & to_name) = 0;
 
-    using ASTModifier = std::function<void(ASTPtr &)>;
+    using ASTModifier = std::function<void(IAST &)>;
 
     /// Change the table structure in metadata.
     /// You must call under the TableStructureLock of the corresponding table . If engine_modifier is empty, then engine does not change.

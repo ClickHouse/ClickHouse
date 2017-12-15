@@ -171,7 +171,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, si
         }
         return (this->*fillBlockFunction)({}, columns, {}, std::move(view_columns));
     }
-    else if(!ids.empty())
+    else if (!ids.empty())
     {
         PaddedPODArray<Key> block_ids(ids.begin() + start, ids.begin() + start + length);
         return (this->*fillBlockFunction)(block_ids, {}, {}, {});
@@ -201,7 +201,7 @@ template <typename DictionaryType, typename Key>
 template <typename Type, typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
     DictionaryGetter<Type> getter, const PaddedPODArray<Key> & ids,
-    const Columns & keys, const DataTypes & data_types,
+    const Columns & /*keys*/, const DataTypes & /*data_types*/,
     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {
     (dictionary.*getter)(attribute.name, ids, container);
@@ -211,7 +211,7 @@ template <typename DictionaryType, typename Key>
 template <typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
     DictionaryStringGetter getter, const PaddedPODArray<Key> & ids,
-    const Columns & keys, const DataTypes & data_types,
+    const Columns & /*keys*/, const DataTypes & /*data_types*/,
     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {
     (dictionary.*getter)(attribute.name, ids, container);
@@ -220,7 +220,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
 template <typename DictionaryType, typename Key>
 template <typename Type, typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
-    GetterByKey<Type> getter, const PaddedPODArray<Key> & ids,
+    GetterByKey<Type> getter, const PaddedPODArray<Key> & /*ids*/,
     const Columns & keys, const DataTypes & data_types,
     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {
@@ -230,7 +230,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
 template <typename DictionaryType, typename Key>
 template <typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
-    StringGetterByKey getter, const PaddedPODArray<Key> & ids,
+    StringGetterByKey getter, const PaddedPODArray<Key> & /*ids*/,
     const Columns & keys, const DataTypes & data_types,
     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {
@@ -284,6 +284,9 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
                 break;
             case AttributeUnderlyingType::UInt64:
                 GET_COLUMN_FORM_ATTRIBUTE(UInt64);
+                break;
+            case AttributeUnderlyingType::UInt128:
+                GET_COLUMN_FORM_ATTRIBUTE(UInt128);
                 break;
             case AttributeUnderlyingType::Int8:
                 GET_COLUMN_FORM_ATTRIBUTE(Int8);
@@ -379,6 +382,9 @@ void DictionaryBlockInputStream<DictionaryType, Key>::fillKeyColumns(
             break;
         case AttributeUnderlyingType::UInt64:
             ADD_COLUMN(UInt64);
+            break;
+        case AttributeUnderlyingType::UInt128:
+            ADD_COLUMN(UInt128);
             break;
         case AttributeUnderlyingType::Int8:
             ADD_COLUMN(Int8);

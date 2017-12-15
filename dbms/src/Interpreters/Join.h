@@ -12,7 +12,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 
 #include <DataStreams/IBlockInputStream.h>
 
@@ -39,16 +38,16 @@ struct JoinKeyGetterOneNumber
     }
 
     Key getKey(
-        const ConstColumnPlainPtrs & key_columns,
-        size_t keys_size,                /// number of key columns.
-        size_t i,                        /// row number to get key from.
-        const Sizes & key_sizes) const    /// If keys are of fixed size - their sizes. Not used for methods with variable-length keys.
+        const ConstColumnPlainPtrs & /*key_columns*/,
+        size_t /*keys_size*/,                 /// number of key columns.
+        size_t i,                             /// row number to get key from.
+        const Sizes & /*key_sizes*/) const    /// If keys are of fixed size - their sizes. Not used for methods with variable-length keys.
     {
         return unionCastToUInt64(vec[i]);
     }
 
     /// Place additional data into memory pool, if needed, when new key was inserted into hash table.
-    static void onNewKey(Key & key, Arena & pool) {}
+    static void onNewKey(Key & /*key*/, Arena & /*pool*/) {}
 };
 
 /// For single String key.
@@ -68,10 +67,10 @@ struct JoinKeyGetterString
     }
 
     Key getKey(
-        const ConstColumnPlainPtrs & key_columns,
-        size_t keys_size,
+        const ConstColumnPlainPtrs &,
+        size_t,
         size_t i,
-        const Sizes & key_sizes) const
+        const Sizes &) const
     {
         return StringRef(
             &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
@@ -101,10 +100,10 @@ struct JoinKeyGetterFixedString
     }
 
     Key getKey(
-        const ConstColumnPlainPtrs & key_columns,
-        size_t keys_size,
+        const ConstColumnPlainPtrs &,
+        size_t,
         size_t i,
-        const Sizes & key_sizes) const
+        const Sizes &) const
     {
         return StringRef(&(*chars)[i * n], n);
     }
@@ -121,7 +120,7 @@ struct JoinKeyGetterFixed
 {
     using Key = TKey;
 
-    JoinKeyGetterFixed(const ConstColumnPlainPtrs & key_columns)
+    JoinKeyGetterFixed(const ConstColumnPlainPtrs &)
     {
     }
 
@@ -134,7 +133,7 @@ struct JoinKeyGetterFixed
         return packFixed<Key>(i, keys_size, key_columns, key_sizes);
     }
 
-    static void onNewKey(Key & key, Arena & pool) {}
+    static void onNewKey(Key &, Arena &) {}
 };
 
 /// Generic method, use crypto hash function.
@@ -142,7 +141,7 @@ struct JoinKeyGetterHashed
 {
     using Key = UInt128;
 
-    JoinKeyGetterHashed(const ConstColumnPlainPtrs & key_columns)
+    JoinKeyGetterHashed(const ConstColumnPlainPtrs &)
     {
     }
 
@@ -150,12 +149,12 @@ struct JoinKeyGetterHashed
         const ConstColumnPlainPtrs & key_columns,
         size_t keys_size,
         size_t i,
-        const Sizes & key_sizes) const
+        const Sizes &) const
     {
         return hash128(i, keys_size, key_columns);
     }
 
-    static void onNewKey(Key & key, Arena & pool) {}
+    static void onNewKey(Key &, Arena &) {}
 };
 
 
@@ -313,14 +312,14 @@ public:
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
-        M(key8)             \
-        M(key16)             \
-        M(key32)             \
-        M(key64)             \
-        M(key_string)         \
-        M(key_fixed_string) \
-        M(keys128)             \
-        M(keys256)             \
+        M(key8)                        \
+        M(key16)                       \
+        M(key32)                       \
+        M(key64)                       \
+        M(key_string)                  \
+        M(key_fixed_string)            \
+        M(keys128)                     \
+        M(keys256)                     \
         M(hashed)
 
     enum class Type
@@ -338,15 +337,15 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-        std::unique_ptr<HashMap<UInt8, Mapped, TrivialHash, HashTableFixedGrower<8>>>     key8;
+        std::unique_ptr<HashMap<UInt8, Mapped, TrivialHash, HashTableFixedGrower<8>>>   key8;
         std::unique_ptr<HashMap<UInt16, Mapped, TrivialHash, HashTableFixedGrower<16>>> key16;
         std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>                     key32;
         std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>                     key64;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                         key_string;
-        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                         key_fixed_string;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;
+        std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_fixed_string;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
         std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>                     keys256;
-        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                     hashed;
+        std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
     };
 
     using MapsAny = MapsTemplate<WithUsedFlag<false, RowRef>>;

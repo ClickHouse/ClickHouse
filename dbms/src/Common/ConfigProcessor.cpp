@@ -13,6 +13,9 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/StringUtils.h>
 
+#define PREPROCESSED_SUFFIX "-preprocessed"
+
+
 using namespace Poco::XML;
 
 
@@ -35,8 +38,27 @@ static std::string numberFromHost(const std::string & s)
     return "";
 }
 
-ConfigProcessor::ConfigProcessor(bool throw_on_bad_incl_, bool log_to_console, const Substitutions & substitutions_)
-    : throw_on_bad_incl(throw_on_bad_incl_)
+static std::string preprocessedConfigPath(const std::string & path)
+{
+    Poco::Path preprocessed_path(path);
+    preprocessed_path.setBaseName(preprocessed_path.getBaseName() + PREPROCESSED_SUFFIX);
+    return preprocessed_path.toString();
+}
+
+bool ConfigProcessor::isPreprocessedFile(const std::string & path)
+{
+    return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
+}
+
+
+ConfigProcessor::ConfigProcessor(
+    const std::string & path_,
+    bool throw_on_bad_incl_,
+    bool log_to_console,
+    const Substitutions & substitutions_)
+    : path(path_)
+    , preprocessed_path(preprocessedConfigPath(path))
+    , throw_on_bad_incl(throw_on_bad_incl_)
     , substitutions(substitutions_)
     /// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
     /// Size is prime because Poco::XML::NamePool uses bad (inefficient, low quality)
@@ -116,13 +138,6 @@ static Node * getRootNode(Document * document)
 static bool allWhitespace(const std::string & s)
 {
     return s.find_first_not_of(" \t\n\r") == std::string::npos;
-}
-
-static std::string preprocessedConfigPath(const std::string & path)
-{
-    Poco::Path preprocessed_path(path);
-    preprocessed_path.setBaseName(preprocessed_path.getBaseName() + "-preprocessed");
-    return preprocessed_path.toString();
 }
 
 void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, Node * with_root)
@@ -320,12 +335,12 @@ void ConfigProcessor::doIncludesRecursive(
             XMLDocumentPtr zk_document;
             auto get_zk_node = [&](const std::string & name) -> Node *
             {
-                std::experimental::optional<std::string> contents = zk_node_cache->get(name);
+                std::optional<std::string> contents = zk_node_cache->get(name);
                 if (!contents)
                     return nullptr;
 
                 /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                zk_document = dom_parser.parseString("<from_zk>" + contents.value() + "</from_zk>");
+                zk_document = dom_parser.parseString("<from_zk>" + *contents + "</from_zk>");
                 return getRootNode(zk_document.get());
             };
 
@@ -373,16 +388,15 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 }
 
 XMLDocumentPtr ConfigProcessor::processConfig(
-        const std::string & path_str,
-        bool * has_zk_includes,
-        zkutil::ZooKeeperNodeCache * zk_node_cache)
+    bool * has_zk_includes,
+    zkutil::ZooKeeperNodeCache * zk_node_cache)
 {
-    XMLDocumentPtr config = dom_parser.parse(path_str);
+    XMLDocumentPtr config = dom_parser.parse(path);
 
     std::vector<std::string> contributing_files;
-    contributing_files.push_back(path_str);
+    contributing_files.push_back(path);
 
-    for (auto & merge_file : getConfigMergeFiles(path_str))
+    for (auto & merge_file : getConfigMergeFiles(path))
     {
         try
         {
@@ -392,7 +406,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         }
         catch (Poco::Exception & e)
         {
-            throw Poco::Exception("Failed to merge config with " + merge_file + ": " + e.displayText());
+            throw Poco::Exception("Failed to merge config with '" + merge_file + "': " + e.displayText());
         }
     }
 
@@ -422,7 +436,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     }
     catch (Poco::Exception & e)
     {
-        throw Poco::Exception("Failed to preprocess config `" + path_str + "': " + e.displayText(), e);
+        throw Poco::Exception("Failed to preprocess config '" + path + "': " + e.displayText(), e);
     }
 
     if (has_zk_includes)
@@ -432,15 +446,15 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     comment <<     " This file was generated automatically.\n";
     comment << "     Do not edit it: it is likely to be discarded and generated again before it's read next time.\n";
     comment << "     Files used to generate this file:";
-    for (const std::string & path : contributing_files)
+    for (const std::string & contributing_file : contributing_files)
     {
-        comment << "\n       " << path;
+        comment << "\n       " << contributing_file;
     }
     if (zk_node_cache && !contributing_zk_paths.empty())
     {
         comment << "\n     ZooKeeper nodes used to generate this file:";
-        for (const std::string & path : contributing_zk_paths)
-            comment << "\n       " << path;
+        for (const std::string & contributing_zk_path : contributing_zk_paths)
+            comment << "\n       " << contributing_zk_path;
     }
 
     comment << "      ";
@@ -452,39 +466,29 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     return config;
 }
 
-ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(const std::string & path, bool allow_zk_includes)
+ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes)
 {
     bool has_zk_includes;
-    XMLDocumentPtr config_xml = processConfig(path, &has_zk_includes);
+    XMLDocumentPtr config_xml = processConfig(&has_zk_includes);
 
     if (has_zk_includes && !allow_zk_includes)
         throw Poco::Exception("Error while loading config `" + path + "': from_zk includes are not allowed!");
 
-    bool preprocessed_written = false;
-    if (!has_zk_includes)
-    {
-        savePreprocessedConfig(config_xml, preprocessedConfigPath(path));
-        preprocessed_written = true;
-    }
-
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, preprocessed_written};
+    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml};
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
-        const std::string & path,
         zkutil::ZooKeeperNodeCache & zk_node_cache,
         bool fallback_to_preprocessed)
 {
-    std::string preprocessed_path = preprocessedConfigPath(path);
-
     XMLDocumentPtr config_xml;
     bool has_zk_includes;
     bool processed_successfully = false;
     try
     {
-        config_xml = processConfig(path, &has_zk_includes, &zk_node_cache);
+        config_xml = processConfig(&has_zk_includes, &zk_node_cache);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)
@@ -504,19 +508,16 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         config_xml = dom_parser.parse(preprocessed_path);
     }
 
-    if (processed_successfully)
-        savePreprocessedConfig(config_xml, preprocessed_path);
-
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, processed_successfully};
+    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml};
 }
 
-void ConfigProcessor::savePreprocessedConfig(const XMLDocumentPtr & config, const std::string & preprocessed_path)
+void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config)
 {
     try
     {
-        DOMWriter().writeNode(preprocessed_path, config);
+        DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
     }
     catch (Poco::Exception & e)
     {

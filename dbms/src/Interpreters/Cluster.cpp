@@ -1,5 +1,5 @@
 #include <Interpreters/Cluster.h>
-#include <Interpreters/DNSCache.h>
+#include <Common/DNSCache.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/SimpleCache.h>
@@ -333,7 +333,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
 
 Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password, UInt16 clickhouse_port)
+                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_shared)
 {
     UInt32 current_shard_num = 1;
 
@@ -348,23 +348,30 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
         ConnectionPoolPtrs replicas;
         replicas.reserve(current.size());
 
+        Addresses shard_local_addresses;
+
         for (const auto & replica : current)
         {
-            replicas.emplace_back(std::make_shared<ConnectionPool>(
-                settings.distributed_connections_pool_size,
-                replica.host_name, replica.port, replica.resolved_address,
-                replica.default_database, replica.user, replica.password,
-                "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
-                saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
-                saturate(settings.receive_timeout, settings.limits.max_execution_time),
-                saturate(settings.send_timeout, settings.limits.max_execution_time)));
+            if (replica.is_local && !treat_local_as_shared)
+                shard_local_addresses.push_back(replica);
+            else
+            {
+                replicas.emplace_back(std::make_shared<ConnectionPool>(
+                        settings.distributed_connections_pool_size,
+                        replica.host_name, replica.port, replica.resolved_address,
+                        replica.default_database, replica.user, replica.password,
+                        "server", Protocol::Compression::Enable, Protocol::Encryption::Disable,
+                        saturate(settings.connect_timeout_with_failover_ms, settings.limits.max_execution_time),
+                        saturate(settings.receive_timeout, settings.limits.max_execution_time),
+                        saturate(settings.send_timeout, settings.limits.max_execution_time)));
+            }
         }
 
         ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
                 std::move(replicas), settings.load_balancing, settings.connections_with_failover_max_tries);
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
-        shards_info.push_back({{}, current_shard_num, default_weight, {}, shard_pool});
+        shards_info.push_back({{}, current_shard_num, default_weight, std::move(shard_local_addresses), shard_pool, false});
         ++current_shard_num;
     }
 
@@ -405,43 +412,6 @@ void Cluster::initMisc()
             any_remote_shard_info = &shard_info;
             break;
         }
-    }
-
-    calculateHashOfAddresses();
-}
-
-
-void Cluster::calculateHashOfAddresses()
-{
-    std::vector<std::string> elements;
-
-    if (!addresses_with_failover.empty())
-    {
-        for (const auto & addresses : addresses_with_failover)
-        {
-            for (const auto & address : addresses)
-                elements.push_back(address.host_name + ":" + toString(address.port));
-        }
-    }
-    else
-        throw Exception("Cluster: ill-formed cluster", ErrorCodes::LOGICAL_ERROR);
-
-    std::sort(elements.begin(), elements.end());
-
-    unsigned char hash[SHA512_DIGEST_LENGTH];
-
-    SHA512_CTX ctx;
-    SHA512_Init(&ctx);
-
-    for (const auto & host : elements)
-        SHA512_Update(&ctx, reinterpret_cast<const void *>(host.c_str()), host.size() + 1);
-
-    SHA512_Final(hash, &ctx);
-
-    {
-        WriteBufferFromString buf(hash_of_addresses);
-        HexWriteBuffer hex_buf(buf);
-        hex_buf.write(reinterpret_cast<const char *>(hash), sizeof(hash));
     }
 }
 

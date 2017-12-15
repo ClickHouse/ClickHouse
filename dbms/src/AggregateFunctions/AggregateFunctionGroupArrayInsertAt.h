@@ -9,7 +9,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <AggregateFunctions/IBinaryAggregateFunction.h>
@@ -55,7 +55,7 @@ class AggregateFunctionGroupArrayInsertAtGeneric final
 private:
     DataTypePtr type;
     Field default_value;
-    size_t length_to_resize = 0;    /// zero means - do not do resizing.
+    UInt64 length_to_resize = 0;    /// zero means - do not do resizing.
 
 public:
     String getName() const override { return "groupArrayInsertAt"; }
@@ -67,7 +67,7 @@ public:
 
     void setArgumentsImpl(const DataTypes & arguments)
     {
-        if (!arguments.at(1)->behavesAsNumber())    /// TODO filter out floating point types.
+        if (!arguments.at(1)->canBeUsedAsNonNegativeArrayIndex())
             throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         type = arguments.front();
@@ -97,7 +97,9 @@ public:
 
         if (params.size() == 2)
         {
-            length_to_resize = applyVisitor(FieldVisitorConvertToNumber<size_t>(), params[1]);
+            length_to_resize = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
+            if (length_to_resize > AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE)
+                throw Exception("Too large array size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
         }
     }
 
@@ -125,7 +127,7 @@ public:
         column_value.get(row_num, arr[position]);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         Array & arr_lhs = data(place).value;
         const Array & arr_rhs = data(rhs).value;

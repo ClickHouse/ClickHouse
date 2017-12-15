@@ -479,7 +479,7 @@ struct Dispatcher
         if (arguments.size() == 2)
         {
             const IColumn & scale_column = *block.getByPosition(arguments[1]).column;
-            if (!scale_column.isConst())
+            if (!scale_column.isColumnConst())
                 throw Exception("Scale argument for rounding functions must be constant.", ErrorCodes::ILLEGAL_COLUMN);
 
             Field scale_field = static_cast<const ColumnConst &>(scale_column).getField();
@@ -526,7 +526,7 @@ class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRounding>(); }
 
 private:
     template <typename T>
@@ -558,7 +558,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto & type : arguments)
-            if (!type->behavesAsNumber())
+            if (!type->isNumber())
                 throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -592,7 +592,7 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
         return { true, true, true };
     }
@@ -621,7 +621,7 @@ using FunctionTrunc = FunctionRounding<NameTrunc, RoundingMode::Trunc>;
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return { true };
     }

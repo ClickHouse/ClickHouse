@@ -8,30 +8,29 @@ namespace DB
 
 /** Column, that is just group of few another columns.
   *
-  * For constant Tuples, see ColumnConstTuple.
+  * For constant Tuples, see ColumnConst.
   * Mixed constant/non-constant columns is prohibited in tuple
   *  for implementation simplicity.
   */
 class ColumnTuple final : public IColumn
 {
 private:
-    Block data;
     Columns columns;
 
     template <bool positive>
     struct Less;
 
 public:
-    ColumnTuple() {}
-    ColumnTuple(Block data_);
+    ColumnTuple(const Columns & columns);
 
-    std::string getName() const override { return "Tuple"; }
+    std::string getName() const override;
+    const char * getFamilyName() const override { return "Tuple"; }
 
     ColumnPtr cloneEmpty() const override;
 
     size_t size() const override
     {
-        return data.rows();
+        return columns.at(0)->size();
     }
 
     Field operator[](size_t n) const override;
@@ -58,10 +57,7 @@ public:
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
-    ColumnPtr convertToFullColumnIfConst() const override;
-
-    const Block & getData() const { return data; }
-    Block & getData() { return data; }
+    void forEachSubcolumn(ColumnCallback callback) override;
 
     const Columns & getColumns() const { return columns; }
     Columns & getColumns() { return columns; }

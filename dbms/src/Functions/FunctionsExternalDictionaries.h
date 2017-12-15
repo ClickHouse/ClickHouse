@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
 
 #include <Common/typeid_cast.h>
 
@@ -77,7 +78,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                     + ", expected a string.",
@@ -140,7 +141,7 @@ private:
 
             dict->has(ids, out);
 
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(id_col->size(), toField(out.front()));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(id_col->size(), toField(out.front()));
         }
         else
             throw Exception{
@@ -158,14 +159,16 @@ private:
         if (!dict)
             return false;
 
-        const auto key_col_with_type = block.getByPosition(arguments[1]);
-        if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
-            || checkColumnConst<ColumnTuple>(key_col_with_type.column.get()))
-        {
-            /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-            const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[1]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
+
+        if (checkColumn<ColumnTuple>(key_col.get()))
+        {
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             const auto out = std::make_shared<ColumnUInt8>(key_col_with_type.column->size());
@@ -237,7 +240,7 @@ private:
                     + toString(arguments.size()) + ", should be 3 or 4.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -245,7 +248,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -331,7 +334,7 @@ private:
             auto out = std::make_unique<ColumnString>();
             dict->getString(attr_name, ids, out.get());
 
-            block.getByPosition(result).column = DataTypeString().createConstColumn(id_col->size(), out->getDataAt(0).toString());
+            block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
         }
         else
         {
@@ -365,13 +368,16 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto key_col_with_type = block.getByPosition(arguments[2]);
-        if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
-            || checkColumnConst<ColumnTuple>(key_col_with_type.column.get()))
-        {
-            const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
+
+        if (checkColumn<ColumnTuple>(key_col.get()))
+        {
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             const auto out = std::make_shared<ColumnString>();
@@ -473,7 +479,7 @@ private:
             auto out = std::make_unique<ColumnString>();
             dictionary->getString(attr_name, ids, dates, out.get());
 
-            block.getByPosition(result).column = DataTypeString().createConstColumn(id_col->size(), out->getDataAt(0).toString());
+            block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
         }
         else
         {
@@ -506,13 +512,13 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() +
                     ", expected a string.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() +
                     ", expected a string.",
@@ -527,7 +533,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[3].get()))
+        if (!arguments[3]->isString())
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName() +
                     ", must be String.",
@@ -648,7 +654,7 @@ private:
 
             dictionary->getString(attr_name, ids, def, out.get());
 
-            block.getByPosition(result).column = DataTypeString().createConstColumn(id_col->size(), out->getDataAt(0).toString());
+            block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
         }
         else
             throw Exception{
@@ -672,12 +678,14 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto key_col_with_type = block.getByPosition(arguments[2]);
-        const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-        const ColumnPtr key_col_materialized = key_col.convertToFullColumnIfConst();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
 
-        const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
         const auto out = std::make_shared<ColumnString>();
@@ -757,15 +765,17 @@ DECLARE_DICT_GET_TRAITS(Float32, DataTypeFloat32)
 DECLARE_DICT_GET_TRAITS(Float64, DataTypeFloat64)
 DECLARE_DICT_GET_TRAITS(UInt16, DataTypeDate)
 DECLARE_DICT_GET_TRAITS(UInt32, DataTypeDateTime)
+DECLARE_DICT_GET_TRAITS(UInt128, DataTypeUUID)
 #undef DECLARE_DICT_GET_TRAITS
 
-template <typename DataType>
+
+template <typename DataType, typename Name>
 class FunctionDictGet final : public IFunction
 {
     using Type = typename DataType::FieldType;
 
 public:
-    static const std::string name;
+    static constexpr auto name = Name::name;
 
     static FunctionPtr create(const Context & context)
     {
@@ -790,7 +800,7 @@ private:
         if (arguments.size() != 3 && arguments.size() != 4)
             throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -798,7 +808,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -888,7 +898,7 @@ private:
             PaddedPODArray<Type> data(1);
             DictGetTraits<DataType>::get(dict, attr_name, ids, data);
 
-            block.getByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), toField(data.front()));
+            block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col->size(), toField(data.front()));
         }
         else
         {
@@ -922,13 +932,16 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto key_col_with_type = block.getByPosition(arguments[2]);
-        if (checkColumn<ColumnTuple>(key_col_with_type.column.get())
-            || checkColumnConst<ColumnTuple>(key_col_with_type.column.get()))
-        {
-            const ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst();
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
+
+        if (checkColumn<ColumnTuple>(key_col.get()))
+        {
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumns();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             const auto out = std::make_shared<ColumnVector<Type>>(key_columns.front()->size());
@@ -1045,7 +1058,7 @@ private:
             PaddedPODArray<Type> data(1);
             DictGetTraits<DataType>::get(dictionary, attr_name, ids, dates, data);
 
-            block.getByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), toField(data.front()));
+            block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col->size(), toField(data.front()));
         }
         else
         {
@@ -1058,31 +1071,42 @@ private:
     const ExternalDictionaries & dictionaries;
 };
 
-template <typename DataType>
-const std::string FunctionDictGet<DataType>::name = "dictGet" + DataType{}.getName();
+struct NameDictGetUInt8 { static constexpr auto name = "dictGetUInt8"; };
+struct NameDictGetUInt16 { static constexpr auto name = "dictGetUInt16"; };
+struct NameDictGetUInt32 { static constexpr auto name = "dictGetUInt32"; };
+struct NameDictGetUInt64 { static constexpr auto name = "dictGetUInt64"; };
+struct NameDictGetInt8 { static constexpr auto name = "dictGetInt8"; };
+struct NameDictGetInt16 { static constexpr auto name = "dictGetInt16"; };
+struct NameDictGetInt32 { static constexpr auto name = "dictGetInt32"; };
+struct NameDictGetInt64 { static constexpr auto name = "dictGetInt64"; };
+struct NameDictGetFloat32 { static constexpr auto name = "dictGetFloat32"; };
+struct NameDictGetFloat64 { static constexpr auto name = "dictGetFloat64"; };
+struct NameDictGetDate { static constexpr auto name = "dictGetDate"; };
+struct NameDictGetDateTime { static constexpr auto name = "dictGetDateTime"; };
+struct NameDictGetUUID { static constexpr auto name = "dictGetUUID"; };
+
+using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8, NameDictGetUInt8>;
+using FunctionDictGetUInt16 = FunctionDictGet<DataTypeUInt16, NameDictGetUInt16>;
+using FunctionDictGetUInt32 = FunctionDictGet<DataTypeUInt32, NameDictGetUInt32>;
+using FunctionDictGetUInt64 = FunctionDictGet<DataTypeUInt64, NameDictGetUInt64>;
+using FunctionDictGetInt8 = FunctionDictGet<DataTypeInt8, NameDictGetInt8>;
+using FunctionDictGetInt16 = FunctionDictGet<DataTypeInt16, NameDictGetInt16>;
+using FunctionDictGetInt32 = FunctionDictGet<DataTypeInt32, NameDictGetInt32>;
+using FunctionDictGetInt64 = FunctionDictGet<DataTypeInt64, NameDictGetInt64>;
+using FunctionDictGetFloat32 = FunctionDictGet<DataTypeFloat32, NameDictGetFloat32>;
+using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64, NameDictGetFloat64>;
+using FunctionDictGetDate = FunctionDictGet<DataTypeDate, NameDictGetDate>;
+using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime, NameDictGetDateTime>;
+using FunctionDictGetUUID = FunctionDictGet<DataTypeUUID, NameDictGetUUID>;
 
 
-using FunctionDictGetUInt8 = FunctionDictGet<DataTypeUInt8>;
-using FunctionDictGetUInt16 = FunctionDictGet<DataTypeUInt16>;
-using FunctionDictGetUInt32 = FunctionDictGet<DataTypeUInt32>;
-using FunctionDictGetUInt64 = FunctionDictGet<DataTypeUInt64>;
-using FunctionDictGetInt8 = FunctionDictGet<DataTypeInt8>;
-using FunctionDictGetInt16 = FunctionDictGet<DataTypeInt16>;
-using FunctionDictGetInt32 = FunctionDictGet<DataTypeInt32>;
-using FunctionDictGetInt64 = FunctionDictGet<DataTypeInt64>;
-using FunctionDictGetFloat32 = FunctionDictGet<DataTypeFloat32>;
-using FunctionDictGetFloat64 = FunctionDictGet<DataTypeFloat64>;
-using FunctionDictGetDate = FunctionDictGet<DataTypeDate>;
-using FunctionDictGetDateTime = FunctionDictGet<DataTypeDateTime>;
-
-
-template <typename DataType>
+template <typename DataType, typename Name>
 class FunctionDictGetOrDefault final : public IFunction
 {
     using Type = typename DataType::FieldType;
 
 public:
-    static const std::string name;
+    static constexpr auto name = Name::name;
 
     static FunctionPtr create(const Context & context)
     {
@@ -1098,7 +1122,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1106,7 +1130,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
+        if (!arguments[1]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
@@ -1127,7 +1151,7 @@ private:
         {
             throw Exception{
                 "Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
-                    + ", must be " + DataType{}.getName() + ".",
+                    + ", must be " + String(DataType{}.getFamilyName()) + ".",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
@@ -1218,7 +1242,7 @@ private:
         }
         else
             throw Exception{
-                "Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+                "Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 
@@ -1252,11 +1276,11 @@ private:
 
             DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, def, data);
 
-            block.getByPosition(result).column = DataTypeNumber<Type>().createConstColumn(id_col->size(), toField(data.front()));
+            block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col->size(), toField(data.front()));
         }
         else
             throw Exception{
-                "Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+                "Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
 
@@ -1276,16 +1300,18 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto key_col_with_type = block.getByPosition(arguments[2]);
-        const auto & key_col = typeid_cast<const ColumnTuple &>(*key_col_with_type.column);
+        const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
+        ColumnPtr key_col = key_col_with_type.column;
 
-        const ColumnPtr key_col_materialized = key_col.convertToFullColumnIfConst();
+        /// Functions in external dictionaries only support full-value (not constant) columns with keys.
+        if (auto key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
+            key_col = key_col_materialized;
 
-        const auto & key_columns = static_cast<const ColumnTuple &>(*key_col_materialized).getColumns();
+        const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
         /// @todo detect when all key columns are constant
-        const auto rows = key_col.size();
+        const auto rows = key_col->size();
         const auto out = std::make_shared<ColumnVector<Type>>(rows);
         block.getByPosition(result).column = out;
         auto & data = out->getData();
@@ -1306,7 +1332,7 @@ private:
         }
         else
             throw Exception{
-                "Fourth argument of function " + getName() + " must be " + DataType{}.getName(),
+                "Fourth argument of function " + getName() + " must be " + String(DataType{}.getFamilyName()),
                 ErrorCodes::ILLEGAL_COLUMN};
 
         return true;
@@ -1315,22 +1341,33 @@ private:
     const ExternalDictionaries & dictionaries;
 };
 
-template <typename DataType>
-const std::string FunctionDictGetOrDefault<DataType>::name = "dictGet" + DataType{}.getName() + "OrDefault";
+struct NameDictGetUInt8OrDefault { static constexpr auto name = "dictGetUInt8OrDefault"; };
+struct NameDictGetUInt16OrDefault { static constexpr auto name = "dictGetUInt16OrDefault"; };
+struct NameDictGetUInt32OrDefault { static constexpr auto name = "dictGetUInt32OrDefault"; };
+struct NameDictGetUInt64OrDefault { static constexpr auto name = "dictGetUInt64OrDefault"; };
+struct NameDictGetInt8OrDefault { static constexpr auto name = "dictGetInt8OrDefault"; };
+struct NameDictGetInt16OrDefault { static constexpr auto name = "dictGetInt16OrDefault"; };
+struct NameDictGetInt32OrDefault { static constexpr auto name = "dictGetInt32OrDefault"; };
+struct NameDictGetInt64OrDefault { static constexpr auto name = "dictGetInt64OrDefault"; };
+struct NameDictGetFloat32OrDefault { static constexpr auto name = "dictGetFloat32OrDefault"; };
+struct NameDictGetFloat64OrDefault { static constexpr auto name = "dictGetFloat64OrDefault"; };
+struct NameDictGetDateOrDefault { static constexpr auto name = "dictGetDateOrDefault"; };
+struct NameDictGetDateTimeOrDefault { static constexpr auto name = "dictGetDateTimeOrDefault"; };
+struct NameDictGetUUIDOrDefault { static constexpr auto name = "dictGetUUIDOrDefault"; };
 
-
-using FunctionDictGetUInt8OrDefault = FunctionDictGetOrDefault<DataTypeUInt8>;
-using FunctionDictGetUInt16OrDefault = FunctionDictGetOrDefault<DataTypeUInt16>;
-using FunctionDictGetUInt32OrDefault = FunctionDictGetOrDefault<DataTypeUInt32>;
-using FunctionDictGetUInt64OrDefault = FunctionDictGetOrDefault<DataTypeUInt64>;
-using FunctionDictGetInt8OrDefault = FunctionDictGetOrDefault<DataTypeInt8>;
-using FunctionDictGetInt16OrDefault = FunctionDictGetOrDefault<DataTypeInt16>;
-using FunctionDictGetInt32OrDefault = FunctionDictGetOrDefault<DataTypeInt32>;
-using FunctionDictGetInt64OrDefault = FunctionDictGetOrDefault<DataTypeInt64>;
-using FunctionDictGetFloat32OrDefault = FunctionDictGetOrDefault<DataTypeFloat32>;
-using FunctionDictGetFloat64OrDefault = FunctionDictGetOrDefault<DataTypeFloat64>;
-using FunctionDictGetDateOrDefault = FunctionDictGetOrDefault<DataTypeDate>;
-using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTime>;
+using FunctionDictGetUInt8OrDefault = FunctionDictGet<DataTypeUInt8, NameDictGetUInt8OrDefault>;
+using FunctionDictGetUInt16OrDefault = FunctionDictGet<DataTypeUInt16, NameDictGetUInt16OrDefault>;
+using FunctionDictGetUInt32OrDefault = FunctionDictGet<DataTypeUInt32, NameDictGetUInt32OrDefault>;
+using FunctionDictGetUInt64OrDefault = FunctionDictGet<DataTypeUInt64, NameDictGetUInt64OrDefault>;
+using FunctionDictGetInt8OrDefault = FunctionDictGet<DataTypeInt8, NameDictGetInt8OrDefault>;
+using FunctionDictGetInt16OrDefault = FunctionDictGet<DataTypeInt16, NameDictGetInt16OrDefault>;
+using FunctionDictGetInt32OrDefault = FunctionDictGet<DataTypeInt32, NameDictGetInt32OrDefault>;
+using FunctionDictGetInt64OrDefault = FunctionDictGet<DataTypeInt64, NameDictGetInt64OrDefault>;
+using FunctionDictGetFloat32OrDefault = FunctionDictGet<DataTypeFloat32, NameDictGetFloat32OrDefault>;
+using FunctionDictGetFloat64OrDefault = FunctionDictGet<DataTypeFloat64, NameDictGetFloat64OrDefault>;
+using FunctionDictGetDateOrDefault = FunctionDictGet<DataTypeDate, NameDictGetDateOrDefault>;
+using FunctionDictGetDateTimeOrDefault = FunctionDictGet<DataTypeDateTime, NameDictGetDateTimeOrDefault>;
+using FunctionDictGetUUIDOrDefault = FunctionDictGet<DataTypeUUID, NameDictGetUUIDOrDefault>;
 
 
 /// Functions to work with hierarchies.
@@ -1351,11 +1388,11 @@ public:
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const Block & sample_block) override { return true; }
+    bool isInjective(const Block & /*sample_block*/) override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1484,7 +1521,7 @@ private:
 
             get_hierarchies(in, backend->getData(), array->getOffsets());
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(id_col->size(), (*array)[0].get<Array>());
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(id_col->size(), (*array)[0].get<Array>());
         }
         else
         {
@@ -1519,7 +1556,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             throw Exception{
                 "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
@@ -1660,7 +1697,7 @@ private:
 
             dictionary->isInConstantConstant(child_id, ancestor_id, res);
 
-            block.getByPosition(result).column = DataTypeUInt8().createConstColumn(child_id_col->size(), UInt64(res));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(child_id_col->size(), UInt64(res));
         }
         else
         {

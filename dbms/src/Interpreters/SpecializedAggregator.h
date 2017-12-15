@@ -190,7 +190,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
             AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
             aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, i, keys, *aggregates_pool);
+            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
 
@@ -222,7 +222,7 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
     /// Optimization in the case of a single aggregate function `count`.
     AggregateFunctionCount * agg_count = params.aggregates_size == 1
         ? typeid_cast<AggregateFunctionCount *>(aggregate_functions[0])
-        : NULL;
+        : nullptr;
 
     if (agg_count)
         agg_count->addDelta(res, rows);

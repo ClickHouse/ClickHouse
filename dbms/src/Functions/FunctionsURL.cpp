@@ -64,7 +64,7 @@ static size_t decodeURL(const char * src, size_t src_size, char * dst)
 
 size_t ExtractProtocol::getReserveLengthForElement()
 {
-    return makeStringView("https").size() + 1;
+    return strlen("https") + 1;
 }
 
 
@@ -109,8 +109,7 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 }
 
 
-void DecodeURLComponentImpl::vector_fixed(const ColumnString::Chars_t & data, size_t n,
-    ColumnString::Chars_t & res_data)
+void DecodeURLComponentImpl::vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
 {
     throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
 }

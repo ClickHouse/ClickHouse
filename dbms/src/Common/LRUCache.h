@@ -16,7 +16,7 @@ namespace DB
 template <typename T>
 struct TrivialWeightFunction
 {
-    size_t operator()(const T & x) const
+    size_t operator()(const T &) const
     {
         return 1;
     }
@@ -165,7 +165,7 @@ private:
     /// Represents pending insertion attempt.
     struct InsertToken
     {
-        InsertToken(LRUCache & cache_) : cache(cache_) {}
+        explicit InsertToken(LRUCache & cache_) : cache(cache_) {}
 
         std::mutex mutex;
         bool cleaned_up = false; /// Protected by the token mutex
@@ -188,14 +188,14 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, std::lock_guard<std::mutex> & cache_lock)
+        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             key = key_;
             token = token_;
             ++token->refcount;
         }
 
-        void cleanup(std::lock_guard<std::mutex> & token_lock, std::lock_guard<std::mutex> & cache_lock)
+        void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;
@@ -260,7 +260,7 @@ private:
 
     WeightFunction weight_function;
 
-    MappedPtr getImpl(const Key & key, std::lock_guard<std::mutex> & cache_lock)
+    MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         auto it = cells.find(key);
         if (it == cells.end())
@@ -277,7 +277,7 @@ private:
         return cell.value;
     }
 
-    void setImpl(const Key & key, const MappedPtr & mapped, std::lock_guard<std::mutex> & cache_lock)
+    void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         auto res = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),

@@ -1,3 +1,4 @@
+#include <Common/config.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -8,7 +9,6 @@
 #include <DataStreams/BinaryRowOutputStream.h>
 #include <DataStreams/ValuesRowInputStream.h>
 #include <DataStreams/ValuesRowOutputStream.h>
-#include <DataStreams/TabSeparatedBlockOutputStream.h>
 #include <DataStreams/PrettyBlockOutputStream.h>
 #include <DataStreams/PrettyCompactBlockOutputStream.h>
 #include <DataStreams/PrettySpaceBlockOutputStream.h>
@@ -30,6 +30,11 @@
 #include <DataStreams/FormatFactory.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataTypes/FormatSettingsJSON.h>
+#if USE_CAPNP
+#include <DataStreams/CapnProtoRowInputStream.h>
+#endif
+
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -92,9 +97,21 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     {
         return wrap_row_stream(std::make_shared<JSONEachRowRowInputStream>(buf, sample, settings.input_format_skip_unknown_fields));
     }
+#if USE_CAPNP
+    else if (name == "CapnProto")
+    {
+        std::vector<String> tokens;
+        auto schema_and_root = settings.format_schema.toString();
+        boost::split(tokens, schema_and_root, boost::is_any_of(":"));
+        if (tokens.size() != 2)
+            throw Exception("Format CapnProto requires 'format_schema' setting to have a schema_file:root_object format, e.g. 'schema.capnp:Message'");
+
+        const String & schema_dir = context.getFormatSchemaPath();
+        return wrap_row_stream(std::make_shared<CapnProtoRowInputStream>(buf, sample, schema_dir, tokens[0], tokens[1]));
+    }
+#endif
     else if (name == "TabSeparatedRaw"
         || name == "TSVRaw"
-        || name == "BlockTabSeparated"
         || name == "Pretty"
         || name == "PrettyCompact"
         || name == "PrettyCompactMonoBlock"
@@ -135,8 +152,6 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true));
     else if (name == "TabSeparatedRaw" || name == "TSVRaw")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample));
-    else if (name == "BlockTabSeparated")
-        return std::make_shared<TabSeparatedBlockOutputStream>(buf);
     else if (name == "CSV")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample));
     else if (name == "CSVWithNames")
@@ -162,10 +177,10 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<PrettySpaceBlockOutputStream>(buf, true, settings.output_format_pretty_max_rows, context);
     else if (name == "Vertical")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(
-            buf, sample, settings.output_format_pretty_max_rows, context));
+            buf, sample, settings.output_format_pretty_max_rows));
     else if (name == "VerticalRaw")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRawRowOutputStream>(
-            buf, sample, settings.output_format_pretty_max_rows, context));
+            buf, sample, settings.output_format_pretty_max_rows));
     else if (name == "Values")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf));
     else if (name == "JSON")

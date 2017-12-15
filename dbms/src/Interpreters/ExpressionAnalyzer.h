@@ -83,7 +83,7 @@ public:
     /** Get a set of columns that are enough to read from the table to evaluate the expression.
       * Columns added from another table by JOIN are not counted.
       */
-    Names getRequiredColumns();
+    Names getRequiredColumns() const;
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -111,7 +111,7 @@ public:
     void appendSelect(ExpressionActionsChain & chain, bool only_types);
     bool appendOrderBy(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
-    void appendProjectResult(ExpressionActionsChain & chain, bool only_types) const;
+    void appendProjectResult(ExpressionActionsChain & chain) const;
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
     /// If project_result, only the calculated values in the desired order, renamed to aliases, remain in the output block.
@@ -127,7 +127,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets getSubqueriesForSets() { return subqueries_for_sets; }
+    SubqueriesForSets getSubqueriesForSets() const { return subqueries_for_sets; }
 
     PreparedSets getPreparedSets() { return prepared_sets; }
 

@@ -28,6 +28,7 @@ public:
     explicit ColumnArray(ColumnPtr nested_column, ColumnPtr offsets_column = nullptr);
 
     std::string getName() const override;
+    const char * getFamilyName() const override { return "Array"; }
     ColumnPtr cloneResized(size_t size) const override;
     size_t size() const override;
     Field operator[](size_t n) const override;
@@ -80,10 +81,13 @@ public:
         return scatterImpl<ColumnArray>(num_columns, selector);
     }
 
-    /// Creates and returns a column with array sizes.
-    ColumnPtr getLengthsColumn() const;
-
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    void forEachSubcolumn(ColumnCallback callback) override
+    {
+        callback(offsets);
+        callback(data);
+    }
 
 private:
     ColumnPtr data;

@@ -3,12 +3,12 @@
 set -e
 
 BRANCH=trunk
-#BRANCH=tags/RELEASE_400/final
+#BRANCH=tags/RELEASE_500/final
 
 THREADS=$(grep -c ^processor /proc/cpuinfo)
 
 cd ~
-sudo apt-get install -y subversion cmake3
+sudo apt-get install -y subversion cmake
 
 mkdir llvm
 cd llvm

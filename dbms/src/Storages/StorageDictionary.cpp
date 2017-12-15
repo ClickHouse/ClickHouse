@@ -16,26 +16,26 @@ namespace DB
 StoragePtr StorageDictionary::create(
     const String & table_name,
     Context & context,
-    ASTPtr & query,
+    const ASTCreateQuery & query,
     NamesAndTypesListPtr columns,
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults)
 {
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query);
-    const ASTFunction & function = typeid_cast<const ASTFunction &> (*create.storage);
+    const ASTFunction & engine = *query.storage->engine;
     String dictionary_name;
-    if (function.arguments)
+    if (engine.arguments)
     {
         std::stringstream iss;
-        function.arguments->format(IAST::FormatSettings(iss, false, false));
+        engine.arguments->format(IAST::FormatSettings(iss, false, false));
         dictionary_name = iss.str();
     }
 
     const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
     const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-    return make_shared(table_name, columns, materialized_columns, alias_columns,
-                       column_defaults, dictionary_structure, dictionary_name);
+    return ext::shared_ptr_helper<StorageDictionary>::create(
+        table_name, columns, materialized_columns, alias_columns,
+        column_defaults, dictionary_structure, dictionary_name);
 }
 
 StoragePtr StorageDictionary::create(
@@ -47,8 +47,9 @@ StoragePtr StorageDictionary::create(
     const DictionaryStructure & dictionary_structure,
     const String & dictionary_name)
 {
-    return make_shared(table_name, columns, materialized_columns, alias_columns,
-                       column_defaults, dictionary_structure, dictionary_name);
+    return ext::shared_ptr_helper<StorageDictionary>::create(
+        table_name, columns, materialized_columns, alias_columns,
+        column_defaults, dictionary_structure, dictionary_name);
 }
 
 StorageDictionary::StorageDictionary(
@@ -68,11 +69,11 @@ StorageDictionary::StorageDictionary(
 
 BlockInputStreams StorageDictionary::read(
     const Names & column_names,
-    const SelectQueryInfo & query_info,
+    const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned /*threads*/)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
     auto dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);

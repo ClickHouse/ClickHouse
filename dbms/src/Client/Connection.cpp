@@ -1,13 +1,7 @@
 #include <iomanip>
 
 #include <Poco/Net/NetException.h>
-#include <Poco/Net/SecureStreamSocket.h>
-
-#include <Common/ClickHouseRevision.h>
-
 #include <Core/Defines.h>
-#include <Common/Exception.h>
-
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -15,16 +9,19 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
-
 #include <Client/Connection.h>
-
+#include <Common/ClickHouseRevision.h>
+#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
-
 #include <Interpreters/ClientInfo.h>
+
+#include <Common/config.h>
+#if Poco_NetSSL_FOUND
+#include <Poco/Net/SecureStreamSocket.h>
+#endif
 
 
 namespace CurrentMetrics
@@ -42,6 +39,7 @@ namespace ErrorCodes
     extern const int SERVER_REVISION_IS_TOO_OLD;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -54,7 +52,18 @@ void Connection::connect()
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user);
 
-        socket = static_cast<bool>(encryption) ? std::make_unique<Poco::Net::SecureStreamSocket>() : std::make_unique<Poco::Net::StreamSocket>();
+        if (static_cast<bool>(encryption))
+        {
+#if Poco_NetSSL_FOUND
+            socket = std::make_unique<Poco::Net::SecureStreamSocket>();
+#else
+            throw Exception{"tcp_ssl protocol is disabled because poco library built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+        }
+        else
+        {
+            socket = std::make_unique<Poco::Net::StreamSocket>();
+        }
         socket->connect(resolved_address, connect_timeout);
         socket->setReceiveTimeout(receive_timeout);
         socket->setSendTimeout(send_timeout);
@@ -392,7 +401,6 @@ void Connection::sendData(const Block & block, const String & name)
 
     size_t prev_bytes = out->count();
 
-    block.checkNestedArraysOffsets();
     block_out->write(block);
     maybe_compressed_out->next();
     out->next();

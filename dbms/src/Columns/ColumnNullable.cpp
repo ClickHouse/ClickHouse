@@ -3,9 +3,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -23,43 +21,15 @@ namespace ErrorCodes
 ColumnNullable::ColumnNullable(ColumnPtr nested_column_, ColumnPtr null_map_)
     : nested_column{nested_column_}, null_map{null_map_}
 {
-    if (nested_column->isNullable())
-        throw Exception{"A nullable column cannot contain another nullable column", ErrorCodes::ILLEGAL_COLUMN};
-
-    /// TODO Also check for Nullable(Array(...)). But they are occasionally used somewhere in tests.
-
-    if (typeid_cast<const ColumnTuple *>(nested_column.get()))
-        throw Exception{"Nullable(Tuple(...)) is illegal", ErrorCodes::ILLEGAL_COLUMN};
-
-    if (typeid_cast<const ColumnAggregateFunction *>(nested_column.get()))
-        throw Exception{"Nullable(AggregateFunction(...)) is illegal", ErrorCodes::ILLEGAL_COLUMN};
-
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
     if (auto nested_column_materialized = nested_column->convertToFullColumnIfConst())
         nested_column = nested_column_materialized;
 
-    if (null_map->isConst())
+    if (!nested_column->canBeInsideNullable())
+        throw Exception{getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};
+
+    if (null_map->isColumnConst())
         throw Exception{"ColumnNullable cannot have constant null map", ErrorCodes::ILLEGAL_COLUMN};
-}
-
-
-size_t ColumnNullable::sizeOfField() const
-{
-    if (nested_column->isFixed())
-        return getNullMapConcreteColumn().sizeOfField() + nested_column->sizeOfField();
-
-    throw Exception("Cannot get sizeOfField() for column " + getName(), ErrorCodes::CANNOT_GET_SIZE_OF_FIELD);
-}
-
-
-ColumnPtr ColumnNullable::convertToFullColumnIfConst() const
-{
-    ColumnPtr new_col_holder;
-
-    if (auto full_col = nested_column->convertToFullColumnIfConst())
-        new_col_holder = std::make_shared<ColumnNullable>(full_col, null_map);
-
-    return new_col_holder;
 }
 
 
@@ -113,12 +83,12 @@ void ColumnNullable::get(size_t n, Field & res) const
         nested_column->get(n, res);
 }
 
-StringRef ColumnNullable::getDataAt(size_t n) const
+StringRef ColumnNullable::getDataAt(size_t /*n*/) const
 {
     throw Exception{"Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
 }
 
-void ColumnNullable::insertData(const char * pos, size_t length)
+void ColumnNullable::insertData(const char * /*pos*/, size_t /*length*/)
 {
     throw Exception{"Method insertData is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED};
 }
@@ -464,6 +434,18 @@ void ColumnNullable::checkConsistency() const
     if (null_map->size() != nested_column->size())
         throw Exception("Logical error: Sizes of nested column and null map of Nullable column are not equal",
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
+}
+
+
+ColumnPtr makeNullable(const ColumnPtr & column)
+{
+    if (column->isColumnNullable())
+        return column;
+
+    if (column->isColumnConst())
+        return std::make_shared<ColumnConst>(makeNullable(static_cast<ColumnConst &>(*column).getDataColumnPtr()), column->size());
+
+    return std::make_shared<ColumnNullable>(column, std::make_shared<ColumnUInt8>(column->size(), 0));
 }
 
 }

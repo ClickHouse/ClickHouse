@@ -78,7 +78,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
     for (const auto & col : key_columns)
     {
-        if (col->isNullable())
+        if (col->isColumnNullable())
         {
             const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*col);
             nested_key_columns.push_back(nullable_col.getNestedColumn().get());
@@ -95,12 +95,12 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     key_sizes.resize(keys_size);
     for (size_t j = 0; j < keys_size; ++j)
     {
-        if (!nested_key_columns[j]->isFixed())
+        if (!nested_key_columns[j]->isFixedAndContiguous())
         {
             all_fixed = false;
             break;
         }
-        key_sizes[j] = nested_key_columns[j]->sizeOfField();
+        key_sizes[j] = nested_key_columns[j]->sizeOfValueIfFixed();
         keys_bytes += key_sizes[j];
     }
 
@@ -112,7 +112,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
         {
             /// We have exactly one key and it is nullable. We shall add it a tag
             /// which specifies whether its value is null or not.
-            size_t size_of_field = nested_key_columns[0]->sizeOfField();
+            size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
             if ((size_of_field == 1) || (size_of_field == 2) || (size_of_field == 4) || (size_of_field == 8))
                 return Type::nullable_keys128;
             else
@@ -137,9 +137,9 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     }
 
     /// If there is one numeric key that fits into 64 bits
-    if (keys_size == 1 && nested_key_columns[0]->isNumericNotNullable())
+    if (keys_size == 1 && nested_key_columns[0]->isNumeric())
     {
-        size_t size_of_field = nested_key_columns[0]->sizeOfField();
+        size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
         if (size_of_field == 1)
             return Type::key8;
         if (size_of_field == 2)
@@ -148,7 +148,9 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
             return Type::key32;
         if (size_of_field == 8)
             return Type::key64;
-        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8.", ErrorCodes::LOGICAL_ERROR);
+        if (size_of_field == 16)
+            return Type::keys128;
+        throw Exception("Logical error: numeric column has sizeOfField not in 1, 2, 4, 8, 16.", ErrorCodes::LOGICAL_ERROR);
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
@@ -160,7 +162,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     /// If there is single string key, use hash table of it's values.
     if (keys_size == 1
         && (typeid_cast<const ColumnString *>(nested_key_columns[0])
-            || (nested_key_columns[0]->isConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(nested_key_columns[0])->getDataColumn()))))
+            || (nested_key_columns[0]->isColumnConst() && typeid_cast<const ColumnString *>(&static_cast<const ColumnConst *>(nested_key_columns[0])->getDataColumn()))))
         return Type::key_string;
 
     if (keys_size == 1 && typeid_cast<const ColumnFixedString *>(nested_key_columns[0]))

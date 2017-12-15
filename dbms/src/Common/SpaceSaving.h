@@ -30,11 +30,12 @@ namespace DB
  * Arena interface to allow specialized storage of keys.
  * POD keys do not require additional storage, so this interface is empty.
  */
-template <typename TKey> struct SpaceSavingArena
+template <typename TKey>
+struct SpaceSavingArena
 {
     SpaceSavingArena() {}
     const TKey emplace(const TKey & key) { return key; }
-    void free(const TKey & key) {}
+    void free(const TKey & /*key*/) {}
 };
 
 /*
@@ -42,7 +43,8 @@ template <typename TKey> struct SpaceSavingArena
  * Keys of this type that are retained on insertion must be serialised into local storage,
  * otherwise the reference would be invalid after the processed block is released.
  */
-template <> struct SpaceSavingArena<StringRef>
+template <>
+struct SpaceSavingArena<StringRef>
 {
     const StringRef emplace(const StringRef & key)
     {
@@ -74,7 +76,7 @@ class SpaceSaving
 private:
     // Suggested constants in the paper "Finding top-k elements in data streams", chap 6. equation (24)
     // Round to nearest power of 2 for cheaper binning without modulo
-    constexpr uint64_t nextAlphaSize (uint64_t x)
+    constexpr uint64_t nextAlphaSize(uint64_t x)
     {
         constexpr uint64_t ALPHA_MAP_ELEMENTS_PER_COUNTER = 6;
         return 1ULL<<(sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));

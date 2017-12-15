@@ -12,11 +12,11 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Storages/IStorage.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/DNSCache.h>
+#include <Common/DNSCache.h>
 
 #include <Common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>

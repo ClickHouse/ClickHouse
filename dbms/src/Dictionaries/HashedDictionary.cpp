@@ -52,7 +52,7 @@ void HashedDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<
 
 /// Allow to use single value in same way as array.
 static inline HashedDictionary::Key getAt(const PaddedPODArray<HashedDictionary::Key> & arr, const size_t idx) { return arr[idx]; }
-static inline HashedDictionary::Key getAt(const HashedDictionary::Key & value, const size_t idx) { return value; }
+static inline HashedDictionary::Key getAt(const HashedDictionary::Key & value, const size_t) { return value; }
 
 template <typename ChildType, typename AncestorType>
 void HashedDictionary::isInImpl(
@@ -128,6 +128,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -147,7 +148,7 @@ void HashedDictionary::getString(const std::string & attribute_name, const Padde
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return null_value; });
 }
 
@@ -170,6 +171,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -189,7 +191,7 @@ void HashedDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t row) { return def->getDataAt(row); });
 }
 
@@ -211,6 +213,7 @@ DECLARE(UInt8)
 DECLARE(UInt16)
 DECLARE(UInt32)
 DECLARE(UInt64)
+DECLARE(UInt128)
 DECLARE(Int8)
 DECLARE(Int16)
 DECLARE(Int32)
@@ -230,7 +233,7 @@ void HashedDictionary::getString(
             ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
-        [&] (const size_t row, const StringRef value) { out->insertData(value.data, value.size); },
+        [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
         [&] (const size_t) { return StringRef{def}; });
 }
 
@@ -244,6 +247,7 @@ void HashedDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8
         case AttributeUnderlyingType::UInt16: has<UInt16>(attribute, ids, out); break;
         case AttributeUnderlyingType::UInt32: has<UInt32>(attribute, ids, out); break;
         case AttributeUnderlyingType::UInt64: has<UInt64>(attribute, ids, out); break;
+        case AttributeUnderlyingType::UInt128: has<UInt128>(attribute, ids, out); break;
         case AttributeUnderlyingType::Int8: has<Int8>(attribute, ids, out); break;
         case AttributeUnderlyingType::Int16: has<Int16>(attribute, ids, out); break;
         case AttributeUnderlyingType::Int32: has<Int32>(attribute, ids, out); break;
@@ -325,6 +329,7 @@ void HashedDictionary::calculateBytesAllocated()
             case AttributeUnderlyingType::UInt16: addAttributeSize<UInt16>(attribute); break;
             case AttributeUnderlyingType::UInt32: addAttributeSize<UInt32>(attribute); break;
             case AttributeUnderlyingType::UInt64: addAttributeSize<UInt64>(attribute); break;
+            case AttributeUnderlyingType::UInt128: addAttributeSize<UInt128>(attribute); break;
             case AttributeUnderlyingType::Int8: addAttributeSize<Int8>(attribute); break;
             case AttributeUnderlyingType::Int16: addAttributeSize<Int16>(attribute); break;
             case AttributeUnderlyingType::Int32: addAttributeSize<Int32>(attribute); break;
@@ -351,7 +356,7 @@ void HashedDictionary::createAttributeImpl(Attribute & attribute, const Field & 
 
 HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
 {
-    Attribute attr{type};
+    Attribute attr{type, {}, {}, {}};
 
     switch (type)
     {
@@ -359,6 +364,7 @@ HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const Attr
         case AttributeUnderlyingType::UInt16: createAttributeImpl<UInt16>(attr, null_value); break;
         case AttributeUnderlyingType::UInt32: createAttributeImpl<UInt32>(attr, null_value); break;
         case AttributeUnderlyingType::UInt64: createAttributeImpl<UInt64>(attr, null_value); break;
+        case AttributeUnderlyingType::UInt128: createAttributeImpl<UInt128>(attr, null_value); break;
         case AttributeUnderlyingType::Int8: createAttributeImpl<Int8>(attr, null_value); break;
         case AttributeUnderlyingType::Int16: createAttributeImpl<Int16>(attr, null_value); break;
         case AttributeUnderlyingType::Int32: createAttributeImpl<Int32>(attr, null_value); break;
@@ -393,6 +399,7 @@ void HashedDictionary::getItemsNumber(
     DISPATCH(UInt16)
     DISPATCH(UInt32)
     DISPATCH(UInt64)
+    DISPATCH(UInt128)
     DISPATCH(Int8)
     DISPATCH(Int16)
     DISPATCH(Int32)
@@ -417,7 +424,7 @@ void HashedDictionary::getItemsImpl(
     for (const auto i : ext::range(0, rows))
     {
         const auto it = attr.find(ids[i]);
-        set_value(i, it != attr.end() ? it->second : get_default(i));
+        set_value(i, it != attr.end() ? static_cast<OutputType>(it->second) : get_default(i));
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
@@ -439,6 +446,7 @@ void HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, co
         case AttributeUnderlyingType::UInt16: setAttributeValueImpl<UInt16>(attribute, id, value.get<UInt64>()); break;
         case AttributeUnderlyingType::UInt32: setAttributeValueImpl<UInt32>(attribute, id, value.get<UInt64>()); break;
         case AttributeUnderlyingType::UInt64: setAttributeValueImpl<UInt64>(attribute, id, value.get<UInt64>()); break;
+        case AttributeUnderlyingType::UInt128: setAttributeValueImpl<UInt128>(attribute, id, value.get<UInt128>()); break;
         case AttributeUnderlyingType::Int8: setAttributeValueImpl<Int8>(attribute, id, value.get<Int64>()); break;
         case AttributeUnderlyingType::Int16: setAttributeValueImpl<Int16>(attribute, id, value.get<Int64>()); break;
         case AttributeUnderlyingType::Int32: setAttributeValueImpl<Int32>(attribute, id, value.get<Int64>()); break;
@@ -502,6 +510,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
         case AttributeUnderlyingType::UInt16: return getIds<UInt16>(attribute); break;
         case AttributeUnderlyingType::UInt32: return getIds<UInt32>(attribute); break;
         case AttributeUnderlyingType::UInt64: return getIds<UInt64>(attribute); break;
+        case AttributeUnderlyingType::UInt128: return getIds<UInt128>(attribute); break;
         case AttributeUnderlyingType::Int8: return getIds<Int8>(attribute); break;
         case AttributeUnderlyingType::Int16: return getIds<Int16>(attribute); break;
         case AttributeUnderlyingType::Int32: return getIds<Int32>(attribute); break;

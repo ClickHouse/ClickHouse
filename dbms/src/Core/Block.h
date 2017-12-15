@@ -1,16 +1,14 @@
 #pragma once
 
 #include <vector>
+#include <list>
 #include <map>
 #include <initializer_list>
 
-#include <Common/Exception.h>
 #include <Core/BlockInfo.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/ColumnNumbers.h>
-#include <Common/Exception.h>
 
 
 
@@ -55,8 +53,6 @@ public:
     void erase(size_t position);
     /// remove the column with the specified name
     void erase(const String & name);
-    /// Adds missing columns to the block with default values
-    void addDefaults(const NamesAndTypesList & required_columns);
 
     /// References are invalidated after calling functions above.
 
@@ -68,6 +64,13 @@ public:
 
     ColumnWithTypeAndName & getByName(const std::string & name);
     const ColumnWithTypeAndName & getByName(const std::string & name) const;
+
+    Container::iterator begin() { return data.begin(); }
+    Container::iterator end() { return data.end(); }
+    Container::const_iterator begin() const { return data.begin(); }
+    Container::const_iterator end() const { return data.end(); }
+    Container::const_iterator cbegin() const { return data.cbegin(); }
+    Container::const_iterator cend() const { return data.cend(); }
 
     bool has(const std::string & name) const;
 
@@ -104,13 +107,6 @@ public:
 
     /** Get a block with columns that have been rearranged in the order of their names. */
     Block sortColumns() const;
-
-    /** Replaces the offset columns within the nested tables by one common for the table.
-     *  Throws an exception if these offsets suddenly turn out to be different.
-     */
-    void optimizeNestedArraysOffsets();
-    /** The same, only without changing the offsets. */
-    void checkNestedArraysOffsets() const;
 
     void clear();
     void swap(Block & other) noexcept;

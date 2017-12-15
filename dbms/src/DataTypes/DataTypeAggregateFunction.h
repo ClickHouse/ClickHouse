@@ -8,13 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int THERE_IS_NO_DEFAULT_VALUE;
-    extern const int NOT_IMPLEMENTED;
-}
-
-
 /** Type - the state of the aggregate function.
   * Type parameters is an aggregate function, the types of its arguments, and its parameters (for parametric aggregate functions).
   */
@@ -26,6 +19,8 @@ private:
     Array parameters;
 
 public:
+    static constexpr bool is_parametric = true;
+
     DataTypeAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
         : function(function_), argument_types(argument_types_), parameters(parameters_)
     {
@@ -37,6 +32,8 @@ public:
     std::string getName() const override;
 
     const char * getFamilyName() const override { return "AggregateFunction"; }
+
+    bool canBeInsideNullable() const override { return false; }
 
     DataTypePtr getReturnType() const { return function->getReturnType(); };
     DataTypes getArgumentsDataTypes() const { return argument_types; }
@@ -65,6 +62,10 @@ public:
     ColumnPtr createColumn() const override;
 
     Field getDefault() const override;
+
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return false; }
+    bool shouldAlignRightInPrettyFormats() const override { return false; }
 };
 
 

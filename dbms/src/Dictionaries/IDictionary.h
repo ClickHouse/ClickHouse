@@ -1,22 +1,21 @@
 #pragma once
 
 #include <Core/Field.h>
+#include <Interpreters/IExternalLoadable.h>
 #include <common/StringRef.h>
 #include <Core/Names.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/PODArray.h>
 #include <memory>
 #include <chrono>
+#include <Dictionaries/IDictionarySource.h>
 
 namespace DB
 {
 
-class IDictionarySource;
-
 struct IDictionaryBase;
 using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
 
-struct DictionaryLifetime;
 struct DictionaryStructure;
 class ColumnString;
 
@@ -24,13 +23,9 @@ class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 
-struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
+struct IDictionaryBase : public IExternalLoadable
 {
     using Key = UInt64;
-
-    virtual std::exception_ptr getCreationException() const = 0;
-
-    virtual std::string getName() const = 0;
 
     virtual std::string getTypeName() const = 0;
 
@@ -45,21 +40,32 @@ struct IDictionaryBase : public std::enable_shared_from_this<IDictionaryBase>
     virtual double getLoadFactor() const = 0;
 
     virtual bool isCached() const = 0;
-    virtual DictionaryPtr clone() const = 0;
 
     virtual const IDictionarySource * getSource() const = 0;
 
-    virtual const DictionaryLifetime & getLifetime() const = 0;
-
     virtual const DictionaryStructure & getStructure() const = 0;
-
-    virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
     virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
-    virtual ~IDictionaryBase() = default;
+    bool supportUpdates() const override { return !isCached(); }
+
+    bool isModified() const override
+    {
+        auto source = getSource();
+        return source && source->isModified();
+    }
+
+    std::shared_ptr<IDictionaryBase> shared_from_this()
+    {
+        return std::static_pointer_cast<IDictionaryBase>(IExternalLoadable::shared_from_this());
+    }
+
+    std::shared_ptr<const IDictionaryBase> shared_from_this() const
+    {
+        return std::static_pointer_cast<const IDictionaryBase>(IExternalLoadable::shared_from_this());
+    }
 };
 
 
@@ -73,17 +79,17 @@ struct IDictionary : IDictionaryBase
 
     /// Methods for hierarchy.
 
-    virtual void isInVectorVector(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
+    virtual void isInVectorVector(const PaddedPODArray<Key> & /*child_ids*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
     {
         throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const
+    virtual void isInVectorConstant(const PaddedPODArray<Key> & /*child_ids*/, const Key /*ancestor_id*/, PaddedPODArray<UInt8> & /*out*/) const
     {
         throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const
+    virtual void isInConstantVector(const Key /*child_id*/, const PaddedPODArray<Key> & /*ancestor_ids*/, PaddedPODArray<UInt8> & /*out*/) const
     {
         throw Exception("Hierarchy is not supported for " + getName() + " dictionary.", ErrorCodes::NOT_IMPLEMENTED);
     }

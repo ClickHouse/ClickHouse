@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 function perform()
 {
     local test_id=$1
     local query=$2
 
     echo "performing test: $test_id"
-    clickhouse-client --query "$query" 2>/dev/null
+    ${CLICKHOUSE_CLIENT} --query "$query" 2>/dev/null
     if [ "$?" -eq 0 ]; then
         cat "./test_into_outfile_$test_id.out"
     else
@@ -24,7 +27,7 @@ perform "bad_union_all" "SELECT 1, 2 INTO OUTFILE './test_into_outfile_bad_union
 perform "describe_table" "DESCRIBE TABLE system.one INTO OUTFILE './test_into_outfile_describe_table.out'"
 
 echo "performing test: clickhouse-local"
-echo -e '1\t2' | clickhouse-local --structure 'col1 UInt32, col2 UInt32' --query "SELECT col1 + 1, col2 + 1 FROM table INTO OUTFILE './test_into_outfile_clickhouse-local.out'" 2>/dev/null
+echo -e '1\t2' | ${CLICKHOUSE_LOCAL} --structure 'col1 UInt32, col2 UInt32' --query "SELECT col1 + 1, col2 + 1 FROM table INTO OUTFILE './test_into_outfile_clickhouse-local.out'" 2>/dev/null
 if [ "$?" -eq 0 ]; then
     cat "./test_into_outfile_clickhouse-local.out"
 else
@@ -33,4 +36,4 @@ fi
 rm -f "./test_into_outfile_clickhouse-local.out"
 
 echo "performing test: http"
-echo "SELECT 1, 2 INTO OUTFILE './test_into_outfile_http.out'" | curl -s 'http://localhost:8123' -d @- --fail || echo "query failed"
+echo "SELECT 1, 2 INTO OUTFILE './test_into_outfile_http.out'" | ${CLICKHOUSE_CURL} -s "${CLICKHOUSE_URL}" -d @- --fail || echo "query failed"

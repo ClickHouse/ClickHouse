@@ -3,16 +3,20 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
 #include <DataTypes/NumberTraits.h>
 #include <Core/AccurateComparison.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
+#include <boost/math/common_factor.hpp>
 
 
 namespace DB
@@ -160,12 +164,9 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
-    /// Is it better to use siglongjmp instead of checks?
-
     if (unlikely(b == 0))
         return true;
 
-    /// http://avva.livejournal.com/2548306.html
     if (unlikely(std::is_signed<A>::value && std::is_signed<B>::value && a == std::numeric_limits<A>::min() && b == -1))
         return true;
 
@@ -209,9 +210,9 @@ struct ModuloImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<A>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
         return typename NumberTraits::ToInteger<A>::Type(a)
-            % typename NumberTraits::ToInteger<A>::Type(b);
+            % typename NumberTraits::ToInteger<B>::Type(b);
     }
 };
 
@@ -409,24 +410,46 @@ struct AbsImpl
 {
     using ResultType = typename NumberTraits::ResultOfAbs<A>::Type;
 
-    template <typename T = A>
-    static inline ResultType apply(T a,
-        typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, void>::type * = nullptr)
+    static inline ResultType apply(A a)
     {
-        return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
+        if constexpr (std::is_integral<A>::value && std::is_signed<A>::value)
+            return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
+        else if constexpr (std::is_integral<A>::value && std::is_unsigned<A>::value)
+            return static_cast<ResultType>(a);
+        else if constexpr (std::is_floating_point<A>::value)
+            return static_cast<ResultType>(std::abs(a));
     }
+};
 
-    template <typename T = A>
-    static inline ResultType apply(T a,
-        typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value, void>::type * = nullptr)
+template <typename A, typename B>
+struct GCDImpl
+{
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
     {
-        return static_cast<ResultType>(a);
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        return boost::math::gcd(
+            typename NumberTraits::ToInteger<Result>::Type(a),
+            typename NumberTraits::ToInteger<Result>::Type(b));
     }
+};
 
-    template <typename T = A>
-    static inline ResultType apply(T a, typename std::enable_if<std::is_floating_point<T>::value, void>::type * = nullptr)
+template <typename A, typename B>
+struct LCMImpl
+{
+    using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+
+    template <typename Result = ResultType>
+    static inline Result apply(A a, B b)
     {
-        return static_cast<ResultType>(std::abs(a));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
+        throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
+        return boost::math::lcm(
+            typename NumberTraits::ToInteger<Result>::Type(a),
+            typename NumberTraits::ToInteger<Result>::Type(b));
     }
 };
 
@@ -460,15 +483,6 @@ template <> struct IsIntegral<DataTypeInt8> { static constexpr auto value = true
 template <> struct IsIntegral<DataTypeInt16> { static constexpr auto value = true; };
 template <> struct IsIntegral<DataTypeInt32> { static constexpr auto value = true; };
 template <> struct IsIntegral<DataTypeInt64> { static constexpr auto value = true; };
-
-template <typename DataType> struct IsFloating { static constexpr auto value = false; };
-template <> struct IsFloating<DataTypeFloat32> { static constexpr auto value = true; };
-template <> struct IsFloating<DataTypeFloat64> { static constexpr auto value = true; };
-
-template <typename DataType> struct IsNumeric
-{
-    static constexpr auto value = IsIntegral<DataType>::value || IsFloating<DataType>::value;
-};
 
 template <typename DataType> struct IsDateOrDateTime { static constexpr auto value = false; };
 template <> struct IsDateOrDateTime<DataTypeDate> { static constexpr auto value = true; };
@@ -542,24 +556,24 @@ class FunctionBinaryArithmetic : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
+
+    FunctionBinaryArithmetic(const Context & context) : context(context) {}
 
 private:
-    /// Overload for InvalidType
-    template <typename ResultDataType,
-              typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool checkRightTypeImpl(DataTypePtr & type_res) const
-    {
-        return false;
-    }
+    const Context & context;
 
-    /// Overload for well-defined operations
-    template <typename ResultDataType,
-              typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
+    template <typename ResultDataType>
     bool checkRightTypeImpl(DataTypePtr & type_res) const
     {
-        type_res = std::make_shared<ResultDataType>();
-        return true;
+        /// Overload for InvalidType
+        if constexpr (std::is_same<ResultDataType, InvalidType>::value)
+            return false;
+        else
+        {
+            type_res = std::make_shared<ResultDataType>();
+            return true;
+        }
     }
 
     template <typename LeftDataType, typename RightDataType>
@@ -609,27 +623,22 @@ private:
     }
 
     /// Overload for InvalidType
-    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
-              typename std::enable_if<std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                                  const ColumnType * col_left)
+    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType>
+    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments,
+        [[maybe_unused]] const size_t result, [[maybe_unused]] const ColumnType * col_left)
     {
-        throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
-            + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
-            + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+        if constexpr (std::is_same<ResultDataType, InvalidType>::value)
+            throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
+                + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
+                + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        else
+        {
+            using T0 = typename LeftDataType::FieldType;
+            using T1 = typename RightDataType::FieldType;
+            using ResultType = typename ResultDataType::FieldType;
 
-    /// Overload for well-defined operations
-    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType,
-              typename std::enable_if<!std::is_same<ResultDataType, InvalidType>::value>::type * = nullptr>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments, const size_t result,
-                                  const ColumnType * col_left)
-    {
-        using T0 = typename LeftDataType::FieldType;
-        using T1 = typename RightDataType::FieldType;
-        using ResultType = typename ResultDataType::FieldType;
-
-        return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
+            return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
+        }
     }
 
     /// ColumnVector overload
@@ -681,7 +690,7 @@ private:
         {
             ResultType res = 0;
             BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-            block.getByPosition(result).column = DataTypeNumber<ResultType>().createConstColumn(col_left->size(), toField(res));
+            block.getByPosition(result).column = DataTypeNumber<ResultType>().createColumnConst(col_left->size(), toField(res));
 
             return true;
         }
@@ -745,6 +754,47 @@ private:
         return false;
     }
 
+    FunctionPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
+    {
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
+        /// We construct another function (example: addMonths) and call it.
+
+        bool function_is_plus = std::is_same<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>::value;
+        bool function_is_minus = std::is_same<Op<UInt8, UInt8>, MinusImpl<UInt8, UInt8>>::value;
+
+        if (!function_is_plus && !function_is_minus)
+            return {};
+
+        int interval_arg = 1;
+        const DataTypeInterval * interval_data_type = checkAndGetDataType<DataTypeInterval>(type1.get());
+        if (!interval_data_type)
+        {
+            interval_arg = 0;
+            interval_data_type = checkAndGetDataType<DataTypeInterval>(type0.get());
+        }
+        if (!interval_data_type)
+            return {};
+
+        if (interval_arg == 0 && function_is_minus)
+            throw Exception("Wrong order of arguments for function " + getName() + ": argument of type Interval cannot be first.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        const DataTypeDate * date_data_type = checkAndGetDataType<DataTypeDate>(interval_arg == 0 ? type1.get() : type0.get());
+        const DataTypeDateTime * date_time_data_type = nullptr;
+        if (!date_data_type)
+        {
+            date_time_data_type = checkAndGetDataType<DataTypeDateTime>(interval_arg == 0 ? type1.get() : type0.get());
+            if (!date_time_data_type)
+                throw Exception("Wrong argument types for function " + getName() + ": if one argument is Interval, then another must be Date or DateTime.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        std::stringstream function_name;
+        function_name << (function_is_plus ? "add" : "subtract") << interval_data_type->kindToString() << 's';
+
+        return FunctionFactory::instance().get(function_name.str(), context);
+    }
+
 public:
     String getName() const override
     {
@@ -755,6 +805,27 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
+        if (FunctionPtr function = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
+        {
+            ColumnsWithTypeAndName new_arguments(2);
+
+            for (size_t i = 0; i < 2; ++i)
+                new_arguments[i].type = arguments[i];
+
+            /// Interval argument must be second.
+            if (checkDataType<DataTypeInterval>(new_arguments[0].type.get()))
+                std::swap(new_arguments[0], new_arguments[1]);
+
+            /// Change interval argument to its representation
+            new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+            DataTypePtr res;
+            std::vector<ExpressionAction> unused_prerequisites;
+            function->getReturnTypeAndPrerequisites(new_arguments, res, unused_prerequisites);
+            return res;
+        }
+
         DataTypePtr type_res;
 
         if (!( checkLeftType<DataTypeDate>(arguments, type_res)
@@ -769,7 +840,7 @@ public:
             || checkLeftType<DataTypeInt64>(arguments, type_res)
             || checkLeftType<DataTypeFloat32>(arguments, type_res)
             || checkLeftType<DataTypeFloat64>(arguments, type_res)))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type_res;
@@ -777,6 +848,25 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
     {
+        /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
+        if (FunctionPtr function = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
+        {
+            ColumnNumbers new_arguments = arguments;
+
+            /// Interval argument must be second.
+            if (checkDataType<DataTypeInterval>(block.getByPosition(arguments[0]).type.get()))
+                std::swap(new_arguments[0], new_arguments[1]);
+
+            /// Change interval argument type to its representation
+            Block new_block = block;
+            new_block.getByPosition(new_arguments[1]).type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
+
+            function->executeImpl(new_block, new_arguments, result);
+            block.getByPosition(result).column = new_block.getByPosition(result).column;
+
+            return;
+        }
+
         if (!( executeLeftType<DataTypeDate>(block, arguments, result)
             || executeLeftType<DataTypeDateTime>(block, arguments, result)
             || executeLeftType<DataTypeUInt8>(block, arguments, result)
@@ -805,7 +895,7 @@ class FunctionUnaryArithmetic : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnaryArithmetic>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryArithmetic>(); }
 
 private:
     template <typename T0>
@@ -892,7 +982,7 @@ public:
         return FunctionUnaryArithmeticMonotonicity<Name>::has();
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
     {
         return FunctionUnaryArithmeticMonotonicity<Name>::get(left, right);
     }
@@ -921,6 +1011,8 @@ struct NameBitTestAny           { static constexpr auto name = "bitTestAny"; };
 struct NameBitTestAll           { static constexpr auto name = "bitTestAll"; };
 struct NameLeast                { static constexpr auto name = "least"; };
 struct NameGreatest             { static constexpr auto name = "greatest"; };
+struct NameGCD                  { static constexpr auto name = "gcd"; };
+struct NameLCM                  { static constexpr auto name = "lcm"; };
 
 using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
 using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
@@ -942,13 +1034,15 @@ using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, Name
 using FunctionBitTest = FunctionBinaryArithmetic<BitTestImpl, NameBitTest>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
+using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD>;
+using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM>;
 
 /// Monotonicity properties for some functions.
 
 template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return { true, false };
     }
@@ -972,7 +1066,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitNot>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const Field &, const Field &)
     {
         return {};
     }
@@ -1147,14 +1241,7 @@ public:
 
         const auto first_arg = arguments.front().get();
 
-        if (!checkDataType<DataTypeUInt8>(first_arg)
-            && !checkDataType<DataTypeUInt16>(first_arg)
-            && !checkDataType<DataTypeUInt32>(first_arg)
-            && !checkDataType<DataTypeUInt64>(first_arg)
-            && !checkDataType<DataTypeInt8>(first_arg)
-            && !checkDataType<DataTypeInt16>(first_arg)
-            && !checkDataType<DataTypeInt32>(first_arg)
-            && !checkDataType<DataTypeInt64>(first_arg))
+        if (!first_arg->isInteger())
             throw Exception{
                 "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1164,10 +1251,7 @@ public:
         {
             const auto pos_arg = arguments[i].get();
 
-            if (!checkDataType<DataTypeUInt8>(pos_arg)
-                && !checkDataType<DataTypeUInt16>(pos_arg)
-                && !checkDataType<DataTypeUInt32>(pos_arg)
-                && !checkDataType<DataTypeUInt64>(pos_arg))
+            if (!pos_arg->canBeUsedAsNonNegativeArrayIndex())
                 throw Exception{
                     "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -1203,7 +1287,7 @@ private:
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto & val = value_col->getData();
 
             const auto out_col = std::make_shared<ColumnVector<UInt8>>(size);
@@ -1229,12 +1313,12 @@ private:
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(size, block, arguments, is_const);
+            const auto mask = createConstMask<T>(block, arguments, is_const);
             const auto val = value_col->template getValue<T>();
 
             if (is_const)
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(size, toField(Impl::apply(val, mask)));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, mask)));
             }
             else
             {
@@ -1256,7 +1340,7 @@ private:
     }
 
     template <typename ValueType>
-    ValueType createConstMask(const size_t size, const Block & block, const ColumnNumbers & arguments, bool & is_const)
+    ValueType createConstMask(const Block & block, const ColumnNumbers & arguments, bool & is_const)
     {
         is_const = true;
         ValueType mask = 0;

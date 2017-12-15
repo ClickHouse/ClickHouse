@@ -3,7 +3,7 @@
 #include <DataStreams/LazyBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <Storages/StorageMerge.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/VirtualColumnFactory.h>
@@ -28,17 +28,6 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_SOURCE_TABLES;
 }
 
-
-StorageMerge::StorageMerge(
-    const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const String & source_database_,
-    const String & table_name_regexp_,
-    const Context & context_)
-    : name(name_), columns(columns_), source_database(source_database_),
-      table_name_regexp(table_name_regexp_), context(context_)
-{
-}
 
 StorageMerge::StorageMerge(
     const std::string & name_,
@@ -152,7 +141,7 @@ BlockInputStreams StorageMerge::read(
         else
             virt_column_names.push_back(it);
 
-    std::experimental::optional<QueryProcessingStage::Enum> processed_stage_in_source_tables;
+    std::optional<QueryProcessingStage::Enum> processed_stage_in_source_tables;
 
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
@@ -221,7 +210,7 @@ BlockInputStreams StorageMerge::read(
 
             if (!processed_stage_in_source_tables)
                 processed_stage_in_source_tables.emplace(processed_stage_in_source_table);
-            else if (processed_stage_in_source_table != processed_stage_in_source_tables.value())
+            else if (processed_stage_in_source_table != *processed_stage_in_source_tables)
                 throw Exception("Source tables for Merge table are processing data up to different stages",
                     ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
@@ -250,7 +239,7 @@ BlockInputStreams StorageMerge::read(
                 if (!processed_stage_in_source_tables)
                     throw Exception("Logical error: unknown processed stage in source tables",
                         ErrorCodes::LOGICAL_ERROR);
-                else if (processed_stage_in_source_table != processed_stage_in_source_tables.value())
+                else if (processed_stage_in_source_table != *processed_stage_in_source_tables)
                     throw Exception("Source tables for Merge table are processing data up to different stages",
                         ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
@@ -281,12 +270,12 @@ BlockInputStreams StorageMerge::read(
     }
 
     if (processed_stage_in_source_tables)
-        processed_stage = processed_stage_in_source_tables.value();
+        processed_stage = *processed_stage_in_source_tables;
 
     res = narrowBlockInputStreams(res, num_streams);
 
     /// Added to avoid different block structure from different sources
-    if (!processed_stage_in_source_tables || processed_stage_in_source_tables.value() == QueryProcessingStage::FetchColumns)
+    if (!processed_stage_in_source_tables || *processed_stage_in_source_tables == QueryProcessingStage::FetchColumns)
     {
         for (auto & stream : res)
             stream = std::make_shared<FilterColumnsBlockInputStream>(stream, column_names, true);

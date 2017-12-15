@@ -19,12 +19,10 @@ class ExternalDictionaries;
 
 class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
-    friend class ext::shared_ptr_helper<StorageDictionary>;
-
 public:
     static StoragePtr create(const String & table_name_,
         Context & context_,
-        ASTPtr & query_,
+        const ASTCreateQuery & query,
         NamesAndTypesListPtr columns_,
         const NamesAndTypesList & materialized_columns_,
         const NamesAndTypesList & alias_columns_,
@@ -59,14 +57,6 @@ private:
     String dictionary_name;
     Poco::Logger * logger;
 
-    StorageDictionary(const String & table_name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const DictionaryStructure & dictionary_structure_,
-        const String & dictionary_name_);
-
     void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionaryStructure) const;
 
     template <typename ForwardIterator>
@@ -86,5 +76,15 @@ private:
         }
         return description.substr(2, description.size());
     }
+
+protected:
+    StorageDictionary(const String & table_name_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        const DictionaryStructure & dictionary_structure_,
+        const String & dictionary_name_);
 };
+
 }

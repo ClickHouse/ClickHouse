@@ -1,5 +1,5 @@
 #include <Core/Field.h>
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 #include <Core/Row.h>
 
 #include <Columns/ColumnsNumber.h>
@@ -8,10 +8,10 @@
 #include <Common/typeid_cast.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
 
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTraits.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -88,7 +88,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
         method.data.emplace(key, it, inserted);
 
         if (inserted)
-            method.onNewKey(*it, keys_size, i, variants.string_pool);
+            method.onNewKey(*it, keys_size, variants.string_pool);
     }
 }
 
@@ -135,19 +135,20 @@ bool Set::insertFromBlock(const Block & block, bool create_ordered_set)
       */
     if (keys_size == 1)
     {
-        if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(key_columns.back()))
+        const auto & col = block.getByPosition(0);
+        if (const DataTypeTuple * tuple = typeid_cast<const DataTypeTuple *>(col.type.get()))
         {
+            const ColumnTuple & column = typeid_cast<const ColumnTuple &>(*key_columns[0]);
+
             key_columns.pop_back();
-            const Columns & tuple_elements = tuple->getColumns();
+            const Columns & tuple_elements = column.getColumns();
             for (const auto & elem : tuple_elements)
                 key_columns.push_back(elem.get());
 
             if (empty())
             {
                 data_types.pop_back();
-                const Block & tuple_block = tuple->getData();
-                for (size_t i = 0, size = tuple_block.columns(); i < size; ++i)
-                    data_types.push_back(tuple_block.getByPosition(i).type);
+                data_types.insert(data_types.end(), tuple->getElements().begin(), tuple->getElements().end());
             }
         }
     }
@@ -329,7 +330,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
             throw Exception("Array(Nullable(...)) for left hand side of IN is not supported.", ErrorCodes::NOT_IMPLEMENTED);
 
         if (!array_type->getNestedType()->equals(*data_types[0]))
-            throw Exception(std::string() + "Types in section IN don't match: " + data_types[0]->getName() +
+            throw Exception("Types in section IN don't match: " + data_types[0]->getName() +
                 " on the right, " + array_type->getNestedType()->getName() + " on the left.",
                 ErrorCodes::TYPE_MISMATCH);
 
@@ -366,8 +367,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
         {
             key_columns.push_back(block.safeGetByPosition(i).column.get());
 
-            if (DataTypeTraits::removeNullable(data_types[i])->getName() !=
-                DataTypeTraits::removeNullable(block.safeGetByPosition(i).type)->getName())
+            if (!removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
                 throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
                     + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
                     " on the left.", ErrorCodes::TYPE_MISMATCH);

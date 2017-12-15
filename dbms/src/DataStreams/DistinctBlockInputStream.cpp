@@ -124,7 +124,7 @@ void DistinctBlockInputStream::buildFilter(
         method.data.emplace(key, it, inserted);
 
         if (inserted)
-            method.onNewKey(*it, columns.size(), i, variants.string_pool);
+            method.onNewKey(*it, columns.size(), variants.string_pool);
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
@@ -146,7 +146,7 @@ ConstColumnPlainPtrs DistinctBlockInputStream::getKeyColumns(const Block & block
             : block.getByName(columns_names[i]).column;
 
         /// Ignore all constant columns.
-        if (!column->isConst())
+        if (!column->isColumnConst())
             column_ptrs.emplace_back(column.get());
     }
 

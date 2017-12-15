@@ -325,7 +325,7 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
 }
@@ -365,7 +365,7 @@ void StorageBuffer::shutdown()
   *
   * This kind of race condition make very hard to implement proper tests.
   */
-bool StorageBuffer::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+bool StorageBuffer::optimize(const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & /*context*/)
 {
     if (partition)
         throw Exception("Partition cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
@@ -474,7 +474,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
         return;
 
     /** For simplicity, buffer is locked during write.
-        * We could unlock buffer temporary, but it would lead to too much difficulties:
+        * We could unlock buffer temporary, but it would lead to too many difficulties:
         * - data, that is written, will not be visible for SELECTs;
         * - new data could be appended to buffer, and in case of exception, we must merge it with old data, that has not been written;
         * - this could lead to infinite memory growth.
@@ -533,7 +533,9 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
             if (block.getByName(dst_col.name).type->getName() != dst_col.type->getName())
             {
                 LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table
-                    << " have different type of column " << dst_col.name << ". Block of data is discarded.");
+                    << " have different type of column " << dst_col.name << " ("
+                    << block.getByName(dst_col.name).type->getName() << " != " << dst_col.type->getName()
+                    << "). Block of data is discarded.");
                 return;
             }
 

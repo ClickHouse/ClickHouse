@@ -66,13 +66,13 @@ public:
     /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     /// Initialize by the function arguments.
-    void init(Block & block, const ColumnNumbers & arguments) {}
+    void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
 
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
@@ -124,11 +124,11 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!checkDataType<DataTypeString>(&*arguments[1]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -305,13 +305,13 @@ public:
         if (!pos || pos > end)
             return false;
 
-        if (!re->match(pos, end - pos, matches) || !matches[capture].length)
+        if (!re->match(pos, end - pos, matches) || !matches[0].length)
             return false;
 
         token_begin = pos + matches[capture].offset;
         token_end = token_begin + matches[capture].length;
 
-        pos += matches[capture].offset + matches[capture].length;
+        pos += matches[0].offset + matches[0].length;
 
         return true;
     }
@@ -323,7 +323,7 @@ class FunctionTokens : public IFunction
 {
 public:
     static constexpr auto name = Generator::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionTokens>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTokens>(); }
 
     String getName() const override
     {
@@ -412,7 +412,7 @@ public:
             while (generator.get(token_begin, token_end))
                 dst.push_back(String(token_begin, token_end - token_begin));
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_const_str->size(), dst);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_const_str->size(), dst);
         }
         else
             throw Exception("Illegal columns " + block.getByPosition(array_argument_position).column->getName()
@@ -487,7 +487,7 @@ private:
 
 public:
     static constexpr auto name = "arrayStringConcat";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayStringConcat>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayStringConcat>(); }
 
     String getName() const override
     {
@@ -505,11 +505,11 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type || !checkDataType<DataTypeString>(array_type->getNestedType().get()))
+        if (!array_type || !array_type->getNestedType()->isString())
             throw Exception("First argument for function " + getName() + " must be array of strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2
-            && !checkDataType<DataTypeString>(arguments[1].get()))
+            && !arguments[1]->isString())
             throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -538,7 +538,7 @@ public:
                 dst_str += src_arr[i].get<const String &>();
             }
 
-            block.getByPosition(result).column = block.getByPosition(result).type->createConstColumn(col_const_arr->size(), dst_str);
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_const_arr->size(), dst_str);
         }
         else
         {

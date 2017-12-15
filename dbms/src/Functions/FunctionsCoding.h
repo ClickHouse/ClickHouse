@@ -65,7 +65,7 @@ class FunctionIPv6NumToString : public IFunction
 {
 public:
     static constexpr auto name = "IPv6NumToString";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv6NumToString>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6NumToString>(); }
 
     String getName() const override { return name; }
 
@@ -134,7 +134,7 @@ class FunctionCutIPv6 : public IFunction
 {
 public:
     static constexpr auto name = "cutIPv6";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionCutIPv6>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionCutIPv6>(); }
 
     String getName() const override { return name; }
 
@@ -241,8 +241,8 @@ public:
 private:
     bool isIPv4Mapped(const unsigned char * address) const
     {
-        return (*reinterpret_cast<const UInt64 *>(&address[0]) == 0) &&
-            ((*reinterpret_cast<const UInt64 *>(&address[8]) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
+        return (*reinterpret_cast<const UInt64 *>(address) == 0) &&
+            ((*reinterpret_cast<const UInt64 *>(address + 8) & 0x00000000FFFFFFFFull) == 0x00000000FFFF0000ull);
     }
 
     void cutAddress(const unsigned char * address, char *& dst, UInt8 zeroed_tail_bytes_count)
@@ -256,7 +256,7 @@ class FunctionIPv6StringToNum : public IFunction
 {
 public:
     static constexpr auto name = "IPv6StringToNum";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv6StringToNum>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6StringToNum>(); }
 
     String getName() const override { return name; }
 
@@ -264,7 +264,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -504,7 +504,7 @@ private:
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4NumToString<mask_tail_octets, Name>>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv4NumToString<mask_tail_octets, Name>>(); }
 
     String getName() const override
     {
@@ -564,7 +564,7 @@ class FunctionIPv4StringToNum : public IFunction
 {
 public:
     static constexpr auto name = "IPv4StringToNum";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4StringToNum>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv4StringToNum>(); }
 
     String getName() const override
     {
@@ -575,7 +575,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -641,7 +641,7 @@ class FunctionIPv4ToIPv6 : public IFunction
 {
 public:
      static constexpr auto name = "IPv4ToIPv6";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIPv4ToIPv6>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv4ToIPv6>(); }
 
     String getName() const override { return name; }
 
@@ -686,8 +686,8 @@ public:
 private:
     void mapIPv4ToIPv6(UInt32 in, unsigned char * buf) const
     {
-        *reinterpret_cast<UInt64 *>(&buf[0]) = 0;
-        *reinterpret_cast<UInt64 *>(&buf[8]) = 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32);
+        *reinterpret_cast<UInt64 *>(buf) = 0;
+        *reinterpret_cast<UInt64 *>(buf + 8) = 0x00000000FFFF0000ull | (static_cast<UInt64>(ntohl(in)) << 32);
     }
 };
 
@@ -696,7 +696,7 @@ class FunctionMACNumToString : public IFunction
 {
 public:
     static constexpr auto name = "MACNumToString";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACNumToString>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMACNumToString>(); }
 
     String getName() const override
     {
@@ -825,7 +825,7 @@ class FunctionMACStringTo : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMACStringTo<Impl>>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMACStringTo<Impl>>(); }
 
     String getName() const override
     {
@@ -836,7 +836,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -887,7 +887,7 @@ class FunctionUUIDNumToString : public IFunction
 
 public:
     static constexpr auto name = "UUIDNumToString";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUUIDNumToString>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUUIDNumToString>(); }
 
     String getName() const override
     {
@@ -984,7 +984,7 @@ private:
 
 public:
     static constexpr auto name = "UUIDStringToNum";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUUIDStringToNum>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUUIDStringToNum>(); }
 
     String getName() const override
     {
@@ -997,7 +997,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// String or FixedString(36)
-        if (!checkDataType<DataTypeString>(arguments[0].get()))
+        if (!arguments[0]->isString())
         {
             const auto ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
             if (!ptr || ptr->getN() != uuid_text_length)
@@ -1086,7 +1086,7 @@ class FunctionGenerateUUIDv4 : public IFunction
 {
 public:
     static constexpr auto name = "generateUUIDv4";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionGenerateUUIDv4>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGenerateUUIDv4>(); }
 
     String getName() const override
     {
@@ -1095,12 +1095,12 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
         return std::make_shared<DataTypeUUID>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
     {
         auto col_to = std::make_shared<ColumnVector<UInt128>>();
         block.safeGetByPosition(result).column = col_to;
@@ -1126,7 +1126,7 @@ class FunctionHex : public IFunction
 {
 public:
     static constexpr auto name = "hex";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionHex>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionHex>(); }
 
     String getName() const override
     {
@@ -1138,14 +1138,13 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]) &&
-            !checkDataType<DataTypeFixedString>(&*arguments[0]) &&
-            !checkDataType<DataTypeDate>(&*arguments[0]) &&
-            !checkDataType<DataTypeDateTime>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt8>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt16>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt32>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt64>(&*arguments[0]))
+        if (!arguments[0]->isString()
+            && !arguments[0]->isFixedString()
+            && !arguments[0]->isDateOrDateTime()
+            && !checkDataType<DataTypeUInt8>(&*arguments[0])
+            && !checkDataType<DataTypeUInt16>(&*arguments[0])
+            && !checkDataType<DataTypeUInt32>(&*arguments[0])
+            && !checkDataType<DataTypeUInt64>(&*arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1348,7 +1347,7 @@ class FunctionUnhex : public IFunction
 {
 public:
     static constexpr auto name = "unhex";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnhex>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnhex>(); }
 
     String getName() const override
     {
@@ -1360,7 +1359,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1437,7 +1436,7 @@ class FunctionBitmaskToArray : public IFunction
 {
 public:
     static constexpr auto name = "bitmaskToArray";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBitmaskToArray>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitmaskToArray>(); }
 
     String getName() const override
     {
@@ -1449,14 +1448,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeUInt8>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt16>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt32>(&*arguments[0]) &&
-            !checkDataType<DataTypeUInt64>(&*arguments[0]) &&
-            !checkDataType<DataTypeInt8>(&*arguments[0]) &&
-            !checkDataType<DataTypeInt16>(&*arguments[0]) &&
-            !checkDataType<DataTypeInt32>(&*arguments[0]) &&
-            !checkDataType<DataTypeInt64>(&*arguments[0]))
+        if (!arguments[0]->isInteger())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1528,7 +1520,7 @@ class FunctionToStringCutToZero : public IFunction
 {
 public:
     static constexpr auto name = "toStringCutToZero";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionToStringCutToZero>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToStringCutToZero>(); }
 
     String getName() const override
     {
@@ -1539,8 +1531,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeFixedString>(&*arguments[0]) &&
-            !checkDataType<DataTypeString>(&*arguments[0]))
+        if (!arguments[0]->isStringOrFixedString())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

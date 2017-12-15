@@ -2,6 +2,13 @@
 #include <AggregateFunctions/AggregateFunctionUniq.h>
 #include <AggregateFunctions/Helpers.h>
 
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+
+
 namespace DB
 {
 
@@ -13,7 +20,7 @@ namespace
   */
 
 template <typename Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() == 1)
     {
@@ -31,6 +38,8 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return std::make_shared<AggregateFunctionUniq<String, Data>>();
         else if (typeid_cast<const DataTypeTuple *>(&argument_type))
             return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true>>();
+        else if (typeid_cast<const DataTypeUUID *>(&argument_type))
+            return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data>>();
         else
             throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -51,7 +60,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 }
 
 template <template <typename> class Data, typename DataForVariadic>
-AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
 {
     if (argument_types.size() == 1)
     {
@@ -69,6 +78,8 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return std::make_shared<AggregateFunctionUniq<String, Data<String>>>();
         else if (typeid_cast<const DataTypeTuple *>(&argument_type))
             return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true>>();
+        else if (typeid_cast<const DataTypeUUID *>(&argument_type))
+            return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType>>>();
         else
             throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

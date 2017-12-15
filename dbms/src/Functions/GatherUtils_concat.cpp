@@ -82,7 +82,7 @@ static void NO_INLINE concatGenericArray(const std::vector<std::unique_ptr<IArra
         }
         else
             throw Exception(
-                std::string("GenericArraySource expected for GenericArraySink, got: ") + typeid(source).name(), ErrorCodes::LOGICAL_ERROR);
+                std::string("GenericArraySource expected for GenericArraySink, got: ") + demangle(typeid(source).name()), ErrorCodes::LOGICAL_ERROR);
     }
 
     while (!sink.isEnd())

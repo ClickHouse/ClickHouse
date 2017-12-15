@@ -147,7 +147,7 @@ bool DistinctSortedBlockInputStream::buildFilter(
 
         if (inserted)
         {
-            method.onNewKey(*it, columns.size(), i, variants.string_pool);
+            method.onNewKey(*it, columns.size(), variants.string_pool);
             has_new_data = true;
         }
 
@@ -172,7 +172,7 @@ ConstColumnPlainPtrs DistinctSortedBlockInputStream::getKeyColumns(const Block &
             : block.getByName(columns_names[i]).column;
 
         /// Ignore all constant columns.
-        if (!column->isConst())
+        if (!column->isColumnConst())
             column_ptrs.emplace_back(column.get());
     }
 

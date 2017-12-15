@@ -162,7 +162,10 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
             /// Quantifiers that allow a zero number of occurences.
             case '{':
                 in_curly_braces = true;
-            case '?': case '*':
+                [[fallthrough]];
+            case '?':
+                [[fallthrough]];
+            case '*':
                 is_trivial = false;
                 if (!last_substring->first.empty() && !in_square_braces)
                 {
@@ -182,6 +185,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 break;
 
             ordinary:   /// Normal, not escaped symbol.
+            [[fallthrough]];
             default:
                 if (depth == 0 && !in_curly_braces && !in_square_braces)
                 {
@@ -228,7 +232,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
             }
         }
     }
-    else
+    else if (!trivial_substrings.empty())
     {
         required_substring = trivial_substrings.front().first;
         required_substring_is_prefix = trivial_substrings.front().second == 0;

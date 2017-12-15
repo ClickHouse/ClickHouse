@@ -1,10 +1,9 @@
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnConst.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 #include <ext/map.h>
 #include <ext/enumerate.h>
@@ -35,12 +34,12 @@ std::string DataTypeTuple::getName() const
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
-    return *static_cast<ColumnTuple &>(column).getData().getByPosition(idx).column;
+    return *static_cast<ColumnTuple &>(column).getColumns()[idx];
 }
 
 static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
 {
-    return *static_cast<const ColumnTuple &>(column).getData().getByPosition(idx).column;
+    return *static_cast<const ColumnTuple &>(column).getColumns()[idx];
 }
 
 
@@ -71,7 +70,7 @@ template <typename F>
 static void addElementSafe(const DataTypes & elems, IColumn & column, F && impl)
 {
     /// We use the assumption that tuples of zero size do not exist.
-    size_t old_size = extractElementColumn(column, 0).size();
+    size_t old_size = column.size();
 
     try
     {
@@ -123,7 +122,10 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr) const
         {
             skipWhitespaceIfAny(istr);
             if (i != 0)
+            {
                 assertChar(',', istr);
+                skipWhitespaceIfAny(istr);
+            }
             elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr);
         }
     });
@@ -175,7 +177,10 @@ void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr) con
         {
             skipWhitespaceIfAny(istr);
             if (i != 0)
+            {
                 assertChar(',', istr);
+                skipWhitespaceIfAny(istr);
+            }
             elems[i]->deserializeTextJSON(extractElementColumn(column, i), istr);
         }
     });
@@ -224,31 +229,57 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
     });
 }
 
-void DataTypeTuple::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeTuple::enumerateStreams(StreamCallback callback, SubstreamPath path) const
 {
-    const ColumnTuple & real_column = static_cast<const ColumnTuple &>(column);
-    for (size_t i = 0, size = elems.size(); i < size; ++i)
-        NativeBlockOutputStream::writeData(*elems[i], real_column.getData().safeGetByPosition(i).column, ostr, offset, limit);
+    path.push_back(Substream::TupleElement);
+    for (const auto i : ext::range(0, ext::size(elems)))
+    {
+        path.back().tuple_element = i + 1;
+        elems[i]->enumerateStreams(callback, path);
+    }
 }
 
-void DataTypeTuple::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
+    const IColumn & column,
+    OutputStreamGetter getter,
+    size_t offset,
+    size_t limit,
+    bool position_independent_encoding,
+    SubstreamPath path) const
 {
-    ColumnTuple & real_column = static_cast<ColumnTuple &>(column);
-    for (size_t i = 0, size = elems.size(); i < size; ++i)
-        NativeBlockInputStream::readData(*elems[i], *real_column.getData().safeGetByPosition(i).column, istr, limit, avg_value_size_hint);
+    path.push_back(Substream::TupleElement);
+    for (const auto i : ext::range(0, ext::size(elems)))
+    {
+        path.back().tuple_element = i + 1;
+        elems[i]->serializeBinaryBulkWithMultipleStreams(
+            extractElementColumn(column, i), getter, offset, limit, position_independent_encoding, path);
+    }
+}
+
+void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
+    IColumn & column,
+    InputStreamGetter getter,
+    size_t limit,
+    double avg_value_size_hint,
+    bool position_independent_encoding,
+    SubstreamPath path) const
+{
+    path.push_back(Substream::TupleElement);
+    for (const auto i : ext::range(0, ext::size(elems)))
+    {
+        path.back().tuple_element = i + 1;
+        elems[i]->deserializeBinaryBulkWithMultipleStreams(
+            extractElementColumn(column, i), getter, limit, avg_value_size_hint, position_independent_encoding, path);
+    }
 }
 
 ColumnPtr DataTypeTuple::createColumn() const
 {
-    Block tuple_block;
-    for (size_t i = 0, size = elems.size(); i < size; ++i)
-    {
-        ColumnWithTypeAndName col;
-        col.column = elems[i]->createColumn();
-        col.type = elems[i]->clone();
-        tuple_block.insert(std::move(col));
-    }
-    return std::make_shared<ColumnTuple>(tuple_block);
+    size_t size = elems.size();
+    Columns tuple_columns(size);
+    for (size_t i = 0; i < size; ++i)
+        tuple_columns[i] = elems[i]->createColumn();
+    return std::make_shared<ColumnTuple>(tuple_columns);
 }
 
 Field DataTypeTuple::getDefault() const
@@ -263,6 +294,33 @@ void DataTypeTuple::insertDefaultInto(IColumn & column) const
         for (const auto & i : ext::range(0, ext::size(elems)))
             elems[i]->insertDefaultInto(extractElementColumn(column, i));
     });
+}
+
+
+bool DataTypeTuple::textCanContainOnlyValidUTF8() const
+{
+    return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->textCanContainOnlyValidUTF8(); });
+}
+
+bool DataTypeTuple::haveMaximumSizeOfValue() const
+{
+    return std::all_of(elems.begin(), elems.end(), [](auto && elem) { return elem->haveMaximumSizeOfValue(); });
+}
+
+size_t DataTypeTuple::getMaximumSizeOfValueInMemory() const
+{
+    size_t res = 0;
+    for (const auto & elem : elems)
+        res += elem->getMaximumSizeOfValueInMemory();
+    return res;
+}
+
+size_t DataTypeTuple::getSizeOfValueInMemory() const
+{
+    size_t res = 0;
+    for (const auto & elem : elems)
+        res += elem->getSizeOfValueInMemory();
+    return res;
 }
 
 

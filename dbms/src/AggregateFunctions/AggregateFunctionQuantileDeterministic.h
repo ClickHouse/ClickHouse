@@ -2,7 +2,7 @@
 
 #include <AggregateFunctions/ReservoirSamplerDeterministic.h>
 
-#include <Core/FieldVisitors.h>
+#include <Common/FieldVisitors.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -58,10 +58,10 @@ public:
     {
         type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
 
-        if (!arguments[1]->isNumeric())
+        if (!arguments[1]->isNumber() && !arguments[1]->isDateOrDateTime())
             throw Exception{
                 "Invalid type of second argument to function " + getName() +
-                    ", got " + arguments[1]->getName() + ", expected numeric",
+                    ", got " + arguments[1]->getName() + ", expected numeric or Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
@@ -80,7 +80,7 @@ public:
             determinator.get64(row_num));
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).sample.merge(this->data(rhs).sample);
     }
@@ -139,10 +139,10 @@ public:
     {
         type = returns_float ? std::make_shared<DataTypeFloat64>() : arguments[0];
 
-        if (!arguments[1]->isNumeric())
+        if (!arguments[1]->isNumber() && !arguments[1]->isDateOrDateTime())
             throw Exception{
                 "Invalid type of second argument to function " + getName() +
-                    ", got " + arguments[1]->getName() + ", expected numeric",
+                    ", got " + arguments[1]->getName() + ", expected numeric or Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
@@ -165,7 +165,7 @@ public:
             determinator.get64(row_num));
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).sample.merge(this->data(rhs).sample);
     }

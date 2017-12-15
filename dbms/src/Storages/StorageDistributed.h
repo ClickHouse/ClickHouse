@@ -27,7 +27,6 @@ class StorageDistributedDirectoryMonitor;
   */
 class StorageDistributed : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
-    friend class ext::shared_ptr_helper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
 
@@ -66,20 +65,13 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     void drop() override {}
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override { name = new_table_name; }
+    void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { name = new_table_name; }
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
     void startup() override;
     void shutdown() override;
-
-    void reshardPartitions(
-        const ASTPtr & query, const String  & database_name,
-        const ASTPtr & partition,
-        const WeightedZooKeeperPaths & weighted_zookeeper_paths,
-        const ASTPtr & sharding_key_expr, bool do_copy, const Field & coordinator,
-        const Context & context) override;
 
     /// From each replica, get a description of the corresponding local table.
     BlockInputStreams describe(const Context & context, const Settings & settings);
@@ -91,30 +83,6 @@ public:
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
     std::string getClusterName() const { return cluster_name; } /// Returns empty string if tables is used by TableFunctionRemote
-
-private:
-    StorageDistributed(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
-
-    StorageDistributed(
-        const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
-        const String & remote_database_,
-        const String & remote_table_,
-        const String & cluster_name_,
-        const Context & context_,
-        const ASTPtr & sharding_key_ = nullptr,
-        const String & data_path_ = String{});
 
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors();
@@ -159,6 +127,30 @@ private:
 
     /// Used for global monotonic ordering of files to send.
     SimpleIncrement file_names_increment;
+
+protected:
+    StorageDistributed(
+        const std::string & name_,
+        NamesAndTypesListPtr columns_,
+        const String & remote_database_,
+        const String & remote_table_,
+        const String & cluster_name_,
+        const Context & context_,
+        const ASTPtr & sharding_key_ = nullptr,
+        const String & data_path_ = String{});
+
+    StorageDistributed(
+        const std::string & name_,
+        NamesAndTypesListPtr columns_,
+        const NamesAndTypesList & materialized_columns_,
+        const NamesAndTypesList & alias_columns_,
+        const ColumnDefaults & column_defaults_,
+        const String & remote_database_,
+        const String & remote_table_,
+        const String & cluster_name_,
+        const Context & context_,
+        const ASTPtr & sharding_key_ = nullptr,
+        const String & data_path_ = String{});
 };
 
 }

@@ -4,19 +4,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemTables.h>
-#include <Common/VirtualColumnUtils.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 
 StorageSystemTables::StorageSystemTables(const std::string & name_)
     : name(name_),
@@ -55,8 +49,8 @@ BlockInputStreams StorageSystemTables::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;

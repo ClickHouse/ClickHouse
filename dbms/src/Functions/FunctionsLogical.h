@@ -70,7 +70,7 @@ struct XorImpl
         return false;
     }
 
-    static inline bool isSaturatedValue(UInt8 a)
+    static inline bool isSaturatedValue(UInt8)
     {
         return false;
     }
@@ -144,7 +144,7 @@ struct AssociativeOperationImpl
 template <typename Op>
 struct AssociativeOperationImpl<Op, 1>
 {
-    static void execute(UInt8ColumnPtrs & in, UInt8Container & result)
+    static void execute(UInt8ColumnPtrs &, UInt8Container &)
     {
         throw Exception("Logical error: AssociativeOperationImpl<Op, 1>::execute called", ErrorCodes::LOGICAL_ERROR);
     }
@@ -166,7 +166,7 @@ class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionAnyArityLogical>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyArityLogical>(); };
 
 private:
     bool extractConstColumns(ColumnPlainPtrs & in, UInt8 & res)
@@ -174,7 +174,7 @@ private:
         bool has_res = false;
         for (int i = static_cast<int>(in.size()) - 1; i >= 0; --i)
         {
-            if (in[i]->isConst())
+            if (in[i]->isColumnConst())
             {
                 Field val = (*in[i])[0];
                 UInt8 x = !!val.get<UInt64>();
@@ -271,7 +271,7 @@ public:
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
-            if (!arguments[i]->isNumeric())
+            if (!arguments[i]->isNumber())
                 throw Exception("Illegal type ("
                     + arguments[i]->getName()
                     + ") of " + toString(i + 1) + " argument of function " + getName(),
@@ -299,7 +299,7 @@ public:
         {
             if (!in.empty())
                 const_val = Impl<UInt8>::apply(const_val, 0);
-            auto col_res = DataTypeUInt8().createConstColumn(n, toField(const_val));
+            auto col_res = DataTypeUInt8().createColumnConst(n, toField(const_val));
             block.getByPosition(result).column = col_res;
             return;
         }
@@ -376,7 +376,7 @@ class FunctionUnaryLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionUnaryLogical>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryLogical>(); };
 
 private:
     template <typename T>
@@ -407,7 +407,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isNumeric())
+        if (!arguments[0]->isNumber())
             throw Exception("Illegal type ("
                 + arguments[0]->getName()
                 + ") of argument of function " + getName(),
