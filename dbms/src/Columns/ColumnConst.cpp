@@ -24,7 +24,7 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s)
 
 MutableColumnPtr ColumnConst::convertToFullColumn() const
 {
-    return data->replicate(Offsets_t(1, s));
+    return data->replicate(Offsets(1, s));
 }
 
 }

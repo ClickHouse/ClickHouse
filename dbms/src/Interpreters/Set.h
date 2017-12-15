@@ -88,12 +88,12 @@ private:
     OverflowMode overflow_mode;
 
     /// If there is an array on the left side of IN. We check that at least one element of the array presents in the set.
-    void executeArray(const ColumnArray * key_column, ColumnUInt8::Container_t & vec_res, bool negative) const;
+    void executeArray(const ColumnArray * key_column, ColumnUInt8::Container & vec_res, bool negative) const;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
         const ColumnRawPtrs & key_columns,
-        ColumnUInt8::Container_t & vec_res,
+        ColumnUInt8::Container & vec_res,
         bool negative,
         const PaddedPODArray<UInt8> * null_map) const;
 
@@ -134,7 +134,7 @@ private:
     void executeImpl(
         Method & method,
         const ColumnRawPtrs & key_columns,
-        ColumnUInt8::Container_t & vec_res,
+        ColumnUInt8::Container & vec_res,
         bool negative,
         size_t rows,
         ConstNullMapPtr null_map) const;
@@ -143,7 +143,7 @@ private:
     void executeImplCase(
         Method & method,
         const ColumnRawPtrs & key_columns,
-        ColumnUInt8::Container_t & vec_res,
+        ColumnUInt8::Container & vec_res,
         bool negative,
         size_t rows,
         ConstNullMapPtr null_map) const;
@@ -152,8 +152,8 @@ private:
     void executeArrayImpl(
         Method & method,
         const ColumnRawPtrs & key_columns,
-        const ColumnArray::Offsets_t & offsets,
-        ColumnUInt8::Container_t & vec_res,
+        const ColumnArray::Offsets & offsets,
+        ColumnUInt8::Container & vec_res,
         bool negative,
         size_t rows) const;
 };

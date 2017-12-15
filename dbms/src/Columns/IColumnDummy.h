@@ -94,7 +94,7 @@ public:
             res[i] = i;
     }
 
-    MutableColumnPtr replicate(const Offsets_t & offsets) const override
+    MutableColumnPtr replicate(const Offsets & offsets) const override
     {
         if (s != offsets.size())
             throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);

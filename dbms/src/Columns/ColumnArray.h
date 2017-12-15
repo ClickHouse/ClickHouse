@@ -33,7 +33,7 @@ private:
 
 public:
     /** On the index i there is an offset to the beginning of the i + 1 -th element. */
-    using ColumnOffsets_t = ColumnVector<Offset_t>;
+    using ColumnOffsets = ColumnVector<Offset>;
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Array"; }
@@ -58,7 +58,7 @@ public:
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
-    MutableColumnPtr replicate(const Offsets_t & replicate_offsets) const override;
+    MutableColumnPtr replicate(const Offsets & replicate_offsets) const override;
     MutableColumnPtr convertToFullColumnIfConst() const override;
     void getExtremes(Field & min, Field & max) const override;
 
@@ -71,14 +71,14 @@ public:
     //MutableColumnPtr getDataPtr() { return data->assumeMutable(); }
     const ColumnPtr & getDataPtr() const { return data; }
 
-    Offsets_t & ALWAYS_INLINE getOffsets()
+    Offsets & ALWAYS_INLINE getOffsets()
     {
-        return static_cast<ColumnOffsets_t &>(*offsets->assumeMutable()).getData();
+        return static_cast<ColumnOffsets &>(*offsets->assumeMutable()).getData();
     }
 
-    const Offsets_t & ALWAYS_INLINE getOffsets() const
+    const Offsets & ALWAYS_INLINE getOffsets() const
     {
-        return static_cast<const ColumnOffsets_t &>(*offsets).getData();
+        return static_cast<const ColumnOffsets &>(*offsets).getData();
     }
 
     MutableColumnPtr getOffsetsPtr() { return offsets->assumeMutable(); }
@@ -107,23 +107,23 @@ private:
 
     /// Multiply values if the nested column is ColumnVector<T>.
     template <typename T>
-    MutableColumnPtr replicateNumber(const Offsets_t & replicate_offsets) const;
+    MutableColumnPtr replicateNumber(const Offsets & replicate_offsets) const;
 
     /// Multiply the values if the nested column is ColumnString. The code is too complicated.
-    MutableColumnPtr replicateString(const Offsets_t & replicate_offsets) const;
+    MutableColumnPtr replicateString(const Offsets & replicate_offsets) const;
 
     /** Non-constant arrays of constant values are quite rare.
       * Most functions can not work with them, and does not create such columns as a result.
       * An exception is the function `replicate`(see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
       * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).
       */
-    MutableColumnPtr replicateConst(const Offsets_t & replicate_offsets) const;
+    MutableColumnPtr replicateConst(const Offsets & replicate_offsets) const;
 
     /** The following is done by simply replicating of nested columns.
       */
-    MutableColumnPtr replicateTuple(const Offsets_t & replicate_offsets) const;
-    MutableColumnPtr replicateNullable(const Offsets_t & replicate_offsets) const;
-    MutableColumnPtr replicateGeneric(const Offsets_t & replicate_offsets) const;
+    MutableColumnPtr replicateTuple(const Offsets & replicate_offsets) const;
+    MutableColumnPtr replicateNullable(const Offsets & replicate_offsets) const;
+    MutableColumnPtr replicateGeneric(const Offsets & replicate_offsets) const;
 
 
     /// Specializations for the filter function.

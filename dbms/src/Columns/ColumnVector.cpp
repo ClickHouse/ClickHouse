@@ -153,7 +153,7 @@ MutableColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t r
         throw Exception("Size of filter doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     auto res = this->create();
-    Container_t & res_data = res->getData();
+    Container & res_data = res->getData();
 
     if (result_size_hint)
         res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
@@ -223,7 +223,7 @@ MutableColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, siz
         throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     auto res = this->create(limit);
-    typename Self::Container_t & res_data = res->getData();
+    typename Self::Container & res_data = res->getData();
     for (size_t i = 0; i < limit; ++i)
         res_data[i] = data[perm[i]];
 
@@ -231,7 +231,7 @@ MutableColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, siz
 }
 
 template <typename T>
-MutableColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets_t & offsets) const
+MutableColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
@@ -241,10 +241,10 @@ MutableColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets_t & offsets) 
         return this->create();
 
     auto res = this->create();
-    typename Self::Container_t & res_data = res->getData();
+    typename Self::Container & res_data = res->getData();
     res_data.reserve(offsets.back());
 
-    IColumn::Offset_t prev_offset = 0;
+    IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
         size_t size_to_replicate = offsets[i] - prev_offset;

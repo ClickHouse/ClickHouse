@@ -96,7 +96,7 @@ BlockInputStreams StorageSystemParts::read(
         database_column = block_to_filter.getByName("database").column;
         size_t rows = database_column->size();
 
-        IColumn::Offsets_t offsets(rows);
+        IColumn::Offsets offsets(rows);
         ColumnPtr table_column = ColumnString::create();
         ColumnPtr engine_column = ColumnString::create();
         ColumnPtr active_column = ColumnUInt8::create();

@@ -37,7 +37,7 @@ try
         column1.name = "a";
         column1.type = table->getDataTypeByName("a");
         column1.column = column1.type->createColumn();
-        ColumnUInt64::Container_t & vec1 = typeid_cast<ColumnUInt64&>(*column1.column).getData();
+        ColumnUInt64::Container & vec1 = typeid_cast<ColumnUInt64&>(*column1.column).getData();
 
         vec1.resize(rows);
         for (size_t i = 0; i < rows; ++i)
@@ -49,7 +49,7 @@ try
         column2.name = "b";
         column2.type = table->getDataTypeByName("b");
         column2.column = column2.type->createColumn();
-        ColumnUInt8::Container_t & vec2 = typeid_cast<ColumnUInt8&>(*column2.column).getData();
+        ColumnUInt8::Container & vec2 = typeid_cast<ColumnUInt8&>(*column2.column).getData();
 
         vec2.resize(rows);
         for (size_t i = 0; i < rows; ++i)

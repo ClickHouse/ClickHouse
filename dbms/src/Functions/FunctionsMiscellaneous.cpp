@@ -1187,7 +1187,7 @@ private:
     template <typename T>
     static void fill(const PaddedPODArray<T> & src,
         ColumnString::Chars_t & dst_chars,
-        ColumnString::Offsets_t & dst_offsets,
+        ColumnString::Offsets & dst_offsets,
         Int64 min,
         Int64 max,
         Float64 max_width)

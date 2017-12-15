@@ -102,7 +102,7 @@ public:
     {
         // Column 0 contains array of keys of known type
         const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[0]);
-        const IColumn::Offsets_t & offsets = array_column.getOffsets();
+        const IColumn::Offsets & offsets = array_column.getOffsets();
         const auto & keys_vec = static_cast<const ColumnVector<T> &>(array_column.getData());
         const size_t keys_vec_offset = row_num == 0 ? 0 : offsets[row_num - 1];
         const size_t keys_vec_size = (offsets[row_num] - keys_vec_offset);
@@ -113,7 +113,7 @@ public:
         {
             Field value;
             const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[col + 1]);
-            const IColumn::Offsets_t & offsets = array_column.getOffsets();
+            const IColumn::Offsets & offsets = array_column.getOffsets();
             const size_t values_vec_offset = row_num == 0 ? 0 : offsets[row_num - 1];
             const size_t values_vec_size = (offsets[row_num] - values_vec_offset);
 

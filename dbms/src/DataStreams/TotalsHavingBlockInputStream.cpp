@@ -204,7 +204,7 @@ void TotalsHavingBlockInputStream::addToTotals(MutableColumns & totals, const Bl
 
         /// Accumulate all aggregate states into that value.
 
-        const ColumnAggregateFunction::Container_t & vec = column->getData();
+        const ColumnAggregateFunction::Container & vec = column->getData();
         size_t size = vec.size();
 
         if (filter)

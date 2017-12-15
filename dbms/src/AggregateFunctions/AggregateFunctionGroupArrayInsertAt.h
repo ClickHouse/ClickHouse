@@ -184,7 +184,7 @@ public:
     {
         ColumnArray & to_array = static_cast<ColumnArray &>(to);
         IColumn & to_data = to_array.getData();
-        ColumnArray::Offsets_t & to_offsets = to_array.getOffsets();
+        ColumnArray::Offsets & to_offsets = to_array.getOffsets();
 
         const Array & arr = data(place).value;
 

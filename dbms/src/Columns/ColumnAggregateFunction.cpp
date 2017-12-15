@@ -135,7 +135,7 @@ MutableColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t 
 
     /// To save RAM in case of too strong filtering.
     if (res_data.size() * 2 < res_data.capacity())
-        res_data = Container_t(res_data.cbegin(), res_data.cend());
+        res_data = Container(res_data.cbegin(), res_data.cend());
 
     return std::move(res);
 }
@@ -326,7 +326,7 @@ void ColumnAggregateFunction::popBack(size_t n)
     data.resize_assume_reserved(new_size);
 }
 
-MutableColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & offsets) const
+MutableColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
@@ -339,7 +339,7 @@ MutableColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets_t & o
     auto & res_data = res->getData();
     res_data.reserve(offsets.back());
 
-    IColumn::Offset_t prev_offset = 0;
+    IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
         size_t size_to_replicate = offsets[i] - prev_offset;

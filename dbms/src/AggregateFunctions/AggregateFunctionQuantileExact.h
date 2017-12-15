@@ -187,12 +187,12 @@ public:
         auto & array = const_cast<typename AggregateFunctionQuantileExactData<T>::Array &>(this->data(place).array);
 
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
-        ColumnArray::Offsets_t & offsets_to = arr_to.getOffsets();
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
         size_t num_levels = levels.size();
         offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + num_levels);
 
-        typename ColumnVector<T>::Container_t & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
         data_to.resize(old_size + num_levels);
 

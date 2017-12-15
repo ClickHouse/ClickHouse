@@ -171,8 +171,8 @@ template <typename Op>
 struct StringComparisonImpl
 {
     static void NO_INLINE string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -201,8 +201,8 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -223,12 +223,12 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE string_vector_constant(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
+        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
-        ColumnString::Offset_t b_size = b.size() + 1;
+        ColumnString::Offset b_size = b.size() + 1;
         const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
         for (size_t i = 0; i < size; ++i)
         {
@@ -247,8 +247,8 @@ struct StringComparisonImpl
     }
 
     static void fixed_string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
@@ -277,8 +277,8 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         /** Specialization if both sizes are 16.
@@ -302,11 +302,11 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
+        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
-        ColumnString::Offset_t b_n = b.size();
+        ColumnString::Offset b_n = b.size();
         if (a_n == 16 && b_n == 16)
         {
             fixed_string_vector_constant_16(a_data, b, c);
@@ -325,7 +325,7 @@ struct StringComparisonImpl
 
     static void constant_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a, c);
@@ -333,7 +333,7 @@ struct StringComparisonImpl
 
     static void constant_fixed_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vector_constant(b_data, b_n, a, c);
@@ -358,8 +358,8 @@ template <bool positive>
 struct StringEqualsImpl
 {
     static void NO_INLINE string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -371,8 +371,8 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -384,12 +384,12 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE string_vector_constant(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets_t & a_offsets,
+        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
-        ColumnString::Offset_t b_n = b.size();
+        ColumnString::Offset b_n = b.size();
         const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
         for (size_t i = 0; i < size; ++i)
             c[i] = positive == ((i == 0)
@@ -448,8 +448,8 @@ struct StringEqualsImpl
 #endif
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         /** Specialization if both sizes are 16.
@@ -470,11 +470,11 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
+        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
-        ColumnString::Offset_t b_n = b.size();
+        ColumnString::Offset b_n = b.size();
 #if __SSE2__
         if (a_n == 16 && b_n == 16)
         {
@@ -491,8 +491,8 @@ struct StringEqualsImpl
     }
 
     static void fixed_string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset_t a_n,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
@@ -500,7 +500,7 @@ struct StringEqualsImpl
 
     static void constant_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets_t & b_offsets,
+        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         string_vector_constant(b_data, b_offsets, a, c);
@@ -508,7 +508,7 @@ struct StringEqualsImpl
 
     static void constant_fixed_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset_t b_n,
+        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         fixed_string_vector_constant(b_data, b_n, a, c);
@@ -585,7 +585,7 @@ private:
         {
             auto col_res = ColumnUInt8::create();
 
-            ColumnUInt8::Container_t & vec_res = col_res->getData();
+            ColumnUInt8::Container & vec_res = col_res->getData();
             vec_res.resize(col_left->getData().size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
 
@@ -596,7 +596,7 @@ private:
         {
             auto col_res = ColumnUInt8::create();
 
-            ColumnUInt8::Container_t & vec_res = col_res->getData();
+            ColumnUInt8::Container & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
 
@@ -614,7 +614,7 @@ private:
         {
             auto col_res = ColumnUInt8::create();
 
-            ColumnUInt8::Container_t & vec_res = col_res->getData();
+            ColumnUInt8::Container & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
             NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
 
@@ -694,7 +694,7 @@ private:
 
         auto c_res = ColumnUInt8::create();
         block.getByPosition(result).column = c_res;
-        ColumnUInt8::Container_t & vec_res = c_res->getData();
+        ColumnUInt8::Container & vec_res = c_res->getData();
         vec_res.resize(c0->size());
 
         if (c0_const && c1_const)
@@ -986,7 +986,7 @@ private:
 
         auto c_res = ColumnUInt8::create();
         block.getByPosition(result).column = c_res;
-        ColumnUInt8::Container_t & vec_res = c_res->getData();
+        ColumnUInt8::Container & vec_res = c_res->getData();
         vec_res.resize(c0->size());
 
         if (c0_const && c1_const)

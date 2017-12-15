@@ -108,7 +108,7 @@ public:
 
     MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-    MutableColumnPtr replicate(const Offsets_t & offsets) const override;
+    MutableColumnPtr replicate(const Offsets & offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {

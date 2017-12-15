@@ -39,7 +39,7 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     {
         /// Copy column and append empty strings for extra elements.
 
-        Offset_t offset = 0;
+        Offset offset = 0;
         if (from_size > 0)
         {
             res->offsets.assign(offsets.begin(), offsets.end());
@@ -105,7 +105,7 @@ MutableColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_h
     auto res = ColumnString::create();
 
     Chars_t & res_chars = res->chars;
-    Offsets_t & res_offsets = res->offsets;
+    Offsets & res_offsets = res->offsets;
 
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
     return std::move(res);
@@ -130,7 +130,7 @@ MutableColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) c
     auto res = ColumnString::create();
 
     Chars_t & res_chars = res->chars;
-    Offsets_t & res_offsets = res->offsets;
+    Offsets & res_offsets = res->offsets;
 
     if (limit == size)
         res_chars.resize(chars.size());
@@ -144,7 +144,7 @@ MutableColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) c
 
     res_offsets.resize(limit);
 
-    Offset_t current_new_offset = 0;
+    Offset current_new_offset = 0;
 
     for (size_t i = 0; i < limit; ++i)
     {
@@ -208,7 +208,7 @@ void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_directio
 }
 
 
-MutableColumnPtr ColumnString::replicate(const Offsets_t & replicate_offsets) const
+MutableColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
@@ -220,13 +220,13 @@ MutableColumnPtr ColumnString::replicate(const Offsets_t & replicate_offsets) co
         return std::move(res);
 
     Chars_t & res_chars = res->chars;
-    Offsets_t & res_offsets = res->offsets;
+    Offsets & res_offsets = res->offsets;
     res_chars.reserve(chars.size() / col_size * replicate_offsets.back());
     res_offsets.reserve(replicate_offsets.back());
 
-    Offset_t prev_replicate_offset = 0;
-    Offset_t prev_string_offset = 0;
-    Offset_t current_new_offset = 0;
+    Offset prev_replicate_offset = 0;
+    Offset prev_string_offset = 0;
+    Offset current_new_offset = 0;
 
     for (size_t i = 0; i < col_size; ++i)
     {

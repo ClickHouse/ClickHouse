@@ -220,7 +220,7 @@ Block LogBlockInputStream::readImpl()
             String name = DataTypeNested::extractNestedTableName(name);
 
             if (offset_columns.count(name) == 0)
-                offset_columns[name] = ColumnArray::ColumnOffsets_t::create();
+                offset_columns[name] = ColumnArray::ColumnOffsets::create();
             else
                 read_offsets = false; /// on previous iterations the offsets were already read by `readData`
 

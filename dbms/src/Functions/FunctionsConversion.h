@@ -77,8 +77,8 @@ struct ConvertImpl
             auto col_to = ColumnVector<ToFieldType>::create();
             block.getByPosition(result).column = col_to;
 
-            const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
-            typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<FromFieldType>::Container & vec_from = col_from->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
             size_t size = vec_from.size();
             vec_to.resize(size);
 
@@ -219,9 +219,9 @@ struct ConvertImpl<FromDataType, typename std::enable_if<!std::is_same<FromDataT
             auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
-            const typename ColumnVector<FromFieldType>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<FromFieldType>::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
 
             if constexpr (std::is_same<FromDataType, DataTypeDate>::value)
@@ -267,7 +267,7 @@ struct ConvertImplGenericToString
         block.getByPosition(result).column = col_to;
 
         ColumnString::Chars_t & data_to = col_to->getChars();
-        ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+        ColumnString::Offsets & offsets_to = col_to->getOffsets();
 
         data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
         offsets_to.resize(size);
@@ -337,12 +337,12 @@ struct ConvertImpl<typename std::enable_if<!std::is_same<ToDataType, DataTypeStr
             auto col_to = ColumnVector<ToFieldType>::create();
             block.getByPosition(result).column = col_to;
 
-            typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
             size_t size = col_from->size();
             vec_to.resize(size);
 
             const ColumnString::Chars_t & chars = col_from->getChars();
-            const IColumn::Offsets_t & offsets = col_from->getOffsets();
+            const IColumn::Offsets & offsets = col_from->getOffsets();
 
             size_t current_offset = 0;
 
@@ -392,12 +392,12 @@ struct ConvertOrZeroImpl
             auto col_to = ColumnVector<ToFieldType>::create();
             block.getByPosition(result).column = col_to;
 
-            typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
             size_t size = col_from->size();
             vec_to.resize(size);
 
             const ColumnString::Chars_t & chars = col_from->getChars();
-            const IColumn::Offsets_t & offsets = col_from->getOffsets();
+            const IColumn::Offsets & offsets = col_from->getOffsets();
 
             size_t current_offset = 0;
 
@@ -442,7 +442,7 @@ struct ConvertImplGenericFromString
             column_to.reserve(size);
 
             const ColumnString::Chars_t & chars = col_from_string->getChars();
-            const IColumn::Offsets_t & offsets = col_from_string->getOffsets();
+            const IColumn::Offsets & offsets = col_from_string->getOffsets();
 
             size_t current_offset = 0;
 
@@ -508,7 +508,7 @@ struct ConvertImpl<DataTypeFixedString, ToDataType, Name>
 
             const ColumnFixedString::Chars_t & data_from = col_from->getChars();
             size_t n = col_from->getN();
-            typename ColumnVector<ToFieldType>::Container_t & vec_to = col_to->getData();
+            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
             size_t size = col_from->size();
             vec_to.resize(size);
 
@@ -551,7 +551,7 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 
             const ColumnFixedString::Chars_t & data_from = col_from->getChars();
             ColumnString::Chars_t & data_to = col_to->getChars();
-            ColumnString::Offsets_t & offsets_to = col_to->getOffsets();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = col_from->size();
             size_t n = col_from->getN();
             data_to.resize(size * (n + 1)); /// + 1 - zero terminator

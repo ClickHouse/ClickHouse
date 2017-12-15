@@ -1111,8 +1111,8 @@ public:
         {
             auto res = ColumnUInt32::create();
             ColumnPtr res_holder = res;
-            ColumnUInt32::Container_t & res_vec = res->getData();
-            const ColumnUInt32::Container_t & vec = times->getData();
+            ColumnUInt32::Container & res_vec = res->getData();
+            const ColumnUInt32::Container & vec = times->getData();
 
             size_t size = vec.size();
             res_vec.resize(size);
@@ -1135,14 +1135,14 @@ struct TimeSlotsImpl
 {
     static void vector_vector(
         const PaddedPODArray<UInt32> & starts, const PaddedPODArray<DurationType> & durations,
-        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = starts.size();
 
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + durations[i]) / TIME_SLOT_SIZE; ++value)
@@ -1157,14 +1157,14 @@ struct TimeSlotsImpl
 
     static void vector_constant(
         const PaddedPODArray<UInt32> & starts, DurationType duration,
-        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = starts.size();
 
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + duration) / TIME_SLOT_SIZE; ++value)
@@ -1179,14 +1179,14 @@ struct TimeSlotsImpl
 
     static void constant_vector(
         UInt32 start, const PaddedPODArray<DurationType> & durations,
-        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets_t & result_offsets)
+        PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = durations.size();
 
         result_offsets.resize(size);
         result_values.reserve(size);
 
-        ColumnArray::Offset_t current_offset = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
             for (UInt32 value = start / TIME_SLOT_SIZE; value <= (start + durations[i]) / TIME_SLOT_SIZE; ++value)
@@ -1245,7 +1245,7 @@ public:
 
         auto res = ColumnArray::create(ColumnUInt32::create());
         ColumnPtr res_holder = res;
-        ColumnUInt32::Container_t & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
+        ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
         if (starts && durations)
         {

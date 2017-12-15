@@ -109,7 +109,7 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
                 {
                     if (!append)
                     {
-                        offset_columns[name] = ColumnArray::ColumnOffsets_t::create();
+                        offset_columns[name] = ColumnArray::ColumnOffsets::create();
                         column = ColumnArray::create(type_arr->getNestedType()->createColumn(), offset_columns[name]);
                     }
                 }

@@ -209,8 +209,8 @@ public:
             block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
-            const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
-            typename ColumnUInt64::Container_t & vec_to = col_to->getData();
+            const typename ColumnString::Offsets & offsets = col_from->getOffsets();
+            typename ColumnUInt64::Container & vec_to = col_to->getData();
             size_t size = offsets.size();
             vec_to.resize(size);
 
@@ -260,7 +260,7 @@ public:
             block.getByPosition(result).column = col_to;
 
             const typename ColumnString::Chars_t & data = col_from->getChars();
-            const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
+            const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             auto & chars_to = col_to->getChars();
             const auto size = offsets.size();
             chars_to.resize(size * Impl::length);
@@ -297,8 +297,8 @@ private:
             auto col_to = ColumnVector<ToType>::create();
             block.getByPosition(result).column = col_to;
 
-            const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
-            typename ColumnVector<ToType>::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
+            typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
             size_t size = vec_from.size();
             vec_to.resize(size);
@@ -376,11 +376,11 @@ public:
 
 private:
     template <typename FromType, bool first>
-    void executeIntType(const IColumn * column, ColumnUInt64::Container_t & vec_to)
+    void executeIntType(const IColumn * column, ColumnUInt64::Container & vec_to)
     {
         if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
         {
-            const typename ColumnVector<FromType>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
@@ -412,12 +412,12 @@ private:
     }
 
     template <bool first>
-    void executeString(const IColumn * column, ColumnUInt64::Container_t & vec_to)
+    void executeString(const IColumn * column, ColumnUInt64::Container & vec_to)
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
             const typename ColumnString::Chars_t & data = col_from->getChars();
-            const typename ColumnString::Offsets_t & offsets = col_from->getOffsets();
+            const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             size_t size = offsets.size();
 
             for (size_t i = 0; i < size; ++i)
@@ -469,17 +469,17 @@ private:
     }
 
     template <bool first>
-    void executeArray(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to)
+    void executeArray(const IDataType * type, const IColumn * column, ColumnUInt64::Container & vec_to)
     {
         const IDataType * nested_type = typeid_cast<const DataTypeArray *>(type)->getNestedType().get();
 
         if (const ColumnArray * col_from = checkAndGetColumn<ColumnArray>(column))
         {
             const IColumn * nested_column = &col_from->getData();
-            const ColumnArray::Offsets_t & offsets = col_from->getOffsets();
+            const ColumnArray::Offsets & offsets = col_from->getOffsets();
             const size_t nested_size = nested_column->size();
 
-            ColumnUInt64::Container_t vec_temp(nested_size);
+            ColumnUInt64::Container vec_temp(nested_size);
             executeAny<true>(nested_type, nested_column, vec_temp);
 
             const size_t size = offsets.size();
@@ -512,7 +512,7 @@ private:
     }
 
     template <bool first>
-    void executeAny(const IDataType * from_type, const IColumn * icolumn, ColumnUInt64::Container_t & vec_to)
+    void executeAny(const IDataType * from_type, const IColumn * icolumn, ColumnUInt64::Container & vec_to)
     {
         if      (checkDataType<DataTypeUInt8>(from_type)) executeIntType<UInt8, first>(icolumn, vec_to);
         else if (checkDataType<DataTypeUInt16>(from_type)) executeIntType<UInt16, first>(icolumn, vec_to);
@@ -536,7 +536,7 @@ private:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void executeForArgument(const IDataType * type, const IColumn * column, ColumnUInt64::Container_t & vec_to, bool & is_first)
+    void executeForArgument(const IDataType * type, const IColumn * column, ColumnUInt64::Container & vec_to, bool & is_first)
     {
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
@@ -589,7 +589,7 @@ public:
         auto col_to = ColumnUInt64::create(rows);
         block.getByPosition(result).column = col_to;
 
-        ColumnUInt64::Container_t & vec_to = col_to->getData();
+        ColumnUInt64::Container & vec_to = col_to->getData();
 
         if (arguments.empty())
         {

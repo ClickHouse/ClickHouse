@@ -177,7 +177,7 @@ struct AggregationMethodString
 
     struct State
     {
-        const ColumnString::Offsets_t * offsets;
+        const ColumnString::Offsets * offsets;
         const ColumnString::Chars_t * chars;
 
         void init(ColumnRawPtrs & key_columns)
@@ -1042,8 +1042,8 @@ public:
     void execute(const BlockInputStreamPtr & stream, AggregatedDataVariants & result);
 
     using AggregateColumns = std::vector<ColumnRawPtrs>;
-    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container_t *>;
-    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container_t *>;
+    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
+    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
     using AggregateFunctionsPlainPtrs = std::vector<IAggregateFunction *>;
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').

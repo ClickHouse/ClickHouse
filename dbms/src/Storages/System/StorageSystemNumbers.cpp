@@ -28,7 +28,7 @@ protected:
         column_with_type_and_name.name = "number";
         column_with_type_and_name.type = std::make_shared<DataTypeUInt64>();
         auto column = ColumnUInt64::create(block_size);
-        ColumnUInt64::Container_t & vec = column->getData();
+        ColumnUInt64::Container & vec = column->getData();
         column_with_type_and_name.column = column;
 
         size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Common/Arena.h>
 
@@ -44,7 +44,7 @@ namespace DB
 class ColumnAggregateFunction final : public COWPtrHelper<IColumn, ColumnAggregateFunction>
 {
 public:
-    using Container_t = PaddedPODArray<AggregateDataPtr>;
+    using Container = PaddedPODArray<AggregateDataPtr>;
 
 private:
     friend class COWPtrHelper<IColumn, ColumnAggregateFunction>;
@@ -60,7 +60,7 @@ private:
     ColumnPtr src;
 
     /// Array of pointers to aggregation states, that are placed in arenas.
-    Container_t data;
+    Container data;
 
     ColumnAggregateFunction() {}
 
@@ -156,7 +156,7 @@ public:
 
     MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-    MutableColumnPtr replicate(const Offsets_t & offsets) const override;
+    MutableColumnPtr replicate(const Offsets & offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
@@ -170,12 +170,12 @@ public:
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     /** More efficient manipulation methods */
-    Container_t & getData()
+    Container & getData()
     {
         return data;
     }
 
-    const Container_t & getData() const
+    const Container & getData() const
     {
         return data;
     }

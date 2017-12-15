@@ -67,7 +67,7 @@ BlockInputStreams StorageSystemColumns::read(
 
         /// Add `table` column.
         ColumnPtr table_column = ColumnString::create();
-        IColumn::Offsets_t offsets(rows);
+        IColumn::Offsets offsets(rows);
         for (size_t i = 0; i < rows; ++i)
         {
             const std::string database_name = (*database_column)[i].get<std::string>();

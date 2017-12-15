@@ -55,7 +55,7 @@ struct JoinKeyGetterString
 {
     using Key = StringRef;
 
-    const ColumnString::Offsets_t * offsets;
+    const ColumnString::Offsets * offsets;
     const ColumnString::Chars_t * chars;
 
     JoinKeyGetterString(const ColumnRawPtrs & key_columns)

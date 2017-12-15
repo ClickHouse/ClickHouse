@@ -918,7 +918,7 @@ private:
 
             auto col_res = ColumnVector<ResultType>::create();
 
-            typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
             vec_res.resize(col->getData().size());
             UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
 

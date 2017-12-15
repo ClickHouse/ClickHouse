@@ -39,7 +39,7 @@ private:
         auto col_res = ColumnVector<ResultType>::create();
         block.getByPosition(result).column = col_res;
 
-        typename ColumnVector<ResultType>::Container_t & vec_res = col_res->getData();
+        typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
         vec_res.resize(size);
 
         return vec_res;

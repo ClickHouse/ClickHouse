@@ -243,8 +243,8 @@ public:
             auto col_to = ColumnVector<T>::create();
             block.getByPosition(result).column = col_to;
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
-            typename ColumnVector<T>::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
+            typename ColumnVector<T>::Container & vec_to = col_to->getData();
             size_t size = vec_from.size();
             vec_to.resize(size);
 
@@ -341,9 +341,9 @@ public:
             auto col_to = ColumnUInt8::create();
             block.getByPosition(result).column = col_to;
 
-            const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
-            const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-            typename ColumnUInt8::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
+            const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
+            typename ColumnUInt8::Container & vec_to = col_to->getData();
             size_t size = vec_from1.size();
             vec_to.resize(size);
 
@@ -355,9 +355,9 @@ public:
             auto col_to = ColumnUInt8::create();
             block.getByPosition(result).column = col_to;
 
-            const typename ColumnVector<T>::Container_t & vec_from1 = col_vec1->getData();
+            const typename ColumnVector<T>::Container & vec_from1 = col_vec1->getData();
             const T const_from2 = col_const2->template getValue<T>();
-            typename ColumnUInt8::Container_t & vec_to = col_to->getData();
+            typename ColumnUInt8::Container & vec_to = col_to->getData();
             size_t size = vec_from1.size();
             vec_to.resize(size);
 
@@ -370,8 +370,8 @@ public:
             block.getByPosition(result).column = col_to;
 
             const T const_from1 = col_const1->template getValue<T>();
-            const typename ColumnVector<T>::Container_t & vec_from2 = col_vec2->getData();
-            typename ColumnUInt8::Container_t & vec_to = col_to->getData();
+            const typename ColumnVector<T>::Container & vec_from2 = col_vec2->getData();
+            typename ColumnUInt8::Container & vec_to = col_to->getData();
             size_t size = vec_from2.size();
             vec_to.resize(size);
 
@@ -468,10 +468,10 @@ public:
             auto col_array = ColumnArray::create(col_values);
             block.getByPosition(result).column = col_array;
 
-            ColumnArray::Offsets_t & res_offsets = col_array->getOffsets();
-            typename ColumnVector<T>::Container_t & res_values = col_values->getData();
+            ColumnArray::Offsets & res_offsets = col_array->getOffsets();
+            typename ColumnVector<T>::Container & res_values = col_values->getData();
 
-            const typename ColumnVector<T>::Container_t & vec_from = col_from->getData();
+            const typename ColumnVector<T>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             res_offsets.resize(size);
             res_values.reserve(size * 4);
@@ -737,7 +737,7 @@ public:
             auto col_to = ColumnString::create();
             block.getByPosition(result).column = col_to;
 
-            const ColumnUInt32::Container_t & region_ids = col_from->getData();
+            const ColumnUInt32::Container & region_ids = col_from->getData();
 
             for (size_t i = 0; i < region_ids.size(); ++i)
             {
