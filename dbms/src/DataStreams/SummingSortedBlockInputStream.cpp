@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 String SummingSortedBlockInputStream::getID() const
 {
@@ -36,7 +41,7 @@ String SummingSortedBlockInputStream::getID() const
 }
 
 
-void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumnRawPtrs & merged_columns, bool force_insertion)
+void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns, bool force_insertion)
 {
     for (auto & desc : columns_to_aggregate)
     {
@@ -111,12 +116,16 @@ Block SummingSortedBlockInputStream::readImpl()
     if (children.size() == 1)
         return children[0]->read();
 
-    Block merged_block;
-    MutableColumnRawPtrs merged_columns;
+    Block header;
+    MutableColumns merged_columns;
 
-    init(merged_block, merged_columns);
+    init(header, merged_columns);
+
+    if (has_collation)
+        throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
+
     if (merged_columns.empty())
-        return Block();
+        return {};
 
     /// Additional initialization.
     if (current_row.empty())
@@ -134,7 +143,7 @@ Block SummingSortedBlockInputStream::readImpl()
           */
         for (size_t i = 0; i < num_columns; ++i)
         {
-            ColumnWithTypeAndName & column = merged_block.safeGetByPosition(i);
+            const ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
             /// Discover nested Maps and find columns for summation
             if (typeid_cast<const DataTypeArray *>(column.type.get()))
@@ -196,7 +205,7 @@ Block SummingSortedBlockInputStream::readImpl()
             /// no elements of map could be in primary key
             auto column_num_it = map.second.begin();
             for (; column_num_it != map.second.end(); ++column_num_it)
-                if (isInPrimaryKey(description, merged_block.safeGetByPosition(*column_num_it).name, *column_num_it))
+                if (isInPrimaryKey(description, header.safeGetByPosition(*column_num_it).name, *column_num_it))
                     break;
             if (column_num_it != map.second.end())
             {
@@ -212,7 +221,7 @@ Block SummingSortedBlockInputStream::readImpl()
             column_num_it = map.second.begin();
             for (; column_num_it != map.second.end(); ++column_num_it)
             {
-                const ColumnWithTypeAndName & key_col = merged_block.safeGetByPosition(*column_num_it);
+                const ColumnWithTypeAndName & key_col = header.safeGetByPosition(*column_num_it);
                 const String & name = key_col.name;
                 const IDataType & nested_type = *static_cast<const DataTypeArray *>(key_col.type.get())->getNestedType();
 
@@ -271,32 +280,27 @@ Block SummingSortedBlockInputStream::readImpl()
             size_t tuple_size = desc.column_numbers.size();
             Columns tuple_columns(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i] = merged_block.safeGetByPosition(desc.column_numbers[i]).column;
+                tuple_columns[i] = header.safeGetByPosition(desc.column_numbers[i]).column;
 
             desc.merged_column = ColumnTuple::create(tuple_columns);
         }
         else
-            desc.merged_column = merged_block.safeGetByPosition(desc.column_numbers[0]).column;
+            desc.merged_column = header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty();
     }
 
-    if (has_collation)
-        merge(merged_columns, queue_with_collation);
-    else
-        merge(merged_columns, queue);
-
-    return merged_block;
+    merge(merged_columns, queue);
+    return header.cloneWithColumns(merged_columns);
 }
 
 
-template <typename TSortCursor>
-void SummingSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns, std::priority_queue<TSortCursor> & queue)
+void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
 {
     merged_rows = 0;
 
-    /// Take the rows in needed order and put them in `merged_block` until rows no more than `max_block_size`
+    /// Take the rows in needed order and put them in `merged_columns` until rows no more than `max_block_size`
     while (!queue.empty())
     {
-        TSortCursor current = queue.top();
+        SortCursor current = queue.top();
 
         setPrimaryKeyRef(next_key, current);
 
@@ -364,8 +368,8 @@ void SummingSortedBlockInputStream::merge(MutableColumnRawPtrs & merged_columns,
     finished = true;
 }
 
-template <typename TSortCursor>
-bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, TSortCursor & cursor)
+
+bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & row, SortCursor & cursor)
 {
     /// Strongly non-optimal.
 
@@ -448,8 +452,7 @@ bool SummingSortedBlockInputStream::mergeMap(const MapDescription & desc, Row & 
 }
 
 
-template <typename TSortCursor>
-void SummingSortedBlockInputStream::addRow(TSortCursor & cursor)
+void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
 {
     for (auto & desc : columns_to_aggregate)
     {

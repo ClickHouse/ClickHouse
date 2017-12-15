@@ -79,9 +79,9 @@ Block FilterBlockInputStream::readImpl()
         ColumnPtr column = sample_block.safeGetByPosition(filter_column_in_sample_block).column;
 
         if (column)
-            analyzeConstantFilter(*column, filter_always_false, filter_always_true);
+            constant_filter_description = ConstantFilterDescription(*column);
 
-        if (filter_always_false)
+        if (constant_filter_description.always_false)
             return res;
     }
 
@@ -94,7 +94,7 @@ Block FilterBlockInputStream::readImpl()
 
         expression->execute(res);
 
-        if (filter_always_true)
+        if (constant_filter_description.always_true)
             return res;
 
         /// Find the current position of the filter column in the block.
@@ -104,49 +104,23 @@ Block FilterBlockInputStream::readImpl()
         size_t columns = res.columns();
         ColumnPtr column = res.safeGetByPosition(filter_column).column;
 
-        auto filter_and_holder = getFilterFromColumn(*column);
+        /** It happens that at the stage of analysis of expressions (in sample_block) the columns-constants have not been calculated yet,
+            *  and now - are calculated. That is, not all cases are covered by the code above.
+            * This happens if the function returns a constant for a non-constant argument.
+            * For example, `ignore` function.
+            */
+        constant_filter_description = ConstantFilterDescription(*column);
 
-        IColumn * observed_column = column.get();
-        bool is_nullable_column = observed_column->isColumnNullable();
-        if (is_nullable_column)
-            observed_column = &static_cast<const ColumnNullable &>(*column.get()).getNestedColumn();
-
-        ColumnUInt8 * column_vec = typeid_cast<ColumnUInt8 *>(observed_column);
-        if (!column_vec)
+        if (constant_filter_description.always_false)
         {
-            /** It happens that at the stage of analysis of expressions (in sample_block) the columns-constants have not been calculated yet,
-              *  and now - are calculated. That is, not all cases are covered by the code above.
-              * This happens if the function returns a constant for a non-constant argument.
-              * For example, `ignore` function.
-              */
-            analyzeConstantFilter(*observed_column, filter_always_false, filter_always_true);
-
-            if (filter_always_false)
-            {
-                res.clear();
-                return res;
-            }
-
-            if (filter_always_true)
-                return res;
-
-            throw Exception("Illegal type " + column->getName() + " of column for filter. Must be ColumnUInt8 or ColumnConstUInt8 or Nullable variants of them.",
-                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+            res.clear();
+            return res;
         }
 
-        IColumn::Filter & filter = column_vec->getData();
+        if (constant_filter_description.always_true)
+            return res;
 
-        if (is_nullable_column)
-        {
-            /// Exclude the entries of the filter column that actually are NULL values.
-
-            const NullMap & null_map = static_cast<ColumnNullable &>(*column).getNullMapData();
-
-            IColumn::Filter & filter = column_vec->getData();
-            for (size_t i = 0, size = null_map.size(); i < size; ++i)
-                if (null_map[i])
-                    filter[i] = 0;
-        }
+        FilterDescription filter_and_holder(*column);
 
         /** Let's find out how many rows will be in result.
           * To do this, we filter out the first non-constant column
@@ -168,12 +142,12 @@ Block FilterBlockInputStream::readImpl()
         if (first_non_constant_column != static_cast<size_t>(filter_column))
         {
             ColumnWithTypeAndName & current_column = res.safeGetByPosition(first_non_constant_column);
-            current_column.column = current_column.column->filter(filter, -1);
+            current_column.column = current_column.column->filter(*filter_and_holder.data, -1);
             filtered_rows = current_column.column->size();
         }
         else
         {
-            filtered_rows = countBytesInFilter(filter);
+            filtered_rows = countBytesInFilter(*filter_and_holder.data);
         }
 
         /// If the current block is completely filtered out, let's move on to the next one.
@@ -181,7 +155,7 @@ Block FilterBlockInputStream::readImpl()
             continue;
 
         /// If all the rows pass through the filter.
-        if (filtered_rows == filter.size())
+        if (filtered_rows == filter_and_holder.data->size())
         {
             /// Replace the column with the filter by a constant.
             res.safeGetByPosition(filter_column).column = res.safeGetByPosition(filter_column).type->createColumnConst(filtered_rows, UInt64(1));
@@ -211,7 +185,7 @@ Block FilterBlockInputStream::readImpl()
             if (current_column.column->isColumnConst())
                 current_column.column = current_column.column->cut(0, filtered_rows);
             else
-                current_column.column = current_column.column->filter(filter, -1);
+                current_column.column = current_column.column->filter(*filter_and_holder.data, -1);
         }
 
         return res;

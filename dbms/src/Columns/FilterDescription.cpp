@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 
-FilterDescription::FilterDescription(const IColumn & column)
+ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 {
     if (column.onlyNull())
     {
@@ -31,7 +31,11 @@ FilterDescription::FilterDescription(const IColumn & column)
             always_false = true;
         return;
     }
+}
 
+
+FilterDescription::FilterDescription(const IColumn & column)
+{
     if (const ColumnUInt8 * concrete_column = typeid_cast<const ColumnUInt8 *>(&column))
     {
         data = &concrete_column->getData();
