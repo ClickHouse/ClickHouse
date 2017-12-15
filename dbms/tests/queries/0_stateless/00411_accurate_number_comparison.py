@@ -3,7 +3,7 @@ from __future__ import print_function
 import os, itertools, urllib
 
 def get_ch_answer(query):
-    return urllib.urlopen('http://localhost:8123', data=query).read()
+    return urllib.urlopen(os.environ.get('CLICKHOUSE_URL', 'http://localhost:' + os.environ.get('CLICKHOUSE_PORT_HTTP', '8123') ), data=query).read()
 
 def check_answers(query, answer):
     ch_answer = get_ch_answer(query)

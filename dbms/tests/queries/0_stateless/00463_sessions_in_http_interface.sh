@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
 
 request() {
     local url="$1"
     local select="$2"
-    curl --silent $url --data "$select"
+    ${CLICKHOUSE_CURL} --silent $url --data "$select"
 }
 
 
@@ -29,9 +31,9 @@ check() {
 }
 
 
-address="localhost"
-port="8123"
-url="http://$address:$port/"
+address=${CLICKHOUSE_HOST}
+port=${CLICKHOUSE_PORT_HTTP}
+url="${CLICKHOUSE_PORT_HTTP_PROTO}://$address:$port/"
 session="?session_id=test_$$"
 select="SELECT * FROM system.settings WHERE name = 'max_rows_to_read'"
 select_from_temporary_table="SELECT * FROM temp ORDER BY x"
