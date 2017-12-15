@@ -46,7 +46,7 @@ FilterDescription::FilterDescription(const IColumn & column)
     {
         MutableColumnPtr mutable_holder = nullable_column->getNestedColumn().mutate();
 
-        ColumnUInt8 * concrete_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get())
+        ColumnUInt8 * concrete_column = typeid_cast<ColumnUInt8 *>(mutable_holder.get());
         if (!concrete_column)
             throw Exception("Illegal type " + column.getName() + " of column for filter. Must be UInt8 or Nullable(UInt8).",
                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
